@@ -1,4 +1,4 @@
-/* Code version: v3.3.0 */
+/* Code version: v3.3.1 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -292,7 +292,6 @@
 		setupAutocomplete(input);
 		validateAllTickerInputs();
 		input?.focus();
-		scheduleAutoSubmit(120);
 	};
 
 	const compactTickerInputs = () => {
