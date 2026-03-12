@@ -1,6 +1,6 @@
 [app]
 name = "antigravity"
-version = "v2.2.9"
+version = "v2.2.16"
 debug = true
 updated_on = "12 Mar 2026"
 
@@ -33,6 +33,7 @@ to = "to"
 include_dividends = "Include cash dividends"
 update_chart = "Update the chart"
 performance_summary = "Performance summary"
+chart_summary = "Return chart"
 ending_return = "ending return"
 interval = "Interval"
 range = "Range"
@@ -61,9 +62,9 @@ radius_control = "10px"
 [ui.chart]
 zero_line_color = "rgba(160, 167, 178, 0.85)"
 zero_line_width = 1
-line_width = 3
-line_width_active = 4
-line_width_inactive = 2
+line_width = 2.5
+line_width_active = 3.2
+line_width_inactive = 1.8
 shadow_blur = 16
 shadow_blur_active = 22
 shadow_blur_inactive = 8

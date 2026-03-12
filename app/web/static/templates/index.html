@@ -29,12 +29,10 @@
 </head>
 <body>
 <main class="page">
-    <div class="app-stage">
     <div class="app-shell">
         <aside class="panel sidebar">
             <section class="hero">
                 <h1>{{ labels.hero_title }}</h1>
-                <p class="subtitle">{{ labels.hero_subtitle }}</p>
             </section>
 
             <form class="controls" method="get">
@@ -60,7 +58,6 @@
                     <button type="button" id="add_ticker" class="secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
                     </div>
                 <div class="field">
-                    <label>{{ labels.range_selection }}</label>
                     <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
                         <label class="range-mode-option" for="range_mode_period">
                             <input id="range_mode_period" name="range_mode" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
@@ -120,7 +117,32 @@
             {% if series %}
             <div class="workspace-header">
                 <article class="report-card">
-                    <p class="report-heading">{{ labels.performance_summary }}</p>
+                    <div class="report-heading-row">
+                        <p class="report-heading">{{ labels.performance_summary }}</p>
+                        <div class="report-info">
+                            <button type="button" class="report-info-button" aria-label="Show comparison details">i</button>
+                            <div class="report-info-tooltip chart-tooltip" role="tooltip">
+                                <dl class="report-info-meta">
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.interval }}</dt>
+                                        <dd>{{ interval_label }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.period }}</dt>
+                                        <dd>{{ period_label }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.range }}</dt>
+                                        <dd>{{ display_range }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.return_mode }}</dt>
+                                        <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
                     <div class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
                         {% for item in performance_items %}
                         <section class="performance-item" style="--item-color: {{ item.color }}; --item-shadow: {{ item.shadow_color }};">
@@ -141,22 +163,18 @@
                         </section>
                         {% endfor %}
                     </div>
-                    <ul class="report-meta">
-                        <li><span class="report-meta-label">{{ labels.interval }}</span><span class="report-meta-value">{{ interval_label }}</span></li>
-                        <li><span class="report-meta-label">{{ labels.period }}</span><span class="report-meta-value">{{ period_label }}</span></li>
-                        <li><span class="report-meta-label">{{ labels.range }}</span><span class="report-meta-value">{{ display_range }}</span></li>
-                        <li><span class="report-meta-label">{{ labels.return_mode }}</span><span class="report-meta-value">{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</span></li>
-                    </ul>
                 </article>
             </div>
             <div class="chart-surface">
+                <div class="chart-heading-row">
+                    <p class="chart-heading">{{ labels.chart_summary }}</p>
+                </div>
                 <div class="chart-wrap">
                     <canvas id="returnsChart"></canvas>
                 </div>
             </div>
             {% endif %}
         </section>
-    </div>
     </div>
 </main>
 
