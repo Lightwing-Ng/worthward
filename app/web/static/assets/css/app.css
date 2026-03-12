@@ -1,4 +1,4 @@
-/* Code version: v3.8.0 */
+/* Code version: v3.8.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -39,22 +39,22 @@ h1 { margin: 0; font-size: 24px; line-height: 1; letter-spacing: -0.03em; font-w
 .ticker-input-main { flex: 1 1 auto; min-width: 0; position: relative; }
 .portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 18px; position: relative; }
 .portfolio-weight-row { position: relative; display: flex; align-items: center; }
-.portfolio-weight-input { padding-right: 16px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
+.portfolio-weight-input { padding-right: 16px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
 .portfolio-weight-input::placeholder { color: var(--muted); opacity: 1; font-size: 12px; }
 .portfolio-weight-input::-webkit-outer-spin-button, .portfolio-weight-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.portfolio-weight-unit { position: absolute; right: 8px; color: var(--text); font-size: 12px; line-height: 1; font-weight: 600; pointer-events: none; }
-.portfolio-weight-slider { position: absolute; top: calc(100% + 8px); right: 0; width: 148px; padding: 10px 12px; min-height: 0; background: var(--tooltip-background); box-shadow: 0 24px 52px rgba(17, 24, 39, 0.16), 0 10px 24px rgba(17, 24, 39, 0.10); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: 10px; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms ease, visibility 180ms ease, transform 180ms ease; transform: translateY(-4px); z-index: 8; }
+.portfolio-weight-unit { position: absolute; right: 8px; color: var(--text); font-size: 14px; line-height: 1; font-weight: 600; pointer-events: none; }
+.portfolio-weight-slider { position: absolute; top: calc(100% + 8px); right: 0; width: 188px; padding: 18px 18px; min-height: 56px; background: var(--tooltip-background); box-shadow: 0 24px 52px rgba(17, 24, 39, 0.16), 0 10px 24px rgba(17, 24, 39, 0.10); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: 10px; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms ease, visibility 180ms ease, transform 180ms ease; transform: translateY(-4px); z-index: 8; }
 .portfolio-weight-field.is-open .portfolio-weight-slider { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
 .portfolio-weight-tooltip { position: absolute; top: calc(100% + 42px); right: 0; width: 220px; margin-top: 0; z-index: 8; }
-.portfolio-weight-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: rgba(0, 85, 204, 0.14); }
-.portfolio-weight-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; margin-top: -5px; width: 14px; height: 14px; border-radius: 50%; background: #0055cc; border: 0; box-shadow: 0 2px 6px rgba(0, 85, 204, 0.22); }
-.portfolio-weight-slider::-moz-range-track { height: 4px; border-radius: 999px; background: rgba(0, 85, 204, 0.14); }
-.portfolio-weight-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #0055cc; border: 0; box-shadow: 0 2px 6px rgba(0, 85, 204, 0.22); }
+.portfolio-weight-slider::-webkit-slider-runnable-track { height: 10px; border-radius: 999px; background: rgba(0, 85, 204, 0.14); }
+.portfolio-weight-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; margin-top: -0.5px; width: 11px; height: 11px; border-radius: 50%; background: #0055cc; border: 0; box-shadow: 0 1px 3px rgba(0, 85, 204, 0.18); }
+.portfolio-weight-slider::-moz-range-track { height: 10px; border-radius: 999px; background: rgba(0, 85, 204, 0.14); }
+.portfolio-weight-slider::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: #0055cc; border: 0; box-shadow: 0 1px 3px rgba(0, 85, 204, 0.18); }
 .ticker-input-main > label { display: block; height: 12px; margin: 0 0 6px 2px; font-size: 12px; line-height: 1; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 140ms ease; }
 .ticker-input-main > label { opacity: 1; }
 .ticker-input-row:has(.portfolio-weight-field) .suggestions { right: auto; width: calc(100% + 64px); }
 .ticker-input-control { position: relative; }
-.ticker-input-control input { padding-right: 36px; font-size: 12px; line-height: 1; min-height: 29px; }
+.ticker-input-control input { padding-right: 36px; font-size: 14px; line-height: 1; min-height: 29px; }
 .ticker-input-control input::placeholder { font-size: 12px; }
 .ticker-clear, .ticker-remove { padding: 0; border: 0; background: rgba(148, 163, 184, 0.76); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms ease, background 160ms ease, transform 160ms ease; }
 .ticker-clear { position: absolute; top: 50%; right: 8px; width: 18px; height: 18px; min-width: 18px; min-height: 18px; border-radius: 50%; transform: translateY(-50%); z-index: 2; opacity: 0; pointer-events: none; }
