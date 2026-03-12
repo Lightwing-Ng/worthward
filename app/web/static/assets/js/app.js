@@ -612,7 +612,9 @@
 						<input id="weight_${index}" name="weight_${index}" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
 						<span class="portfolio-weight-unit">%</span>
 					</div>
-					<input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="0" aria-label="${labels.portfolio_weight}">
+					<div class="portfolio-weight-slider-shell" aria-hidden="true">
+						<input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="0" aria-label="${labels.portfolio_weight}">
+					</div>
 					<div class="portfolio-weight-tooltip field-tooltip" hidden></div>
 				</div>` : ""}
 				<button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>

@@ -101,7 +101,9 @@
                                     <input id="weight_{{ index }}" name="weight_{{ index }}" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
                                     <span class="portfolio-weight-unit">%</span>
                                 </div>
-                                <input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" aria-label="{{ labels.portfolio_weight }}">
+                                <div class="portfolio-weight-slider-shell" aria-hidden="true">
+                                    <input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" aria-label="{{ labels.portfolio_weight }}">
+                                </div>
                                 <div class="portfolio-weight-tooltip field-tooltip" hidden></div>
                             </div>
                             {% endif %}
