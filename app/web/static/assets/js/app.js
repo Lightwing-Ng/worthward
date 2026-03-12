@@ -1,4 +1,4 @@
-/* Code version: v3.9.2 */
+/* Code version: v3.10.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -163,21 +163,6 @@
 		return Array.from({ length: count }, (_item, index) => base + (index < remainder ? 1 : 0));
 	};
 
-	const buildGradientColors = (count) => {
-		if (count <= 1) return [theme.accent_primary || "#0055cc"];
-		const hexToRgb = (value) => {
-			const raw = value.replace("#", "");
-			return [Number.parseInt(raw.slice(0, 2), 16), Number.parseInt(raw.slice(2, 4), 16), Number.parseInt(raw.slice(4, 6), 16)];
-		};
-		const rgbToHex = ([r, g, b]) => `#${[r, g, b].map((item) => item.toString(16).padStart(2, "0")).join("")}`;
-		const start = hexToRgb(theme.accent_primary || "#0055cc");
-		const end = hexToRgb(theme.accent_secondary || "#ff2f92");
-		return Array.from({ length: count }, (_item, index) => {
-			const ratio = index / (count - 1);
-			return rgbToHex(start.map((channel, channelIndex) => Math.round(channel + ((end[channelIndex] - channel) * ratio))));
-		});
-	};
-
 	const getFilledWeightEntries = () => getWeightFields()
 		.map((item, index) => ({ ...item, index, ticker: sanitizeTicker(item.tickerInput.value.trim()) }))
 		.filter((item) => item.ticker);
@@ -191,12 +176,12 @@
 	const resolvePassivePortfolioEntry = (changedIndex, filledEntries) => {
 		const candidates = filledEntries.filter((entry) => entry.index !== changedIndex);
 		if (!candidates.length) return null;
-		return candidates.reduce((oldestEntry, entry) => {
-			const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
+		return candidates.reduce((latestEntry, entry) => {
+			const latestStamp = getPortfolioWeightTouchStamp(latestEntry.index);
 			const entryStamp = getPortfolioWeightTouchStamp(entry.index);
-			if (entryStamp < oldestStamp) return entry;
-			if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
-			return oldestEntry;
+			if (entryStamp > latestStamp) return entry;
+			if (entryStamp === latestStamp && entry.index > latestEntry.index) return entry;
+			return latestEntry;
 		});
 	};
 
@@ -272,103 +257,24 @@
 		if (shouldWarn) {
 			showPortfolioWeightTooltip(
 				activeEntry,
-				`${passiveEntry.ticker} is currently the oldest untouched weight, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
+				`${passiveEntry.ticker} was the most recently edited weight available, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
 			);
 		}
 		markPortfolioWeightTouched(changedIndex);
 		syncPortfolioWeightBounds();
 	};
 
-	const updatePortfolioPreview = () => {
+	const dispatchPortfolioPreviewUpdate = () => {
 		if (!isPortfolioView) return;
-		const donut = $("#portfolio_donut");
-		const logoLayer = $("#portfolio_donut_logo_layer");
-		if (!donut) return;
-		const filledEntries = getFilledWeightEntries();
-		if (!filledEntries.length) {
-			donut.style.background = "rgba(148, 163, 184, 0.16)";
-			if (logoLayer) logoLayer.innerHTML = "";
-			return;
-		}
-		const colors = buildGradientColors(filledEntries.length);
-		const stops = [];
-		let angle = 0;
-		const gapDegrees = 1.2;
-		const donutSize = donut.clientWidth || 120;
-		const logoSize = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-size")) || 20;
-		const logoGap = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-gap")) || 10;
-		const logoPadding = Math.max(6, logoGap);
-		const outerRadius = donutSize / 2;
-		const logoOrbitRadius = outerRadius + (logoSize / 2) + logoGap;
-		const logoItems = [];
-		filledEntries.forEach((entry, index) => {
-			const value = Number.parseInt(entry.number.value, 10) || 0;
-			const sweep = (value / 100) * 360;
-			const segmentEnd = angle + sweep;
-			const coloredEnd = Math.max(angle, segmentEnd - gapDegrees);
-			stops.push(`${colors[index]} ${angle}deg ${coloredEnd}deg`);
-			if (coloredEnd < segmentEnd) {
-				stops.push(`transparent ${coloredEnd}deg ${segmentEnd}deg`);
-			}
-			const logoUrl = state.portfolio?.items?.find((item) => item.ticker === entry.ticker)?.logo_url || "";
-			if (logoUrl && sweep > 0) {
-				logoItems.push({
+		window.dispatchEvent(new CustomEvent("antigravity:portfolio-preview", {
+			detail: {
+				entries: getFilledWeightEntries().map((entry) => ({
+					index: entry.index,
 					ticker: entry.ticker,
-					logoUrl,
-					midAngle: angle + (sweep / 2),
-					sweep,
-				});
-			}
-			angle = segmentEnd;
-		});
-		donut.style.background = `conic-gradient(${stops.join(", ")})`;
-		if (!logoLayer) return;
-		if (!logoItems.length) {
-			logoLayer.innerHTML = "";
-			return;
-		}
-
-		const angleToPoint = (degrees) => {
-			const radians = ((degrees - 90) * Math.PI) / 180;
-			return {
-				x: Math.cos(radians) * logoOrbitRadius,
-				y: Math.sin(radians) * logoOrbitRadius,
-			};
-		};
-		const chordDistance = (leftAngle, rightAngle) => {
-			const deltaRadians = (Math.abs(rightAngle - leftAngle) * Math.PI) / 180;
-			return 2 * logoOrbitRadius * Math.sin(deltaRadians / 2);
-		};
-		const minimumCenterDistance = logoSize + logoPadding;
-		const minimumAngularGap = (2 * Math.asin(Math.min(1, minimumCenterDistance / (2 * logoOrbitRadius))) * 180) / Math.PI;
-		const placedItems = logoItems
-			.map((item, index) => ({ ...item, index, placedAngle: item.midAngle }))
-			.sort((left, right) => left.midAngle - right.midAngle);
-		for (let pass = 0; pass < placedItems.length * 3; pass += 1) {
-			let changed = false;
-			for (let index = 0; index < placedItems.length - 1; index += 1) {
-				const current = placedItems[index];
-				const next = placedItems[index + 1];
-				const currentDistance = chordDistance(current.placedAngle, next.placedAngle);
-				if (currentDistance >= minimumCenterDistance) continue;
-				const deficit = minimumAngularGap - Math.abs(next.placedAngle - current.placedAngle);
-				if (deficit <= 0) continue;
-				const currentPush = Math.max(0, current.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
-				const nextPush = Math.max(0, next.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
-				if (currentPush > 0) current.placedAngle -= currentPush;
-				if (nextPush > 0) next.placedAngle += nextPush;
-				if (currentPush === 0 && nextPush === 0) {
-					current.placedAngle -= deficit / 2;
-					next.placedAngle += deficit / 2;
-				}
-				changed = true;
-			}
-			if (!changed) break;
-		}
-		logoLayer.innerHTML = placedItems.map((item) => {
-			const point = angleToPoint(item.placedAngle);
-			return `<img class="portfolio-donut-logo" src="${item.logoUrl}" alt="${item.ticker} logo" style="transform: translate(calc(-50% + ${point.x.toFixed(2)}px), calc(-50% + ${point.y.toFixed(2)}px));">`;
-		}).join("");
+					weight: Number.parseInt(entry.number.value, 10) || 0,
+				})),
+			},
+		}));
 	};
 
 	const attachPortfolioWeightHandlers = () => {
@@ -381,7 +287,7 @@
 				number.value = String(value);
 				slider.value = String(value);
 				rebalancePortfolioWeights(index);
-				updatePortfolioPreview();
+				dispatchPortfolioPreviewUpdate();
 				scheduleAutoSubmit(180);
 			};
 			const openSlider = () => field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
@@ -409,7 +315,7 @@
 					getFilledWeightEntries().forEach((entry, entryIndex) => syncPortfolioWeightPair(entry, defaults[entryIndex] || 0));
 				}
 				syncPortfolioWeightBounds();
-				updatePortfolioPreview();
+				dispatchPortfolioPreviewUpdate();
 			});
 		});
 	};
@@ -672,7 +578,7 @@
 				if (isPortfolioView) {
 					ensurePortfolioWeightTouches();
 					syncPortfolioWeightBounds();
-					updatePortfolioPreview();
+					dispatchPortfolioPreviewUpdate();
 				}
 				validateAllTickerInputs();
 				syncDateConstraints();
@@ -724,7 +630,7 @@
 		setupAutocomplete(input);
 		validateAllTickerInputs();
 		syncPortfolioWeightDisabledState();
-		updatePortfolioPreview();
+		dispatchPortfolioPreviewUpdate();
 		input?.focus();
 	};
 
@@ -855,7 +761,7 @@
 	syncPortfolioWeightDisabledState();
 	ensurePortfolioWeightTouches();
 	syncPortfolioWeightBounds();
-	updatePortfolioPreview();
+	dispatchPortfolioPreviewUpdate();
 	updateRangePanels();
 	syncDateConstraints();
 	scheduleDockPosition();

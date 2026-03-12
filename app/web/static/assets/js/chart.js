@@ -1,4 +1,4 @@
-/* Code version: v3.1.0 */
+/* Code version: v3.1.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || !state.chart || !window.Chart) return;
@@ -25,6 +25,11 @@
 	};
 
 	const labels = series[0].dates;
+	const portfolioLabelMap = {
+		Portfolio: "Portfolio",
+		SPY: "SPX",
+		QQQ: "Nasdaq-100",
+	};
 	const glowPlugin = {
 		id: "glowPlugin",
 		beforeDatasetDraw(chartInstance, args) {
@@ -142,7 +147,7 @@
 			const profile = profiles.find((item) => item.ticker === point.dataset.label);
 			return {
 				color: point.dataset.borderColor,
-				label: point.dataset.label,
+				label: state.currentView === "portfolio" ? (portfolioLabelMap[point.dataset.label] || point.dataset.label) : point.dataset.label,
 				logoUrl: profile?.logo_url || "",
 				value: `${point.parsed.y.toFixed(2)}%`,
 			};

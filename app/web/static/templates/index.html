@@ -28,6 +28,49 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
 </head>
 <body>
+{% macro render_report_info(button_label) -%}
+<div class="report-info">
+    <button type="button" class="report-info-button" aria-label="{{ button_label }}">i</button>
+    <div class="report-info-tooltip chart-tooltip" role="tooltip">
+        <dl class="report-info-meta">
+            <div class="report-info-row">
+                <dt>{{ labels.interval }}</dt>
+                <dd>{{ interval_label }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.period }}</dt>
+                <dd>{{ period_label }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.range }}</dt>
+                <dd>{{ display_range }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.return_mode }}</dt>
+                <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None) -%}
+<div class="chart-surface">
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ chart_heading }}</p>
+    </div>
+    {% if has_series %}
+    <div class="chart-wrap">
+        <canvas id="returnsChart"></canvas>
+    </div>
+    {% else %}
+    <div class="placeholder-copy chart-placeholder-copy">
+        <p>{{ placeholder_text }}</p>
+    </div>
+    {% endif %}
+</div>
+{%- endmacro %}
+
 <main class="page">
     <div class="app-shell">
         <aside class="panel sidebar">
@@ -130,29 +173,7 @@
                 <article class="report-card">
                     <div class="report-heading-row">
                         <p class="report-heading">{{ report_heading }}</p>
-                        <div class="report-info">
-                            <button type="button" class="report-info-button" aria-label="Show comparison details">i</button>
-                            <div class="report-info-tooltip chart-tooltip" role="tooltip">
-                                <dl class="report-info-meta">
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.interval }}</dt>
-                                        <dd>{{ interval_label }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.period }}</dt>
-                                        <dd>{{ period_label }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.range }}</dt>
-                                        <dd>{{ display_range }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.return_mode }}</dt>
-                                        <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        </div>
+                        {{ render_report_info("Show comparison details") }}
                     </div>
                     <div class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
                         {% for item in performance_items %}
@@ -176,70 +197,29 @@
                     </div>
                 </article>
             </div>
-            <div class="chart-surface">
-                <div class="chart-heading-row">
-                    <p class="chart-heading">{{ chart_heading }}</p>
-                </div>
-                <div class="chart-wrap">
-                    <canvas id="returnsChart"></canvas>
-                </div>
-            </div>
+            {{ render_chart_surface(chart_heading, True) }}
             {% elif current_view == "portfolio" %}
             <div class="workspace-header">
                 <article class="report-card">
                     <div class="report-heading-row">
                         <p class="report-heading">{{ report_heading }}</p>
-                        <div class="report-info">
-                            <button type="button" class="report-info-button" aria-label="Show portfolio details">i</button>
-                            <div class="report-info-tooltip chart-tooltip" role="tooltip">
-                                <dl class="report-info-meta">
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.interval }}</dt>
-                                        <dd>{{ interval_label }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.period }}</dt>
-                                        <dd>{{ period_label }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.range }}</dt>
-                                        <dd>{{ display_range }}</dd>
-                                    </div>
-                                    <div class="report-info-row">
-                                        <dt>{{ labels.return_mode }}</dt>
-                                        <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        </div>
+                        {{ render_report_info("Show portfolio details") }}
                     </div>
                     <div class="portfolio-summary">
+                        <div class="portfolio-donut-block">
+                            <div id="portfolio_donut_orbit" class="portfolio-donut-orbit">
+                                <div id="portfolio_donut_logo_layer" class="portfolio-donut-logo-layer" aria-hidden="true"></div>
+                                <div id="portfolio_donut" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}"></div>
+                            </div>
+                        </div>
                         <div class="portfolio-summary-main">
                             <p class="portfolio-total-label">{{ labels.portfolio_total_return }}</p>
                             <p id="portfolio_total_return" class="portfolio-total-value">{% if portfolio_total_return is not none %}{{ "%.2f"|format(portfolio_total_return) }}%{% else %}--{% endif %}</p>
                         </div>
-                        <div class="portfolio-donut-block">
-                            <div id="portfolio_donut" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}">
-                                <div id="portfolio_donut_logo_layer" class="portfolio-donut-logo-layer" aria-hidden="true"></div>
-                            </div>
-                        </div>
                     </div>
                 </article>
             </div>
-            <div class="chart-surface">
-                <div class="chart-heading-row">
-                    <p class="chart-heading">{{ chart_heading }}</p>
-                </div>
-                {% if series %}
-                <div class="chart-wrap">
-                    <canvas id="returnsChart"></canvas>
-                </div>
-                {% else %}
-                <div class="placeholder-copy chart-placeholder-copy">
-                    <p>{{ labels.portfolio_placeholder }}</p>
-                </div>
-                {% endif %}
-            </div>
+            {{ render_chart_surface(chart_heading, series|length > 0, labels.portfolio_placeholder) }}
             {% elif current_view == "settings" %}
             <article class="chart-surface settings-surface">
                 <div class="chart-heading-row">
@@ -399,6 +379,9 @@
         currentView: {{ current_view_name|tojson }}
     };
 </script>
+{% if current_view == "portfolio" %}
+<script src="{{ url_for('static', filename='assets/js/portfolio.js', v=version) }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
 {% if (current_view == "tickers" or current_view == "portfolio") and series %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
