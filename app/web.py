@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.6.0
+Code version: v3.7.0
 """
 
 from __future__ import annotations
@@ -24,6 +24,11 @@ from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, history_st
 
 MAX_TICKERS = 5
 MIN_TICKERS = 2
+PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
+PORTFOLIO_BENCHMARK_COLORS = {
+    "SPY": "#8e8e93",
+    "QQQ": "#c7c7cc",
+}
 SUPPORTED_VIEWS = {"tickers", "portfolio", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "local-market-store"}
 LOCAL_STORE_PAGE_SIZE = 10
@@ -118,6 +123,34 @@ def register_routes(app: Flask) -> None:
             }
         )
         return build_series_payload("Portfolio", portfolio_frame, color=color)
+
+    def build_benchmark_series_payloads(
+        reference_dates: pd.Series,
+        include_dividends: bool,
+    ) -> tuple[list, list]:
+        benchmark_series = []
+        benchmark_profiles = []
+        reference_date_frame = pd.DataFrame({"Date": reference_dates})
+        for ticker in PORTFOLIO_BENCHMARK_TICKERS:
+            dataset = fetch_history(ticker, DEFAULT_INTERVAL, include_dividends)
+            aligned = pd.merge(
+                reference_date_frame,
+                dataset[["Date", "Close"]],
+                on="Date",
+                how="inner",
+            ).sort_values("Date")
+            if aligned.empty or len(aligned) != len(reference_date_frame):
+                continue
+            benchmark_series.append(
+                build_series_payload(
+                    ticker,
+                    aligned,
+                    color=PORTFOLIO_BENCHMARK_COLORS[ticker],
+                    glow=False,
+                )
+            )
+            benchmark_profiles.append(fetch_quote_profile(ticker, False))
+        return benchmark_series, benchmark_profiles
 
     def resolve_view() -> str:
         requested_view = request.args.get("view", "tickers").strip().lower()
@@ -311,14 +344,18 @@ def register_routes(app: Flask) -> None:
             colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
             if current_view == "portfolio":
                 portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
-                series = [
-                    build_portfolio_series_payload(
-                        aligned_datasets,
-                        portfolio_weights,
-                        theme["accent_primary"],
-                    )
-                ]
-                portfolio_total_return = series[0].normalized_returns[-1]
+                portfolio_series = build_portfolio_series_payload(
+                    aligned_datasets,
+                    portfolio_weights,
+                    theme["accent_primary"],
+                )
+                benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
+                    aligned_datasets[0]["Date"],
+                    include_dividends,
+                )
+                series = [portfolio_series, *benchmark_series]
+                profiles = [*profiles, *benchmark_profiles]
+                portfolio_total_return = portfolio_series.normalized_returns[-1]
                 portfolio_items = [
                     {
                         "ticker": ticker,
@@ -327,7 +364,7 @@ def register_routes(app: Flask) -> None:
                         "weight": weight,
                         "color": color,
                     }
-                    for ticker, profile, weight, color in zip(validated_tickers, profiles, portfolio_weights, colors, strict=True)
+                    for ticker, profile, weight, color in zip(validated_tickers, profiles[: len(validated_tickers)], portfolio_weights, colors, strict=True)
                 ]
             else:
                 series = [

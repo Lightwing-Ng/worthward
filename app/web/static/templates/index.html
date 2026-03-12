@@ -219,7 +219,9 @@
                             <p id="portfolio_total_return" class="portfolio-total-value">{% if portfolio_total_return is not none %}{{ "%.2f"|format(portfolio_total_return) }}%{% else %}--{% endif %}</p>
                         </div>
                         <div class="portfolio-donut-block">
-                            <div id="portfolio_donut" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}"></div>
+                            <div id="portfolio_donut" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}">
+                                <div id="portfolio_donut_logo_layer" class="portfolio-donut-logo-layer" aria-hidden="true"></div>
+                            </div>
                         </div>
                     </div>
                 </article>

@@ -1,4 +1,4 @@
-/* Code version: v3.8.0 */
+/* Code version: v3.9.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -15,6 +15,10 @@
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
+	const portfolioWeightState = {
+		clock: 0,
+		touchedAtByIndex: {},
+	};
 	const settingsActionOverlay = $("#settings_action_overlay");
 	const settingsActionOverlayClose = $("#settings_action_overlay_close");
 	const settingsActionOverlayTitle = settingsActionOverlay?.querySelector(".settings-action-title");
@@ -24,14 +28,14 @@
 	const getTickerFields = () => $$(".ticker-field");
 	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
 	const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
-	const getWeightFields = () => getTickerFields().map((field) => ({
+	const getWeightFields = () => getTickerFields().map((field, index) => ({
+		index,
 		field,
 		number: field.querySelector('.portfolio-weight-input'),
 		slider: field.querySelector('.portfolio-weight-slider'),
 		tickerInput: field.querySelector('input[name^="ticker_"]'),
 		tooltip: field.querySelector('.portfolio-weight-tooltip'),
 	})).filter((item) => item.number && item.slider && item.tickerInput);
-	let manualWeightHistory = [];
 
 	const syncTickerClearButton = (input) => {
 		const clearButton = input?.parentElement?.querySelector(".ticker-clear");
@@ -56,9 +60,44 @@
 		}, 2400);
 	};
 
-	const recordManualWeightEdit = (index) => {
-		manualWeightHistory = manualWeightHistory.filter((value) => value !== index);
-		manualWeightHistory.push(index);
+	const nextPortfolioTouchStamp = () => {
+		portfolioWeightState.clock += 1;
+		return portfolioWeightState.clock;
+	};
+
+	const markPortfolioWeightTouched = (index) => {
+		portfolioWeightState.touchedAtByIndex[index] = nextPortfolioTouchStamp();
+	};
+
+	const dropPortfolioWeightTouch = (index) => {
+		delete portfolioWeightState.touchedAtByIndex[index];
+	};
+
+	const getPortfolioWeightTouchStamp = (index) => portfolioWeightState.touchedAtByIndex[index] || 0;
+
+	const reindexPortfolioWeightState = () => {
+		const nextTouchedAtByIndex = {};
+		getTickerFields().forEach((field, offset) => {
+			const previousIndex = Number.parseInt(field.dataset.index || String(offset + 1), 10) - 1;
+			const nextIndex = offset;
+			const previousStamp = portfolioWeightState.touchedAtByIndex[previousIndex];
+			if (previousStamp) nextTouchedAtByIndex[nextIndex] = previousStamp;
+		});
+		portfolioWeightState.touchedAtByIndex = nextTouchedAtByIndex;
+	};
+
+	const ensurePortfolioWeightTouches = () => {
+		if (!isPortfolioView) return;
+		getFilledWeightEntries().forEach((entry) => {
+			if (!getPortfolioWeightTouchStamp(entry.index)) {
+				markPortfolioWeightTouched(entry.index);
+			}
+		});
+		const activeIndexes = new Set(getFilledWeightEntries().map((entry) => entry.index));
+		Object.keys(portfolioWeightState.touchedAtByIndex).forEach((key) => {
+			const index = Number.parseInt(key, 10);
+			if (!activeIndexes.has(index)) dropPortfolioWeightTouch(index);
+		});
 	};
 
 	const updateAddButtonState = () => {
@@ -68,6 +107,7 @@
 	};
 
 	const reindexTickerFields = () => {
+		reindexPortfolioWeightState();
 		getTickerFields().forEach((field, offset) => {
 			const index = offset + 1;
 			field.dataset.index = String(index);
@@ -148,62 +188,119 @@
 		entry.slider.value = String(normalized);
 	};
 
+	const resolvePassivePortfolioEntry = (changedIndex, filledEntries) => {
+		const candidates = filledEntries.filter((entry) => entry.index !== changedIndex);
+		if (!candidates.length) return null;
+		return candidates.reduce((oldestEntry, entry) => {
+			const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
+			const entryStamp = getPortfolioWeightTouchStamp(entry.index);
+			if (entryStamp < oldestStamp) return entry;
+			if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
+			return oldestEntry;
+		});
+	};
+
+	const computeActiveWeightBounds = (changedIndex, filledEntries) => {
+		const passiveEntry = resolvePassivePortfolioEntry(changedIndex, filledEntries);
+		if (!passiveEntry) {
+			return { min: 100, max: 100, passiveEntry: null };
+		}
+		const fixedOtherTotal = filledEntries
+			.filter((entry) => entry.index !== changedIndex && entry.index !== passiveEntry.index)
+			.reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+		return {
+			min: Math.max(0, 100 - fixedOtherTotal - 100),
+			max: Math.min(100, 100 - fixedOtherTotal),
+			passiveEntry,
+		};
+	};
+
+	const syncPortfolioWeightBounds = () => {
+		if (!isPortfolioView) return;
+		ensurePortfolioWeightTouches();
+		const filledEntries = getFilledWeightEntries();
+		const filledIndexSet = new Set(filledEntries.map((entry) => entry.index));
+		getWeightFields().forEach((entry) => {
+			if (!filledIndexSet.has(entry.index)) {
+				entry.number.min = "0";
+				entry.number.max = "100";
+				entry.slider.min = "0";
+				entry.slider.max = "100";
+				return;
+			}
+			const bounds = computeActiveWeightBounds(entry.index, filledEntries);
+			entry.number.min = String(bounds.min);
+			entry.number.max = String(bounds.max);
+			entry.slider.min = String(bounds.min);
+			entry.slider.max = String(bounds.max);
+		});
+	};
+
 	const rebalancePortfolioWeights = (changedIndex) => {
 		if (!isPortfolioView) return;
+		ensurePortfolioWeightTouches();
 		const filledEntries = getFilledWeightEntries();
 		if (!filledEntries.length) return;
 		const activeEntry = filledEntries.find((entry) => entry.index === changedIndex);
 		if (!activeEntry) return;
 		hidePortfolioWeightTooltips();
-		const passiveIndex = [...manualWeightHistory].reverse().find((index) => index !== changedIndex && filledEntries.some((entry) => entry.index === index));
-		const passiveEntry = filledEntries.find((entry) => entry.index === passiveIndex)
-			|| filledEntries.filter((entry) => entry.index !== changedIndex).at(-1);
+		const bounds = computeActiveWeightBounds(changedIndex, filledEntries);
+		const passiveEntry = bounds.passiveEntry;
 		if (!passiveEntry) {
 			syncPortfolioWeightPair(activeEntry, 100);
-			recordManualWeightEdit(changedIndex);
+			markPortfolioWeightTouched(changedIndex);
+			syncPortfolioWeightBounds();
 			return;
 		}
 		const desiredActive = Number.parseInt(activeEntry.number.value, 10) || 0;
+		let nextActive = desiredActive;
+		let shouldWarn = false;
+		if (desiredActive > bounds.max) {
+			nextActive = bounds.max;
+			shouldWarn = true;
+		}
+		if (desiredActive < bounds.min) {
+			nextActive = bounds.min;
+			shouldWarn = true;
+		}
 		const fixedOtherTotal = filledEntries
 			.filter((entry) => entry.index !== changedIndex && entry.index !== passiveEntry.index)
 			.reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
-		const allowedActiveMin = Math.max(0, 100 - fixedOtherTotal - 100);
-		const allowedActiveMax = Math.min(100, 100 - fixedOtherTotal);
-		let nextActive = desiredActive;
-		let shouldWarn = false;
-		if (desiredActive > allowedActiveMax) {
-			nextActive = allowedActiveMax;
-			shouldWarn = true;
-		}
-		if (desiredActive < allowedActiveMin) {
-			nextActive = allowedActiveMin;
-			shouldWarn = true;
-		}
 		const nextPassive = Math.max(0, Math.min(100, 100 - fixedOtherTotal - nextActive));
 		syncPortfolioWeightPair(activeEntry, nextActive);
 		syncPortfolioWeightPair(passiveEntry, nextPassive);
 		if (shouldWarn) {
 			showPortfolioWeightTooltip(
 				activeEntry,
-				`${passiveEntry.ticker} was the only available weight that could adjust, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
+				`${passiveEntry.ticker} is currently the oldest untouched weight, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
 			);
 		}
-		recordManualWeightEdit(changedIndex);
+		markPortfolioWeightTouched(changedIndex);
+		syncPortfolioWeightBounds();
 	};
 
 	const updatePortfolioPreview = () => {
 		if (!isPortfolioView) return;
 		const donut = $("#portfolio_donut");
+		const logoLayer = $("#portfolio_donut_logo_layer");
 		if (!donut) return;
 		const filledEntries = getFilledWeightEntries();
 		if (!filledEntries.length) {
 			donut.style.background = "rgba(148, 163, 184, 0.16)";
+			if (logoLayer) logoLayer.innerHTML = "";
 			return;
 		}
 		const colors = buildGradientColors(filledEntries.length);
 		const stops = [];
 		let angle = 0;
 		const gapDegrees = 1.2;
+		const donutSize = donut.clientWidth || 120;
+		const logoSize = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-size")) || 20;
+		const logoGap = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-gap")) || 10;
+		const logoPadding = Math.max(6, logoGap);
+		const outerRadius = donutSize / 2;
+		const logoOrbitRadius = outerRadius + (logoSize / 2) + logoGap;
+		const logoItems = [];
 		filledEntries.forEach((entry, index) => {
 			const value = Number.parseInt(entry.number.value, 10) || 0;
 			const sweep = (value / 100) * 360;
@@ -213,14 +310,70 @@
 			if (coloredEnd < segmentEnd) {
 				stops.push(`transparent ${coloredEnd}deg ${segmentEnd}deg`);
 			}
+			const logoUrl = state.portfolio?.items?.find((item) => item.ticker === entry.ticker)?.logo_url || "";
+			if (logoUrl && sweep > 0) {
+				logoItems.push({
+					ticker: entry.ticker,
+					logoUrl,
+					midAngle: angle + (sweep / 2),
+					sweep,
+				});
+			}
 			angle = segmentEnd;
 		});
 		donut.style.background = `conic-gradient(${stops.join(", ")})`;
+		if (!logoLayer) return;
+		if (!logoItems.length) {
+			logoLayer.innerHTML = "";
+			return;
+		}
+
+		const angleToPoint = (degrees) => {
+			const radians = ((degrees - 90) * Math.PI) / 180;
+			return {
+				x: Math.cos(radians) * logoOrbitRadius,
+				y: Math.sin(radians) * logoOrbitRadius,
+			};
+		};
+		const chordDistance = (leftAngle, rightAngle) => {
+			const deltaRadians = (Math.abs(rightAngle - leftAngle) * Math.PI) / 180;
+			return 2 * logoOrbitRadius * Math.sin(deltaRadians / 2);
+		};
+		const minimumCenterDistance = logoSize + logoPadding;
+		const minimumAngularGap = (2 * Math.asin(Math.min(1, minimumCenterDistance / (2 * logoOrbitRadius))) * 180) / Math.PI;
+		const placedItems = logoItems
+			.map((item, index) => ({ ...item, index, placedAngle: item.midAngle }))
+			.sort((left, right) => left.midAngle - right.midAngle);
+		for (let pass = 0; pass < placedItems.length * 3; pass += 1) {
+			let changed = false;
+			for (let index = 0; index < placedItems.length - 1; index += 1) {
+				const current = placedItems[index];
+				const next = placedItems[index + 1];
+				const currentDistance = chordDistance(current.placedAngle, next.placedAngle);
+				if (currentDistance >= minimumCenterDistance) continue;
+				const deficit = minimumAngularGap - Math.abs(next.placedAngle - current.placedAngle);
+				if (deficit <= 0) continue;
+				const currentPush = Math.max(0, current.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
+				const nextPush = Math.max(0, next.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
+				if (currentPush > 0) current.placedAngle -= currentPush;
+				if (nextPush > 0) next.placedAngle += nextPush;
+				if (currentPush === 0 && nextPush === 0) {
+					current.placedAngle -= deficit / 2;
+					next.placedAngle += deficit / 2;
+				}
+				changed = true;
+			}
+			if (!changed) break;
+		}
+		logoLayer.innerHTML = placedItems.map((item) => {
+			const point = angleToPoint(item.placedAngle);
+			return `<img class="portfolio-donut-logo" src="${item.logoUrl}" alt="${item.ticker} logo" style="transform: translate(calc(-50% + ${point.x.toFixed(2)}px), calc(-50% + ${point.y.toFixed(2)}px));">`;
+		}).join("");
 	};
 
 	const attachPortfolioWeightHandlers = () => {
 		if (!isPortfolioView) return;
-		getWeightFields().forEach(({ field, number, slider }, index) => {
+		getWeightFields().forEach(({ field, number, slider, tickerInput, index }) => {
 			if (number.dataset.bound === "1") return;
 			number.dataset.bound = "1";
 			const syncAndRefresh = (source) => {
@@ -242,12 +395,20 @@
 			field.addEventListener("focusout", closeSlider);
 			number.addEventListener("input", () => syncAndRefresh(number));
 			slider.addEventListener("input", () => syncAndRefresh(slider));
-			field.querySelector('input[name^="ticker_"]')?.addEventListener("input", () => {
+			tickerInput?.addEventListener("input", () => {
+				const ticker = sanitizeTicker(tickerInput.value.trim());
 				syncPortfolioWeightDisabledState();
+				if (ticker && !getPortfolioWeightTouchStamp(index)) {
+					markPortfolioWeightTouched(index);
+				}
+				if (!ticker) {
+					dropPortfolioWeightTouch(index);
+				}
 				if (getFilledWeightEntries().length && getFilledWeightEntries().every((entry) => (Number.parseInt(entry.number.value, 10) || 0) === 0)) {
 					const defaults = buildDefaultWeights(getFilledWeightEntries().length);
 					getFilledWeightEntries().forEach((entry, entryIndex) => syncPortfolioWeightPair(entry, defaults[entryIndex] || 0));
 				}
+				syncPortfolioWeightBounds();
 				updatePortfolioPreview();
 			});
 		});
@@ -509,10 +670,8 @@
 				button.closest(".ticker-field")?.remove();
 				reindexTickerFields();
 				if (isPortfolioView) {
-					const filledEntries = getFilledWeightEntries();
-					const defaults = buildDefaultWeights(filledEntries.length);
-					filledEntries.forEach((entry, index) => syncPortfolioWeightPair(entry, defaults[index] || 0));
-					manualWeightHistory = filledEntries.map((entry) => entry.index);
+					ensurePortfolioWeightTouches();
+					syncPortfolioWeightBounds();
 					updatePortfolioPreview();
 				}
 				validateAllTickerInputs();
@@ -548,12 +707,16 @@
 						<span class="portfolio-weight-unit">%</span>
 					</div>
 					<input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="0" aria-label="${labels.portfolio_weight}">
+					<div class="portfolio-weight-tooltip field-tooltip" hidden></div>
 				</div>` : ""}
 				<button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 			</div>
 		`;
 		container.appendChild(field);
 		reindexTickerFields();
+		if (isPortfolioView) {
+			markPortfolioWeightTouched(index - 1);
+		}
 		attachRemoveHandlers();
 		attachTickerClearHandlers();
 		attachPortfolioWeightHandlers();
@@ -593,6 +756,7 @@
 		}
 		reindexTickerFields();
 		syncPortfolioWeightDisabledState();
+		syncPortfolioWeightBounds();
 		validateAllTickerInputs();
 		return values;
 	};
@@ -689,10 +853,9 @@
 	reindexTickerFields();
 	validateAllTickerInputs();
 	syncPortfolioWeightDisabledState();
+	ensurePortfolioWeightTouches();
+	syncPortfolioWeightBounds();
 	updatePortfolioPreview();
-	if (isPortfolioView && manualWeightHistory.length === 0) {
-		manualWeightHistory = getFilledWeightEntries().map((entry) => entry.index);
-	}
 	updateRangePanels();
 	syncDateConstraints();
 	scheduleDockPosition();

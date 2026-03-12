@@ -1,4 +1,4 @@
-/* Code version: v3.0.4 */
+/* Code version: v3.1.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || !state.chart || !window.Chart) return;
@@ -29,11 +29,12 @@
 		id: "glowPlugin",
 		beforeDatasetDraw(chartInstance, args) {
 			const { ctx } = chartInstance;
+			const dataset = chartInstance.data.datasets[args.index];
 			ctx.save();
-			ctx.shadowColor = chartInstance.data.datasets[args.index].shadowColor;
-			ctx.shadowBlur = chartInstance.data.datasets[args.index].shadowBlur;
-			ctx.shadowOffsetX = chartInstance.data.datasets[args.index].shadowOffsetX;
-			ctx.shadowOffsetY = chartInstance.data.datasets[args.index].shadowOffsetY;
+			ctx.shadowColor = dataset.glow === false ? "transparent" : dataset.shadowColor;
+			ctx.shadowBlur = dataset.glow === false ? 0 : dataset.shadowBlur;
+			ctx.shadowOffsetX = dataset.glow === false ? 0 : dataset.shadowOffsetX;
+			ctx.shadowOffsetY = dataset.glow === false ? 0 : dataset.shadowOffsetY;
 		},
 		afterDatasetDraw(chartInstance) {
 			chartInstance.ctx.restore();
@@ -211,6 +212,8 @@
 				borderColor: item.color || theme.accent_primary,
 				pointHoverBackgroundColor: item.color || theme.accent_primary,
 				shadowColor: hexToRgba(item.color || theme.accent_primary, 0.4),
+				glow: item.glow !== false,
+				shadowBlur: item.glow === false ? 0 : chartConfig.shadow_blur,
 			})),
 		},
 		options: {
@@ -224,13 +227,13 @@
 				chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
 					if (activeIndexes.size === 0) {
 						dataset.borderWidth = chartConfig.line_width;
-						dataset.shadowBlur = chartConfig.shadow_blur;
+						dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur;
 					} else if (activeIndexes.has(datasetIndex)) {
 						dataset.borderWidth = chartConfig.line_width_active;
-						dataset.shadowBlur = chartConfig.shadow_blur_active;
+						dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_active;
 					} else {
 						dataset.borderWidth = chartConfig.line_width_inactive;
-						dataset.shadowBlur = chartConfig.shadow_blur_inactive;
+						dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_inactive;
 					}
 				});
 				chartInstance.update("none");

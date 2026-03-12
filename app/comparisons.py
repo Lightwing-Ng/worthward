@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v3.1.0
+Code version: v3.2.0
 """
 
 from __future__ import annotations
@@ -75,7 +75,13 @@ def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFr
     )
 
 
-def build_series_payload(ticker: str, dataset: pd.DataFrame, color: str | None = None) -> SeriesPayload:
+def build_series_payload(
+    ticker: str,
+    dataset: pd.DataFrame,
+    color: str | None = None,
+    *,
+    glow: bool = True,
+) -> SeriesPayload:
     first_close = float(dataset["Close"].iloc[0])
     normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0
     return SeriesPayload(
@@ -83,4 +89,5 @@ def build_series_payload(ticker: str, dataset: pd.DataFrame, color: str | None =
         dates=dataset["Date"].map(format_display_date).tolist(),
         normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
         color=color,
+        glow=glow,
     )
