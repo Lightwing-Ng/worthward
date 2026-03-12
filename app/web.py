@@ -1,12 +1,13 @@
 """
 HTTP route registration.
 
-Code version: v3.1.19
+Code version: v3.2.0
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
+from urllib.parse import urlencode
 
 import pandas as pd
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -23,6 +24,7 @@ from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, record_tic
 
 MAX_TICKERS = 5
 MIN_TICKERS = 2
+SUPPORTED_VIEWS = {"tickers", "portfolio", "settings"}
 
 
 def register_routes(app: Flask) -> None:
@@ -55,6 +57,16 @@ def register_routes(app: Flask) -> None:
             return []
         compacted = [normalize_ticker_input(value) for value in raw_tickers if normalize_ticker_input(value)]
         return compacted[:MAX_TICKERS]
+
+    def resolve_view() -> str:
+        requested_view = request.args.get("view", "tickers").strip().lower()
+        return requested_view if requested_view in SUPPORTED_VIEWS else "tickers"
+
+    def build_view_url(view_name: str) -> str:
+        params = request.args.to_dict(flat=False)
+        params["view"] = [view_name]
+        query_string = urlencode(params, doseq=True)
+        return f"/?{query_string}" if query_string else "/"
 
     def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
         merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
@@ -102,6 +114,7 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/")
     def index():
+        current_view = resolve_view()
         requested_tickers = parse_requested_tickers()
         range_mode = request.args.get("range_mode", defaults.get("range_mode", "period")).strip().lower()
         period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
@@ -120,6 +133,16 @@ def register_routes(app: Flask) -> None:
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         period_label = format_period_label(period)
+        page_title = labels["hero_title"]
+        report_heading = labels["performance_summary"]
+        chart_heading = labels["chart_summary"]
+
+        if current_view == "portfolio":
+            page_title = labels["portfolio_title"]
+            report_heading = labels["portfolio_summary"]
+            chart_heading = labels["portfolio_chart"]
+        elif current_view == "settings":
+            page_title = labels["settings_title"]
 
         if period not in SUPPORTED_PERIODS:
             period = DEFAULT_PERIOD
@@ -218,6 +241,11 @@ def register_routes(app: Flask) -> None:
             exact_end=date_constraints.adjusted_end or exact_end,
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
+            current_view=current_view,
+            page_title=page_title,
+            report_heading=report_heading,
+            chart_heading=chart_heading,
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "settings")},
             labels=labels,
             theme=theme,
             chart_config=chart_config,

@@ -32,10 +32,12 @@
     <div class="app-shell">
         <aside class="panel sidebar">
             <section class="hero">
-                <h1>{{ labels.hero_title }}</h1>
+                <h1>{{ page_title }}</h1>
             </section>
 
+            {% if current_view != "settings" %}
             <form class="controls" method="get">
+                <input type="hidden" name="view" value="{{ current_view }}">
                 <div id="ticker_fields">
                     {% for index in range(1, ticker_slots | length + 1) %}
                     <div class="field ticker-field" data-index="{{ index }}">
@@ -98,15 +100,19 @@
                     <button id="submit" type="submit">{{ labels.update_chart }}</button>
                 </div>
             </form>
-
-            <footer>
-                <dl class="footer-meta">
-                    <dt>{{ labels.code_version }}</dt>
-                    <dd>{{ version }}</dd>
-                    <dt>{{ labels.updated_on }}</dt>
-                    <dd>{{ updated_on }}</dd>
-                </dl>
-            </footer>
+            {% else %}
+            <section class="sidebar-placeholder about-panel">
+                <div class="about-card">
+                    <p class="about-heading">{{ labels.about }}</p>
+                    <dl class="footer-meta about-meta">
+                        <dt>{{ labels.code_version }}</dt>
+                        <dd>{{ version }}</dd>
+                        <dt>{{ labels.updated_on }}</dt>
+                        <dd>{{ updated_on }}</dd>
+                    </dl>
+                </div>
+            </section>
+            {% endif %}
         </aside>
 
         <section class="panel chart-panel workspace">
@@ -114,11 +120,11 @@
             {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
             {% if date_notice %}<div class="notice">{{ date_notice }}</div>{% endif %}
 
-            {% if series %}
+            {% if current_view == "tickers" and series %}
             <div class="workspace-header">
                 <article class="report-card">
                     <div class="report-heading-row">
-                        <p class="report-heading">{{ labels.performance_summary }}</p>
+                        <p class="report-heading">{{ report_heading }}</p>
                         <div class="report-info">
                             <button type="button" class="report-info-button" aria-label="Show comparison details">i</button>
                             <div class="report-info-tooltip chart-tooltip" role="tooltip">
@@ -167,15 +173,67 @@
             </div>
             <div class="chart-surface">
                 <div class="chart-heading-row">
-                    <p class="chart-heading">{{ labels.chart_summary }}</p>
+                    <p class="chart-heading">{{ chart_heading }}</p>
                 </div>
                 <div class="chart-wrap">
                     <canvas id="returnsChart"></canvas>
                 </div>
             </div>
+            {% elif current_view == "portfolio" %}
+            <div class="workspace-header">
+                <article class="report-card placeholder-card">
+                    <div class="report-heading-row">
+                        <p class="report-heading">{{ report_heading }}</p>
+                    </div>
+                    <div class="placeholder-copy">
+                        <p>{{ labels.portfolio_placeholder }}</p>
+                    </div>
+                </article>
+            </div>
+            <div class="chart-surface placeholder-card">
+                <div class="chart-heading-row">
+                    <p class="chart-heading">{{ chart_heading }}</p>
+                </div>
+                <div class="placeholder-copy chart-placeholder-copy">
+                    <p>{{ labels.portfolio_placeholder }}</p>
+                </div>
+            </div>
+            {% elif current_view == "settings" %}
+            <div class="workspace-header">
+                <article class="report-card placeholder-card">
+                    <div class="report-heading-row">
+                        <p class="report-heading">{{ labels.settings_title }}</p>
+                    </div>
+                    <div class="placeholder-copy">
+                        <p>{{ labels.settings_placeholder }}</p>
+                    </div>
+                </article>
+            </div>
+            <div class="chart-surface placeholder-card">
+                <div class="chart-heading-row">
+                    <p class="chart-heading">{{ labels.settings_title }}</p>
+                </div>
+                <div class="placeholder-copy chart-placeholder-copy">
+                    <p>{{ labels.settings_placeholder }}</p>
+                </div>
+            </div>
             {% endif %}
         </section>
     </div>
+    <nav class="sidebar-dock" aria-label="Workspace modes">
+        <a href="{{ dock_urls.tickers }}" class="sidebar-dock-item{% if current_view == 'tickers' %} is-active{% endif %}" aria-current="{% if current_view == 'tickers' %}page{% endif %}" aria-label="{{ labels.dock_tickers }}" data-tooltip="{{ labels.dock_tickers }}">
+            <span class="icon icon-dock-compare" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_tickers }}</span>
+        </a>
+        <a href="{{ dock_urls.portfolio }}" class="sidebar-dock-item{% if current_view == 'portfolio' %} is-active{% endif %}" aria-current="{% if current_view == 'portfolio' %}page{% endif %}" aria-label="{{ labels.dock_portfolio }}" data-tooltip="{{ labels.dock_portfolio }}">
+            <span class="icon icon-dock-portfolio" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_portfolio }}</span>
+        </a>
+        <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
+            <span class="icon icon-dock-settings" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_settings }}</span>
+        </a>
+    </nav>
 </main>
 
 <script>
@@ -193,7 +251,7 @@
     };
 </script>
 <script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
-{% if series %}
+{% if current_view == "tickers" and series %}
 <script src="{{ url_for('static', filename='assets/js/chart.js') }}"></script>
 {% endif %}
 </body>
