@@ -1,4 +1,4 @@
-/* Code version: v3.1.0 */
+/* Code version: v3.2.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -11,6 +11,8 @@
 	const $ = (selector) => document.querySelector(selector);
 	const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
+	const hasInitialResult = Boolean(state.chart?.series?.length);
+	let autoSubmitTimer = null;
 
 	const getTickerFields = () => $$(".ticker-field");
 	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
@@ -228,6 +230,7 @@
 		input.addEventListener("change", () => {
 			validateAllTickerInputs();
 			syncDateConstraints();
+			scheduleAutoSubmit();
 		});
 	};
 
@@ -240,6 +243,7 @@
 				reindexTickerFields();
 				validateAllTickerInputs();
 				syncDateConstraints();
+				scheduleAutoSubmit(120);
 			});
 		});
 	};
@@ -270,6 +274,7 @@
 		setupAutocomplete(input);
 		validateAllTickerInputs();
 		input?.focus();
+		scheduleAutoSubmit(120);
 	};
 
 	const compactTickerInputs = () => {
@@ -308,6 +313,27 @@
 		}
 		if (periodPanel) periodPanel.hidden = rangeMode !== "period";
 		if (exactPanel) exactPanel.hidden = rangeMode !== "exact";
+	};
+
+	const canAutoSubmit = () => {
+		if (!hasInitialResult || !form) return false;
+		const values = compactTickerInputs();
+		if (values.length < MIN_TICKERS) return false;
+		if (new Set(values).size !== values.length) return false;
+		validateAllTickerInputs();
+		if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
+		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
+		if (rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
+		return true;
+	};
+
+	const scheduleAutoSubmit = (delay = 240) => {
+		if (!canAutoSubmit()) return;
+		if (autoSubmitTimer) window.clearTimeout(autoSubmitTimer);
+		autoSubmitTimer = window.setTimeout(() => {
+			if (!canAutoSubmit()) return;
+			form.requestSubmit();
+		}, delay);
 	};
 
 	const setDateTooltip = (message) => {
@@ -364,16 +390,25 @@
 			window.setTimeout(() => rangeShell.classList.remove("is-animating"), 220);
 		}
 		updateRangePanels();
+		scheduleAutoSubmit();
 	}));
 	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
-		if (input) input.addEventListener("change", syncDateConstraints);
+		if (!input) return;
+		input.addEventListener("change", () => {
+			syncDateConstraints();
+			scheduleAutoSubmit();
+		});
 	});
 	if (includeDividendsInput && form) {
 		includeDividendsInput.addEventListener("change", () => {
 			compactTickerInputs();
-			window.setTimeout(() => form.requestSubmit(), 0);
+			scheduleAutoSubmit(80);
 		});
 	}
+	$("#period")?.addEventListener("change", () => {
+		compactTickerInputs();
+		scheduleAutoSubmit();
+	});
 
 	if (form) {
 		form.addEventListener("submit", (event) => {
