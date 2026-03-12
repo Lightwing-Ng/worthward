@@ -1,0 +1,76 @@
+[app]
+name = "antigravity"
+version = "v2.2.7"
+debug = true
+updated_on = "12 Mar 2026"
+
+[server]
+host = "127.0.0.1"
+port = 5000
+
+[persistence]
+directory = "market_store"
+
+[defaults]
+ticker_a = "QQQ"
+ticker_b = "JEPQ"
+period = "1y"
+interval = "1d"
+range_mode = "period"
+include_dividends = false
+
+[ui.labels]
+page_title = "Stock Return Comparison"
+hero_title = "Stock Return Comparison"
+hero_subtitle = "Compare two tickers across the same daily window with local caching and optional cash dividend inclusion."
+range_selection = "Comparison window"
+range_mode_period = "Relative"
+range_mode_exact = "Exact"
+period = "Period"
+exact_range = "Exact range"
+start = "Start"
+to = "to"
+include_dividends = "Include cash dividends"
+update_chart = "Update the chart"
+performance_summary = "Performance summary"
+ending_return = "ending return"
+interval = "Interval"
+range = "Range"
+return_mode = "Return mode"
+return_mode_total = "Cash dividends included"
+return_mode_price = "Price return only"
+code_version = "Code version:"
+updated_on = "Updated on:"
+winner_alt = "Winner"
+
+[ui.theme]
+color_scheme = "light"
+background = "#ffffff"
+panel = "rgba(255, 255, 255, 0.68)"
+panel_strong = "rgba(255, 255, 255, 0.82)"
+text = "#0b0c0c"
+muted = "#505a5f"
+accent_primary = "#0055cc"
+accent_secondary = "#ff2f92"
+shadow = "0 24px 80px rgba(17, 24, 39, 0.10)"
+glass_highlight = "rgba(255, 255, 255, 0.55)"
+radius_shell = "10px"
+radius_panel = "10px"
+radius_control = "10px"
+
+[ui.chart]
+zero_line_color = "rgba(160, 167, 178, 0.85)"
+zero_line_width = 1
+line_width = 3
+line_width_active = 4
+line_width_inactive = 2
+shadow_blur = 16
+shadow_blur_active = 22
+shadow_blur_inactive = 8
+point_hover_radius = 4
+point_hit_radius = 18
+
+[ui.logos]
+search_size = 18
+card_size = 20
+tooltip_size = 16

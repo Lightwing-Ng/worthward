@@ -1,0 +1,85 @@
+"""
+Comparison and return-series logic.
+
+Code version: v3.0.0
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from .config import PERIOD_OFFSETS, SUPPORTED_PERIODS
+from .schemas import SeriesPayload
+
+
+def resolve_effective_period(
+    requested_period: str,
+    dataset_a: pd.DataFrame,
+    dataset_b: pd.DataFrame,
+) -> tuple[str, str | None]:
+    if requested_period == "max":
+        return "max", None
+
+    common_start = max(dataset_a["Date"].min(), dataset_b["Date"].min())
+    common_end = min(dataset_a["Date"].max(), dataset_b["Date"].max())
+    available_days = (common_end - common_start).days
+    requested_start = (common_end - PERIOD_OFFSETS[requested_period]).normalize()
+    if requested_start >= common_start:
+        return requested_period, None
+
+    fallback_period = "max"
+    for candidate in SUPPORTED_PERIODS:
+        if candidate == "max":
+            break
+        candidate_start = (common_end - PERIOD_OFFSETS[candidate]).normalize()
+        if candidate_start >= common_start:
+            fallback_period = candidate
+
+    if available_days <= 0:
+        raise ValueError("The selected tickers do not have overlapping trading history.")
+
+    notice = (
+        f"Requested period {requested_period} exceeds the shared trading history. "
+        f"Automatically switched to {fallback_period} based on the latest common start date "
+        f"({common_start.strftime('%-d %b %Y')})."
+    )
+    return fallback_period, notice
+
+
+def slice_dataset_for_period(dataset: pd.DataFrame, period: str, reference_end_date: pd.Timestamp) -> pd.DataFrame:
+    bounded_dataset = dataset[dataset["Date"] <= reference_end_date].copy()
+    if bounded_dataset.empty:
+        return dataset.tail(1).copy()
+    if period == "max":
+        return bounded_dataset
+
+    start_date = (reference_end_date - PERIOD_OFFSETS[period]).normalize()
+    sliced = bounded_dataset[bounded_dataset["Date"] >= start_date].copy()
+    return sliced if not sliced.empty else bounded_dataset.tail(1).copy()
+
+
+def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    merged = pd.merge(
+        dataset_a[["Date", "Close"]],
+        dataset_b[["Date", "Close"]],
+        on="Date",
+        how="inner",
+        suffixes=("_a", "_b"),
+    ).sort_values("Date")
+    if merged.empty:
+        raise ValueError("The selected tickers do not share any common trading dates.")
+    return (
+        merged[["Date", "Close_a"]].rename(columns={"Close_a": "Close"}).copy(),
+        merged[["Date", "Close_b"]].rename(columns={"Close_b": "Close"}).copy(),
+    )
+
+
+def build_series_payload(ticker: str, dataset: pd.DataFrame, color: str | None = None) -> SeriesPayload:
+    first_close = float(dataset["Close"].iloc[0])
+    normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0
+    return SeriesPayload(
+        ticker=ticker.upper(),
+        dates=dataset["Date"].dt.strftime("%-d %b %Y").tolist(),
+        normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
+        color=color,
+    )

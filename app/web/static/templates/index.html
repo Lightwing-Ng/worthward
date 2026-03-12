@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ labels.page_title }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --color-scheme: {{ theme.color_scheme }};
+            --theme-background: {{ theme.background }};
+            --theme-panel: {{ theme.panel }};
+            --theme-panel-strong: {{ theme.panel_strong }};
+            --theme-text: {{ theme.text }};
+            --theme-muted: {{ theme.muted }};
+            --theme-accent-primary: {{ theme.accent_primary }};
+            --theme-accent-secondary: {{ theme.accent_secondary }};
+            --theme-shadow: {{ theme.shadow }};
+            --theme-glass-highlight: {{ theme.glass_highlight }};
+            --theme-radius-shell: {{ theme.radius_shell }};
+            --theme-radius-panel: {{ theme.radius_panel }};
+            --theme-radius-control: {{ theme.radius_control }};
+            --logo-search-size: {{ logos.search_size }}px;
+            --logo-card-size: {{ logos.card_size }}px;
+            --logo-tooltip-size: {{ logos.tooltip_size }}px;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css') }}">
+</head>
+<body>
+<main class="page">
+    <div class="app-stage">
+    <div class="app-shell">
+        <aside class="panel sidebar">
+            <section class="hero">
+                <h1>{{ labels.hero_title }}</h1>
+                <p class="subtitle">{{ labels.hero_subtitle }}</p>
+            </section>
+
+            <form class="controls" method="get">
+                <div id="ticker_fields">
+                    {% for index in range(1, ticker_slots | length + 1) %}
+                    <div class="field ticker-field" data-index="{{ index }}">
+                        <div class="ticker-input-row">
+                            <div class="ticker-input-main">
+                                <label for="ticker_{{ index }}">Ticker {{ index }}</label>
+                                <input id="ticker_{{ index }}" name="ticker_{{ index }}" value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                                <div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
+                                <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                                <div class="suggestions" id="ticker_{{ index }}_suggestions"></div>
+                            </div>
+                            {% if index > min_tickers %}
+                            <button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove" aria-hidden="true"></span></button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                    <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
+                    <button type="button" id="add_ticker" class="secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
+                    </div>
+                <div class="field">
+                    <label>{{ labels.range_selection }}</label>
+                    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
+                        <label class="range-mode-option" for="range_mode_period">
+                            <input id="range_mode_period" name="range_mode" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
+                            <span>{{ labels.range_mode_period }}</span>
+                        </label>
+                        <label class="range-mode-option" for="range_mode_exact">
+                            <input id="range_mode_exact" name="range_mode" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
+                            <span>{{ labels.range_mode_exact }}</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="field range-panel" id="period_panel">
+                    <label for="period">{{ labels.period }}</label>
+                    <select id="period" name="period">
+                        {% for item in periods %}
+                        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
+                    <label for="exact_start">{{ labels.start }}</label>
+                    <input id="exact_start" name="exact_start" type="date" value="{{ exact_start }}">
+                    <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
+                    <input id="exact_end" name="exact_end" type="date" value="{{ exact_end }}">
+                    <div id="date_adjust_tooltip" class="date-adjust-tooltip" {% if not date_notice %}hidden{% endif %}>{{ date_notice or '' }}</div>
+                </div>
+                <div class="field-checkbox field-switch">
+                    <input type="hidden" name="include_dividends" value="0">
+                    <label class="switch-row" for="include_dividends">
+                        <span class="switch-label">{{ labels.include_dividends }}</span>
+                        <span class="ios-switch-shell">
+                            <input id="include_dividends" name="include_dividends" type="checkbox" value="1" {% if include_dividends %}checked{% endif %}>
+                            <span class="ios-switch-slider" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                </div>
+                <div class="field">
+                    <button id="submit" type="submit">{{ labels.update_chart }}</button>
+                </div>
+            </form>
+
+            <footer>
+                <dl class="footer-meta">
+                    <dt>{{ labels.code_version }}</dt>
+                    <dd>{{ version }}</dd>
+                    <dt>{{ labels.updated_on }}</dt>
+                    <dd>{{ updated_on }}</dd>
+                </dl>
+            </footer>
+        </aside>
+
+        <section class="panel chart-panel workspace">
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+            {% if date_notice %}<div class="notice">{{ date_notice }}</div>{% endif %}
+
+            {% if series %}
+            <div class="workspace-header">
+                <article class="report-card">
+                    <p class="report-heading">{{ labels.performance_summary }}</p>
+                    <div class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
+                        {% for item in performance_items %}
+                        <section class="performance-item" style="--item-color: {{ item.color }}; --item-shadow: {{ item.shadow_color }};">
+                            <div class="performance-accent"></div>
+                            <div class="report-symbol-row">
+                                {% if item.logo_url %}
+                                <img class="ticker-logo" src="{{ item.logo_url }}" alt="{{ item.ticker }} logo">
+                                {% endif %}
+                                <p class="report-symbol">{{ item.ticker }}</p>
+                            </div>
+                            <p class="report-company">{{ item.company_name }}</p>
+                            <p class="report-value">
+                                <span style="color: {{ item.color }};">{{ "%.2f"|format(item.ending_return) }}%</span>
+                                {% if item.is_winner %}
+                                <img class="winner-badge" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
+                                {% endif %}
+                            </p>
+                        </section>
+                        {% endfor %}
+                    </div>
+                    <ul class="report-meta">
+                        <li><span class="report-meta-label">{{ labels.interval }}</span><span class="report-meta-value">{{ interval_label }}</span></li>
+                        <li><span class="report-meta-label">{{ labels.period }}</span><span class="report-meta-value">{{ period_label }}</span></li>
+                        <li><span class="report-meta-label">{{ labels.range }}</span><span class="report-meta-value">{{ display_range }}</span></li>
+                        <li><span class="report-meta-label">{{ labels.return_mode }}</span><span class="report-meta-value">{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</span></li>
+                    </ul>
+                </article>
+            </div>
+            <div class="chart-surface">
+                <div class="chart-wrap">
+                    <canvas id="returnsChart"></canvas>
+                </div>
+            </div>
+            {% endif %}
+        </section>
+    </div>
+    </div>
+</main>
+
+<script>
+    window.ANTIGRAVITY_APP = {
+        defaults: {{ defaults|tojson }},
+        labels: {{ labels|tojson }},
+        theme: {{ theme|tojson }},
+        chartConfig: {{ chart_config|tojson }},
+        endpoints: {{ endpoints|tojson }},
+        constraints: { minTickers: {{ min_tickers }}, maxTickers: {{ max_tickers }} },
+        chart: {
+            series: {{ series|tojson }},
+            profiles: {{ profiles_json|tojson }}
+        }
+    };
+</script>
+<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
+{% if series %}
+<script src="{{ url_for('static', filename='assets/js/chart.js') }}"></script>
+{% endif %}
+</body>
+</html>
