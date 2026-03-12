@@ -25,7 +25,7 @@
             --logo-tooltip-size: {{ logos.tooltip_size }}px;
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
 </head>
 <body>
 <main class="page">
@@ -101,17 +101,9 @@
                 </div>
             </form>
             {% else %}
-            <section class="sidebar-placeholder about-panel">
-                <div class="about-card">
-                    <p class="about-heading">{{ labels.about }}</p>
-                    <dl class="footer-meta about-meta">
-                        <dt>{{ labels.code_version }}</dt>
-                        <dd>{{ version }}</dd>
-                        <dt>{{ labels.updated_on }}</dt>
-                        <dd>{{ updated_on }}</dd>
-                    </dl>
-                </div>
-            </section>
+            <nav class="settings-nav" aria-label="Settings sections">
+                <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
+            </nav>
             {% endif %}
         </aside>
 
@@ -199,24 +191,19 @@
                 </div>
             </div>
             {% elif current_view == "settings" %}
-            <div class="workspace-header">
-                <article class="report-card placeholder-card">
-                    <div class="report-heading-row">
-                        <p class="report-heading">{{ labels.settings_title }}</p>
-                    </div>
-                    <div class="placeholder-copy">
-                        <p>{{ labels.settings_placeholder }}</p>
-                    </div>
-                </article>
-            </div>
-            <div class="chart-surface placeholder-card">
+            <article class="chart-surface settings-surface">
                 <div class="chart-heading-row">
-                    <p class="chart-heading">{{ labels.settings_title }}</p>
+                    <p class="chart-heading">{{ labels.about }}</p>
                 </div>
-                <div class="placeholder-copy chart-placeholder-copy">
-                    <p>{{ labels.settings_placeholder }}</p>
+                <div class="settings-body">
+                    <dl class="footer-meta about-meta">
+                        <dt>{{ labels.code_version }}</dt>
+                        <dd>{{ version }}</dd>
+                        <dt>{{ labels.updated_on }}</dt>
+                        <dd>{{ updated_on }}</dd>
+                    </dl>
                 </div>
-            </div>
+            </article>
             {% endif %}
         </section>
     </div>
@@ -250,9 +237,9 @@
         }
     };
 </script>
-<script src="{{ url_for('static', filename='assets/js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
 {% if current_view == "tickers" and series %}
-<script src="{{ url_for('static', filename='assets/js/chart.js') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}
 </body>
 </html>

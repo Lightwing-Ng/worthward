@@ -1,6 +1,6 @@
 [app]
 name = "antigravity"
-version = "v2.4.0"
+version = "v2.4.1"
 debug = true
 updated_on = "12 Mar 2026"
 
@@ -21,7 +21,7 @@ include_dividends = false
 
 [ui.labels]
 page_title = "Stock Return Comparison"
-hero_title = "Stock Return Comparison"
+hero_title = "Compare"
 portfolio_title = "Portfolio comparison"
 settings_title = "Settings"
 hero_subtitle = "Compare up to five tickers across the same daily window with local caching and optional cash dividend inclusion."
@@ -33,10 +33,10 @@ exact_range = "Exact range"
 start = "Start"
 to = "to"
 include_dividends = "Include cash dividends"
-update_chart = "Update the chart"
+update_chart = "Compare"
 performance_summary = "Performance summary"
 chart_summary = "Return chart"
-dock_tickers = "Tickers"
+dock_tickers = "Compare"
 dock_portfolio = "Portfolio comparison"
 dock_settings = "Settings"
 portfolio_summary = "Portfolio summary"

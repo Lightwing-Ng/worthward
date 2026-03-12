@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.2.0
+Code version: v3.2.1
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, record_tic
 MAX_TICKERS = 5
 MIN_TICKERS = 2
 SUPPORTED_VIEWS = {"tickers", "portfolio", "settings"}
+SUPPORTED_SETTINGS_SECTIONS = {"about"}
 
 
 def register_routes(app: Flask) -> None:
@@ -65,6 +66,17 @@ def register_routes(app: Flask) -> None:
     def build_view_url(view_name: str) -> str:
         params = request.args.to_dict(flat=False)
         params["view"] = [view_name]
+        query_string = urlencode(params, doseq=True)
+        return f"/?{query_string}" if query_string else "/"
+
+    def resolve_settings_section() -> str:
+        requested_section = request.args.get("section", "about").strip().lower()
+        return requested_section if requested_section in SUPPORTED_SETTINGS_SECTIONS else "about"
+
+    def build_settings_url(section_name: str) -> str:
+        params = request.args.to_dict(flat=False)
+        params["view"] = ["settings"]
+        params["section"] = [section_name]
         query_string = urlencode(params, doseq=True)
         return f"/?{query_string}" if query_string else "/"
 
@@ -115,6 +127,7 @@ def register_routes(app: Flask) -> None:
     @app.get("/")
     def index():
         current_view = resolve_view()
+        settings_section = resolve_settings_section()
         requested_tickers = parse_requested_tickers()
         range_mode = request.args.get("range_mode", defaults.get("range_mode", "period")).strip().lower()
         period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
@@ -242,10 +255,12 @@ def register_routes(app: Flask) -> None:
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
+            settings_section=settings_section,
             page_title=page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "settings")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about",)},
             labels=labels,
             theme=theme,
             chart_config=chart_config,

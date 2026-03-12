@@ -1,4 +1,4 @@
-/* Code version: v3.2.2 */
+/* Code version: v3.3.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -13,6 +13,7 @@
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
+	let dockFrame = 0;
 
 	const getTickerFields = () => $$(".ticker-field");
 	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
@@ -234,6 +235,23 @@
 		});
 	};
 
+	const positionSidebarDock = () => {
+		const sidebar = $(".sidebar");
+		const dock = $(".sidebar-dock");
+		if (!sidebar || !dock) return;
+		if (window.matchMedia("(max-width: 820px)").matches) {
+			dock.style.left = "";
+			return;
+		}
+		const rect = sidebar.getBoundingClientRect();
+		dock.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+	};
+
+	const scheduleDockPosition = () => {
+		if (dockFrame) window.cancelAnimationFrame(dockFrame);
+		dockFrame = window.requestAnimationFrame(positionSidebarDock);
+	};
+
 	const attachRemoveHandlers = () => {
 		$$(".ticker-remove").forEach((button) => {
 			if (button.dataset.bound === "1") return;
@@ -381,6 +399,7 @@
 	validateAllTickerInputs();
 	updateRangePanels();
 	syncDateConstraints();
+	scheduleDockPosition();
 
 	$("#add_ticker")?.addEventListener("click", () => addTickerField());
 	rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
@@ -425,4 +444,8 @@
 			}
 		});
 	}
+
+	window.addEventListener("resize", scheduleDockPosition);
+	window.addEventListener("orientationchange", scheduleDockPosition);
+	window.addEventListener("pageshow", scheduleDockPosition);
 })();
