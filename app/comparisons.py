@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v3.0.0
+Code version: v3.1.0
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .config import PERIOD_OFFSETS, SUPPORTED_PERIODS
+from .presentation import format_display_date
 from .schemas import SeriesPayload
 
 
@@ -41,7 +42,7 @@ def resolve_effective_period(
     notice = (
         f"Requested period {requested_period} exceeds the shared trading history. "
         f"Automatically switched to {fallback_period} based on the latest common start date "
-        f"({common_start.strftime('%-d %b %Y')})."
+        f"({format_display_date(common_start)})."
     )
     return fallback_period, notice
 
@@ -79,7 +80,7 @@ def build_series_payload(ticker: str, dataset: pd.DataFrame, color: str | None =
     normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0
     return SeriesPayload(
         ticker=ticker.upper(),
-        dates=dataset["Date"].dt.strftime("%-d %b %Y").tolist(),
+        dates=dataset["Date"].map(format_display_date).tolist(),
         normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
         color=color,
     )

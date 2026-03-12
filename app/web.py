@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.1.17
+Code version: v3.1.18
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .config import CODE_VERSION, DEFAULT_INTERVAL, DEFAULT_PERIOD, DEFAULT_TICK
 from .date_constraints import build_date_constraint_payload
 from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
 from .market_data import fetch_history
-from .presentation import build_series_colors, format_interval_label, format_period_label, hex_to_rgba
+from .presentation import build_series_colors, format_display_date, format_interval_label, format_period_label, hex_to_rgba
 from .settings import get_settings
 from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, record_ticker_usage
 
@@ -96,7 +96,7 @@ def register_routes(app: Flask) -> None:
         notice = (
             f"Requested period {requested_period} exceeds the shared trading history. "
             f"Automatically switched to {fallback_period} based on the latest common start date "
-            f"({common_start.strftime('%-d %b %Y')})."
+            f"({format_display_date(common_start)})."
         )
         return fallback_period, notice
 
@@ -170,7 +170,7 @@ def register_routes(app: Flask) -> None:
             best_return = max(item.normalized_returns[-1] for item in series)
             common_start = aligned_datasets[0]["Date"].min()
             common_end = aligned_datasets[0]["Date"].max()
-            display_range = f"{common_start.strftime('%-d %b %Y')} - {common_end.strftime('%-d %b %Y')}"
+            display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
             performance_items = [
                 {
                     "ticker": item.ticker,

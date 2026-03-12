@@ -1,10 +1,12 @@
 """
 Formatting helpers for display labels.
 
-Code version: v3.0.0
+Code version: v3.1.0
 """
 
 from __future__ import annotations
+
+import pandas as pd
 
 
 def format_period_label(period: str) -> str:
@@ -26,6 +28,11 @@ def format_interval_label(interval: str) -> str:
         "1d": "1 day",
     }
     return labels.get(interval, interval)
+
+
+def format_display_date(value: pd.Timestamp | str) -> str:
+    timestamp = pd.Timestamp(value)
+    return f"{timestamp.day} {timestamp.strftime('%b %Y')}"
 
 
 def build_series_colors(count: int, start_hex: str = "#0055cc", end_hex: str = "#ff2f92") -> list[str]:
