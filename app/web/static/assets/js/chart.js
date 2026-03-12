@@ -1,4 +1,4 @@
-/* Code version: v3.0.1 */
+/* Code version: v3.0.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || !state.chart || !window.Chart) return;
@@ -45,7 +45,25 @@
 		},
 	};
 
-	Chart.register(glowPlugin, zeroBandPlugin);
+	const hoverGuidePlugin = {
+		id: "hoverGuidePlugin",
+		afterDatasetsDraw(chartInstance) {
+			const { ctx, chartArea, tooltip } = chartInstance;
+			if (!chartArea || !tooltip || tooltip.opacity === 0) return;
+			const x = tooltip.caretX;
+			if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
+			ctx.save();
+			ctx.strokeStyle = "rgba(80, 90, 95, 0.24)";
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.moveTo(x, chartArea.top);
+			ctx.lineTo(x, chartArea.bottom);
+			ctx.stroke();
+			ctx.restore();
+		},
+	};
+
+	Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin);
 
 	const getOrCreateTooltip = (chart) => {
 		const parent = chart.canvas.parentNode;
@@ -88,24 +106,23 @@
 		`).join("");
 
 		const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
-		tooltipEl.style.left = `${positionX + tooltip.caretX}px`;
-		tooltipEl.style.top = `${positionY + tooltip.caretY}px`;
-		tooltipEl.classList.remove("is-below");
 		tooltipEl.classList.add("is-visible");
 
 		const parentRect = chart.canvas.parentNode.getBoundingClientRect();
 		const tooltipRect = tooltipEl.getBoundingClientRect();
 		const padding = 12;
-		let left = positionX + tooltip.caretX;
-		const halfWidth = tooltipRect.width / 2;
-		if (left - halfWidth < padding) left = halfWidth + padding;
-		if (left + halfWidth > parentRect.width - padding) left = parentRect.width - halfWidth - padding;
-		let top = positionY + tooltip.caretY;
-		if (top - tooltipRect.height - 12 < padding) tooltipEl.classList.add("is-below");
-		if (tooltipEl.classList.contains("is-below") && top + tooltipRect.height + 12 > parentRect.height - padding) {
-			top = parentRect.height - tooltipRect.height - padding;
-			tooltipEl.classList.remove("is-below");
-		}
+		const gap = 14;
+		const anchorX = positionX + tooltip.caretX;
+		const anchorY = positionY + tooltip.caretY;
+		const roomRight = parentRect.width - anchorX - padding;
+		const roomLeft = anchorX - padding;
+		const preferRight = roomRight >= tooltipRect.width + gap || roomRight >= roomLeft;
+		let left = preferRight ? anchorX + gap : anchorX - tooltipRect.width - gap;
+		if (left < padding) left = padding;
+		if (left + tooltipRect.width > parentRect.width - padding) left = parentRect.width - tooltipRect.width - padding;
+		let top = anchorY - (tooltipRect.height / 2);
+		if (top < padding) top = padding;
+		if (top + tooltipRect.height > parentRect.height - padding) top = parentRect.height - tooltipRect.height - padding;
 		tooltipEl.style.left = `${left}px`;
 		tooltipEl.style.top = `${top}px`;
 	};

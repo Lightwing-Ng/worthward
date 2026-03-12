@@ -1,4 +1,4 @@
-/* Code version: v3.1.8 */
+/* Code version: v3.1.9 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -117,9 +117,8 @@ footer { margin-top: 16px; color: var(--muted); font-size: 13px; position: relat
 .chart-surface { position: relative; z-index: 1; border-radius: var(--radius-panel); padding: 20px 20px 14px; background: #ffffff; box-shadow: 0 18px 40px rgba(17, 24, 39, 0.05); }
 .chart-wrap { position: relative; height: clamp(320px, 52vh, 520px); }
 .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
-.chart-tooltip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); min-width: 164px; padding: 10px 12px; opacity: 0; transition: opacity 120ms ease; z-index: 6; }
+.chart-tooltip { position: absolute; pointer-events: none; transform: none; min-width: 164px; max-width: min(260px, calc(100% - 24px)); padding: 10px 12px; opacity: 0; transition: opacity 120ms ease; z-index: 6; }
 .chart-tooltip.is-visible { opacity: 1; }
-.chart-tooltip.is-below { transform: translate(-50%, 12px); }
 .chart-tooltip-date { margin: 0 0 8px; font-size: 12px; line-height: 1.2; color: var(--muted); font-weight: 700; }
 .chart-tooltip-list { display: grid; gap: 6px; }
 .chart-tooltip-row { display: grid; grid-template-columns: 10px var(--logo-tooltip-size) minmax(44px, auto) minmax(64px, auto); align-items: center; column-gap: 8px; font-size: 13px; line-height: 1.2; font-variant-numeric: tabular-nums; }
