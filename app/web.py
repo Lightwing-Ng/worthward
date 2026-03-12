@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.1.7
+Code version: v3.1.8
 """
 
 from __future__ import annotations
