@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.5.0
+Code version: v3.5.1
 """
 
 from __future__ import annotations
@@ -45,6 +45,14 @@ def register_routes(app: Flask) -> None:
         if not is_known_ticker(normalized_ticker):
             raise ValueError(f"Unknown or unsupported ticker: {normalized_ticker}.")
         return normalized_ticker
+
+    def parse_int_value(raw_value: object, fallback: int) -> int:
+        if raw_value is None:
+            return fallback
+        try:
+            return int(str(raw_value).strip())
+        except (TypeError, ValueError):
+            return fallback
 
     def parse_requested_tickers() -> list[str]:
         numbered = [request.args.get(f"ticker_{index}", "") for index in range(1, MAX_TICKERS + 1)]
@@ -110,7 +118,7 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def local_store_page_value() -> int:
-        return max(request.args.get("local_page", default=1, type=int) or 1, 1)
+        return max(parse_int_value(request.args.get("local_page"), 1), 1)
 
     def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
         merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
@@ -377,7 +385,7 @@ def register_routes(app: Flask) -> None:
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
         action = request.form.get("action", "").strip().lower()
-        page = max(request.form.get("local_page", default=1, type=int) or 1, 1)
+        page = max(parse_int_value(request.form.get("local_page"), 1), 1)
         redirect_url = f"/?view=settings&section=local-market-store&local_page={page}"
 
         if not ticker:
@@ -407,7 +415,7 @@ def register_routes(app: Flask) -> None:
     @app.get("/api/symbol-search")
     def symbol_search():
         query = normalize_ticker_input(request.args.get("q", ""))
-        limit = min(max(request.args.get("limit", default=5, type=int) or 5, 1), 5)
+        limit = min(max(parse_int_value(request.args.get("limit"), 5), 1), 5)
         if not query:
             return jsonify(search_tickers("", limit=limit))
         return jsonify([] if not has_valid_ticker_format(query) else search_tickers(query, limit=limit))
