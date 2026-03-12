@@ -1,4 +1,4 @@
-/* Code version: v3.6.0 */
+/* Code version: v3.6.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -124,6 +124,17 @@
 			panel.classList.remove("is-open");
 			activeIndex = -1;
 		};
+		const showRecentItems = async () => {
+			try {
+				const response = await fetch(`${endpoints.symbolSearch}?limit=5`);
+				if (!response.ok) return closePanel();
+				const payload = await response.json();
+				if (!payload.length) return closePanel();
+				renderItems(payload);
+			} catch (_error) {
+				closePanel();
+			}
+		};
 		const renderItems = (items) => {
 			const panel = getPanel();
 			if (!panel) return;
@@ -180,13 +191,7 @@
 			const query = validateTickerInput(input);
 			if (!query) {
 				setUnknown(false);
-				try {
-					const response = await fetch(`${endpoints.symbolSearch}?limit=5`);
-					if (!response.ok) return closePanel();
-					renderItems(await response.json());
-				} catch (_error) {
-					closePanel();
-				}
+				await showRecentItems();
 				return;
 			}
 			if (controller) controller.abort();
@@ -207,18 +212,14 @@
 		});
 		input.addEventListener("focus", async () => {
 			if (input.value.trim()) return;
-			try {
-				const response = await fetch(`${endpoints.symbolSearch}?limit=5`);
-				if (!response.ok) return closePanel();
-				const payload = await response.json();
-				if (!payload.length) {
-					setUnknown(true);
-					return;
-				}
-				renderItems(payload);
-			} catch (_error) {
-				closePanel();
-			}
+			setUnknown(false);
+			await showRecentItems();
+		});
+		input.addEventListener("click", async () => {
+			if (input.value.trim()) return;
+			if (getPanel()?.classList.contains("is-open")) return;
+			setUnknown(false);
+			await showRecentItems();
 		});
 		input.addEventListener("blur", () => window.setTimeout(closePanel, 120));
 		input.addEventListener("keydown", (event) => {
@@ -297,6 +298,14 @@
 			settingsActionOverlayIcon.className = `icon ${options.iconClass} settings-action-icon`;
 		}
 		settingsActionOverlay.hidden = false;
+	};
+
+	const showCompareOverlay = () => {
+		showSettingsActionOverlay({
+			title: "Processing market data",
+			copy: "Please wait while the app checks local data and prepares the chart. This can take a moment for a new ticker.",
+			iconClass: "icon-overlay-refresh",
+		});
 	};
 
 	const hideSettingsActionOverlay = () => {
@@ -405,6 +414,7 @@
 		if (autoSubmitTimer) window.clearTimeout(autoSubmitTimer);
 		autoSubmitTimer = window.setTimeout(() => {
 			if (!canAutoSubmit()) return;
+			showCompareOverlay();
 			form.requestSubmit();
 		}, delay);
 	};
@@ -497,7 +507,9 @@
 			if (new Set(values).size !== values.length) {
 				event.preventDefault();
 				getTickerInputs().find((input) => input.validationMessage)?.reportValidity();
+				return;
 			}
+			showCompareOverlay();
 		});
 	}
 

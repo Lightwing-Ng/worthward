@@ -1,4 +1,4 @@
-/* Code version: v3.0.3 */
+/* Code version: v3.0.4 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || !state.chart || !window.Chart) return;
@@ -6,6 +6,23 @@
 	const { chart: chartState, theme, chartConfig } = state;
 	const { series, profiles } = chartState;
 	if (!series || !series.length) return;
+	const logoSize = 20;
+	const logoGap = 8;
+	const logoRightPadding = 12;
+	const logoCache = new Map();
+
+	const getLogoImage = (url, chartInstance) => {
+		if (!url) return null;
+		const cached = logoCache.get(url);
+		if (cached) return cached;
+		const image = new Image();
+		image.decoding = "async";
+		image.src = url;
+		image.onload = () => chartInstance.draw();
+		image.onerror = () => logoCache.delete(url);
+		logoCache.set(url, image);
+		return image;
+	};
 
 	const labels = series[0].dates;
 	const glowPlugin = {
@@ -63,7 +80,41 @@
 		},
 	};
 
-	Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin);
+	const lineEndLogoPlugin = {
+		id: "lineEndLogoPlugin",
+		afterDatasetsDraw(chartInstance) {
+			const { ctx, chartArea } = chartInstance;
+			if (!chartArea) return;
+			chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
+				const profile = profiles.find((item) => item.ticker === dataset.label);
+				if (!profile?.logo_url) return;
+				const meta = chartInstance.getDatasetMeta(datasetIndex);
+				const lastPoint = meta?.data?.[meta.data.length - 1];
+				if (!lastPoint) return;
+				const image = getLogoImage(profile.logo_url, chartInstance);
+				if (!image?.complete || !image.naturalWidth || !image.naturalHeight) return;
+				const centerX = chartArea.right + logoGap + (logoSize / 2);
+				const centerY = lastPoint.y;
+				const drawX = centerX - (logoSize / 2);
+				const drawY = centerY - (logoSize / 2);
+				const radius = 10;
+
+				ctx.save();
+				ctx.beginPath();
+				ctx.moveTo(drawX + radius, drawY);
+				ctx.arcTo(drawX + logoSize, drawY, drawX + logoSize, drawY + logoSize, radius);
+				ctx.arcTo(drawX + logoSize, drawY + logoSize, drawX, drawY + logoSize, radius);
+				ctx.arcTo(drawX, drawY + logoSize, drawX, drawY, radius);
+				ctx.arcTo(drawX, drawY, drawX + logoSize, drawY, radius);
+				ctx.closePath();
+				ctx.clip();
+				ctx.drawImage(image, drawX, drawY, logoSize, logoSize);
+				ctx.restore();
+			});
+		},
+	};
+
+	Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin);
 
 	const getOrCreateTooltip = (chart) => {
 		const parent = chart.canvas.parentNode;
@@ -165,7 +216,7 @@
 		options: {
 			responsive: true,
 			maintainAspectRatio: false,
-			layout: { padding: { top: 8, right: 6, bottom: 0, left: 4 } },
+			layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 0, left: 4 } },
 			interaction: { mode: "index", intersect: false },
 			hover: { mode: "index", intersect: false },
 			onHover(_event, activeElements, chartInstance) {

@@ -1,4 +1,4 @@
-/* Code version: v3.6.0 */
+/* Code version: v3.6.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -185,8 +185,8 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .icon-store-refresh { background-color: currentColor; mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; }
 .icon-store-delete { background-color: currentColor; mask: url("../../images/trash.svg") center/contain no-repeat; -webkit-mask: url("../../images/trash.svg") center/contain no-repeat; }
 .settings-pagination { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.settings-page-button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0, 85, 204, 0.28); color: #0055cc; background: rgba(255, 255, 255, 0.72); display: inline-grid; place-items: center; text-decoration: none; font-size: 13px; line-height: 1; font-weight: 700; }
-.settings-page-button.is-active { background: #0055cc; color: #ffffff; border-color: #0055cc; }
+.settings-page-button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0, 85, 204, 0.28); color: #0055cc; background: rgba(255, 255, 255, 0.72); display: inline-grid; place-items: center; text-decoration: none; font-size: 13px; line-height: 1; font-weight: 500; }
+.settings-page-button.is-active { background: #0055cc; color: #ffffff; border-color: #0055cc; font-weight: 700; }
 .settings-page-nav .icon { width: 12px; height: 12px; }
 .icon-page-prev { background-color: currentColor; mask: url("../../images/arrow.left.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.left.svg") center/contain no-repeat; }
 .icon-page-next { background-color: currentColor; mask: url("../../images/arrow.right.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.right.svg") center/contain no-repeat; }
@@ -206,9 +206,9 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .icon-dock-compare { background-color: currentColor; mask: url("../../images/lines.measurement.horizontal.aligned.bottom.svg") center/contain no-repeat; -webkit-mask: url("../../images/lines.measurement.horizontal.aligned.bottom.svg") center/contain no-repeat; }
 .icon-dock-portfolio { background-color: currentColor; mask: url("../../images/lines.measurement.vertical.svg") center/contain no-repeat; -webkit-mask: url("../../images/lines.measurement.vertical.svg") center/contain no-repeat; }
 .icon-dock-settings { background-color: currentColor; mask: url("../../images/gear.svg") center/contain no-repeat; -webkit-mask: url("../../images/gear.svg") center/contain no-repeat; }
-.settings-action-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.settings-action-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(255, 255, 255, 0.12); }
 .settings-action-overlay[hidden] { display: none; }
-.settings-action-dialog { position: relative; width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; }
+.settings-action-dialog { position: relative; width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; border-radius: 10px; background: var(--tooltip-background); box-shadow: 0 28px 64px rgba(17, 24, 39, 0.18), 0 10px 24px rgba(17, 24, 39, 0.10); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); }
 .settings-action-icon { width: 18px; height: 18px; margin-bottom: 10px; }
 .settings-action-close { position: absolute; top: 10px; right: 10px; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; background: rgba(107, 114, 128, 0.82); box-shadow: none; display: inline-grid; place-items: center; }
 .settings-action-close:hover, .settings-action-close:focus-visible { transform: none; box-shadow: none; background: rgba(107, 114, 128, 0.96); }

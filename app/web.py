@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.5.1
+Code version: v3.5.2
 """
 
 from __future__ import annotations
@@ -317,7 +317,7 @@ def register_routes(app: Flask) -> None:
                 local_store_page_start = page_group_index * 5 + 1
                 local_store_page_end = min(local_store_page_start + 4, local_store_total_pages)
                 if local_store_page_start > 1:
-                    local_store_prev_page = local_store_page_start - 1
+                    local_store_prev_page = max(local_store_page_start - 5, 1)
                 if local_store_page_end < local_store_total_pages:
                     local_store_next_page = local_store_page_end + 1
                 start_index = (local_store_current_page - 1) * LOCAL_STORE_PAGE_SIZE
