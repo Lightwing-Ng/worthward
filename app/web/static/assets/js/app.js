@@ -1,4 +1,4 @@
-/* Code version: v3.3.1 */
+/* Code version: v3.6.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -14,10 +14,21 @@
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
+	const settingsActionOverlay = $("#settings_action_overlay");
+	const settingsActionOverlayClose = $("#settings_action_overlay_close");
+	const settingsActionOverlayTitle = settingsActionOverlay?.querySelector(".settings-action-title");
+	const settingsActionOverlayCopy = settingsActionOverlay?.querySelector(".settings-action-copy");
+	const settingsActionOverlayIcon = $("#settings_action_overlay_icon");
 
 	const getTickerFields = () => $$(".ticker-field");
 	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
 	const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
+
+	const syncTickerClearButton = (input) => {
+		const clearButton = input?.parentElement?.querySelector(".ticker-clear");
+		if (!clearButton || !input) return;
+		clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
+	};
 
 	const updateAddButtonState = () => {
 		const wrapper = $("#ticker_add_wrapper");
@@ -41,10 +52,15 @@
 				input.name = `ticker_${index}`;
 				input.required = index <= MIN_TICKERS;
 				input.placeholder = "";
+				syncTickerClearButton(input);
 			}
 			if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
 			const removeButton = field.querySelector(".ticker-remove");
-			if (removeButton) removeButton.hidden = index <= MIN_TICKERS;
+			if (removeButton) {
+				removeButton.classList.toggle("is-placeholder", index <= MIN_TICKERS);
+				removeButton.tabIndex = index <= MIN_TICKERS ? -1 : 0;
+				removeButton.setAttribute("aria-hidden", index <= MIN_TICKERS ? "true" : "false");
+			}
 		});
 		updateAddButtonState();
 	};
@@ -62,6 +78,7 @@
 
 		const shouldFlag = isDuplicate || isMalformed || isUnknown;
 		input.classList.toggle("is-invalid", shouldFlag);
+		syncTickerClearButton(input);
 		if (duplicateTooltip) duplicateTooltip.hidden = !isDuplicate;
 		if (unknownTooltip) unknownTooltip.hidden = !isUnknown;
 		if (isMalformed) {
@@ -235,6 +252,26 @@
 		});
 	};
 
+	const attachTickerClearHandlers = () => {
+		$$(".ticker-clear").forEach((button) => {
+			if (button.dataset.bound === "1") return;
+			button.dataset.bound = "1";
+			button.addEventListener("mousedown", (event) => {
+				event.preventDefault();
+			});
+			button.addEventListener("click", () => {
+				const input = button.parentElement?.querySelector('input[name^="ticker_"]');
+				if (!input) return;
+				input.value = "";
+				input.dataset.unknown = "";
+				validateAllTickerInputs();
+				syncDateConstraints();
+				scheduleAutoSubmit(120);
+				input.focus();
+			});
+		});
+	};
+
 	const positionSidebarDock = () => {
 		const sidebar = $(".sidebar");
 		const dock = $(".sidebar-dock");
@@ -250,6 +287,21 @@
 	const scheduleDockPosition = () => {
 		if (dockFrame) window.cancelAnimationFrame(dockFrame);
 		dockFrame = window.requestAnimationFrame(positionSidebarDock);
+	};
+
+	const showSettingsActionOverlay = (options = {}) => {
+		if (!settingsActionOverlay) return;
+		if (settingsActionOverlayTitle && options.title) settingsActionOverlayTitle.textContent = options.title;
+		if (settingsActionOverlayCopy && options.copy) settingsActionOverlayCopy.textContent = options.copy;
+		if (settingsActionOverlayIcon && options.iconClass) {
+			settingsActionOverlayIcon.className = `icon ${options.iconClass} settings-action-icon`;
+		}
+		settingsActionOverlay.hidden = false;
+	};
+
+	const hideSettingsActionOverlay = () => {
+		if (!settingsActionOverlay) return;
+		settingsActionOverlay.hidden = true;
 	};
 
 	const attachRemoveHandlers = () => {
@@ -277,17 +329,21 @@
 			<div class="ticker-input-row">
 				<div class="ticker-input-main">
 					<label for="ticker_${index}">Ticker ${index}</label>
-					<input id="ticker_${index}" name="ticker_${index}" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
+					<div class="ticker-input-control">
+						<input id="ticker_${index}" name="ticker_${index}" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
+						<button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+					</div>
 					<div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
 					<div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
 					<div class="suggestions" id="ticker_${index}_suggestions"></div>
 				</div>
-				<button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove" aria-hidden="true"></span></button>
+				<button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 			</div>
 		`;
 		container.appendChild(field);
 		reindexTickerFields();
 		attachRemoveHandlers();
+		attachTickerClearHandlers();
 		const input = field.querySelector('input[name^="ticker_"]');
 		setupAutocomplete(input);
 		validateAllTickerInputs();
@@ -394,6 +450,7 @@
 
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
 	attachRemoveHandlers();
+	attachTickerClearHandlers();
 	reindexTickerFields();
 	validateAllTickerInputs();
 	updateRangePanels();
@@ -443,6 +500,27 @@
 			}
 		});
 	}
+
+	$$(".settings-action-form").forEach((formElement) => {
+		formElement.addEventListener("submit", () => {
+			const actionInput = formElement.querySelector('input[name="action"]');
+			if (actionInput?.value === "refresh") {
+				showSettingsActionOverlay({
+					title: "Updating local market data",
+					copy: "This may take a moment while the app checks remote data and refreshes the local store.",
+					iconClass: "icon-overlay-refresh",
+				});
+			}
+		});
+	});
+	$(".settings-nav-network")?.addEventListener("click", () => {
+		showSettingsActionOverlay({
+			title: "Checking network status",
+			copy: "The app is verifying market data and logo services before showing the latest status.",
+			iconClass: "icon-overlay-network",
+		});
+	});
+	settingsActionOverlayClose?.addEventListener("click", hideSettingsActionOverlay);
 
 	window.addEventListener("resize", scheduleDockPosition);
 	window.addEventListener("orientationchange", scheduleDockPosition);

@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.2.1
+Code version: v3.5.0
 """
 
 from __future__ import annotations
@@ -10,22 +10,23 @@ from dataclasses import asdict
 from urllib.parse import urlencode
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 
 from .comparisons import build_series_payload, slice_dataset_for_period
-from .connectivity import has_remote_market_access
+from .connectivity import has_remote_logo_access, has_remote_market_access
 from .config import CODE_VERSION, DEFAULT_INTERVAL, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
 from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
-from .market_data import fetch_history
+from .market_data import fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_interval_label, format_period_label, hex_to_rgba
 from .settings import get_settings
-from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, record_ticker_usage
+from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, history_store_path_for, list_local_tickers, record_ticker_usage
 
 MAX_TICKERS = 5
 MIN_TICKERS = 2
 SUPPORTED_VIEWS = {"tickers", "portfolio", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "local-market-store"}
+LOCAL_STORE_PAGE_SIZE = 10
 
 
 def register_routes(app: Flask) -> None:
@@ -79,6 +80,37 @@ def register_routes(app: Flask) -> None:
         params["section"] = [section_name]
         query_string = urlencode(params, doseq=True)
         return f"/?{query_string}" if query_string else "/"
+
+    def build_local_store_page_url(page_number: int) -> str:
+        params = request.args.to_dict(flat=False)
+        params["view"] = ["settings"]
+        params["section"] = ["local-market-store"]
+        params["local_page"] = [str(page_number)]
+        query_string = urlencode(params, doseq=True)
+        return f"/?{query_string}" if query_string else "/"
+
+    def build_local_market_rows() -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for ticker in list_local_tickers():
+            history_path = history_store_path_for(ticker)
+            if not history_path.exists():
+                continue
+            dataset = pd.read_parquet(history_path, columns=["Date"])
+            if dataset.empty:
+                continue
+            profile = fetch_quote_profile(ticker, False)
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "company_name": profile.company_name,
+                    "logo_url": profile.logo_url or "",
+                    "range": f"{format_display_date(dataset['Date'].min())} - {format_display_date(dataset['Date'].max())}",
+                }
+            )
+        return rows
+
+    def local_store_page_value() -> int:
+        return max(request.args.get("local_page", default=1, type=int) or 1, 1)
 
     def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
         merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
@@ -149,13 +181,28 @@ def register_routes(app: Flask) -> None:
         page_title = labels["hero_title"]
         report_heading = labels["performance_summary"]
         chart_heading = labels["chart_summary"]
+        settings_title = labels["about"]
+        settings_service_rows: list[dict[str, str | bool]] = []
+        local_market_rows: list[dict[str, str]] = []
+        local_store_total_pages = 1
+        local_store_current_page = 1
+        local_store_page_start = 1
+        local_store_page_end = 1
+        local_store_prev_page = None
+        local_store_next_page = None
+        submit_label = labels["update_chart"]
 
         if current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
             chart_heading = labels["portfolio_chart"]
+            submit_label = labels["compute"]
         elif current_view == "settings":
             page_title = labels["settings_title"]
+            if settings_section == "network":
+                settings_title = labels["network_self_check"]
+            elif settings_section == "local-market-store":
+                settings_title = labels["local_market_store"]
 
         if period not in SUPPORTED_PERIODS:
             period = DEFAULT_PERIOD
@@ -224,8 +271,50 @@ def register_routes(app: Flask) -> None:
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
 
-        if not has_remote_market_access() and not error and not notice:
+        remote_market_access = has_remote_market_access()
+        remote_logo_access = has_remote_logo_access()
+
+        if not remote_market_access and not error and not notice:
             notice = "Using bundled local market_store data because remote market access is unavailable."
+
+        if current_view == "settings":
+            settings_service_rows = [
+                {
+                    "name": "yfinance",
+                    "status": labels["service_ok"] if remote_market_access else labels["service_down"],
+                    "note": (
+                        "Yahoo Finance is reachable, so missing price history can be refreshed from the network."
+                        if remote_market_access
+                        else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
+                    ),
+                    "is_available": remote_market_access,
+                },
+                {
+                    "name": labels["logo_network"],
+                    "status": labels["service_ok"] if remote_logo_access else labels["service_down"],
+                    "note": (
+                        "Logo providers are reachable, so missing brand marks can be fetched when needed."
+                        if remote_logo_access
+                        else "Logo providers are blocked here, so only logos already stored locally will appear."
+                    ),
+                    "is_available": remote_logo_access,
+                },
+            ]
+            if settings_section == "local-market-store":
+                all_local_market_rows = build_local_market_rows()
+                local_store_current_page = local_store_page_value()
+                local_store_total_pages = max((len(all_local_market_rows) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
+                local_store_current_page = min(local_store_current_page, local_store_total_pages)
+                page_group_index = (local_store_current_page - 1) // 5
+                local_store_page_start = page_group_index * 5 + 1
+                local_store_page_end = min(local_store_page_start + 4, local_store_total_pages)
+                if local_store_page_start > 1:
+                    local_store_prev_page = local_store_page_start - 1
+                if local_store_page_end < local_store_total_pages:
+                    local_store_next_page = local_store_page_end + 1
+                start_index = (local_store_current_page - 1) * LOCAL_STORE_PAGE_SIZE
+                end_index = start_index + LOCAL_STORE_PAGE_SIZE
+                local_market_rows = all_local_market_rows[start_index:end_index]
 
         while len(ticker_slots) < MIN_TICKERS:
             ticker_slots.append("")
@@ -256,11 +345,23 @@ def register_routes(app: Flask) -> None:
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
             settings_section=settings_section,
+            remote_market_access=remote_market_access,
+            settings_title=settings_title,
+            settings_service_rows=settings_service_rows,
+            local_market_rows=local_market_rows,
+            local_store_current_page=local_store_current_page,
+            local_store_total_pages=local_store_total_pages,
+            local_store_page_start=local_store_page_start,
+            local_store_page_end=local_store_page_end,
+            local_store_prev_page=local_store_prev_page,
+            local_store_next_page=local_store_next_page,
+            submit_label=submit_label,
             page_title=page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about",)},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "local-market-store")},
+            local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
             chart_config=chart_config,
@@ -271,6 +372,29 @@ def register_routes(app: Flask) -> None:
                 "dateConstraints": "/api/date-constraints",
             },
         )
+
+    @app.post("/settings/local-market-store/action")
+    def local_market_store_action():
+        ticker = normalize_ticker_input(request.form.get("ticker", ""))
+        action = request.form.get("action", "").strip().lower()
+        page = max(request.form.get("local_page", default=1, type=int) or 1, 1)
+        redirect_url = f"/?view=settings&section=local-market-store&local_page={page}"
+
+        if not ticker:
+            return redirect(redirect_url)
+
+        try:
+            if action == "refresh":
+                refresh_history_store(ticker, DEFAULT_INTERVAL)
+                fetch_quote_profile(ticker, force_refresh=True)
+            elif action == "delete":
+                history_path = history_store_path_for(ticker)
+                if history_path.exists():
+                    history_path.unlink()
+        except Exception:
+            return redirect(redirect_url)
+
+        return redirect(redirect_url)
 
     @app.get("/market-store/logos/<path:filename>")
     def market_store_logo(filename: str):

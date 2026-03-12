@@ -1,4 +1,4 @@
-/* Code version: v3.0.2 */
+/* Code version: v3.0.3 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || !state.chart || !window.Chart) return;
@@ -53,8 +53,8 @@
 			const x = tooltip.caretX;
 			if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
 			ctx.save();
-			ctx.strokeStyle = "rgba(80, 90, 95, 0.24)";
-			ctx.lineWidth = 1;
+			ctx.strokeStyle = chartConfig.zero_line_color || theme.muted;
+			ctx.lineWidth = chartConfig.zero_line_width || 1;
 			ctx.beginPath();
 			ctx.moveTo(x, chartArea.top);
 			ctx.lineTo(x, chartArea.bottom);

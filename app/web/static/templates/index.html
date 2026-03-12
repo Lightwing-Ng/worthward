@@ -44,14 +44,15 @@
                         <div class="ticker-input-row">
                             <div class="ticker-input-main">
                                 <label for="ticker_{{ index }}">Ticker {{ index }}</label>
-                                <input id="ticker_{{ index }}" name="ticker_{{ index }}" value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                                <div class="ticker-input-control">
+                                    <input id="ticker_{{ index }}" name="ticker_{{ index }}" value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                                    <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                </div>
                                 <div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
                                 <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
                                 <div class="suggestions" id="ticker_{{ index }}_suggestions"></div>
                             </div>
-                            {% if index > min_tickers %}
-                            <button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove" aria-hidden="true"></span></button>
-                            {% endif %}
+                            <button type="button" class="ticker-remove{% if index <= min_tickers %} is-placeholder{% endif %}" aria-label="Remove ticker" {% if index <= min_tickers %}tabindex="-1" aria-hidden="true"{% endif %}><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                         </div>
                     </div>
                     {% endfor %}
@@ -97,12 +98,14 @@
                     </label>
                 </div>
                 <div class="field">
-                    <button id="submit" type="submit">{{ labels.update_chart }}</button>
+                    <button id="submit" type="submit">{{ submit_label }}</button>
                 </div>
             </form>
             {% else %}
             <nav class="settings-nav" aria-label="Settings sections">
                 <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
+                <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">{{ labels.network_self_check }}</a>
+                <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item{% if settings_section == 'local-market-store' %} is-active{% endif %}">{{ labels.local_market_store }}</a>
             </nav>
             {% endif %}
         </aside>
@@ -193,15 +196,111 @@
             {% elif current_view == "settings" %}
             <article class="chart-surface settings-surface">
                 <div class="chart-heading-row">
-                    <p class="chart-heading">{{ labels.about }}</p>
+                    <p class="chart-heading">{{ settings_title }}</p>
                 </div>
                 <div class="settings-body">
+                    {% if settings_section == "about" %}
                     <dl class="footer-meta about-meta">
                         <dt>{{ labels.code_version }}</dt>
                         <dd>{{ version }}</dd>
                         <dt>{{ labels.updated_on }}</dt>
                         <dd>{{ updated_on }}</dd>
                     </dl>
+                    {% elif settings_section == "network" %}
+                    <p class="settings-summary">{{ labels.service_status }}</p>
+                    <div class="settings-service-list">
+                        {% for row in settings_service_rows %}
+                        <div class="settings-service-row">
+                            <div class="settings-service-main">
+                                <p class="settings-service-name">{{ row.name }}</p>
+                                <p class="settings-service-note">{{ row.note }}</p>
+                            </div>
+                            <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
+                                {% if row.is_available %}
+                                <img class="settings-status-check" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
+                                {% endif %}
+                                <span>{{ row.status }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                                    {% elif settings_section == "local-market-store" %}
+                    <p class="settings-summary">{{ labels.local_store_summary }}</p>
+                    <div class="settings-table-wrap">
+                        <table class="settings-table">
+                            <thead>
+                                <tr>
+                                    <th>{{ labels.local_store_symbol }}</th>
+                                    <th>{{ labels.local_store_name }}</th>
+                                    <th>{{ labels.local_store_range }}</th>
+                                    <th>{{ labels.local_store_update }}</th>
+                                    <th>{{ labels.local_store_delete }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if local_market_rows %}
+                                {% for row in local_market_rows %}
+                                <tr>
+                                    <td>
+                                        <span class="settings-symbol-cell">
+                                            {% if row.logo_url %}
+                                            <img class="settings-table-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
+                                            {% else %}
+                                            <span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
+                                            {% endif %}
+                                            <span>{{ row.ticker }}</span>
+                                        </span>
+                                    </td>
+                                    <td>{{ row.company_name }}</td>
+                                    <td>{{ row.range }}</td>
+                                    <td>
+                                        <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                            <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                            <input type="hidden" name="action" value="refresh">
+                                            <input type="hidden" name="local_page" value="{{ local_store_current_page }}">
+                                            <button type="submit" class="settings-action-button" aria-label="{{ labels.local_store_update }}">
+                                                <span class="icon icon-store-refresh" aria-hidden="true"></span>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                            <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="local_page" value="{{ local_store_current_page }}">
+                                            <button type="submit" class="settings-action-button is-danger" aria-label="{{ labels.local_store_delete }}">
+                                                <span class="icon icon-store-delete" aria-hidden="true"></span>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="5">{{ labels.local_store_empty }}</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if local_store_total_pages > 1 %}
+                    <nav class="settings-pagination" aria-label="Local market store pages">
+                        {% if local_store_prev_page %}
+                        <a href="{{ local_store_page_urls[local_store_prev_page] }}" class="settings-page-button settings-page-nav" aria-label="Previous pages">
+                            <span class="icon icon-page-prev" aria-hidden="true"></span>
+                        </a>
+                        {% endif %}
+                        {% for page_number in range(local_store_page_start, local_store_page_end + 1) %}
+                        <a href="{{ local_store_page_urls[page_number] }}" class="settings-page-button{% if page_number == local_store_current_page %} is-active{% endif %}">{{ page_number }}</a>
+                        {% endfor %}
+                        {% if local_store_next_page %}
+                        <a href="{{ local_store_page_urls[local_store_next_page] }}" class="settings-page-button settings-page-nav" aria-label="Next pages">
+                            <span class="icon icon-page-next" aria-hidden="true"></span>
+                        </a>
+                        {% endif %}
+                    </nav>
+                    {% endif %}
+                    {% endif %}
                 </div>
             </article>
             {% endif %}
@@ -222,6 +321,16 @@
         </a>
     </nav>
 </main>
+<div id="settings_action_overlay" class="settings-action-overlay" hidden>
+    <div class="settings-action-dialog chart-tooltip">
+        <button type="button" id="settings_action_overlay_close" class="settings-action-close" aria-label="Close">
+            <span class="icon icon-remove-muted" aria-hidden="true"></span>
+        </button>
+        <span id="settings_action_overlay_icon" class="icon icon-overlay-refresh settings-action-icon" aria-hidden="true"></span>
+        <p class="settings-action-title">Updating local market data</p>
+        <p class="settings-action-copy">This may take a moment while the app checks remote data and refreshes the local store.</p>
+    </div>
+</div>
 
 <script>
     window.ANTIGRAVITY_APP = {
