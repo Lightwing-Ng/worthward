@@ -1,9 +1,10 @@
-/* Code version: v3.6.2 */
+/* Code version: v3.8.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
 
-	const { defaults, labels, endpoints, constraints } = state;
+	const { defaults, labels, endpoints, constraints, theme } = state;
+	const isPortfolioView = state.currentView === "portfolio";
 	const MIN_TICKERS = constraints?.minTickers || 2;
 	const MAX_TICKERS = constraints?.maxTickers || 5;
 	const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
@@ -23,11 +24,41 @@
 	const getTickerFields = () => $$(".ticker-field");
 	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
 	const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
+	const getWeightFields = () => getTickerFields().map((field) => ({
+		field,
+		number: field.querySelector('.portfolio-weight-input'),
+		slider: field.querySelector('.portfolio-weight-slider'),
+		tickerInput: field.querySelector('input[name^="ticker_"]'),
+		tooltip: field.querySelector('.portfolio-weight-tooltip'),
+	})).filter((item) => item.number && item.slider && item.tickerInput);
+	let manualWeightHistory = [];
 
 	const syncTickerClearButton = (input) => {
 		const clearButton = input?.parentElement?.querySelector(".ticker-clear");
 		if (!clearButton || !input) return;
 		clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
+	};
+
+	const hidePortfolioWeightTooltips = () => {
+		getWeightFields().forEach((entry) => {
+			if (!entry.tooltip) return;
+			entry.tooltip.hidden = true;
+			entry.tooltip.textContent = "";
+		});
+	};
+
+	const showPortfolioWeightTooltip = (entry, message) => {
+		if (!entry?.tooltip) return;
+		entry.tooltip.textContent = message;
+		entry.tooltip.hidden = false;
+		window.setTimeout(() => {
+			if (entry.tooltip) entry.tooltip.hidden = true;
+		}, 2400);
+	};
+
+	const recordManualWeightEdit = (index) => {
+		manualWeightHistory = manualWeightHistory.filter((value) => value !== index);
+		manualWeightHistory.push(index);
 	};
 
 	const updateAddButtonState = () => {
@@ -54,6 +85,13 @@
 				input.placeholder = "";
 				syncTickerClearButton(input);
 			}
+			const weightInput = field.querySelector(".portfolio-weight-input");
+			const weightSlider = field.querySelector(".portfolio-weight-slider");
+			if (weightInput && weightSlider) {
+				weightInput.id = `weight_${index}`;
+				weightInput.name = `weight_${index}`;
+				weightSlider.dataset.index = String(index);
+			}
 			if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
 			const removeButton = field.querySelector(".ticker-remove");
 			if (removeButton) {
@@ -63,6 +101,156 @@
 			}
 		});
 		updateAddButtonState();
+	};
+
+	const syncPortfolioWeightDisabledState = () => {
+		if (!isPortfolioView) return;
+		getWeightFields().forEach(({ tickerInput, number, slider }) => {
+			const isFilled = Boolean(sanitizeTicker(tickerInput.value.trim()));
+			number.disabled = !isFilled;
+			slider.disabled = !isFilled;
+			if (!isFilled) {
+				number.value = "0";
+				slider.value = "0";
+			}
+		});
+	};
+
+	const buildDefaultWeights = (count) => {
+		if (count <= 0) return [];
+		const base = Math.floor(100 / count);
+		const remainder = 100 % count;
+		return Array.from({ length: count }, (_item, index) => base + (index < remainder ? 1 : 0));
+	};
+
+	const buildGradientColors = (count) => {
+		if (count <= 1) return [theme.accent_primary || "#0055cc"];
+		const hexToRgb = (value) => {
+			const raw = value.replace("#", "");
+			return [Number.parseInt(raw.slice(0, 2), 16), Number.parseInt(raw.slice(2, 4), 16), Number.parseInt(raw.slice(4, 6), 16)];
+		};
+		const rgbToHex = ([r, g, b]) => `#${[r, g, b].map((item) => item.toString(16).padStart(2, "0")).join("")}`;
+		const start = hexToRgb(theme.accent_primary || "#0055cc");
+		const end = hexToRgb(theme.accent_secondary || "#ff2f92");
+		return Array.from({ length: count }, (_item, index) => {
+			const ratio = index / (count - 1);
+			return rgbToHex(start.map((channel, channelIndex) => Math.round(channel + ((end[channelIndex] - channel) * ratio))));
+		});
+	};
+
+	const getFilledWeightEntries = () => getWeightFields()
+		.map((item, index) => ({ ...item, index, ticker: sanitizeTicker(item.tickerInput.value.trim()) }))
+		.filter((item) => item.ticker);
+
+	const syncPortfolioWeightPair = (entry, value) => {
+		const normalized = Math.min(100, Math.max(0, Number.parseInt(String(value || 0), 10) || 0));
+		entry.number.value = String(normalized);
+		entry.slider.value = String(normalized);
+	};
+
+	const rebalancePortfolioWeights = (changedIndex) => {
+		if (!isPortfolioView) return;
+		const filledEntries = getFilledWeightEntries();
+		if (!filledEntries.length) return;
+		const activeEntry = filledEntries.find((entry) => entry.index === changedIndex);
+		if (!activeEntry) return;
+		hidePortfolioWeightTooltips();
+		const passiveIndex = [...manualWeightHistory].reverse().find((index) => index !== changedIndex && filledEntries.some((entry) => entry.index === index));
+		const passiveEntry = filledEntries.find((entry) => entry.index === passiveIndex)
+			|| filledEntries.filter((entry) => entry.index !== changedIndex).at(-1);
+		if (!passiveEntry) {
+			syncPortfolioWeightPair(activeEntry, 100);
+			recordManualWeightEdit(changedIndex);
+			return;
+		}
+		const desiredActive = Number.parseInt(activeEntry.number.value, 10) || 0;
+		const fixedOtherTotal = filledEntries
+			.filter((entry) => entry.index !== changedIndex && entry.index !== passiveEntry.index)
+			.reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+		const allowedActiveMin = Math.max(0, 100 - fixedOtherTotal - 100);
+		const allowedActiveMax = Math.min(100, 100 - fixedOtherTotal);
+		let nextActive = desiredActive;
+		let shouldWarn = false;
+		if (desiredActive > allowedActiveMax) {
+			nextActive = allowedActiveMax;
+			shouldWarn = true;
+		}
+		if (desiredActive < allowedActiveMin) {
+			nextActive = allowedActiveMin;
+			shouldWarn = true;
+		}
+		const nextPassive = Math.max(0, Math.min(100, 100 - fixedOtherTotal - nextActive));
+		syncPortfolioWeightPair(activeEntry, nextActive);
+		syncPortfolioWeightPair(passiveEntry, nextPassive);
+		if (shouldWarn) {
+			showPortfolioWeightTooltip(
+				activeEntry,
+				`${passiveEntry.ticker} was the only available weight that could adjust, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
+			);
+		}
+		recordManualWeightEdit(changedIndex);
+	};
+
+	const updatePortfolioPreview = () => {
+		if (!isPortfolioView) return;
+		const donut = $("#portfolio_donut");
+		if (!donut) return;
+		const filledEntries = getFilledWeightEntries();
+		if (!filledEntries.length) {
+			donut.style.background = "rgba(148, 163, 184, 0.16)";
+			return;
+		}
+		const colors = buildGradientColors(filledEntries.length);
+		const stops = [];
+		let angle = 0;
+		const gapDegrees = 1.2;
+		filledEntries.forEach((entry, index) => {
+			const value = Number.parseInt(entry.number.value, 10) || 0;
+			const sweep = (value / 100) * 360;
+			const segmentEnd = angle + sweep;
+			const coloredEnd = Math.max(angle, segmentEnd - gapDegrees);
+			stops.push(`${colors[index]} ${angle}deg ${coloredEnd}deg`);
+			if (coloredEnd < segmentEnd) {
+				stops.push(`transparent ${coloredEnd}deg ${segmentEnd}deg`);
+			}
+			angle = segmentEnd;
+		});
+		donut.style.background = `conic-gradient(${stops.join(", ")})`;
+	};
+
+	const attachPortfolioWeightHandlers = () => {
+		if (!isPortfolioView) return;
+		getWeightFields().forEach(({ field, number, slider }, index) => {
+			if (number.dataset.bound === "1") return;
+			number.dataset.bound = "1";
+			const syncAndRefresh = (source) => {
+				const value = Math.min(100, Math.max(0, Number.parseInt(String(source.value || 0), 10) || 0));
+				number.value = String(value);
+				slider.value = String(value);
+				rebalancePortfolioWeights(index);
+				updatePortfolioPreview();
+				scheduleAutoSubmit(180);
+			};
+			const openSlider = () => field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
+			const closeSlider = () => window.setTimeout(() => {
+				if (field.matches(":focus-within")) return;
+				field.querySelector(".portfolio-weight-field")?.classList.remove("is-open");
+			}, 80);
+			number.addEventListener("focus", openSlider);
+			number.addEventListener("click", openSlider);
+			slider.addEventListener("focus", openSlider);
+			field.addEventListener("focusout", closeSlider);
+			number.addEventListener("input", () => syncAndRefresh(number));
+			slider.addEventListener("input", () => syncAndRefresh(slider));
+			field.querySelector('input[name^="ticker_"]')?.addEventListener("input", () => {
+				syncPortfolioWeightDisabledState();
+				if (getFilledWeightEntries().length && getFilledWeightEntries().every((entry) => (Number.parseInt(entry.number.value, 10) || 0) === 0)) {
+					const defaults = buildDefaultWeights(getFilledWeightEntries().length);
+					getFilledWeightEntries().forEach((entry, entryIndex) => syncPortfolioWeightPair(entry, defaults[entryIndex] || 0));
+				}
+				updatePortfolioPreview();
+			});
+		});
 	};
 
 	const validateTickerInput = (input) => {
@@ -302,9 +490,9 @@
 
 	const showCompareOverlay = () => {
 		showSettingsActionOverlay({
-			title: "Processing market data",
-			copy: "Please wait while the app checks local data and prepares the chart. This can take a moment for a new ticker.",
-			iconClass: "icon-overlay-refresh",
+			title: "Preparing your chart",
+			copy: "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
+			iconClass: "icon-overlay-processing",
 		});
 	};
 
@@ -320,6 +508,13 @@
 			button.addEventListener("click", () => {
 				button.closest(".ticker-field")?.remove();
 				reindexTickerFields();
+				if (isPortfolioView) {
+					const filledEntries = getFilledWeightEntries();
+					const defaults = buildDefaultWeights(filledEntries.length);
+					filledEntries.forEach((entry, index) => syncPortfolioWeightPair(entry, defaults[index] || 0));
+					manualWeightHistory = filledEntries.map((entry) => entry.index);
+					updatePortfolioPreview();
+				}
 				validateAllTickerInputs();
 				syncDateConstraints();
 				scheduleAutoSubmit(120);
@@ -346,6 +541,14 @@
 					<div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
 					<div class="suggestions" id="ticker_${index}_suggestions"></div>
 				</div>
+				${isPortfolioView ? `
+				<div class="portfolio-weight-field">
+					<div class="portfolio-weight-row">
+						<input id="weight_${index}" name="weight_${index}" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
+						<span class="portfolio-weight-unit">%</span>
+					</div>
+					<input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="0" aria-label="${labels.portfolio_weight}">
+				</div>` : ""}
 				<button type="button" class="ticker-remove" aria-label="Remove ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 			</div>
 		`;
@@ -353,14 +556,25 @@
 		reindexTickerFields();
 		attachRemoveHandlers();
 		attachTickerClearHandlers();
+		attachPortfolioWeightHandlers();
 		const input = field.querySelector('input[name^="ticker_"]');
 		setupAutocomplete(input);
 		validateAllTickerInputs();
+		syncPortfolioWeightDisabledState();
+		updatePortfolioPreview();
 		input?.focus();
 	};
 
 	const compactTickerInputs = () => {
 		const values = getFilledTickers();
+		const portfolioEntries = isPortfolioView
+			? getWeightFields()
+				.map((item) => ({
+					ticker: sanitizeTicker(item.tickerInput.value.trim()),
+					weight: Number.parseInt(item.number.value, 10) || 0,
+				}))
+				.filter((item) => item.ticker)
+			: [];
 		const container = $("#ticker_fields");
 		if (!container) return values;
 		while (getTickerFields().length > Math.max(MIN_TICKERS, values.length)) {
@@ -369,10 +583,16 @@
 		getTickerInputs().forEach((input, index) => {
 			input.value = values[index] || "";
 		});
+		if (isPortfolioView) {
+			getWeightFields().forEach((entry, index) => {
+				syncPortfolioWeightPair(entry, portfolioEntries[index]?.weight || 0);
+			});
+		}
 		while (getTickerFields().length < Math.max(MIN_TICKERS, values.length)) {
 			addTickerField(values[getTickerFields().length] || "");
 		}
 		reindexTickerFields();
+		syncPortfolioWeightDisabledState();
 		validateAllTickerInputs();
 		return values;
 	};
@@ -402,6 +622,10 @@
 		const values = compactTickerInputs();
 		if (values.length < MIN_TICKERS) return false;
 		if (new Set(values).size !== values.length) return false;
+		if (isPortfolioView) {
+			const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+			if (totalWeight !== 100) return false;
+		}
 		validateAllTickerInputs();
 		if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
 		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
@@ -461,8 +685,14 @@
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
 	attachRemoveHandlers();
 	attachTickerClearHandlers();
+	attachPortfolioWeightHandlers();
 	reindexTickerFields();
 	validateAllTickerInputs();
+	syncPortfolioWeightDisabledState();
+	updatePortfolioPreview();
+	if (isPortfolioView && manualWeightHistory.length === 0) {
+		manualWeightHistory = getFilledWeightEntries().map((entry) => entry.index);
+	}
 	updateRangePanels();
 	syncDateConstraints();
 	scheduleDockPosition();
@@ -509,6 +739,13 @@
 				getTickerInputs().find((input) => input.validationMessage)?.reportValidity();
 				return;
 			}
+			if (isPortfolioView) {
+				const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+				if (totalWeight !== 100) {
+					event.preventDefault();
+					return;
+				}
+			}
 			showCompareOverlay();
 		});
 	}
@@ -519,8 +756,8 @@
 			if (actionInput?.value === "refresh") {
 				showSettingsActionOverlay({
 					title: "Updating local market data",
-					copy: "This may take a moment while the app checks remote data and refreshes the local store.",
-					iconClass: "icon-overlay-refresh",
+					copy: "We are checking what is missing and refreshing the local market store. This can take a moment.",
+					iconClass: "icon-overlay-processing",
 				});
 			}
 		});
@@ -528,7 +765,7 @@
 	$(".settings-nav-network")?.addEventListener("click", () => {
 		showSettingsActionOverlay({
 			title: "Checking network status",
-			copy: "The app is verifying market data and logo services before showing the latest status.",
+			copy: "We are checking whether market data and logo services are available from this device.",
 			iconClass: "icon-overlay-network",
 		});
 	});

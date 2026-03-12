@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.5.2
+Code version: v3.6.0
 """
 
 from __future__ import annotations
@@ -67,6 +67,57 @@ def register_routes(app: Flask) -> None:
             return []
         compacted = [normalize_ticker_input(value) for value in raw_tickers if normalize_ticker_input(value)]
         return compacted[:MAX_TICKERS]
+
+    def parse_requested_weights(slot_count: int) -> list[int]:
+        weights: list[int] = []
+        for index in range(1, slot_count + 1):
+            raw_value = request.args.get(f"weight_{index}")
+            if raw_value is None or str(raw_value).strip() == "":
+                weights.append(0)
+            else:
+                weights.append(min(max(parse_int_value(raw_value, 0), 0), 100))
+        return weights
+
+    def build_default_weights(count: int) -> list[int]:
+        if count <= 0:
+            return []
+        base_weight = 100 // count
+        remainder = 100 % count
+        return [base_weight + (1 if index < remainder else 0) for index in range(count)]
+
+    def normalize_portfolio_weights(raw_weights: list[int], active_count: int) -> list[int]:
+        if active_count <= 0:
+            return []
+        trimmed = raw_weights[:active_count]
+        if len(trimmed) < active_count:
+            trimmed.extend([0] * (active_count - len(trimmed)))
+        total = sum(trimmed)
+        if total == 100:
+            return trimmed
+        if total <= 0:
+            return build_default_weights(active_count)
+        scaled = [int((value * 100) / total) for value in trimmed]
+        remainder = 100 - sum(scaled)
+        for index in range(active_count):
+            if remainder == 0:
+                break
+            scaled[index] += 1
+            remainder -= 1
+        return scaled
+
+    def build_portfolio_series_payload(datasets: list[pd.DataFrame], weights: list[int], color: str):
+        first_dataset = datasets[0]
+        cumulative_growth = pd.Series(0.0, index=first_dataset.index)
+        for dataset, weight in zip(datasets, weights, strict=True):
+            first_close = float(dataset["Close"].iloc[0])
+            cumulative_growth += (weight / 100.0) * (dataset["Close"] / first_close)
+        portfolio_frame = pd.DataFrame(
+            {
+                "Date": first_dataset["Date"],
+                "Close": cumulative_growth,
+            }
+        )
+        return build_series_payload("Portfolio", portfolio_frame, color=color)
 
     def resolve_view() -> str:
         requested_view = request.args.get("view", "tickers").strip().lower()
@@ -183,8 +234,12 @@ def register_routes(app: Flask) -> None:
         profiles = []
         series = []
         performance_items = []
+        portfolio_items = []
+        portfolio_weights = []
+        portfolio_total_return = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
+        requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
         period_label = format_period_label(period)
         page_title = labels["hero_title"]
         report_heading = labels["performance_summary"]
@@ -254,26 +309,48 @@ def register_routes(app: Flask) -> None:
                 period_label = format_period_label(period)
 
             colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
-            series = [
-                build_series_payload(ticker, dataset, color=color)
-                for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
-            ]
+            if current_view == "portfolio":
+                portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                series = [
+                    build_portfolio_series_payload(
+                        aligned_datasets,
+                        portfolio_weights,
+                        theme["accent_primary"],
+                    )
+                ]
+                portfolio_total_return = series[0].normalized_returns[-1]
+                portfolio_items = [
+                    {
+                        "ticker": ticker,
+                        "company_name": profile.company_name,
+                        "logo_url": profile.logo_url,
+                        "weight": weight,
+                        "color": color,
+                    }
+                    for ticker, profile, weight, color in zip(validated_tickers, profiles, portfolio_weights, colors, strict=True)
+                ]
+            else:
+                series = [
+                    build_series_payload(ticker, dataset, color=color)
+                    for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
+                ]
             best_return = max(item.normalized_returns[-1] for item in series)
             common_start = aligned_datasets[0]["Date"].min()
             common_end = aligned_datasets[0]["Date"].max()
             display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
-            performance_items = [
-                {
-                    "ticker": item.ticker,
-                    "company_name": profile.company_name,
-                    "logo_url": profile.logo_url,
-                    "ending_return": item.normalized_returns[-1],
-                    "color": item.color,
-                    "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
-                    "is_winner": item.normalized_returns[-1] == best_return,
-                }
-                for item, profile in zip(series, profiles, strict=True)
-            ]
+            if current_view != "portfolio":
+                performance_items = [
+                    {
+                        "ticker": item.ticker,
+                        "company_name": profile.company_name,
+                        "logo_url": profile.logo_url,
+                        "ending_return": item.normalized_returns[-1],
+                        "color": item.color,
+                        "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
+                        "is_winner": item.normalized_returns[-1] == best_return,
+                    }
+                    for item, profile in zip(series, profiles, strict=True)
+                ]
             ticker_slots = validated_tickers.copy()
             record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
@@ -326,6 +403,11 @@ def register_routes(app: Flask) -> None:
 
         while len(ticker_slots) < MIN_TICKERS:
             ticker_slots.append("")
+        if current_view == "portfolio":
+            if not portfolio_weights and any(ticker_slots):
+                portfolio_weights = build_default_weights(len([ticker for ticker in ticker_slots if ticker]))
+            while len(portfolio_weights) < len(ticker_slots):
+                portfolio_weights.append(0)
 
         return render_template(
             "index.html",
@@ -342,6 +424,9 @@ def register_routes(app: Flask) -> None:
             series=series,
             profiles_json=[asdict(profile) for profile in profiles],
             performance_items=performance_items,
+            portfolio_items=portfolio_items,
+            portfolio_weights=portfolio_weights,
+            portfolio_total_return=portfolio_total_return,
             ticker_slots=ticker_slots,
             max_tickers=MAX_TICKERS,
             min_tickers=MIN_TICKERS,
@@ -375,6 +460,7 @@ def register_routes(app: Flask) -> None:
             chart_config=chart_config,
             logos=logos,
             defaults=defaults,
+            current_view_name=current_view,
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",

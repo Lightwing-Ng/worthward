@@ -52,6 +52,16 @@
                                 <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
                                 <div class="suggestions" id="ticker_{{ index }}_suggestions"></div>
                             </div>
+                            {% if current_view == "portfolio" %}
+                            <div class="portfolio-weight-field">
+                                <div class="portfolio-weight-row">
+                                    <input id="weight_{{ index }}" name="weight_{{ index }}" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
+                                    <span class="portfolio-weight-unit">%</span>
+                                </div>
+                                <input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" aria-label="{{ labels.portfolio_weight }}">
+                                <div class="portfolio-weight-tooltip field-tooltip" hidden></div>
+                            </div>
+                            {% endif %}
                             <button type="button" class="ticker-remove{% if index <= min_tickers %} is-placeholder{% endif %}" aria-label="Remove ticker" {% if index <= min_tickers %}tabindex="-1" aria-hidden="true"{% endif %}><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                         </div>
                     </div>
@@ -176,22 +186,57 @@
             </div>
             {% elif current_view == "portfolio" %}
             <div class="workspace-header">
-                <article class="report-card placeholder-card">
+                <article class="report-card">
                     <div class="report-heading-row">
                         <p class="report-heading">{{ report_heading }}</p>
+                        <div class="report-info">
+                            <button type="button" class="report-info-button" aria-label="Show portfolio details">i</button>
+                            <div class="report-info-tooltip chart-tooltip" role="tooltip">
+                                <dl class="report-info-meta">
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.interval }}</dt>
+                                        <dd>{{ interval_label }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.period }}</dt>
+                                        <dd>{{ period_label }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.range }}</dt>
+                                        <dd>{{ display_range }}</dd>
+                                    </div>
+                                    <div class="report-info-row">
+                                        <dt>{{ labels.return_mode }}</dt>
+                                        <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
                     </div>
-                    <div class="placeholder-copy">
-                        <p>{{ labels.portfolio_placeholder }}</p>
+                    <div class="portfolio-summary">
+                        <div class="portfolio-summary-main">
+                            <p class="portfolio-total-label">{{ labels.portfolio_total_return }}</p>
+                            <p id="portfolio_total_return" class="portfolio-total-value">{% if portfolio_total_return is not none %}{{ "%.2f"|format(portfolio_total_return) }}%{% else %}--{% endif %}</p>
+                        </div>
+                        <div class="portfolio-donut-block">
+                            <div id="portfolio_donut" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}"></div>
+                        </div>
                     </div>
                 </article>
             </div>
-            <div class="chart-surface placeholder-card">
+            <div class="chart-surface">
                 <div class="chart-heading-row">
                     <p class="chart-heading">{{ chart_heading }}</p>
                 </div>
+                {% if series %}
+                <div class="chart-wrap">
+                    <canvas id="returnsChart"></canvas>
+                </div>
+                {% else %}
                 <div class="placeholder-copy chart-placeholder-copy">
                     <p>{{ labels.portfolio_placeholder }}</p>
                 </div>
+                {% endif %}
             </div>
             {% elif current_view == "settings" %}
             <article class="chart-surface settings-surface">
@@ -343,11 +388,17 @@
         chart: {
             series: {{ series|tojson }},
             profiles: {{ profiles_json|tojson }}
-        }
+        },
+        portfolio: {
+            items: {{ portfolio_items|tojson }},
+            weights: {{ portfolio_weights|tojson }},
+            totalReturn: {{ portfolio_total_return|tojson }}
+        },
+        currentView: {{ current_view_name|tojson }}
     };
 </script>
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
-{% if current_view == "tickers" and series %}
+{% if (current_view == "tickers" or current_view == "portfolio") and series %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}
 </body>
