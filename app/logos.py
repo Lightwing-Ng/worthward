@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v2.5.1
+Code version: v2.6.1
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from urllib.request import Request, urlopen
 import yfinance as yf
 from flask import url_for
 
-from .storage import history_store_path_for, is_store_entry_fresh, ensure_market_store_dir, logo_store_path_for, profile_store_path_for, top_used_tickers
+from .connectivity import has_remote_market_access
+from .storage import history_store_path_for, is_store_entry_fresh, ensure_market_store_dir, list_local_tickers, logo_store_path_for, profile_store_path_for, top_used_tickers
 from .schemas import QuoteProfile
 
 
@@ -55,6 +56,8 @@ def is_known_ticker(ticker: str) -> bool:
         return False
     if history_store_path_for(normalized_ticker).exists() or profile_store_path_for(normalized_ticker).exists():
         return True
+    if not has_remote_market_access():
+        return False
 
     try:
         results = yf.Search(
@@ -104,6 +107,20 @@ def is_supported_search_result(item: dict[str, object], query: str) -> bool:
         if not head or tail not in {"A", "B", "C"}:
             return False
     return True
+
+
+def is_supported_local_symbol(symbol: str, query: str) -> bool:
+    normalized_symbol = normalize_ticker_input(symbol)
+    if not normalized_symbol.startswith(query):
+        return False
+    if "=" in normalized_symbol:
+        return False
+    if "." in normalized_symbol:
+        head, tail = normalized_symbol.split(".", 1)
+        if not head or tail not in {"A", "B", "C"}:
+            return False
+    plain_length = len(normalized_symbol.replace(".", ""))
+    return plain_length <= 5
 
 
 def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, int, str]:
@@ -169,14 +186,17 @@ def fetch_and_store_logo(
     force_refresh: bool = False,
     namespace: str = "primary",
 ) -> str | None:
-    domain = extract_domain(website)
-    if not domain:
-        return None
-
     ensure_market_store_dir()
     path = logo_store_path_for(ticker, namespace=namespace)
     if path.exists() and not force_refresh:
         return url_for("market_store_logo", filename=path.name)
+
+    if not has_remote_market_access():
+        return url_for("market_store_logo", filename=path.name) if path.exists() else None
+
+    domain = extract_domain(website)
+    if not domain:
+        return None
 
     logo_bytes = fetch_remote_logo_bytes(domain)
     if logo_bytes is None:
@@ -196,15 +216,23 @@ def fetch_quote_profile(
     ensure_market_store_dir()
     path = profile_store_path_for(ticker, namespace=namespace)
 
-    if is_store_entry_fresh(path) and not force_refresh:
+    if path.exists() and (is_store_entry_fresh(path) or not has_remote_market_access() or not force_refresh):
         payload = json.loads(path.read_text())
-        if payload.get("website"):
-            return QuoteProfile(
-                ticker=payload["ticker"],
-                company_name=payload["company_name"],
-                website=payload.get("website"),
-                logo_url=fetch_and_store_logo(payload["ticker"], payload.get("website"), namespace=namespace),
-            )
+        return QuoteProfile(
+            ticker=payload["ticker"],
+            company_name=payload["company_name"],
+            website=payload.get("website"),
+            logo_url=fetch_and_store_logo(payload["ticker"], payload.get("website"), namespace=namespace),
+        )
+
+    if not has_remote_market_access():
+        existing_logo = fetch_and_store_logo(ticker, None, namespace=namespace)
+        return QuoteProfile(
+            ticker=ticker.upper(),
+            company_name=ticker.upper(),
+            website=None,
+            logo_url=existing_logo,
+        )
 
     payload = build_quote_profile_payload(ticker)
     path.write_text(json.dumps(payload))
@@ -226,6 +254,27 @@ def _build_recent_suggestion(symbol: str) -> dict[str, str]:
     }
 
 
+def build_local_search_items(query: str) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for symbol in list_local_tickers():
+        if symbol in seen or not history_store_path_for(symbol).exists() or not is_supported_local_symbol(symbol, query):
+            continue
+        seen.add(symbol)
+        search_profile_path = profile_store_path_for(symbol, namespace="search")
+        namespace = "search" if search_profile_path.exists() else "primary"
+        profile = fetch_quote_profile(symbol, force_refresh=False, namespace=namespace)
+        items.append(
+            {
+                "symbol": symbol,
+                "name": profile.company_name or symbol,
+                "logo_url": profile.logo_url or "",
+                "source": "remote",
+            }
+        )
+    return items
+
+
 def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     ensure_market_store_dir()
     from .storage import search_store_path_for
@@ -239,12 +288,17 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
 
     path = search_store_path_for(normalized_query)
     cached_items: list[dict[str, str]] = []
-    if is_store_entry_fresh(path):
+    if path.exists():
         cached_items = json.loads(path.read_text())
 
     remote_items: list[dict[str, str]] = []
     if cached_items and all("logo_url" in item for item in cached_items):
-        remote_items = cached_items
+        remote_items = [
+            item for item in cached_items
+            if is_supported_local_symbol(item.get("symbol", ""), normalized_query)
+        ]
+    elif not has_remote_market_access():
+        remote_items = build_local_search_items(normalized_query)
     else:
         results = yf.Search(
             normalized_query,
@@ -279,6 +333,9 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         deduped_remote = {item["symbol"]: item for item in filtered}
         remote_items = sorted(deduped_remote.values(), key=lambda item: search_result_sort_key(item, normalized_query))
         path.write_text(json.dumps(remote_items))
+
+    if not remote_items and not has_remote_market_access():
+        remote_items = build_local_search_items(normalized_query)
 
     combined: list[dict[str, str]] = []
     seen: set[str] = set()

@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.1.16
+Code version: v3.1.17
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import pandas as pd
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from .comparisons import build_series_payload, slice_dataset_for_period
+from .connectivity import has_remote_market_access
 from .config import CODE_VERSION, DEFAULT_INTERVAL, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
 from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
@@ -186,6 +187,9 @@ def register_routes(app: Flask) -> None:
             record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
+
+        if not has_remote_market_access() and not error and not notice:
+            notice = "Using bundled local market_store data because remote market access is unavailable."
 
         while len(ticker_slots) < MIN_TICKERS:
             ticker_slots.append("")

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.2.0
+Code version: v3.3.1
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import yfinance as yf
 
+from .connectivity import has_remote_market_access
 from .storage import ensure_market_store_dir, history_store_path_for
 
 
@@ -48,6 +49,12 @@ def fetch_history(
     path = history_store_path_for(ticker)
     if path.exists():
         return select_price_series(pd.read_parquet(path), include_dividends)
+
+    if not has_remote_market_access():
+        raise ValueError(
+            f"Local market data for {ticker} is unavailable and remote access is blocked. "
+            "Sync the latest market_store/ directory from a connected machine first."
+        )
 
     history = yf.download(
         tickers=ticker,

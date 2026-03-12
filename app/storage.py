@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v3.3.0
+Code version: v3.4.1
 """
 
 from __future__ import annotations
@@ -59,6 +59,21 @@ def logo_store_path_for(ticker: str, namespace: str = "primary") -> Path:
 
 def search_store_path_for(query: str) -> Path:
     return SEARCH_STORE_DIR / f"{query.upper().replace('/', '_')}.json"
+
+
+def ticker_from_store_path(path: Path) -> str:
+    return path.stem.replace("_", "/").upper()
+
+
+def list_local_tickers() -> list[str]:
+    ensure_market_store_dir()
+    tickers = {
+        ticker_from_store_path(path)
+        for directory in (HISTORICAL_STORE_DIR, PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR)
+        for path in directory.glob("*")
+        if path.is_file()
+    }
+    return sorted(tickers)
 
 
 def is_store_entry_fresh(path: Path) -> bool:
