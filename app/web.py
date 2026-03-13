@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.9.0
+Code version: v3.11.1
 """
 
 from __future__ import annotations
@@ -59,6 +59,17 @@ def register_routes(app: Flask) -> None:
             return fallback
         try:
             return int(str(raw_value).strip())
+        except (TypeError, ValueError):
+            return fallback
+
+    def parse_float_value(raw_value: object, fallback: float) -> float:
+        if raw_value is None:
+            return fallback
+        normalized = str(raw_value).strip().replace(",", "")
+        if not normalized:
+            return fallback
+        try:
+            return float(normalized)
         except (TypeError, ValueError):
             return fallback
 
@@ -126,6 +137,12 @@ def register_routes(app: Flask) -> None:
             }
         )
         return build_series_payload("Portfolio", portfolio_frame, color=color)
+
+    def build_portfolio_growth_multipliers(datasets: list[pd.DataFrame]) -> list[float]:
+        return [
+            float(dataset["Close"].iloc[-1]) / float(dataset["Close"].iloc[0])
+            for dataset in datasets
+        ]
 
     def build_benchmark_series_payloads(
         reference_dates: pd.Series,
@@ -265,6 +282,7 @@ def register_routes(app: Flask) -> None:
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
+        notice_is_floating = False
         date_notice = None
         display_range = ""
         profiles = []
@@ -275,7 +293,7 @@ def register_routes(app: Flask) -> None:
         portfolio_total_return = None
         strategy_options = list_enabled_strategies()
         selected_strategy_id = request.args.get("strategy", strategy_options[0]["id"] if strategy_options else "").strip()
-        backtest_initial_capital = max(float(parse_int_value(request.args.get("initial_capital"), 10000)), 1.0)
+        backtest_initial_capital = max(parse_float_value(request.args.get("initial_capital"), 10000.0), 1.0)
         trade_backtest_result = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
@@ -323,10 +341,32 @@ def register_routes(app: Flask) -> None:
                 ticker_slots = [trade_ticker]
                 trade_dataset = fetch_history(trade_ticker, interval, include_dividends)
                 profiles = [fetch_quote_profile(trade_ticker, False)]
+                date_constraints = build_date_constraint_payload(
+                    trade_dataset,
+                    requested_start=exact_start or None,
+                    requested_end=exact_end or None,
+                )
+                if range_mode == "exact":
+                    if not date_constraints.trading_dates:
+                        raise ValueError("The selected exact range does not contain trading dates.")
+                    aligned_start = pd.to_datetime(date_constraints.adjusted_start)
+                    aligned_end = pd.to_datetime(date_constraints.adjusted_end)
+                    trade_dataset = trade_dataset[
+                        (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
+                    ].copy()
+                    if trade_dataset.empty:
+                        raise ValueError("The selected exact range does not contain trading dates.")
+                    date_notice = date_constraints.message
+                    period_label = "Exact range"
+                else:
+                    common_end_date = trade_dataset["Date"].max()
+                    trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
+                    period_label = format_period_label(period)
+                display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
                 signal_result = strategy.compute_signals(trade_dataset)
                 trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
-            else:
+            elif current_view in {"tickers", "portfolio"}:
                 if not requested_tickers:
                     raise ValueError("")
                 if len(requested_tickers) < MIN_TICKERS:
@@ -367,6 +407,7 @@ def register_routes(app: Flask) -> None:
                 colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                 if current_view == "portfolio":
                     portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                    growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
                     portfolio_series = build_portfolio_series_payload(
                         aligned_datasets,
                         portfolio_weights,
@@ -385,9 +426,17 @@ def register_routes(app: Flask) -> None:
                             "company_name": profile.company_name,
                             "logo_url": profile.logo_url,
                             "weight": weight,
+                            "growth_multiple": growth_multiple,
                             "color": color,
                         }
-                        for ticker, profile, weight, color in zip(validated_tickers, profiles[: len(validated_tickers)], portfolio_weights, colors, strict=True)
+                        for ticker, profile, weight, growth_multiple, color in zip(
+                            validated_tickers,
+                            profiles[: len(validated_tickers)],
+                            portfolio_weights,
+                            growth_multipliers,
+                            colors,
+                            strict=True,
+                        )
                     ]
                 else:
                     series = [
@@ -419,8 +468,9 @@ def register_routes(app: Flask) -> None:
         remote_market_access = has_remote_market_access()
         remote_logo_access = has_remote_logo_access()
 
-        if not remote_market_access and not error and not notice:
+        if current_view != "settings" and not remote_market_access and not error and not notice:
             notice = "Using bundled local market_store data because remote market access is unavailable."
+            notice_is_floating = True
 
         if current_view == "settings":
             settings_service_rows = [
@@ -476,6 +526,7 @@ def register_routes(app: Flask) -> None:
             "index.html",
             error=error,
             notice=notice,
+            notice_is_floating=notice_is_floating,
             date_notice=date_notice,
             interval=interval,
             period=period,
@@ -539,12 +590,13 @@ def register_routes(app: Flask) -> None:
     def email_smtp_action():
         action = request.form.get("action", "save").strip().lower()
         current_settings = load_smtp_settings()
+        mailbox = request.form.get("from_email", current_settings.from_email or current_settings.username).strip()
         updated_settings = SmtpSettings(
             host=request.form.get("host", current_settings.host).strip() or current_settings.host,
             port=max(parse_int_value(request.form.get("port"), current_settings.port), 1),
-            username=request.form.get("username", current_settings.username).strip(),
+            username=mailbox,
             password=request.form.get("password", ""),
-            from_email=request.form.get("from_email", current_settings.from_email).strip(),
+            from_email=mailbox,
             use_starttls=request.form.getlist("use_starttls")[-1] == "1" if request.form.getlist("use_starttls") else False,
         )
         if not updated_settings.password:

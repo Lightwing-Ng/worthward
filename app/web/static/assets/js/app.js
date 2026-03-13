@@ -1,12 +1,14 @@
-/* Code version: v3.11.0 */
+/* Code version: v3.14.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
 
 	const { defaults, labels, endpoints, constraints, theme } = state;
 	const isPortfolioView = state.currentView === "portfolio";
+	const isTradeMessagesView = state.currentView === "trade-messages";
 	const MIN_TICKERS = constraints?.minTickers || 2;
 	const MAX_TICKERS = constraints?.maxTickers || 5;
+	const minimumRequiredTickers = isTradeMessagesView ? 1 : MIN_TICKERS;
 	const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
 	const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
 	const $ = (selector) => document.querySelector(selector);
@@ -15,6 +17,7 @@
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
+	let isSubmittingWithOverlay = false;
 	const portfolioWeightState = {
 		clock: 0,
 		touchedAtByIndex: {},
@@ -36,6 +39,17 @@
 		tickerInput: field.querySelector('input[name^="ticker_"]'),
 		tooltip: field.querySelector('.portfolio-weight-tooltip'),
 	})).filter((item) => item.number && item.slider && item.tickerInput);
+
+	const attachNoticeHandlers = () => {
+		$$("[data-dismissible-notice]").forEach((noticeElement) => {
+			const closeButton = noticeElement.querySelector(".notice-close");
+			if (!closeButton || closeButton.dataset.bound === "1") return;
+			closeButton.dataset.bound = "1";
+			closeButton.addEventListener("click", () => {
+				noticeElement.hidden = true;
+			});
+		});
+	};
 
 	const syncTickerClearButton = (input) => {
 		const clearButton = input?.parentElement?.querySelector(".ticker-clear");
@@ -150,12 +164,12 @@
 			const suggestions = field.querySelector(".suggestions");
 			if (label) {
 				label.setAttribute("for", `ticker_${index}`);
-				label.textContent = `Ticker ${index}`;
+				label.textContent = isTradeMessagesView ? labels.trade_messages_ticker : `Ticker ${index}`;
 			}
 			if (input) {
 				input.id = `ticker_${index}`;
 				input.name = `ticker_${index}`;
-				input.required = index <= MIN_TICKERS;
+				input.required = index <= minimumRequiredTickers;
 				input.placeholder = "";
 				syncTickerClearButton(input);
 				syncTickerInputDecoration(input);
@@ -170,9 +184,9 @@
 			if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
 			const removeButton = field.querySelector(".ticker-remove");
 			if (removeButton) {
-				removeButton.classList.toggle("is-placeholder", index <= MIN_TICKERS);
-				removeButton.tabIndex = index <= MIN_TICKERS ? -1 : 0;
-				removeButton.setAttribute("aria-hidden", index <= MIN_TICKERS ? "true" : "false");
+				removeButton.classList.toggle("is-placeholder", index <= minimumRequiredTickers);
+				removeButton.tabIndex = index <= minimumRequiredTickers ? -1 : 0;
+				removeButton.setAttribute("aria-hidden", index <= minimumRequiredTickers ? "true" : "false");
 			}
 		});
 		updateAddButtonState();
@@ -615,8 +629,10 @@
 
 	const showCompareOverlay = () => {
 		showSettingsActionOverlay({
-			title: "Preparing your chart",
-			copy: "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
+			title: isTradeMessagesView ? "Running your backtest" : "Preparing your chart",
+			copy: isTradeMessagesView
+				? "Please wait while the app checks the selected market data and computes the backtest result."
+				: "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
 			iconClass: "icon-overlay-processing",
 		});
 	};
@@ -710,7 +726,7 @@
 			: [];
 		const container = $("#ticker_fields");
 		if (!container) return values;
-		while (getTickerFields().length > Math.max(MIN_TICKERS, values.length)) {
+		while (getTickerFields().length > Math.max(minimumRequiredTickers, values.length)) {
 			getTickerFields()[getTickerFields().length - 1].remove();
 		}
 		getTickerInputs().forEach((input, index) => {
@@ -721,7 +737,7 @@
 				syncPortfolioWeightPair(entry, portfolioEntries[index]?.weight || 0);
 			});
 		}
-		while (getTickerFields().length < Math.max(MIN_TICKERS, values.length)) {
+		while (getTickerFields().length < Math.max(minimumRequiredTickers, values.length)) {
 			addTickerField(values[getTickerFields().length] || "");
 		}
 		reindexTickerFields();
@@ -739,6 +755,20 @@
 	const exactEndInput = $("#exact_end");
 	const includeDividendsInput = $("#include_dividends");
 	const dateAdjustTooltip = $("#date_adjust_tooltip");
+	const tradeCapitalField = $(".trade-capital-field");
+	const tradeCapitalInput = $("#trade_initial_capital");
+	const tradeCapitalSlider = $("#trade_initial_capital_slider");
+
+	const clampTradeCapital = (value) => Math.min(1000000, Math.max(1, value || 1));
+	const parseTradeCapitalValue = (rawValue) => {
+		const normalized = String(rawValue || "").replace(/,/g, "").trim();
+		const parsed = Number.parseFloat(normalized);
+		return Number.isFinite(parsed) ? clampTradeCapital(parsed) : 10000;
+	};
+	const formatTradeCapitalValue = (value) => new Intl.NumberFormat("en-US", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(clampTradeCapital(value));
 
 	const updateRangePanels = () => {
 		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
@@ -754,7 +784,7 @@
 	const canAutoSubmit = () => {
 		if (!hasInitialResult || !form) return false;
 		const values = compactTickerInputs();
-		if (values.length < MIN_TICKERS) return false;
+		if (values.length < minimumRequiredTickers) return false;
 		if (new Set(values).size !== values.length) return false;
 		if (isPortfolioView) {
 			const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
@@ -763,7 +793,7 @@
 		validateAllTickerInputs();
 		if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
 		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
-		if (rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
+		if (rangeModeInputs.length && rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
 		return true;
 	};
 
@@ -784,11 +814,11 @@
 	};
 
 	const syncDateConstraints = async () => {
-		if (!exactStartInput || !exactEndInput || !includeDividendsInput) return;
+		if (!exactStartInput || !exactEndInput) return;
 		const tickers = getFilledTickers();
-		if (tickers.length < MIN_TICKERS || new Set(tickers).size !== tickers.length) return;
+		if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
 		const params = new URLSearchParams({
-			include_dividends: includeDividendsInput.checked ? "1" : "0",
+			include_dividends: includeDividendsInput?.checked ? "1" : "0",
 			exact_start: exactStartInput.value,
 			exact_end: exactEndInput.value,
 		});
@@ -817,6 +847,7 @@
 	};
 
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
+	attachNoticeHandlers();
 	attachRemoveHandlers();
 	attachTickerClearHandlers();
 	attachPortfolioWeightHandlers();
@@ -858,11 +889,45 @@
 		scheduleAutoSubmit();
 	});
 
+	if (isTradeMessagesView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
+		const openTradeCapitalSlider = () => tradeCapitalField.classList.add("is-open");
+		const closeTradeCapitalSlider = () => window.setTimeout(() => {
+			if (tradeCapitalField.matches(":focus-within")) return;
+			tradeCapitalField.classList.remove("is-open");
+			tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
+		}, 80);
+		const syncTradeCapitalControls = (value) => {
+			const normalized = clampTradeCapital(value);
+			tradeCapitalInput.value = String(normalized);
+			tradeCapitalSlider.value = String(Math.round(normalized));
+		};
+		tradeCapitalInput.addEventListener("focus", () => {
+			tradeCapitalInput.value = String(parseTradeCapitalValue(tradeCapitalInput.value));
+			openTradeCapitalSlider();
+		});
+		tradeCapitalInput.addEventListener("click", openTradeCapitalSlider);
+		tradeCapitalInput.addEventListener("input", () => {
+			syncTradeCapitalControls(parseTradeCapitalValue(tradeCapitalInput.value));
+		});
+		tradeCapitalInput.addEventListener("blur", () => {
+			tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
+		});
+		tradeCapitalSlider.addEventListener("focus", openTradeCapitalSlider);
+		tradeCapitalSlider.addEventListener("input", () => {
+			const value = clampTradeCapital(Number.parseFloat(tradeCapitalSlider.value) || 0);
+			tradeCapitalInput.value = formatTradeCapitalValue(value);
+		});
+		tradeCapitalField.addEventListener("focusout", closeTradeCapitalSlider);
+		tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
+		tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
+	}
+
 	if (form) {
 		form.addEventListener("submit", (event) => {
+			if (isSubmittingWithOverlay) return;
 			const values = compactTickerInputs();
 			validateAllTickerInputs();
-			if (values.length < MIN_TICKERS) {
+			if (values.length < minimumRequiredTickers) {
 				event.preventDefault();
 				getTickerInputs()[0]?.reportValidity();
 				return;
@@ -879,7 +944,12 @@
 					return;
 				}
 			}
+			event.preventDefault();
 			showCompareOverlay();
+			isSubmittingWithOverlay = true;
+			window.requestAnimationFrame(() => {
+				form.submit();
+			});
 		});
 	}
 

@@ -3,7 +3,7 @@
   "strategies": [
     {
       "id": "buy-and-hold",
-      "name": "Buy and Hold",
+      "name": "Buy and hold",
       "module": "strategies.algorithms.buy_and_hold",
       "class_name": "BuyAndHoldStrategy",
       "enabled": true,

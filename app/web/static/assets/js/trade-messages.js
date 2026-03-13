@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.2.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || state.currentView !== "trade-messages" || !window.Chart || !state.tradeBacktest) return;
@@ -14,13 +14,26 @@
 	const buyMarkers = tradeBacktest.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
 	const sellMarkers = tradeBacktest.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
 
+	const axisLineColor = "rgba(160, 167, 178, 0.85)";
+	const fixedYAxisWidth = 52;
 	const commonOptions = {
 		responsive: true,
 		maintainAspectRatio: false,
 		plugins: { legend: { display: false } },
 		scales: {
-			x: { grid: { display: false }, ticks: { color: theme.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
-			y: { grid: { color: "rgba(148, 163, 184, 0.12)" }, ticks: { color: theme.muted } },
+			x: {
+				grid: { display: false },
+				border: { color: axisLineColor, width: 1 },
+				ticks: { color: theme.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 6, font: { weight: "700" } },
+			},
+			y: {
+				grid: { display: false, drawTicks: false },
+				border: { color: axisLineColor, width: 1 },
+				afterFit: (scale) => {
+					scale.width = fixedYAxisWidth;
+				},
+				ticks: { color: theme.muted, display: true, padding: 8 },
+			},
 		},
 	};
 
@@ -34,7 +47,16 @@
 				{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#dc2626" },
 			],
 		},
-		options: commonOptions,
+		options: {
+			...commonOptions,
+			scales: {
+				...commonOptions.scales,
+				x: {
+					...commonOptions.scales.x,
+					display: false,
+				},
+			},
+		},
 	});
 
 	new Chart(equityCanvas, {

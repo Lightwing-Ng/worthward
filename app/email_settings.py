@@ -1,7 +1,7 @@
 """
 SMTP settings persistence and connection checks.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -57,23 +57,25 @@ def save_smtp_settings(settings: SmtpSettings) -> None:
 
 
 def sanitize_smtp_settings_for_view(settings: SmtpSettings) -> dict[str, object]:
+    mailbox = settings.from_email or settings.username
     return {
         "host": settings.host,
         "port": settings.port,
         "username": settings.username,
-        "from_email": settings.from_email,
+        "from_email": mailbox,
         "use_starttls": settings.use_starttls,
         "has_password": bool(settings.password),
     }
 
 
 def test_smtp_connection(settings: SmtpSettings, timeout_seconds: float = 12.0) -> tuple[bool, str]:
+    mailbox = settings.from_email.strip() or settings.username.strip()
     if not settings.host.strip():
         return False, "SMTP host is required."
     if not settings.port:
         return False, "SMTP port is required."
-    if not settings.username.strip():
-        return False, "SMTP username is required."
+    if not mailbox:
+        return False, "Outlook email is required."
     if not settings.password:
         return False, "SMTP password is required."
 
@@ -83,7 +85,7 @@ def test_smtp_connection(settings: SmtpSettings, timeout_seconds: float = 12.0) 
             if settings.use_starttls:
                 client.starttls(context=ssl.create_default_context())
                 client.ehlo()
-            client.login(settings.username, settings.password)
+            client.login(mailbox, settings.password)
     except smtplib.SMTPAuthenticationError:
         return False, "SMTP authentication failed. Check the Outlook address, password, and whether SMTP AUTH is enabled."
     except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, socket.timeout, TimeoutError):

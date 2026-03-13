@@ -1,7 +1,7 @@
 """
 Buy-and-hold baseline strategy.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from ..base import BaseStrategy, StrategySignalResult
 
 class BuyAndHoldStrategy(BaseStrategy):
     strategy_id = "buy-and-hold"
-    strategy_name = "Buy and Hold"
+    strategy_name = "Buy and hold"
 
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
         frame = dataset.copy()

@@ -1,12 +1,15 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || state.currentView !== "portfolio") return;
 
-	const donut = document.getElementById("portfolio_donut");
-	const orbit = document.getElementById("portfolio_donut_orbit");
-	const logoLayer = document.getElementById("portfolio_donut_logo_layer");
-	if (!donut || !orbit || !logoLayer) return;
+	const startDonut = document.getElementById("portfolio_donut_start");
+	const startOrbit = document.getElementById("portfolio_donut_start_orbit");
+	const startLogoLayer = document.getElementById("portfolio_donut_start_logo_layer");
+	const endDonut = document.getElementById("portfolio_donut_end");
+	const endOrbit = document.getElementById("portfolio_donut_end_orbit");
+	const endLogoLayer = document.getElementById("portfolio_donut_end_logo_layer");
+	if (!startDonut || !startOrbit || !startLogoLayer || !endDonut || !endOrbit || !endLogoLayer) return;
 
 	const buildGradientColors = (count) => {
 		if (count <= 1) return [state.theme?.accent_primary || "#0055cc"];
@@ -27,7 +30,9 @@
 		});
 	};
 
-	const getPortfolioLogoUrl = (ticker) => state.portfolio?.items?.find((item) => item.ticker === ticker)?.logo_url || "";
+	const getPortfolioItem = (ticker) => state.portfolio?.items?.find((item) => item.ticker === ticker) || null;
+
+	const getPortfolioLogoUrl = (ticker) => getPortfolioItem(ticker)?.logo_url || "";
 
 	const getPortfolioEntriesFromDom = () => Array.from(document.querySelectorAll(".ticker-field"))
 		.map((field, index) => {
@@ -86,7 +91,7 @@
 		return placedItems;
 	};
 
-	const renderPortfolioPreview = (entries = getPortfolioEntriesFromDom()) => {
+	const renderDonut = ({ donut, orbit, logoLayer, entries }) => {
 		if (!entries.length) {
 			donut.style.setProperty("--portfolio-donut-fill", "rgba(148, 163, 184, 0.16)");
 			logoLayer.innerHTML = "";
@@ -132,6 +137,37 @@
 			const point = angleToPoint(item.placedAngle, orbitCenter, logoOrbitRadius);
 			return `<img class="portfolio-donut-logo" src="${item.logoUrl}" alt="${item.ticker} logo" style="left:${point.x.toFixed(2)}px; top:${point.y.toFixed(2)}px;">`;
 		}).join("");
+	};
+
+	const buildEndingEntries = (entries) => {
+		const endingValues = entries.map((entry) => {
+			const growthMultiple = getPortfolioItem(entry.ticker)?.growth_multiple || 1;
+			return {
+				...entry,
+				endingValue: entry.weight * growthMultiple,
+			};
+		});
+		const totalEndingValue = endingValues.reduce((sum, entry) => sum + entry.endingValue, 0);
+		if (!totalEndingValue) return entries;
+		return endingValues.map((entry) => ({
+			...entry,
+			weight: (entry.endingValue / totalEndingValue) * 100,
+		}));
+	};
+
+	const renderPortfolioPreview = (entries = getPortfolioEntriesFromDom()) => {
+		renderDonut({
+			donut: startDonut,
+			orbit: startOrbit,
+			logoLayer: startLogoLayer,
+			entries,
+		});
+		renderDonut({
+			donut: endDonut,
+			orbit: endOrbit,
+			logoLayer: endLogoLayer,
+			entries: buildEndingEntries(entries),
+		});
 	};
 
 	window.addEventListener("antigravity:portfolio-preview", (event) => {
