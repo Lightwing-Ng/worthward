@@ -1,0 +1,24 @@
+{
+  "version": "v1.0.0",
+  "strategies": [
+    {
+      "id": "buy-and-hold",
+      "name": "Buy and Hold",
+      "module": "strategies.algorithms.buy_and_hold",
+      "class_name": "BuyAndHoldStrategy",
+      "enabled": true,
+      "category": "baseline",
+      "description": "Baseline strategy that buys at the first available bar and exits at the last available bar.",
+      "supports": {
+        "single_ticker": true,
+        "multi_ticker": false,
+        "long_only": true,
+        "short": false
+      },
+      "default_params": {},
+      "ui": {
+        "display_order": 10
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-/* Code version: v3.10.0 */
+/* Code version: v3.11.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -41,6 +41,40 @@
 		const clearButton = input?.parentElement?.querySelector(".ticker-clear");
 		if (!clearButton || !input) return;
 		clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
+	};
+
+	const syncTickerInputDecoration = (input, suggestion = null) => {
+		const control = input?.closest(".ticker-input-control");
+		if (!control || !input) return;
+		const logo = control.querySelector(".ticker-input-logo");
+		const placeholder = control.querySelector(".ticker-logo-placeholder");
+		const value = input.value.trim();
+		const hasTickerLikeValue = Boolean(value);
+		const tickerValue = suggestion?.symbol || input.dataset.symbol || value.toUpperCase();
+		const profileLogoUrl = state.chart?.profiles?.find((item) => item.ticker === tickerValue)?.logo_url || "";
+		const logoUrl = suggestion?.logo_url || input.dataset.logoUrl || profileLogoUrl || "";
+		control.classList.toggle("has-value", hasTickerLikeValue);
+		control.classList.toggle("has-logo", Boolean(logoUrl));
+		if (logo) {
+			if (logoUrl) {
+				logo.src = logoUrl;
+				logo.alt = `${tickerValue} logo`;
+				logo.hidden = false;
+			} else {
+				logo.removeAttribute("src");
+				logo.alt = "";
+				logo.hidden = true;
+			}
+		}
+		if (placeholder) placeholder.hidden = Boolean(logoUrl);
+		if (suggestion) {
+			input.dataset.logoUrl = suggestion.logo_url || "";
+			input.dataset.symbol = suggestion.symbol || "";
+		}
+		if (!hasTickerLikeValue) {
+			input.dataset.logoUrl = "";
+			input.dataset.symbol = "";
+		}
 	};
 
 	const hidePortfolioWeightTooltips = () => {
@@ -124,6 +158,7 @@
 				input.required = index <= MIN_TICKERS;
 				input.placeholder = "";
 				syncTickerClearButton(input);
+				syncTickerInputDecoration(input);
 			}
 			const weightInput = field.querySelector(".portfolio-weight-input");
 			const weightSlider = field.querySelector(".portfolio-weight-slider");
@@ -321,7 +356,8 @@
 	};
 
 	const validateTickerInput = (input) => {
-		const value = sanitizeTicker(input.value.trim());
+		const rawValue = input.value.trim();
+		const value = sanitizeTicker(rawValue);
 		input.value = value;
 		const duplicateTooltip = input.parentElement.querySelector(".field-tooltip-duplicate");
 		const unknownTooltip = input.parentElement.querySelector(".field-tooltip-invalid");
@@ -334,6 +370,7 @@
 		const shouldFlag = isDuplicate || isMalformed || isUnknown;
 		input.classList.toggle("is-invalid", shouldFlag);
 		syncTickerClearButton(input);
+		syncTickerInputDecoration(input);
 		if (duplicateTooltip) duplicateTooltip.hidden = !isDuplicate;
 		if (unknownTooltip) unknownTooltip.hidden = !isUnknown;
 		if (isMalformed) {
@@ -390,6 +427,17 @@
 				closePanel();
 			}
 		};
+		const applySuggestion = (item) => {
+			input.value = item.symbol;
+			input.dataset.unknown = "";
+			syncTickerInputDecoration(input, item);
+			validateAllTickerInputs();
+			closePanel();
+			input.focus();
+			syncDateConstraints();
+			scheduleAutoSubmit(120);
+		};
+
 		const renderItems = (items) => {
 			const panel = getPanel();
 			if (!panel) return;
@@ -412,9 +460,12 @@
 					<div class="suggestion-group">
 						<div class="suggestion-group-label">${group.title}</div>
 						${entries.map((item) => `
-							<button type="button" class="suggestion-item" data-symbol="${item.symbol}">
+							<button type="button" class="suggestion-item" data-symbol="${item.symbol}" data-logo-url="${item.logo_url || ""}" data-name="${item.name}">
 								<span class="suggestion-row">
-									${item.logo_url ? `<img class="suggestion-logo" src="${item.logo_url}" alt="${item.symbol} logo">` : ""}
+									<span class="suggestion-logo-slot">
+										<span class="suggestion-logo-placeholder"></span>
+										${item.logo_url ? `<img class="suggestion-logo" src="${item.logo_url}" alt="${item.symbol} logo">` : ""}
+									</span>
 									<span class="suggestion-copy">
 										<span class="suggestion-symbol">${item.symbol}</span>
 										<span class="suggestion-name">${item.name}</span>
@@ -433,18 +484,22 @@
 					syncActiveSuggestion();
 				});
 				button.addEventListener("click", () => {
-					input.value = button.dataset.symbol;
-					validateAllTickerInputs();
-					closePanel();
-					input.focus();
-					syncDateConstraints();
+					applySuggestion({
+						symbol: button.dataset.symbol || "",
+						logo_url: button.dataset.logoUrl || "",
+						name: button.dataset.name || button.dataset.symbol || "",
+					});
 				});
 			});
 		};
 
 		input.addEventListener("input", async () => {
+			input.dataset.logoUrl = "";
+			input.dataset.symbol = "";
+			syncTickerInputDecoration(input);
+			const rawQuery = input.value.trim();
 			const query = validateTickerInput(input);
-			if (!query) {
+			if (!rawQuery) {
 				setUnknown(false);
 				await showRecentItems();
 				return;
@@ -452,7 +507,7 @@
 			if (controller) controller.abort();
 			controller = new AbortController();
 			try {
-				const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+				const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(rawQuery)}`, { signal: controller.signal });
 				if (!response.ok) return closePanel();
 				const payload = await response.json();
 				if (!payload.length) {
@@ -520,6 +575,9 @@
 				if (!input) return;
 				input.value = "";
 				input.dataset.unknown = "";
+				input.dataset.logoUrl = "";
+				input.dataset.symbol = "";
+				syncTickerInputDecoration(input);
 				validateAllTickerInputs();
 				syncDateConstraints();
 				scheduleAutoSubmit(120);
@@ -599,7 +657,11 @@
 				<div class="ticker-input-main">
 					<label for="ticker_${index}">Ticker ${index}</label>
 					<div class="ticker-input-control">
-						<input id="ticker_${index}" name="ticker_${index}" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
+						<span class="ticker-leading-slot" aria-hidden="true">
+							<span class="ticker-logo-placeholder"></span>
+							<img class="ticker-input-logo" alt="">
+						</span>
+						<input id="ticker_${index}" name="ticker_${index}" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
 						<button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 					</div>
 					<div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>

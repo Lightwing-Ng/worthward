@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v2.6.1
+Code version: v2.7.0
 """
 
 from __future__ import annotations
@@ -87,12 +87,30 @@ def is_known_ticker(ticker: str) -> bool:
     return bool(info.get("longName") or info.get("shortName") or info.get("symbol"))
 
 
+def normalize_search_text(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+def search_text_matches(query: str, symbol: str, company_name: str) -> bool:
+    normalized_query = normalize_search_text(query)
+    normalized_symbol = normalize_search_text(symbol)
+    normalized_name = normalize_search_text(company_name)
+    if not normalized_query:
+        return True
+    if normalized_symbol.startswith(normalized_query):
+        return True
+    if normalized_query in normalized_name:
+        return True
+    return False
+
+
 def is_supported_search_result(item: dict[str, object], query: str) -> bool:
     symbol = str(item.get("symbol", "")).upper()
     quote_type = str(item.get("quoteType", "")).upper()
     exchange = str(item.get("exchange", "")).upper()
+    company_name = str(item.get("longname") or item.get("shortname") or symbol)
 
-    if not symbol.startswith(query):
+    if not search_text_matches(query, symbol, company_name):
         return False
     if quote_type not in VALID_QUOTE_TYPES:
         return False
@@ -109,9 +127,10 @@ def is_supported_search_result(item: dict[str, object], query: str) -> bool:
     return True
 
 
-def is_supported_local_symbol(symbol: str, query: str) -> bool:
+def is_supported_local_symbol(symbol: str, query: str, company_name: str | None = None) -> bool:
     normalized_symbol = normalize_ticker_input(symbol)
-    if not normalized_symbol.startswith(query):
+    display_name = company_name or normalized_symbol
+    if not search_text_matches(query, normalized_symbol, display_name):
         return False
     if "=" in normalized_symbol:
         return False
@@ -123,12 +142,17 @@ def is_supported_local_symbol(symbol: str, query: str) -> bool:
     return plain_length <= 5
 
 
-def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, int, str]:
+def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, int, int, str]:
     symbol = item["symbol"]
-    is_exact = 0 if symbol == query else 1
-    is_plain_symbol = 0 if "." not in symbol else 1
+    company_name = item.get("name", symbol)
+    normalized_query = normalize_search_text(query)
+    normalized_symbol = normalize_search_text(symbol)
+    normalized_name = normalize_search_text(company_name)
+    is_symbol_exact = 0 if normalized_symbol == normalized_query else 1
+    is_symbol_prefix = 0 if normalized_symbol.startswith(normalized_query) else 1
+    is_name_match = 0 if normalized_query and normalized_query in normalized_name else 1
     is_etf = 1 if item.get("asset_type") == "ETF" else 0
-    return (is_exact, is_plain_symbol, is_etf, symbol)
+    return (is_symbol_exact, is_symbol_prefix, is_name_match, is_etf, symbol)
 
 
 def resolve_website(ticker: str, company_name: str, website: str | None) -> str | None:
@@ -258,12 +282,14 @@ def build_local_search_items(query: str) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     seen: set[str] = set()
     for symbol in list_local_tickers():
-        if symbol in seen or not history_store_path_for(symbol).exists() or not is_supported_local_symbol(symbol, query):
+        if symbol in seen or not history_store_path_for(symbol).exists():
             continue
-        seen.add(symbol)
         search_profile_path = profile_store_path_for(symbol, namespace="search")
         namespace = "search" if search_profile_path.exists() else "primary"
         profile = fetch_quote_profile(symbol, force_refresh=False, namespace=namespace)
+        if not is_supported_local_symbol(symbol, query, profile.company_name):
+            continue
+        seen.add(symbol)
         items.append(
             {
                 "symbol": symbol,

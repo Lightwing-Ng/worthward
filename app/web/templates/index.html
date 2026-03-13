@@ -78,7 +78,7 @@
                 <h1>{{ page_title }}</h1>
             </section>
 
-            {% if current_view != "settings" %}
+            {% if current_view == "tickers" or current_view == "portfolio" %}
             <form class="controls" method="get">
                 <input type="hidden" name="view" value="{{ current_view }}">
                 <div id="ticker_fields">
@@ -88,7 +88,11 @@
                             <div class="ticker-input-main">
                                 <label for="ticker_{{ index }}">Ticker {{ index }}</label>
                                 <div class="ticker-input-control">
-                                    <input id="ticker_{{ index }}" name="ticker_{{ index }}" value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" pattern="[A-Za-z0-9.-]{1,15}" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                                    <span class="ticker-leading-slot" aria-hidden="true">
+                                        <span class="ticker-logo-placeholder"></span>
+                                        <img class="ticker-input-logo" alt="">
+                                    </span>
+                                    <input id="ticker_{{ index }}" name="ticker_{{ index }}" value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
                                     <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                                 </div>
                                 <div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
@@ -156,10 +160,47 @@
                     <button id="submit" type="submit">{{ submit_label }}</button>
                 </div>
             </form>
+            {% elif current_view == "trade-messages" %}
+            <form class="controls" method="get">
+                <input type="hidden" name="view" value="trade-messages">
+                <div class="field ticker-field" data-index="1">
+                    <div class="ticker-input-row">
+                        <div class="ticker-input-main">
+                            <label for="ticker_1">{{ labels.trade_messages_ticker }}</label>
+                            <div class="ticker-input-control">
+                                <span class="ticker-leading-slot" aria-hidden="true">
+                                    <span class="ticker-logo-placeholder"></span>
+                                    <img class="ticker-input-logo" alt="">
+                                </span>
+                                <input id="ticker_1" name="ticker_1" value="{{ ticker_slots[0] if ticker_slots else '' }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as NVDA or MSFT." required>
+                                <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                            </div>
+                            <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                            <div class="suggestions" id="ticker_1_suggestions"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
+                    <select id="trade_strategy" name="strategy">
+                        {% for strategy in strategy_options %}
+                        <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
+                    <input id="trade_initial_capital" name="initial_capital" type="number" min="1" step="1" value="{{ backtest_initial_capital|int }}" inputmode="numeric">
+                </div>
+                <div class="field">
+                    <button id="submit" type="submit">{{ labels.trade_messages_backtest }}</button>
+                </div>
+            </form>
             {% else %}
             <nav class="settings-nav" aria-label="Settings sections">
                 <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
                 <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">{{ labels.network_self_check }}</a>
+                <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item{% if settings_section == 'email-smtp' %} is-active{% endif %}">{{ labels.email_smtp }}</a>
                 <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item{% if settings_section == 'local-market-store' %} is-active{% endif %}">{{ labels.local_market_store }}</a>
             </nav>
             {% endif %}
@@ -222,6 +263,51 @@
                 </article>
             </div>
             {{ render_chart_surface(chart_heading, series|length > 0, labels.portfolio_placeholder) }}
+            {% elif current_view == "trade-messages" %}
+            <article class="chart-surface trade-messages-surface">
+                <div class="trade-messages-layout">
+                    <section class="trade-pane trade-pane-stream">
+                        <div class="chart-heading-row trade-pane-heading-row">
+                            <p class="chart-heading">{{ labels.trade_messages_metrics }}</p>
+                        </div>
+                        <div class="trade-pane-body">
+                            {% if trade_backtest_result %}
+                            <div class="trade-metrics-grid">
+                                <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><strong class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</strong></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><strong class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</strong></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><strong class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</strong></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><strong class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</strong></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><strong class="trade-metric-value">{{ trade_backtest_result.summary.trade_count }}</strong></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><strong class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</strong></div>
+                            </div>
+                            {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.trade_messages_no_result }}</p>
+                            {% endif %}
+                        </div>
+                    </section>
+                    <section class="trade-pane trade-pane-detail">
+                        <div class="chart-heading-row trade-pane-heading-row">
+                            <p class="chart-heading">{{ labels.trade_messages_chart }}</p>
+                        </div>
+                        <div class="trade-pane-body trade-pane-body-chart">
+                            {% if trade_backtest_result %}
+                            <div class="trade-chart-stack">
+                                <div class="trade-chart-panel">
+                                    <p class="trade-chart-caption">Daily close with buy or sell markers</p>
+                                    <canvas id="tradePriceChart"></canvas>
+                                </div>
+                                <div class="trade-chart-panel trade-chart-panel-equity">
+                                    <p class="trade-chart-caption">Equity curve</p>
+                                    <canvas id="tradeEquityChart"></canvas>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.trade_messages_detail_placeholder }}</p>
+                            {% endif %}
+                        </div>
+                    </section>
+                </div>
+            </article>
             {% elif current_view == "settings" %}
             <article class="chart-surface settings-surface">
                 <div class="chart-heading-row">
@@ -253,7 +339,50 @@
                         </div>
                         {% endfor %}
                     </div>
-                                    {% elif settings_section == "local-market-store" %}
+                    {% elif settings_section == "email-smtp" %}
+                    <p class="settings-summary">{{ labels.email_smtp_summary }}</p>
+                    <form method="post" action="/settings/email-smtp/action" class="settings-stack-form">
+                        <div class="settings-form-grid">
+                            <div class="field">
+                                <label for="smtp_host">{{ labels.email_smtp_host }}</label>
+                                <input id="smtp_host" name="host" type="text" value="{{ smtp_settings.host }}" placeholder="smtp.office365.com">
+                            </div>
+                            <div class="field">
+                                <label for="smtp_port">{{ labels.email_smtp_port }}</label>
+                                <input id="smtp_port" name="port" type="number" min="1" max="65535" value="{{ smtp_settings.port }}" inputmode="numeric">
+                            </div>
+                            <div class="field">
+                                <label for="smtp_username">{{ labels.email_smtp_username }}</label>
+                                <input id="smtp_username" name="username" type="email" value="{{ smtp_settings.username }}" autocomplete="username email" placeholder="your-name@example.invalid">
+                            </div>
+                            <div class="field">
+                                <label for="smtp_from_email">{{ labels.email_smtp_from }}</label>
+                                <input id="smtp_from_email" name="from_email" type="email" value="{{ smtp_settings.from_email }}" autocomplete="email" placeholder="your-name@example.invalid">
+                            </div>
+                            <div class="field settings-field-span-full">
+                                <label for="smtp_password">{{ labels.email_smtp_password }}</label>
+                                <input id="smtp_password" name="password" type="password" value="" autocomplete="current-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}App password or mailbox password{% endif %}">
+                            </div>
+                        </div>
+                        <div class="field-checkbox field-switch settings-field-span-full">
+                            <input type="hidden" name="use_starttls" value="0">
+                            <label class="switch-row" for="smtp_use_starttls">
+                                <span class="switch-label">{{ labels.email_smtp_starttls }}</span>
+                                <span class="ios-switch-shell">
+                                    <input id="smtp_use_starttls" name="use_starttls" type="checkbox" value="1" {% if smtp_settings.use_starttls %}checked{% endif %}>
+                                    <span class="ios-switch-slider" aria-hidden="true"></span>
+                                </span>
+                            </label>
+                        </div>
+                        {% if smtp_settings.has_password %}
+                        <div class="field-tooltip">{{ labels.email_smtp_password_saved }}</div>
+                        {% endif %}
+                        <div class="settings-form-actions">
+                            <button type="submit" name="action" value="save" class="secondary-button settings-inline-button">{{ labels.email_smtp_save }}</button>
+                            <button type="submit" name="action" value="test" class="settings-inline-button">{{ labels.email_smtp_test }}</button>
+                        </div>
+                    </form>
+                    {% elif settings_section == "local-market-store" %}
                     <p class="settings-summary">{{ labels.local_store_summary }}</p>
                     <div class="settings-table-wrap">
                         <table class="settings-table">
@@ -344,6 +473,10 @@
             <span class="icon icon-dock-portfolio" aria-hidden="true"></span>
             <span class="sr-only">{{ labels.dock_portfolio }}</span>
         </a>
+        <a href="{{ dock_urls['trade-messages'] }}" class="sidebar-dock-item{% if current_view == 'trade-messages' %} is-active{% endif %}" aria-current="{% if current_view == 'trade-messages' %}page{% endif %}" aria-label="{{ labels.dock_trade_messages }}" data-tooltip="{{ labels.dock_trade_messages }}">
+            <span class="icon icon-dock-trade-messages" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_trade_messages }}</span>
+        </a>
         <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
             <span class="icon icon-dock-settings" aria-hidden="true"></span>
             <span class="sr-only">{{ labels.dock_settings }}</span>
@@ -378,6 +511,7 @@
             weights: {{ portfolio_weights|tojson }},
             totalReturn: {{ portfolio_total_return|tojson }}
         },
+        tradeBacktest: {{ trade_backtest_result|tojson }},
         currentView: {{ current_view_name|tojson }}
     };
 </script>
@@ -387,6 +521,9 @@
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
 {% if (current_view == "tickers" or current_view == "portfolio") and series %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
+{% endif %}
+{% if current_view == "trade-messages" and trade_backtest_result %}
+<script src="{{ url_for('static', filename='assets/js/trade-messages.js', v=version) }}"></script>
 {% endif %}
 </body>
 </html>
