@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.6.1 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || state.currentView !== "trade-messages" || !window.Chart || !state.tradeBacktest) return;
@@ -200,7 +200,14 @@
 		data: {
 			labels,
 			datasets: [
-				{ label: "Close", data: close, borderColor: theme.accent_primary, borderWidth: 2, pointRadius: 0, tension: 0.18 },
+				{
+					label: "Close",
+					data: close,
+					borderColor: theme.accent_primary,
+					borderWidth: 2.5,
+					pointRadius: 0,
+					tension: 0.18,
+				},
 				{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#16a34a" },
 				{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#dc2626" },
 			],
@@ -226,7 +233,7 @@
 				{
 					label: "Equity",
 					data: equity,
-					borderWidth: 2,
+					borderWidth: 2.5,
 					pointRadius: 0,
 					tension: 0.18,
 					segment: {

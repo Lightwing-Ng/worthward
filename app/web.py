@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.13.0
+Code version: v3.14.0
 """
 
 from __future__ import annotations
@@ -278,7 +278,22 @@ def register_routes(app: Flask) -> None:
         exact_start = request.args.get("exact_start", "").strip()
         exact_end = request.args.get("exact_end", "").strip()
         interval = DEFAULT_INTERVAL
-        include_dividends = request.args.getlist("include_dividends")[-1] == "1" if request.args.getlist("include_dividends") else False
+        include_dividends_requested = bool(request.args.getlist("include_dividends"))
+        include_dividends = request.args.getlist("include_dividends")[-1] == "1" if include_dividends_requested else False
+
+        if current_view == "tickers" and not requested_tickers:
+            requested_tickers = [
+                normalize_ticker_input(defaults.get("ticker_a", DEFAULT_TICKERS[0])),
+                normalize_ticker_input(defaults.get("ticker_b", DEFAULT_TICKERS[1])),
+            ]
+            include_dividends = True
+        elif current_view == "portfolio" and not requested_tickers:
+            requested_tickers = [
+                normalize_ticker_input(value)
+                for value in defaults.get("portfolio_tickers", ["NVDA", "AAPL", "QQQ"])
+                if normalize_ticker_input(value)
+            ][:MAX_TICKERS]
+            include_dividends = True
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
@@ -299,6 +314,13 @@ def register_routes(app: Flask) -> None:
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
+        if current_view == "portfolio" and not request.args.get("weight_1") and not any(
+            key.startswith("weight_") for key in request.args.keys()
+        ):
+            requested_weights = [
+                min(max(parse_int_value(value, 0), 0), 100)
+                for value in defaults.get("portfolio_weights", [25, 25, 50])
+            ][:max(len(requested_tickers), MIN_TICKERS)]
         period_label = format_period_label(period)
         page_title = labels["hero_title"]
         report_heading = labels["performance_summary"]

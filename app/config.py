@@ -11,7 +11,7 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MARKET_STORE_DIR = BASE_DIR / "market_store"
-DEFAULT_TICKERS = ("QQQ", "JEPQ")
+DEFAULT_TICKERS = ("QQQ", "SPY")
 DEFAULT_PERIOD = "1y"
 DEFAULT_INTERVAL = "1d"
 SUPPORTED_PERIODS = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max")

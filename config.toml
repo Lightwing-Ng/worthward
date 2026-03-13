@@ -13,7 +13,9 @@ directory = "market_store"
 
 [defaults]
 ticker_a = "QQQ"
-ticker_b = "JEPQ"
+ticker_b = "SPY"
+portfolio_tickers = ["NVDA", "AAPL", "QQQ"]
+portfolio_weights = [25, 25, 50]
 period = "1y"
 interval = "1d"
 range_mode = "period"
@@ -36,7 +38,7 @@ include_dividends = "Include cash dividends"
 update_chart = "Compare"
 compute = "Compute"
 performance_summary = "Performance summary"
-chart_summary = "Return chart"
+chart_summary = "Stock return comparison"
 dock_tickers = "Compare stocks"
 dock_portfolio = "Compute your portfolio"
 dock_trade_messages = "Trade messages"

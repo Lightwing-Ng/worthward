@@ -1,4 +1,4 @@
-/* Code version: v3.16.0 */
+/* Code version: v3.16.3 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -37,12 +37,12 @@ h1 { margin: 0; font-size: 24px; line-height: 1; letter-spacing: -0.03em; font-w
 .ticker-input-row:has(.ticker-remove:hover),
 .ticker-input-row:has(.ticker-remove:focus-visible) { background: rgba(255, 255, 255, 0.92); box-shadow: 0 12px 28px rgba(17, 24, 39, 0.12); }
 .ticker-input-main { flex: 1 1 auto; min-width: 0; position: relative; }
-.portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 18px; position: relative; }
-.portfolio-weight-row { position: relative; display: flex; align-items: center; }
+.portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 24px; position: relative; }
+.portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: 29px; }
 .portfolio-weight-input { padding-right: 16px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
 .portfolio-weight-input::placeholder { color: var(--muted); opacity: 1; font-size: 12px; }
 .portfolio-weight-input::-webkit-outer-spin-button, .portfolio-weight-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.portfolio-weight-unit { position: absolute; right: 8px; color: var(--text); font-size: 14px; line-height: 1; font-weight: 600; pointer-events: none; }
+.portfolio-weight-unit { position: absolute; right: 0; color: var(--text); font-size: 14px; line-height: 1; font-weight: 600; pointer-events: none; }
 .portfolio-weight-slider-shell { position: absolute; top: calc(100% + 8px); right: 0; width: 204px; height: 44px; padding: 0 16px; display: flex; align-items: center; border-radius: 10px; background: rgba(255, 255, 255, 0.68); border: 1px solid rgba(255, 255, 255, 0.42); box-shadow: 0 18px 40px rgba(17, 24, 39, 0.10); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 180ms ease, visibility 180ms ease, transform 180ms ease; transform: translateY(-4px); z-index: 8; }
 .portfolio-weight-field.is-open .portfolio-weight-slider-shell { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
 .portfolio-weight-slider { width: 100%; height: 12px; padding: 0; min-height: 12px; background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; border: 0; border-radius: 0; appearance: none; -webkit-appearance: none; }
@@ -147,7 +147,7 @@ button:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 
 .portfolio-donut::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--portfolio-donut-fill); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px))); mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px))); }
 .portfolio-donut-logo-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .portfolio-donut-logo { position: absolute; top: 50%; left: 50%; width: var(--portfolio-donut-logo-size); height: var(--portfolio-donut-logo-size); border-radius: 50%; object-fit: cover; background: rgba(255, 255, 255, 0.94); box-shadow: 0 10px 22px rgba(15, 23, 42, 0.14), 0 1px 0 rgba(255, 255, 255, 0.96) inset, 0 0 0 1px rgba(255, 255, 255, 0.72); transform: translate(-50%, -50%); }
-.portfolio-donut-arrow { width: 36px; height: 36px; margin: 0 10px; flex: 0 0 36px; align-self: center; }
+.portfolio-donut-arrow { width: 36px; height: 36px; padding: 0 10px; margin: 0; flex: 0 0 56px; align-self: center; position: relative; z-index: 3; box-sizing: content-box; }
 .icon-portfolio-donut-flow { background: linear-gradient(90deg, #0055cc 0%, #ff2f92 100%); mask: url("../../images/arrow.right.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.right.svg") center/contain no-repeat; }
 .report-heading-row { display: flex; align-items: center; justify-content: flex-start; gap: 1ch; margin-bottom: 6px; }
 .report-heading { margin: 0 0 12px; font-size: 24px; line-height: 1; letter-spacing: -0.03em; color: var(--text); font-weight: 700; }
@@ -175,7 +175,7 @@ button:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 
 .ticker-logo { width: var(--logo-card-size); height: var(--logo-card-size); border-radius: var(--radius-soft); object-fit: contain; background: rgba(255, 255, 255, 0.88); box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08); flex: 0 0 auto; }
 .suggestion-logo-slot { position: relative; width: 20px; height: 20px; flex: 0 0 20px; display: block; overflow: hidden; border-radius: var(--radius-soft); }
 .suggestion-logo-placeholder { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: inherit; background: rgba(148, 163, 184, 0.18); box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05); }
-.report-value { position: relative; display: inline-block; align-self: end; font-size: 32px; line-height: 1; letter-spacing: -0.04em; }
+.report-value { position: relative; display: inline-block; align-self: end; margin: 10px 0; font-size: 32px; line-height: 1; letter-spacing: -0.04em; }
 .winner-badge { position: absolute; top: -5px; right: -8px; width: 16px; height: 16px; display: block; }
 .suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; border-radius: var(--radius-control); background: rgba(255, 255, 255, 0.96); box-shadow: 0 14px 30px rgba(17, 24, 39, 0.10); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); overflow: hidden; display: none; }
 .suggestions.is-open { display: block; }
@@ -216,14 +216,14 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
 .chart-tooltip { position: absolute; pointer-events: none; transform: none; min-width: 164px; max-width: min(260px, calc(100% - 24px)); padding: 10px 12px; opacity: 0; transition: opacity 120ms ease; z-index: 6; }
 .chart-tooltip.is-visible { opacity: 1; }
-.chart-tooltip-date { margin: 0 0 8px; font-size: 14px; line-height: 1.2; color: var(--text); font-weight: 700; }
+.chart-tooltip-date { margin: 0 0 8px; font-size: 14px; line-height: 1.2; color: var(--text); font-weight: 400; }
 .chart-tooltip-list { display: grid; gap: 6px; }
 .chart-tooltip-row { display: grid; grid-template-columns: 10px var(--logo-tooltip-size) minmax(86px, auto) minmax(72px, auto); align-items: center; column-gap: 8px; font-size: 13px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .chart-tooltip-dot { width: 8px; height: 8px; border-radius: var(--radius-soft); }
 .chart-tooltip-logo { width: var(--logo-tooltip-size); height: var(--logo-tooltip-size); border-radius: var(--radius-soft); object-fit: contain; background: rgba(255, 255, 255, 0.92); }
 .chart-tooltip-label { text-align: left; font-weight: 700; color: var(--text); }
 .chart-tooltip-label { white-space: nowrap; }
-.chart-tooltip-value { text-align: right; color: var(--text); font-weight: 700; }
+.chart-tooltip-value { text-align: right; color: var(--text); font-weight: 400; }
 .sidebar-placeholder, .placeholder-copy { display: flex; align-items: center; justify-content: flex-start; min-height: 120px; padding: 10px 2px; color: var(--muted); font-size: 16px; line-height: 1.45; }
 .placeholder-card { display: flex; flex-direction: column; }
 .chart-placeholder-copy { flex: 1 1 auto; min-height: 220px; }
@@ -277,10 +277,11 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .trade-sidebar-copy { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
 .trade-messages-surface { height: 100%; padding-bottom: 14px; }
 .trade-pane-placeholder { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.trade-performance-card { height: 292px; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .trade-detail-tabs { display: grid; gap: 10px; justify-items: center; }
 .trade-detail-shell { width: min(320px, 100%); max-width: 320px; margin: 0 auto; }
 .trade-detail-shell::before { background: #0055cc; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 24px rgba(0, 85, 204, 0.16); }
-.trade-detail-panel { min-height: 0; width: 100%; }
+.trade-detail-panel { min-height: 0; width: 100%; height: 100%; overflow: auto; }
 .trade-metrics-grid { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .trade-metric-card { padding: 4px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.68); }
 .trade-metric-label { display: block; margin-bottom: 3px; font-size: 12px; line-height: 1.1; font-weight: 700; color: var(--muted); }
@@ -327,6 +328,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 	.portfolio-summary { align-items: flex-start; }
 	.portfolio-donut-block { justify-content: flex-start; }
 	.trade-metrics-grid { grid-template-columns: 1fr; }
+	.trade-performance-card { height: 308px; }
 	.settings-form-grid { grid-template-columns: 1fr; }
 	.date-picker-grid { grid-template-columns: 1fr; }
 }

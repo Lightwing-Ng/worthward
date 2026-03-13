@@ -298,9 +298,6 @@
                         <section class="performance-item" style="--item-color: {{ item.color }}; --item-shadow: {{ item.shadow_color }};">
                             <div class="performance-accent"></div>
                             <div class="report-symbol-row">
-                                {% if item.logo_url %}
-                                <img class="ticker-logo" src="{{ item.logo_url }}" alt="{{ item.ticker }} logo">
-                                {% endif %}
                                 <p class="report-symbol">{{ item.ticker }}</p>
                             </div>
                             <p class="report-company">{{ item.company_name }}</p>

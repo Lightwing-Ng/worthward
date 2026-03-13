@@ -1,4 +1,4 @@
-/* Code version: v3.17.0 */
+/* Code version: v3.17.1 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -158,12 +158,19 @@
 
 	const ensurePortfolioWeightTouches = () => {
 		if (!isPortfolioView) return;
-		getFilledWeightEntries().forEach((entry) => {
+		const filledEntries = getFilledWeightEntries();
+		if (filledEntries.length && Object.keys(portfolioWeightState.touchedAtByIndex).length === 0) {
+			filledEntries.forEach((entry, order) => {
+				portfolioWeightState.clock += 1;
+				portfolioWeightState.touchedAtByIndex[entry.index] = order === filledEntries.length - 1 ? 1 : portfolioWeightState.clock + 1;
+			});
+		}
+		filledEntries.forEach((entry) => {
 			if (!getPortfolioWeightTouchStamp(entry.index)) {
 				markPortfolioWeightTouched(entry.index);
 			}
 		});
-		const activeIndexes = new Set(getFilledWeightEntries().map((entry) => entry.index));
+		const activeIndexes = new Set(filledEntries.map((entry) => entry.index));
 		Object.keys(portfolioWeightState.touchedAtByIndex).forEach((key) => {
 			const index = Number.parseInt(key, 10);
 			if (!activeIndexes.has(index)) dropPortfolioWeightTouch(index);
@@ -247,12 +254,12 @@
 	const resolvePassivePortfolioEntry = (changedIndex, filledEntries) => {
 		const candidates = filledEntries.filter((entry) => entry.index !== changedIndex);
 		if (!candidates.length) return null;
-		return candidates.reduce((latestEntry, entry) => {
-			const latestStamp = getPortfolioWeightTouchStamp(latestEntry.index);
+		return candidates.reduce((oldestEntry, entry) => {
+			const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
 			const entryStamp = getPortfolioWeightTouchStamp(entry.index);
-			if (entryStamp > latestStamp) return entry;
-			if (entryStamp === latestStamp && entry.index > latestEntry.index) return entry;
-			return latestEntry;
+			if (entryStamp < oldestStamp) return entry;
+			if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
+			return oldestEntry;
 		});
 	};
 
@@ -328,7 +335,7 @@
 		if (shouldWarn) {
 			showPortfolioWeightTooltip(
 				activeEntry,
-				`${passiveEntry.ticker} was the most recently edited weight available, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
+				`${passiveEntry.ticker} was the oldest editable weight available, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
 			);
 		}
 		markPortfolioWeightTouched(changedIndex);
@@ -877,7 +884,6 @@
 		if (autoSubmitTimer) window.clearTimeout(autoSubmitTimer);
 		autoSubmitTimer = window.setTimeout(() => {
 			if (!canAutoSubmit()) return;
-			showCompareOverlay();
 			form.requestSubmit();
 		}, delay);
 	};
