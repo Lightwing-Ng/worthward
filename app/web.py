@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.11.1
+Code version: v3.12.0
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "QQQ": "#c7c7cc",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "email-smtp", "local-market-store"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store"}
 LOCAL_STORE_PAGE_SIZE = 10
 
 
@@ -284,6 +284,8 @@ def register_routes(app: Flask) -> None:
         notice = request.args.get("notice", "").strip() or None
         notice_is_floating = False
         date_notice = None
+        exact_start_value = exact_start
+        exact_end_value = exact_end
         display_range = ""
         profiles = []
         series = []
@@ -304,6 +306,7 @@ def register_routes(app: Flask) -> None:
         chart_heading = labels["chart_summary"]
         settings_title = labels["about"]
         settings_service_rows: list[dict[str, str | bool]] = []
+        strategy_settings_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         local_market_rows: list[dict[str, str]] = []
         local_store_total_pages = 1
@@ -325,6 +328,8 @@ def register_routes(app: Flask) -> None:
             page_title = labels["settings_title"]
             if settings_section == "network":
                 settings_title = labels["network_self_check"]
+            elif settings_section == "strategies":
+                settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
                 settings_title = labels["email_smtp"]
             elif settings_section == "local-market-store":
@@ -357,10 +362,14 @@ def register_routes(app: Flask) -> None:
                     if trade_dataset.empty:
                         raise ValueError("The selected exact range does not contain trading dates.")
                     date_notice = date_constraints.message
+                    exact_start_value = date_constraints.adjusted_start or exact_start
+                    exact_end_value = date_constraints.adjusted_end or exact_end
                     period_label = "Exact range"
                 else:
                     common_end_date = trade_dataset["Date"].max()
                     trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
+                    exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
+                    exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
                     period_label = format_period_label(period)
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
@@ -396,12 +405,16 @@ def register_routes(app: Flask) -> None:
                     if any(dataset.empty for dataset in aligned_datasets):
                         raise ValueError("The selected exact range does not contain shared trading dates.")
                     date_notice = date_constraints.message
+                    exact_start_value = date_constraints.adjusted_start or exact_start
+                    exact_end_value = date_constraints.adjusted_end or exact_end
                     period_label = "Exact range"
                 else:
                     period, notice = resolve_effective_period_for_many(period, datasets)
                     common_end_date = min(dataset["Date"].max() for dataset in datasets)
                     sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
                     aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
+                    exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
+                    exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                     period_label = format_period_label(period)
 
                 colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
@@ -495,6 +508,14 @@ def register_routes(app: Flask) -> None:
                     "is_available": remote_logo_access,
                 },
             ]
+            strategy_settings_rows = [
+                {
+                    "name": item["name"],
+                    "description": item.get("description", ""),
+                    "supports": item.get("supports", {}),
+                }
+                for item in strategy_options
+            ]
             if settings_section == "local-market-store":
                 all_local_market_rows = build_local_market_rows()
                 local_store_current_page = local_store_page_value()
@@ -546,8 +567,8 @@ def register_routes(app: Flask) -> None:
             min_tickers=MIN_TICKERS,
             include_dividends=include_dividends,
             range_mode=range_mode,
-            exact_start=date_constraints.adjusted_start or exact_start,
-            exact_end=date_constraints.adjusted_end or exact_end,
+            exact_start=exact_start_value,
+            exact_end=exact_end_value,
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
@@ -555,6 +576,7 @@ def register_routes(app: Flask) -> None:
             remote_market_access=remote_market_access,
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
+            strategy_settings_rows=strategy_settings_rows,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_total_pages=local_store_total_pages,
@@ -567,7 +589,7 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "email-smtp", "local-market-store")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -654,7 +676,9 @@ def register_routes(app: Flask) -> None:
     @app.get("/api/date-constraints")
     def date_constraints_api():
         requested_tickers = parse_requested_tickers()
-        if len(requested_tickers) < MIN_TICKERS:
+        requested_view = request.args.get("view", "tickers").strip().lower()
+        minimum_required = 1 if requested_view == "trade-messages" else MIN_TICKERS
+        if len(requested_tickers) < minimum_required:
             return jsonify(asdict(build_date_constraint_payload()))
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):

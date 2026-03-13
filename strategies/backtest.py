@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.0.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -11,8 +11,6 @@ from math import floor
 import pandas as pd
 
 from .base import StrategySignalResult
-
-
 def run_single_ticker_backtest(
     signal_result: StrategySignalResult,
     initial_capital: float,
@@ -43,10 +41,11 @@ def run_single_ticker_backtest(
                 cash -= spent
                 entry_price = close_price
                 trades.append({
-                    "date": trade_date.strftime("%Y-%m-%d"),
+                    "date": trade_date.strftime("%Y/%m/%d"),
                     "side": "BUY",
                     "price": round(close_price, 4),
                     "shares": shares,
+                    "equity": round(cash + (shares * close_price), 4),
                 })
 
         elif sell_signal and shares > 0:
@@ -54,11 +53,12 @@ def run_single_ticker_backtest(
             pnl = proceeds - (shares * float(entry_price or close_price))
             cash += proceeds
             trades.append({
-                "date": trade_date.strftime("%Y-%m-%d"),
+                "date": trade_date.strftime("%Y/%m/%d"),
                 "side": "SELL",
                 "price": round(close_price, 4),
                 "shares": shares,
                 "pnl": round(pnl, 4),
+                "equity": round(cash, 4),
             })
             shares = 0
             entry_price = None
@@ -82,7 +82,7 @@ def run_single_ticker_backtest(
             "win_rate_pct": round((len(wins) / len(sell_trades)) * 100.0, 2) if sell_trades else 0.0,
         },
         "chart": {
-            "dates": frame["Date"].dt.strftime("%-d %b %Y").tolist(),
+            "dates": frame["Date"].dt.strftime("%Y/%m/%d").tolist(),
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
             "buy_markers": [bool(value) for value in frame[buy_column].tolist()],

@@ -1,5 +1,5 @@
 {
-  "version": "v1.0.0",
+  "version": "v1.1.1",
   "strategies": [
     {
       "id": "buy-and-hold",
@@ -18,6 +18,30 @@
       "default_params": {},
       "ui": {
         "display_order": 10
+      }
+    },
+    {
+      "id": "macd",
+      "name": "MACD",
+      "module": "strategies.algorithms.strategy_macd",
+      "class_name": "MacdStrategy",
+      "enabled": true,
+      "category": "momentum",
+      "description": "MACD crossover strategy using default daily 12, 26, and 9 settings.",
+      "supports": {
+        "single_ticker": true,
+        "multi_ticker": false,
+        "long_only": true,
+        "short": false
+      },
+      "default_params": {
+        "interval": "1d",
+        "fast_span": 12,
+        "slow_span": 26,
+        "signal_span": 9
+      },
+      "ui": {
+        "display_order": 20
       }
     }
   ]

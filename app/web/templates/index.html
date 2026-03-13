@@ -15,6 +15,7 @@
             --theme-muted: {{ theme.muted }};
             --theme-accent-primary: {{ theme.accent_primary }};
             --theme-accent-secondary: {{ theme.accent_secondary }};
+            --theme-accent-positive: {{ theme.accent_positive }};
             --theme-shadow: {{ theme.shadow }};
             --theme-glass-highlight: {{ theme.glass_highlight }};
             --theme-radius-shell: {{ theme.radius_shell }};
@@ -71,6 +72,83 @@
 </div>
 {%- endmacro %}
 
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) -%}
+<div class="field">
+    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
+        <label class="range-mode-option" for="range_mode_period">
+            <input id="range_mode_period" name="range_mode" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
+            <span>{{ labels.range_mode_period }}</span>
+        </label>
+        <label class="range-mode-option" for="range_mode_exact">
+            <input id="range_mode_exact" name="range_mode" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
+            <span>{{ labels.range_mode_exact }}</span>
+        </label>
+    </div>
+</div>
+<div class="field range-panel" id="period_panel">
+    <label for="period">{{ labels.period }}</label>
+    <select id="period" name="period">
+        {% for item in periods %}
+        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
+    <div class="date-picker-grid">
+        <div class="date-picker-field" data-date-picker>
+            <label for="exact_start">{{ labels.start }}</label>
+            <input id="exact_start" name="exact_start" type="hidden" value="{{ exact_start }}">
+            <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                <span class="date-picker-trigger-value" data-date-trigger-value></span>
+            </button>
+            <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-toolbar">
+                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                        <span class="icon icon-page-prev" aria-hidden="true"></span>
+                    </button>
+                    <p class="date-picker-month" data-date-month></p>
+                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                        <span class="icon icon-page-next" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <div class="date-picker-weekdays" aria-hidden="true">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                <div class="date-picker-days" data-date-grid></div>
+            </div>
+        </div>
+        <div class="date-picker-field" data-date-picker>
+            <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
+            <input id="exact_end" name="exact_end" type="hidden" value="{{ exact_end }}">
+            <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                <span class="date-picker-trigger-value" data-date-trigger-value></span>
+            </button>
+            <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-toolbar">
+                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                        <span class="icon icon-page-prev" aria-hidden="true"></span>
+                    </button>
+                    <p class="date-picker-month" data-date-month></p>
+                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                        <span class="icon icon-page-next" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <div class="date-picker-weekdays" aria-hidden="true">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                <div class="date-picker-days" data-date-grid></div>
+            </div>
+        </div>
+    </div>
+    <div id="date_adjust_tooltip" class="date-adjust-tooltip date-adjust-tooltip-dismissible" {% if not date_notice %}hidden{% endif %}>
+        <span class="date-adjust-tooltip-copy">{{ date_notice or '' }}</span>
+        <button type="button" class="notice-close date-adjust-tooltip-close" aria-label="Close date adjustment notice">
+            <span class="icon icon-remove-muted" aria-hidden="true"></span>
+        </button>
+    </div>
+</div>
+{%- endmacro %}
+
 <main class="page">
     <div class="app-shell">
         <aside class="panel sidebar">
@@ -119,33 +197,7 @@
                     <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
                     <button type="button" id="add_ticker" class="secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
                     </div>
-                <div class="field">
-                    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
-                        <label class="range-mode-option" for="range_mode_period">
-                            <input id="range_mode_period" name="range_mode" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
-                            <span>{{ labels.range_mode_period }}</span>
-                        </label>
-                        <label class="range-mode-option" for="range_mode_exact">
-                            <input id="range_mode_exact" name="range_mode" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
-                            <span>{{ labels.range_mode_exact }}</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="field range-panel" id="period_panel">
-                    <label for="period">{{ labels.period }}</label>
-                    <select id="period" name="period">
-                        {% for item in periods %}
-                        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
-                    <label for="exact_start">{{ labels.start }}</label>
-                    <input id="exact_start" name="exact_start" type="date" value="{{ exact_start }}">
-                    <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
-                    <input id="exact_end" name="exact_end" type="date" value="{{ exact_end }}">
-                    <div id="date_adjust_tooltip" class="date-adjust-tooltip" {% if not date_notice %}hidden{% endif %}>{{ date_notice or '' }}</div>
-                </div>
+                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) }}
                 <div class="field-checkbox field-switch">
                     <input type="hidden" name="include_dividends" value="0">
                     <label class="switch-row" for="include_dividends">
@@ -188,33 +240,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="field">
-                    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
-                        <label class="range-mode-option" for="range_mode_period">
-                            <input id="range_mode_period" name="range_mode" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
-                            <span>{{ labels.range_mode_period }}</span>
-                        </label>
-                        <label class="range-mode-option" for="range_mode_exact">
-                            <input id="range_mode_exact" name="range_mode" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
-                            <span>{{ labels.range_mode_exact }}</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="field range-panel" id="period_panel">
-                    <label for="period">{{ labels.period }}</label>
-                    <select id="period" name="period">
-                        {% for item in periods %}
-                        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
-                    <label for="exact_start">{{ labels.start }}</label>
-                    <input id="exact_start" name="exact_start" type="date" value="{{ exact_start }}">
-                    <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
-                    <input id="exact_end" name="exact_end" type="date" value="{{ exact_end }}">
-                    <div id="date_adjust_tooltip" class="date-adjust-tooltip" {% if not date_notice %}hidden{% endif %}>{{ date_notice or '' }}</div>
-                </div>
+                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) }}
                 <div class="field trade-capital-field">
                     <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
                     <div class="trade-capital-row">
@@ -224,6 +250,16 @@
                         <input id="trade_initial_capital_slider" class="trade-capital-slider" type="range" min="1000" max="1000000" step="100" value="{{ backtest_initial_capital|int }}">
                     </div>
                 </div>
+                <div class="field-checkbox field-switch">
+                    <input type="hidden" name="include_dividends" value="0">
+                    <label class="switch-row" for="include_dividends">
+                        <span class="switch-label">{{ labels.include_dividends }}</span>
+                        <span class="ios-switch-shell">
+                            <input id="include_dividends" name="include_dividends" type="checkbox" value="1" {% if include_dividends %}checked{% endif %}>
+                            <span class="ios-switch-slider" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                </div>
                 <div class="field">
                     <button id="submit" type="submit">{{ labels.trade_messages_backtest }}</button>
                 </div>
@@ -232,6 +268,7 @@
             <nav class="settings-nav" aria-label="Settings sections">
                 <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
                 <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">{{ labels.network_self_check }}</a>
+                <a href="{{ settings_urls.strategies }}" class="settings-nav-item{% if settings_section == 'strategies' %} is-active{% endif %}">{{ labels.strategy_settings }}</a>
                 <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item{% if settings_section == 'email-smtp' %} is-active{% endif %}">{{ labels.email_smtp }}</a>
                 <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item{% if settings_section == 'local-market-store' %} is-active{% endif %}">{{ labels.local_market_store }}</a>
             </nav>
@@ -248,8 +285,6 @@
                 </button>
             </div>
             {% endif %}
-            {% if date_notice %}<div class="notice">{{ date_notice }}</div>{% endif %}
-
             {% if current_view == "tickers" and series %}
             <div class="workspace-header">
                 <article class="report-card">
@@ -314,13 +349,57 @@
                         <p class="report-heading">{{ labels.trade_messages_metrics }}</p>
                     </div>
                     {% if trade_backtest_result %}
-                    <div class="trade-metrics-grid">
-                        <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
-                        <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
-                        <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
-                        <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
-                        <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value">{{ trade_backtest_result.summary.trade_count }}</span></div>
-                        <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
+                    <div class="trade-detail-tabs">
+                        <div class="range-mode-shell trade-detail-shell" data-trade-detail-shell data-active="metrics">
+                            <label class="range-mode-option" for="trade_detail_metrics">
+                                <input id="trade_detail_metrics" name="trade_detail_tab" type="radio" value="metrics" checked>
+                                <span>{{ labels.trade_messages_metrics_tab }}</span>
+                            </label>
+                            <label class="range-mode-option" for="trade_detail_transactions">
+                                <input id="trade_detail_transactions" name="trade_detail_tab" type="radio" value="transactions">
+                                <span>{{ labels.trade_messages_transactions_tab }}</span>
+                            </label>
+                        </div>
+                        <div class="trade-detail-panel" data-trade-detail-panel="metrics">
+                            <div class="trade-metrics-grid">
+                                <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value">{{ trade_backtest_result.summary.trade_count }}</span></div>
+                                <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
+                            </div>
+                        </div>
+                        <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
+                            <div class="trade-transactions-wrap">
+                                <table class="settings-table trade-transactions-table">
+                                    <thead>
+                                        <tr>
+                                            <th>No.</th>
+                                            <th>Date</th>
+                                            <th>Side</th>
+                                            <th class="trade-transactions-number">Price</th>
+                                            <th class="trade-transactions-number">Shares</th>
+                                            <th class="trade-transactions-number">P&amp;L</th>
+                                            <th class="trade-transactions-number">Equity</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in trade_backtest_result.trades %}
+                                        <tr>
+                                            <td class="trade-transactions-number">{{ loop.index }}</td>
+                                            <td>{{ row.date }}</td>
+                                            <td>{{ row.side }}</td>
+                                            <td class="trade-transactions-number">{{ "{:,.2f}".format(row.price) }}</td>
+                                            <td class="trade-transactions-number">{{ "{:,}".format(row.shares) }}</td>
+                                            <td class="trade-transactions-number">{% if row.pnl is defined %}{{ "{:,.2f}".format(row.pnl) }}{% else %}--{% endif %}</td>
+                                            <td class="trade-transactions-number">{{ "{:,.2f}".format(row.equity) }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                     {% else %}
                     <p class="trade-pane-placeholder">{{ labels.trade_messages_no_result }}</p>
@@ -371,6 +450,24 @@
                                 <img class="settings-status-check" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
                                 {% endif %}
                                 <span>{{ row.status }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% elif settings_section == "strategies" %}
+                    <p class="settings-summary">Review the built-in trading strategies available in this workspace.</p>
+                    <div class="settings-service-list">
+                        {% for row in strategy_settings_rows %}
+                        <div class="settings-service-row">
+                            <div class="settings-service-main">
+                                <p class="settings-service-name">{{ row.name }}</p>
+                                <p class="settings-service-note">{{ row.description }}</p>
+                            </div>
+                            <div class="settings-service-state is-muted">
+                                <span>
+                                    {% if row.supports.long_only %}Long only{% endif %}
+                                    {% if row.supports.single_ticker %} · Single ticker{% endif %}
+                                </span>
                             </div>
                         </div>
                         {% endfor %}

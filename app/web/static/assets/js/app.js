@@ -1,4 +1,4 @@
-/* Code version: v3.14.2 */
+/* Code version: v3.16.3 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -18,6 +18,8 @@
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
 	let isSubmittingWithOverlay = false;
+	const datePickerState = [];
+	let validTradingDateSet = null;
 	const portfolioWeightState = {
 		clock: 0,
 		touchedAtByIndex: {},
@@ -49,6 +51,25 @@
 				noticeElement.hidden = true;
 			});
 		});
+	};
+
+	const attachTradeDetailTabs = () => {
+		const shell = $("[data-trade-detail-shell]");
+		if (!shell) return;
+		const panels = $$("[data-trade-detail-panel]");
+		const syncPanels = () => {
+			const active = shell.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
+			shell.dataset.active = active === "transactions" ? "exact" : "period";
+			panels.forEach((panel) => {
+				panel.hidden = panel.dataset.tradeDetailPanel !== active;
+			});
+		};
+		shell.querySelectorAll('input[name="trade_detail_tab"]').forEach((input) => {
+			if (input.dataset.bound === "1") return;
+			input.dataset.bound = "1";
+			input.addEventListener("change", syncPanels);
+		});
+		syncPanels();
 	};
 
 	const syncTickerClearButton = (input) => {
@@ -631,7 +652,7 @@
 		showSettingsActionOverlay({
 			title: isTradeMessagesView ? "Running your backtest" : "Preparing your chart",
 			copy: isTradeMessagesView
-				? "Please wait while the app checks the selected market data and computes the backtest result."
+				? "Please wait while the app prepares the selected daily data and runs the backtest."
 				: "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
 			iconClass: "icon-overlay-processing",
 		});
@@ -758,6 +779,49 @@
 	const tradeCapitalField = $(".trade-capital-field");
 	const tradeCapitalInput = $("#trade_initial_capital");
 	const tradeCapitalSlider = $("#trade_initial_capital_slider");
+	const displayDateFormatter = new Intl.DateTimeFormat("en-US", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	});
+	const monthDateFormatter = new Intl.DateTimeFormat("en-US", {
+		month: "long",
+		year: "numeric",
+		timeZone: "UTC",
+	});
+
+	const parseIsoDate = (rawValue) => {
+		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(rawValue || ""));
+		if (!match) return null;
+		return new Date(Date.UTC(Number.parseInt(match[1], 10), Number.parseInt(match[2], 10) - 1, Number.parseInt(match[3], 10)));
+	};
+
+	const formatIsoDate = (date) => {
+		const year = date.getUTCFullYear();
+		const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+		const day = String(date.getUTCDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	};
+
+	const formatDisplayDate = (rawValue) => {
+		const date = parseIsoDate(rawValue);
+		if (!date) return "Select date";
+		return `${date.getUTCDate()} ${date.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${date.getUTCFullYear()}`;
+	};
+
+	const startOfMonthUtc = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+	const addMonthsUtc = (date, offset) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offset, 1));
+	const isSameUtcDay = (left, right) => (
+		left.getUTCFullYear() === right.getUTCFullYear()
+		&& left.getUTCMonth() === right.getUTCMonth()
+		&& left.getUTCDate() === right.getUTCDate()
+	);
+	const clampDateToBounds = (date, minDate, maxDate) => {
+		if (minDate && date < minDate) return minDate;
+		if (maxDate && date > maxDate) return maxDate;
+		return date;
+	};
 
 	const clampTradeCapital = (value) => Math.min(1000000, Math.max(1, value || 1));
 	const parseTradeCapitalValue = (rawValue) => {
@@ -809,15 +873,153 @@
 
 	const setDateTooltip = (message) => {
 		if (!dateAdjustTooltip) return;
+		const copy = dateAdjustTooltip.querySelector(".date-adjust-tooltip-copy");
 		dateAdjustTooltip.hidden = !message;
+		if (copy) {
+			copy.textContent = message || "";
+			return;
+		}
 		dateAdjustTooltip.textContent = message || "";
+	};
+
+	const closeAllDatePickers = () => {
+		datePickerState.forEach((picker) => {
+			picker.popover.hidden = true;
+			picker.trigger.setAttribute("aria-expanded", "false");
+		});
+	};
+
+	const positionDatePickerPopover = (picker) => {
+		const sidebar = $(".sidebar");
+		const triggerRect = picker.trigger.getBoundingClientRect();
+		const sidebarRect = sidebar?.getBoundingClientRect();
+		const popoverWidth = Math.min(320, window.innerWidth - 48);
+		const leftBoundary = sidebarRect ? Math.max(12, sidebarRect.left + 12) : 12;
+		const rightBoundary = sidebarRect ? Math.min(window.innerWidth - 12, sidebarRect.right - 12) : window.innerWidth - 12;
+		const maxLeft = Math.max(leftBoundary, rightBoundary - popoverWidth);
+		const preferredTop = triggerRect.bottom + 8;
+		const top = Math.min(preferredTop, window.innerHeight - 24);
+		const left = Math.min(Math.max(triggerRect.left, leftBoundary), maxLeft);
+		picker.popover.style.top = `${Math.round(top)}px`;
+		picker.popover.style.left = `${Math.round(left)}px`;
+	};
+
+	const syncDatePickerView = (picker) => {
+		picker.triggerValue.textContent = formatDisplayDate(picker.input.value);
+		const selectedDate = parseIsoDate(picker.input.value);
+		const minDate = parseIsoDate(picker.input.min);
+		const maxDate = parseIsoDate(picker.input.max);
+		const today = startOfMonthUtc(new Date());
+		const anchorDate = clampDateToBounds(selectedDate || minDate || maxDate || today, minDate, maxDate);
+		if (!picker.visibleMonth || picker.forceSyncMonth) {
+			picker.visibleMonth = startOfMonthUtc(anchorDate);
+			picker.forceSyncMonth = false;
+		}
+		picker.monthLabel.textContent = monthDateFormatter.format(picker.visibleMonth);
+		picker.grid.innerHTML = "";
+
+		const firstDay = startOfMonthUtc(picker.visibleMonth);
+		const monthStartOffset = firstDay.getUTCDay();
+		const gridStart = new Date(Date.UTC(firstDay.getUTCFullYear(), firstDay.getUTCMonth(), 1 - monthStartOffset));
+		for (let offset = 0; offset < 42; offset += 1) {
+			const cellDate = new Date(Date.UTC(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + offset));
+			const isoValue = formatIsoDate(cellDate);
+			const isCurrentMonth = cellDate.getUTCMonth() === picker.visibleMonth.getUTCMonth();
+			const isBeforeMin = minDate && cellDate < minDate;
+			const isAfterMax = maxDate && cellDate > maxDate;
+			const isTradingDay = !validTradingDateSet || validTradingDateSet.has(isoValue);
+			const button = document.createElement("button");
+			button.type = "button";
+			button.className = "date-picker-day";
+			if (!isCurrentMonth) button.classList.add("is-muted");
+			if (isBeforeMin || isAfterMax || !isTradingDay) button.classList.add("is-disabled");
+			if (selectedDate && isSameUtcDay(cellDate, selectedDate)) button.classList.add("is-selected");
+			if (isSameUtcDay(cellDate, new Date())) button.classList.add("is-today");
+			button.textContent = String(cellDate.getUTCDate());
+			button.dataset.value = isoValue;
+			button.disabled = Boolean(isBeforeMin || isAfterMax || !isTradingDay);
+			button.addEventListener("click", () => {
+				picker.input.value = isoValue;
+				picker.forceSyncMonth = true;
+				syncDatePickerView(picker);
+				closeAllDatePickers();
+				picker.input.dispatchEvent(new Event("change", { bubbles: true }));
+			});
+			picker.grid.appendChild(button);
+		}
+	};
+
+	const initializeDatePickers = () => {
+		$$("[data-date-picker]").forEach((wrapper) => {
+			if (wrapper.dataset.bound === "1") return;
+			const input = wrapper.querySelector('input[type="hidden"]');
+			const trigger = wrapper.querySelector("[data-date-trigger]");
+			const triggerValue = wrapper.querySelector("[data-date-trigger-value]");
+			const popover = wrapper.querySelector("[data-date-popover]");
+			const monthLabel = wrapper.querySelector("[data-date-month]");
+			const grid = wrapper.querySelector("[data-date-grid]");
+			if (!input || !trigger || !triggerValue || !popover || !monthLabel || !grid) return;
+			const picker = {
+				wrapper,
+				input,
+				trigger,
+				triggerValue,
+				popover,
+				monthLabel,
+				grid,
+				visibleMonth: null,
+				forceSyncMonth: true,
+			};
+			wrapper.dataset.bound = "1";
+			datePickerState.push(picker);
+			syncDatePickerView(picker);
+			trigger.addEventListener("click", () => {
+				const willOpen = popover.hidden;
+				closeAllDatePickers();
+				if (!willOpen) return;
+				picker.forceSyncMonth = true;
+				syncDatePickerView(picker);
+				popover.hidden = false;
+				trigger.setAttribute("aria-expanded", "true");
+				positionDatePickerPopover(picker);
+			});
+			input.addEventListener("change", () => {
+				picker.forceSyncMonth = true;
+				syncDatePickerView(picker);
+			});
+			wrapper.querySelectorAll("[data-date-nav]").forEach((button) => {
+				button.addEventListener("click", () => {
+					picker.visibleMonth = addMonthsUtc(picker.visibleMonth || startOfMonthUtc(new Date()), Number.parseInt(button.dataset.dateNav || "0", 10));
+					syncDatePickerView(picker);
+				});
+			});
+		});
+		document.addEventListener("click", (event) => {
+			if (event.target.closest("[data-date-picker]")) return;
+			closeAllDatePickers();
+		}, { passive: true });
+		window.addEventListener("resize", () => {
+			datePickerState.forEach((picker) => {
+				if (!picker.popover.hidden) positionDatePickerPopover(picker);
+			});
+		});
+	};
+
+	const refreshDatePickers = () => {
+		datePickerState.forEach((picker) => syncDatePickerView(picker));
 	};
 
 	const syncDateConstraints = async () => {
 		if (!exactStartInput || !exactEndInput) return;
+		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
+		if (rangeMode !== "exact") {
+			validTradingDateSet = null;
+			return;
+		}
 		const tickers = getFilledTickers();
 		if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
 		const params = new URLSearchParams({
+			view: state.currentView,
 			include_dividends: includeDividendsInput?.checked ? "1" : "0",
 			exact_start: exactStartInput.value,
 			exact_end: exactEndInput.value,
@@ -827,6 +1029,7 @@
 			const response = await fetch(`${endpoints.dateConstraints}?${params.toString()}`);
 			if (!response.ok) return;
 			const payload = await response.json();
+			validTradingDateSet = payload.trading_dates?.length ? new Set(payload.trading_dates) : null;
 			const tradingDateSet = new Set(payload.trading_dates || []);
 			exactStartInput.min = payload.min_date || "";
 			exactStartInput.max = payload.max_date || "";
@@ -841,13 +1044,19 @@
 			};
 			const adjustedStart = enforceTradingDate(exactStartInput, payload.adjusted_start);
 			const adjustedEnd = enforceTradingDate(exactEndInput, payload.adjusted_end);
-			setDateTooltip(payload.message || (adjustedStart || adjustedEnd ? labels.date_adjusted_fallback : ""));
+			refreshDatePickers();
+			setDateTooltip(payload.message || "");
 		} catch (_error) {
 		}
 	};
 
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
+	initializeDatePickers();
+	dateAdjustTooltip?.querySelector(".date-adjust-tooltip-close")?.addEventListener("click", () => {
+		dateAdjustTooltip.hidden = true;
+	});
 	attachNoticeHandlers();
+	attachTradeDetailTabs();
 	attachRemoveHandlers();
 	attachTickerClearHandlers();
 	attachPortfolioWeightHandlers();
@@ -869,6 +1078,7 @@
 			window.setTimeout(() => rangeShell.classList.remove("is-animating"), 220);
 		}
 		updateRangePanels();
+		syncDateConstraints();
 		scheduleAutoSubmit();
 	}));
 	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
@@ -948,7 +1158,7 @@
 			showCompareOverlay();
 			isSubmittingWithOverlay = true;
 			window.requestAnimationFrame(() => {
-				form.submit();
+				HTMLFormElement.prototype.submit.call(form);
 			});
 		});
 	}
