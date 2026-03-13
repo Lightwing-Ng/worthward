@@ -1,6 +1,6 @@
 [app]
 name = "antigravity"
-version = "v2.10.0"
+version = "v2.10.1"
 debug = true
 updated_on = "12 Mar 2026"
 
@@ -52,7 +52,7 @@ trade_messages_detail = "Backtest result"
 trade_messages_detail_placeholder = "Run a backtest to inspect performance metrics and chart output."
 trade_messages_ticker = "Ticker"
 trade_messages_strategy = "Strategy"
-trade_messages_capital = "Initial capital"
+trade_messages_capital = "Initial capital (USD)"
 trade_messages_backtest = "Backtest"
 trade_messages_metrics = "Performance"
 trade_messages_chart = "Trade actions and net asset curve"

@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from math import floor
 import pandas as pd
 
 from .base import StrategySignalResult
+from app.presentation import format_display_date
 def run_single_ticker_backtest(
     signal_result: StrategySignalResult,
     initial_capital: float,
@@ -42,9 +43,10 @@ def run_single_ticker_backtest(
                 entry_price = close_price
                 trades.append({
                     "date": trade_date.strftime("%Y/%m/%d"),
-                    "side": "BUY",
+                    "side": "Buy",
                     "price": round(close_price, 4),
                     "shares": shares,
+                    "pnl": 0.0,
                     "equity": round(cash + (shares * close_price), 4),
                 })
 
@@ -54,7 +56,7 @@ def run_single_ticker_backtest(
             cash += proceeds
             trades.append({
                 "date": trade_date.strftime("%Y/%m/%d"),
-                "side": "SELL",
+                "side": "Sell",
                 "price": round(close_price, 4),
                 "shares": shares,
                 "pnl": round(pnl, 4),
@@ -82,7 +84,7 @@ def run_single_ticker_backtest(
             "win_rate_pct": round((len(wins) / len(sell_trades)) * 100.0, 2) if sell_trades else 0.0,
         },
         "chart": {
-            "dates": frame["Date"].dt.strftime("%Y/%m/%d").tolist(),
+            "dates": frame["Date"].map(format_display_date).tolist(),
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
             "buy_markers": [bool(value) for value in frame[buy_column].tolist()],

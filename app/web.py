@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.12.0
+Code version: v3.13.0
 """
 
 from __future__ import annotations
@@ -283,7 +283,6 @@ def register_routes(app: Flask) -> None:
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
         notice_is_floating = False
-        date_notice = None
         exact_start_value = exact_start
         exact_end_value = exact_end
         display_range = ""
@@ -361,7 +360,6 @@ def register_routes(app: Flask) -> None:
                     ].copy()
                     if trade_dataset.empty:
                         raise ValueError("The selected exact range does not contain trading dates.")
-                    date_notice = date_constraints.message
                     exact_start_value = date_constraints.adjusted_start or exact_start
                     exact_end_value = date_constraints.adjusted_end or exact_end
                     period_label = "Exact range"
@@ -373,7 +371,7 @@ def register_routes(app: Flask) -> None:
                     period_label = format_period_label(period)
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
-                signal_result = strategy.compute_signals(trade_dataset)
+                signal_result = strategy.compute_signals(trade_dataset, strategy.normalize_params())
                 trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
             elif current_view in {"tickers", "portfolio"}:
                 if not requested_tickers:
@@ -404,7 +402,6 @@ def register_routes(app: Flask) -> None:
                     ]
                     if any(dataset.empty for dataset in aligned_datasets):
                         raise ValueError("The selected exact range does not contain shared trading dates.")
-                    date_notice = date_constraints.message
                     exact_start_value = date_constraints.adjusted_start or exact_start
                     exact_end_value = date_constraints.adjusted_end or exact_end
                     period_label = "Exact range"
@@ -513,6 +510,13 @@ def register_routes(app: Flask) -> None:
                     "name": item["name"],
                     "description": item.get("description", ""),
                     "supports": item.get("supports", {}),
+                    "parameters": [
+                        {
+                            "label": definition.label,
+                            "default_display": definition.display_default(),
+                        }
+                        for definition in instantiate_strategy(item["id"]).get_parameter_definitions()
+                    ],
                 }
                 for item in strategy_options
             ]
@@ -548,7 +552,6 @@ def register_routes(app: Flask) -> None:
             error=error,
             notice=notice,
             notice_is_floating=notice_is_floating,
-            date_notice=date_notice,
             interval=interval,
             period=period,
             interval_label=format_interval_label(interval),

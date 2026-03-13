@@ -1,4 +1,4 @@
-/* Code version: v3.16.3 */
+/* Code version: v3.17.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -18,6 +18,7 @@
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
 	let isSubmittingWithOverlay = false;
+	let compareOverlayTimer = null;
 	const datePickerState = [];
 	let validTradingDateSet = null;
 	const portfolioWeightState = {
@@ -660,7 +661,18 @@
 
 	const hideSettingsActionOverlay = () => {
 		if (!settingsActionOverlay) return;
+		if (compareOverlayTimer) {
+			window.clearTimeout(compareOverlayTimer);
+			compareOverlayTimer = null;
+		}
 		settingsActionOverlay.hidden = true;
+	};
+
+	const scheduleCompareOverlay = () => {
+		if (compareOverlayTimer) window.clearTimeout(compareOverlayTimer);
+		compareOverlayTimer = window.setTimeout(() => {
+			showCompareOverlay();
+		}, 180);
 	};
 
 	const attachRemoveHandlers = () => {
@@ -775,7 +787,6 @@
 	const exactStartInput = $("#exact_start");
 	const exactEndInput = $("#exact_end");
 	const includeDividendsInput = $("#include_dividends");
-	const dateAdjustTooltip = $("#date_adjust_tooltip");
 	const tradeCapitalField = $(".trade-capital-field");
 	const tradeCapitalInput = $("#trade_initial_capital");
 	const tradeCapitalSlider = $("#trade_initial_capital_slider");
@@ -869,17 +880,6 @@
 			showCompareOverlay();
 			form.requestSubmit();
 		}, delay);
-	};
-
-	const setDateTooltip = (message) => {
-		if (!dateAdjustTooltip) return;
-		const copy = dateAdjustTooltip.querySelector(".date-adjust-tooltip-copy");
-		dateAdjustTooltip.hidden = !message;
-		if (copy) {
-			copy.textContent = message || "";
-			return;
-		}
-		dateAdjustTooltip.textContent = message || "";
 	};
 
 	const closeAllDatePickers = () => {
@@ -1042,19 +1042,15 @@
 				input.value = fallbackValue || "";
 				return true;
 			};
-			const adjustedStart = enforceTradingDate(exactStartInput, payload.adjusted_start);
-			const adjustedEnd = enforceTradingDate(exactEndInput, payload.adjusted_end);
+			enforceTradingDate(exactStartInput, payload.adjusted_start);
+			enforceTradingDate(exactEndInput, payload.adjusted_end);
 			refreshDatePickers();
-			setDateTooltip(payload.message || "");
 		} catch (_error) {
 		}
 	};
 
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
 	initializeDatePickers();
-	dateAdjustTooltip?.querySelector(".date-adjust-tooltip-close")?.addEventListener("click", () => {
-		dateAdjustTooltip.hidden = true;
-	});
 	attachNoticeHandlers();
 	attachTradeDetailTabs();
 	attachRemoveHandlers();
@@ -1155,7 +1151,7 @@
 				}
 			}
 			event.preventDefault();
-			showCompareOverlay();
+			scheduleCompareOverlay();
 			isSubmittingWithOverlay = true;
 			window.requestAnimationFrame(() => {
 				HTMLFormElement.prototype.submit.call(form);
@@ -1183,6 +1179,7 @@
 		});
 	});
 	settingsActionOverlayClose?.addEventListener("click", hideSettingsActionOverlay);
+	window.addEventListener("pageshow", hideSettingsActionOverlay);
 
 	window.addEventListener("resize", scheduleDockPosition);
 	window.addEventListener("orientationchange", scheduleDockPosition);

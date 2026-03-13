@@ -1,4 +1,4 @@
-/* Code version: v3.15.2 */
+/* Code version: v3.16.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -101,8 +101,8 @@ h1 { margin: 0; font-size: 24px; line-height: 1; letter-spacing: -0.03em; font-w
 .range-mode-option:hover span { transform: none; }
 .range-mode-option input:checked + span { color: #ffffff; letter-spacing: 0; }
 .range-panel[hidden] { display: none; }
-.date-adjust-tooltip, .chart-tooltip, .field-tooltip { background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: var(--radius-soft); }
-.date-adjust-tooltip, .field-tooltip { margin-top: 8px; padding: 8px 10px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.chart-tooltip, .field-tooltip { background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: var(--radius-soft); }
+.field-tooltip { margin-top: 8px; padding: 8px 10px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .field-tooltip-invalid { color: #d92c2c; }
 .field-tooltip-duplicate { color: #991b1b; }
 label { display: block; margin-bottom: 8px; font-size: 14px; color: var(--text); font-weight: 700; }
@@ -131,9 +131,6 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-day.is-disabled { color: rgba(80, 90, 95, 0.24); pointer-events: none; }
 .date-picker-day.is-selected { background: #0055cc; color: #ffffff; font-weight: 700; }
 .date-picker-day.is-today { box-shadow: inset 0 0 0 1px rgba(0, 85, 204, 0.22); }
-.date-adjust-tooltip-dismissible { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.date-adjust-tooltip-copy { display: block; flex: 1 1 auto; }
-.date-adjust-tooltip-close { margin-top: -2px; }
 input.is-invalid { color: #991b1b; }
 button { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%); color: #fff; font-weight: 700; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 14px 30px rgba(0, 85, 204, 0.24); transition: transform 180ms ease, box-shadow 180ms ease; min-height: 36px; }
 button:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 18px 34px rgba(255, 47, 146, 0.26); }
@@ -205,7 +202,8 @@ button:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 
 .error, .notice { margin-bottom: 16px; padding: 14px 16px; border-radius: var(--radius-control); background: rgba(255, 255, 255, 0.72); position: relative; z-index: 1; }
 .error { color: #991b1b; }
 .notice { color: #00419c; }
-.notice[data-dismissible-notice] { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.notice[data-dismissible-notice],
+.error[data-dismissible-notice] { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .notice-floating { position: absolute; top: 0; right: 0; width: min(420px, calc(100% - 12px)); margin: 0; padding: 12px 12px 12px 14px; background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); z-index: 9; }
 .notice-close { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; background: rgba(107, 114, 128, 0.82); box-shadow: none; display: inline-grid; place-items: center; flex: 0 0 auto; }
 .notice-close:hover, .notice-close:focus-visible { transform: none; box-shadow: none; background: rgba(107, 114, 128, 0.96); }
@@ -273,21 +271,25 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .settings-field-span-full { grid-column: 1 / -1; }
 .settings-form-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-inline-button { width: auto; min-width: 180px; }
+.settings-service-note-params { margin-top: 6px; }
 .trade-sidebar-card { padding: 12px 12px 10px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.48); }
 .trade-sidebar-eyebrow { margin: 0 0 8px; font-size: 14px; line-height: 1.2; font-weight: 700; color: var(--text); }
 .trade-sidebar-copy { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
 .trade-messages-surface { height: 100%; padding-bottom: 14px; }
 .trade-pane-placeholder { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
-.trade-detail-tabs { display: grid; gap: 10px; }
-.trade-detail-shell { max-width: 320px; }
+.trade-detail-tabs { display: grid; gap: 10px; justify-items: center; }
+.trade-detail-shell { width: min(320px, 100%); max-width: 320px; margin: 0 auto; }
 .trade-detail-shell::before { background: #0055cc; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 24px rgba(0, 85, 204, 0.16); }
-.trade-detail-panel { min-height: 0; }
+.trade-detail-panel { min-height: 0; width: 100%; }
 .trade-metrics-grid { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.trade-metric-card { padding: 8px 10px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.68); }
+.trade-metric-card { padding: 4px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.68); }
 .trade-metric-label { display: block; margin-bottom: 3px; font-size: 12px; line-height: 1.1; font-weight: 700; color: var(--muted); }
 .trade-metric-value { display: block; font-size: 24px; line-height: 1; letter-spacing: -0.03em; color: var(--text); font-weight: 400; }
 .trade-transactions-wrap { max-height: 186px; overflow: auto; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.46); }
 .trade-transactions-table { min-width: 100%; }
+.trade-transactions-table th,
+.trade-transactions-table th.trade-transactions-number { text-align: center !important; }
+.trade-transactions-index { text-align: center !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .trade-transactions-number { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .field-switch { display: grid; gap: 8px; }
 .field-switch .switch-row { padding-left: 0; background: transparent; min-height: 24px; }

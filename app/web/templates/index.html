@@ -72,7 +72,7 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) -%}
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) -%}
 <div class="field">
     <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
         <label class="range-mode-option" for="range_mode_period">
@@ -140,12 +140,6 @@
             </div>
         </div>
     </div>
-    <div id="date_adjust_tooltip" class="date-adjust-tooltip date-adjust-tooltip-dismissible" {% if not date_notice %}hidden{% endif %}>
-        <span class="date-adjust-tooltip-copy">{{ date_notice or '' }}</span>
-        <button type="button" class="notice-close date-adjust-tooltip-close" aria-label="Close date adjustment notice">
-            <span class="icon icon-remove-muted" aria-hidden="true"></span>
-        </button>
-    </div>
 </div>
 {%- endmacro %}
 
@@ -197,7 +191,7 @@
                     <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
                     <button type="button" id="add_ticker" class="secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
                     </div>
-                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) }}
+                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
                 <div class="field-checkbox field-switch">
                     <input type="hidden" name="include_dividends" value="0">
                     <label class="switch-row" for="include_dividends">
@@ -240,7 +234,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, date_notice) }}
+                {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
                 <div class="field trade-capital-field">
                     <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
                     <div class="trade-capital-row">
@@ -276,7 +270,14 @@
         </aside>
 
         <section class="panel chart-panel workspace">
-            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            {% if error %}
+            <div class="error{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
+                <span>{{ error }}</span>
+                <button type="button" class="notice-close" aria-label="Close error notice">
+                    <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                </button>
+            </div>
+            {% endif %}
             {% if notice %}
             <div class="notice{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
                 <span>{{ notice }}</span>
@@ -387,12 +388,12 @@
                                     <tbody>
                                         {% for row in trade_backtest_result.trades %}
                                         <tr>
-                                            <td class="trade-transactions-number">{{ loop.index }}</td>
+                                            <td class="trade-transactions-index">{{ loop.index }}</td>
                                             <td>{{ row.date }}</td>
                                             <td>{{ row.side }}</td>
                                             <td class="trade-transactions-number">{{ "{:,.2f}".format(row.price) }}</td>
                                             <td class="trade-transactions-number">{{ "{:,}".format(row.shares) }}</td>
-                                            <td class="trade-transactions-number">{% if row.pnl is defined %}{{ "{:,.2f}".format(row.pnl) }}{% else %}--{% endif %}</td>
+                                            <td class="trade-transactions-number">{{ "{:,.2f}".format(row.pnl) }}</td>
                                             <td class="trade-transactions-number">{{ "{:,.2f}".format(row.equity) }}</td>
                                         </tr>
                                         {% endfor %}
@@ -455,13 +456,20 @@
                         {% endfor %}
                     </div>
                     {% elif settings_section == "strategies" %}
-                    <p class="settings-summary">Review the built-in trading strategies available in this workspace.</p>
+                    <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
                     <div class="settings-service-list">
                         {% for row in strategy_settings_rows %}
                         <div class="settings-service-row">
                             <div class="settings-service-main">
                                 <p class="settings-service-name">{{ row.name }}</p>
                                 <p class="settings-service-note">{{ row.description }}</p>
+                                {% if row.parameters %}
+                                <p class="settings-service-note settings-service-note-params">
+                                    {% for parameter in row.parameters %}
+                                    <span>{{ parameter.label }}: {{ parameter.default_display }}</span>{% if not loop.last %}<span> · </span>{% endif %}
+                                    {% endfor %}
+                                </p>
+                                {% endif %}
                             </div>
                             <div class="settings-service-state is-muted">
                                 <span>

@@ -1,25 +1,60 @@
 """
 MACD crossover strategy.
 
-Code version: v1.0.1
+Code version: v1.1.0
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-from ..base import BaseStrategy, StrategySignalResult
+from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult
 
 
 class MacdStrategy(BaseStrategy):
     strategy_id = "macd"
     strategy_name = "MACD"
 
+    def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
+        return (
+            StrategyParameterDefinition(
+                key="interval",
+                label="Interval",
+                kind="choice",
+                default="1d",
+                options=("1d",),
+                editable=False,
+                help_text="MACD backtests run on daily bars only.",
+            ),
+            StrategyParameterDefinition(
+                key="fast_span",
+                label="Fast EMA",
+                kind="integer",
+                default=12,
+                minimum=1,
+            ),
+            StrategyParameterDefinition(
+                key="slow_span",
+                label="Slow EMA",
+                kind="integer",
+                default=26,
+                minimum=2,
+            ),
+            StrategyParameterDefinition(
+                key="signal_span",
+                label="Signal EMA",
+                kind="integer",
+                default=9,
+                minimum=1,
+            ),
+        )
+
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
         frame = dataset.copy()
-        fast_span = 12
-        slow_span = 26
-        signal_span = 9
+        normalized_params = self.normalize_params(params)
+        fast_span = int(normalized_params["fast_span"])
+        slow_span = int(normalized_params["slow_span"])
+        signal_span = int(normalized_params["signal_span"])
 
         ema_fast = frame["Close"].ewm(span=fast_span, adjust=False).mean()
         ema_slow = frame["Close"].ewm(span=slow_span, adjust=False).mean()
