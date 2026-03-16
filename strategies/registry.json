@@ -1,5 +1,5 @@
 {
-  "version": "v1.1.1",
+  "version": "v1.2.0",
   "strategies": [
     {
       "id": "buy-and-hold",
@@ -42,6 +42,35 @@
       },
       "ui": {
         "display_order": 20
+      }
+    },
+    {
+      "id": "supertrend-ai",
+      "name": "SuperTrend AI",
+      "module": "strategies.algorithms.strategy_supertrend_ai",
+      "class_name": "SupertrendAiStrategy",
+      "enabled": true,
+      "category": "trend",
+      "description": "Adaptive multi-factor SuperTrend strategy with three-cluster factor selection inspired by the LuxAlgo PineScript.",
+      "supports": {
+        "single_ticker": true,
+        "multi_ticker": false,
+        "long_only": true,
+        "short": false
+      },
+      "default_params": {
+        "interval": "1d",
+        "atr_length": 10,
+        "min_factor": 1,
+        "max_factor": 5,
+        "factor_step": 0.5,
+        "performance_memory": 10.0,
+        "from_cluster": "Best",
+        "max_iteration_steps": 1000,
+        "historical_bars_calculation": 10000
+      },
+      "ui": {
+        "display_order": 30
       }
     }
   ]

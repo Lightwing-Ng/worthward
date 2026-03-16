@@ -1,4 +1,4 @@
-/* Code version: v1.6.1 */
+/* Code version: v1.6.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state || state.currentView !== "trade-messages" || !window.Chart || !state.tradeBacktest) return;
@@ -113,12 +113,12 @@
 		scales: {
 			x: {
 				grid: { display: false },
-				border: { color: axisLineColor, width: 1 },
+				border: { display: false },
 				ticks: { color: theme.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 6, font: { weight: "700" } },
 			},
 			y: {
 				grid: { display: false, drawTicks: false },
-				border: { color: axisLineColor, width: 1 },
+				border: { display: false },
 				afterFit: (scale) => {
 					scale.width = fixedYAxisWidth;
 				},
