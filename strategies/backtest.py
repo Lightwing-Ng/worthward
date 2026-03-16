@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.3.0
+Code version: v1.4.1
 """
 
 from __future__ import annotations
@@ -11,7 +11,37 @@ from math import floor
 import pandas as pd
 
 from .base import StrategySignalResult
-from app.presentation import format_display_date
+
+
+def _format_display_date(value: pd.Timestamp | str) -> str:
+    timestamp = pd.Timestamp(value)
+    return f"{timestamp.day} {timestamp.strftime('%b %Y')}"
+
+
+def _is_winning_trade_pair(first_trade: dict[str, object], second_trade: dict[str, object]) -> bool:
+    first_side = str(first_trade.get("side", ""))
+    second_side = str(second_trade.get("side", ""))
+    first_price = float(first_trade.get("price", 0.0))
+    second_price = float(second_trade.get("price", 0.0))
+
+    if first_side == "Buy" and second_side == "Sell":
+        return second_price > first_price
+    if first_side == "Sell" and second_side == "Buy":
+        return second_price < first_price
+    return False
+
+
+def _build_trade_pairs(trades: list[dict[str, object]]) -> list[tuple[dict[str, object], dict[str, object]]]:
+    trade_pairs: list[tuple[dict[str, object], dict[str, object]]] = []
+    for index in range(len(trades) - 1):
+        first_trade = trades[index]
+        second_trade = trades[index + 1]
+        if first_trade.get("side") == second_trade.get("side"):
+            continue
+        trade_pairs.append((first_trade, second_trade))
+    return trade_pairs
+
+
 def run_single_ticker_backtest(
     signal_result: StrategySignalResult,
     initial_capital: float,
@@ -69,8 +99,9 @@ def run_single_ticker_backtest(
 
     frame["Equity"] = equity_points
     drawdown = (frame["Equity"] / frame["Equity"].cummax()) - 1.0
-    sell_trades = [trade for trade in trades if trade["side"] == "SELL"]
-    wins = [trade for trade in sell_trades if float(trade.get("pnl", 0.0)) > 0]
+    sell_trades = [trade for trade in trades if trade["side"] == "Sell"]
+    trade_pairs = _build_trade_pairs(trades)
+    wins = [pair for pair in trade_pairs if _is_winning_trade_pair(*pair)]
     final_equity = float(frame["Equity"].iloc[-1])
     total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
 
@@ -81,10 +112,10 @@ def run_single_ticker_backtest(
             "net_return_pct": round(total_return, 2),
             "max_drawdown_pct": round(float(drawdown.min()) * 100.0, 2),
             "trade_count": len(sell_trades),
-            "win_rate_pct": round((len(wins) / len(sell_trades)) * 100.0, 2) if sell_trades else 0.0,
+            "win_rate_pct": round((len(wins) / len(trade_pairs)) * 100.0, 2) if trade_pairs else 0.0,
         },
         "chart": {
-            "dates": frame["Date"].map(format_display_date).tolist(),
+            "dates": frame["Date"].map(_format_display_date).tolist(),
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
             "buy_markers": [bool(value) for value in frame[buy_column].tolist()],
