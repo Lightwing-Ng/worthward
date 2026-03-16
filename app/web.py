@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.14.0
+Code version: v3.15.0
 """
 
 from __future__ import annotations
@@ -201,6 +201,30 @@ def register_routes(app: Flask) -> None:
         query_string = urlencode(params, doseq=True)
         return f"/?{query_string}" if query_string else "/"
 
+    def build_local_store_pagination_slots(
+        current_page: int,
+        total_pages: int,
+    ) -> tuple[dict[str, int | None], list[dict[str, int | None]], dict[str, int | None]]:
+        page_group_index = (current_page - 1) // 5
+        page_start = (page_group_index * 5) + 1
+        page_slots: list[dict[str, int | None]] = []
+        for offset in range(5):
+            page_number = page_start + offset
+            page_slots.append(
+                {
+                    "page": page_number if page_number <= total_pages else None,
+                    "is_active": page_number == current_page,
+                }
+            )
+
+        previous_page = page_start - 5 if page_start > 1 else None
+        next_page = page_start + 5 if page_start + 5 <= total_pages else None
+        return (
+            {"page": previous_page},
+            page_slots,
+            {"page": next_page},
+        )
+
     def build_local_market_rows() -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
         for ticker in list_local_tickers():
@@ -332,10 +356,9 @@ def register_routes(app: Flask) -> None:
         local_market_rows: list[dict[str, str]] = []
         local_store_total_pages = 1
         local_store_current_page = 1
-        local_store_page_start = 1
-        local_store_page_end = 1
-        local_store_prev_page = None
-        local_store_next_page = None
+        local_store_prev_slot = {"page": None}
+        local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
+        local_store_next_slot = {"page": None}
         submit_label = labels["update_chart"]
 
         if current_view == "portfolio":
@@ -547,13 +570,10 @@ def register_routes(app: Flask) -> None:
                 local_store_current_page = local_store_page_value()
                 local_store_total_pages = max((len(all_local_market_rows) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
                 local_store_current_page = min(local_store_current_page, local_store_total_pages)
-                page_group_index = (local_store_current_page - 1) // 5
-                local_store_page_start = page_group_index * 5 + 1
-                local_store_page_end = min(local_store_page_start + 4, local_store_total_pages)
-                if local_store_page_start > 1:
-                    local_store_prev_page = max(local_store_page_start - 5, 1)
-                if local_store_page_end < local_store_total_pages:
-                    local_store_next_page = local_store_page_end + 1
+                local_store_prev_slot, local_store_page_slots, local_store_next_slot = build_local_store_pagination_slots(
+                    local_store_current_page,
+                    local_store_total_pages,
+                )
                 start_index = (local_store_current_page - 1) * LOCAL_STORE_PAGE_SIZE
                 end_index = start_index + LOCAL_STORE_PAGE_SIZE
                 local_market_rows = all_local_market_rows[start_index:end_index]
@@ -605,10 +625,9 @@ def register_routes(app: Flask) -> None:
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_total_pages=local_store_total_pages,
-            local_store_page_start=local_store_page_start,
-            local_store_page_end=local_store_page_end,
-            local_store_prev_page=local_store_prev_page,
-            local_store_next_page=local_store_next_page,
+            local_store_prev_slot=local_store_prev_slot,
+            local_store_page_slots=local_store_page_slots,
+            local_store_next_slot=local_store_next_slot,
             submit_label=submit_label,
             page_title=page_title,
             report_heading=report_heading,
