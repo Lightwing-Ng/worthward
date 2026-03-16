@@ -1,5 +1,5 @@
 {
-  "version": "v1.2.0",
+  "version": "v1.3.0",
   "strategies": [
     {
       "id": "buy-and-hold",
@@ -35,7 +35,6 @@
         "short": false
       },
       "default_params": {
-        "interval": "1d",
         "fast_span": 12,
         "slow_span": 26,
         "signal_span": 9
@@ -59,7 +58,6 @@
         "short": false
       },
       "default_params": {
-        "interval": "1d",
         "atr_length": 10,
         "min_factor": 1,
         "max_factor": 5,

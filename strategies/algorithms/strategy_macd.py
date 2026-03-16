@@ -1,7 +1,7 @@
 """
 MACD crossover strategy.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -17,15 +17,6 @@ class MacdStrategy(BaseStrategy):
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
-            StrategyParameterDefinition(
-                key="interval",
-                label="Interval",
-                kind="choice",
-                default="1d",
-                options=("1d",),
-                editable=False,
-                help_text="MACD backtests run on daily bars only.",
-            ),
             StrategyParameterDefinition(
                 key="fast_span",
                 label="Fast EMA",

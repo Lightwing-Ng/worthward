@@ -1,7 +1,7 @@
 """
 Formatting helpers for display labels.
 
-Code version: v3.1.0
+Code version: v3.2.0
 """
 
 from __future__ import annotations
@@ -21,13 +21,6 @@ def format_period_label(period: str) -> str:
         "max": "Max",
     }
     return labels.get(period, period)
-
-
-def format_interval_label(interval: str) -> str:
-    labels = {
-        "1d": "1 day",
-    }
-    return labels.get(interval, interval)
 
 
 def format_display_date(value: pd.Timestamp | str) -> str:

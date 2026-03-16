@@ -1,7 +1,7 @@
 """
 SuperTrend AI strategy with factor clustering.
 
-Code version: v1.0.1
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -25,16 +25,16 @@ class _SupertrendState:
 
 
 def _true_range(frame: pd.DataFrame) -> pd.Series:
-	previous_close = frame["Close"].shift(1)
-	ranges = pd.concat(
-		[
-			frame["High"] - frame["Low"],
-			(frame["High"] - previous_close).abs(),
-			(frame["Low"] - previous_close).abs(),
-		],
-		axis=1,
-	)
-	return ranges.max(axis=1)
+    previous_close = frame["Close"].shift(1)
+    ranges = pd.concat(
+        [
+            frame["High"] - frame["Low"],
+            (frame["High"] - previous_close).abs(),
+            (frame["Low"] - previous_close).abs(),
+        ],
+        axis=1,
+    )
+    return ranges.max(axis=1)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -67,10 +67,10 @@ def _mean_or_none(values: list[float]) -> float | None:
 
 
 def _cluster_factor_and_score(
-	perf_values: list[float],
-	factor_values: list[float],
-	cluster_name: str,
-	max_iter: int,
+    perf_values: list[float],
+    factor_values: list[float],
+    cluster_name: str,
+    max_iter: int,
 ) -> tuple[float | None, float | None]:
     if not perf_values or not factor_values:
         return None, None
@@ -123,15 +123,6 @@ class SupertrendAiStrategy(BaseStrategy):
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
-            StrategyParameterDefinition(
-                key="interval",
-                label="Interval",
-                kind="choice",
-                default="1d",
-                options=("1d",),
-                editable=False,
-                help_text="SuperTrend AI backtests run on daily bars only.",
-            ),
             StrategyParameterDefinition(
                 key="atr_length",
                 label="ATR Length",

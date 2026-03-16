@@ -17,7 +17,6 @@ ticker_b = "SPY"
 portfolio_tickers = ["NVDA", "AAPL", "QQQ"]
 portfolio_weights = [25, 25, 50]
 period = "1y"
-interval = "1d"
 range_mode = "period"
 include_dividends = false
 
@@ -106,7 +105,6 @@ local_store_update = "Update"
 local_store_delete = "Delete"
 local_store_empty = "No local market data is available yet."
 ending_return = "ending return"
-interval = "Interval"
 range = "Range"
 return_mode = "Return mode"
 return_mode_total = "Cash dividends included"

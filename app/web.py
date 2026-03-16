@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.15.0
+Code version: v3.16.0
 """
 
 from __future__ import annotations
@@ -17,11 +17,11 @@ from .email_settings import SmtpSettings, load_smtp_settings, sanitize_smtp_sett
 from strategies.backtest import run_single_ticker_backtest
 from strategies.loader import instantiate_strategy, list_enabled_strategies
 from .connectivity import has_remote_logo_access, has_remote_market_access
-from .config import CODE_VERSION, DEFAULT_INTERVAL, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
+from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
 from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
 from .market_data import fetch_history, refresh_history_store
-from .presentation import build_series_colors, format_display_date, format_interval_label, format_period_label, hex_to_rgba
+from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
 from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, history_store_path_for, list_local_tickers, record_ticker_usage
 
@@ -152,7 +152,7 @@ def register_routes(app: Flask) -> None:
         benchmark_profiles = []
         reference_date_frame = pd.DataFrame({"Date": reference_dates})
         for ticker in PORTFOLIO_BENCHMARK_TICKERS:
-            dataset = fetch_history(ticker, DEFAULT_INTERVAL, include_dividends)
+            dataset = fetch_history(ticker, include_dividends)
             aligned = pd.merge(
                 reference_date_frame,
                 dataset[["Date", "Close"]],
@@ -301,7 +301,6 @@ def register_routes(app: Flask) -> None:
         period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
         exact_start = request.args.get("exact_start", "").strip()
         exact_end = request.args.get("exact_end", "").strip()
-        interval = DEFAULT_INTERVAL
         include_dividends_requested = bool(request.args.getlist("include_dividends"))
         include_dividends = request.args.getlist("include_dividends")[-1] == "1" if include_dividends_requested else False
 
@@ -388,7 +387,7 @@ def register_routes(app: Flask) -> None:
                     raise ValueError("")
                 trade_ticker = validate_ticker_or_raise(requested_tickers[0])
                 ticker_slots = [trade_ticker]
-                trade_dataset = fetch_history(trade_ticker, interval, include_dividends)
+                trade_dataset = fetch_history(trade_ticker, include_dividends)
                 profiles = [fetch_quote_profile(trade_ticker, False)]
                 date_constraints = build_date_constraint_payload(
                     trade_dataset,
@@ -427,7 +426,7 @@ def register_routes(app: Flask) -> None:
                 if len(set(validated_tickers)) != len(validated_tickers):
                     raise ValueError("Ticker symbols must be unique.")
 
-                datasets = [fetch_history(ticker, interval, include_dividends) for ticker in validated_tickers]
+                datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
                 profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                 date_constraints = build_date_constraint_payload(
                     *datasets,
@@ -594,9 +593,7 @@ def register_routes(app: Flask) -> None:
             error=error,
             notice=notice,
             notice_is_floating=notice_is_floating,
-            interval=interval,
             period=period,
-            interval_label=format_interval_label(interval),
             period_label=period_label,
             display_range=display_range,
             periods=SUPPORTED_PERIODS,
@@ -690,7 +687,7 @@ def register_routes(app: Flask) -> None:
 
         try:
             if action == "refresh":
-                refresh_history_store(ticker, DEFAULT_INTERVAL)
+                refresh_history_store(ticker)
                 fetch_quote_profile(ticker, force_refresh=True)
             elif action == "delete":
                 history_path = history_store_path_for(ticker)
@@ -730,6 +727,6 @@ def register_routes(app: Flask) -> None:
         include_dividends = request.args.get("include_dividends", "0") == "1"
         requested_start = request.args.get("exact_start", "").strip() or None
         requested_end = request.args.get("exact_end", "").strip() or None
-        datasets = [fetch_history(ticker, DEFAULT_INTERVAL, include_dividends) for ticker in validated_tickers]
+        datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         return jsonify(asdict(payload))

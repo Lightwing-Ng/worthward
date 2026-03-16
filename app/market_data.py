@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.4.0
+Code version: v3.5.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
+from .config import DEFAULT_INTERVAL
 from .connectivity import has_remote_market_access
 from .storage import ensure_market_store_dir, history_store_path_for
 
@@ -44,7 +45,6 @@ def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.Da
 
 def fetch_history(
     ticker: str,
-    interval: str,
     include_dividends: bool,
 ) -> pd.DataFrame:
     ensure_market_store_dir()
@@ -61,7 +61,7 @@ def fetch_history(
     history = yf.download(
         tickers=ticker,
         period="max",
-        interval=interval,
+        interval=DEFAULT_INTERVAL,
         auto_adjust=False,
         progress=False,
         multi_level_index=False,
@@ -71,7 +71,7 @@ def fetch_history(
     return select_price_series(normalized_dataset, include_dividends)
 
 
-def refresh_history_store(ticker: str, interval: str = "1d") -> Path:
+def refresh_history_store(ticker: str) -> Path:
     ensure_market_store_dir()
     if not has_remote_market_access():
         raise ValueError("Remote market access is unavailable.")
@@ -79,7 +79,7 @@ def refresh_history_store(ticker: str, interval: str = "1d") -> Path:
     history = yf.download(
         tickers=ticker,
         period="max",
-        interval=interval,
+        interval=DEFAULT_INTERVAL,
         auto_adjust=False,
         progress=False,
         multi_level_index=False,
