@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_range_controls with context %}
+
+{% block sidebar_content %}
+<form class="controls" method="get" action="{{ current_path }}">
+    <div class="field ticker-field" data-index="1">
+        <div class="ticker-input-row">
+            <div class="ticker-input-main">
+                <label for="ticker_1">{{ labels.trade_messages_ticker }}</label>
+                <div class="ticker-input-control">
+                    <span class="ticker-leading-slot" aria-hidden="true">
+                        <span class="ticker-logo-placeholder"></span>
+                        <img class="ticker-input-logo" alt="">
+                    </span>
+                    <input id="ticker_1" name="ticker" data-ticker-input value="{{ ticker_slots[0] if ticker_slots else '' }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as NVDA or MSFT." required>
+                    <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                </div>
+                <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                <div class="suggestions" id="ticker_1_suggestions"></div>
+            </div>
+        </div>
+    </div>
+    <div class="field">
+        <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
+        <select id="trade_strategy" name="strategy" class="trade-strategy-select">
+            {% for strategy in strategy_options %}
+            <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
+    <div class="field trade-capital-field">
+        <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
+        <div class="trade-capital-row">
+            <input id="trade_initial_capital" name="capital" class="trade-capital-input" type="text" value="{{ "{:,.2f}".format(backtest_initial_capital) }}" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="trade-capital-slider-shell" aria-hidden="true">
+            <input id="trade_initial_capital_slider" class="trade-capital-slider" type="range" min="1000" max="1000000" step="100" value="{{ backtest_initial_capital|int }}">
+        </div>
+    </div>
+    <div class="field-checkbox field-switch">
+        <label class="switch-row" for="include_dividends">
+            <span class="switch-label">{{ labels.include_dividends }}</span>
+            <span class="ios-switch-shell">
+                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends %}checked{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field">
+        <button id="submit" type="submit">{{ labels.trade_messages_backtest }}</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block workspace_content %}
+<div class="workspace-header">
+    <article class="report-card trade-performance-card">
+        <div class="report-heading-row">
+            <p class="report-heading">{{ labels.trade_messages_metrics }}</p>
+        </div>
+        {% if trade_backtest_result %}
+        <div class="trade-detail-tabs">
+            <div class="range-mode-shell trade-detail-shell" data-trade-detail-shell data-active="metrics">
+                <label class="range-mode-option" for="trade_detail_metrics">
+                    <input id="trade_detail_metrics" name="trade_detail_tab" type="radio" value="metrics" checked>
+                    <span>{{ labels.trade_messages_metrics_tab }}</span>
+                </label>
+                <label class="range-mode-option" for="trade_detail_transactions">
+                    <input id="trade_detail_transactions" name="trade_detail_tab" type="radio" value="transactions">
+                    <span>{{ labels.trade_messages_transactions_tab }}</span>
+                </label>
+            </div>
+            <div class="trade-detail-panel" data-trade-detail-panel="metrics">
+                <div class="trade-metrics-grid">
+                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value">{{ trade_backtest_result.summary.trade_count }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
+                </div>
+            </div>
+            <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
+                <div class="trade-transactions-wrap">
+                    <table class="settings-table trade-transactions-table">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Date</th>
+                                <th>Side</th>
+                                <th class="trade-transactions-number">Price</th>
+                                <th class="trade-transactions-number">Shares</th>
+                                <th class="trade-transactions-number">P&amp;L</th>
+                                <th class="trade-transactions-number">Equity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in trade_backtest_result.trades %}
+                            <tr>
+                                <td class="trade-transactions-index">{{ loop.index }}</td>
+                                <td class="trade-transactions-date">{{ row.date }}</td>
+                                <td class="trade-transactions-side">{{ row.side }}</td>
+                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.price) }}</td>
+                                <td class="trade-transactions-number">{{ "{:,}".format(row.shares) }}</td>
+                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.pnl) }}</td>
+                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.equity) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <p class="trade-pane-placeholder">{{ labels.trade_messages_no_result }}</p>
+        {% endif %}
+    </article>
+</div>
+<article class="chart-surface trade-messages-surface">
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ labels.trade_messages_chart }}</p>
+    </div>
+    {% if trade_backtest_result %}
+    <div class="trade-chart-stack">
+        <div class="trade-chart-panel">
+            <canvas id="tradePriceChart"></canvas>
+        </div>
+        <div class="trade-chart-panel trade-chart-panel-equity">
+            <canvas id="tradeEquityChart"></canvas>
+        </div>
+    </div>
+    {% else %}
+    <p class="trade-pane-placeholder">{{ labels.trade_messages_detail_placeholder }}</p>
+    {% endif %}
+</article>
+{% endblock %}

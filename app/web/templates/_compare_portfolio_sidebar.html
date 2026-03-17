@@ -1,0 +1,54 @@
+{% from "_macros.html" import render_range_controls with context %}
+<form class="controls" method="get" action="{{ current_path }}">
+    <div id="ticker_fields">
+        {% for index in range(1, ticker_slots | length + 1) %}
+        <div class="field ticker-field" data-index="{{ index }}">
+            <div class="ticker-input-row">
+                <div class="ticker-input-main">
+                    <label for="ticker_{{ index }}">Ticker {{ index }}</label>
+                    <div class="ticker-input-control">
+                        <span class="ticker-leading-slot" aria-hidden="true">
+                            <span class="ticker-logo-placeholder"></span>
+                            <img class="ticker-input-logo" alt="">
+                        </span>
+                        <input id="ticker_{{ index }}" name="ticker" data-ticker-input value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
+                        <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                    </div>
+                    <div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
+                    <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                    <div class="suggestions" id="ticker_{{ index }}_suggestions"></div>
+                </div>
+                {% if current_view == "portfolio" %}
+                <div class="portfolio-weight-field">
+                    <div class="portfolio-weight-row">
+                        <input id="weight_{{ index }}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
+                        <span class="portfolio-weight-unit">%</span>
+                    </div>
+                    <div class="portfolio-weight-slider-shell" aria-hidden="true">
+                        <input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" aria-label="{{ labels.portfolio_weight }}">
+                    </div>
+                    <div class="portfolio-weight-tooltip field-tooltip" hidden></div>
+                </div>
+                {% endif %}
+                <button type="button" class="ticker-remove{% if index <= min_tickers %} is-placeholder{% endif %}" aria-label="Remove ticker" {% if index <= min_tickers %}tabindex="-1" aria-hidden="true"{% endif %}><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
+        <button type="button" id="add_ticker" class="flat-link-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
+    </div>
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
+    <div class="field-checkbox field-switch">
+        <label class="switch-row" for="include_dividends">
+            <span class="switch-label">{{ labels.include_dividends }}</span>
+            <span class="ios-switch-shell">
+                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends %}checked{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field">
+        <button id="submit" type="submit">{{ submit_label }}</button>
+    </div>
+</form>

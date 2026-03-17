@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ labels.page_title }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --color-scheme: {{ theme.color_scheme }};
+            --theme-background: {{ theme.background }};
+            --theme-panel: {{ theme.panel }};
+            --theme-panel-strong: {{ theme.panel_strong }};
+            --theme-text: {{ theme.text }};
+            --theme-muted: {{ theme.muted }};
+            --theme-accent-primary: {{ theme.accent_primary }};
+            --theme-accent-secondary: {{ theme.accent_secondary }};
+            --theme-accent-positive: {{ theme.accent_positive }};
+            --theme-shadow: {{ theme.shadow }};
+            --theme-glass-highlight: {{ theme.glass_highlight }};
+            --theme-radius-shell: {{ theme.radius_shell }};
+            --theme-radius-panel: {{ theme.radius_panel }};
+            --theme-radius-control: {{ theme.radius_control }};
+            --logo-search-size: {{ logos.search_size }}px;
+            --logo-card-size: {{ logos.card_size }}px;
+            --logo-tooltip-size: {{ logos.tooltip_size }}px;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
+</head>
+<body>
+<main class="page">
+    <div class="app-shell is-sidebar-open">
+        <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="Toggle sidebar" aria-expanded="true">
+            <span class="icon icon-sidebar-left" aria-hidden="true"></span>
+        </button>
+        <aside class="panel sidebar" id="app_sidebar">
+            <section class="hero">
+                <h1>{{ page_title }}</h1>
+            </section>
+            {% block sidebar_content %}{% endblock %}
+        </aside>
+        <section class="panel chart-panel workspace">
+            {% if error %}
+            <div class="error{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
+                <span>{{ error }}</span>
+                <button type="button" class="notice-close" aria-label="Close error notice">
+                    <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                </button>
+            </div>
+            {% endif %}
+            {% if notice %}
+            <div class="notice{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
+                <span>{{ notice }}</span>
+                <button type="button" class="notice-close" aria-label="Close notice">
+                    <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                </button>
+            </div>
+            {% endif %}
+            {% block workspace_content %}{% endblock %}
+        </section>
+    </div>
+    <nav class="sidebar-dock" aria-label="Workspace modes">
+        <a href="{{ dock_urls.tickers }}" class="sidebar-dock-item{% if current_view == 'tickers' %} is-active{% endif %}" aria-current="{% if current_view == 'tickers' %}page{% endif %}" aria-label="{{ labels.dock_tickers }}" data-tooltip="{{ labels.dock_tickers }}">
+            <span class="icon icon-dock-compare" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_tickers }}</span>
+        </a>
+        <a href="{{ dock_urls.portfolio }}" class="sidebar-dock-item{% if current_view == 'portfolio' %} is-active{% endif %}" aria-current="{% if current_view == 'portfolio' %}page{% endif %}" aria-label="{{ labels.dock_portfolio }}" data-tooltip="{{ labels.dock_portfolio }}">
+            <span class="icon icon-dock-portfolio" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_portfolio }}</span>
+        </a>
+        <a href="{{ dock_urls['trade-messages'] }}" class="sidebar-dock-item{% if current_view == 'trade-messages' %} is-active{% endif %}" aria-current="{% if current_view == 'trade-messages' %}page{% endif %}" aria-label="{{ labels.dock_trade_messages }}" data-tooltip="{{ labels.dock_trade_messages }}">
+            <span class="icon icon-dock-trade-messages" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_trade_messages }}</span>
+        </a>
+        <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
+            <span class="icon icon-dock-settings" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_settings }}</span>
+        </a>
+    </nav>
+</main>
+<div id="settings_action_overlay" class="settings-action-overlay" hidden>
+    <div class="settings-action-dialog chart-tooltip">
+        <button type="button" id="settings_action_overlay_close" class="settings-action-close" aria-label="Close">
+            <span class="icon icon-remove-muted" aria-hidden="true"></span>
+        </button>
+        <span id="settings_action_overlay_icon" class="icon icon-overlay-refresh settings-action-icon" aria-hidden="true"></span>
+        <p class="settings-action-title">Updating local market data</p>
+        <p class="settings-action-copy">This may take a moment while the app checks remote data and refreshes the local store.</p>
+    </div>
+</div>
+<script>
+    window.ANTIGRAVITY_APP = {
+        defaults: {{ defaults|tojson }},
+        labels: {{ labels|tojson }},
+        theme: {{ theme|tojson }},
+        chartConfig: {{ chart_config|tojson }},
+        endpoints: {{ endpoints|tojson }},
+        constraints: { minTickers: {{ min_tickers }}, maxTickers: {{ max_tickers }} },
+        chart: {
+            series: {{ series|tojson }},
+            profiles: {{ profiles_json|tojson }}
+        },
+        portfolio: {
+            items: {{ portfolio_items|tojson }},
+            weights: {{ portfolio_weights|tojson }},
+            totalReturn: {{ portfolio_total_return|tojson }}
+        },
+        tradeBacktest: {{ trade_backtest_result|tojson }},
+        currentView: {{ current_view_name|tojson }}
+    };
+</script>
+{% block page_scripts %}{% endblock %}
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
+{% if (current_view == "tickers" or current_view == "portfolio") and series %}
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
+{% endif %}
+{% if current_view == "trade-messages" and trade_backtest_result %}
+<script src="{{ url_for('static', filename='assets/js/trade-messages.js', v=version) }}"></script>
+{% endif %}
+</body>
+</html>

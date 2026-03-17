@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block sidebar_content %}
+<nav class="settings-nav" aria-label="Settings sections">
+    <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
+    <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">{{ labels.network_self_check }}</a>
+    <a href="{{ settings_urls.strategies }}" class="settings-nav-item{% if settings_section == 'strategies' %} is-active{% endif %}">{{ labels.strategy_settings }}</a>
+    <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item{% if settings_section == 'email-smtp' %} is-active{% endif %}">{{ labels.email_smtp }}</a>
+    <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item{% if settings_section == 'local-market-store' %} is-active{% endif %}">{{ labels.local_market_store }}</a>
+</nav>
+{% endblock %}
+
+{% block workspace_content %}
+<article class="chart-surface settings-surface">
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ settings_title }}</p>
+    </div>
+    <div class="settings-body">
+        {% if settings_section == "about" %}
+        <dl class="footer-meta about-meta">
+            <dt>{{ labels.code_version }}</dt>
+            <dd>{{ version }}</dd>
+            <dt>{{ labels.updated_on }}</dt>
+            <dd>{{ updated_on }}</dd>
+        </dl>
+        {% elif settings_section == "network" %}
+        <p class="settings-summary">{{ labels.service_status }}</p>
+        <div class="settings-service-list">
+            {% for row in settings_service_rows %}
+            <div class="settings-service-row">
+                <div class="settings-service-main">
+                    <p class="settings-service-name">{{ row.name }}</p>
+                    <p class="settings-service-note">{{ row.note }}</p>
+                </div>
+                <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
+                    {% if row.is_available %}
+                    <img class="settings-status-check" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
+                    {% endif %}
+                    <span>{{ row.status }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% elif settings_section == "strategies" %}
+        <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
+        <div class="settings-service-list">
+            {% for row in strategy_settings_rows %}
+            <div class="settings-service-row">
+                <div class="settings-service-main">
+                    <p class="settings-service-name">{{ row.name }}</p>
+                    <p class="settings-service-note">{{ row.description }}</p>
+                    {% if row.parameters %}
+                    <p class="settings-service-note settings-service-note-params">
+                        {% for parameter in row.parameters %}
+                        <span>{{ parameter.label }}: {{ parameter.default_display }}</span>{% if not loop.last %}<span> · </span>{% endif %}
+                        {% endfor %}
+                    </p>
+                    {% endif %}
+                </div>
+                <div class="settings-service-state is-muted">
+                    <span>
+                        {% if row.supports.long_only %}Long only{% endif %}
+                        {% if row.supports.single_ticker %} · Single ticker{% endif %}
+                    </span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% elif settings_section == "email-smtp" %}
+        <p class="settings-summary">{{ labels.email_smtp_summary }}</p>
+        <form method="post" action="/settings/email-smtp/action" class="settings-stack-form">
+            <div class="settings-form-grid">
+                <div class="field">
+                    <label for="smtp_host">{{ labels.email_smtp_host }}</label>
+                    <input id="smtp_host" name="host" type="text" value="{{ smtp_settings.host }}" placeholder="smtp.office365.com">
+                </div>
+                <div class="field">
+                    <label for="smtp_port">{{ labels.email_smtp_port }}</label>
+                    <input id="smtp_port" name="port" type="number" min="1" max="65535" value="{{ smtp_settings.port }}" inputmode="numeric">
+                </div>
+                <div class="field">
+                    <label for="smtp_from_email">{{ labels.email_smtp_from }}</label>
+                    <input id="smtp_from_email" name="from_email" type="email" value="{{ smtp_settings.from_email }}" autocomplete="username email" placeholder="your-name@example.invalid">
+                </div>
+                <div class="field settings-field-span-full">
+                    <label for="smtp_password">{{ labels.email_smtp_password }}</label>
+                    <input id="smtp_password" name="password" type="password" value="" autocomplete="current-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}App password or mailbox password{% endif %}">
+                </div>
+            </div>
+            <div class="field-checkbox field-switch settings-field-span-full">
+                <label class="switch-row" for="smtp_use_starttls">
+                    <span class="switch-label">{{ labels.email_smtp_starttls }}</span>
+                    <span class="ios-switch-shell">
+                        <input id="smtp_use_starttls" name="use_starttls" type="checkbox" value="1" {% if smtp_settings.use_starttls %}checked{% endif %}>
+                        <span class="ios-switch-slider" aria-hidden="true"></span>
+                    </span>
+                </label>
+            </div>
+            {% if smtp_settings.has_password %}
+            <div class="field-tooltip">{{ labels.email_smtp_password_saved }}</div>
+            {% endif %}
+            <div class="settings-form-actions">
+                <button type="submit" name="action" value="save" class="secondary-button settings-inline-button">{{ labels.email_smtp_save }}</button>
+                <button type="submit" name="action" value="test" class="settings-inline-button">{{ labels.email_smtp_test }}</button>
+            </div>
+        </form>
+        {% elif settings_section == "local-market-store" %}
+        <div class="local-store-layout">
+            <p class="settings-summary">{{ labels.local_store_summary }}</p>
+            <div class="settings-table-wrap local-store-table-wrap">
+                <table class="settings-table">
+                    <thead>
+                        <tr>
+                            <th>{{ labels.local_store_symbol }}</th>
+                            <th>{{ labels.local_store_name }}</th>
+                            <th>{{ labels.local_store_range }}</th>
+                            <th>{{ labels.local_store_update }}</th>
+                            <th>{{ labels.local_store_delete }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if local_market_rows %}
+                        {% for row in local_market_rows %}
+                        <tr>
+                            <td>
+                                <span class="settings-symbol-cell">
+                                    {% if row.logo_url %}
+                                    <img class="settings-table-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
+                                    {% else %}
+                                    <span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
+                                    {% endif %}
+                                    <span>{{ row.ticker }}</span>
+                                </span>
+                            </td>
+                            <td>{{ row.company_name }}</td>
+                            <td>{{ row.range }}</td>
+                            <td>
+                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                    <input type="hidden" name="action" value="refresh">
+                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                    <button type="submit" class="settings-action-button" aria-label="{{ labels.local_store_update }}">
+                                        <span class="icon icon-store-refresh" aria-hidden="true"></span>
+                                    </button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                    <button type="submit" class="settings-action-button is-danger" aria-label="{{ labels.local_store_delete }}">
+                                        <span class="icon icon-store-delete" aria-hidden="true"></span>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="5">{{ labels.local_store_empty }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            {% if local_store_total_pages > 1 %}
+            <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages">
+                {% if local_store_prev_slot.page %}
+                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="settings-page-button settings-page-nav" aria-label="Previous pages">
+                    <span class="icon icon-page-prev" aria-hidden="true"></span>
+                </a>
+                {% else %}
+                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                {% endif %}
+                {% for slot in local_store_page_slots %}
+                {% if slot.page %}
+                <a href="{{ local_store_page_urls[slot.page] }}" class="settings-page-button{% if slot.is_active %} is-active{% endif %}">{{ slot.page }}</a>
+                {% else %}
+                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                {% endif %}
+                {% endfor %}
+                {% if local_store_next_slot.page %}
+                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="settings-page-button settings-page-nav" aria-label="Next pages">
+                    <span class="icon icon-page-next" aria-hidden="true"></span>
+                </a>
+                {% else %}
+                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                {% endif %}
+            </nav>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</article>
+{% endblock %}

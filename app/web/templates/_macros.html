@@ -1,0 +1,109 @@
+{% macro render_report_info(button_label) -%}
+<div class="report-info">
+    <button type="button" class="report-info-button" aria-label="{{ button_label }}">i</button>
+    <div class="report-info-tooltip chart-tooltip" role="tooltip">
+        <dl class="report-info-meta">
+            <div class="report-info-row">
+                <dt>{{ labels.period }}</dt>
+                <dd>{{ period_label }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.range }}</dt>
+                <dd>{{ display_range }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.return_mode }}</dt>
+                <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None) -%}
+<div class="chart-surface">
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ chart_heading }}</p>
+    </div>
+    {% if has_series %}
+    <div class="chart-wrap">
+        <canvas id="returnsChart"></canvas>
+    </div>
+    {% else %}
+    <div class="placeholder-copy chart-placeholder-copy">
+        <p>{{ placeholder_text }}</p>
+    </div>
+    {% endif %}
+</div>
+{%- endmacro %}
+
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) -%}
+<div class="field">
+    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
+        <label class="range-mode-option" for="range_period">
+            <input id="range_period" name="range" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
+            <span>{{ labels.range_mode_period }}</span>
+        </label>
+        <label class="range-mode-option" for="range_exact">
+            <input id="range_exact" name="range" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
+            <span>{{ labels.range_mode_exact }}</span>
+        </label>
+    </div>
+</div>
+<div class="field range-panel" id="period_panel">
+    <label for="period">{{ labels.period }}</label>
+    <select id="period" name="period">
+        {% for item in periods %}
+        <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
+    <div class="date-picker-grid">
+        <div class="date-picker-field" data-date-picker>
+            <label for="exact_start">{{ labels.start }}</label>
+            <input id="exact_start" name="from" type="hidden" value="{{ exact_start }}">
+            <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                <span class="date-picker-trigger-value" data-date-trigger-value></span>
+            </button>
+            <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-toolbar">
+                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                        <span class="icon icon-page-prev" aria-hidden="true"></span>
+                    </button>
+                    <p class="date-picker-month" data-date-month></p>
+                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                        <span class="icon icon-page-next" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <div class="date-picker-weekdays" aria-hidden="true">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                <div class="date-picker-days" data-date-grid></div>
+            </div>
+        </div>
+        <div class="date-picker-field" data-date-picker>
+            <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
+            <input id="exact_end" name="to" type="hidden" value="{{ exact_end }}">
+            <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                <span class="date-picker-trigger-value" data-date-trigger-value></span>
+            </button>
+            <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-toolbar">
+                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                        <span class="icon icon-page-prev" aria-hidden="true"></span>
+                    </button>
+                    <p class="date-picker-month" data-date-month></p>
+                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                        <span class="icon icon-page-next" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <div class="date-picker-weekdays" aria-hidden="true">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                <div class="date-picker-days" data-date-grid></div>
+            </div>
+        </div>
+    </div>
+</div>
+{%- endmacro %}
