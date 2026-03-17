@@ -1,4 +1,4 @@
-/* Code version: v3.19.1 */
+/* Code version: v3.25.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -26,11 +26,75 @@
 		clock: 0,
 		touchedAtByIndex: {},
 	};
+	const tickerValidationCache = new Map();
 	const settingsActionOverlay = $("#settings_action_overlay");
 	const settingsActionOverlayClose = $("#settings_action_overlay_close");
 	const settingsActionOverlayTitle = settingsActionOverlay?.querySelector(".settings-action-title");
 	const settingsActionOverlayCopy = settingsActionOverlay?.querySelector(".settings-action-copy");
 	const settingsActionOverlayIcon = $("#settings_action_overlay_icon");
+	const canTransitionDom = typeof document.startViewTransition === "function";
+	const dockPrefetchCache = new Map();
+	const progressiveResourceCache = new Map();
+	const progressiveViewRegistry = {
+		tickers: {
+			masks: [
+				'[data-workspace-mask="compare-return"]',
+				'[data-workspace-mask="chart-area"]',
+			],
+		},
+		portfolio: {
+			masks: [
+				'[data-workspace-mask="portfolio-total-return"]',
+				'[data-workspace-mask="portfolio-donut-start"]',
+				'[data-workspace-mask="portfolio-donut-end"]',
+				'[data-workspace-mask="chart-area"]',
+			],
+		},
+		"trade-messages": {
+			masks: [
+				'[data-workspace-mask="trade-metric"]',
+				'[data-workspace-mask="trade-chart"]',
+			],
+		},
+		settings: {
+			about: { masks: [] },
+			strategies: { masks: [] },
+			"email-smtp": { masks: [] },
+			network: {
+				masks: [
+					'[data-workspace-mask="settings-status-icon"]',
+					'[data-workspace-mask="settings-status-text"]',
+				],
+				hydrate: () => hydrateNetworkStatuses(),
+			},
+			"local-market-store": {
+				masks: [
+					'[data-workspace-mask="local-store-date"]',
+				],
+				hydrate: () => hydrateLocalStoreRanges(),
+			},
+		},
+	};
+
+	const getProgressiveManifest = (view, section = null) => {
+		if (view === "settings") {
+			return progressiveViewRegistry.settings[section || "about"] || { masks: [] };
+		}
+		return progressiveViewRegistry[view] || { masks: [] };
+	};
+
+	const getProgressiveMaskSelectors = (view, section = null) => getProgressiveManifest(view, section).masks || [];
+
+	const fetchJsonCached = async (cacheKey, url, { ttlMs = 30000 } = {}) => {
+		const cached = progressiveResourceCache.get(cacheKey);
+		const now = Date.now();
+		if (cached && (now - cached.cachedAt) < ttlMs) return cached.value;
+		const response = await fetch(url, { credentials: "same-origin" });
+		if (!response.ok) throw new Error(`JSON fetch failed: ${response.status}`);
+		const value = await response.json();
+		progressiveResourceCache.set(cacheKey, { cachedAt: now, value });
+		return value;
+	};
 
 	const appShell = $(".app-shell");
 	const sidebarToggle = $("#sidebar_toggle");
@@ -135,19 +199,377 @@
 
 	const attachDockMemory = () => {
 		const viewByDockIndex = ["tickers", "portfolio", "trade-messages", "settings"];
+		const dockLinks = $$(".sidebar-dock-item");
+		const setDockPreviewTarget = (targetView) => {
+			dockLinks.forEach((link, index) => {
+				const isTarget = viewByDockIndex[index] === targetView;
+				link.classList.toggle("is-active", isTarget);
+				if (isTarget) {
+					link.setAttribute("aria-current", "page");
+				} else {
+					link.removeAttribute("aria-current");
+				}
+			});
+		};
+		const prefetchDockDestination = async (url) => {
+			if (!url) return null;
+			if (dockPrefetchCache.has(url)) return dockPrefetchCache.get(url);
+			const fetchPromise = fetch(url, {
+				credentials: "same-origin",
+				headers: {
+					"X-Requested-With": "dock-prefetch",
+				},
+				cache: "force-cache",
+			}).then(async (response) => {
+				if (!response.ok) throw new Error(`Dock prefetch failed: ${response.status}`);
+				return response.text();
+			});
+			dockPrefetchCache.set(url, fetchPromise);
+			return fetchPromise;
+		};
+		const resolveSettingsSectionFromUrl = (url) => {
+			try {
+				const parsedUrl = new URL(url, window.location.origin);
+				const pathMatch = parsedUrl.pathname.match(/^\/settings\/([^/?#]+)/);
+				return pathMatch?.[1] || "about";
+			} catch (_error) {
+				return "about";
+			}
+		};
 		$$(".sidebar-dock-item").forEach((link, index) => {
 			const targetView = viewByDockIndex[index];
 			if (!targetView || link.dataset.boundDockMemory === "1") return;
 			link.dataset.boundDockMemory = "1";
-			link.addEventListener("click", (event) => {
+			link.addEventListener("click", async (event) => {
 				rememberCurrentViewUrl();
 				const memory = readViewMemory();
 				const rememberedUrl = memory[targetView];
-				if (!rememberedUrl) return;
 				const fallbackUrl = link.getAttribute("href") || "";
-				if (!fallbackUrl || rememberedUrl === fallbackUrl) return;
 				event.preventDefault();
-				window.location.assign(rememberedUrl);
+				const nextUrl = rememberedUrl || fallbackUrl;
+				if (!nextUrl) return;
+				if (targetView === state.currentView && nextUrl === (window.location.pathname + window.location.search)) {
+					return;
+				}
+				setDockPreviewTarget(targetView);
+				document.body.classList.add("is-workspace-switching");
+				try {
+					const responseText = await prefetchDockDestination(nextUrl);
+					const parser = new DOMParser();
+					const newDoc = parser.parseFromString(responseText, "text/html");
+					const newAppShell = newDoc.querySelector(".app-shell");
+					if (newAppShell) {
+						document.querySelector(".app-shell").replaceWith(newAppShell);
+						const targetSettingsSection = targetView === "settings"
+							? resolveSettingsSectionFromUrl(nextUrl)
+							: null;
+						const nextSelectors = getProgressiveMaskSelectors(targetView, targetSettingsSection);
+						document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
+							node.classList.remove("is-masked-during-switch");
+						});
+						nextSelectors.forEach((selector) => {
+							document.querySelectorAll(selector).forEach((node) => {
+								node.classList.add("is-masked-during-switch");
+							});
+						});
+					}
+				} catch (_error) {
+				}
+				window.requestAnimationFrame(() => {
+					window.location.assign(nextUrl);
+				});
+			});
+		});
+	};
+
+	const isTickerValidationPending = () => getTickerInputs().some((input) => input.dataset.validationPending === "1");
+
+	const setTickerValidationPending = (input, isPending) => {
+		if (!input) return;
+		input.dataset.validationPending = isPending ? "1" : "";
+		input.classList.toggle("is-pending", isPending);
+	};
+
+	const validateTickerExistence = async (input, { preferFresh = false } = {}) => {
+		if (!input) return false;
+		const value = sanitizeTicker(input.value.trim());
+		input.value = value;
+		validateTickerInput(input);
+		if (!value) {
+			input.dataset.unknown = "";
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+			return false;
+		}
+		if (!tickerPattern.test(value)) {
+			input.dataset.unknown = "";
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+			return false;
+		}
+		const counts = new Map();
+		getFilledTickers().forEach((ticker) => counts.set(ticker, (counts.get(ticker) || 0) + 1));
+		if ((counts.get(value) || 0) > 1) {
+			input.dataset.unknown = "";
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+			return false;
+		}
+
+		if (!preferFresh && tickerValidationCache.has(value)) {
+			input.dataset.unknown = tickerValidationCache.get(value) ? "" : "1";
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+			return tickerValidationCache.get(value);
+		}
+
+		setTickerValidationPending(input, true);
+		input.dataset.validationTicker = value;
+		try {
+			const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(value)}&limit=5`);
+			if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
+			const payload = await response.json();
+			const isKnown = payload.some((item) => String(item.symbol || "").toUpperCase() === value);
+			tickerValidationCache.set(value, isKnown);
+			if (input.dataset.validationTicker === value) {
+				input.dataset.unknown = isKnown ? "" : "1";
+				setTickerValidationPending(input, false);
+				validateTickerInput(input);
+			}
+			return isKnown;
+		} catch (_error) {
+			if (input.dataset.validationTicker === value) {
+				setTickerValidationPending(input, false);
+				validateTickerInput(input);
+			}
+			return input.dataset.unknown !== "1";
+		}
+	};
+
+	const ensureTickerValidityBeforeSubmit = async () => {
+		const inputs = getTickerInputs();
+		const results = await Promise.all(inputs.map((input) => validateTickerExistence(input, { preferFresh: true })));
+		validateAllTickerInputs();
+		return results.every((item, index) => {
+			const input = inputs[index];
+			if (!sanitizeTicker(input.value.trim())) return !input.required;
+			return item && input.checkValidity() && input.dataset.unknown !== "1";
+		});
+	};
+
+	const replaceLocalStoreRegion = (nextRegion) => {
+		const currentRegion = $("#local_store_region");
+		if (!currentRegion || !nextRegion) return;
+		const applyReplacement = () => {
+			currentRegion.replaceWith(nextRegion);
+		};
+		if (canTransitionDom) {
+			document.startViewTransition(applyReplacement);
+			return;
+		}
+		applyReplacement();
+	};
+
+	const replaceSettingsWorkspaceRegion = (nextRegion) => {
+		const currentRegion = $("#settings_workspace_region");
+		if (!currentRegion || !nextRegion) return;
+		const applyReplacement = () => {
+			currentRegion.replaceWith(nextRegion);
+		};
+		if (canTransitionDom) {
+			document.startViewTransition(applyReplacement);
+			return;
+		}
+		applyReplacement();
+	};
+
+	const setActiveSettingsNav = (targetSection) => {
+		$$(".settings-nav-item").forEach((link) => {
+			const isTarget = link.getAttribute("href")?.includes(`/settings/${targetSection}`);
+			link.classList.toggle("is-active", Boolean(isTarget));
+			if (isTarget) {
+				link.setAttribute("aria-current", "page");
+			} else {
+				link.removeAttribute("aria-current");
+			}
+		});
+	};
+
+	const attachSettingsSectionNavigation = () => {
+		document.addEventListener("click", async (event) => {
+			const link = event.target.closest(".settings-nav-item");
+			if (!link || state.currentView !== "settings") return;
+			const nextUrl = link.href;
+			if (!nextUrl) return;
+			const parsed = new URL(nextUrl, window.location.origin);
+			const targetSection = parsed.pathname.split("/")[2] || "about";
+			if (targetSection === state.settingsSection && parsed.search === window.location.search) return;
+			event.preventDefault();
+			setActiveSettingsNav(targetSection);
+			try {
+				const responseText = await fetch(nextUrl, {
+					credentials: "same-origin",
+					headers: { "X-Requested-With": "settings-prefetch" },
+					cache: "force-cache",
+				}).then(async (response) => {
+					if (!response.ok) throw new Error(`Settings prefetch failed: ${response.status}`);
+					return response.text();
+				});
+				const parser = new DOMParser();
+				const nextDocument = parser.parseFromString(responseText, "text/html");
+				const nextRegion = nextDocument.querySelector("#settings_workspace_region");
+				if (!nextRegion) throw new Error("Settings workspace region missing.");
+				replaceSettingsWorkspaceRegion(nextRegion);
+				window.history.pushState({ settingsSection: targetSection }, "", nextUrl);
+				state.settingsSection = targetSection;
+				rememberCurrentViewUrl(nextUrl);
+				document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
+					node.classList.remove("is-masked-during-switch");
+				});
+				const manifest = getProgressiveManifest("settings", targetSection);
+				(manifest.masks || []).forEach((selector) => {
+					document.querySelectorAll(selector).forEach((node) => {
+						node.classList.add("is-masked-during-switch");
+					});
+				});
+				if (typeof manifest.hydrate === "function") {
+					void manifest.hydrate();
+				}
+			} catch (_error) {
+				window.location.assign(nextUrl);
+			}
+		});
+
+		window.addEventListener("popstate", async () => {
+			if (state.currentView !== "settings") return;
+			const section = window.location.pathname.split("/")[2] || "about";
+			setActiveSettingsNav(section);
+			state.settingsSection = section;
+			try {
+				const responseText = await fetch(window.location.pathname + window.location.search, {
+					credentials: "same-origin",
+					headers: { "X-Requested-With": "settings-popstate" },
+					cache: "force-cache",
+				}).then(async (response) => {
+					if (!response.ok) throw new Error(`Settings popstate failed: ${response.status}`);
+					return response.text();
+				});
+				const parser = new DOMParser();
+				const nextDocument = parser.parseFromString(responseText, "text/html");
+				const nextRegion = nextDocument.querySelector("#settings_workspace_region");
+				if (nextRegion) replaceSettingsWorkspaceRegion(nextRegion);
+				const manifest = getProgressiveManifest("settings", section);
+				if (typeof manifest.hydrate === "function") {
+					void manifest.hydrate();
+				}
+			} catch (_error) {
+				window.location.assign(window.location.pathname + window.location.search);
+			}
+		});
+	};
+
+	const hydrateLocalStoreRanges = async () => {
+		if (state.currentView !== "settings" || state.settingsSection !== "local-market-store") return;
+		const region = $("#local_store_region");
+		if (!region) return;
+		const rows = Array.from(region.querySelectorAll("[data-local-store-ticker]"));
+		if (!rows.length) return;
+		rows.forEach((row) => {
+			row.querySelectorAll('[data-workspace-mask="local-store-date"]').forEach((node) => {
+				node.classList.add("is-pending-value");
+			});
+		});
+		const page = new URLSearchParams(window.location.search).get("page") || "1";
+		try {
+			const payload = await fetchJsonCached(
+				`local-store:${page}`,
+				`${endpoints.localStorePageData}?page=${encodeURIComponent(page)}`,
+				{ ttlMs: 60000 },
+			);
+			(payload.rows || []).forEach((item) => {
+				const row = region.querySelector(`[data-local-store-ticker="${CSS.escape(item.ticker || "")}"]`);
+				if (!row) return;
+				const startNode = row.querySelector('[data-local-store-range="start"]');
+				const endNode = row.querySelector('[data-local-store-range="end"]');
+				const companyNode = row.querySelector("[data-local-store-company]");
+				if (companyNode && !companyNode.textContent.trim() && item.company_name) {
+					companyNode.textContent = item.company_name;
+				}
+				if (startNode) {
+					startNode.textContent = item.range_start || "";
+					startNode.classList.toggle("is-pending-value", !item.range_start);
+				}
+				if (endNode) {
+					endNode.textContent = item.range_end || "";
+					endNode.classList.toggle("is-pending-value", !item.range_end);
+				}
+			});
+		} catch (_error) {
+		}
+	};
+
+	const hydrateNetworkStatuses = async () => {
+		if (state.currentView !== "settings" || state.settingsSection !== "network") return;
+		try {
+			const payload = await fetchJsonCached(
+				"settings-network-status",
+				endpoints.settingsNetworkStatus,
+				{ ttlMs: 45000 },
+			);
+			(payload.rows || []).forEach((item) => {
+				const row = document.querySelector(`[data-settings-service-row][data-service-key="${CSS.escape(item.key || "")}"]`);
+				if (!row) return;
+				const statusNode = row.querySelector("[data-settings-service-status]");
+				const noteNode = row.querySelector("[data-settings-service-note]");
+				const iconNode = row.querySelector("[data-settings-service-icon]");
+				const stateNode = row.querySelector(".settings-service-state");
+				if (statusNode) statusNode.textContent = item.status || "";
+				if (noteNode) noteNode.textContent = item.note || "";
+				if (stateNode) stateNode.classList.toggle("is-muted", !item.is_available);
+				if (iconNode) {
+					iconNode.classList.remove("is-pending-status");
+					iconNode.classList.toggle("is-visible", Boolean(item.is_available));
+				}
+			});
+		} catch (_error) {
+		}
+	};
+
+	const fetchLocalStorePage = async (url, { pushHistory = true } = {}) => {
+		const response = await fetch(url, {
+			headers: {
+				"X-Requested-With": "fetch",
+			},
+			credentials: "same-origin",
+		});
+		if (!response.ok) throw new Error(`Local store page fetch failed: ${response.status}`);
+		const html = await response.text();
+		const parser = new DOMParser();
+		const nextDocument = parser.parseFromString(html, "text/html");
+		const nextRegion = nextDocument.querySelector("#local_store_region");
+		if (!nextRegion) throw new Error("Local store region missing from response.");
+		replaceLocalStoreRegion(nextRegion);
+		if (pushHistory) window.history.pushState({ localStore: true }, "", url);
+		rememberCurrentViewUrl(url);
+		void hydrateLocalStoreRanges();
+	};
+
+	const attachLocalStorePagination = () => {
+		document.addEventListener("click", (event) => {
+			const link = event.target.closest(".local-store-pagination a");
+			if (!link) return;
+			if (!window.location.pathname.startsWith("/settings/local-market-store")) return;
+			const targetUrl = link.href;
+			if (!targetUrl) return;
+			event.preventDefault();
+			fetchLocalStorePage(targetUrl).catch(() => {
+				window.location.assign(targetUrl);
+			});
+		});
+
+		window.addEventListener("popstate", () => {
+			if (!window.location.pathname.startsWith("/settings/local-market-store")) return;
+			fetchLocalStorePage(window.location.pathname + window.location.search, { pushHistory: false }).catch(() => {
 			});
 		});
 	};
@@ -523,6 +945,7 @@
 		const getButtons = () => Array.from(getPanel()?.querySelectorAll(".suggestion-item") || []);
 		const setUnknown = (flag) => {
 			input.dataset.unknown = flag ? "1" : "";
+			if (flag && input.value.trim()) tickerValidationCache.set(sanitizeTicker(input.value.trim()), false);
 			validateTickerInput(input);
 		};
 		const syncActiveSuggestion = () => {
@@ -637,6 +1060,10 @@
 					closePanel();
 					return;
 				}
+				const exactMatch = payload.some((item) => String(item.symbol || "").toUpperCase() === query);
+				if (query) tickerValidationCache.set(query, exactMatch);
+				input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
+				validateTickerInput(input);
 				renderItems(payload);
 			} catch (error) {
 				if (error.name !== "AbortError") closePanel();
@@ -653,7 +1080,10 @@
 			setUnknown(false);
 			await showRecentItems();
 		});
-		input.addEventListener("blur", () => window.setTimeout(closePanel, 120));
+		input.addEventListener("blur", () => {
+			window.setTimeout(closePanel, 120);
+			void validateTickerExistence(input, { preferFresh: true });
+		});
 		input.addEventListener("keydown", (event) => {
 			const buttons = getButtons();
 			if (!buttons.length) return;
@@ -680,6 +1110,7 @@
 		});
 		input.addEventListener("change", () => {
 			validateAllTickerInputs();
+			void validateTickerExistence(input, { preferFresh: true });
 			syncDateConstraints();
 			scheduleAutoSubmit();
 		});
@@ -952,6 +1383,7 @@
 			if (totalWeight !== 100) return false;
 		}
 		validateAllTickerInputs();
+		if (isTickerValidationPending()) return false;
 		if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
 		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
 		if (rangeModeInputs.length && rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
@@ -1215,11 +1647,16 @@
 	});
 
 	if (isTradeMessagesView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
+		const scheduleTradeAutoSubmit = () => {
+			if (!hasInitialResult) return;
+			scheduleAutoSubmit(180);
+		};
 		const openTradeCapitalSlider = () => tradeCapitalField.classList.add("is-open");
 		const closeTradeCapitalSlider = () => window.setTimeout(() => {
 			if (tradeCapitalField.matches(":focus-within")) return;
 			tradeCapitalField.classList.remove("is-open");
 			tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
+			scheduleTradeAutoSubmit();
 		}, 80);
 		const syncTradeCapitalControls = (value) => {
 			const normalized = clampTradeCapital(value);
@@ -1233,43 +1670,53 @@
 		tradeCapitalInput.addEventListener("click", openTradeCapitalSlider);
 		tradeCapitalInput.addEventListener("input", () => {
 			syncTradeCapitalControls(parseTradeCapitalValue(tradeCapitalInput.value));
+			scheduleTradeAutoSubmit();
 		});
 		tradeCapitalInput.addEventListener("blur", () => {
 			tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
+			scheduleTradeAutoSubmit();
 		});
 		tradeCapitalSlider.addEventListener("focus", openTradeCapitalSlider);
 		tradeCapitalSlider.addEventListener("input", () => {
 			const value = clampTradeCapital(Number.parseFloat(tradeCapitalSlider.value) || 0);
 			tradeCapitalInput.value = formatTradeCapitalValue(value);
+			scheduleTradeAutoSubmit();
 		});
 		tradeCapitalField.addEventListener("focusout", closeTradeCapitalSlider);
 		tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
 		tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
 	}
 
+	$("#trade_strategy")?.addEventListener("change", () => {
+		if (!hasInitialResult) return;
+		scheduleAutoSubmit(100);
+	});
+
 	if (form) {
-		form.addEventListener("submit", (event) => {
+		form.addEventListener("submit", async (event) => {
 			if (isSubmittingWithOverlay) return;
+			event.preventDefault();
 			const values = compactTickerInputs();
 			validateAllTickerInputs();
 			if (values.length < minimumRequiredTickers) {
-				event.preventDefault();
 				getTickerInputs()[0]?.reportValidity();
 				return;
 			}
 			if (new Set(values).size !== values.length) {
-				event.preventDefault();
 				getTickerInputs().find((input) => input.validationMessage)?.reportValidity();
+				return;
+			}
+			const areTickersValid = await ensureTickerValidityBeforeSubmit();
+			if (!areTickersValid) {
+				getTickerInputs().find((input) => !input.checkValidity() || input.dataset.unknown === "1")?.reportValidity();
 				return;
 			}
 			if (isPortfolioView) {
 				const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
 				if (totalWeight !== 100) {
-					event.preventDefault();
 					return;
 				}
 			}
-			event.preventDefault();
 			scheduleCompareOverlay();
 			isSubmittingWithOverlay = true;
 			const nextUrl = buildCleanWorkspaceUrl();
@@ -1280,27 +1727,39 @@
 		});
 	}
 
-	$$(".settings-action-form").forEach((formElement) => {
-		formElement.addEventListener("submit", () => {
+	document.addEventListener("submit", (event) => {
+		const formElement = event.target.closest(".settings-action-form");
+		if (formElement) {
 			const actionInput = formElement.querySelector('input[name="action"]');
+			const submitButton = formElement.querySelector("button[type='submit']");
+			submitButton?.classList.add("is-pending");
 			if (actionInput?.value === "refresh") {
 				showSettingsActionOverlay({
-					title: "Updating local market data",
-					copy: "We are checking what is missing and refreshing the local market store. This can take a moment.",
-					iconClass: "icon-overlay-processing",
+					title: "Saving daily market data to local cache",
+					copy: "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
+					iconClass: "icon-overlay-local-cache",
 				});
 			}
-		});
-	});
-	$(".settings-nav-network")?.addEventListener("click", () => {
-		showSettingsActionOverlay({
-			title: "Checking network status",
-			copy: "We are checking whether market data and logo services are available from this device.",
-			iconClass: "icon-overlay-network",
-		});
+			return;
+		}
+		const smtpForm = event.target.closest(".settings-stack-form");
+		if (!smtpForm) return;
+		const submitter = event.submitter;
+		submitter?.classList.add("is-pending");
+		submitter?.setAttribute("aria-busy", "true");
 	});
 	settingsActionOverlayClose?.addEventListener("click", hideSettingsActionOverlay);
 	window.addEventListener("pageshow", hideSettingsActionOverlay);
+	window.addEventListener("pageshow", () => {
+		document.body.classList.remove("is-workspace-switching");
+		document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
+			node.classList.remove("is-masked-during-switch");
+		});
+	});
+	attachLocalStorePagination();
+	attachSettingsSectionNavigation();
+	void hydrateNetworkStatuses();
+	void hydrateLocalStoreRanges();
 
 	window.addEventListener("resize", scheduleDockPosition);
 	window.addEventListener("orientationchange", scheduleDockPosition);

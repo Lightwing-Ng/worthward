@@ -22,11 +22,15 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
         <span class="settings-nav-label">{{ labels.local_market_store }}</span>
     </a>
+    <a href="{{ settings_urls['clear-caches'] }}" class="settings-nav-item settings-nav-item-clear-cache{% if settings_section == 'clear-caches' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+        <span class="settings-nav-label">Clear caches</span>
+    </a>
 </nav>
 {% endblock %}
 
 {% block workspace_content %}
-<article class="chart-surface settings-surface">
+<article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
     <div class="chart-heading-row">
         <p class="chart-heading">{{ settings_title }}</p>
     </div>
@@ -42,16 +46,14 @@
         <p class="settings-summary">{{ labels.service_status }}</p>
         <div class="settings-service-list">
             {% for row in settings_service_rows %}
-            <div class="settings-service-row">
+            <div class="settings-service-row" data-settings-service-row data-service-key="{{ row.key }}">
                 <div class="settings-service-main">
                     <p class="settings-service-name">{{ row.name }}</p>
-                    <p class="settings-service-note">{{ row.note }}</p>
+                    <p class="settings-service-note" data-settings-service-note>{{ row.note }}</p>
                 </div>
                 <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
-                    {% if row.is_available %}
-                    <img class="settings-status-check" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
-                    {% endif %}
-                    <span>{{ row.status }}</span>
+                    <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
+                    <span data-workspace-mask="settings-status-text" data-settings-service-status>{{ row.status }}</span>
                 </div>
             </div>
             {% endfor %}
@@ -120,10 +122,17 @@
             </div>
         </form>
         {% elif settings_section == "local-market-store" %}
-        <div class="local-store-layout">
+        <div class="local-store-layout" id="local_store_region" data-local-store-region>
             <p class="settings-summary">{{ labels.local_store_summary }}</p>
             <div class="settings-table-wrap local-store-table-wrap">
-                <table class="settings-table">
+                <table class="settings-table local-store-table">
+                    <colgroup>
+                        <col class="local-store-col-symbol">
+                        <col class="local-store-col-name">
+                        <col class="local-store-col-range">
+                        <col class="local-store-col-update">
+                        <col class="local-store-col-delete">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{{ labels.local_store_symbol }}</th>
@@ -136,7 +145,7 @@
                     <tbody>
                         {% if local_market_rows %}
                         {% for row in local_market_rows %}
-                        <tr>
+                        <tr data-local-store-ticker="{{ row.ticker }}">
                             <td>
                                 <span class="settings-symbol-cell">
                                     {% if row.logo_url %}
@@ -147,8 +156,14 @@
                                     <span>{{ row.ticker }}</span>
                                 </span>
                             </td>
-                            <td>{{ row.company_name }}</td>
-                            <td>{{ row.range }}</td>
+                            <td data-local-store-company>{{ row.company_name }}</td>
+                            <td class="local-store-range-cell">
+                                <span class="local-store-range-value">
+                                    <span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start"></span>
+                                    <span class="local-store-range-separator"> - </span>
+                                    <span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end"></span>
+                                </span>
+                            </td>
                             <td>
                                 <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
@@ -205,6 +220,20 @@
             </nav>
             {% endif %}
         </div>
+        {% elif settings_section == "clear-caches" %}
+        <section class="settings-danger-card">
+            <div class="settings-danger-copy">
+                <span class="settings-nav-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-danger-text">
+                    <p class="settings-service-name">Clear caches</p>
+                    <p class="settings-service-note">This removes cached profiles, logos, search results, and recent ticker history from this device. Daily parquet market data will be kept.</p>
+                </div>
+            </div>
+            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-danger-form">
+                <input type="hidden" name="section" value="clear-caches">
+                <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear caches</button>
+            </form>
+        </section>
         {% endif %}
     </div>
 </article>

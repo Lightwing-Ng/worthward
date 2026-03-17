@@ -1,29 +1,39 @@
 """
 HTTP route registration.
 
-Code version: v3.18.0
+Code version: v3.20.0
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from urllib.parse import urlencode
 
 import pandas as pd
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from .comparisons import build_series_payload, slice_dataset_for_period
 from .email_settings import SmtpSettings, load_smtp_settings, sanitize_smtp_settings_for_view, save_smtp_settings, test_smtp_connection
 from strategies.backtest import run_single_ticker_backtest
 from strategies.loader import instantiate_strategy, list_enabled_strategies
-from .connectivity import has_remote_logo_access, has_remote_market_access
+from .connectivity import has_remote_logo_access, has_remote_market_access, reset_connectivity_caches
 from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
 from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
 from .market_data import fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
-from .storage import PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR, history_store_path_for, list_local_tickers, record_ticker_usage
+from .storage import (
+    PRIMARY_LOGOS_STORE_DIR,
+    SEARCH_LOGOS_STORE_DIR,
+    clear_nonhistorical_market_cache,
+    history_store_path_for,
+    list_local_tickers,
+    logo_store_path_for,
+    profile_store_path_for,
+    record_ticker_usage,
+)
 
 MAX_TICKERS = 5
 MIN_TICKERS = 2
@@ -33,7 +43,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "QQQ": "#c7c7cc",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
 LOCAL_STORE_PAGE_SIZE = 10
 VIEW_PATHS = {
     "tickers": "/compare",
@@ -127,6 +137,9 @@ def register_routes(app: Flask) -> None:
             if values:
                 return values[-1] == "1"
         return default
+
+    def format_store_range_date(raw_value: pd.Timestamp) -> str:
+        return pd.to_datetime(raw_value).strftime("%Y/%m/%d")
 
     def build_default_weights(count: int) -> list[int]:
         if count <= 0:
@@ -263,23 +276,110 @@ def register_routes(app: Flask) -> None:
 
     def build_local_market_rows() -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
-        for ticker in list_local_tickers():
+        for ticker in list_local_market_tickers():
+            rows.extend(build_local_market_rows_for_tickers([ticker], include_ranges=True))
+        return rows
+
+    def list_local_market_tickers() -> list[str]:
+        return [
+            ticker
+            for ticker in list_local_tickers()
+            if history_store_path_for(ticker).exists()
+        ]
+
+    def load_local_profile_snapshot(ticker: str) -> tuple[str, str]:
+        for namespace in ("primary", "search"):
+            profile_path = profile_store_path_for(ticker, namespace=namespace)
+            if not profile_path.exists():
+                continue
+            payload = json.loads(profile_path.read_text())
+            logo_path = logo_store_path_for(ticker, namespace=namespace)
+            logo_url = url_for("market_store_logo", filename=logo_path.name) if logo_path.exists() else ""
+            return str(payload.get("company_name") or ticker), logo_url
+        return ticker, ""
+
+    def build_local_market_rows_for_tickers(
+        tickers: list[str],
+        *,
+        include_ranges: bool,
+    ) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for ticker in tickers:
             history_path = history_store_path_for(ticker)
             if not history_path.exists():
                 continue
-            dataset = pd.read_parquet(history_path, columns=["Date"])
-            if dataset.empty:
-                continue
-            profile = fetch_quote_profile(ticker, False)
+            company_name, logo_url = load_local_profile_snapshot(ticker)
+            range_start = ""
+            range_end = ""
+            if include_ranges:
+                dataset = pd.read_parquet(history_path, columns=["Date"])
+                if dataset.empty:
+                    continue
+                range_start = format_store_range_date(dataset["Date"].min())
+                range_end = format_store_range_date(dataset["Date"].max())
             rows.append(
                 {
                     "ticker": ticker,
-                    "company_name": profile.company_name,
-                    "logo_url": profile.logo_url or "",
-                    "range": f"{format_display_date(dataset['Date'].min())} - {format_display_date(dataset['Date'].max())}",
+                    "company_name": company_name,
+                    "logo_url": logo_url,
+                    "range_start": range_start,
+                    "range_end": range_end,
+                    "range": f"{range_start} - {range_end}" if range_start and range_end else "",
                 }
             )
         return rows
+
+    def build_network_service_rows(*, pending: bool) -> list[dict[str, str | bool]]:
+        if pending:
+            return [
+                {
+                    "key": "market",
+                    "name": "yfinance",
+                    "status": "Checking...",
+                    "note": "Checking whether Yahoo Finance can be reached from this device.",
+                    "is_available": False,
+                    "is_pending": True,
+                },
+                {
+                    "key": "logo",
+                    "name": labels["logo_network"],
+                    "status": "Checking...",
+                    "note": "Checking whether logo providers can be reached from this device.",
+                    "is_available": False,
+                    "is_pending": True,
+                },
+            ]
+
+        remote_market_access = has_remote_market_access()
+        remote_logo_access = has_remote_logo_access()
+        remote_market_access = bool(remote_market_access)
+        remote_logo_access = bool(remote_logo_access)
+        return [
+            {
+                "key": "market",
+                "name": "yfinance",
+                "status": labels["service_ok"] if remote_market_access else labels["service_down"],
+                "note": (
+                    "Yahoo Finance is reachable, so missing price history can be refreshed from the network."
+                    if remote_market_access
+                    else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
+                ),
+                "is_available": remote_market_access,
+                "is_pending": False,
+            },
+            {
+                "key": "logo",
+                "name": labels["logo_network"],
+                "status": labels["service_ok"] if remote_logo_access else labels["service_down"],
+                "note": (
+                    "Logo providers are reachable, so missing brand marks can be fetched when needed."
+                    if remote_logo_access
+                    else "Logo providers are blocked here, so only logos already stored locally will appear."
+                ),
+                "is_available": remote_logo_access,
+                "is_pending": False,
+            },
+        ]
 
     def local_store_page_value() -> int:
         return max(parse_int_value(request.args.get("page", request.args.get("local_page")), 1), 1)
@@ -410,6 +510,7 @@ def register_routes(app: Flask) -> None:
         return fallback_period, notice
 
     def render_workspace_page(current_view: str, settings_section: str = "about"):
+        is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         range_mode = request.args.get(
             "range",
@@ -502,6 +603,8 @@ def register_routes(app: Flask) -> None:
                 settings_title = labels["email_smtp"]
             elif settings_section == "local-market-store":
                 settings_title = labels["local_market_store"]
+            elif settings_section == "clear-caches":
+                settings_title = "Clear caches"
 
         if period not in SUPPORTED_PERIODS:
             period = DEFAULT_PERIOD
@@ -544,132 +647,129 @@ def register_routes(app: Flask) -> None:
                 trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
-                    validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
-                    if len(set(validated_tickers)) != len(validated_tickers):
-                        raise ValueError("Ticker symbols must be unique.")
-
-                    datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
-                    profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
-                    date_constraints = build_date_constraint_payload(
-                        *datasets,
-                        requested_start=exact_start or None,
-                        requested_end=exact_end or None,
-                    )
-                    if range_mode == "exact":
-                        if not date_constraints.trading_dates:
-                            raise ValueError("The selected tickers do not share any common trading dates.")
-                        aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-                        aligned_end = pd.to_datetime(date_constraints.adjusted_end)
-                        aligned_datasets = align_datasets_on_common_dates(datasets)
-                        aligned_datasets = [
-                            dataset[(dataset["Date"] >= aligned_start) & (dataset["Date"] <= aligned_end)].copy()
-                            for dataset in aligned_datasets
-                        ]
-                        if any(dataset.empty for dataset in aligned_datasets):
-                            raise ValueError("The selected exact range does not contain shared trading dates.")
-                        exact_start_value = date_constraints.adjusted_start or exact_start
-                        exact_end_value = date_constraints.adjusted_end or exact_end
-                        period_label = "Exact range"
+                    if is_dock_prefetch:
+                        validated_tickers = [normalize_ticker_input(t) or t for t in requested_tickers]
+                        profiles = [type("Mock", (), {"company_name": t, "logo_url": ""})() for t in validated_tickers]
+                        if current_view == "portfolio":
+                            portfolio_weights = requested_weights or [0] * len(validated_tickers)
+                            portfolio_items = [{"ticker": t, "company_name": t, "logo_url": "", "weight": w, "growth_multiple": 1.0, "color": "transparent"} for t, w in zip(validated_tickers, portfolio_weights)]
+                            portfolio_total_return = 0.0
+                        else:
+                            series = [type("Mock", (), {"ticker": t, "normalized_returns": [0.0], "color": "transparent"})() for t in validated_tickers]
+                            performance_items = [{"ticker": t, "company_name": t, "logo_url": "", "ending_return": 0.0, "color": "transparent", "shadow_color": "transparent", "is_winner": False} for t in validated_tickers]
+                        common_start = pd.Timestamp.now()
+                        common_end = pd.Timestamp.now()
+                        display_range = "Loading range..."
+                        ticker_slots = validated_tickers.copy()
+                        continue_process_tickers = False
                     else:
-                        period, notice = resolve_effective_period_for_many(period, datasets)
-                        common_end_date = min(dataset["Date"].max() for dataset in datasets)
-                        sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
-                        aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
-                        exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
-                        exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
-                        period_label = format_period_label(period)
+                        validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
+                        continue_process_tickers = True
+                    if continue_process_tickers:
+                        if len(set(validated_tickers)) != len(validated_tickers):
+                            raise ValueError("Ticker symbols must be unique.")
 
-                    colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
-                    if current_view == "portfolio":
-                        portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
-                        growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
-                        portfolio_series = build_portfolio_series_payload(
-                            aligned_datasets,
-                            portfolio_weights,
-                            theme["accent_primary"],
+                        datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
+                        profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
+                        date_constraints = build_date_constraint_payload(
+                            *datasets,
+                            requested_start=exact_start or None,
+                            requested_end=exact_end or None,
                         )
-                        benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
-                            aligned_datasets[0]["Date"],
-                            include_dividends,
-                        )
-                        series = [portfolio_series, *benchmark_series]
-                        profiles = [*profiles, *benchmark_profiles]
-                        portfolio_total_return = portfolio_series.normalized_returns[-1]
-                        portfolio_items = [
-                            {
-                                "ticker": ticker,
-                                "company_name": profile.company_name,
-                                "logo_url": profile.logo_url,
-                                "weight": weight,
-                                "growth_multiple": growth_multiple,
-                                "color": color,
-                            }
-                            for ticker, profile, weight, growth_multiple, color in zip(
-                                validated_tickers,
-                                profiles[: len(validated_tickers)],
+                        if range_mode == "exact":
+                            if not date_constraints.trading_dates:
+                                raise ValueError("The selected tickers do not share any common trading dates.")
+                            aligned_start = pd.to_datetime(date_constraints.adjusted_start)
+                            aligned_end = pd.to_datetime(date_constraints.adjusted_end)
+                            aligned_datasets = align_datasets_on_common_dates(datasets)
+                            aligned_datasets = [
+                                dataset[(dataset["Date"] >= aligned_start) & (dataset["Date"] <= aligned_end)].copy()
+                                for dataset in aligned_datasets
+                            ]
+                            if any(dataset.empty for dataset in aligned_datasets):
+                                raise ValueError("The selected exact range does not contain shared trading dates.")
+                            exact_start_value = date_constraints.adjusted_start or exact_start
+                            exact_end_value = date_constraints.adjusted_end or exact_end
+                            period_label = "Exact range"
+                        else:
+                            period, notice = resolve_effective_period_for_many(period, datasets)
+                            common_end_date = min(dataset["Date"].max() for dataset in datasets)
+                            sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
+                            aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
+                            exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
+                            exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
+                            period_label = format_period_label(period)
+
+                        colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
+                        if current_view == "portfolio":
+                            portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                            growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
+                            portfolio_series = build_portfolio_series_payload(
+                                aligned_datasets,
                                 portfolio_weights,
-                                growth_multipliers,
-                                colors,
-                                strict=True,
+                                theme["accent_primary"],
                             )
-                        ]
-                    else:
-                        series = [
-                            build_series_payload(ticker, dataset, color=color)
-                            for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
-                        ]
-                    best_return = max(item.normalized_returns[-1] for item in series)
-                    common_start = aligned_datasets[0]["Date"].min()
-                    common_end = aligned_datasets[0]["Date"].max()
-                    display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
-                    if current_view != "portfolio":
-                        performance_items = [
-                            {
-                                "ticker": item.ticker,
-                                "company_name": profile.company_name,
-                                "logo_url": profile.logo_url,
-                                "ending_return": item.normalized_returns[-1],
-                                "color": item.color,
-                                "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
-                                "is_winner": item.normalized_returns[-1] == best_return,
-                            }
-                            for item, profile in zip(series, profiles, strict=True)
-                        ]
-                    ticker_slots = validated_tickers.copy()
-                    record_ticker_usage(validated_tickers)
+                            benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
+                                aligned_datasets[0]["Date"],
+                                include_dividends,
+                            )
+                            series = [portfolio_series, *benchmark_series]
+                            profiles = [*profiles, *benchmark_profiles]
+                            portfolio_total_return = portfolio_series.normalized_returns[-1]
+                            portfolio_items = [
+                                {
+                                    "ticker": ticker,
+                                    "company_name": profile.company_name,
+                                    "logo_url": profile.logo_url,
+                                    "weight": weight,
+                                    "growth_multiple": growth_multiple,
+                                    "color": color,
+                                }
+                                for ticker, profile, weight, growth_multiple, color in zip(
+                                    validated_tickers,
+                                    profiles[: len(validated_tickers)],
+                                    portfolio_weights,
+                                    growth_multipliers,
+                                    colors,
+                                    strict=True,
+                                )
+                            ]
+                        else:
+                            series = [
+                                build_series_payload(ticker, dataset, color=color)
+                                for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
+                            ]
+                        best_return = max(item.normalized_returns[-1] for item in series)
+                        common_start = aligned_datasets[0]["Date"].min()
+                        common_end = aligned_datasets[0]["Date"].max()
+                        display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
+                        if current_view != "portfolio":
+                            performance_items = [
+                                {
+                                    "ticker": item.ticker,
+                                    "company_name": profile.company_name,
+                                    "logo_url": profile.logo_url,
+                                    "ending_return": item.normalized_returns[-1],
+                                    "color": item.color,
+                                    "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
+                                    "is_winner": item.normalized_returns[-1] == best_return,
+                                }
+                                for item, profile in zip(series, profiles, strict=True)
+                            ]
+                        ticker_slots = validated_tickers.copy()
+                        record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
 
-        remote_market_access = has_remote_market_access()
-        remote_logo_access = has_remote_logo_access()
+        remote_market_access = has_remote_market_access() if current_view != "settings" else True
+        remote_logo_access = False
 
         if current_view != "settings" and not remote_market_access and not error and not notice:
             notice = "Using bundled local market_store data because remote market access is unavailable."
             notice_is_floating = True
 
         if current_view == "settings":
-            settings_service_rows = [
-                {
-                    "name": "yfinance",
-                    "status": labels["service_ok"] if remote_market_access else labels["service_down"],
-                    "note": (
-                        "Yahoo Finance is reachable, so missing price history can be refreshed from the network."
-                        if remote_market_access
-                        else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
-                    ),
-                    "is_available": remote_market_access,
-                },
-                {
-                    "name": labels["logo_network"],
-                    "status": labels["service_ok"] if remote_logo_access else labels["service_down"],
-                    "note": (
-                        "Logo providers are reachable, so missing brand marks can be fetched when needed."
-                        if remote_logo_access
-                        else "Logo providers are blocked here, so only logos already stored locally will appear."
-                    ),
-                    "is_available": remote_logo_access,
-                },
-            ]
+            settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = [
                 {
                     "name": item["name"],
@@ -686,9 +786,9 @@ def register_routes(app: Flask) -> None:
                 for item in strategy_options
             ]
             if settings_section == "local-market-store":
-                all_local_market_rows = build_local_market_rows()
+                all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
-                local_store_total_pages = max((len(all_local_market_rows) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
+                local_store_total_pages = max((len(all_local_market_tickers) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
                 local_store_current_page = min(local_store_current_page, local_store_total_pages)
                 local_store_prev_slot, local_store_page_slots, local_store_next_slot = build_local_store_pagination_slots(
                     local_store_current_page,
@@ -696,7 +796,10 @@ def register_routes(app: Flask) -> None:
                 )
                 start_index = (local_store_current_page - 1) * LOCAL_STORE_PAGE_SIZE
                 end_index = start_index + LOCAL_STORE_PAGE_SIZE
-                local_market_rows = all_local_market_rows[start_index:end_index]
+                local_market_rows = build_local_market_rows_for_tickers(
+                    all_local_market_tickers[start_index:end_index],
+                    include_ranges=False,
+                )
 
         if current_view == "trade-messages":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -758,7 +861,7 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -775,6 +878,8 @@ def register_routes(app: Flask) -> None:
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",
+                "settingsNetworkStatus": "/api/settings/network-status",
+                "localStorePageData": "/api/settings/local-market-store/page-data",
             },
         )
 
@@ -838,7 +943,13 @@ def register_routes(app: Flask) -> None:
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
         action = request.form.get("action", "").strip().lower()
         page = max(parse_int_value(request.form.get("page", request.form.get("local_page")), 1), 1)
-        redirect_url = f"{build_settings_path('local-market-store')}?page={page}"
+        base_path = build_settings_path("local-market-store")
+
+        def build_local_store_redirect(**extra_params: str) -> str:
+            params = {"page": page, **extra_params}
+            return f"{base_path}?{urlencode(params)}"
+
+        redirect_url = build_local_store_redirect()
 
         if not ticker:
             return redirect(redirect_url)
@@ -847,14 +958,31 @@ def register_routes(app: Flask) -> None:
             if action == "refresh":
                 refresh_history_store(ticker)
                 fetch_quote_profile(ticker, force_refresh=True)
+                notice = f"Saved the latest daily market data for {ticker} to local cache."
+                return redirect(build_local_store_redirect(notice=notice))
             elif action == "delete":
                 history_path = history_store_path_for(ticker)
                 if history_path.exists():
                     history_path.unlink()
-        except Exception:
-            return redirect(redirect_url)
+                notice = f"Removed cached market data for {ticker} from local storage."
+                return redirect(build_local_store_redirect(notice=notice))
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc).strip() or f"Unable to update local cache for {ticker}."
+            return redirect(build_local_store_redirect(error=message))
 
         return redirect(redirect_url)
+
+    @app.post("/settings/cache/action")
+    def settings_cache_action():
+        section_name = normalize_settings_section(request.form.get("section", "clear-caches"))
+        try:
+            clear_nonhistorical_market_cache()
+            reset_connectivity_caches()
+            notice = "Cleared cached profiles, logos, search results, and recent ticker history. Daily parquet market data was kept."
+            return redirect(f"{build_settings_path(section_name)}?{urlencode({'notice': notice})}")
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc).strip() or "Unable to clear cached settings data."
+            return redirect(f"{build_settings_path(section_name)}?{urlencode({'error': message})}")
 
     @app.get("/market-store/logos/<path:filename>")
     def market_store_logo(filename: str):
@@ -888,3 +1016,27 @@ def register_routes(app: Flask) -> None:
         datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         return jsonify(asdict(payload))
+
+    @app.get("/api/settings/network-status")
+    def settings_network_status_api():
+        return jsonify({"rows": build_network_service_rows(pending=False)})
+
+    @app.get("/api/settings/local-market-store/page-data")
+    def local_market_store_page_data_api():
+        current_page = max(parse_int_value(request.args.get("page"), 1), 1)
+        all_local_market_tickers = list_local_market_tickers()
+        total_pages = max((len(all_local_market_tickers) - 1) // LOCAL_STORE_PAGE_SIZE + 1, 1)
+        current_page = min(current_page, total_pages)
+        start_index = (current_page - 1) * LOCAL_STORE_PAGE_SIZE
+        end_index = start_index + LOCAL_STORE_PAGE_SIZE
+        rows = build_local_market_rows_for_tickers(
+            all_local_market_tickers[start_index:end_index],
+            include_ranges=True,
+        )
+        return jsonify(
+            {
+                "page": current_page,
+                "total_pages": total_pages,
+                "rows": rows,
+            }
+        )

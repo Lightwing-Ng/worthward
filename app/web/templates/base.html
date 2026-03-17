@@ -44,16 +44,16 @@
             {% if error %}
             <div class="error{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
                 <span>{{ error }}</span>
-                <button type="button" class="notice-close" aria-label="Close error notice">
-                    <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                <button type="button" class="dismiss-button notice-close" aria-label="Close error notice">
+                    <span class="icon icon-dismiss-control" aria-hidden="true"></span>
                 </button>
             </div>
             {% endif %}
             {% if notice %}
             <div class="notice{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
                 <span>{{ notice }}</span>
-                <button type="button" class="notice-close" aria-label="Close notice">
-                    <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                <button type="button" class="dismiss-button notice-close" aria-label="Close notice">
+                    <span class="icon icon-dismiss-control" aria-hidden="true"></span>
                 </button>
             </div>
             {% endif %}
@@ -81,8 +81,8 @@
 </main>
 <div id="settings_action_overlay" class="settings-action-overlay" hidden>
     <div class="settings-action-dialog chart-tooltip">
-        <button type="button" id="settings_action_overlay_close" class="settings-action-close" aria-label="Close">
-            <span class="icon icon-remove-muted" aria-hidden="true"></span>
+        <button type="button" id="settings_action_overlay_close" class="dismiss-button settings-action-close" aria-label="Close">
+            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
         </button>
         <span id="settings_action_overlay_icon" class="icon icon-overlay-refresh settings-action-icon" aria-hidden="true"></span>
         <p class="settings-action-title">Updating local market data</p>
@@ -107,7 +107,8 @@
             totalReturn: {{ portfolio_total_return|tojson }}
         },
         tradeBacktest: {{ trade_backtest_result|tojson }},
-        currentView: {{ current_view_name|tojson }}
+        currentView: {{ current_view_name|tojson }},
+        settingsSection: {{ settings_section|tojson }}
     };
 </script>
 {% block page_scripts %}{% endblock %}

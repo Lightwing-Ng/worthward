@@ -14,19 +14,19 @@
         </div>
         <div class="portfolio-summary">
             <div class="portfolio-donut-block">
-                <div id="portfolio_donut_start_orbit" class="portfolio-donut-orbit">
+                <div id="portfolio_donut_start_orbit" class="portfolio-donut-orbit" data-workspace-mask="portfolio-donut-start">
                     <div id="portfolio_donut_start_logo_layer" class="portfolio-donut-logo-layer" aria-hidden="true"></div>
                     <div id="portfolio_donut_start" class="portfolio-donut" aria-label="{{ labels.portfolio_allocation }}"></div>
                 </div>
                 <span class="portfolio-donut-arrow icon icon-portfolio-donut-flow" aria-hidden="true"></span>
-                <div id="portfolio_donut_end_orbit" class="portfolio-donut-orbit">
+                <div id="portfolio_donut_end_orbit" class="portfolio-donut-orbit" data-workspace-mask="portfolio-donut-end">
                     <div id="portfolio_donut_end_logo_layer" class="portfolio-donut-logo-layer" aria-hidden="true"></div>
                     <div id="portfolio_donut_end" class="portfolio-donut" aria-label="{{ labels.portfolio_total_return }}"></div>
                 </div>
             </div>
             <div class="portfolio-summary-main">
                 <p class="portfolio-total-label">{{ labels.portfolio_total_return }}</p>
-                <p id="portfolio_total_return" class="portfolio-total-value">{% if portfolio_total_return is not none %}{{ "%.2f"|format(portfolio_total_return) }}%{% else %}--{% endif %}</p>
+                <p id="portfolio_total_return" class="portfolio-total-value" data-workspace-mask="portfolio-total-return">{% if portfolio_total_return is not none %}{{ "%.2f"|format(portfolio_total_return) }}%{% else %}--{% endif %}</p>
             </div>
         </div>
     </article>

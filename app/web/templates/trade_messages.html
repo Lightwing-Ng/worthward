@@ -73,12 +73,12 @@
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="metrics">
                 <div class="trade-metrics-grid">
-                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value">{{ trade_backtest_result.summary.trade_count }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ trade_backtest_result.summary.trade_count }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
                 </div>
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
@@ -123,12 +123,12 @@
     </div>
     {% if trade_backtest_result %}
     <div class="trade-chart-stack">
-        <div class="trade-chart-panel">
-            <canvas id="tradePriceChart"></canvas>
-        </div>
-        <div class="trade-chart-panel trade-chart-panel-equity">
-            <canvas id="tradeEquityChart"></canvas>
-        </div>
+                <div class="trade-chart-panel" data-workspace-mask="trade-chart">
+                    <canvas id="tradePriceChart"></canvas>
+                </div>
+                <div class="trade-chart-panel trade-chart-panel-equity" data-workspace-mask="trade-chart">
+                    <canvas id="tradeEquityChart"></canvas>
+                </div>
     </div>
     {% else %}
     <p class="trade-pane-placeholder">{{ labels.trade_messages_detail_placeholder }}</p>

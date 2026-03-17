@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v3.4.1
+Code version: v3.5.0
 """
 
 from __future__ import annotations
@@ -121,3 +121,17 @@ def top_used_tickers(query: str = "", limit: int = 5) -> list[str]:
         )
     ranked.sort(key=lambda item: (-item[1], -datetime.fromisoformat(item[2]).timestamp() if item[2] else 0.0, item[0]))
     return [ticker for ticker, _, _ in ranked[:limit]]
+
+
+def clear_nonhistorical_market_cache() -> None:
+    ensure_market_store_dir()
+    for directory in (
+        PRIMARY_PROFILES_STORE_DIR,
+        SEARCH_PROFILES_STORE_DIR,
+        PRIMARY_LOGOS_STORE_DIR,
+        SEARCH_LOGOS_STORE_DIR,
+        SEARCH_STORE_DIR,
+    ):
+        for path in directory.glob("*"):
+            if path.is_file():
+                path.unlink()

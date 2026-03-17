@@ -20,9 +20,9 @@
                 <div class="report-symbol-row">
                     <p class="report-symbol">{{ item.ticker }}</p>
                 </div>
-                <p class="report-company">{{ item.company_name }}</p>
+                <p class="report-company" data-workspace-mask="company-name">{{ item.company_name }}</p>
                 <p class="report-value">
-                    <span style="color: {{ item.color }};">{{ "%.2f"|format(item.ending_return) }}%</span>
+                    <span data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ "%.2f"|format(item.ending_return) }}%</span>
                     {% if item.is_winner %}
                     <img class="winner-badge" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
                     {% endif %}
