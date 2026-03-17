@@ -13,7 +13,7 @@ directory = "market_store"
 
 [defaults]
 ticker_a = "QQQ"
-ticker_b = "SPY"
+ticker_b = "JEPQ"
 portfolio_tickers = ["NVDA", "AAPL", "QQQ"]
 portfolio_weights = [25, 25, 50]
 period = "1y"

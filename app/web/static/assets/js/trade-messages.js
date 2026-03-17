@@ -96,7 +96,6 @@
 	const commonOptions = {
 		responsive: true,
 		maintainAspectRatio: false,
-		animation: false,
 		layout: {
 			padding: {
 				bottom: 6,

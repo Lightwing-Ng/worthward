@@ -2,11 +2,26 @@
 
 {% block sidebar_content %}
 <nav class="settings-nav" aria-label="Settings sections">
-    <a href="{{ settings_urls.about }}" class="settings-nav-item{% if settings_section == 'about' %} is-active{% endif %}">{{ labels.about }}</a>
-    <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">{{ labels.network_self_check }}</a>
-    <a href="{{ settings_urls.strategies }}" class="settings-nav-item{% if settings_section == 'strategies' %} is-active{% endif %}">{{ labels.strategy_settings }}</a>
-    <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item{% if settings_section == 'email-smtp' %} is-active{% endif %}">{{ labels.email_smtp }}</a>
-    <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item{% if settings_section == 'local-market-store' %} is-active{% endif %}">{{ labels.local_market_store }}</a>
+    <a href="{{ settings_urls.about }}" class="settings-nav-item settings-nav-item-about{% if settings_section == 'about' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-about"></span></span>
+        <span class="settings-nav-label">{{ labels.about }}</span>
+    </a>
+    <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-item-network settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
+        <span class="settings-nav-label">{{ labels.network_self_check }}</span>
+    </a>
+    <a href="{{ settings_urls.strategies }}" class="settings-nav-item settings-nav-item-strategies{% if settings_section == 'strategies' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-strategies"></span></span>
+        <span class="settings-nav-label">{{ labels.strategy_settings }}</span>
+    </a>
+    <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item settings-nav-item-email{% if settings_section == 'email-smtp' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+        <span class="settings-nav-label">{{ labels.email_smtp }}</span>
+    </a>
+    <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item settings-nav-item-store{% if settings_section == 'local-market-store' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
+        <span class="settings-nav-label">{{ labels.local_market_store }}</span>
+    </a>
 </nav>
 {% endblock %}
 

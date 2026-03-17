@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.16.0
+Code version: v3.18.0
 """
 
 from __future__ import annotations
@@ -35,6 +35,12 @@ PORTFOLIO_BENCHMARK_COLORS = {
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store"}
 LOCAL_STORE_PAGE_SIZE = 10
+VIEW_PATHS = {
+    "tickers": "/compare",
+    "portfolio": "/portfolio",
+    "trade-messages": "/trade-messages",
+    "settings": "/settings/about",
+}
 
 
 def register_routes(app: Flask) -> None:
@@ -74,6 +80,20 @@ def register_routes(app: Flask) -> None:
             return fallback
 
     def parse_requested_tickers() -> list[str]:
+        repeated = request.args.getlist("ticker")
+        if repeated:
+            compacted = [normalize_ticker_input(value) for value in repeated if normalize_ticker_input(value)]
+            return compacted[:MAX_TICKERS]
+
+        csv_tickers = request.args.get("tickers", "").strip()
+        if csv_tickers:
+            compacted = [
+                normalize_ticker_input(value)
+                for value in csv_tickers.split(",")
+                if normalize_ticker_input(value)
+            ]
+            return compacted[:MAX_TICKERS]
+
         numbered = [request.args.get(f"ticker_{index}", "") for index in range(1, MAX_TICKERS + 1)]
         has_numbered = any(value.strip() for value in numbered) or any(
             f"ticker_{index}" in request.args for index in range(1, MAX_TICKERS + 1)
@@ -88,14 +108,25 @@ def register_routes(app: Flask) -> None:
         return compacted[:MAX_TICKERS]
 
     def parse_requested_weights(slot_count: int) -> list[int]:
+        repeated = request.args.getlist("weight")
+        raw_values = repeated[:slot_count] if repeated else [
+            request.args.get(f"weight_{index}", "")
+            for index in range(1, slot_count + 1)
+        ]
         weights: list[int] = []
-        for index in range(1, slot_count + 1):
-            raw_value = request.args.get(f"weight_{index}")
+        for raw_value in raw_values:
             if raw_value is None or str(raw_value).strip() == "":
                 weights.append(0)
             else:
                 weights.append(min(max(parse_int_value(raw_value, 0), 0), 100))
         return weights
+
+    def parse_bool_flag(*names: str, default: bool = False) -> bool:
+        for name in names:
+            values = request.args.getlist(name)
+            if values:
+                return values[-1] == "1"
+        return default
 
     def build_default_weights(count: int) -> list[int]:
         if count <= 0:
@@ -176,30 +207,35 @@ def register_routes(app: Flask) -> None:
         requested_view = request.args.get("view", "tickers").strip().lower()
         return requested_view if requested_view in SUPPORTED_VIEWS else "tickers"
 
+    def build_view_path(view_name: str) -> str:
+        return VIEW_PATHS.get(view_name, VIEW_PATHS["tickers"])
+
     def build_view_url(view_name: str) -> str:
-        params = request.args.to_dict(flat=False)
-        params["view"] = [view_name]
-        query_string = urlencode(params, doseq=True)
-        return f"/?{query_string}" if query_string else "/"
+        return build_view_path(view_name)
 
     def resolve_settings_section() -> str:
         requested_section = request.args.get("section", "about").strip().lower()
         return requested_section if requested_section in SUPPORTED_SETTINGS_SECTIONS else "about"
 
+    def normalize_settings_section(section_name: str | None) -> str:
+        candidate = (section_name or "about").strip().lower()
+        return candidate if candidate in SUPPORTED_SETTINGS_SECTIONS else "about"
+
+    def build_settings_path(section_name: str) -> str:
+        return f"/settings/{normalize_settings_section(section_name)}"
+
     def build_settings_url(section_name: str) -> str:
-        params = request.args.to_dict(flat=False)
-        params["view"] = ["settings"]
-        params["section"] = [section_name]
-        query_string = urlencode(params, doseq=True)
-        return f"/?{query_string}" if query_string else "/"
+        return build_settings_path(section_name)
 
     def build_local_store_page_url(page_number: int) -> str:
         params = request.args.to_dict(flat=False)
-        params["view"] = ["settings"]
-        params["section"] = ["local-market-store"]
-        params["local_page"] = [str(page_number)]
+        params.pop("view", None)
+        params.pop("section", None)
+        params.pop("local_page", None)
+        params["page"] = [str(page_number)]
         query_string = urlencode(params, doseq=True)
-        return f"/?{query_string}" if query_string else "/"
+        base_path = build_settings_path("local-market-store")
+        return f"{base_path}?{query_string}" if query_string else base_path
 
     def build_local_store_pagination_slots(
         current_page: int,
@@ -246,7 +282,88 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def local_store_page_value() -> int:
-        return max(parse_int_value(request.args.get("local_page"), 1), 1)
+        return max(parse_int_value(request.args.get("page", request.args.get("local_page")), 1), 1)
+
+    def build_modern_query_pairs() -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+
+        for ticker in parse_requested_tickers():
+            pairs.append(("ticker", ticker))
+
+        has_weight_args = bool(request.args.getlist("weight")) or any(
+            key.startswith("weight_") for key in request.args.keys()
+        )
+        if has_weight_args:
+            for weight in parse_requested_weights(MAX_TICKERS):
+                pairs.append(("weight", str(weight)))
+
+        period_value = request.args.get("period", "").strip().lower()
+        if period_value:
+            pairs.append(("period", period_value))
+
+        range_value = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
+        if range_value:
+            pairs.append(("range", range_value))
+
+        start_value = request.args.get("from", request.args.get("exact_start", "")).strip()
+        if start_value:
+            pairs.append(("from", start_value))
+
+        end_value = request.args.get("to", request.args.get("exact_end", "")).strip()
+        if end_value:
+            pairs.append(("to", end_value))
+
+        dividends_value = request.args.get("dividends", request.args.get("include_dividends", "")).strip()
+        if dividends_value:
+            pairs.append(("dividends", dividends_value))
+
+        strategy_value = request.args.get("strategy", "").strip()
+        if strategy_value:
+            pairs.append(("strategy", strategy_value))
+
+        capital_value = request.args.get("capital", request.args.get("initial_capital", "")).strip()
+        if capital_value:
+            pairs.append(("capital", capital_value))
+
+        page_value = request.args.get("page", request.args.get("local_page", "")).strip()
+        if page_value:
+            pairs.append(("page", page_value))
+
+        passthrough_keys = {
+            "ticker",
+            "tickers",
+            "weight",
+            "period",
+            "range",
+            "range_mode",
+            "from",
+            "to",
+            "exact_start",
+            "exact_end",
+            "dividends",
+            "include_dividends",
+            "strategy",
+            "capital",
+            "initial_capital",
+            "page",
+            "local_page",
+            "view",
+            "section",
+            "ticker_a",
+            "ticker_b",
+        }
+        passthrough_keys.update({f"ticker_{index}" for index in range(1, MAX_TICKERS + 1)})
+        passthrough_keys.update({f"weight_{index}" for index in range(1, MAX_TICKERS + 1)})
+
+        for key in request.args.keys():
+            if key in passthrough_keys:
+                continue
+            for value in request.args.getlist(key):
+                cleaned = str(value).strip()
+                if cleaned:
+                    pairs.append((key, cleaned))
+
+        return pairs
 
     def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
         merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
@@ -292,17 +409,16 @@ def register_routes(app: Flask) -> None:
         )
         return fallback_period, notice
 
-    @app.get("/")
-    def index():
-        current_view = resolve_view()
-        settings_section = resolve_settings_section()
+    def render_workspace_page(current_view: str, settings_section: str = "about"):
         requested_tickers = parse_requested_tickers()
-        range_mode = request.args.get("range_mode", defaults.get("range_mode", "period")).strip().lower()
+        range_mode = request.args.get(
+            "range",
+            request.args.get("range_mode", defaults.get("range_mode", "period")),
+        ).strip().lower()
         period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
-        exact_start = request.args.get("exact_start", "").strip()
-        exact_end = request.args.get("exact_end", "").strip()
-        include_dividends_requested = bool(request.args.getlist("include_dividends"))
-        include_dividends = request.args.getlist("include_dividends")[-1] == "1" if include_dividends_requested else False
+        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
+        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        include_dividends = parse_bool_flag("dividends", "include_dividends")
 
         if current_view == "tickers" and not requested_tickers:
             requested_tickers = [
@@ -330,16 +446,23 @@ def register_routes(app: Flask) -> None:
         portfolio_items = []
         portfolio_weights = []
         portfolio_total_return = None
+        validated_tickers: list[str] = []
+        datasets: list[pd.DataFrame] = []
+        aligned_datasets: list[pd.DataFrame] = []
         strategy_options = list_enabled_strategies()
         selected_strategy_id = request.args.get("strategy", strategy_options[0]["id"] if strategy_options else "").strip()
-        backtest_initial_capital = max(parse_float_value(request.args.get("initial_capital"), 10000.0), 1.0)
+        backtest_initial_capital = max(
+            parse_float_value(request.args.get("capital", request.args.get("initial_capital")), 10000.0),
+            1.0,
+        )
         trade_backtest_result = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
-        if current_view == "portfolio" and not request.args.get("weight_1") and not any(
+        has_weight_query = bool(request.args.getlist("weight")) or any(
             key.startswith("weight_") for key in request.args.keys()
-        ):
+        )
+        if current_view == "portfolio" and not has_weight_query:
             requested_weights = [
                 min(max(parse_int_value(value, 0), 0), 100)
                 for value in defaults.get("portfolio_weights", [25, 25, 50])
@@ -359,6 +482,8 @@ def register_routes(app: Flask) -> None:
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
         submit_label = labels["update_chart"]
+
+        settings_section = normalize_settings_section(settings_section)
 
         if current_view == "portfolio":
             page_title = labels["portfolio_title"]
@@ -418,104 +543,100 @@ def register_routes(app: Flask) -> None:
                 signal_result = strategy.compute_signals(trade_dataset, strategy.normalize_params())
                 trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
             elif current_view in {"tickers", "portfolio"}:
-                if not requested_tickers:
-                    raise ValueError("")
-                if len(requested_tickers) < MIN_TICKERS:
-                    raise ValueError("Please enter at least two ticker symbols.")
-                validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
-                if len(set(validated_tickers)) != len(validated_tickers):
-                    raise ValueError("Ticker symbols must be unique.")
+                if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
+                    validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
+                    if len(set(validated_tickers)) != len(validated_tickers):
+                        raise ValueError("Ticker symbols must be unique.")
 
-                datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
-                profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
-                date_constraints = build_date_constraint_payload(
-                    *datasets,
-                    requested_start=exact_start or None,
-                    requested_end=exact_end or None,
-                )
-
-                if range_mode == "exact":
-                    if not date_constraints.trading_dates:
-                        raise ValueError("The selected tickers do not share any common trading dates.")
-                    aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-                    aligned_end = pd.to_datetime(date_constraints.adjusted_end)
-                    aligned_datasets = align_datasets_on_common_dates(datasets)
-                    aligned_datasets = [
-                        dataset[(dataset["Date"] >= aligned_start) & (dataset["Date"] <= aligned_end)].copy()
-                        for dataset in aligned_datasets
-                    ]
-                    if any(dataset.empty for dataset in aligned_datasets):
-                        raise ValueError("The selected exact range does not contain shared trading dates.")
-                    exact_start_value = date_constraints.adjusted_start or exact_start
-                    exact_end_value = date_constraints.adjusted_end or exact_end
-                    period_label = "Exact range"
-                else:
-                    period, notice = resolve_effective_period_for_many(period, datasets)
-                    common_end_date = min(dataset["Date"].max() for dataset in datasets)
-                    sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
-                    aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
-                    exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
-                    exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
-                    period_label = format_period_label(period)
-
-                colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
-                if current_view == "portfolio":
-                    portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
-                    growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
-                    portfolio_series = build_portfolio_series_payload(
-                        aligned_datasets,
-                        portfolio_weights,
-                        theme["accent_primary"],
+                    datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
+                    profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
+                    date_constraints = build_date_constraint_payload(
+                        *datasets,
+                        requested_start=exact_start or None,
+                        requested_end=exact_end or None,
                     )
-                    benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
-                        aligned_datasets[0]["Date"],
-                        include_dividends,
-                    )
-                    series = [portfolio_series, *benchmark_series]
-                    profiles = [*profiles, *benchmark_profiles]
-                    portfolio_total_return = portfolio_series.normalized_returns[-1]
-                    portfolio_items = [
-                        {
-                            "ticker": ticker,
-                            "company_name": profile.company_name,
-                            "logo_url": profile.logo_url,
-                            "weight": weight,
-                            "growth_multiple": growth_multiple,
-                            "color": color,
-                        }
-                        for ticker, profile, weight, growth_multiple, color in zip(
-                            validated_tickers,
-                            profiles[: len(validated_tickers)],
+                    if range_mode == "exact":
+                        if not date_constraints.trading_dates:
+                            raise ValueError("The selected tickers do not share any common trading dates.")
+                        aligned_start = pd.to_datetime(date_constraints.adjusted_start)
+                        aligned_end = pd.to_datetime(date_constraints.adjusted_end)
+                        aligned_datasets = align_datasets_on_common_dates(datasets)
+                        aligned_datasets = [
+                            dataset[(dataset["Date"] >= aligned_start) & (dataset["Date"] <= aligned_end)].copy()
+                            for dataset in aligned_datasets
+                        ]
+                        if any(dataset.empty for dataset in aligned_datasets):
+                            raise ValueError("The selected exact range does not contain shared trading dates.")
+                        exact_start_value = date_constraints.adjusted_start or exact_start
+                        exact_end_value = date_constraints.adjusted_end or exact_end
+                        period_label = "Exact range"
+                    else:
+                        period, notice = resolve_effective_period_for_many(period, datasets)
+                        common_end_date = min(dataset["Date"].max() for dataset in datasets)
+                        sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
+                        aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
+                        exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
+                        exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
+                        period_label = format_period_label(period)
+
+                    colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
+                    if current_view == "portfolio":
+                        portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                        growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
+                        portfolio_series = build_portfolio_series_payload(
+                            aligned_datasets,
                             portfolio_weights,
-                            growth_multipliers,
-                            colors,
-                            strict=True,
+                            theme["accent_primary"],
                         )
-                    ]
-                else:
-                    series = [
-                        build_series_payload(ticker, dataset, color=color)
-                        for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
-                    ]
-                best_return = max(item.normalized_returns[-1] for item in series)
-                common_start = aligned_datasets[0]["Date"].min()
-                common_end = aligned_datasets[0]["Date"].max()
-                display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
-                if current_view != "portfolio":
-                    performance_items = [
-                        {
-                            "ticker": item.ticker,
-                            "company_name": profile.company_name,
-                            "logo_url": profile.logo_url,
-                            "ending_return": item.normalized_returns[-1],
-                            "color": item.color,
-                            "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
-                            "is_winner": item.normalized_returns[-1] == best_return,
-                        }
-                        for item, profile in zip(series, profiles, strict=True)
-                    ]
-                ticker_slots = validated_tickers.copy()
-                record_ticker_usage(validated_tickers)
+                        benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
+                            aligned_datasets[0]["Date"],
+                            include_dividends,
+                        )
+                        series = [portfolio_series, *benchmark_series]
+                        profiles = [*profiles, *benchmark_profiles]
+                        portfolio_total_return = portfolio_series.normalized_returns[-1]
+                        portfolio_items = [
+                            {
+                                "ticker": ticker,
+                                "company_name": profile.company_name,
+                                "logo_url": profile.logo_url,
+                                "weight": weight,
+                                "growth_multiple": growth_multiple,
+                                "color": color,
+                            }
+                            for ticker, profile, weight, growth_multiple, color in zip(
+                                validated_tickers,
+                                profiles[: len(validated_tickers)],
+                                portfolio_weights,
+                                growth_multipliers,
+                                colors,
+                                strict=True,
+                            )
+                        ]
+                    else:
+                        series = [
+                            build_series_payload(ticker, dataset, color=color)
+                            for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
+                        ]
+                    best_return = max(item.normalized_returns[-1] for item in series)
+                    common_start = aligned_datasets[0]["Date"].min()
+                    common_end = aligned_datasets[0]["Date"].max()
+                    display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
+                    if current_view != "portfolio":
+                        performance_items = [
+                            {
+                                "ticker": item.ticker,
+                                "company_name": profile.company_name,
+                                "logo_url": profile.logo_url,
+                                "ending_return": item.normalized_returns[-1],
+                                "color": item.color,
+                                "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
+                                "is_winner": item.normalized_returns[-1] == best_return,
+                            }
+                            for item, profile in zip(series, profiles, strict=True)
+                        ]
+                    ticker_slots = validated_tickers.copy()
+                    record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
 
@@ -588,8 +709,15 @@ def register_routes(app: Flask) -> None:
             while len(portfolio_weights) < len(ticker_slots):
                 portfolio_weights.append(0)
 
+        template_name = {
+            "tickers": "compare.html",
+            "portfolio": "portfolio.html",
+            "trade-messages": "trade_messages.html",
+            "settings": "settings.html",
+        }[current_view]
+
         return render_template(
-            "index.html",
+            template_name,
             error=error,
             notice=notice,
             notice_is_floating=notice_is_floating,
@@ -643,11 +771,43 @@ def register_routes(app: Flask) -> None:
             backtest_initial_capital=backtest_initial_capital,
             trade_backtest_result=trade_backtest_result,
             current_view_name=current_view,
+            current_path=request.path,
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",
             },
         )
+
+    @app.get("/")
+    def root():
+        legacy_view = request.args.get("view")
+        if request.args:
+            target_view = resolve_view() if legacy_view else "tickers"
+            target_section = resolve_settings_section() if target_view == "settings" else "about"
+            target_path = build_settings_path(target_section) if target_view == "settings" else build_view_path(target_view)
+            query_string = urlencode(build_modern_query_pairs(), doseq=True)
+            return redirect(f"{target_path}?{query_string}" if query_string else target_path)
+        return redirect(build_view_path("tickers"))
+
+    @app.get("/compare")
+    def compare_page():
+        return render_workspace_page("tickers")
+
+    @app.get("/portfolio")
+    def portfolio_page():
+        return render_workspace_page("portfolio")
+
+    @app.get("/trade-messages")
+    def trade_messages_page():
+        return render_workspace_page("trade-messages")
+
+    @app.get("/settings")
+    def settings_root():
+        return redirect(build_settings_path("about"))
+
+    @app.get("/settings/<section_name>")
+    def settings_page(section_name: str):
+        return render_workspace_page("settings", section_name)
 
     @app.post("/settings/email-smtp/action")
     def email_smtp_action():
@@ -665,22 +825,20 @@ def register_routes(app: Flask) -> None:
         if not updated_settings.password:
             updated_settings.password = current_settings.password
         save_smtp_settings(updated_settings)
-        redirect_url = "/?view=settings&section=email-smtp"
+        redirect_url = build_settings_path("email-smtp")
         success, message = test_smtp_connection(updated_settings) if action == "test" else (True, "SMTP settings saved.")
         params = urlencode({
-            "view": "settings",
-            "section": "email-smtp",
             "notice": message if success else "",
             "error": "" if success else message,
         })
-        return redirect(f"/?{params}")
+        return redirect(f"{build_settings_path('email-smtp')}?{params}" if params else build_settings_path("email-smtp"))
 
     @app.post("/settings/local-market-store/action")
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
         action = request.form.get("action", "").strip().lower()
-        page = max(parse_int_value(request.form.get("local_page"), 1), 1)
-        redirect_url = f"/?view=settings&section=local-market-store&local_page={page}"
+        page = max(parse_int_value(request.form.get("page", request.form.get("local_page")), 1), 1)
+        redirect_url = f"{build_settings_path('local-market-store')}?page={page}"
 
         if not ticker:
             return redirect(redirect_url)
@@ -717,16 +875,16 @@ def register_routes(app: Flask) -> None:
     @app.get("/api/date-constraints")
     def date_constraints_api():
         requested_tickers = parse_requested_tickers()
-        requested_view = request.args.get("view", "tickers").strip().lower()
+        requested_view = request.args.get("view", request.args.get("mode", "tickers")).strip().lower()
         minimum_required = 1 if requested_view == "trade-messages" else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
             return jsonify(asdict(build_date_constraint_payload()))
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):
             return jsonify(asdict(build_date_constraint_payload()))
-        include_dividends = request.args.get("include_dividends", "0") == "1"
-        requested_start = request.args.get("exact_start", "").strip() or None
-        requested_end = request.args.get("exact_end", "").strip() or None
+        include_dividends = request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+        requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
+        requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
         datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         return jsonify(asdict(payload))

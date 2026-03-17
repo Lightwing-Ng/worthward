@@ -1,4 +1,4 @@
-/* Code version: v3.17.1 */
+/* Code version: v3.19.1 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -14,6 +14,7 @@
 	const $ = (selector) => document.querySelector(selector);
 	const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
+	const VIEW_MEMORY_KEY = "antigravity:view-memory";
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
@@ -31,15 +32,49 @@
 	const settingsActionOverlayCopy = settingsActionOverlay?.querySelector(".settings-action-copy");
 	const settingsActionOverlayIcon = $("#settings_action_overlay_icon");
 
+	const appShell = $(".app-shell");
+	const sidebarToggle = $("#sidebar_toggle");
+	const appSidebar = $("#app_sidebar");
+	let isSidebarOpen = true;
+	let isSidebarAnimating = false;
+
+	const animateDock = () => {
+		scheduleDockPosition();
+		if (isSidebarAnimating) {
+			requestAnimationFrame(animateDock);
+		}
+	};
+
+	if (sidebarToggle && appSidebar && appShell) {
+		appShell.classList.add("is-sidebar-open");
+		appSidebar.setAttribute("aria-hidden", "false");
+		if ("inert" in appSidebar) appSidebar.inert = false;
+		sidebarToggle.addEventListener("click", () => {
+			isSidebarOpen = !isSidebarOpen;
+			sidebarToggle.setAttribute("aria-hidden", "false"); // keep toggle visible to SR
+			sidebarToggle.setAttribute("aria-expanded", String(isSidebarOpen));
+			appShell.classList.toggle("is-sidebar-open", isSidebarOpen);
+			appShell.classList.toggle("is-sidebar-collapsed", !isSidebarOpen);
+			appSidebar.hidden = false;
+			appSidebar.style.display = "";
+			appSidebar.setAttribute("aria-hidden", String(!isSidebarOpen));
+			if ("inert" in appSidebar) appSidebar.inert = !isSidebarOpen;
+			
+			isSidebarAnimating = true;
+			animateDock();
+			setTimeout(() => { isSidebarAnimating = false; scheduleDockPosition(); }, 650);
+		});
+	}
+
 	const getTickerFields = () => $$(".ticker-field");
-	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector('input[name^="ticker_"]')).filter(Boolean);
+	const getTickerInputs = () => getTickerFields().map((field) => field.querySelector("[data-ticker-input]")).filter(Boolean);
 	const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
 	const getWeightFields = () => getTickerFields().map((field, index) => ({
 		index,
 		field,
 		number: field.querySelector('.portfolio-weight-input'),
 		slider: field.querySelector('.portfolio-weight-slider'),
-		tickerInput: field.querySelector('input[name^="ticker_"]'),
+		tickerInput: field.querySelector("[data-ticker-input]"),
 		tooltip: field.querySelector('.portfolio-weight-tooltip'),
 	})).filter((item) => item.number && item.slider && item.tickerInput);
 
@@ -71,6 +106,50 @@
 			input.addEventListener("change", syncPanels);
 		});
 		syncPanels();
+	};
+
+	const readViewMemory = () => {
+		try {
+			const raw = window.sessionStorage.getItem(VIEW_MEMORY_KEY);
+			if (!raw) return {};
+			const parsed = JSON.parse(raw);
+			return parsed && typeof parsed === "object" ? parsed : {};
+		} catch (_error) {
+			return {};
+		}
+	};
+
+	const writeViewMemory = (nextMemory) => {
+		try {
+			window.sessionStorage.setItem(VIEW_MEMORY_KEY, JSON.stringify(nextMemory));
+		} catch (_error) {
+		}
+	};
+
+	const rememberCurrentViewUrl = (url = window.location.pathname + window.location.search) => {
+		if (!state.currentView) return;
+		const memory = readViewMemory();
+		memory[state.currentView] = url;
+		writeViewMemory(memory);
+	};
+
+	const attachDockMemory = () => {
+		const viewByDockIndex = ["tickers", "portfolio", "trade-messages", "settings"];
+		$$(".sidebar-dock-item").forEach((link, index) => {
+			const targetView = viewByDockIndex[index];
+			if (!targetView || link.dataset.boundDockMemory === "1") return;
+			link.dataset.boundDockMemory = "1";
+			link.addEventListener("click", (event) => {
+				rememberCurrentViewUrl();
+				const memory = readViewMemory();
+				const rememberedUrl = memory[targetView];
+				if (!rememberedUrl) return;
+				const fallbackUrl = link.getAttribute("href") || "";
+				if (!fallbackUrl || rememberedUrl === fallbackUrl) return;
+				event.preventDefault();
+				window.location.assign(rememberedUrl);
+			});
+		});
 	};
 
 	const syncTickerClearButton = (input) => {
@@ -189,7 +268,7 @@
 			const index = offset + 1;
 			field.dataset.index = String(index);
 			const label = field.querySelector("label");
-			const input = field.querySelector('input[name^="ticker_"]');
+			const input = field.querySelector("[data-ticker-input]");
 			const suggestions = field.querySelector(".suggestions");
 			if (label) {
 				label.setAttribute("for", `ticker_${index}`);
@@ -197,7 +276,7 @@
 			}
 			if (input) {
 				input.id = `ticker_${index}`;
-				input.name = `ticker_${index}`;
+				input.name = "ticker";
 				input.required = index <= minimumRequiredTickers;
 				input.placeholder = "";
 				syncTickerClearButton(input);
@@ -207,7 +286,7 @@
 			const weightSlider = field.querySelector(".portfolio-weight-slider");
 			if (weightInput && weightSlider) {
 				weightInput.id = `weight_${index}`;
-				weightInput.name = `weight_${index}`;
+				weightInput.name = "weight";
 				weightSlider.dataset.index = String(index);
 			}
 			if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
@@ -614,7 +693,7 @@
 				event.preventDefault();
 			});
 			button.addEventListener("click", () => {
-				const input = button.parentElement?.querySelector('input[name^="ticker_"]');
+				const input = button.parentElement?.querySelector("[data-ticker-input]");
 				if (!input) return;
 				input.value = "";
 				input.dataset.unknown = "";
@@ -717,7 +796,7 @@
 							<span class="ticker-logo-placeholder"></span>
 							<img class="ticker-input-logo" alt="">
 						</span>
-						<input id="ticker_${index}" name="ticker_${index}" value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
+						<input id="ticker_${index}" name="ticker" data-ticker-input value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
 						<button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
 					</div>
 					<div class="field-tooltip field-tooltip-duplicate" hidden>This ticker is already used. Choose a different one.</div>
@@ -727,7 +806,7 @@
 				${isPortfolioView ? `
 				<div class="portfolio-weight-field">
 					<div class="portfolio-weight-row">
-						<input id="weight_${index}" name="weight_${index}" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
+						<input id="weight_${index}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
 						<span class="portfolio-weight-unit">%</span>
 					</div>
 					<div class="portfolio-weight-slider-shell" aria-hidden="true">
@@ -746,7 +825,7 @@
 		attachRemoveHandlers();
 		attachTickerClearHandlers();
 		attachPortfolioWeightHandlers();
-		const input = field.querySelector('input[name^="ticker_"]');
+		const input = field.querySelector("[data-ticker-input]");
 		setupAutocomplete(input);
 		validateAllTickerInputs();
 		syncPortfolioWeightDisabledState();
@@ -790,7 +869,7 @@
 	const form = $("form.controls");
 	const periodPanel = $("#period_panel");
 	const exactPanel = $("#exact_panel");
-	const rangeModeInputs = $$("input[name='range_mode']");
+	const rangeModeInputs = $$("input[name='range']");
 	const exactStartInput = $("#exact_start");
 	const exactEndInput = $("#exact_end");
 	const includeDividendsInput = $("#include_dividends");
@@ -853,7 +932,7 @@
 	}).format(clampTradeCapital(value));
 
 	const updateRangePanels = () => {
-		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
+		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
 		const rangeShell = $(".range-mode-shell");
 		if (rangeShell) {
 			rangeShell.dataset.active = rangeMode;
@@ -874,7 +953,7 @@
 		}
 		validateAllTickerInputs();
 		if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
-		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
+		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
 		if (rangeModeInputs.length && rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
 		return true;
 	};
@@ -1015,22 +1094,54 @@
 		datePickerState.forEach((picker) => syncDatePickerView(picker));
 	};
 
+	const buildCleanWorkspaceUrl = () => {
+		const params = new URLSearchParams();
+		const tickers = compactTickerInputs();
+		tickers.forEach((ticker) => params.append("ticker", ticker));
+
+		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
+		if (rangeMode === "exact") {
+			params.set("range", "exact");
+			if (exactStartInput?.value) params.set("from", exactStartInput.value);
+			if (exactEndInput?.value) params.set("to", exactEndInput.value);
+		} else {
+			const periodValue = $("#period")?.value || defaults.period;
+			if (periodValue) params.set("period", periodValue);
+		}
+
+		if (includeDividendsInput?.checked) params.set("dividends", "1");
+
+		if (isPortfolioView) {
+			getFilledWeightEntries().forEach((entry) => {
+				params.append("weight", String(Number.parseInt(entry.number.value, 10) || 0));
+			});
+		}
+
+		if (isTradeMessagesView) {
+			const strategySelect = $("#trade_strategy");
+			const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
+			if (strategySelect?.value) params.set("strategy", strategySelect.value);
+			if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
+		}
+
+		const queryString = params.toString();
+		return queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+	};
+
 	const syncDateConstraints = async () => {
 		if (!exactStartInput || !exactEndInput) return;
-		const rangeMode = $("input[name='range_mode']:checked")?.value || defaults.range_mode;
+		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
 		if (rangeMode !== "exact") {
 			validTradingDateSet = null;
 			return;
 		}
 		const tickers = getFilledTickers();
 		if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
-		const params = new URLSearchParams({
-			view: state.currentView,
-			include_dividends: includeDividendsInput?.checked ? "1" : "0",
-			exact_start: exactStartInput.value,
-			exact_end: exactEndInput.value,
-		});
-		tickers.forEach((ticker, index) => params.append(`ticker_${index + 1}`, ticker));
+		const params = new URLSearchParams({ view: state.currentView });
+		if (includeDividendsInput?.checked) params.set("dividends", "1");
+		if (exactStartInput.value) params.set("from", exactStartInput.value);
+		if (exactEndInput.value) params.set("to", exactEndInput.value);
+		tickers.forEach((ticker) => params.append("ticker", ticker));
 		try {
 			const response = await fetch(`${endpoints.dateConstraints}?${params.toString()}`);
 			if (!response.ok) return;
@@ -1059,6 +1170,8 @@
 	initializeDatePickers();
 	attachNoticeHandlers();
 	attachTradeDetailTabs();
+	rememberCurrentViewUrl();
+	attachDockMemory();
 	attachRemoveHandlers();
 	attachTickerClearHandlers();
 	attachPortfolioWeightHandlers();
@@ -1159,8 +1272,10 @@
 			event.preventDefault();
 			scheduleCompareOverlay();
 			isSubmittingWithOverlay = true;
+			const nextUrl = buildCleanWorkspaceUrl();
+			rememberCurrentViewUrl(nextUrl);
 			window.requestAnimationFrame(() => {
-				HTMLFormElement.prototype.submit.call(form);
+				window.location.assign(nextUrl);
 			});
 		});
 	}
