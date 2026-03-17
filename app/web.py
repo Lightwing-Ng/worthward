@@ -280,14 +280,20 @@ def register_routes(app: Flask) -> None:
             rows.extend(build_local_market_rows_for_tickers([ticker], include_ranges=True))
         return rows
 
+    def has_local_profile_snapshot(ticker: str) -> bool:
+        return any(
+            profile_store_path_for(ticker, namespace=namespace).exists()
+            for namespace in ("primary", "search")
+        )
+
     def list_local_market_tickers() -> list[str]:
         return [
             ticker
             for ticker in list_local_tickers()
-            if history_store_path_for(ticker).exists()
+            if history_store_path_for(ticker).exists() and has_local_profile_snapshot(ticker)
         ]
 
-    def load_local_profile_snapshot(ticker: str) -> tuple[str, str]:
+    def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
         for namespace in ("primary", "search"):
             profile_path = profile_store_path_for(ticker, namespace=namespace)
             if not profile_path.exists():
@@ -295,8 +301,10 @@ def register_routes(app: Flask) -> None:
             payload = json.loads(profile_path.read_text())
             logo_path = logo_store_path_for(ticker, namespace=namespace)
             logo_url = url_for("market_store_logo", filename=logo_path.name) if logo_path.exists() else ""
-            return str(payload.get("company_name") or ticker), logo_url
-        return ticker, ""
+            company_name = str(payload.get("company_name") or "").strip()
+            if company_name:
+                return company_name, logo_url
+        return None
 
     def build_local_market_rows_for_tickers(
         tickers: list[str],
@@ -308,7 +316,10 @@ def register_routes(app: Flask) -> None:
             history_path = history_store_path_for(ticker)
             if not history_path.exists():
                 continue
-            company_name, logo_url = load_local_profile_snapshot(ticker)
+            profile_snapshot = load_local_profile_snapshot(ticker)
+            if profile_snapshot is None:
+                continue
+            company_name, logo_url = profile_snapshot
             range_start = ""
             range_end = ""
             if include_ranges:
@@ -769,6 +780,8 @@ def register_routes(app: Flask) -> None:
             notice_is_floating = True
 
         if current_view == "settings":
+            if settings_section == "local-market-store" and notice and not error:
+                notice_is_floating = True
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = [
                 {
