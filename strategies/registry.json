@@ -1,5 +1,5 @@
 {
-  "version": "v1.3.0",
+  "version": "v1.4.0",
   "strategies": [
     {
       "id": "buy-and-hold",
@@ -69,6 +69,34 @@
       },
       "ui": {
         "display_order": 30
+      }
+    },
+    {
+      "id": "supertrend-double-ai",
+      "name": "Super Trend Double AI",
+      "module": "strategies.algorithms.strategy_supertrend_double_ai",
+      "class_name": "SupertrendDoubleAiStrategy",
+      "enabled": true,
+      "category": "trend",
+      "description": "Adaptive multi-factor SuperTrend strategy with clustering, exposed as the Super Trend Double AI variant.",
+      "supports": {
+        "single_ticker": true,
+        "multi_ticker": false,
+        "long_only": true,
+        "short": false
+      },
+      "default_params": {
+        "atr_length": 10,
+        "min_factor": 1,
+        "max_factor": 5,
+        "factor_step": 0.5,
+        "performance_memory": 10.0,
+        "from_cluster": "Best",
+        "max_iteration_steps": 1000,
+        "historical_bars_calculation": 10000
+      },
+      "ui": {
+        "display_order": 31
       }
     }
   ]
