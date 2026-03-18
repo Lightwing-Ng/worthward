@@ -104,7 +104,7 @@
 		const commonOptions = {
 			responsive: true,
 			maintainAspectRatio: false,
-			layout: { padding: { bottom: 6 } },
+			layout: { padding: { bottom: 8 } },
 			interaction: { mode: "index", intersect: false },
 			plugins: { legend: { display: false }, tooltip: { enabled: false } },
 			scales: {

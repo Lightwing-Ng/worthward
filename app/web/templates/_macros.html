@@ -25,7 +25,7 @@
     <div class="chart-heading-row">
         <p class="chart-heading">{{ chart_heading }}</p>
     </div>
-    <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %}>
+    <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %} class="chart-region-wrap">
     {% if has_series %}
     <div class="chart-wrap" data-workspace-mask="chart-area">
         <canvas id="returnsChart"></canvas>

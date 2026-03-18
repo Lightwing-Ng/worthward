@@ -236,7 +236,7 @@
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
-				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 0, left: 4 } },
+				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 8, left: 4 } },
 				interaction: { mode: "index", intersect: false },
 				hover: { mode: "index", intersect: false },
 				onHover(_event, activeElements, chartInstance) {
