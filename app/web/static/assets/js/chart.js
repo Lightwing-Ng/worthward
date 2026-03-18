@@ -1,4 +1,4 @@
-/* Code version: v3.2.0 */
+/* Code version: v3.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -33,9 +33,7 @@
 		};
 
 		const labels = series[0].dates;
-		const dateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-		const yearLabelFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" });
+		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const portfolioLabelMap = {
 			Portfolio: "Portfolio",
 			SPY: "SPX",
@@ -75,6 +73,36 @@
 				ctx.moveTo(left, zeroY);
 				ctx.lineTo(right, zeroY);
 				ctx.stroke();
+				ctx.restore();
+			},
+		};
+
+		const xAxisLabelPlugin = {
+			id: "xAxisLabelPlugin",
+			afterDraw(chartInstance) {
+				const { ctx, chartArea, scales } = chartInstance;
+				const xScale = scales?.x;
+				if (!chartArea || !xScale || !labels.length) return;
+				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+				const baselineY = chartArea.bottom + 16;
+				const lineHeight = 12;
+				ctx.save();
+				ctx.fillStyle = theme.muted;
+				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+				ctx.textBaseline = "top";
+				tickIndexes.forEach((index, tickIndex) => {
+					const parsedDate = parseLabelDate(labels[index]);
+					if (!parsedDate) return;
+					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
+					const x = xScale.getPixelForValue(index);
+					if (!Number.isFinite(x)) return;
+					if (tickIndex === 0) ctx.textAlign = "left";
+					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
+					else ctx.textAlign = "center";
+					ctx.fillText(firstLine, x, baselineY);
+					ctx.fillText(secondLine, x, baselineY + lineHeight);
+				});
 				ctx.restore();
 			},
 		};
@@ -132,7 +160,7 @@
 		};
 
 		try {
-			Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin);
+			Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin);
 		} catch (e) {
 			// ignore registration error
 		}
@@ -156,7 +184,10 @@
 			}
 			const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
 			const listEl = tooltipEl.querySelector(".chart-tooltip-list");
-			if (tooltip.title?.length) [dateEl.textContent] = tooltip.title;
+			if (tooltip.title?.length) {
+				const parsedDate = parseLabelDate(tooltip.title[0]);
+				dateEl.textContent = parsedDate ? `${parsedDate.getUTCDate()} ${monthAbbreviations[parsedDate.getUTCMonth()]} ${parsedDate.getUTCFullYear()}` : tooltip.title[0];
+			}
 
 			const bodyLines = tooltip.dataPoints.map((point) => {
 				const profile = profiles.find((item) => item.ticker === point.dataset.label);
@@ -199,8 +230,10 @@
 			tooltipEl.style.top = `${top}px`;
 		};
 
+		const referenceLineWidth = 2.5;
+
 		const baseDatasetStyle = {
-			borderWidth: chartConfig.line_width,
+			borderWidth: referenceLineWidth,
 			pointRadius: 0,
 			pointHoverRadius: chartConfig.point_hover_radius,
 			pointHitRadius: chartConfig.point_hit_radius,
@@ -226,16 +259,21 @@
 			return Number.isNaN(parsed.getTime()) ? null : parsed;
 		};
 
-		const buildAdaptiveTickLabel = (scale, index, ticks) => {
-			const tickLabel = labels[index];
-			if (!tickLabel) return "";
-			const parsedDate = parseLabelDate(tickLabel);
-			if (!parsedDate) return tickLabel;
-			const plotWidth = scale.chart?.chartArea?.width || scale.chart?.width || 0;
+		const formatChartDateLines = (date) => [`${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]}`, `${date.getUTCFullYear()}`];
+
+		const buildTickIndexSet = (count, plotWidth) => {
+			if (count <= 0) return new Set();
+			if (count === 1) return new Set([0]);
 			const maxTickCount = plotWidth >= 768 ? 4 : 3;
-			const slotWidth = plotWidth / Math.max(1, maxTickCount);
-			if (slotWidth >= 112) return dateLabelFormatter.format(parsedDate);
-			return [shortDateLabelFormatter.format(parsedDate), yearLabelFormatter.format(parsedDate)];
+			if (maxTickCount === 3 || count < 4) {
+				return new Set([0, Math.round((count - 1) / 2), count - 1]);
+			}
+			return new Set([
+				0,
+				Math.round((count - 1) / 3),
+				Math.round(((count - 1) * 2) / 3),
+				count - 1,
+			]);
 		};
 
 		new Chart(canvas, {
@@ -256,20 +294,20 @@
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
-				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 8, left: 4 } },
+				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 34, left: 4 } },
 				interaction: { mode: "index", intersect: false },
 				hover: { mode: "index", intersect: false },
 				onHover(_event, activeElements, chartInstance) {
 					const activeIndexes = new Set(activeElements.map((item) => item.datasetIndex));
 					chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
 						if (activeIndexes.size === 0) {
-							dataset.borderWidth = chartConfig.line_width;
+							dataset.borderWidth = referenceLineWidth;
 							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur;
 						} else if (activeIndexes.has(datasetIndex)) {
-							dataset.borderWidth = chartConfig.line_width_active;
+							dataset.borderWidth = referenceLineWidth;
 							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_active;
 						} else {
-							dataset.borderWidth = chartConfig.line_width_inactive;
+							dataset.borderWidth = referenceLineWidth;
 							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_inactive;
 						}
 					});
@@ -280,17 +318,7 @@
 					x: {
 						grid: { display: false, drawBorder: false },
 						border: { display: false },
-						ticks: {
-							color: theme.muted,
-							padding: 10,
-							maxRotation: 0,
-							autoSkip: true,
-							maxTicksLimit: 4,
-							font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12, weight: "700" },
-							callback(value, index, ticks) {
-								return buildAdaptiveTickLabel(this, index, ticks);
-							},
-						},
+						ticks: { display: false },
 					},
 					y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: theme.muted, padding: 10, font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 }, callback(value) { return `${value}%`; } } },
 				},

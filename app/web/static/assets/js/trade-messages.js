@@ -1,4 +1,4 @@
-/* Code version: v1.8.0 */
+/* Code version: v1.9.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -22,9 +22,7 @@
 		const equity = tradeBacktest.chart.equity;
 		const initialCapital = Number(tradeBacktest.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
-		const dateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-		const yearLabelFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" });
+		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const buyMarkers = tradeBacktest.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
 		const sellMarkers = tradeBacktest.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
 		const allInShares = close.length && close[0] > 0 ? Math.floor(initialCapital / close[0]) : 0;
@@ -94,16 +92,23 @@
 			return Number.isNaN(parsed.getTime()) ? null : parsed;
 		};
 
-		const buildAdaptiveTickLabel = (scale, index, ticks) => {
-			const tickLabel = labels[index];
-			if (!tickLabel) return "";
-			const parsedDate = parseLabelDate(tickLabel);
-			if (!parsedDate) return tickLabel;
-			const plotWidth = scale.chart?.chartArea?.width || scale.chart?.width || 0;
+		const formatChartDate = (date) => `${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+
+		const formatChartDateLines = (date) => [`${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]}`, `${date.getUTCFullYear()}`];
+
+		const buildTickIndexSet = (count, plotWidth) => {
+			if (count <= 0) return new Set();
+			if (count === 1) return new Set([0]);
 			const maxTickCount = plotWidth >= 768 ? 4 : 3;
-			const slotWidth = plotWidth / Math.max(1, maxTickCount);
-			if (slotWidth >= 112) return dateLabelFormatter.format(parsedDate);
-			return [shortDateLabelFormatter.format(parsedDate), yearLabelFormatter.format(parsedDate)];
+			if (maxTickCount === 3 || count < 4) {
+				return new Set([0, Math.round((count - 1) / 2), count - 1]);
+			}
+			return new Set([
+				0,
+				Math.round((count - 1) / 3),
+				Math.round(((count - 1) * 2) / 3),
+				count - 1,
+			]);
 		};
 
 		const referenceLinePlugin = {
@@ -126,26 +131,48 @@
 			},
 		};
 
+		const xAxisLabelPlugin = {
+			id: "tradeXAxisLabelPlugin",
+			afterDraw(chart) {
+				if (chart.canvas !== equityCanvas) return;
+				const { ctx, chartArea, scales } = chart;
+				const xScale = scales?.x;
+				if (!chartArea || !xScale || !labels.length) return;
+				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+				const baselineY = chartArea.bottom + 16;
+				const lineHeight = 12;
+				ctx.save();
+				ctx.fillStyle = theme.muted;
+				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+				ctx.textBaseline = "top";
+				tickIndexes.forEach((index, tickIndex) => {
+					const parsedDate = parseLabelDate(labels[index]);
+					if (!parsedDate) return;
+					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
+					const x = xScale.getPixelForValue(index);
+					if (!Number.isFinite(x)) return;
+					if (tickIndex === 0) ctx.textAlign = "left";
+					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
+					else ctx.textAlign = "center";
+					ctx.fillText(firstLine, x, baselineY);
+					ctx.fillText(secondLine, x, baselineY + lineHeight);
+				});
+				ctx.restore();
+			},
+		};
+
 		const commonOptions = {
 			responsive: true,
 			maintainAspectRatio: false,
-			layout: { padding: { bottom: 8 } },
+			layout: { padding: { bottom: 34 } },
 			interaction: { mode: "index", intersect: false },
 			plugins: { legend: { display: false }, tooltip: { enabled: false } },
 			scales: {
 				x: {
 					grid: { display: false },
 					border: { display: false },
-					ticks: {
-						color: theme.muted,
-						maxRotation: 0,
-						autoSkip: true,
-						maxTicksLimit: 4,
-						font: { weight: "700" },
-						callback(value, index, ticks) {
-							return buildAdaptiveTickLabel(this, index, ticks);
-						},
-					},
+					ticks: { display: false },
 				},
 				y: {
 					grid: { display: false, drawTicks: false },
@@ -172,8 +199,8 @@
 			if (index === null) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
-					return;
-				}
+				return;
+			}
 			const canvasRect = sourceCanvas.getBoundingClientRect();
 			const stackRect = tradeChartStack.getBoundingClientRect();
 			const sourcePoint = sourceChart?.getDatasetMeta(0)?.data?.[index];
@@ -196,7 +223,8 @@
 			const allInValue = Number(allInEquity[index] || 0);
 			const netReturn = initialCapital > 0 ? ((equityValue / initialCapital) - 1) * 100 : 0;
 			const versusAllIn = equityValue - allInValue;
-			tooltip.querySelector(".chart-tooltip-date").textContent = labels[index];
+			const parsedLabelDate = parseLabelDate(labels[index]);
+			tooltip.querySelector(".chart-tooltip-date").textContent = parsedLabelDate ? formatChartDate(parsedLabelDate) : labels[index];
 			tooltip.querySelector('[data-role="close"]').textContent = formatMoney(closeValue);
 			tooltip.querySelector('[data-role="return"]').textContent = formatReturn(netReturn);
 			tooltip.querySelector('[data-role="equity"]').textContent = formatMoney(equityValue);
@@ -285,7 +313,7 @@
 				],
 			},
 			options: commonOptions,
-			plugins: [referenceLinePlugin],
+			plugins: [referenceLinePlugin, xAxisLabelPlugin],
 		});
 
 		attachHover(priceCanvas, priceChart);
