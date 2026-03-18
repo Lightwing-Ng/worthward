@@ -186,11 +186,15 @@ def extract_domain(website: str | None) -> str | None:
     return domain or None
 
 
-def fetch_remote_logo_bytes(domain: str) -> bytes | None:
+def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | None:
     providers = [
-        f"https://www.google.com/s2/favicons?{urlencode({'sz': 128, 'domain_url': domain})}",
-        f"https://icon.horse/icon/{domain}",
+        f"https://eodhd.com/img/logos/US/{ticker.upper()}.png",
     ]
+    if domain:
+        providers.extend([
+            f"https://www.google.com/s2/favicons?{urlencode({'sz': 128, 'domain_url': domain})}",
+            f"https://icon.horse/icon/{domain}",
+        ])
     for remote_url in providers:
         request_obj = Request(remote_url, headers={"User-Agent": "Mozilla/5.0"})
         try:
@@ -219,10 +223,7 @@ def fetch_and_store_logo(
         return url_for("market_store_logo", filename=path.name) if path.exists() else None
 
     domain = extract_domain(website)
-    if not domain:
-        return None
-
-    logo_bytes = fetch_remote_logo_bytes(domain)
+    logo_bytes = fetch_remote_logo_bytes(ticker, domain)
     if logo_bytes is None:
         if not path.exists():
             return None

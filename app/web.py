@@ -368,7 +368,7 @@ def register_routes(app: Flask) -> None:
                     "key": "logo",
                     "name": labels["logo_network"],
                     "status": "Checking...",
-                    "note": "Checking whether logo providers can be reached from this device.",
+                    "note": "Checking whether the primary ticker logo service and its fallbacks can be reached from this device.",
                     "is_available": False,
                     "is_pending": True,
                 },
@@ -398,7 +398,7 @@ def register_routes(app: Flask) -> None:
                 "note": (
                     "Logo providers are reachable, so missing brand marks can be fetched when needed."
                     if remote_logo_access
-                    else "Logo providers are blocked here, so only logos already stored locally will appear."
+                    else "Remote logo sources are blocked here, so only logos already stored locally will appear."
                 ),
                 "is_available": remote_logo_access,
                 "is_pending": False,

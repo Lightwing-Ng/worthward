@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v1.3.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ import yfinance as yf
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d&interval=1d"
-LOGO_PING_URL = "https://www.google.com/s2/favicons?domain_url=apple.com&sz=32"
+PRIMARY_LOGO_PING_URL = "https://eodhd.com/img/logos/US/TQQQ.png"
+FALLBACK_LOGO_PING_URLS = (
+    "https://www.google.com/s2/favicons?domain_url=apple.com&sz=32",
+    "https://icon.horse/icon/apple.com",
+)
 REMOTE_MARKET_SUCCESS_TTL_SECONDS = 900
 REMOTE_MARKET_FAILURE_TTL_SECONDS = 45
 REMOTE_MARKET_STALE_GRACE_SECONDS = 3600
@@ -102,18 +106,22 @@ def has_remote_logo_access() -> bool:
     if cached_value is not None:
         return cached_value
 
-    request_obj = Request(
-        LOGO_PING_URL,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
-    try:
-        with urlopen(request_obj, timeout=2) as response:
-            is_available = response.status < 500
-            _remote_logo_access_cache = (monotonic(), is_available)
-            return is_available
-    except (HTTPError, URLError, TimeoutError, ValueError):
-        _remote_logo_access_cache = (monotonic(), False)
-        return False
+    for remote_url in (PRIMARY_LOGO_PING_URL, *FALLBACK_LOGO_PING_URLS):
+        request_obj = Request(
+            remote_url,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        try:
+            with urlopen(request_obj, timeout=4) as response:
+                is_available = response.status < 500
+                if is_available:
+                    _remote_logo_access_cache = (monotonic(), True)
+                    return True
+        except (HTTPError, URLError, TimeoutError, ValueError):
+            continue
+
+    _remote_logo_access_cache = (monotonic(), False)
+    return False
 
 
 def reset_connectivity_caches() -> None:
