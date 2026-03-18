@@ -120,14 +120,20 @@
 			},
 		};
 
-		const updateSharedTooltip = (index, sourceCanvas) => {
+		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
 				tooltip.classList.remove("is-visible");
 				return;
 			}
 			const canvasRect = sourceCanvas.getBoundingClientRect();
 			const stackRect = tradeChartStack.getBoundingClientRect();
-			const relativeX = canvasRect.left - stackRect.left + priceChart.getDatasetMeta(0).data[index].x;
+			const sourcePoint = sourceChart?.getDatasetMeta(0)?.data?.[index];
+			if (!sourcePoint) {
+				tooltip.classList.remove("is-visible");
+				return;
+			}
+			const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
+			const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
 			const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
 			const allInValue = Number(allInEquity[index] || 0);
@@ -150,12 +156,17 @@
 			const tooltipWidth = tooltip.offsetWidth || 220;
 			const rightSpace = stackRect.width - relativeX;
 			const left = rightSpace >= tooltipWidth + 20 ? relativeX + 14 : Math.max(12, relativeX - tooltipWidth - 14);
+			const tooltipHeight = tooltip.offsetHeight || 156;
+			const padding = 12;
+			let top = relativeY - (tooltipHeight / 2);
+			if (top < padding) top = padding;
+			if (top + tooltipHeight > stackRect.height - padding) top = stackRect.height - tooltipHeight - padding;
 			tooltip.style.left = `${left}px`;
-			tooltip.style.top = "12px";
+			tooltip.style.top = `${Math.max(padding, top)}px`;
 			tooltip.classList.add("is-visible");
 		};
 
-		const syncHoverState = (index, sourceCanvas) => {
+		const syncHoverState = (index, sourceCanvas, sourceChart) => {
 			activeIndex = index;
 			const setActive = (chart) => {
 				if (!chart) return;
@@ -164,20 +175,20 @@
 			};
 			setActive(priceChart);
 			setActive(equityChart);
-			updateSharedTooltip(index, sourceCanvas);
+			updateSharedTooltip(index, sourceCanvas, sourceChart);
 		};
 
 		const attachHover = (canvas, chart) => {
 			canvas.addEventListener("mousemove", (event) => {
 				const points = chart.getElementsAtEventForMode(event, "index", { intersect: false }, false);
 				if (!points.length) {
-					syncHoverState(null, canvas);
+					syncHoverState(null, canvas, chart);
 					return;
 				}
-				syncHoverState(points[0].index, canvas);
+				syncHoverState(points[0].index, canvas, chart);
 			});
 			canvas.addEventListener("mouseleave", () => {
-				syncHoverState(null, canvas);
+				syncHoverState(null, canvas, chart);
 			});
 		};
 

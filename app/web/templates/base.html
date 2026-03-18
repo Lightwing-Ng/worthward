@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ labels.page_title }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/favicon.svg', v=version) }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
     <style>
         :root {
@@ -80,7 +81,7 @@
     </nav>
 </main>
 <div id="settings_action_overlay" class="settings-action-overlay" hidden>
-    <div class="settings-action-dialog chart-tooltip">
+    <div class="settings-action-dialog">
         <button type="button" id="settings_action_overlay_close" class="dismiss-button settings-action-close" aria-label="Close">
             <span class="icon icon-dismiss-control" aria-hidden="true"></span>
         </button>

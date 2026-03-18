@@ -731,9 +731,9 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .icon-settings-email { mask: url("../../images/envelope.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/envelope.fill.svg") center/contain no-repeat; }
 .icon-settings-store { mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; }
 .icon-settings-clear-cache { mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; }
-.settings-action-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(255, 255, 255, 0.12); }
+.settings-action-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(255, 255, 255, 0.04); }
 .settings-action-overlay[hidden] { display: none; }
-.settings-action-dialog { position: relative; width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; border-radius: 10px; background: var(--tooltip-background); box-shadow: 0 28px 64px rgba(17, 24, 39, 0.18), 0 10px 24px rgba(17, 24, 39, 0.10); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); }
+.settings-action-dialog { position: relative; width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; border-radius: var(--radius-soft); background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); }
 .settings-action-icon { width: 18px; height: 18px; margin-bottom: 10px; }
 .settings-action-close { position: absolute; top: 10px; right: 10px; }
 .icon-dismiss-control { background-color: currentColor; mask: url("../../images/xmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/xmark.svg") center/contain no-repeat; }

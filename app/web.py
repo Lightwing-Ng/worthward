@@ -828,7 +828,7 @@ def register_routes(app: Flask) -> None:
                 end_index = start_index + LOCAL_STORE_PAGE_SIZE
                 local_market_rows = build_local_market_rows_for_tickers(
                     all_local_market_tickers[start_index:end_index],
-                    include_ranges=False,
+                    include_ranges=True,
                 )
 
         if current_view == "trade-messages":
@@ -987,7 +987,13 @@ def register_routes(app: Flask) -> None:
         try:
             if action == "refresh":
                 refresh_history_store(ticker)
-                fetch_quote_profile(ticker, force_refresh=True)
+                try:
+                    fetch_quote_profile(ticker, force_refresh=True)
+                except Exception:
+                    try:
+                        fetch_quote_profile(ticker, force_refresh=False)
+                    except Exception:
+                        pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
                 return redirect(build_local_store_redirect(notice=notice))
             elif action == "delete":

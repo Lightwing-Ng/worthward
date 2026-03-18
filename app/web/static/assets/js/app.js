@@ -16,7 +16,9 @@
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
-	const hasInitialResult = Boolean(state.chart?.series?.length);
+	const hasInitialResult = isTradeMessagesView
+		? Boolean(state.tradeBacktest)
+		: Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
 	let isSubmittingWithOverlay = false;
@@ -655,7 +657,7 @@
 				const responseText = await fetch(nextUrl, {
 					credentials: "same-origin",
 					headers: { "X-Requested-With": "settings-prefetch" },
-					cache: "force-cache",
+					cache: targetSection === "local-market-store" ? "no-store" : "force-cache",
 				}).then(async (response) => {
 					if (!response.ok) throw new Error(`Settings prefetch failed: ${response.status}`);
 					return response.text();
@@ -726,7 +728,7 @@
 			const payload = await fetchJsonCached(
 				`local-store:${page}`,
 				`${endpoints.localStorePageData}?page=${encodeURIComponent(page)}`,
-				{ ttlMs: 60000 },
+				{ ttlMs: 0 },
 			);
 			(payload.rows || []).forEach((item) => {
 				const row = region.querySelector(`[data-local-store-ticker="${CSS.escape(item.ticker || "")}"]`);
@@ -783,6 +785,7 @@
 				"X-Requested-With": "fetch",
 			},
 			credentials: "same-origin",
+			cache: "no-store",
 		});
 		if (!response.ok) throw new Error(`Local store page fetch failed: ${response.status}`);
 		const html = await response.text();
