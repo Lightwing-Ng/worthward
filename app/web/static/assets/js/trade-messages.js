@@ -100,11 +100,8 @@
 			const parsedDate = parseLabelDate(tickLabel);
 			if (!parsedDate) return tickLabel;
 			const plotWidth = scale.chart?.chartArea?.width || scale.chart?.width || 0;
-			const tickCount = Math.max(1, ticks.length);
-			const slotWidth = plotWidth / tickCount;
-			const showEvery = slotWidth >= 112 ? 1 : slotWidth >= 76 ? 2 : 3;
-			const isLastTick = index === ticks.length - 1;
-			if (index % showEvery !== 0 && !isLastTick) return "";
+			const maxTickCount = plotWidth >= 768 ? 4 : 3;
+			const slotWidth = plotWidth / Math.max(1, maxTickCount);
 			if (slotWidth >= 112) return dateLabelFormatter.format(parsedDate);
 			return [shortDateLabelFormatter.format(parsedDate), yearLabelFormatter.format(parsedDate)];
 		};
@@ -142,7 +139,8 @@
 					ticks: {
 						color: theme.muted,
 						maxRotation: 0,
-						autoSkip: false,
+						autoSkip: true,
+						maxTicksLimit: 4,
 						font: { weight: "700" },
 						callback(value, index, ticks) {
 							return buildAdaptiveTickLabel(this, index, ticks);
