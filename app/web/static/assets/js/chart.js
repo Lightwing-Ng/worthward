@@ -33,8 +33,8 @@
 		};
 
 		const labels = series[0].dates;
-		const dateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+		const dateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 		const yearLabelFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" });
 		const portfolioLabelMap = {
 			Portfolio: "Portfolio",

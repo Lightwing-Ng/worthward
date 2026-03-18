@@ -22,8 +22,8 @@
 		const equity = tradeBacktest.chart.equity;
 		const initialCapital = Number(tradeBacktest.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
-		const dateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+		const dateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 		const yearLabelFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" });
 		const buyMarkers = tradeBacktest.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
 		const sellMarkers = tradeBacktest.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
@@ -158,10 +158,20 @@
 			},
 		};
 
-			const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
-				if (index === null) {
-					hoverLine.classList.remove("is-visible");
-					tooltip.classList.remove("is-visible");
+		const updateHoverLineFrame = () => {
+			if (!priceChart?.chartArea || !equityChart?.chartArea) return null;
+			const priceCanvasRect = priceCanvas.getBoundingClientRect();
+			const equityCanvasRect = equityCanvas.getBoundingClientRect();
+			const stackRect = tradeChartStack.getBoundingClientRect();
+			const top = priceCanvasRect.top - stackRect.top + priceChart.chartArea.top;
+			const bottom = equityCanvasRect.top - stackRect.top + equityChart.chartArea.bottom;
+			return { top, bottom };
+		};
+
+		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
+			if (index === null) {
+				hoverLine.classList.remove("is-visible");
+				tooltip.classList.remove("is-visible");
 					return;
 				}
 			const canvasRect = sourceCanvas.getBoundingClientRect();
@@ -172,10 +182,15 @@
 				tooltip.classList.remove("is-visible");
 				return;
 			}
-				const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
-				const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
-				hoverLine.style.left = `${relativeX}px`;
-				hoverLine.classList.add("is-visible");
+			const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
+			const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
+			const hoverLineFrame = updateHoverLineFrame();
+			if (hoverLineFrame) {
+				hoverLine.style.top = `${hoverLineFrame.top}px`;
+				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
+			}
+			hoverLine.style.left = `${relativeX}px`;
+			hoverLine.classList.add("is-visible");
 				const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
 			const allInValue = Number(allInEquity[index] || 0);

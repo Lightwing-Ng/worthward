@@ -1552,13 +1552,13 @@
 	const tradeCapitalField = $(".trade-capital-field");
 	const tradeCapitalInput = $("#trade_initial_capital");
 	const tradeCapitalSlider = $("#trade_initial_capital_slider");
-	const displayDateFormatter = new Intl.DateTimeFormat("en-US", {
+	const displayDateFormatter = new Intl.DateTimeFormat("en-GB", {
 		day: "numeric",
 		month: "short",
 		year: "numeric",
 		timeZone: "UTC",
 	});
-	const monthDateFormatter = new Intl.DateTimeFormat("en-US", {
+	const monthDateFormatter = new Intl.DateTimeFormat("en-GB", {
 		month: "long",
 		year: "numeric",
 		timeZone: "UTC",
@@ -1580,7 +1580,7 @@
 	const formatDisplayDate = (rawValue) => {
 		const date = parseIsoDate(rawValue);
 		if (!date) return "Select date";
-		return `${date.getUTCDate()} ${date.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${date.getUTCFullYear()}`;
+		return displayDateFormatter.format(date);
 	};
 
 	const startOfMonthUtc = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
