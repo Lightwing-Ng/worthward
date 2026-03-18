@@ -1385,7 +1385,7 @@
 		const sidebar = $(".sidebar");
 		const dock = $(".sidebar-dock");
 		if (!sidebar || !dock) return;
-		if (window.matchMedia("(max-width: 820px)").matches) {
+		if (window.matchMedia("(max-width: 767px)").matches) {
 			dock.style.left = "";
 			return;
 		}
