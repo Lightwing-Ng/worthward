@@ -1088,6 +1088,37 @@
 		syncPortfolioWeightBounds();
 	};
 
+	const rebalancePortfolioWeightsAfterRemoval = (removedWeight = 0) => {
+		if (!isPortfolioView) return;
+		ensurePortfolioWeightTouches();
+		const filledEntries = getFilledWeightEntries();
+		if (!filledEntries.length) return;
+		if (filledEntries.length === 1) {
+			syncPortfolioWeightPair(filledEntries[0], 100);
+			markPortfolioWeightTouched(filledEntries[0].index);
+			syncPortfolioWeightBounds();
+			return;
+		}
+		const currentTotal = filledEntries.reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+		const deficit = Math.max(0, 100 - currentTotal);
+		const targetAdjustment = deficit || Math.max(0, Number.parseInt(String(removedWeight || 0), 10) || 0);
+		if (targetAdjustment <= 0) {
+			syncPortfolioWeightBounds();
+			return;
+		}
+		const passiveEntry = filledEntries.reduce((oldestEntry, entry) => {
+			const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
+			const entryStamp = getPortfolioWeightTouchStamp(entry.index);
+			if (entryStamp < oldestStamp) return entry;
+			if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
+			return oldestEntry;
+		});
+		const nextValue = (Number.parseInt(passiveEntry.number.value, 10) || 0) + targetAdjustment;
+		syncPortfolioWeightPair(passiveEntry, Math.min(100, nextValue));
+		markPortfolioWeightTouched(passiveEntry.index);
+		syncPortfolioWeightBounds();
+	};
+
 	const dispatchPortfolioPreviewUpdate = () => {
 		if (!isPortfolioView) return;
 		window.dispatchEvent(new CustomEvent("antigravity:portfolio-preview", {
@@ -1101,17 +1132,54 @@
 		}));
 	};
 
+	const validatePortfolioWeightInputs = () => {
+		if (!isPortfolioView) return true;
+		let isValid = true;
+		getWeightFields().forEach((entry) => {
+			const { tickerInput, number } = entry;
+			const ticker = sanitizeTicker(tickerInput.value.trim());
+			const weight = Number.parseInt(number.value, 10) || 0;
+			if (ticker && weight <= 0) {
+				number.classList.add("is-invalid");
+				if (!entry.tooltip?.textContent) {
+					showPortfolioWeightTooltip(entry, "Each selected ticker must have a weight above 0%.");
+				}
+				isValid = false;
+				return;
+			}
+			number.classList.remove("is-invalid");
+		});
+		return isValid;
+	};
+
+	const restoreRetainedPortfolioWeight = (tickerInput) => {
+		if (!isPortfolioView || !tickerInput) return;
+		const field = tickerInput.closest(".ticker-field");
+		const number = field?.querySelector(".portfolio-weight-input");
+		const slider = field?.querySelector(".portfolio-weight-slider");
+		const retainedWeight = Number.parseInt(tickerInput.dataset.retainedWeight || "", 10);
+		if (!number || !slider) return;
+		if (!sanitizeTicker(tickerInput.value.trim())) return;
+		if (!Number.isFinite(retainedWeight) || retainedWeight <= 0) return;
+		if ((Number.parseInt(number.value, 10) || 0) > 0) return;
+		number.value = String(retainedWeight);
+		slider.value = String(retainedWeight);
+		delete tickerInput.dataset.retainedWeight;
+	};
+
 	const attachPortfolioWeightHandlers = () => {
 		if (!isPortfolioView) return;
 		getWeightFields().forEach(({ field, number, slider, tickerInput, index }) => {
 			if (number.dataset.bound === "1") return;
 			number.dataset.bound = "1";
+			if (tickerInput) tickerInput.dataset.lastTicker = sanitizeTicker(tickerInput.value.trim());
 			const syncAndRefresh = (source) => {
 				const value = Math.min(100, Math.max(0, Number.parseInt(String(source.value || 0), 10) || 0));
 				number.value = String(value);
 				slider.value = String(value);
 				rebalancePortfolioWeights(index);
 				dispatchPortfolioPreviewUpdate();
+				validatePortfolioWeightInputs();
 				scheduleAutoSubmit(180);
 			};
 			const openSlider = () => field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
@@ -1126,7 +1194,17 @@
 			number.addEventListener("input", () => syncAndRefresh(number));
 			slider.addEventListener("input", () => syncAndRefresh(slider));
 			tickerInput?.addEventListener("input", () => {
+				const previousTicker = tickerInput.dataset.lastTicker || "";
 				const ticker = sanitizeTicker(tickerInput.value.trim());
+				if (!ticker && previousTicker) {
+					const currentWeight = Number.parseInt(number.value, 10) || 0;
+					if (currentWeight > 0) {
+						tickerInput.dataset.retainedWeight = String(currentWeight);
+					}
+				}
+				if (ticker && !previousTicker) {
+					restoreRetainedPortfolioWeight(tickerInput);
+				}
 				syncPortfolioWeightDisabledState();
 				if (ticker && !getPortfolioWeightTouchStamp(index)) {
 					markPortfolioWeightTouched(index);
@@ -1140,6 +1218,8 @@
 				}
 				syncPortfolioWeightBounds();
 				dispatchPortfolioPreviewUpdate();
+				validatePortfolioWeightInputs();
+				tickerInput.dataset.lastTicker = ticker;
 			});
 		});
 	};
@@ -1218,8 +1298,14 @@
 			}
 		};
 		const applySuggestion = (item) => {
-			input.value = item.symbol;
+			const selectedSymbol = sanitizeTicker(item.symbol || "");
+			input.value = selectedSymbol;
 			input.dataset.unknown = "";
+			input.dataset.validationTicker = selectedSymbol;
+			tickerValidationCache.set(selectedSymbol, true);
+			setTickerValidationPending(input, false);
+			input.setCustomValidity("");
+			restoreRetainedPortfolioWeight(input);
 			syncTickerInputDecoration(input, item);
 			validateAllTickerInputs();
 			closePanel();
@@ -1442,11 +1528,18 @@
 			if (button.dataset.bound === "1") return;
 			button.dataset.bound = "1";
 			button.addEventListener("click", () => {
-				button.closest(".ticker-field")?.remove();
+				const field = button.closest(".ticker-field");
+				const removedWeight = isPortfolioView
+					? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
+					: 0;
+				field?.remove();
 				reindexTickerFields();
 				if (isPortfolioView) {
+					rebalancePortfolioWeightsAfterRemoval(removedWeight);
 					ensurePortfolioWeightTouches();
 					syncPortfolioWeightBounds();
+					syncPortfolioWeightDisabledState();
+					validatePortfolioWeightInputs();
 					dispatchPortfolioPreviewUpdate();
 				}
 				validateAllTickerInputs();
@@ -1857,6 +1950,7 @@
 	ensurePortfolioWeightTouches();
 	syncPortfolioWeightBounds();
 	dispatchPortfolioPreviewUpdate();
+	validatePortfolioWeightInputs();
 	updateRangePanels();
 	syncDateConstraints();
 	scheduleDockPosition();
@@ -1949,6 +2043,10 @@
 				return;
 			}
 			if (isPortfolioView) {
+				const areWeightsValid = validatePortfolioWeightInputs();
+				if (!areWeightsValid) {
+					return;
+				}
 				const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
 				if (totalWeight !== 100) {
 					return;

@@ -95,7 +95,8 @@
 					const parsedDate = parseLabelDate(labels[index]);
 					if (!parsedDate) return;
 					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
-					const x = xScale.getPixelForValue(index);
+					const ratio = labels.length <= 1 ? 0 : index / (labels.length - 1);
+					const x = chartArea.left + (chartArea.width * ratio);
 					if (!Number.isFinite(x)) return;
 					if (tickIndex === 0) ctx.textAlign = "left";
 					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";

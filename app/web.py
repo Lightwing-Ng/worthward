@@ -169,6 +169,14 @@ def register_routes(app: Flask) -> None:
             remainder -= 1
         return scaled
 
+    def ensure_positive_portfolio_weights(raw_weights: list[int], active_count: int) -> list[int]:
+        trimmed = raw_weights[:active_count]
+        if len(trimmed) < active_count:
+            trimmed.extend([0] * (active_count - len(trimmed)))
+        if any(weight <= 0 for weight in trimmed):
+            raise ValueError("Each selected ticker must have a weight above 0%.")
+        return trimmed
+
     def build_portfolio_series_payload(datasets: list[pd.DataFrame], weights: list[int], color: str):
         first_dataset = datasets[0]
         cumulative_growth = pd.Series(0.0, index=first_dataset.index)
@@ -730,6 +738,7 @@ def register_routes(app: Flask) -> None:
 
                         colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                         if current_view == "portfolio":
+                            ensure_positive_portfolio_weights(requested_weights, len(validated_tickers))
                             portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
                             growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
                             portfolio_series = build_portfolio_series_payload(
