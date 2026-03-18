@@ -73,12 +73,12 @@
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="metrics">
                 <div class="trade-metrics-grid">
-                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ trade_backtest_result.summary.trade_count }}</span></div>
                     <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ trade_backtest_result.summary.trade_count }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
                 </div>
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
