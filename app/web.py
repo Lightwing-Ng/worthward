@@ -28,6 +28,7 @@ from .storage import (
     PRIMARY_LOGOS_STORE_DIR,
     SEARCH_LOGOS_STORE_DIR,
     clear_nonhistorical_market_cache,
+    delete_ticker_data,
     history_store_path_for,
     list_local_tickers,
     logo_store_path_for,
@@ -990,10 +991,8 @@ def register_routes(app: Flask) -> None:
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
                 return redirect(build_local_store_redirect(notice=notice))
             elif action == "delete":
-                history_path = history_store_path_for(ticker)
-                if history_path.exists():
-                    history_path.unlink()
-                notice = f"Removed cached market data for {ticker} from local storage."
+                delete_ticker_data(ticker)
+                notice = f"Removed all cached data for {ticker} from local storage."
                 return redirect(build_local_store_redirect(notice=notice))
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or f"Unable to update local cache for {ticker}."

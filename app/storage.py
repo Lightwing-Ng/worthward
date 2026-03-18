@@ -135,3 +135,17 @@ def clear_nonhistorical_market_cache() -> None:
         for path in directory.glob("*"):
             if path.is_file():
                 path.unlink()
+
+
+def delete_ticker_data(ticker: str) -> None:
+    ensure_market_store_dir()
+    paths = [
+        history_store_path_for(ticker),
+        profile_store_path_for(ticker, namespace="primary"),
+        profile_store_path_for(ticker, namespace="search"),
+        logo_store_path_for(ticker, namespace="primary"),
+        logo_store_path_for(ticker, namespace="search"),
+    ]
+    for path in paths:
+        if path.exists():
+            path.unlink()
