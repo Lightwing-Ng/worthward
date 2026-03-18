@@ -13,7 +13,7 @@
             <p class="report-heading">{{ report_heading }}</p>
             {{ render_report_info("Show comparison details") }}
         </div>
-        <div class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
+        <div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
             {% for item in performance_items %}
             <section class="performance-item" style="--item-color: {{ item.color }}; --item-shadow: {{ item.shadow_color }};">
                 <div class="performance-accent"></div>
@@ -32,8 +32,8 @@
         </div>
     </article>
 </div>
-{{ render_chart_surface(chart_heading, True) }}
+{{ render_chart_surface(chart_heading, True, chart_region_id="compare_chart_region") }}
 {% else %}
-{{ render_chart_surface(chart_heading, False, "Please configure at least two tickers to compare.") }}
+{{ render_chart_surface(chart_heading, False, "Please configure at least two tickers to compare.", "compare_chart_region") }}
 {% endif %}
 {% endblock %}

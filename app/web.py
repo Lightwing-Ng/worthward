@@ -286,11 +286,18 @@ def register_routes(app: Flask) -> None:
             for namespace in ("primary", "search")
         )
 
+    def has_local_logo_snapshot(ticker: str) -> bool:
+        return any(
+            logo_store_path_for(ticker, namespace=namespace).exists() and logo_store_path_for(ticker, namespace=namespace).stat().st_size > 0
+            for namespace in ("primary", "search")
+        )
+
     def list_local_market_tickers() -> list[str]:
         return [
             ticker
             for ticker in list_local_tickers()
-            if history_store_path_for(ticker).exists() and has_local_profile_snapshot(ticker)
+            if history_store_path_for(ticker).exists() and history_store_path_for(ticker).stat().st_size > 0
+            and has_local_profile_snapshot(ticker) and has_local_logo_snapshot(ticker)
         ]
 
     def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
@@ -298,8 +305,10 @@ def register_routes(app: Flask) -> None:
             profile_path = profile_store_path_for(ticker, namespace=namespace)
             if not profile_path.exists():
                 continue
-            payload = json.loads(profile_path.read_text())
             logo_path = logo_store_path_for(ticker, namespace=namespace)
+            if not logo_path.exists():
+                continue
+            payload = json.loads(profile_path.read_text())
             logo_url = url_for("market_store_logo", filename=logo_path.name) if logo_path.exists() else ""
             company_name = str(payload.get("company_name") or "").strip()
             if company_name:
@@ -314,7 +323,7 @@ def register_routes(app: Flask) -> None:
         rows: list[dict[str, str]] = []
         for ticker in tickers:
             history_path = history_store_path_for(ticker)
-            if not history_path.exists():
+            if not history_path.exists() or history_path.stat().st_size == 0:
                 continue
             profile_snapshot = load_local_profile_snapshot(ticker)
             if profile_snapshot is None:
@@ -323,11 +332,14 @@ def register_routes(app: Flask) -> None:
             range_start = ""
             range_end = ""
             if include_ranges:
-                dataset = pd.read_parquet(history_path, columns=["Date"])
-                if dataset.empty:
-                    continue
-                range_start = format_store_range_date(dataset["Date"].min())
-                range_end = format_store_range_date(dataset["Date"].max())
+                try:
+                    dataset = pd.read_parquet(history_path, columns=["Date"])
+                    if dataset.empty:
+                        continue
+                    range_start = format_store_range_date(dataset["Date"].min())
+                    range_end = format_store_range_date(dataset["Date"].max())
+                except Exception:
+                    pass
             rows.append(
                 {
                     "ticker": ticker,
@@ -596,6 +608,10 @@ def register_routes(app: Flask) -> None:
         submit_label = labels["update_chart"]
 
         settings_section = normalize_settings_section(settings_section)
+
+        if current_view == "settings" and settings_section == "about":
+            error = None
+            notice = None
 
         if current_view == "portfolio":
             page_title = labels["portfolio_title"]

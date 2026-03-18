@@ -1,5 +1,5 @@
 """
-Tests for the Super Trend Double AI strategy.
+Tests for the SuperTrend Double AI strategy.
 
 Code version: v1.0.0
 """

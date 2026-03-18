@@ -73,12 +73,12 @@
     },
     {
       "id": "supertrend-double-ai",
-      "name": "Super Trend Double AI",
+      "name": "SuperTrend Double AI",
       "module": "strategies.algorithms.strategy_supertrend_double_ai",
       "class_name": "SupertrendDoubleAiStrategy",
       "enabled": true,
       "category": "trend",
-      "description": "Adaptive multi-factor SuperTrend strategy with clustering, exposed as the Super Trend Double AI variant.",
+      "description": "Adaptive multi-factor SuperTrend strategy with clustering, exposed as the SuperTrend Double AI variant.",
       "supports": {
         "single_ticker": true,
         "multi_ticker": false,

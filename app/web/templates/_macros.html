@@ -20,11 +20,12 @@
 </div>
 {%- endmacro %}
 
-{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None) -%}
+{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None) -%}
 <div class="chart-surface">
     <div class="chart-heading-row">
         <p class="chart-heading">{{ chart_heading }}</p>
     </div>
+    <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %}>
     {% if has_series %}
     <div class="chart-wrap" data-workspace-mask="chart-area">
         <canvas id="returnsChart"></canvas>
@@ -34,6 +35,7 @@
         <p>{{ placeholder_text }}</p>
     </div>
     {% endif %}
+    </div>
 </div>
 {%- endmacro %}
 

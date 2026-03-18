@@ -123,11 +123,15 @@
     </div>
     {% if trade_backtest_result %}
     <div class="trade-chart-stack">
-                <div class="trade-chart-panel" data-workspace-mask="trade-chart">
-                    <canvas id="tradePriceChart"></canvas>
+                <div class="trade-chart-panel">
+                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
+                        <canvas id="tradePriceChart"></canvas>
+                    </div>
                 </div>
-                <div class="trade-chart-panel trade-chart-panel-equity" data-workspace-mask="trade-chart">
-                    <canvas id="tradeEquityChart"></canvas>
+                <div class="trade-chart-panel trade-chart-panel-equity">
+                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-equity-chart">
+                        <canvas id="tradeEquityChart"></canvas>
+                    </div>
                 </div>
     </div>
     {% else %}

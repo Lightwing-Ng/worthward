@@ -11,4 +11,4 @@ from .strategy_supertrend_ai import SupertrendAiStrategy
 
 class SupertrendDoubleAiStrategy(SupertrendAiStrategy):
     strategy_id = "supertrend-double-ai"
-    strategy_name = "Super Trend Double AI"
+    strategy_name = "SuperTrend Double AI"

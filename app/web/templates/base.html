@@ -40,7 +40,7 @@
             </section>
             {% block sidebar_content %}{% endblock %}
         </aside>
-        <section class="panel chart-panel workspace">
+        <section class="panel chart-panel workspace" id="workspace_panel">
             {% if error %}
             <div class="error{% if notice_is_floating %} notice-floating{% endif %}" data-dismissible-notice>
                 <span>{{ error }}</span>
@@ -89,34 +89,29 @@
         <p class="settings-action-copy">This may take a moment while the app checks remote data and refreshes the local store.</p>
     </div>
 </div>
+<script id="antigravity_state" type="application/json">{{ {
+    "defaults": defaults,
+    "labels": labels,
+    "theme": theme,
+    "chartConfig": chart_config,
+    "endpoints": endpoints,
+    "constraints": {"minTickers": min_tickers, "maxTickers": max_tickers},
+    "chart": {"series": series, "profiles": profiles_json},
+    "portfolio": {"items": portfolio_items, "weights": portfolio_weights, "totalReturn": portfolio_total_return},
+    "tradeBacktest": trade_backtest_result,
+    "currentView": current_view_name,
+    "settingsSection": settings_section
+}|tojson }}</script>
 <script>
-    window.ANTIGRAVITY_APP = {
-        defaults: {{ defaults|tojson }},
-        labels: {{ labels|tojson }},
-        theme: {{ theme|tojson }},
-        chartConfig: {{ chart_config|tojson }},
-        endpoints: {{ endpoints|tojson }},
-        constraints: { minTickers: {{ min_tickers }}, maxTickers: {{ max_tickers }} },
-        chart: {
-            series: {{ series|tojson }},
-            profiles: {{ profiles_json|tojson }}
-        },
-        portfolio: {
-            items: {{ portfolio_items|tojson }},
-            weights: {{ portfolio_weights|tojson }},
-            totalReturn: {{ portfolio_total_return|tojson }}
-        },
-        tradeBacktest: {{ trade_backtest_result|tojson }},
-        currentView: {{ current_view_name|tojson }},
-        settingsSection: {{ settings_section|tojson }}
-    };
+    window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
+    window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
 {% block page_scripts %}{% endblock %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
-{% if (current_view == "tickers" or current_view == "portfolio") and series %}
+{% if current_view == "tickers" or current_view == "portfolio" %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}
-{% if current_view == "trade-messages" and trade_backtest_result %}
+{% if current_view == "trade-messages" %}
 <script src="{{ url_for('static', filename='assets/js/trade-messages.js', v=version) }}"></script>
 {% endif %}
 </body>

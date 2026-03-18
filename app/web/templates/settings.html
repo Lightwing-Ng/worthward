@@ -159,9 +159,9 @@
                             <td data-local-store-company>{{ row.company_name }}</td>
                             <td class="local-store-range-cell">
                                 <span class="local-store-range-value">
-                                    <span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start"></span>
+                                    <span class="local-store-range-token{% if not row.range_start %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="start">{{ row.range_start }}</span>
                                     <span class="local-store-range-separator"> - </span>
-                                    <span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end"></span>
+                                    <span class="local-store-range-token{% if not row.range_end %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="end">{{ row.range_end }}</span>
                                 </span>
                             </td>
                             <td>

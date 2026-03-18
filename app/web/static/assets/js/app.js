@@ -15,11 +15,14 @@
 	const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
+	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
 	const hasInitialResult = Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
 	let isSubmittingWithOverlay = false;
 	let compareOverlayTimer = null;
+	let activeWorkspaceHydration = null;
+	let workspaceHydrationToken = 0;
 	const datePickerState = [];
 	let validTradingDateSet = null;
 	const portfolioWeightState = {
@@ -53,7 +56,8 @@
 		"trade-messages": {
 			masks: [
 				'[data-workspace-mask="trade-metric"]',
-				'[data-workspace-mask="trade-chart"]',
+				'[data-workspace-mask="trade-price-chart"]',
+				'[data-workspace-mask="trade-equity-chart"]',
 			],
 		},
 		settings: {
@@ -157,9 +161,19 @@
 		const shell = $("[data-trade-detail-shell]");
 		if (!shell) return;
 		const panels = $$("[data-trade-detail-panel]");
+		try {
+			const storedValue = window.sessionStorage.getItem(TRADE_DETAIL_MEMORY_KEY);
+			const storedInput = storedValue ? shell.querySelector(`input[name="trade_detail_tab"][value="${storedValue}"]`) : null;
+			if (storedInput) storedInput.checked = true;
+		} catch (_error) {
+		}
 		const syncPanels = () => {
 			const active = shell.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
 			shell.dataset.active = active === "transactions" ? "exact" : "period";
+			try {
+				window.sessionStorage.setItem(TRADE_DETAIL_MEMORY_KEY, active);
+			} catch (_error) {
+			}
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.tradeDetailPanel !== active;
 			});
@@ -170,6 +184,237 @@
 			input.addEventListener("change", syncPanels);
 		});
 		syncPanels();
+	};
+
+	const setFormBusyState = (isBusy) => {
+		if (!form) return;
+		form.setAttribute("aria-busy", String(isBusy));
+	};
+
+	const initializeWorkspaceEnhancements = () => {
+		attachNoticeHandlers();
+		attachTradeDetailTabs();
+		window.requestAnimationFrame(() => {
+			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
+			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
+			window.ANTIGRAVITY_BOOTSTRAP?.initTradeMessagesWorkspace?.();
+			if (state.currentView === "portfolio") {
+				dispatchPortfolioPreviewUpdate();
+			}
+		});
+	};
+
+	const buildPendingWorkspaceMarkup = () => {
+		const currentValues = getFilledTickers();
+		const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.trade_messages_metrics || "Loading";
+		const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || "Loading";
+		if (state.currentView === "trade-messages") {
+			const tradeMetricLabels = [
+				"Net return",
+				"Final equity",
+				"Max drawdown",
+				"Win rate",
+				"Closed trades",
+				"Initial capital",
+			];
+			return `
+				<div class="workspace-header">
+					<article class="report-card trade-performance-card">
+						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
+						<div class="trade-detail-tabs">
+							<div class="range-mode-shell trade-detail-shell" data-active="metrics">
+								<span class="range-mode-option"><span>${labels.trade_messages_metrics_tab}</span></span>
+								<span class="range-mode-option"><span>${labels.trade_messages_transactions_tab}</span></span>
+							</div>
+							<div class="trade-detail-panel">
+								<div class="trade-metrics-grid">
+									${tradeMetricLabels.map((label) => `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`).join("")}
+								</div>
+							</div>
+							<div class="trade-detail-panel" hidden>
+								<div class="trade-transactions-wrap">
+									<table class="settings-table trade-transactions-table">
+										<thead>
+											<tr><th>No.</th><th>Date</th><th>Side</th><th class="trade-transactions-number">Price</th><th class="trade-transactions-number">Shares</th><th class="trade-transactions-number">P&amp;L</th><th class="trade-transactions-number">Equity</th></tr>
+										</thead>
+										<tbody>
+											${Array.from({ length: 4 }, (_, index) => `<tr><td class="trade-transactions-index">${index + 1}</td><td class="is-pending-value">0000</td><td class="is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td><td class="trade-transactions-number is-pending-value">0000</td></tr>`).join("")}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</div>
+					</article>
+				</div>
+				<article class="chart-surface trade-messages-surface">
+					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+					<div class="trade-chart-stack">
+						<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
+						<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
+					</div>
+				</article>
+			`;
+		}
+		if (state.currentView === "portfolio") {
+			return `
+				<div class="workspace-header">
+					<article class="report-card">
+						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
+						<div class="portfolio-summary">
+							<div class="portfolio-donut-block">
+								<div class="portfolio-donut-orbit is-pending-value" data-workspace-mask="portfolio-donut-start"><div class="portfolio-donut" aria-hidden="true"></div></div>
+								<span class="portfolio-donut-arrow icon icon-portfolio-donut-flow" aria-hidden="true"></span>
+								<div class="portfolio-donut-orbit is-pending-value" data-workspace-mask="portfolio-donut-end"><div class="portfolio-donut" aria-hidden="true"></div></div>
+							</div>
+							<div class="portfolio-summary-main">
+								<p class="portfolio-total-label">${labels.portfolio_total_return}</p>
+								<p class="portfolio-total-value is-pending-value" data-workspace-mask="portfolio-total-return">0000</p>
+							</div>
+						</div>
+					</article>
+				</div>
+				<div class="chart-surface">
+					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+					<div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div>
+				</div>
+			`;
+		}
+		const itemCount = Math.max(currentValues.length, MIN_TICKERS);
+		return `
+			<div class="workspace-header">
+				<article class="report-card">
+					<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
+					<div class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
+						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card"><div class="performance-accent"></div><div class="report-symbol-row"><p class="report-symbol">${currentValues[index] || "..."}</p></div><p class="report-company is-pending-value" data-workspace-mask="company-name">Loading</p><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
+					</div>
+				</article>
+			</div>
+			<div class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></div>
+		`;
+	};
+
+	const replaceDomRegion = (currentRegion, nextRegion) => {
+		if (!currentRegion || !nextRegion) return;
+		currentRegion.replaceChildren(...Array.from(nextRegion.childNodes).map((node) => node.cloneNode(true)));
+	};
+
+	const applyComparePendingState = () => {
+		const workspacePanel = document.getElementById("workspace_panel");
+		if (!workspacePanel) return;
+		delete workspacePanel.dataset.workspacePending;
+	};
+
+	const applyPortfolioPendingState = () => {
+		const workspacePanel = document.getElementById("workspace_panel");
+		if (!workspacePanel) return;
+		delete workspacePanel.dataset.workspacePending;
+	};
+
+	const applyTradeMessagesPendingState = () => {
+		const workspacePanel = document.getElementById("workspace_panel");
+		if (!workspacePanel) return;
+		const metricNodes = Array.from(workspacePanel.querySelectorAll('[data-workspace-mask="trade-metric"]'));
+		if (!metricNodes.length) return;
+		metricNodes.forEach((node) => {
+			node.classList.add("is-pending-value");
+		});
+		workspacePanel.dataset.workspacePending = "1";
+	};
+
+	const applyPendingWorkspaceMarkup = () => {
+		if (state.currentView === "tickers") {
+			applyComparePendingState();
+			return;
+		}
+		if (state.currentView === "portfolio") {
+			applyPortfolioPendingState();
+			return;
+		}
+		if (state.currentView === "trade-messages") {
+			applyTradeMessagesPendingState();
+			return;
+		}
+		const workspacePanel = document.getElementById("workspace_panel");
+		if (!workspacePanel) return;
+		workspacePanel.innerHTML = buildPendingWorkspaceMarkup();
+		workspacePanel.dataset.workspacePending = "1";
+	};
+
+	const parseStateFromHtmlDocument = (doc) => {
+		const stateNode = doc.getElementById("antigravity_state");
+		if (!stateNode?.textContent) return null;
+		try {
+			return JSON.parse(stateNode.textContent);
+		} catch (_error) {
+			return null;
+		}
+	};
+
+	const abortActiveWorkspaceHydration = () => {
+		if (!activeWorkspaceHydration) return;
+		activeWorkspaceHydration.abort();
+		activeWorkspaceHydration = null;
+	};
+
+	const hydrateWorkspaceFromUrl = async (nextUrl) => {
+		abortActiveWorkspaceHydration();
+		const token = ++workspaceHydrationToken;
+		const controller = new AbortController();
+		activeWorkspaceHydration = controller;
+		const response = await fetch(nextUrl, {
+			headers: {
+				"X-Requested-With": "workspace-hydrate",
+			},
+			credentials: "same-origin",
+			signal: controller.signal,
+		});
+		if (!response.ok) throw new Error(`Workspace refresh failed: ${response.status}`);
+		const html = await response.text();
+		if (controller.signal.aborted || token !== workspaceHydrationToken) return false;
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(html, "text/html");
+		const nextWorkspacePanel = doc.getElementById("workspace_panel");
+		const workspacePanel = document.getElementById("workspace_panel");
+		if (!nextWorkspacePanel || !workspacePanel) throw new Error("Workspace panel missing from response.");
+		if (state.currentView === "tickers") {
+			const currentSummaryRegion = document.getElementById("compare_summary_region");
+			const nextSummaryRegion = doc.getElementById("compare_summary_region");
+			const currentChartRegion = document.getElementById("compare_chart_region");
+			const nextChartRegion = doc.getElementById("compare_chart_region");
+			if (!currentChartRegion || !nextChartRegion || (Boolean(currentSummaryRegion) !== Boolean(nextSummaryRegion))) {
+				workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
+			} else {
+				if (currentSummaryRegion && nextSummaryRegion) replaceDomRegion(currentSummaryRegion, nextSummaryRegion);
+				replaceDomRegion(currentChartRegion, nextChartRegion);
+				workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
+			}
+		} else if (state.currentView === "portfolio") {
+			const currentSummaryRegion = document.getElementById("portfolio_summary_region");
+			const nextSummaryRegion = doc.getElementById("portfolio_summary_region");
+			const currentChartRegion = document.getElementById("portfolio_chart_region");
+			const nextChartRegion = doc.getElementById("portfolio_chart_region");
+			if (!currentSummaryRegion || !nextSummaryRegion || !currentChartRegion || !nextChartRegion) {
+				workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
+			} else {
+				replaceDomRegion(currentSummaryRegion, nextSummaryRegion);
+				replaceDomRegion(currentChartRegion, nextChartRegion);
+				workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
+			}
+		} else {
+			workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
+		}
+		delete workspacePanel.dataset.workspacePending;
+		const nextState = parseStateFromHtmlDocument(doc);
+		if (nextState) {
+			window.ANTIGRAVITY_APP = nextState;
+			Object.assign(state, nextState);
+		}
+		document.title = doc.title || document.title;
+		window.history.replaceState({}, "", nextUrl);
+		initializeWorkspaceEnhancements();
+		scheduleDockPosition();
+		if (activeWorkspaceHydration === controller) activeWorkspaceHydration = null;
+		return true;
 	};
 
 	const readViewMemory = () => {
@@ -474,11 +719,8 @@
 		if (!region) return;
 		const rows = Array.from(region.querySelectorAll("[data-local-store-ticker]"));
 		if (!rows.length) return;
-		rows.forEach((row) => {
-			row.querySelectorAll('[data-workspace-mask="local-store-date"]').forEach((node) => {
-				node.classList.add("is-pending-value");
-			});
-		});
+		const hasPendingDateToken = rows.some((row) => row.querySelector('[data-workspace-mask="local-store-date"].is-pending-value'));
+		if (!hasPendingDateToken) return;
 		const page = new URLSearchParams(window.location.search).get("page") || "1";
 		try {
 			const payload = await fetchJsonCached(
@@ -1375,7 +1617,7 @@
 
 	const canAutoSubmit = () => {
 		if (!hasInitialResult || !form) return false;
-		const values = compactTickerInputs();
+		const values = getFilledTickers();
 		if (values.length < minimumRequiredTickers) return false;
 		if (new Set(values).size !== values.length) return false;
 		if (isPortfolioView) {
@@ -1394,7 +1636,7 @@
 		if (!canAutoSubmit()) return;
 		if (autoSubmitTimer) window.clearTimeout(autoSubmitTimer);
 		autoSubmitTimer = window.setTimeout(() => {
-			if (!canAutoSubmit()) return;
+			if (!canAutoSubmit() || isSubmittingWithOverlay) return;
 			form.requestSubmit();
 		}, delay);
 	};
@@ -1528,7 +1770,7 @@
 
 	const buildCleanWorkspaceUrl = () => {
 		const params = new URLSearchParams();
-		const tickers = compactTickerInputs();
+		const tickers = getFilledTickers();
 		tickers.forEach((ticker) => params.append("ticker", ticker));
 
 		const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
@@ -1600,8 +1842,7 @@
 
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
 	initializeDatePickers();
-	attachNoticeHandlers();
-	attachTradeDetailTabs();
+	initializeWorkspaceEnhancements();
 	rememberCurrentViewUrl();
 	attachDockMemory();
 	attachRemoveHandlers();
@@ -1619,11 +1860,6 @@
 
 	$("#add_ticker")?.addEventListener("click", () => addTickerField());
 	rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
-		const rangeShell = $(".range-mode-shell");
-		if (rangeShell) {
-			rangeShell.classList.add("is-animating");
-			window.setTimeout(() => rangeShell.classList.remove("is-animating"), 220);
-		}
 		updateRangePanels();
 		syncDateConstraints();
 		scheduleAutoSubmit();
@@ -1637,12 +1873,10 @@
 	});
 	if (includeDividendsInput && form) {
 		includeDividendsInput.addEventListener("change", () => {
-			compactTickerInputs();
 			scheduleAutoSubmit(80);
 		});
 	}
 	$("#period")?.addEventListener("change", () => {
-		compactTickerInputs();
 		scheduleAutoSubmit();
 	});
 
@@ -1696,7 +1930,7 @@
 		form.addEventListener("submit", async (event) => {
 			if (isSubmittingWithOverlay) return;
 			event.preventDefault();
-			const values = compactTickerInputs();
+			const values = getFilledTickers();
 			validateAllTickerInputs();
 			if (values.length < minimumRequiredTickers) {
 				getTickerInputs()[0]?.reportValidity();
@@ -1717,13 +1951,29 @@
 					return;
 				}
 			}
-			scheduleCompareOverlay();
+			if (autoSubmitTimer) {
+				window.clearTimeout(autoSubmitTimer);
+				autoSubmitTimer = null;
+			}
 			isSubmittingWithOverlay = true;
+			setFormBusyState(true);
 			const nextUrl = buildCleanWorkspaceUrl();
 			rememberCurrentViewUrl(nextUrl);
-			window.requestAnimationFrame(() => {
-				window.location.assign(nextUrl);
-			});
+			applyPendingWorkspaceMarkup();
+			try {
+				const hydrated = await hydrateWorkspaceFromUrl(nextUrl);
+				if (hydrated === false) return;
+			} catch (error) {
+				console.error("Hydration Error: ", error);
+				if (error?.name === "AbortError") return;
+				window.requestAnimationFrame(() => {
+					window.location.assign(nextUrl);
+				});
+				return;
+			} finally {
+				isSubmittingWithOverlay = false;
+				setFormBusyState(false);
+			}
 		});
 	}
 
