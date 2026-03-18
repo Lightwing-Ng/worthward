@@ -1,4 +1,4 @@
-/* Code version: v1.7.0 */
+/* Code version: v1.8.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -22,6 +22,9 @@
 		const equity = tradeBacktest.chart.equity;
 		const initialCapital = Number(tradeBacktest.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
+		const dateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+		const shortDateLabelFormatter = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+		const yearLabelFormatter = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: "UTC" });
 		const buyMarkers = tradeBacktest.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
 		const sellMarkers = tradeBacktest.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
 		const allInShares = close.length && close[0] > 0 ? Math.floor(initialCapital / close[0]) : 0;
@@ -29,10 +32,14 @@
 		const allInEquity = close.map((value) => Number((allInCash + (allInShares * value)).toFixed(4)));
 
 		const axisLineColor = "rgba(160, 167, 178, 0.85)";
-		const crosshairColor = "rgba(160, 167, 178, 0.85)";
 		const fixedYAxisWidth = 52;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
+		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
+		if (existingHoverLine) existingHoverLine.remove();
+		const hoverLine = document.createElement("div");
+		hoverLine.className = "trade-chart-hover-line";
+		tradeChartStack.appendChild(hoverLine);
 
 		const existingTooltip = tradeChartStack.querySelector(".chart-tooltip");
 		if (existingTooltip) existingTooltip.remove();
@@ -82,20 +89,41 @@
 		let priceChart;
 		let equityChart;
 
-		const crosshairPlugin = {
-			id: "tradeSharedCrosshair",
-			afterDatasetsDraw(chart) {
-				if (activeIndex === null) return;
-				const meta = chart.getDatasetMeta(0);
-				const point = meta?.data?.[activeIndex];
-				if (!point) return;
-				const { ctx, chartArea } = chart;
+		const parseLabelDate = (value) => {
+			const parsed = new Date(value);
+			return Number.isNaN(parsed.getTime()) ? null : parsed;
+		};
+
+		const buildAdaptiveTickLabel = (scale, index, ticks) => {
+			const tickLabel = labels[index];
+			if (!tickLabel) return "";
+			const parsedDate = parseLabelDate(tickLabel);
+			if (!parsedDate) return tickLabel;
+			const plotWidth = scale.chart?.chartArea?.width || scale.chart?.width || 0;
+			const tickCount = Math.max(1, ticks.length);
+			const slotWidth = plotWidth / tickCount;
+			const showEvery = slotWidth >= 112 ? 1 : slotWidth >= 76 ? 2 : 3;
+			const isLastTick = index === ticks.length - 1;
+			if (index % showEvery !== 0 && !isLastTick) return "";
+			if (slotWidth >= 112) return dateLabelFormatter.format(parsedDate);
+			return [shortDateLabelFormatter.format(parsedDate), yearLabelFormatter.format(parsedDate)];
+		};
+
+		const referenceLinePlugin = {
+			id: "tradeReferenceLine",
+			beforeDatasetsDraw(chart) {
+				if (chart.canvas !== equityCanvas) return;
+				const { ctx, chartArea, scales } = chart;
+				const yScale = scales?.y;
+				if (!chartArea || !yScale || !Number.isFinite(initialCapital)) return;
+				const y = yScale.getPixelForValue(initialCapital);
+				if (!Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
 				ctx.save();
-				ctx.beginPath();
-				ctx.moveTo(point.x, chartArea.top);
-				ctx.lineTo(point.x, chartArea.bottom);
+				ctx.strokeStyle = axisLineColor;
 				ctx.lineWidth = 1;
-				ctx.strokeStyle = crosshairColor;
+				ctx.beginPath();
+				ctx.moveTo(chartArea.left + 8, y);
+				ctx.lineTo(chartArea.right - 8, y);
 				ctx.stroke();
 				ctx.restore();
 			},
@@ -108,7 +136,19 @@
 			interaction: { mode: "index", intersect: false },
 			plugins: { legend: { display: false }, tooltip: { enabled: false } },
 			scales: {
-				x: { grid: { display: false }, border: { display: false }, ticks: { color: theme.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 6, font: { weight: "700" } } },
+				x: {
+					grid: { display: false },
+					border: { display: false },
+					ticks: {
+						color: theme.muted,
+						maxRotation: 0,
+						autoSkip: false,
+						font: { weight: "700" },
+						callback(value, index, ticks) {
+							return buildAdaptiveTickLabel(this, index, ticks);
+						},
+					},
+				},
 				y: {
 					grid: { display: false, drawTicks: false },
 					border: { display: false },
@@ -120,21 +160,25 @@
 			},
 		};
 
-		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
-			if (index === null) {
-				tooltip.classList.remove("is-visible");
-				return;
-			}
+			const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
+				if (index === null) {
+					hoverLine.classList.remove("is-visible");
+					tooltip.classList.remove("is-visible");
+					return;
+				}
 			const canvasRect = sourceCanvas.getBoundingClientRect();
 			const stackRect = tradeChartStack.getBoundingClientRect();
 			const sourcePoint = sourceChart?.getDatasetMeta(0)?.data?.[index];
 			if (!sourcePoint) {
+				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				return;
 			}
-			const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
-			const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
-			const closeValue = Number(close[index] || 0);
+				const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
+				const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
+				hoverLine.style.left = `${relativeX}px`;
+				hoverLine.classList.add("is-visible");
+				const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
 			const allInValue = Number(allInEquity[index] || 0);
 			const netReturn = initialCapital > 0 ? ((equityValue / initialCapital) - 1) * 100 : 0;
@@ -203,7 +247,7 @@
 				],
 			},
 			options: { ...commonOptions, scales: { ...commonOptions.scales, x: { ...commonOptions.scales.x, display: false } } },
-			plugins: [crosshairPlugin],
+			plugins: [],
 		});
 
 		equityChart = new Chart(equityCanvas, {
@@ -228,7 +272,7 @@
 				],
 			},
 			options: commonOptions,
-			plugins: [crosshairPlugin],
+			plugins: [referenceLinePlugin],
 		});
 
 		attachHover(priceCanvas, priceChart);
