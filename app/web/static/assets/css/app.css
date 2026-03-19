@@ -32,7 +32,7 @@
 body { margin: 0; height: 100vh; min-height: 100svh; overflow: hidden; font-family: "GDS Transport", "Helvetica Neue", Arial, sans-serif; color: var(--text); background: var(--bg); }
 .page { width: min(1560px, 100vw); height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--page-edge-pad); display: flex; align-items: stretch; overflow: hidden; position: relative; }
 .app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - 56px); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: 1; width: 100%; height: 100%; }
-.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 14px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.66); box-shadow: 0 18px 44px rgba(17, 24, 39, 0.10); overflow-y: auto; overflow-x: visible; margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 420ms ease, transform 560ms cubic-bezier(0.22, 1, 0.36, 1); }
+.sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.66); box-shadow: 0 18px 44px rgba(17, 24, 39, 0.10); overflow-y: auto; overflow-x: visible; margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 420ms ease, transform 560ms cubic-bezier(0.22, 1, 0.36, 1); }
 .sidebar-toggle { position: absolute; top: 10px; left: 10px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.58); box-shadow: 0 8px 24px rgba(17, 24, 39, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.4); backdrop-filter: saturate(180%) blur(28px); -webkit-backdrop-filter: saturate(180%) blur(28px); display: inline-flex; align-items: center; justify-content: center; color: rgba(80, 90, 95, 0.82); z-index: 30; transition: background 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 460ms cubic-bezier(0.16, 1, 0.3, 1); transform: translate3d(var(--sidebar-toggle-x), 0, 0); cursor: pointer; }
 .sidebar-toggle:hover { background: rgba(255, 255, 255, 0.82); color: #0055cc; box-shadow: 0 12px 32px rgba(17, 24, 39, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.6); transform: translate3d(var(--sidebar-toggle-x), -1px, 0); }
 .sidebar-toggle:active { box-shadow: 0 6px 18px rgba(17, 24, 39, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 0 0 1px rgba(255, 255, 255, 0.48); transform: translate3d(var(--sidebar-toggle-x), 1px, 0); }
@@ -192,7 +192,8 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	-webkit-backdrop-filter: saturate(180%) blur(22px);
 	transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
-.ticker-input-control input { padding-left: 38px; padding-right: 10px; font-size: 14px; line-height: 1; min-height: 29px; font-variant-numeric: tabular-nums; }
+.ticker-input-control { position: relative; }
+.ticker-input-control input { width: 100%; display: block; padding-left: 44px; padding-right: var(--trade-control-input-height); font-size: 14px; line-height: 1; min-height: 29px; font-variant-numeric: tabular-nums; }
 .ticker-input-control input::placeholder { font-size: 12px; }
 .ticker-input-control input:hover,
 .trade-strategy-select:hover { background: rgba(255, 255, 255, 0.88); }
@@ -365,6 +366,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	row-gap: 0;
 	padding-right: 10px;
 }
+.portfolio-controls .ticker-input-main { padding-right: 0; }
 .ticker-form-controls .ticker-input-main > label {
 	margin: 0;
 	white-space: nowrap;
@@ -379,28 +381,38 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .ticker-form-controls .ticker-input-control {
 	height: var(--trade-control-input-height);
-}
-.tickers-controls .ticker-input-control,
-.tickers-controls .field.range-panel > select,
-.tickers-controls .date-picker-trigger,
-.tickers-controls #submit,
-.tickers-controls #add_ticker {
 	width: 80%;
+	margin: 0;
+}
+.compare-controls .ticker-input-control { width: 80%; margin: 0; }
+.portfolio-controls .ticker-input-control { width: 100%; margin: 0; }
+.trade-controls .ticker-input-control { width: 80%; margin: 0; }
+.ticker-form-controls .field.range-panel > select,
+.ticker-form-controls .date-picker-trigger {
+	width: 100%;
+	margin: 0;
+	display: block;
+}
+.ticker-form-controls #submit,
+.ticker-form-controls #add_ticker {
+	width: 80%;
+	margin-left: auto;
+	margin-right: auto;
+	display: block; /* keep actions centered */
 }
 .ticker-form-controls .ticker-input-control input {
 	height: var(--trade-control-input-height);
 	min-height: var(--trade-control-input-height);
 	padding-top: 0;
 	padding-bottom: 0;
-	padding-left: 44px;
 }
 .ticker-form-controls .ticker-leading-slot {
 	left: 14px;
 	width: 22px;
 	height: 22px;
 }
-.ticker-form-controls .ticker-input-row:hover,
-.ticker-form-controls .ticker-input-row:focus-within {
+.ticker-form-controls .ticker-input-row:hover:not(:has(.ticker-remove.is-placeholder)),
+.ticker-form-controls .ticker-input-row:focus-within:not(:has(.ticker-remove.is-placeholder)) {
 	background: rgba(255, 255, 255, 0.92);
 	box-shadow: 0 12px 28px rgba(17, 24, 39, 0.12);
 }
@@ -427,13 +439,13 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	background: rgba(200, 30, 30, 0.12);
 	box-shadow: none;
 }
-.tickers-controls .ticker-clear {
+.ticker-form-controls .ticker-clear {
 	top: calc((var(--trade-control-input-height) - 18px) / 2);
 	right: calc((var(--trade-control-input-height) - 18px) / 2);
 	transform: none;
 }
-.tickers-controls .ticker-clear:hover,
-.tickers-controls .ticker-clear:focus-visible {
+.ticker-form-controls .ticker-clear:hover,
+.ticker-form-controls .ticker-clear:focus-visible {
 	transform: none;
 }
 .portfolio-controls .ticker-field {
@@ -451,16 +463,31 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	align-items: stretch;
 	position: relative;
 	border-radius: 10px;
+	column-gap: 4px; /* tighten gap so weight input and remove button do not collide */
 }
 .portfolio-controls .portfolio-weight-field {
 	align-self: stretch;
 	height: 100%;
 	padding-top: var(--trade-control-label-height);
 	display: block;
+	flex: 0 0 90px;
+	min-width: 90px;
 }
 .portfolio-controls .portfolio-weight-row {
 	min-height: var(--trade-control-input-height);
 	height: var(--trade-control-input-height);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.portfolio-controls .portfolio-weight-input {
+	width: 30px;
+	padding-right: 0;
+	text-align: right;
+}
+.portfolio-controls .portfolio-weight-unit {
+	position: static;
+	flex: 0 0 auto;
 }
 .trade-controls .ticker-input-control input { padding-left: 44px; }
 .trade-controls .trade-capital-input { }
@@ -534,7 +561,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-strategy-slider-shell .portfolio-weight-slider { width: 100%; }
 .trade-strategy-param .field-tooltip { margin-top: 0; }
 .ticker-clear, .ticker-remove { padding: 0; border: 0; background: rgba(148, 163, 184, 0.76); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms ease, background 160ms ease, transform 160ms ease; }
-.ticker-clear { position: absolute; top: 50%; right: 8px; width: 18px; height: 18px; min-width: 18px; min-height: 18px; border-radius: 50%; transform: translateY(-50%); z-index: 2; opacity: 0; pointer-events: none; }
+.ticker-clear { position: absolute; top: 50%; right: calc((var(--trade-control-input-height) - 18px) / 2); width: 18px; height: 18px; min-width: 18px; min-height: 18px; border-radius: 50%; transform: translateY(-50%); z-index: 2; opacity: 0; pointer-events: none; }
 .ticker-input-control:has(input:focus) .ticker-clear.is-visible { opacity: 1; pointer-events: auto; }
 .ticker-remove { width: 24px; flex: 0 0 24px; height: 24px; min-height: 24px; min-width: 24px; border-radius: 50%; margin-top: 21px; opacity: 0; }
 .ticker-remove.is-placeholder { opacity: 0 !important; pointer-events: none; }
@@ -661,8 +688,8 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 .ticker-logo { width: var(--logo-card-size); height: var(--logo-card-size); border-radius: var(--radius-soft); object-fit: contain; background: rgba(255, 255, 255, 0.88); box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08); flex: 0 0 auto; }
 .suggestion-logo-slot { position: relative; width: 20px; height: 20px; flex: 0 0 20px; display: block; overflow: hidden; border-radius: var(--radius-soft); }
 .suggestion-logo-placeholder { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: inherit; background: rgba(148, 163, 184, 0.18); box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05); }
-.report-value { position: relative; display: inline-block; align-self: end; margin: 10px 0; font-size: 32px; line-height: 1; letter-spacing: -0.04em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.winner-badge { position: absolute; top: -5px; right: -8px; width: 16px; height: 16px; display: block; }
+.report-value { position: relative; display: inline-flex; align-items: center; gap: 10px; align-self: end; margin: 10px 0; font-size: 32px; line-height: 1; letter-spacing: -0.04em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.winner-badge { position: static; width: 16px; height: 16px; display: inline-block; flex: 0 0 16px; }
 .suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; border-radius: var(--radius-control); background: rgba(255, 255, 255, 0.96); box-shadow: 0 14px 30px rgba(17, 24, 39, 0.10); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); overflow: hidden; display: none; }
 .suggestions.is-open { display: block; }
 .suggestion-group + .suggestion-group { border-top: 1px solid rgba(15, 23, 42, 0.06); }
@@ -722,7 +749,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 	position: relative;
 	z-index: 1;
 	border-radius: var(--radius-panel);
-	padding: 10px 14px 10px;
+	padding: 10px;
 	background: #ffffff;
 	box-shadow: 0 18px 40px rgba(17, 24, 39, 0.05);
 	flex: 1 1 auto;
