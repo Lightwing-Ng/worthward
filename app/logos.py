@@ -155,6 +155,15 @@ def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, 
     return (is_symbol_exact, is_symbol_prefix, is_name_match, is_etf, symbol)
 
 
+def should_cache_search_results(query: str, items: list[dict[str, str]]) -> bool:
+    normalized_query = normalize_ticker_input(query)
+    if not has_valid_ticker_format(normalized_query):
+        return False
+    if not any(item.get("symbol", "").upper() == normalized_query for item in items):
+        return False
+    return is_known_ticker(normalized_query)
+
+
 def resolve_website(ticker: str, company_name: str, website: str | None) -> str | None:
     if website:
         return website
@@ -359,7 +368,8 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
 
         deduped_remote = {item["symbol"]: item for item in filtered}
         remote_items = sorted(deduped_remote.values(), key=lambda item: search_result_sort_key(item, normalized_query))
-        path.write_text(json.dumps(remote_items))
+        if should_cache_search_results(normalized_query, remote_items):
+            path.write_text(json.dumps(remote_items))
 
     if not remote_items and not has_remote_market_access():
         remote_items = build_local_search_items(normalized_query)

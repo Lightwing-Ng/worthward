@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% from "_macros.html" import render_range_controls with context %}
+{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
 
 {% block sidebar_content %}
-<form class="controls trade-controls" method="get" action="{{ current_path }}">
+<form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}">
     <div class="field ticker-field" data-index="1">
         <div class="ticker-input-row">
             <div class="ticker-input-main">
@@ -42,7 +42,7 @@
     </div>
     <div class="field">
         <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
-        <select id="trade_strategy" name="strategy" class="trade-strategy-select">
+        <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
             {% for group in strategy_option_groups %}
             <optgroup label="{{ group.label }}">
                 {% for strategy in group['items'] %}
@@ -53,7 +53,7 @@
         </select>
     </div>
     <div class="field">
-        <button id="submit" type="submit">{{ labels.trade_messages_backtest }}</button>
+        <button id="submit" type="submit" class="sidebar-action-button">{{ labels.trade_messages_backtest }}</button>
     </div>
 </form>
 {% endblock %}
@@ -66,16 +66,16 @@
         </div>
         {% if trade_backtest_result %}
         <div class="trade-detail-tabs">
-            <div class="range-mode-shell trade-detail-shell" data-trade-detail-shell data-active="metrics">
-                <label class="range-mode-option" for="trade_detail_metrics">
-                    <input id="trade_detail_metrics" name="trade_detail_tab" type="radio" value="metrics" checked>
-                    <span>{{ labels.trade_messages_metrics_tab }}</span>
-                </label>
-                <label class="range-mode-option" for="trade_detail_transactions">
-                    <input id="trade_detail_transactions" name="trade_detail_tab" type="radio" value="transactions">
-                    <span>{{ labels.trade_messages_transactions_tab }}</span>
-                </label>
-            </div>
+            {{ render_segmented_control(
+                "range-mode-shell trade-detail-shell",
+                "trade_detail_tab",
+                "metrics",
+                [
+                    {"id": "trade_detail_metrics", "value": "metrics", "label": labels.trade_messages_metrics_tab},
+                    {"id": "trade_detail_transactions", "value": "transactions", "label": labels.trade_messages_transactions_tab},
+                ],
+                'data-trade-detail-shell data-active="metrics"'
+            ) }}
             <div class="trade-detail-panel" data-trade-detail-panel="metrics">
                 <div class="trade-metrics-grid">
                     <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>

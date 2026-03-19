@@ -39,22 +39,33 @@
 </div>
 {%- endmacro %}
 
+{% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='') -%}
+<div class="segmented-control {{ shell_class }}"{% if shell_attrs %} {{ shell_attrs|safe }}{% endif %}>
+    {% for option in options %}
+    <label class="segmented-control-option" for="{{ option.id }}">
+        <input id="{{ option.id }}" name="{{ name }}" type="radio" value="{{ option.value }}" {% if option.value == active_value %}checked{% endif %}>
+        <span>{{ option.label }}</span>
+    </label>
+    {% endfor %}
+</div>
+{%- endmacro %}
+
 {% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) -%}
 <div class="field">
-    <div class="range-mode-shell" data-active="{{ range_mode if range_mode == 'exact' else 'period' }}">
-        <label class="range-mode-option" for="range_period">
-            <input id="range_period" name="range" type="radio" value="period" {% if range_mode != 'exact' %}checked{% endif %}>
-            <span>{{ labels.range_mode_period }}</span>
-        </label>
-        <label class="range-mode-option" for="range_exact">
-            <input id="range_exact" name="range" type="radio" value="exact" {% if range_mode == 'exact' %}checked{% endif %}>
-            <span>{{ labels.range_mode_exact }}</span>
-        </label>
-    </div>
+    {{ render_segmented_control(
+        "range-mode-shell",
+        "range",
+        range_mode if range_mode == 'exact' else 'period',
+        [
+            {"id": "range_period", "value": "period", "label": labels.range_mode_period},
+            {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
+        ],
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '"'
+    ) }}
 </div>
 <div class="field range-panel" id="period_panel">
     <label for="period">{{ labels.period }}</label>
-    <select id="period" name="period">
+    <select id="period" name="period" class="form-select">
         {% for item in periods %}
         <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
         {% endfor %}

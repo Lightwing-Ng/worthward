@@ -1,5 +1,5 @@
 {% from "_macros.html" import render_range_controls with context %}
-<form class="controls ticker-form-controls {{ current_view }}-controls" method="get" action="{{ current_path }}">
+<form class="controls sidebar-form ticker-controls ticker-form-controls {{ current_view }}-controls" method="get" action="{{ current_path }}">
     <div id="ticker_fields">
         {% for index in range(1, ticker_slots | length + 1) %}
         <div class="field ticker-field" data-index="{{ index }}">
@@ -36,7 +36,7 @@
         {% endfor %}
     </div>
     <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
-        <button type="button" id="add_ticker" class="flat-link-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
+        <button type="button" id="add_ticker" class="flat-link-button sidebar-action-button sidebar-secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
     <div class="field-checkbox field-switch">
@@ -49,6 +49,6 @@
         </label>
     </div>
     <div class="field">
-        <button id="submit" type="submit">{{ submit_label }}</button>
+        <button id="submit" type="submit" class="sidebar-action-button">{{ submit_label }}</button>
     </div>
 </form>

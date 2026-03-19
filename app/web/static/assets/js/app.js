@@ -171,7 +171,7 @@
 		}
 		const syncPanels = () => {
 			const active = shell.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
-			shell.dataset.active = active === "transactions" ? "exact" : "period";
+			shell.dataset.active = active;
 			try {
 				window.sessionStorage.setItem(TRADE_DETAIL_MEMORY_KEY, active);
 			} catch (_error) {
@@ -225,8 +225,8 @@
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 						<div class="trade-detail-tabs">
 							<div class="range-mode-shell trade-detail-shell" data-active="metrics">
-								<span class="range-mode-option"><span>${labels.trade_messages_metrics_tab}</span></span>
-								<span class="range-mode-option"><span>${labels.trade_messages_transactions_tab}</span></span>
+								<span class="segmented-control-option"><span>${labels.trade_messages_metrics_tab}</span></span>
+								<span class="segmented-control-option"><span>${labels.trade_messages_transactions_tab}</span></span>
 							</div>
 							<div class="trade-detail-panel">
 								<div class="trade-metrics-grid">
