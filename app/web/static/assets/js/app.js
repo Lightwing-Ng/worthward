@@ -1328,11 +1328,63 @@
 		} else {
 			input.setCustomValidity("");
 		}
+		if (!input.validationMessage) hideTickerValidationTooltip(input);
 		return value;
 	};
 
 	const validateAllTickerInputs = () => {
 		getTickerInputs().forEach((input) => validateTickerInput(input));
+	};
+
+	const ensureTickerValidationTooltip = (input) => {
+		const host = input.closest(".ticker-input-main");
+		if (!(host instanceof HTMLElement)) return null;
+		let tooltip = host.querySelector(".field-tooltip-validation");
+		if (tooltip instanceof HTMLElement) return tooltip;
+		tooltip = document.createElement("div");
+		tooltip.className = "field-tooltip field-tooltip-validation liquid-glass-surface";
+		const icon = document.createElement("span");
+		icon.className = "field-tooltip-validation-icon";
+		icon.setAttribute("aria-hidden", "true");
+		const copy = document.createElement("span");
+		copy.className = "field-tooltip-validation-copy";
+		tooltip.append(icon, copy);
+		tooltip.hidden = true;
+		const control = input.closest(".ticker-input-control");
+		if (control?.parentElement === host) {
+			control.insertAdjacentElement("afterend", tooltip);
+		} else {
+			host.appendChild(tooltip);
+		}
+		return tooltip;
+	};
+
+	const hideTickerValidationTooltip = (input) => {
+		const tooltip = ensureTickerValidationTooltip(input);
+		if (!(tooltip instanceof HTMLElement)) return;
+		tooltip.hidden = true;
+		const copy = tooltip.querySelector(".field-tooltip-validation-copy");
+		if (copy instanceof HTMLElement) copy.textContent = "";
+	};
+
+	const showTickerValidationTooltip = (input, message = input.validationMessage) => {
+		if (!message) return;
+		getTickerInputs().forEach((tickerInput) => {
+			if (tickerInput !== input) hideTickerValidationTooltip(tickerInput);
+		});
+		if (document.activeElement !== input) {
+			input.focus({ preventScroll: true });
+		}
+		const tooltip = ensureTickerValidationTooltip(input);
+		if (!(tooltip instanceof HTMLElement)) return;
+		const copy = tooltip.querySelector(".field-tooltip-validation-copy");
+		if (copy instanceof HTMLElement) {
+			copy.textContent = message;
+		} else {
+			tooltip.textContent = message;
+		}
+		tooltip.hidden = false;
+		input.scrollIntoView({ block: "nearest", inline: "nearest" });
 	};
 
 	const setupAutocomplete = (input) => {
@@ -1445,6 +1497,7 @@
 		};
 
 		input.addEventListener("input", async () => {
+			hideTickerValidationTooltip(input);
 			input.dataset.logoUrl = "";
 			input.dataset.symbol = "";
 			syncTickerInputDecoration(input);
@@ -1476,11 +1529,13 @@
 			}
 		});
 		input.addEventListener("focus", async () => {
+			hideTickerValidationTooltip(input);
 			if (input.value.trim()) return;
 			setUnknown(false);
 			await showRecentItems();
 		});
 		input.addEventListener("click", async () => {
+			hideTickerValidationTooltip(input);
 			if (input.value.trim()) return;
 			if (getPanel()?.classList.contains("is-open")) return;
 			setUnknown(false);
@@ -2374,22 +2429,26 @@
 	}
 
 	if (form) {
+		form.noValidate = true;
 		form.addEventListener("submit", async (event) => {
 			if (isSubmittingWithOverlay) return;
 			event.preventDefault();
 			const values = getFilledTickers();
 			validateAllTickerInputs();
 			if (values.length < minimumRequiredTickers) {
-				getTickerInputs()[0]?.reportValidity();
+				const firstInput = getTickerInputs()[0];
+				if (firstInput) showTickerValidationTooltip(firstInput);
 				return;
 			}
 			if (new Set(values).size !== values.length) {
-				getTickerInputs().find((input) => input.validationMessage)?.reportValidity();
+				const invalidInput = getTickerInputs().find((input) => input.validationMessage);
+				if (invalidInput) showTickerValidationTooltip(invalidInput);
 				return;
 			}
 			const areTickersValid = await ensureTickerValidityBeforeSubmit();
 			if (!areTickersValid) {
-				getTickerInputs().find((input) => !input.checkValidity() || input.dataset.unknown === "1")?.reportValidity();
+				const invalidInput = getTickerInputs().find((input) => !input.checkValidity() || input.dataset.unknown === "1");
+				if (invalidInput) showTickerValidationTooltip(invalidInput);
 				return;
 			}
 			if (isPortfolioView) {
