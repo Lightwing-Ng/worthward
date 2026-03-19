@@ -6,6 +6,10 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-about"></span></span>
         <span class="settings-nav-label">{{ labels.about }}</span>
     </a>
+    <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
+        <span class="settings-nav-label">General</span>
+    </a>
     <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-item-network settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
         <span class="settings-nav-label">{{ labels.network_self_check }}</span>
@@ -42,6 +46,65 @@
             <dt>{{ labels.updated_on }}</dt>
             <dd>{{ updated_on }}</dd>
         </dl>
+        {% elif settings_section == "general" %}
+        <p class="settings-summary">Preview the current type scale before wiring it into more UI controls.</p>
+        <section class="font-preview-card">
+            <div class="font-preview-header">
+                <p class="font-preview-kicker">Type preview</p>
+                <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
+            </div>
+            <div class="font-preview-stack">
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Card title</p>
+                        <p class="font-preview-unit">24</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Trade messages</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Card subtitle</p>
+                        <p class="font-preview-unit">15</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Metric value</p>
+                        <p class="font-preview-unit">32</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Form label</p>
+                        <p class="font-preview-unit">14</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Form control</p>
+                        <p class="font-preview-unit">15</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Table body</p>
+                        <p class="font-preview-unit">13</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Tooltip</p>
+                        <p class="font-preview-unit">12</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
+                </div>
+            </div>
+        </section>
         {% elif settings_section == "network" %}
         <p class="settings-summary">{{ labels.service_status }}</p>
         <div class="settings-service-list">
@@ -238,4 +301,3 @@
     </div>
 </article>
 {% endblock %}
- endblock %}

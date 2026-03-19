@@ -46,7 +46,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "QQQ": "#c7c7cc",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
 SUPPORTED_MORE_SECTIONS = {"overview"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
@@ -814,6 +814,8 @@ def register_routes(app: Flask) -> None:
             page_title = labels["settings_title"]
             if settings_section == "network":
                 settings_title = labels["network_self_check"]
+            elif settings_section == "general":
+                settings_title = "General"
             elif settings_section == "strategies":
                 settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
@@ -1075,7 +1077,7 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "more", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview",)},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
