@@ -47,7 +47,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
-SUPPORTED_MORE_SECTIONS = {"overview", "workflows", "library"}
+SUPPORTED_MORE_SECTIONS = {"overview"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
@@ -270,32 +270,6 @@ def register_routes(app: Flask) -> None:
         return build_more_path(section_name)
 
     def build_more_cards(section_name: str) -> list[dict[str, str]]:
-        if section_name == "workflows":
-            return [
-                {
-                    "title": "Workspace memory",
-                    "detail": "Jump between Compare stocks, Compute your portfolio, Trade messages, More, and Settings while preserving each page's most recent meaningful state.",
-                    "meta": "Navigation",
-                },
-                {
-                    "title": "Progressive loading",
-                    "detail": "The shell, controls, and stable labels stay in place while only the truly dynamic values hydrate afterward.",
-                    "meta": "Performance",
-                },
-            ]
-        if section_name == "library":
-            return [
-                {
-                    "title": "Reusable UI primitives",
-                    "detail": "This workspace reuses the same rounded glass cards, left navigation, and dock geometry already used by Settings.",
-                    "meta": "Design system",
-                },
-                {
-                    "title": "Expansion point",
-                    "detail": "Future secondary utilities can be added here without crowding the four primary product workflows.",
-                    "meta": "Architecture",
-                },
-            ]
         return [
             {
                 "title": "Collection workspace",
@@ -1102,7 +1076,7 @@ def register_routes(app: Flask) -> None:
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "workflows", "library")},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("overview",)},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,

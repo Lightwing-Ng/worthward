@@ -394,7 +394,6 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	margin: 0;
 	display: block;
 }
-.ticker-form-controls #submit,
 .ticker-form-controls #add_ticker {
 	width: 80%;
 	margin-left: auto;
@@ -631,6 +630,18 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 input.is-invalid { color: #991b1b; }
 button { background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%); color: #fff; font-weight: 700; cursor: pointer; box-shadow: none; transition: transform 180ms ease, background 180ms ease; min-height: 36px; border-radius: 999px; }
 button:hover { transform: translateY(-1px); box-shadow: none; }
+:is(.trade-controls, .ticker-form-controls) #submit {
+	width: fit-content;
+	min-width: 0;
+	margin-left: auto;
+	margin-right: auto;
+	padding: 0 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 400;
+	white-space: nowrap;
+}
 .chart-panel { padding: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .workspace-header { display: block; margin-bottom: 8px; position: relative; z-index: 1; flex: 0 0 auto; }
 .report-card { position: relative; z-index: 1; border-radius: var(--radius-panel); padding: 10px 12px 8px; background: rgba(255, 255, 255, 0.58); backdrop-filter: saturate(160%) blur(24px); -webkit-backdrop-filter: saturate(160%) blur(24px); }
@@ -852,8 +863,6 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .settings-nav-item-store { --settings-icon-tint: #16a34a; --settings-icon-surface: rgba(22, 163, 74, 0.14); }
 .settings-nav-item-clear-cache { --settings-icon-tint: #c81e1e; --settings-icon-surface: rgba(200, 30, 30, 0.14); }
 .settings-nav-item-more-overview { --settings-icon-tint: #0055cc; --settings-icon-surface: rgba(0, 85, 204, 0.14); }
-.settings-nav-item-more-workflows { --settings-icon-tint: #d97706; --settings-icon-surface: rgba(217, 119, 6, 0.14); }
-.settings-nav-item-more-library { --settings-icon-tint: #0f766e; --settings-icon-surface: rgba(15, 118, 110, 0.14); }
 .settings-nav-item.is-active .settings-nav-icon-shell { background: rgba(0, 85, 204, 0.12); }
 .settings-nav-item.is-active .icon { background-color: #0055cc; }
 .settings-status-check { width: 14px; height: 14px; display: block; }
@@ -1213,8 +1222,6 @@ footer { margin-top: 10px; color: var(--muted); font-size: 13px; position: relat
 .icon-dock-more { background-color: currentColor; mask: url("../../images/square.grid.2x2.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.grid.2x2.fill.svg") center/contain no-repeat; }
 .icon-dock-settings { background-color: currentColor; mask: url("../../images/gear.svg") center/contain no-repeat; -webkit-mask: url("../../images/gear.svg") center/contain no-repeat; }
 .icon-more-overview { mask: url("../../images/square.grid.2x2.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.grid.2x2.fill.svg") center/contain no-repeat; }
-.icon-more-workflows { mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; -webkit-mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; }
-.icon-more-library { mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; }
 .icon-settings-about { mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; }
 .icon-settings-network { mask: url("../../images/network.svg") center/contain no-repeat; -webkit-mask: url("../../images/network.svg") center/contain no-repeat; }
 .icon-settings-strategies { mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; -webkit-mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; }
