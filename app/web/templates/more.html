@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block sidebar_content %}
+<nav class="settings-nav" aria-label="More sections">
+    <a href="{{ more_urls.overview }}" class="settings-nav-item settings-nav-item-more-overview{% if more_section == 'overview' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-overview"></span></span>
+        <span class="settings-nav-label">{{ labels.more_overview }}</span>
+    </a>
+    <a href="{{ more_urls.workflows }}" class="settings-nav-item settings-nav-item-more-workflows{% if more_section == 'workflows' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-workflows"></span></span>
+        <span class="settings-nav-label">{{ labels.more_workflows }}</span>
+    </a>
+    <a href="{{ more_urls.library }}" class="settings-nav-item settings-nav-item-more-library{% if more_section == 'library' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-library"></span></span>
+        <span class="settings-nav-label">{{ labels.more_library }}</span>
+    </a>
+</nav>
+{% endblock %}
+
+{% block workspace_content %}
+<article class="chart-surface settings-surface">
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ settings_title }}</p>
+    </div>
+    <div class="settings-body">
+        <p class="settings-summary">A dedicated collection workspace for secondary tools and future utilities.</p>
+        <div class="settings-service-list">
+            {% for row in more_cards %}
+            <div class="settings-service-row">
+                <div class="settings-service-main">
+                    <p class="settings-service-name">{{ row.title }}</p>
+                    <p class="settings-service-note">{{ row.detail }}</p>
+                </div>
+                <div class="settings-service-state is-muted">
+                    <span>{{ row.meta }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</article>
+{% endblock %}
