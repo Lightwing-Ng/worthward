@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.20.0
+Code version: v3.21.0
 """
 
 from __future__ import annotations
@@ -45,8 +45,9 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "SPY": "#8e8e93",
     "QQQ": "#c7c7cc",
 }
-SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "settings"}
+SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
+SUPPORTED_MORE_SECTIONS = {"overview", "workflows", "library"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
@@ -58,6 +59,7 @@ VIEW_PATHS = {
     "tickers": "/compare",
     "portfolio": "/portfolio",
     "trade-messages": "/trade-messages",
+    "more": "/more/overview",
     "settings": "/settings/about",
 }
 
@@ -256,6 +258,56 @@ def register_routes(app: Flask) -> None:
 
     def build_settings_url(section_name: str) -> str:
         return build_settings_path(section_name)
+
+    def normalize_more_section(section_name: str | None) -> str:
+        candidate = (section_name or "overview").strip().lower()
+        return candidate if candidate in SUPPORTED_MORE_SECTIONS else "overview"
+
+    def build_more_path(section_name: str) -> str:
+        return f"/more/{normalize_more_section(section_name)}"
+
+    def build_more_url(section_name: str) -> str:
+        return build_more_path(section_name)
+
+    def build_more_cards(section_name: str) -> list[dict[str, str]]:
+        if section_name == "workflows":
+            return [
+                {
+                    "title": "Workspace memory",
+                    "detail": "Jump between Compare stocks, Compute your portfolio, Trade messages, More, and Settings while preserving each page's most recent meaningful state.",
+                    "meta": "Navigation",
+                },
+                {
+                    "title": "Progressive loading",
+                    "detail": "The shell, controls, and stable labels stay in place while only the truly dynamic values hydrate afterward.",
+                    "meta": "Performance",
+                },
+            ]
+        if section_name == "library":
+            return [
+                {
+                    "title": "Reusable UI primitives",
+                    "detail": "This workspace reuses the same rounded glass cards, left navigation, and dock geometry already used by Settings.",
+                    "meta": "Design system",
+                },
+                {
+                    "title": "Expansion point",
+                    "detail": "Future secondary utilities can be added here without crowding the four primary product workflows.",
+                    "meta": "Architecture",
+                },
+            ]
+        return [
+            {
+                "title": "Collection workspace",
+                "detail": "More is a reserved tool hub for secondary utilities that deserve full-size cards and readable side navigation.",
+                "meta": "Overview",
+            },
+            {
+                "title": "Consistent shell",
+                "detail": "This page intentionally mirrors the Settings structure so new utilities can be added without inventing a parallel layout system.",
+                "meta": "UI",
+            },
+        ]
 
     def build_local_store_page_url(page_number: int) -> str:
         params = request.args.to_dict(flat=False)
@@ -674,7 +726,7 @@ def register_routes(app: Flask) -> None:
         )
         return fallback_period, notice
 
-    def render_workspace_page(current_view: str, settings_section: str = "about"):
+    def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "overview"):
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         range_mode = request.args.get(
@@ -699,6 +751,12 @@ def register_routes(app: Flask) -> None:
                 if normalize_ticker_input(value)
             ][:MAX_TICKERS]
             include_dividends = True
+        elif current_view == "trade-messages" and not requested_tickers:
+            default_trade_ticker = normalize_ticker_input(
+                defaults.get("trade_messages_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
+            )
+            requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
+            include_dividends = bool(defaults.get("trade_messages_include_dividends", True))
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
@@ -717,14 +775,22 @@ def register_routes(app: Flask) -> None:
         aligned_datasets: list[pd.DataFrame] = []
         strategy_options = list_enabled_strategies()
         strategy_option_groups = build_strategy_option_groups(strategy_options)
-        selected_strategy_id = request.args.get("strategy", strategy_options[0]["id"] if strategy_options else "").strip()
+        selected_strategy_id = request.args.get(
+            "strategy",
+            defaults.get("trade_messages_strategy", strategy_options[0]["id"] if strategy_options else "")
+            if current_view == "trade-messages"
+            else (strategy_options[0]["id"] if strategy_options else ""),
+        ).strip()
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
         selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
         strategy_form_fields = build_strategy_form_fields(selected_strategy_id, selected_strategy_params) if selected_strategy_id else []
         backtest_initial_capital = max(
-            parse_float_value(request.args.get("capital", request.args.get("initial_capital")), 10000.0),
+            parse_float_value(
+                request.args.get("capital", request.args.get("initial_capital")),
+                float(defaults.get("trade_messages_capital", 10000.0)) if current_view == "trade-messages" else 10000.0,
+            ),
             1.0,
         )
         trade_backtest_result = None
@@ -753,9 +819,11 @@ def register_routes(app: Flask) -> None:
         local_store_prev_slot = {"page": None}
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
+        more_cards: list[dict[str, str]] = []
         submit_label = labels["update_chart"]
 
         settings_section = normalize_settings_section(settings_section)
+        more_section = normalize_more_section(more_section)
 
         if current_view == "settings" and settings_section == "about":
             error = None
@@ -780,6 +848,9 @@ def register_routes(app: Flask) -> None:
                 settings_title = labels["local_market_store"]
             elif settings_section == "clear-caches":
                 settings_title = "Clear caches"
+        elif current_view == "more":
+            page_title = labels["more_title"]
+            settings_title = labels["more_title"]
 
         if period not in SUPPORTED_PERIODS:
             period = DEFAULT_PERIOD
@@ -964,6 +1035,8 @@ def register_routes(app: Flask) -> None:
                     all_local_market_tickers[start_index:end_index],
                     include_ranges=True,
                 )
+        elif current_view == "more":
+            more_cards = build_more_cards(more_section)
 
         if current_view == "trade-messages":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -980,6 +1053,7 @@ def register_routes(app: Flask) -> None:
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
             "trade-messages": "trade_messages.html",
+            "more": "more.html",
             "settings": "settings.html",
         }[current_view]
 
@@ -1010,10 +1084,12 @@ def register_routes(app: Flask) -> None:
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
             settings_section=settings_section,
+            more_section=more_section,
             remote_market_access=remote_market_access,
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
+            more_cards=more_cards,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_total_pages=local_store_total_pages,
@@ -1024,8 +1100,9 @@ def register_routes(app: Flask) -> None:
             page_title=page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "workflows", "library")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -1072,6 +1149,14 @@ def register_routes(app: Flask) -> None:
     @app.get("/trade-messages")
     def trade_messages_page():
         return render_workspace_page("trade-messages")
+
+    @app.get("/more")
+    def more_root():
+        return redirect(build_more_path("overview"))
+
+    @app.get("/more/<section_name>")
+    def more_page(section_name: str):
+        return render_workspace_page("more", more_section=section_name)
 
     @app.get("/settings")
     def settings_root():

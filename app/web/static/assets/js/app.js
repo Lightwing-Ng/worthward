@@ -445,7 +445,7 @@
 	};
 
 	const attachDockMemory = () => {
-		const viewByDockIndex = ["tickers", "portfolio", "trade-messages", "settings"];
+		const viewByDockIndex = ["tickers", "portfolio", "trade-messages", "more", "settings"];
 		const dockLinks = $$(".sidebar-dock-item");
 		const setDockPreviewTarget = (targetView) => {
 			dockLinks.forEach((link, index) => {
@@ -1782,8 +1782,18 @@
 			rangeShell.dataset.active = rangeMode;
 			rangeShell.style.setProperty("--range-shift", rangeMode === "exact" ? "100%" : "0%");
 		}
-		if (periodPanel) periodPanel.hidden = rangeMode !== "period";
-		if (exactPanel) exactPanel.hidden = rangeMode !== "exact";
+		const isPeriodMode = rangeMode === "period";
+		if (periodPanel) {
+			periodPanel.hidden = !isPeriodMode;
+			periodPanel.setAttribute("aria-hidden", String(!isPeriodMode));
+			periodPanel.style.display = isPeriodMode ? "" : "none";
+		}
+		if (exactPanel) {
+			exactPanel.hidden = isPeriodMode;
+			exactPanel.setAttribute("aria-hidden", String(isPeriodMode));
+			exactPanel.style.display = isPeriodMode ? "none" : "";
+		}
+		if (isPeriodMode) closeAllDatePickers();
 	};
 
 	const canAutoSubmit = () => {
@@ -1820,12 +1830,10 @@
 	};
 
 	const positionDatePickerPopover = (picker) => {
-		const sidebar = $(".sidebar");
 		const triggerRect = picker.trigger.getBoundingClientRect();
-		const sidebarRect = sidebar?.getBoundingClientRect();
 		const popoverWidth = Math.min(320, window.innerWidth - 48);
-		const leftBoundary = sidebarRect ? Math.max(12, sidebarRect.left + 12) : 12;
-		const rightBoundary = sidebarRect ? Math.min(window.innerWidth - 12, sidebarRect.right - 12) : window.innerWidth - 12;
+		const leftBoundary = 12;
+		const rightBoundary = window.innerWidth - 12;
 		const maxLeft = Math.max(leftBoundary, rightBoundary - popoverWidth);
 		const preferredTop = triggerRect.bottom + 8;
 		const top = Math.min(preferredTop, window.innerHeight - 24);
@@ -1901,6 +1909,10 @@
 				forceSyncMonth: true,
 			};
 			wrapper.dataset.bound = "1";
+			// Ensure popover is not clipped by sidebar or parents with overflow/transform.
+			if (popover.parentElement !== document.body) {
+				document.body.appendChild(popover);
+			}
 			datePickerState.push(picker);
 			syncDatePickerView(picker);
 			trigger.addEventListener("click", () => {

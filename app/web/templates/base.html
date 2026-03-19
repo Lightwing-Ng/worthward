@@ -74,6 +74,10 @@
             <span class="icon icon-dock-trade-messages" aria-hidden="true"></span>
             <span class="sr-only">{{ labels.dock_trade_messages }}</span>
         </a>
+        <a href="{{ dock_urls.more }}" class="sidebar-dock-item{% if current_view == 'more' %} is-active{% endif %}" aria-current="{% if current_view == 'more' %}page{% endif %}" aria-label="{{ labels.dock_more }}" data-tooltip="{{ labels.dock_more }}">
+            <span class="icon icon-dock-more" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_more }}</span>
+        </a>
         <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
             <span class="icon icon-dock-settings" aria-hidden="true"></span>
             <span class="sr-only">{{ labels.dock_settings }}</span>

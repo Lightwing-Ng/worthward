@@ -1,5 +1,5 @@
 {% from "_macros.html" import render_range_controls with context %}
-<form class="controls" method="get" action="{{ current_path }}">
+<form class="controls ticker-form-controls {{ current_view }}-controls" method="get" action="{{ current_path }}">
     <div id="ticker_fields">
         {% for index in range(1, ticker_slots | length + 1) %}
         <div class="field ticker-field" data-index="{{ index }}">

@@ -268,7 +268,7 @@ class SupertrendDoubleAiStrategy(BaseStrategy):
     strategy_id = "supertrend-double-ai"
     strategy_name = "SuperTrend Double AI"
     strategy_description = "Dual-layer KNN AI prediction with two layered SuperTrend trailing stops"
-    strategy_category = "ai-trend"
+    strategy_category = "trend"
     strategy_enabled: bool = True
     strategy_display_order: int = 40
     strategy_supports = StrategySupportMatrix(
