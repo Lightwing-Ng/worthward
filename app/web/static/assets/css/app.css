@@ -247,9 +247,10 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	grid-template-rows: var(--trade-control-label-height) var(--trade-control-input-height);
 	row-gap: 0;
 	align-items: stretch;
-	overflow: hidden;
+	overflow: visible; /* keep suggestion/tooltips aligned like compare fixed tickers */
 }
 .trade-controls .ticker-input-row {
+	grid-row: 1 / span 2;
 	height: 100%;
 	padding: 0;
 	margin: 0;
