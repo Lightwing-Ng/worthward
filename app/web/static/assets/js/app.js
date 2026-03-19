@@ -1829,6 +1829,15 @@
 		});
 	};
 
+	const isInsideDatePicker = (picker, target) => (
+		Boolean(target)
+		&& (picker.wrapper.contains(target) || picker.popover.contains(target))
+	);
+
+	const isInsideAnyDatePicker = (target) => (
+		datePickerState.some((picker) => isInsideDatePicker(picker, target))
+	);
+
 	const positionDatePickerPopover = (picker) => {
 		const triggerRect = picker.trigger.getBoundingClientRect();
 		const popoverWidth = Math.min(320, window.innerWidth - 48);
@@ -1910,6 +1919,20 @@
 			};
 			wrapper.dataset.bound = "1";
 			// Ensure popover is not clipped by sidebar or parents with overflow/transform.
+			// NOTE: nav buttons are inside the popover, so bind nav listeners BEFORE moving the popover.
+			popover.querySelectorAll("[data-date-nav]").forEach((button) => {
+				button.addEventListener("click", (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					picker.forceSyncMonth = false;
+					picker.visibleMonth = addMonthsUtc(
+						picker.visibleMonth || startOfMonthUtc(new Date()),
+						Number.parseInt(button.dataset.dateNav || "0", 10),
+					);
+					syncDatePickerView(picker);
+					positionDatePickerPopover(picker);
+				});
+			});
 			if (popover.parentElement !== document.body) {
 				document.body.appendChild(popover);
 			}
@@ -1929,17 +1952,11 @@
 				picker.forceSyncMonth = true;
 				syncDatePickerView(picker);
 			});
-			wrapper.querySelectorAll("[data-date-nav]").forEach((button) => {
-				button.addEventListener("click", () => {
-					picker.visibleMonth = addMonthsUtc(picker.visibleMonth || startOfMonthUtc(new Date()), Number.parseInt(button.dataset.dateNav || "0", 10));
-					syncDatePickerView(picker);
-				});
-			});
 		});
-		document.addEventListener("click", (event) => {
-			if (event.target.closest("[data-date-picker]")) return;
+		document.addEventListener("pointerdown", (event) => {
+			if (isInsideAnyDatePicker(event.target)) return;
 			closeAllDatePickers();
-		}, { passive: true });
+		});
 		window.addEventListener("resize", () => {
 			datePickerState.forEach((picker) => {
 				if (!picker.popover.hidden) positionDatePickerPopover(picker);
