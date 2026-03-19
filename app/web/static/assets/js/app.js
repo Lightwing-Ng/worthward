@@ -32,11 +32,11 @@
 		touchedAtByIndex: {},
 	};
 	const tickerValidationCache = new Map();
-	const settingsActionOverlay = $("#settings_action_overlay");
-	const settingsActionOverlayClose = $("#settings_action_overlay_close");
-	const settingsActionOverlayTitle = settingsActionOverlay?.querySelector(".settings-action-title");
-	const settingsActionOverlayCopy = settingsActionOverlay?.querySelector(".settings-action-copy");
-	const settingsActionOverlayIcon = $("#settings_action_overlay_icon");
+	const workspaceModalOverlay = $("#workspace_modal_overlay");
+	const workspaceModalOverlayClose = $("#workspace_modal_overlay_close");
+	const workspaceModalOverlayTitle = workspaceModalOverlay?.querySelector(".workspace-modal-title");
+	const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector(".workspace-modal-copy");
+	const workspaceModalOverlayIcon = $("#workspace_modal_overlay_icon");
 	const canTransitionDom = typeof document.startViewTransition === "function";
 	const dockPrefetchCache = new Map();
 	const progressiveResourceCache = new Map();
@@ -191,6 +191,20 @@
 	const setFormBusyState = (isBusy) => {
 		if (!form) return;
 		form.setAttribute("aria-busy", String(isBusy));
+	};
+
+	const fetchMissingLocalMarketTickers = async (tickers) => {
+		if (!Array.isArray(tickers) || !tickers.length || !endpoints.marketStorePresence) return [];
+		const params = new URLSearchParams();
+		tickers.forEach((ticker) => {
+			if (ticker) params.append("ticker", ticker);
+		});
+		const response = await fetch(`${endpoints.marketStorePresence}?${params.toString()}`, {
+			credentials: "same-origin",
+		});
+		if (!response.ok) throw new Error(`Market store presence fetch failed: ${response.status}`);
+		const payload = await response.json();
+		return Array.isArray(payload?.missingHistory) ? payload.missingHistory : [];
 	};
 
 	const initializeWorkspaceEnhancements = () => {
@@ -604,11 +618,50 @@
 		});
 	};
 
+	const syncLocalStorePagination = (currentRegion, nextRegion) => {
+		if (!(currentRegion instanceof HTMLElement) || !(nextRegion instanceof HTMLElement)) return;
+		const currentPagination = currentRegion.querySelector("[data-local-store-pagination]");
+		const nextPagination = nextRegion.querySelector("[data-local-store-pagination]");
+		if (!(currentPagination instanceof HTMLElement) && !(nextPagination instanceof HTMLElement)) return;
+		if (!(currentPagination instanceof HTMLElement) && nextPagination instanceof HTMLElement) {
+			currentRegion.append(nextPagination.cloneNode(true));
+			return;
+		}
+		if (currentPagination instanceof HTMLElement && !(nextPagination instanceof HTMLElement)) {
+			currentPagination.remove();
+			return;
+		}
+		if (!(currentPagination instanceof HTMLElement) || !(nextPagination instanceof HTMLElement)) return;
+		currentPagination.setAttribute("aria-label", nextPagination.getAttribute("aria-label") || "Local market store pages");
+		const indicator = currentPagination.querySelector(".local-store-pagination-indicator");
+		Array.from(currentPagination.childNodes).forEach((node) => {
+			if (node !== indicator) node.remove();
+		});
+		Array.from(nextPagination.childNodes).forEach((node) => {
+			currentPagination.append(node.cloneNode(true));
+		});
+	};
+
+	const syncLocalStoreRegion = (currentRegion, nextRegion) => {
+		if (!(currentRegion instanceof HTMLElement) || !(nextRegion instanceof HTMLElement)) return;
+		const currentSummary = currentRegion.querySelector(".settings-summary");
+		const nextSummary = nextRegion.querySelector(".settings-summary");
+		if (currentSummary instanceof HTMLElement && nextSummary instanceof HTMLElement) {
+			currentSummary.replaceWith(nextSummary.cloneNode(true));
+		}
+		const currentTableWrap = currentRegion.querySelector(".local-store-table-wrap");
+		const nextTableWrap = nextRegion.querySelector(".local-store-table-wrap");
+		if (currentTableWrap instanceof HTMLElement && nextTableWrap instanceof HTMLElement) {
+			currentTableWrap.replaceWith(nextTableWrap.cloneNode(true));
+		}
+		syncLocalStorePagination(currentRegion, nextRegion);
+	};
+
 	const replaceLocalStoreRegion = (nextRegion) => {
 		const currentRegion = $("#local_store_region");
 		if (!currentRegion || !nextRegion) return;
 		const applyReplacement = () => {
-			currentRegion.replaceWith(nextRegion);
+			syncLocalStoreRegion(currentRegion, nextRegion);
 		};
 		if (canTransitionDom) {
 			document.startViewTransition(applyReplacement);
@@ -797,7 +850,8 @@
 		if (pushHistory) window.history.pushState({ localStore: true }, "", url);
 		rememberCurrentViewUrl(url);
 		void hydrateLocalStoreRanges();
-		initLocalStorePaginationPhysics();
+		const targetPage = new URL(url, window.location.origin).searchParams.get("page") || "1";
+		syncLocalStorePaginationActivePage(targetPage);
 	};
 
 	let localStorePaginationRequest = null;
@@ -835,9 +889,37 @@
 		if (!(pagination instanceof HTMLElement)) return;
 		const active = pagination.querySelector(".settings-page-button.is-active");
 		if (!(active instanceof HTMLElement)) return;
+		pagination.classList.remove("is-animating");
+		pagination.classList.add("is-animated");
 		positionLocalStorePaginationIndicator(pagination, active, { immediate: true });
 		pagination.querySelectorAll(".settings-page-button[data-pagination-target]").forEach((button) => {
 			if (button instanceof HTMLElement) button.dataset.paginationCurrent = button.classList.contains("is-active") ? "1" : "0";
+		});
+	};
+	const syncLocalStorePaginationActivePage = (pageValue) => {
+		const pagination = document.querySelector("[data-local-store-pagination]");
+		if (!(pagination instanceof HTMLElement)) return;
+		const page = String(pageValue || "1");
+		const buttons = Array.from(pagination.querySelectorAll(".settings-page-button"));
+		const target = buttons.find((button) => {
+			if (!(button instanceof HTMLElement)) return false;
+			if (button.classList.contains("settings-page-nav") || button.classList.contains("settings-page-placeholder")) return false;
+			return button.textContent?.trim() === page;
+		});
+		if (!(target instanceof HTMLElement)) {
+			window.requestAnimationFrame(() => initLocalStorePaginationPhysics());
+			return;
+		}
+		buttons.forEach((button) => {
+			if (!(button instanceof HTMLElement)) return;
+			const isTarget = button === target;
+			button.classList.toggle("is-active", isTarget);
+			button.dataset.paginationCurrent = isTarget ? "1" : "0";
+		});
+		pagination.classList.remove("is-animating");
+		pagination.classList.add("is-animated");
+		window.requestAnimationFrame(() => {
+			positionLocalStorePaginationIndicator(pagination, target, { immediate: true });
 		});
 	};
 	const animateLocalStorePaginationTo = (link) => new Promise((resolve) => {
@@ -1661,18 +1743,18 @@
 		dockFrame = window.requestAnimationFrame(positionSidebarDock);
 	};
 
-	const showSettingsActionOverlay = (options = {}) => {
-		if (!settingsActionOverlay) return;
-		if (settingsActionOverlayTitle && options.title) settingsActionOverlayTitle.textContent = options.title;
-		if (settingsActionOverlayCopy && options.copy) settingsActionOverlayCopy.textContent = options.copy;
-		if (settingsActionOverlayIcon && options.iconClass) {
-			settingsActionOverlayIcon.className = `icon ${options.iconClass} settings-action-icon`;
+	const showWorkspaceModal = (options = {}) => {
+		if (!workspaceModalOverlay) return;
+		if (workspaceModalOverlayTitle && options.title) workspaceModalOverlayTitle.textContent = options.title;
+		if (workspaceModalOverlayCopy && options.copy) workspaceModalOverlayCopy.textContent = options.copy;
+		if (workspaceModalOverlayIcon && options.iconClass) {
+			workspaceModalOverlayIcon.className = `icon ${options.iconClass} workspace-modal-icon`;
 		}
-		settingsActionOverlay.hidden = false;
+		workspaceModalOverlay.hidden = false;
 	};
 
 	const showCompareOverlay = () => {
-		showSettingsActionOverlay({
+		showWorkspaceModal({
 			title: isTradeMessagesView ? "Running your backtest" : "Preparing your chart",
 			copy: isTradeMessagesView
 				? "Please wait while the app prepares the selected daily data and runs the backtest."
@@ -1681,13 +1763,13 @@
 		});
 	};
 
-	const hideSettingsActionOverlay = () => {
-		if (!settingsActionOverlay) return;
+	const hideWorkspaceModal = () => {
+		if (!workspaceModalOverlay) return;
 		if (compareOverlayTimer) {
 			window.clearTimeout(compareOverlayTimer);
 			compareOverlayTimer = null;
 		}
-		settingsActionOverlay.hidden = true;
+		workspaceModalOverlay.hidden = true;
 	};
 
 	const scheduleCompareOverlay = () => {
@@ -2509,10 +2591,23 @@
 				window.clearTimeout(autoSubmitTimer);
 				autoSubmitTimer = null;
 			}
+			let missingLocalTickers = [];
+			try {
+				missingLocalTickers = await fetchMissingLocalMarketTickers(values);
+			} catch (error) {
+				console.warn("Market Store Presence Error:", error);
+			}
 			isSubmittingWithOverlay = true;
 			setFormBusyState(true);
 			const nextUrl = buildCleanWorkspaceUrl();
 			rememberCurrentViewUrl(nextUrl);
+			if (missingLocalTickers.length) {
+				showWorkspaceModal({
+					title: "Fetching remote market data",
+					copy: `Fetching remote market data for ${missingLocalTickers.join(", ")} and saving it to Local Market Store. Results will appear as soon as loading finishes.`,
+					iconClass: "icon-overlay-local-cache",
+				});
+			}
 			applyPendingWorkspaceMarkup();
 			try {
 				const hydrated = await hydrateWorkspaceFromUrl(nextUrl);
@@ -2525,6 +2620,7 @@
 				});
 				return;
 			} finally {
+				hideWorkspaceModal();
 				isSubmittingWithOverlay = false;
 				setFormBusyState(false);
 			}
@@ -2538,7 +2634,7 @@
 			const submitButton = formElement.querySelector("button[type='submit']");
 			submitButton?.classList.add("is-pending");
 			if (actionInput?.value === "refresh") {
-				showSettingsActionOverlay({
+				showWorkspaceModal({
 					title: "Saving daily market data to local cache",
 					copy: "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
 					iconClass: "icon-overlay-local-cache",
@@ -2552,8 +2648,8 @@
 		submitter?.classList.add("is-pending");
 		submitter?.setAttribute("aria-busy", "true");
 	});
-	settingsActionOverlayClose?.addEventListener("click", hideSettingsActionOverlay);
-	window.addEventListener("pageshow", hideSettingsActionOverlay);
+	workspaceModalOverlayClose?.addEventListener("click", hideWorkspaceModal);
+	window.addEventListener("pageshow", hideWorkspaceModal);
 	window.addEventListener("pageshow", () => {
 		document.body.classList.remove("is-workspace-switching");
 		document.querySelectorAll(".is-masked-during-switch").forEach((node) => {

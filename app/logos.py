@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v2.7.0
+Code version: v2.8.0
 """
 
 from __future__ import annotations
@@ -40,6 +40,18 @@ ISSUER_WEBSITE_HINTS = {
     "SCHWAB": "https://www.schwabassetmanagement.com",
     "SPDR": "https://www.ssga.com",
 }
+
+
+def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None) -> str:
+    if modified_at_ns is None:
+        for namespace in ("primary", "search"):
+            logo_path = logo_store_path_for(filename.removesuffix(".png"), namespace=namespace)
+            if logo_path.exists():
+                modified_at_ns = logo_path.stat().st_mtime_ns
+                break
+    if modified_at_ns is None:
+        return url_for("market_store_logo", filename=filename)
+    return url_for("market_store_logo", filename=filename, v=modified_at_ns)
 
 
 def normalize_ticker_input(raw_ticker: str) -> str:
@@ -226,10 +238,10 @@ def fetch_and_store_logo(
     ensure_market_store_dir()
     path = logo_store_path_for(ticker, namespace=namespace)
     if path.exists() and not force_refresh:
-        return url_for("market_store_logo", filename=path.name)
+        return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
 
     if not has_remote_market_access():
-        return url_for("market_store_logo", filename=path.name) if path.exists() else None
+        return build_market_store_logo_url(path.name, path.stat().st_mtime_ns) if path.exists() else None
 
     domain = extract_domain(website)
     logo_bytes = fetch_remote_logo_bytes(ticker, domain)
@@ -239,7 +251,7 @@ def fetch_and_store_logo(
     else:
         path.write_bytes(logo_bytes)
 
-    return url_for("market_store_logo", filename=path.name)
+    return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
 
 
 def fetch_quote_profile(

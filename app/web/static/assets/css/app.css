@@ -1582,18 +1582,18 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .icon-settings-email { mask: url("../../images/envelope.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/envelope.fill.svg") center/contain no-repeat; }
 .icon-settings-store { mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; }
 .icon-settings-clear-cache { mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; }
-.settings-action-overlay { position: fixed; inset: 0; z-index: var(--layer-modal-overlay); display: grid; place-items: center; background: rgba(255, 255, 255, 0.04); }
-.settings-action-overlay[hidden] { display: none; }
-.settings-action-dialog { position: relative; z-index: var(--layer-modal-dialog); width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; border-radius: var(--radius-soft); background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); }
-.settings-action-icon { width: 18px; height: 18px; margin-bottom: 10px; }
-.settings-action-close { position: absolute; top: 10px; right: 10px; }
+.workspace-modal-overlay { position: fixed; inset: 0; z-index: var(--layer-modal-overlay); display: grid; place-items: center; background: rgba(255, 255, 255, 0.04); }
+.workspace-modal-overlay[hidden] { display: none; }
+.workspace-modal-dialog { position: relative; z-index: var(--layer-modal-dialog); width: min(420px, calc(100vw - 32px)); padding: 18px 18px 16px; pointer-events: auto; opacity: 1; border-radius: 10px; background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); }
+.workspace-modal-icon { width: 18px; height: 18px; margin-bottom: 10px; }
+.workspace-modal-close { position: absolute; top: 10px; right: 10px; }
 .icon-dismiss-control { background-color: currentColor; mask: url("../../images/xmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/xmark.svg") center/contain no-repeat; }
 .icon-overlay-refresh { background-color: #0055cc; mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; }
 .icon-overlay-processing { background-color: #0055cc; mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; -webkit-mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; }
 .icon-overlay-network { background-color: #0055cc; mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; -webkit-mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; }
 .icon-overlay-local-cache { background-color: #0055cc; mask: url("../../images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat; }
-.settings-action-title { margin: 0 0 6px; font-size: var(--font-ui-lg); line-height: 1.2; font-weight: var(--font-weight-bold); color: var(--text); }
-.settings-action-copy { margin: 0; font-size: var(--font-form-label); line-height: 1.45; color: var(--muted); }
+.workspace-modal-title { margin: 0 0 6px; font-size: var(--font-ui-lg); line-height: 1.2; font-weight: var(--font-weight-bold); color: var(--text); }
+.workspace-modal-copy { margin: 0; font-size: var(--font-form-label); line-height: 1.45; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 980px) {
 	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }

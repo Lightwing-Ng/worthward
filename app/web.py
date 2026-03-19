@@ -22,7 +22,7 @@ from strategies.loader import instantiate_strategy, list_enabled_strategies
 from .connectivity import has_remote_logo_access, has_remote_market_access, reset_connectivity_caches
 from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
-from .logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
+from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
 from .market_data import fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
@@ -466,7 +466,7 @@ def register_routes(app: Flask) -> None:
             if not logo_path.exists():
                 continue
             payload = json.loads(profile_path.read_text())
-            logo_url = url_for("market_store_logo", filename=logo_path.name) if logo_path.exists() else ""
+            logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns) if logo_path.exists() else ""
             company_name = str(payload.get("company_name") or "").strip()
             if company_name:
                 return company_name, logo_url
@@ -1100,6 +1100,7 @@ def register_routes(app: Flask) -> None:
                 "dateConstraints": "/api/date-constraints",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
+                "marketStorePresence": "/api/market-store/presence",
             },
         )
 
@@ -1270,5 +1271,28 @@ def register_routes(app: Flask) -> None:
                 "page": current_page,
                 "total_pages": total_pages,
                 "rows": rows,
+            }
+        )
+
+    @app.get("/api/market-store/presence")
+    def market_store_presence_api():
+        raw_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
+        normalized_tickers: list[str] = []
+        for raw_ticker in raw_tickers:
+            try:
+                normalized_tickers.append(validate_ticker_or_raise(raw_ticker))
+            except ValueError:
+                continue
+        unique_tickers = list(dict.fromkeys(normalized_tickers))
+        missing_history = [
+            ticker
+            for ticker in unique_tickers
+            if not history_store_path_for(ticker).exists()
+        ]
+        return jsonify(
+            {
+                "tickers": unique_tickers,
+                "missingHistory": missing_history,
+                "hasMissingHistory": bool(missing_history),
             }
         )
