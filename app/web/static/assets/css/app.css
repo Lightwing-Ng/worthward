@@ -783,9 +783,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .field-tooltip { margin-top: 8px; padding: 8px 10px; color: var(--muted); font-size: var(--font-tooltip); line-height: 1.35; }
 .field-tooltip-validation {
-	position: absolute;
-	top: calc(50% + (var(--ticker-validation-arrow-rise) / 2));
-	left: calc(var(--ticker-control-width, 100%) / 2);
+	position: fixed;
+	top: 0;
+	left: 0;
 	padding: 4px 8px;
 	color: #0055cc;
 	font-size: var(--font-table-body);

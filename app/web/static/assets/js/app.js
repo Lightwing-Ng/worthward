@@ -1336,12 +1336,57 @@
 		getTickerInputs().forEach((input) => validateTickerInput(input));
 	};
 
-	const ensureTickerValidationTooltip = (input) => {
+	const readTickerControlWidthRatio = (element) => {
+		if (!(element instanceof HTMLElement)) return 1;
+		const rawValue = getComputedStyle(element).getPropertyValue("--ticker-control-width").trim();
+		if (rawValue.endsWith("%")) {
+			const ratio = Number.parseFloat(rawValue);
+			return Number.isFinite(ratio) ? ratio / 100 : 1;
+		}
+		const ratio = Number.parseFloat(rawValue);
+		return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+	};
+
+	const readTickerValidationArrowRise = (element) => {
+		if (!(element instanceof HTMLElement)) return 0;
+		const rawValue = getComputedStyle(element).getPropertyValue("--ticker-validation-arrow-rise").trim();
+		const rise = Number.parseFloat(rawValue);
+		return Number.isFinite(rise) ? rise : 0;
+	};
+
+	const positionTickerValidationTooltip = (input) => {
+		if (!(input instanceof HTMLElement)) return;
+		const tooltipId = input.dataset.validationTooltipId;
+		if (!tooltipId) return;
+		const tooltip = document.getElementById(tooltipId);
+		if (!(tooltip instanceof HTMLElement) || tooltip.hidden) return;
 		const host = input.closest(".ticker-input-main");
-		if (!(host instanceof HTMLElement)) return null;
-		let tooltip = host.querySelector(".field-tooltip-validation");
+		if (!(host instanceof HTMLElement)) return;
+		const hostRect = host.getBoundingClientRect();
+		const controls = input.closest(".compare-controls, .portfolio-controls, .trade-controls, .ticker-form-controls, .ticker-controls");
+		const widthRatio = readTickerControlWidthRatio(controls || host);
+		const arrowRise = readTickerValidationArrowRise(controls || host);
+		tooltip.style.left = `${hostRect.left + (hostRect.width * widthRatio / 2)}px`;
+		tooltip.style.top = `${hostRect.top + (hostRect.height / 2) + (arrowRise / 2)}px`;
+	};
+
+	const syncVisibleTickerValidationTooltips = () => {
+		getTickerInputs().forEach((input) => positionTickerValidationTooltip(input));
+	};
+
+	const ensureTickerValidationTooltip = (input) => {
+		if (!(input instanceof HTMLElement)) return null;
+		if (!input.id) input.id = `ticker_validation_${Math.random().toString(36).slice(2, 10)}`;
+		let tooltipId = input.dataset.validationTooltipId;
+		if (!tooltipId) {
+			tooltipId = `${input.id}_validation_tooltip`;
+			input.dataset.validationTooltipId = tooltipId;
+		}
+		let tooltip = document.getElementById(tooltipId);
 		if (tooltip instanceof HTMLElement) return tooltip;
 		tooltip = document.createElement("div");
+		tooltip.id = tooltipId;
+		tooltip.dataset.validationFor = input.id;
 		tooltip.className = "field-tooltip field-tooltip-validation liquid-glass-surface";
 		const icon = document.createElement("span");
 		icon.className = "field-tooltip-validation-icon";
@@ -1350,12 +1395,7 @@
 		copy.className = "field-tooltip-validation-copy";
 		tooltip.append(icon, copy);
 		tooltip.hidden = true;
-		const control = input.closest(".ticker-input-control");
-		if (control?.parentElement === host) {
-			control.insertAdjacentElement("afterend", tooltip);
-		} else {
-			host.appendChild(tooltip);
-		}
+		document.body.appendChild(tooltip);
 		return tooltip;
 	};
 
@@ -1384,8 +1424,12 @@
 			tooltip.textContent = message;
 		}
 		tooltip.hidden = false;
+		positionTickerValidationTooltip(input);
 		input.scrollIntoView({ block: "nearest", inline: "nearest" });
 	};
+
+	window.addEventListener("resize", syncVisibleTickerValidationTooltips);
+	document.addEventListener("scroll", syncVisibleTickerValidationTooltips, true);
 
 	const setupAutocomplete = (input) => {
 		if (!input || input.dataset.autocompleteReady === "1") return;
