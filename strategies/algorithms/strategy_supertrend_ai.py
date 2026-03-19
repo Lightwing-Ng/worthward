@@ -11,7 +11,7 @@ import math
 
 import pandas as pd
 
-from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult
+from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 
 @dataclass(slots=True)
@@ -120,6 +120,15 @@ def _cluster_factor_and_score(
 class SupertrendAiStrategy(BaseStrategy):
     strategy_id = "supertrend-ai"
     strategy_name = "SuperTrend AI"
+    strategy_description = "Adaptive multi-factor SuperTrend strategy with three-cluster factor selection inspired by the LuxAlgo PineScript."
+    strategy_category = "trend"
+    strategy_display_order = 30
+    strategy_supports = StrategySupportMatrix(
+        single_ticker=True,
+        multi_ticker=False,
+        long_only=True,
+        short=False,
+    )
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
@@ -172,6 +181,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=1_000,
                 minimum=0,
+                unit_hint="iters",
             ),
             StrategyParameterDefinition(
                 key="historical_bars_calculation",

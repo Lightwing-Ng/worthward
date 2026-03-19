@@ -1,12 +1,12 @@
 """
 Base strategy interfaces.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 import pandas as pd
@@ -31,6 +31,8 @@ class StrategyParameterDefinition:
     options: tuple[Any, ...] = field(default_factory=tuple)
     editable: bool = True
     help_text: str = ""
+    unit_hint: str = ""
+    placeholder: str = ""
 
     def display_default(self) -> str:
         if self.default is None:
@@ -38,9 +40,61 @@ class StrategyParameterDefinition:
         return str(self.default)
 
 
+@dataclass(slots=True, frozen=True)
+class StrategySupportMatrix:
+    single_ticker: bool = True
+    multi_ticker: bool = False
+    long_only: bool = True
+    short: bool = False
+
+
+@dataclass(slots=True, frozen=True)
+class StrategyMetadata:
+    strategy_id: str
+    name: str
+    description: str = ""
+    category: str = "general"
+    enabled: bool = True
+    display_order: int = 9999
+    supports: StrategySupportMatrix = field(default_factory=StrategySupportMatrix)
+
+    def to_catalog_entry(self, module: str, class_name: str, default_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": self.strategy_id,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "enabled": self.enabled,
+            "supports": asdict(self.supports),
+            "default_params": default_params,
+            "module": module,
+            "class_name": class_name,
+            "ui": {
+                "display_order": self.display_order,
+            },
+        }
+
+
 class BaseStrategy:
     strategy_id: str = ""
     strategy_name: str = ""
+    strategy_description: str = ""
+    strategy_category: str = "general"
+    strategy_enabled: bool = True
+    strategy_display_order: int = 9999
+    strategy_supports: StrategySupportMatrix = StrategySupportMatrix()
+
+    @classmethod
+    def get_metadata(cls) -> StrategyMetadata:
+        return StrategyMetadata(
+            strategy_id=cls.strategy_id,
+            name=cls.strategy_name,
+            description=cls.strategy_description,
+            category=cls.strategy_category,
+            enabled=cls.strategy_enabled,
+            display_order=cls.strategy_display_order,
+            supports=cls.strategy_supports,
+        )
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return ()

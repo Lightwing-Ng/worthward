@@ -16,5 +16,5 @@ if __name__ == "__main__":
     app.run(
         debug=settings["app"].get("debug", True),
         host=settings["server"].get("host", "127.0.0.1"),
-        port=settings["server"].get("port", 5000),
+        port=settings["server"].get("port", 8688),
     )

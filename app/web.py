@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from typing import Any
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -16,6 +17,7 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 from .comparisons import build_series_payload, slice_dataset_for_period
 from .email_settings import SmtpSettings, load_smtp_settings, sanitize_smtp_settings_for_view, save_smtp_settings, test_smtp_connection
 from strategies.backtest import run_single_ticker_backtest
+from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies
 from .connectivity import has_remote_logo_access, has_remote_market_access, reset_connectivity_caches
 from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
@@ -46,6 +48,12 @@ PORTFOLIO_BENCHMARK_COLORS = {
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
 LOCAL_STORE_PAGE_SIZE = 10
+STRATEGY_CATEGORY_LABELS = {
+    "baseline": "Baseline",
+    "momentum": "Momentum",
+    "trend": "Trend",
+    "general": "General",
+}
 VIEW_PATHS = {
     "tickers": "/compare",
     "portfolio": "/portfolio",
@@ -258,6 +266,120 @@ def register_routes(app: Flask) -> None:
         query_string = urlencode(params, doseq=True)
         base_path = build_settings_path("local-market-store")
         return f"{base_path}?{query_string}" if query_string else base_path
+
+    def format_strategy_category_label(category: str) -> str:
+        normalized = (category or "general").strip().lower()
+        return STRATEGY_CATEGORY_LABELS.get(normalized, normalized.replace("-", " ").title())
+
+    def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
+        grouped: dict[str, list[dict[str, object]]] = {}
+        category_order: list[str] = []
+        for item in strategy_options:
+            category = str(item.get("category", "general"))
+            if category not in grouped:
+                grouped[category] = []
+                category_order.append(category)
+            grouped[category].append(item)
+        return [
+            {
+                "key": category,
+                "label": format_strategy_category_label(category),
+                "items": grouped[category],
+            }
+            for category in category_order
+        ]
+
+    def build_strategy_form_field(definition: StrategyParameterDefinition, value: Any) -> dict[str, object]:
+        resolved_value = definition.default if value is None else value
+        field_type = "select"
+        input_mode = "text"
+        slider_min: int | float | None = None
+        slider_max: int | float | None = None
+        slider_step: int | float | None = None
+
+        if definition.kind in {"integer", "number"}:
+            field_type = "number"
+            input_mode = "decimal" if definition.kind == "number" else "numeric"
+            base_value = resolved_value if isinstance(resolved_value, (int, float)) else definition.default
+            if not isinstance(base_value, (int, float)):
+                base_value = 0
+            slider_step = definition.step if definition.step is not None else (0.1 if definition.kind == "number" else 1)
+            slider_min = definition.minimum if definition.minimum is not None else min(0, base_value)
+            if definition.maximum is not None:
+                slider_max = definition.maximum
+            else:
+                scale = max(abs(float(base_value or 0)), abs(float(definition.default or 0)), 1.0)
+                slider_max = scale * 4
+                if definition.kind == "integer":
+                    slider_max = max(int(slider_min) + 1, int(round(slider_max)))
+                else:
+                    slider_max = max(float(slider_min) + float(slider_step), round(float(slider_max), 4))
+        elif definition.kind == "string":
+            field_type = "text"
+        else:
+            field_type = "select"
+
+        return {
+            "key": definition.key,
+            "label": definition.label,
+            "kind": definition.kind,
+            "field_type": field_type,
+            "input_mode": input_mode,
+            "value": resolved_value,
+            "default": definition.default,
+            "minimum": definition.minimum,
+            "maximum": definition.maximum,
+            "step": definition.step,
+            "slider_min": slider_min,
+            "slider_max": slider_max,
+            "slider_step": slider_step,
+            "options": list(definition.options),
+            "editable": definition.editable,
+            "help_text": definition.help_text,
+            "unit_hint": definition.unit_hint,
+            "placeholder": definition.placeholder,
+        }
+
+    def collect_strategy_form_values(strategy_id: str) -> dict[str, Any]:
+        strategy = instantiate_strategy(strategy_id)
+        raw_values: dict[str, Any] = {}
+        for definition in strategy.get_parameter_definitions():
+            raw_value = request.args.get(definition.key)
+            if raw_value is None or str(raw_value).strip() == "":
+                raw_values[definition.key] = definition.default
+            else:
+                raw_values[definition.key] = raw_value
+        return strategy.normalize_params(raw_values)
+
+    def build_strategy_form_fields(strategy_id: str, values: dict[str, Any] | None = None) -> list[dict[str, object]]:
+        strategy = instantiate_strategy(strategy_id)
+        normalized_values = strategy.normalize_params(values or {})
+        return [
+            build_strategy_form_field(definition, normalized_values.get(definition.key))
+            for definition in strategy.get_parameter_definitions()
+        ]
+
+    def build_strategy_settings_rows(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for item in strategy_options:
+            strategy = instantiate_strategy(str(item["id"]))
+            rows.append(
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "category": format_strategy_category_label(str(item.get("category", "general"))),
+                    "description": item.get("description", ""),
+                    "supports": item.get("supports", {}),
+                    "parameters": [
+                        {
+                            "label": definition.label,
+                            "default_display": definition.display_default(),
+                        }
+                        for definition in strategy.get_parameter_definitions()
+                    ],
+                }
+            )
+        return rows
 
     def build_local_store_pagination_slots(
         current_page: int,
@@ -487,8 +609,19 @@ def register_routes(app: Flask) -> None:
         passthrough_keys.update({f"ticker_{index}" for index in range(1, MAX_TICKERS + 1)})
         passthrough_keys.update({f"weight_{index}" for index in range(1, MAX_TICKERS + 1)})
 
+        strategy_param_keys: set[str] = set()
+        strategy_value = request.args.get("strategy", "").strip()
+        if strategy_value:
+            try:
+                strategy = instantiate_strategy(strategy_value)
+                strategy_param_keys = {definition.key for definition in strategy.get_parameter_definitions()}
+            except Exception:
+                strategy_param_keys = set()
+
         for key in request.args.keys():
-            if key in passthrough_keys:
+            if key in {"view", "section"}:
+                continue
+            if key in passthrough_keys and key not in strategy_param_keys:
                 continue
             for value in request.args.getlist(key):
                 cleaned = str(value).strip()
@@ -583,7 +716,13 @@ def register_routes(app: Flask) -> None:
         datasets: list[pd.DataFrame] = []
         aligned_datasets: list[pd.DataFrame] = []
         strategy_options = list_enabled_strategies()
+        strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = request.args.get("strategy", strategy_options[0]["id"] if strategy_options else "").strip()
+        strategy_ids = {str(item["id"]) for item in strategy_options}
+        if selected_strategy_id not in strategy_ids and strategy_options:
+            selected_strategy_id = str(strategy_options[0]["id"])
+        selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
+        strategy_form_fields = build_strategy_form_fields(selected_strategy_id, selected_strategy_params) if selected_strategy_id else []
         backtest_initial_capital = max(
             parse_float_value(request.args.get("capital", request.args.get("initial_capital")), 10000.0),
             1.0,
@@ -679,7 +818,7 @@ def register_routes(app: Flask) -> None:
                     period_label = format_period_label(period)
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
-                signal_result = strategy.compute_signals(trade_dataset, strategy.normalize_params())
+                signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
                 trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
@@ -809,21 +948,7 @@ def register_routes(app: Flask) -> None:
             if settings_section == "local-market-store" and notice and not error:
                 notice_is_floating = True
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
-            strategy_settings_rows = [
-                {
-                    "name": item["name"],
-                    "description": item.get("description", ""),
-                    "supports": item.get("supports", {}),
-                    "parameters": [
-                        {
-                            "label": definition.label,
-                            "default_display": definition.display_default(),
-                        }
-                        for definition in instantiate_strategy(item["id"]).get_parameter_definitions()
-                    ],
-                }
-                for item in strategy_options
-            ]
+            strategy_settings_rows = build_strategy_settings_rows(strategy_options)
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
@@ -909,7 +1034,10 @@ def register_routes(app: Flask) -> None:
             defaults=defaults,
             smtp_settings=smtp_settings,
             strategy_options=strategy_options,
+            strategy_option_groups=strategy_option_groups,
             selected_strategy_id=selected_strategy_id,
+            strategy_form_fields=strategy_form_fields,
+            selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
             trade_backtest_result=trade_backtest_result,
             current_view_name=current_view,

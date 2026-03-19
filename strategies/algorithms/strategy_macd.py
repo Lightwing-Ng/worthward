@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult
+from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 
 class MacdStrategy(BaseStrategy):
     strategy_id = "macd"
     strategy_name = "MACD"
+    strategy_description = "MACD crossover strategy using default daily 12, 26, and 9 settings."
+    strategy_category = "momentum"
+    strategy_display_order = 20
+    strategy_supports = StrategySupportMatrix(
+        single_ticker=True,
+        multi_ticker=False,
+        long_only=True,
+        short=False,
+    )
 
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
@@ -23,6 +32,7 @@ class MacdStrategy(BaseStrategy):
                 kind="integer",
                 default=12,
                 minimum=1,
+                unit_hint="bars",
             ),
             StrategyParameterDefinition(
                 key="slow_span",

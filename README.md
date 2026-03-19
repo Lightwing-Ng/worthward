@@ -1,14 +1,18 @@
 # antigravity
 
-A local web app for comparing two tickers across the same shared trading window.
+A local-first web app for comparing stock tickers and running single-ticker strategy backtests with full static rendering.
+
+Source code: <https://github.com/Lightwing-Ng/compareStocks>
 
 ## What it does
 
-- compares two securities on a normalized return basis
-- supports relative ranges and exact date ranges
-- can include or exclude cash dividends
-- stores historical data, profiles, logos, and search results locally
-- renders a lightweight comparison UI with local-first behavior
+- compares up to five securities on a normalized cumulative return basis
+- runs single-ticker backtests with built-in trading strategies (Buy and Hold, MACD, SuperTrend AI, SuperTrend Double AI)
+- supports relative time ranges (1mo → max) and exact date ranges
+- can include or exclude cash dividends in total return calculations
+- stores historical data, ticker profiles, logos, and symbol search results locally
+- renders a lightweight responsive UI with mobile-first behavior
+- works entirely in-browser after server render, no external dependencies for viewing
 
 ## Run
 
@@ -31,6 +35,7 @@ main.py
 config.toml
 README.md
 app/
+strategies/
 market_store/
 ```
 
@@ -59,7 +64,20 @@ Application package.
 - `config.py`
   - static application constants
 - `web/static/`
-  - front-end assets and templates
+  - front-end CSS, JS, images, and HTML templates
+
+### `strategies/`
+
+Trading strategy registry and backtest implementation.
+
+- `base.py`
+  - base strategy interface and parameter schema
+- `loader.py`
+  - dynamic strategy loading
+- `registry.json`
+  - strategy registry metadata
+- `algorithms/`
+  - concrete strategy implementations (Buy and Hold, MACD, SuperTrend AI, SuperTrend Double AI)
 
 ### `market_store/`
 

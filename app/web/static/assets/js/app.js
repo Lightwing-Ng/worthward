@@ -797,9 +797,76 @@
 		if (pushHistory) window.history.pushState({ localStore: true }, "", url);
 		rememberCurrentViewUrl(url);
 		void hydrateLocalStoreRanges();
+		initLocalStorePaginationPhysics();
 	};
 
+	let localStorePaginationRequest = null;
+	const ensureLocalStorePaginationIndicator = (pagination) => {
+		if (!(pagination instanceof HTMLElement)) return null;
+		let indicator = pagination.querySelector(".local-store-pagination-indicator");
+		if (!(indicator instanceof HTMLElement)) {
+			indicator = document.createElement("span");
+			indicator.className = "local-store-pagination-indicator";
+			indicator.setAttribute("aria-hidden", "true");
+			pagination.prepend(indicator);
+		}
+		return indicator;
+	};
+	const positionLocalStorePaginationIndicator = (pagination, target, { immediate = false } = {}) => {
+		if (!(pagination instanceof HTMLElement) || !(target instanceof HTMLElement)) return;
+		const indicator = ensureLocalStorePaginationIndicator(pagination);
+		if (!(indicator instanceof HTMLElement)) return;
+		const navRect = pagination.getBoundingClientRect();
+		const targetRect = target.getBoundingClientRect();
+		const x = targetRect.left - navRect.left;
+		const y = targetRect.top - navRect.top;
+		if (immediate) indicator.style.transition = "none";
+		indicator.style.width = `${targetRect.width}px`;
+		indicator.style.height = `${targetRect.height}px`;
+		indicator.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+		pagination.classList.add("is-animated");
+		if (immediate) {
+			void indicator.offsetWidth;
+			indicator.style.removeProperty("transition");
+		}
+	};
+	const initLocalStorePaginationPhysics = () => {
+		const pagination = document.querySelector("[data-local-store-pagination]");
+		if (!(pagination instanceof HTMLElement)) return;
+		const active = pagination.querySelector(".settings-page-button.is-active");
+		if (!(active instanceof HTMLElement)) return;
+		positionLocalStorePaginationIndicator(pagination, active, { immediate: true });
+		pagination.querySelectorAll(".settings-page-button[data-pagination-target]").forEach((button) => {
+			if (button instanceof HTMLElement) button.dataset.paginationCurrent = button.classList.contains("is-active") ? "1" : "0";
+		});
+	};
+	const animateLocalStorePaginationTo = (link) => new Promise((resolve) => {
+		const pagination = link.closest("[data-local-store-pagination]");
+		if (!(pagination instanceof HTMLElement) || !(link instanceof HTMLElement)) {
+			resolve();
+			return;
+		}
+		const current = pagination.querySelector(".settings-page-button.is-active") || pagination.querySelector(".settings-page-button[data-pagination-current='1']");
+		if (!(current instanceof HTMLElement)) {
+			positionLocalStorePaginationIndicator(pagination, link, { immediate: true });
+			resolve();
+			return;
+		}
+		pagination.classList.add("is-animated", "is-animating");
+		current.dataset.paginationCurrent = "0";
+		link.dataset.paginationCurrent = "1";
+		positionLocalStorePaginationIndicator(pagination, current, { immediate: true });
+		window.setTimeout(() => {
+			positionLocalStorePaginationIndicator(pagination, link);
+		}, 72);
+		window.setTimeout(() => {
+			pagination.classList.remove("is-animating");
+			resolve();
+		}, 430);
+	});
+
 	const attachLocalStorePagination = () => {
+		initLocalStorePaginationPhysics();
 		document.addEventListener("click", (event) => {
 			const link = event.target.closest(".local-store-pagination a");
 			if (!link) return;
@@ -807,9 +874,17 @@
 			const targetUrl = link.href;
 			if (!targetUrl) return;
 			event.preventDefault();
-			fetchLocalStorePage(targetUrl).catch(() => {
-				window.location.assign(targetUrl);
-			});
+			if (localStorePaginationRequest) return;
+			localStorePaginationRequest = (async () => {
+				try {
+					await animateLocalStorePaginationTo(link);
+					await fetchLocalStorePage(targetUrl);
+				} catch {
+					window.location.assign(targetUrl);
+				} finally {
+					localStorePaginationRequest = null;
+				}
+			})();
 		});
 
 		window.addEventListener("popstate", () => {
@@ -1892,6 +1967,7 @@
 			const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
 			if (strategySelect?.value) params.set("strategy", strategySelect.value);
 			if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
+			// Dynamic strategy parameters removed — always use defaults, no need to collect
 		}
 
 		const queryString = params.toString();
@@ -2018,10 +2094,255 @@
 		tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
 	}
 
-	$("#trade_strategy")?.addEventListener("change", () => {
+	const strategyParamFields = Array.from(document.querySelectorAll("[data-strategy-param-key]"));
+	const scheduleStrategyParamSubmit = (delay = 160) => {
 		if (!hasInitialResult) return;
-		scheduleAutoSubmit(100);
+		scheduleAutoSubmit(delay);
+	};
+	strategyParamFields.forEach((field) => {
+		if (!(field instanceof HTMLElement)) return;
+		const textInput = field.querySelector("[data-strategy-param-input='text']");
+		const clearButton = field.querySelector("[data-strategy-param-clear]");
+		if (textInput instanceof HTMLInputElement && clearButton instanceof HTMLButtonElement) {
+			const suggestions = field.querySelector("[data-strategy-param-suggestions]");
+			const emptyState = field.querySelector("[data-strategy-param-empty]");
+			const suggestionButtons = Array.from(field.querySelectorAll("[data-strategy-param-suggestion-value]"));
+			const escapeHtml = (value) => String(value)
+				.replaceAll("&", "&amp;")
+				.replaceAll("<", "&lt;")
+				.replaceAll(">", "&gt;")
+				.replaceAll('"', "&quot;")
+				.replaceAll("'", "&#39;");
+			const highlightMatch = (value, query) => {
+				const text = String(value ?? "");
+				const needle = String(query ?? "").trim();
+				if (!needle) return escapeHtml(text);
+				const lowerText = text.toLowerCase();
+				const lowerNeedle = needle.toLowerCase();
+				const index = lowerText.indexOf(lowerNeedle);
+				if (index === -1) return escapeHtml(text);
+				const before = escapeHtml(text.slice(0, index));
+				const match = escapeHtml(text.slice(index, index + needle.length));
+				const after = escapeHtml(text.slice(index + needle.length));
+				return `${before}<mark class="strategy-param-suggestion-mark">${match}</mark>${after}`;
+			};
+			let activeSuggestionIndex = -1;
+			const visibleButtons = () => suggestionButtons.filter((button) => !button.hidden);
+			const syncClearVisibility = () => {
+				const hasValue = textInput.value.trim().length > 0;
+				clearButton.classList.toggle("is-visible", hasValue);
+				clearButton.tabIndex = hasValue ? 0 : -1;
+			};
+			const syncActiveSuggestion = () => {
+				const visible = visibleButtons();
+				suggestionButtons.forEach((button, index) => {
+					button.classList.toggle("is-active", visible[index] === button && index === activeSuggestionIndex);
+				});
+				const active = visible[activeSuggestionIndex];
+				if (active instanceof HTMLElement) active.scrollIntoView({ block: "nearest" });
+			};
+			const setActiveSuggestion = (index) => {
+				const visible = visibleButtons();
+				if (!visible.length) {
+					activeSuggestionIndex = -1;
+					suggestionButtons.forEach((button) => button.classList.remove("is-active"));
+					return;
+				}
+				activeSuggestionIndex = Math.max(0, Math.min(index, visible.length - 1));
+				suggestionButtons.forEach((button) => button.classList.toggle("is-active", button === visible[activeSuggestionIndex]));
+				visible[activeSuggestionIndex]?.scrollIntoView({ block: "nearest" });
+			};
+			const applySuggestion = (button) => {
+				if (!(button instanceof HTMLButtonElement)) return;
+				const value = button.dataset.strategyParamSuggestionValue || "";
+				textInput.value = value;
+				syncClearVisibility();
+				filterSuggestions();
+				closeSuggestions();
+				textInput.focus();
+				scheduleStrategyParamSubmit(80);
+			};
+			const filterSuggestions = () => {
+				const query = textInput.value.trim().toLowerCase();
+				let visibleCount = 0;
+				suggestionButtons.forEach((button) => {
+					if (!(button instanceof HTMLButtonElement)) return;
+					const rawValue = button.dataset.strategyParamSuggestionValue || "";
+					const label = button.querySelector("[data-strategy-param-suggestion-symbol]");
+					const matches = !query || rawValue.toLowerCase().startsWith(query) || rawValue.toLowerCase().includes(query);
+					button.hidden = !matches;
+					button.setAttribute("aria-hidden", matches ? "false" : "true");
+					if (label instanceof HTMLElement) {
+						label.innerHTML = highlightMatch(rawValue, query);
+					}
+					if (matches) visibleCount += 1;
+				});
+				if (emptyState instanceof HTMLElement) emptyState.hidden = visibleCount > 0;
+				const visible = visibleButtons();
+				if (!visible.length) {
+					activeSuggestionIndex = -1;
+					suggestionButtons.forEach((button) => button.classList.remove("is-active"));
+					return;
+				}
+				if (activeSuggestionIndex < 0 || activeSuggestionIndex >= visible.length) {
+					activeSuggestionIndex = 0;
+				}
+				setActiveSuggestion(activeSuggestionIndex);
+			};
+			const openSuggestions = () => {
+				if (!(suggestions instanceof HTMLElement)) return;
+				filterSuggestions();
+				suggestions.classList.add("is-open");
+			};
+			const closeSuggestions = () => {
+				if (!(suggestions instanceof HTMLElement)) return;
+				suggestions.classList.remove("is-open");
+				activeSuggestionIndex = -1;
+				suggestionButtons.forEach((button) => button.classList.remove("is-active"));
+			};
+			textInput.addEventListener("focus", openSuggestions);
+			textInput.addEventListener("click", openSuggestions);
+			textInput.addEventListener("input", () => {
+				syncClearVisibility();
+				openSuggestions();
+				scheduleStrategyParamSubmit();
+			});
+			textInput.addEventListener("change", () => {
+				syncClearVisibility();
+				filterSuggestions();
+				scheduleStrategyParamSubmit(80);
+			});
+			textInput.addEventListener("keydown", (event) => {
+				const visible = visibleButtons();
+				if (event.key === "ArrowDown") {
+					event.preventDefault();
+					openSuggestions();
+					setActiveSuggestion((activeSuggestionIndex < 0 ? -1 : activeSuggestionIndex) + 1);
+					return;
+				}
+				if (event.key === "ArrowUp") {
+					event.preventDefault();
+					openSuggestions();
+					setActiveSuggestion((activeSuggestionIndex < 0 ? visible.length : activeSuggestionIndex) - 1);
+					return;
+				}
+				if (event.key === "Enter" && visible.length && activeSuggestionIndex >= 0 && suggestions instanceof HTMLElement && suggestions.classList.contains("is-open")) {
+					event.preventDefault();
+					applySuggestion(visible[activeSuggestionIndex]);
+					return;
+				}
+				if (event.key === "Escape") {
+					closeSuggestions();
+				}
+			});
+			clearButton.addEventListener("click", () => {
+				textInput.value = "";
+				syncClearVisibility();
+				openSuggestions();
+				textInput.focus();
+				scheduleStrategyParamSubmit(80);
+			});
+			suggestionButtons.forEach((button) => {
+				if (!(button instanceof HTMLButtonElement)) return;
+				button.addEventListener("mouseenter", () => {
+					const visible = visibleButtons();
+					const index = visible.indexOf(button);
+					if (index >= 0) setActiveSuggestion(index);
+				});
+				button.addEventListener("click", () => applySuggestion(button));
+			});
+			field.addEventListener("focusout", () => window.setTimeout(() => {
+				if (field.matches(":focus-within")) return;
+				closeSuggestions();
+			}, 100));
+			syncClearVisibility();
+			filterSuggestions();
+		}
+
+		const numberInput = field.querySelector("[data-strategy-param-input='number']");
+		const numberSlider = field.querySelector("[data-strategy-param-slider]");
+		if (numberInput instanceof HTMLInputElement && numberSlider instanceof HTMLInputElement) {
+			const normalizeNumberValue = (value) => {
+				const parsed = Number.parseFloat(String(value));
+				if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || numberSlider.min || "0") || 0;
+				const min = Number.parseFloat(numberInput.min || numberSlider.min || "");
+				const max = Number.parseFloat(numberInput.max || numberSlider.max || "");
+				let normalized = parsed;
+				if (Number.isFinite(min)) normalized = Math.max(min, normalized);
+				if (Number.isFinite(max)) normalized = Math.min(max, normalized);
+				return normalized;
+			};
+			const syncNumberPair = (value, fromSlider = false) => {
+				const normalized = normalizeNumberValue(value);
+				numberInput.value = numberInput.step && numberInput.step !== "1" ? String(normalized) : String(Math.round(normalized));
+				numberSlider.value = String(normalized);
+				if (fromSlider) scheduleStrategyParamSubmit();
+			};
+			numberInput.addEventListener("focus", () => field.classList.add("is-open"));
+			numberInput.addEventListener("click", () => field.classList.add("is-open"));
+			numberInput.addEventListener("input", () => {
+				syncNumberPair(numberInput.value);
+				scheduleStrategyParamSubmit();
+			});
+			numberInput.addEventListener("change", () => {
+				syncNumberPair(numberInput.value);
+				scheduleStrategyParamSubmit(80);
+			});
+			numberSlider.addEventListener("focus", () => field.classList.add("is-open"));
+			numberSlider.addEventListener("input", () => {
+				syncNumberPair(numberSlider.value, true);
+			});
+			field.addEventListener("focusout", () => window.setTimeout(() => {
+				if (field.matches(":focus-within")) return;
+				field.classList.remove("is-open");
+				syncNumberPair(numberInput.value);
+			}, 80));
+			syncNumberPair(numberInput.value);
+		}
+
+		const selectInput = field.querySelector("[data-strategy-param-input='select']");
+		if (selectInput instanceof HTMLSelectElement) {
+			selectInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+		}
 	});
+
+	const tradeStrategySelect = $("#trade_strategy");
+	const tradeStrategyParamsField = document.querySelector(".trade-strategy-params-field");
+	let strategySwitchAnimationTimer = null;
+	const pulseStrategySwitch = () => {
+		if (!(tradeStrategySelect instanceof HTMLSelectElement)) return;
+		tradeStrategySelect.classList.remove("is-switching");
+		if (tradeStrategyParamsField instanceof HTMLElement) {
+			tradeStrategyParamsField.classList.remove("is-switching");
+		}
+		void tradeStrategySelect.offsetWidth;
+		tradeStrategySelect.classList.add("is-switching");
+		if (tradeStrategyParamsField instanceof HTMLElement) {
+			tradeStrategyParamsField.classList.add("is-switching");
+		}
+		if (strategySwitchAnimationTimer) window.clearTimeout(strategySwitchAnimationTimer);
+		strategySwitchAnimationTimer = window.setTimeout(() => {
+			tradeStrategySelect.classList.remove("is-switching", "is-pressing");
+			if (tradeStrategyParamsField instanceof HTMLElement) {
+				tradeStrategyParamsField.classList.remove("is-switching");
+			}
+		}, 380);
+	};
+	if (tradeStrategySelect instanceof HTMLSelectElement) {
+		const releaseStrategyPress = () => tradeStrategySelect.classList.remove("is-pressing");
+		tradeStrategySelect.addEventListener("pointerdown", () => {
+			tradeStrategySelect.classList.add("is-pressing");
+		});
+		tradeStrategySelect.addEventListener("pointerup", releaseStrategyPress);
+		tradeStrategySelect.addEventListener("pointercancel", releaseStrategyPress);
+		tradeStrategySelect.addEventListener("blur", releaseStrategyPress);
+		tradeStrategySelect.addEventListener("change", () => {
+			if (!form) return;
+			if (!hasInitialResult) return;
+			pulseStrategySwitch();
+			window.setTimeout(() => form.requestSubmit(), 72);
+		});
+	}
 
 	if (form) {
 		form.addEventListener("submit", async (event) => {

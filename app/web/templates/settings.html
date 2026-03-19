@@ -65,7 +65,7 @@
             <div class="settings-service-row">
                 <div class="settings-service-main">
                     <p class="settings-service-name">{{ row.name }}</p>
-                    <p class="settings-service-note">{{ row.description }}</p>
+                    <p class="settings-service-note">{{ row.category }} · {{ row.description }}</p>
                     {% if row.parameters %}
                     <p class="settings-service-note settings-service-note-params">
                         {% for parameter in row.parameters %}
@@ -195,7 +195,7 @@
                 </table>
             </div>
             {% if local_store_total_pages > 1 %}
-            <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages">
+            <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
                 {% if local_store_prev_slot.page %}
                 <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="settings-page-button settings-page-nav" aria-label="Previous pages">
                     <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -238,3 +238,4 @@
     </div>
 </article>
 {% endblock %}
+ endblock %}

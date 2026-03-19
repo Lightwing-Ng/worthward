@@ -23,11 +23,16 @@
     <div class="field">
         <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
         <select id="trade_strategy" name="strategy" class="trade-strategy-select">
-            {% for strategy in strategy_options %}
-            <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+            {% for group in strategy_option_groups %}
+            <optgroup label="{{ group.label }}">
+                {% for strategy in group['items'] %}
+                <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+                {% endfor %}
+            </optgroup>
             {% endfor %}
         </select>
     </div>
+    {# Dynamic parameter form removed — always use default parameters for selected strategy #}
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>

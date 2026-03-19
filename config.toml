@@ -1,12 +1,12 @@
 [app]
 name = "antigravity"
-version = "v2.10.1"
+version = "v2.11.0"
 debug = true
-updated_on = "12 Mar 2026"
+updated_on = "18 Mar 2026"
 
 [server]
 host = "127.0.0.1"
-port = 5000
+port = 8688
 
 [persistence]
 directory = "market_store"
