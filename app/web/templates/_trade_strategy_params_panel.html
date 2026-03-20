@@ -2,39 +2,9 @@
 <div class="trade-strategy-params-grid" data-trade-strategy-params-grid>
     {% for field in strategy_form_fields %}
     <div class="trade-strategy-param" data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="{{ field.kind }}">
-        {% if field.field_type == "number" and field.kind == "integer" %}
+        {% if field.field_type == "number" %}
         <label for="strategy_param_{{ field.key }}">{{ field.label }}</label>
-        <div class="trade-strategy-number-field trade-strategy-number-field--integer">
-            <div class="trade-strategy-number-row">
-                <input
-                    id="strategy_param_{{ field.key }}"
-                    name="{{ field.key }}"
-                    class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
-                    data-strategy-param-input="number"
-                    type="number"
-                    inputmode="{{ field.input_mode }}"
-                    value="{{ field.value }}"
-                    {% if field.minimum is not none %}min="{{ field.minimum }}"{% endif %}
-                    {% if field.maximum is not none %}max="{{ field.maximum }}"{% endif %}
-                    {% if field.step is not none %}step="{{ field.step }}"{% endif %}
-                    {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
-                >
-            </div>
-            <div class="trade-strategy-slider-shell" aria-hidden="true">
-                <input
-                    class="portfolio-weight-slider"
-                    data-strategy-param-slider
-                    type="range"
-                    min="{{ field.slider_min }}"
-                    max="{{ field.slider_max }}"
-                    step="{{ field.slider_step }}"
-                    value="{{ field.value }}"
-                >
-            </div>
-        </div>
-        {% elif field.field_type == "number" %}
-        <label for="strategy_param_{{ field.key }}">{{ field.label }}</label>
-        <div class="trade-strategy-number-field trade-strategy-number-field--float">
+        <div class="trade-strategy-number-field">
             <div class="trade-strategy-stepper" aria-hidden="true">
                 <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="up" aria-label="Increase value">▲</button>
                 <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="down" aria-label="Decrease value">▼</button>
@@ -43,7 +13,7 @@
                 <input
                     id="strategy_param_{{ field.key }}"
                     name="{{ field.key }}"
-                    class="trade-strategy-number-input trade-strategy-number-input--float"
+                    class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
                     data-strategy-param-input="number"
                     type="number"
                     inputmode="{{ field.input_mode }}"

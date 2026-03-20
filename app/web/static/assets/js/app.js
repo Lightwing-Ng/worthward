@@ -2710,44 +2710,7 @@
 			}
 
 			const numberInput = field.querySelector("[data-strategy-param-input='number']");
-			const numberSlider = field.querySelector("[data-strategy-param-slider]");
-			if (numberInput instanceof HTMLInputElement && numberSlider instanceof HTMLInputElement) {
-				const normalizeNumberValue = (value) => {
-					const parsed = Number.parseFloat(String(value));
-					if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || numberSlider.min || "0") || 0;
-					const min = Number.parseFloat(numberInput.min || numberSlider.min || "");
-					const max = Number.parseFloat(numberInput.max || numberSlider.max || "");
-					let normalized = parsed;
-					if (Number.isFinite(min)) normalized = Math.max(min, normalized);
-					if (Number.isFinite(max)) normalized = Math.min(max, normalized);
-					return normalized;
-				};
-				const syncNumberPair = (value, fromSlider = false) => {
-					const normalized = normalizeNumberValue(value);
-					numberInput.value = numberInput.step && numberInput.step !== "1" ? String(normalized) : String(Math.round(normalized));
-					numberSlider.value = String(normalized);
-					if (fromSlider) scheduleStrategyParamSubmit();
-				};
-				numberInput.addEventListener("focus", () => field.classList.add("is-open"));
-				numberInput.addEventListener("click", () => field.classList.add("is-open"));
-				numberInput.addEventListener("input", () => {
-					syncNumberPair(numberInput.value);
-					scheduleStrategyParamSubmit();
-				});
-				numberInput.addEventListener("change", () => {
-					syncNumberPair(numberInput.value);
-					scheduleStrategyParamSubmit(80);
-				});
-				numberSlider.addEventListener("focus", () => field.classList.add("is-open"));
-				numberSlider.addEventListener("input", () => syncNumberPair(numberSlider.value, true));
-				field.addEventListener("focusout", () => window.setTimeout(() => {
-					if (field.matches(":focus-within")) return;
-					field.classList.remove("is-open");
-					syncNumberPair(numberInput.value);
-				}, 80));
-				syncNumberPair(numberInput.value);
-			}
-			else if (numberInput instanceof HTMLInputElement) {
+			if (numberInput instanceof HTMLInputElement) {
 				const normalizeStandaloneNumber = (value) => {
 					const parsed = Number.parseFloat(String(value));
 					if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || "0") || 0;
