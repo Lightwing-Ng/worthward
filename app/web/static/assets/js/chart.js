@@ -1,6 +1,32 @@
 /* Code version: v3.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const consumeChartWorkspaceRefreshTransition = (viewName) => {
+		const transition = bootstrap.chartWorkspaceRefreshTransition;
+		if (!transition || transition.view !== viewName || !transition.labels?.length) return null;
+		delete bootstrap.chartWorkspaceRefreshTransition;
+		return transition;
+	};
+
+	const buildAlignedSeries = (sourceLabels, sourceValues, targetLabels, fallbackValues) => {
+		if (!Array.isArray(targetLabels) || !targetLabels.length) return [];
+		if (!Array.isArray(sourceLabels) || !sourceLabels.length || !Array.isArray(sourceValues) || !sourceValues.length) {
+			return Array.isArray(fallbackValues) ? [...fallbackValues] : [];
+		}
+		const exactMatchMap = new Map();
+		sourceLabels.forEach((label, index) => {
+			exactMatchMap.set(String(label), Number(sourceValues[index] ?? 0));
+		});
+		return targetLabels.map((label, index) => {
+			const exact = exactMatchMap.get(String(label));
+			if (Number.isFinite(exact)) return exact;
+			if (targetLabels.length === 1) return Number(sourceValues[sourceValues.length - 1] ?? fallbackValues?.[index] ?? 0);
+			const ratio = index / Math.max(1, targetLabels.length - 1);
+			const sourceIndex = Math.round(ratio * Math.max(0, sourceValues.length - 1));
+			const candidate = Number(sourceValues[sourceIndex] ?? fallbackValues?.[index] ?? 0);
+			return Number.isFinite(candidate) ? candidate : 0;
+		});
+	};
 
 	const initChartWorkspace = () => {
 		const state = window.ANTIGRAVITY_APP;
@@ -33,6 +59,8 @@
 		};
 
 		const labels = series[0].dates;
+		const refreshTransition = consumeChartWorkspaceRefreshTransition(state.currentView);
+		const previousSeriesMap = new Map((refreshTransition?.series || []).map((item) => [item.ticker, item]));
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const portfolioLabelMap = {
 			Portfolio: "Portfolio",
@@ -277,14 +305,22 @@
 			]);
 		};
 
-		new Chart(canvas, {
+		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
+		const chart = new Chart(canvas, {
 			type: "line",
 			data: {
 				labels,
 				datasets: series.map((item, index) => ({
 					...baseDatasetStyle,
 					label: item.ticker,
-					data: item.normalized_returns,
+					data: refreshTransition
+						? buildAlignedSeries(
+							previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
+							previousSeriesMap.get(item.ticker)?.values || [],
+							labels,
+							item.normalized_returns,
+						)
+						: item.normalized_returns,
 					borderColor: item.color || theme.accent_primary,
 					pointHoverBackgroundColor: item.color || theme.accent_primary,
 					shadowColor: hexToRgba(item.color || theme.accent_primary, 0.4),
@@ -293,6 +329,7 @@
 				})),
 			},
 			options: {
+				animation: refreshTransition ? false : undefined,
 				responsive: true,
 				maintainAspectRatio: false,
 				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 34, left: 4 } },
@@ -325,6 +362,18 @@
 				},
 			},
 		});
+		if (refreshTransition) {
+			window.requestAnimationFrame(() => {
+				chart.options.animation = {
+					duration: 540,
+					easing: "easeOutCubic",
+				};
+				chart.data.datasets.forEach((dataset, index) => {
+					dataset.data = targetSeriesByIndex[index];
+				});
+				chart.update();
+			});
+		}
 	};
 
 	bootstrap.initChartWorkspace = initChartWorkspace;

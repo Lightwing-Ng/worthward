@@ -225,6 +225,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	--trade-control-input-height: 30px;
 	--strategy-param-field-height: 36px;
 	--strategy-param-control-height: 36px;
+	--strategy-param-scrollbar-idle-ms: 720;
 	--ticker-control-width: 80%;
 	--ticker-validation-gap: 8px;
 	--ticker-validation-arrow-size: 12px;
@@ -441,7 +442,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-controls #exact_panel .date-picker-grid {
 	grid-template-columns: 1fr;
 	grid-auto-rows: var(--trade-control-height);
-	row-gap: 10px;
+	row-gap: 0;
 }
 .trade-controls #exact_panel {
 	height: auto !important;
@@ -749,6 +750,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	border: 1px solid rgba(255, 255, 255, 0.26);
 	z-index: var(--layer-inline-overlay);
 }
+.trade-strategy-params-popover:has(.trade-strategy-param.is-open) {
+	padding-bottom: 58px;
+}
 @keyframes strategySelectSnap {
 	0% { transform: translateY(0) scale(1); }
 	18% { transform: translateY(1px) scale(0.987); }
@@ -770,26 +774,44 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	display: grid;
 	gap: 10px;
 	max-height: min(420px, 58vh);
-	overflow-y: auto;
-	padding-right: 2px;
+	overflow-y: hidden;
+	padding-right: 10px;
 	scrollbar-width: thin;
-	scrollbar-color: rgba(107, 114, 128, 0.62) transparent;
+	scrollbar-gutter: stable both-edges;
+	scrollbar-color: transparent transparent;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior: contain;
 }
+.trade-strategy-params-grid.is-scrollable {
+	overflow-y: auto;
+}
 .trade-strategy-params-grid::-webkit-scrollbar {
-	width: 6px;
+	width: 8px;
+}
+.trade-strategy-params-grid::-webkit-scrollbar-thumb {
+	background: transparent;
+	border-radius: 999px;
+}
+.trade-strategy-params-grid.is-scrolling {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(107, 114, 128, 0.62) transparent;
+}
+.trade-strategy-params-grid.is-scrolling::-webkit-scrollbar {
+	width: 8px;
 }
 .trade-strategy-params-grid::-webkit-scrollbar-track {
 	background: transparent;
 	margin: 4px 0;
 }
 .trade-strategy-params-grid::-webkit-scrollbar-thumb {
-	background: rgba(107, 114, 128, 0.62);
+	background: transparent;
 	border-radius: 999px;
 }
 .trade-strategy-params-grid::-webkit-scrollbar-corner {
 	background: transparent;
+}
+.trade-strategy-params-grid.is-scrolling::-webkit-scrollbar-thumb {
+	background: rgba(107, 114, 128, 0.62);
 }
 .trade-strategy-params-grid:empty {
 	display: none;
@@ -822,10 +844,15 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	min-height: var(--strategy-param-control-height);
 	padding-top: 0;
 	padding-bottom: 0;
-	text-align: left;
+	text-align: right;
 }
 .trade-strategy-number-input {
 	text-align: right;
+}
+.trade-strategy-param-select {
+	text-align: right;
+	text-align-last: right;
+	padding-right: 10px;
 }
 .trade-strategy-number-input--integer {
 	appearance: textfield;
@@ -836,16 +863,92 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	-webkit-appearance: none;
 	margin: 0;
 }
+.trade-strategy-number-input--float {
+	appearance: textfield;
+	-moz-appearance: textfield;
+	padding-right: 10px;
+}
+.trade-strategy-number-input--float::-webkit-outer-spin-button,
+.trade-strategy-number-input--float::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
 .strategy-param-text-control,
 .trade-strategy-number-field {
 	position: relative;
 	grid-column: 2;
+}
+.trade-strategy-number-field {
+	display: grid;
+	grid-template-columns: 20px minmax(0, 1fr);
+	column-gap: 4px;
+	align-items: stretch;
+	position: relative;
+}
+.trade-strategy-number-field::before {
+	content: "";
+	grid-column: 1;
+}
+.trade-strategy-number-field--float .trade-strategy-stepper {
+	grid-column: 1;
+}
+.trade-strategy-number-field--float .trade-strategy-number-row {
+	grid-column: 2;
+}
+.trade-strategy-number-field--integer .trade-strategy-number-row {
+	grid-column: 2;
+}
+.trade-strategy-number-field--integer .trade-strategy-slider-shell {
+	left: calc(-65% - 12px);
+	right: 0;
+	width: auto;
 }
 .trade-strategy-number-row {
 	min-height: var(--strategy-param-field-height);
 }
 .trade-strategy-param-select {
 	grid-column: 2;
+}
+.trade-strategy-stepper {
+	display: grid;
+	grid-template-rows: 1fr 1fr;
+	width: 20px;
+	height: var(--strategy-param-control-height);
+	border-radius: 8px;
+	overflow: hidden;
+	background: rgba(148, 163, 184, 0.16);
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity 160ms var(--motion-standard), visibility 160ms var(--motion-standard);
+}
+.trade-strategy-param.is-open .trade-strategy-stepper,
+.trade-strategy-param:focus-within .trade-strategy-stepper {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+}
+.trade-strategy-stepper-button {
+	width: 20px;
+	min-width: 20px;
+	height: 18px;
+	min-height: 18px;
+	padding: 0;
+	border-radius: 0;
+	background: transparent;
+	color: rgba(71, 85, 105, 0.92);
+	font-size: 9px;
+	font-weight: var(--font-weight-bold);
+	line-height: 1;
+}
+.trade-strategy-stepper-button + .trade-strategy-stepper-button {
+	border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+.trade-strategy-stepper-button:hover,
+.trade-strategy-stepper-button:focus-visible {
+	transform: none;
+	background: rgba(255, 255, 255, 0.42);
+	box-shadow: none;
 }
 .trade-strategy-slider-shell {
 	position: absolute;
@@ -1989,6 +2092,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	height: 100%;
 	min-height: 0;
 	border-radius: var(--radius-panel);
+	overflow: hidden;
 }
 .trade-chart-panel canvas { width: 100% !important; height: 100% !important; flex: 1 1 auto; min-height: 0; }
 .sidebar-dock { position: fixed; left: 0; bottom: 18px; transform: translateX(-50%); z-index: var(--layer-fixed-dock); display: flex; align-items: center; gap: 6px; width: fit-content; padding: 6px; border-radius: 999px; min-height: 0; pointer-events: auto; background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); isolation: isolate; }

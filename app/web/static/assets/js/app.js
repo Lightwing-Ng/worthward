@@ -2,6 +2,7 @@
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
+	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
 	const { defaults, labels, endpoints, constraints, theme } = state;
 	const isPortfolioView = state.currentView === "portfolio";
@@ -25,6 +26,7 @@
 	let compareOverlayTimer = null;
 	let activeWorkspaceHydration = null;
 	let workspaceHydrationToken = 0;
+	let pendingWorkspaceChartTransition = null;
 	const datePickerState = [];
 	let validTradingDateSet = null;
 	const portfolioWeightState = {
@@ -100,6 +102,51 @@
 		const value = await response.json();
 		progressiveResourceCache.set(cacheKey, { cachedAt: now, value });
 		return value;
+	};
+
+	const requestWorkspaceChartTransition = (reason) => {
+		pendingWorkspaceChartTransition = {
+			view: state.currentView,
+			reason,
+			requestedAt: performance.now(),
+		};
+	};
+
+	const clearWorkspaceChartTransitionRequest = () => {
+		pendingWorkspaceChartTransition = null;
+	};
+
+	const captureLineChartRefreshTransition = () => {
+		if (!Array.isArray(state.chart?.series) || !state.chart.series.length) {
+			delete bootstrap.chartWorkspaceRefreshTransition;
+			return;
+		}
+		bootstrap.chartWorkspaceRefreshTransition = {
+			view: state.currentView,
+			capturedAt: performance.now(),
+			labels: [...(state.chart.series[0]?.dates || [])],
+			series: state.chart.series.map((item) => ({
+				ticker: item.ticker,
+				dates: [...(item.dates || [])],
+				values: [...(item.normalized_returns || [])],
+			})),
+		};
+	};
+
+	const captureTradeMessagesRefreshTransition = () => {
+		if (!isTradeMessagesView || !state.tradeBacktest?.chart) return;
+		const chartState = state.tradeBacktest.chart;
+		if (!Array.isArray(chartState.dates) || !chartState.dates.length) {
+			delete bootstrap.tradeMessagesRefreshTransition;
+			return;
+		}
+		bootstrap.tradeMessagesRefreshTransition = {
+			capturedAt: performance.now(),
+			labels: [...chartState.dates],
+			close: Array.isArray(chartState.close) ? [...chartState.close] : [],
+			equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
+			initialCapital: Number(state.tradeBacktest.summary?.initial_capital || 0),
+		};
 	};
 
 	const appShell = $(".app-shell");
@@ -1367,6 +1414,7 @@
 				rebalancePortfolioWeights(index);
 				dispatchPortfolioPreviewUpdate();
 				validatePortfolioWeightInputs();
+				requestWorkspaceChartTransition("portfolio-weight");
 				scheduleAutoSubmit(180);
 			};
 			const openSlider = () => field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
@@ -1653,6 +1701,7 @@
 		};
 
 		input.addEventListener("input", async () => {
+			if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
 			hideTickerValidationTooltip(input);
 			input.dataset.logoUrl = "";
 			input.dataset.symbol = "";
@@ -1726,6 +1775,7 @@
 			}
 		});
 		input.addEventListener("change", () => {
+			if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
 			validateAllTickerInputs();
 			void validateTickerExistence(input, { preferFresh: true });
 			syncDateConstraints();
@@ -1814,6 +1864,7 @@
 			if (button.dataset.bound === "1") return;
 			button.dataset.bound = "1";
 			button.addEventListener("click", () => {
+				if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
 				const field = button.closest(".ticker-field");
 				const removedWeight = isPortfolioView
 					? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
@@ -2274,25 +2325,32 @@
 	syncDateConstraints();
 	scheduleDockPosition();
 
-	$("#add_ticker")?.addEventListener("click", () => addTickerField());
+	$("#add_ticker")?.addEventListener("click", () => {
+		if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
+		addTickerField();
+	});
 	rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
 		updateRangePanels();
 		syncDateConstraints();
+		if (!isTradeMessagesView) requestWorkspaceChartTransition("range-mode");
 		scheduleAutoSubmit();
 	}));
 	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
 		if (!input) return;
 		input.addEventListener("change", () => {
 			syncDateConstraints();
+			if (!isTradeMessagesView) requestWorkspaceChartTransition("range-controls");
 			scheduleAutoSubmit();
 		});
 	});
 	if (includeDividendsInput && form) {
 		includeDividendsInput.addEventListener("change", () => {
+			if (!isTradeMessagesView) requestWorkspaceChartTransition("dividends");
 			scheduleAutoSubmit(80);
 		});
 	}
 	$("#period")?.addEventListener("change", () => {
+		if (!isTradeMessagesView) requestWorkspaceChartTransition("period");
 		scheduleAutoSubmit();
 	});
 
@@ -2342,6 +2400,7 @@
 	const tradeStrategyPanel = document.querySelector("[data-trade-strategy-panel]");
 	let strategySwitchAnimationTimer = null;
 	let strategyFieldsRequestToken = 0;
+	let strategyScrollbarIdleTimer = 0;
 
 	const scheduleStrategyParamSubmit = (delay = 160) => {
 		if (!hasInitialResult) return;
@@ -2372,11 +2431,47 @@
 		const dock = document.querySelector(".sidebar-dock");
 		const rootStyles = getComputedStyle(document.documentElement);
 		const pageEdgePad = Number.parseFloat(rootStyles.getPropertyValue("--page-edge-pad")) || 10;
+		const panelStyles = getComputedStyle(tradeStrategyPanel);
 		const lowerBoundary = dock instanceof HTMLElement
 			? Math.min(sidebarRect.bottom, dock.getBoundingClientRect().top) - pageEdgePad
 			: sidebarRect.bottom - pageEdgePad;
 		const availableHeight = Math.max(160, lowerBoundary - panelRect.bottom);
+		const panelGrid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+		if (panelGrid instanceof HTMLElement) {
+			const verticalChrome = (Number.parseFloat(panelStyles.paddingTop) || 0)
+				+ (Number.parseFloat(panelStyles.paddingBottom) || 0);
+			const gridMaxHeight = Math.max(96, availableHeight - verticalChrome);
+			panelGrid.style.maxHeight = `${Math.round(gridMaxHeight)}px`;
+			const contentHeight = Math.ceil(panelGrid.scrollHeight);
+			const needsScroll = contentHeight > Math.round(gridMaxHeight);
+			panelGrid.classList.toggle("is-scrollable", needsScroll);
+			if (!needsScroll) {
+				panelGrid.classList.remove("is-scrolling");
+				if (strategyScrollbarIdleTimer) {
+					window.clearTimeout(strategyScrollbarIdleTimer);
+					strategyScrollbarIdleTimer = 0;
+				}
+			}
+			const desiredPanelHeight = Math.min(availableHeight, contentHeight + verticalChrome);
+			tradeStrategyPanel.style.height = `${Math.round(desiredPanelHeight)}px`;
+			tradeStrategyPanel.style.maxHeight = `${Math.round(availableHeight)}px`;
+			return;
+		}
+		tradeStrategyPanel.style.height = "";
 		tradeStrategyPanel.style.maxHeight = `${Math.round(availableHeight)}px`;
+	};
+
+	const setStrategyPanelScrollingState = () => {
+		if (!(tradeStrategyPanel instanceof HTMLElement)) return;
+		const grid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+		if (!(grid instanceof HTMLElement)) return;
+		if (!grid.classList.contains("is-scrollable")) return;
+		grid.classList.add("is-scrolling");
+		const idleMs = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--strategy-param-scrollbar-idle-ms")) || 720;
+		if (strategyScrollbarIdleTimer) window.clearTimeout(strategyScrollbarIdleTimer);
+		strategyScrollbarIdleTimer = window.setTimeout(() => {
+			grid.classList.remove("is-scrolling");
+		}, idleMs);
 	};
 
 	const setTradeStrategyPanelOpen = (isOpen) => {
@@ -2395,10 +2490,22 @@
 			positionTradeStrategyPanel();
 		} else {
 			tradeStrategyPanel.style.maxHeight = "";
+			tradeStrategyPanel.style.height = "";
+			const panelGrid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+			if (panelGrid instanceof HTMLElement) {
+				panelGrid.style.maxHeight = "";
+				panelGrid.classList.remove("is-scrollable", "is-scrolling");
+			}
 		}
 	};
 
 	const initStrategyParamControls = (root = document) => {
+		const panelGrid = root.querySelector?.("[data-trade-strategy-params-grid]");
+		if (panelGrid instanceof HTMLElement && panelGrid.dataset.strategyScrollBound !== "1") {
+			panelGrid.dataset.strategyScrollBound = "1";
+			panelGrid.classList.remove("is-scrolling");
+			panelGrid.addEventListener("scroll", setStrategyPanelScrollingState, { passive: true });
+		}
 		const fields = Array.from(root.querySelectorAll("[data-strategy-param-key]"));
 		fields.forEach((field) => {
 			if (!(field instanceof HTMLElement) || field.dataset.strategyParamBound === "1") return;
@@ -2449,8 +2556,52 @@
 				syncNumberPair(numberInput.value);
 			}
 			else if (numberInput instanceof HTMLInputElement) {
+				const normalizeStandaloneNumber = (value) => {
+					const parsed = Number.parseFloat(String(value));
+					if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || "0") || 0;
+					const min = Number.parseFloat(numberInput.min || "");
+					const max = Number.parseFloat(numberInput.max || "");
+					let normalized = parsed;
+					if (Number.isFinite(min)) normalized = Math.max(min, normalized);
+					if (Number.isFinite(max)) normalized = Math.min(max, normalized);
+					return normalized;
+				};
+				const stepValue = () => {
+					const parsed = Number.parseFloat(numberInput.step || "0.1");
+					return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.1;
+				};
+				const formatStandaloneNumber = (value) => {
+					const stepText = String(numberInput.step || "");
+					const decimals = stepText.includes(".") ? stepText.split(".")[1].length : 0;
+					return decimals > 0 ? value.toFixed(decimals) : String(value);
+				};
+				const syncStandaloneNumber = (value) => {
+					const normalized = normalizeStandaloneNumber(value);
+					numberInput.value = formatStandaloneNumber(normalized);
+					return normalized;
+				};
+				field.querySelectorAll("[data-strategy-stepper]").forEach((button) => {
+					if (!(button instanceof HTMLButtonElement)) return;
+					button.addEventListener("click", () => {
+						const delta = button.dataset.strategyStepper === "down" ? -stepValue() : stepValue();
+						const currentValue = Number.parseFloat(numberInput.value || "0") || 0;
+						syncStandaloneNumber(currentValue + delta);
+						scheduleStrategyParamSubmit(80);
+					});
+				});
+				numberInput.addEventListener("focus", () => field.classList.add("is-open"));
+				numberInput.addEventListener("click", () => field.classList.add("is-open"));
 				numberInput.addEventListener("input", () => scheduleStrategyParamSubmit());
-				numberInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+				numberInput.addEventListener("change", () => {
+					syncStandaloneNumber(numberInput.value);
+					scheduleStrategyParamSubmit(80);
+				});
+				field.addEventListener("focusout", () => window.setTimeout(() => {
+					if (field.matches(":focus-within")) return;
+					field.classList.remove("is-open");
+					syncStandaloneNumber(numberInput.value);
+				}, 80));
+				syncStandaloneNumber(numberInput.value);
 			}
 
 			const booleanInput = field.querySelector("[data-strategy-param-input='boolean']");
@@ -2607,6 +2758,14 @@
 					iconClass: "icon-overlay-local-cache",
 				});
 			}
+			if (state.currentView === "trade-messages") {
+				captureTradeMessagesRefreshTransition();
+			} else if (pendingWorkspaceChartTransition?.view === state.currentView) {
+				captureLineChartRefreshTransition();
+			} else {
+				delete bootstrap.chartWorkspaceRefreshTransition;
+			}
+			clearWorkspaceChartTransitionRequest();
 			applyPendingWorkspaceMarkup();
 			try {
 				const hydrated = await hydrateWorkspaceFromUrl(nextUrl);

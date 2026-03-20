@@ -341,6 +341,17 @@ def register_routes(app: Flask) -> None:
         ]
 
     def build_strategy_form_field(definition: StrategyParameterDefinition, value: Any) -> dict[str, object]:
+        def format_numeric_value(raw_value: Any, *, kind: str, step: Any) -> Any:
+            if kind != "number":
+                return raw_value
+            try:
+                numeric_value = float(raw_value)
+            except (TypeError, ValueError):
+                return raw_value
+            step_text = "" if step is None else str(step)
+            decimals = len(step_text.split(".", 1)[1]) if "." in step_text else 1
+            return f"{numeric_value:.{decimals}f}"
+
         resolved_value = definition.default if value is None else value
         field_type = "select"
         input_mode = "text"
@@ -388,7 +399,7 @@ def register_routes(app: Flask) -> None:
             "kind": definition.kind,
             "field_type": field_type,
             "input_mode": input_mode,
-            "value": resolved_value,
+            "value": format_numeric_value(resolved_value, kind=definition.kind, step=definition.step),
             "default": definition.default,
             "minimum": definition.minimum,
             "maximum": definition.maximum,

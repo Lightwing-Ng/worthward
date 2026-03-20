@@ -1,6 +1,77 @@
-/* Code version: v1.9.0 */
+/* Code version: v1.11.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+
+	const consumeTradeMessagesRefreshTransition = () => {
+		const transition = bootstrap.tradeMessagesRefreshTransition;
+		if (!transition?.labels?.length) return null;
+		delete bootstrap.tradeMessagesRefreshTransition;
+		return transition;
+	};
+
+	const buildAlignedSeries = (sourceLabels, sourceValues, targetLabels, fallbackValues) => {
+		if (!Array.isArray(targetLabels) || !targetLabels.length) return [];
+		if (!Array.isArray(sourceLabels) || !sourceLabels.length || !Array.isArray(sourceValues) || !sourceValues.length) {
+			return Array.isArray(fallbackValues) ? [...fallbackValues] : [];
+		}
+		const exactMatchMap = new Map();
+		sourceLabels.forEach((label, index) => {
+			exactMatchMap.set(String(label), Number(sourceValues[index] ?? 0));
+		});
+		return targetLabels.map((label, index) => {
+			const exact = exactMatchMap.get(String(label));
+			if (Number.isFinite(exact)) return exact;
+			if (targetLabels.length === 1) {
+				return Number(sourceValues[sourceValues.length - 1] ?? fallbackValues?.[index] ?? 0);
+			}
+			const ratio = index / Math.max(1, targetLabels.length - 1);
+			const sourceIndex = Math.round(ratio * Math.max(0, sourceValues.length - 1));
+			const candidate = Number(sourceValues[sourceIndex] ?? fallbackValues?.[index] ?? 0);
+			return Number.isFinite(candidate) ? candidate : 0;
+		});
+	};
+
+	const buildAllInSeries = (closeSeries, capital) => {
+		const initialCapital = Number(capital || 0);
+		if (!Array.isArray(closeSeries) || !closeSeries.length || !Number.isFinite(initialCapital)) return [];
+		const openingPrice = Number(closeSeries[0] || 0);
+		if (!(openingPrice > 0)) return closeSeries.map(() => initialCapital);
+		const shares = Math.floor(initialCapital / openingPrice);
+		const cash = initialCapital - (shares * openingPrice);
+		return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
+	};
+
+	const animateTradeMessagesRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity) => {
+		if (!priceChart || !equityChart || !transition) return;
+		const nextLabels = priceChart.data.labels || [];
+		const fromClose = buildAlignedSeries(transition.labels, transition.close, nextLabels, nextClose);
+		const fromEquity = buildAlignedSeries(transition.labels, transition.equity, nextLabels, nextEquity);
+		const fromAllIn = buildAlignedSeries(
+			transition.labels,
+			buildAllInSeries(transition.close, transition.initialCapital),
+			nextLabels,
+			buildAllInSeries(nextClose, transition.initialCapital),
+		);
+
+		priceChart.data.datasets[0].data = fromClose;
+		equityChart.data.datasets[0].data = fromEquity;
+		equityChart.data.datasets[1].data = fromAllIn;
+		priceChart.update("none");
+		equityChart.update("none");
+
+		window.requestAnimationFrame(() => {
+			const animationConfig = {
+				duration: 540,
+				easing: "easeOutCubic",
+			};
+			priceChart.options.animation = animationConfig;
+			equityChart.options.animation = animationConfig;
+			priceChart.data.datasets[0].data = nextClose;
+			equityChart.data.datasets[0].data = nextEquity;
+			priceChart.update();
+			equityChart.update();
+		});
+	};
 
 	const initTradeMessagesWorkspace = () => {
 		const state = window.ANTIGRAVITY_APP;
@@ -277,17 +348,29 @@
 			});
 		};
 
+		const refreshTransition = consumeTradeMessagesRefreshTransition();
+		const priceSeriesStart = refreshTransition
+			? buildAlignedSeries(refreshTransition.labels, refreshTransition.close, labels, close)
+			: close;
+		const equitySeriesStart = refreshTransition
+			? buildAlignedSeries(refreshTransition.labels, refreshTransition.equity, labels, equity)
+			: equity;
+
 		priceChart = new Chart(priceCanvas, {
 			type: "line",
 			data: {
 				labels,
 				datasets: [
-					{ label: "Close", data: close, borderColor: theme.accent_primary, borderWidth: 2.5, pointRadius: 0, tension: 0.18 },
+					{ label: "Close", data: priceSeriesStart, borderColor: theme.accent_primary, borderWidth: 2.5, pointRadius: 0, tension: 0.18 },
 					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#16a34a" },
 					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#dc2626" },
 				],
 			},
-			options: { ...commonOptions, scales: { ...commonOptions.scales, x: { ...commonOptions.scales.x, display: false } } },
+			options: {
+				...commonOptions,
+				animation: refreshTransition ? false : undefined,
+				scales: { ...commonOptions.scales, x: { ...commonOptions.scales.x, display: false } },
+			},
 			plugins: [],
 		});
 
@@ -298,7 +381,7 @@
 				datasets: [
 					{
 						label: "Equity",
-						data: equity,
+						data: equitySeriesStart,
 						borderWidth: 2.5,
 						pointRadius: 0,
 						tension: 0.18,
@@ -312,12 +395,18 @@
 					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0.18 },
 				],
 			},
-			options: commonOptions,
+			options: {
+				...commonOptions,
+				animation: refreshTransition ? false : undefined,
+			},
 			plugins: [referenceLinePlugin, xAxisLabelPlugin],
 		});
 
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
+		if (refreshTransition) {
+			animateTradeMessagesRefreshTransition(priceChart, equityChart, refreshTransition, close, equity);
+		}
 	};
 
 	bootstrap.initTradeMessagesWorkspace = initTradeMessagesWorkspace;
