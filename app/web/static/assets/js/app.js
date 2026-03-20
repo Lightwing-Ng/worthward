@@ -121,7 +121,7 @@
 		if ("inert" in appSidebar) appSidebar.inert = false;
 		sidebarToggle.addEventListener("click", () => {
 			isSidebarOpen = !isSidebarOpen;
-			sidebarToggle.setAttribute("aria-hidden", "false"); // keep toggle visible to SR
+			sidebarToggle.setAttribute("aria-hidden", "false");
 			sidebarToggle.setAttribute("aria-expanded", String(isSidebarOpen));
 			appShell.classList.toggle("is-sidebar-open", isSidebarOpen);
 			appShell.classList.toggle("is-sidebar-collapsed", !isSidebarOpen);
@@ -133,6 +133,36 @@
 			isSidebarAnimating = true;
 			animateDock();
 			setTimeout(() => { isSidebarAnimating = false; scheduleDockPosition(); }, 650);
+		});
+	}
+
+	const timingLayoutRow = $("#timing_layout_row");
+	const timingShell = $("#timing_shell");
+	const timingListShell = $("#timing_list_shell");
+	const timingListToggle = $("#timing_list_toggle");
+	const timingToggleIcon = timingListToggle ? timingListToggle.querySelector(".icon-timing-toggle") : null;
+	const timingSuggestionsPanel = $("#timing_suggestions_panel");
+	if (timingListShell && timingListToggle && timingSuggestionsPanel) {
+		let isTimingListOpen = true;
+		timingSuggestionsPanel.setAttribute("aria-hidden", "false");
+		if ("inert" in timingSuggestionsPanel) timingSuggestionsPanel.inert = false;
+		const syncTimingListState = () => {
+			timingListToggle.setAttribute("aria-expanded", String(isTimingListOpen));
+			timingListShell.classList.toggle("is-open", isTimingListOpen);
+			timingListShell.classList.toggle("is-collapsed", !isTimingListOpen);
+			timingShell?.classList.toggle("is-list-collapsed", !isTimingListOpen);
+			timingLayoutRow?.classList.toggle("is-list-collapsed", !isTimingListOpen);
+			timingSuggestionsPanel.setAttribute("aria-hidden", String(!isTimingListOpen));
+			if ("inert" in timingSuggestionsPanel) timingSuggestionsPanel.inert = !isTimingListOpen;
+			if (timingToggleIcon) {
+				timingToggleIcon.classList.toggle("icon-timing-toggle-right", isTimingListOpen);
+				timingToggleIcon.classList.toggle("icon-timing-toggle-left", !isTimingListOpen);
+			}
+		};
+		syncTimingListState();
+		timingListToggle.addEventListener("click", () => {
+			isTimingListOpen = !isTimingListOpen;
+			syncTimingListState();
 		});
 	}
 

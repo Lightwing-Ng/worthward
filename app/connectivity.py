@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v1.4.0
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -27,6 +27,9 @@ REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
 _remote_market_access_cache: tuple[float, bool] | None = None
 _remote_logo_access_cache: tuple[float, bool] | None = None
+_tradingview_ta_cache: tuple[float, bool] | None = None
+TRADINGVIEW_TA_SUCCESS_TTL_SECONDS = 86400
+TRADINGVIEW_TA_FAILURE_TTL_SECONDS = 300
 
 
 def _cached_connectivity_value(
@@ -124,7 +127,51 @@ def has_remote_logo_access() -> bool:
     return False
 
 
+def has_tradingview_ta_available() -> bool:
+    """Check if the tradingview-ta library is installed and importable."""
+    global _tradingview_ta_cache
+
+    cached_value = _cached_connectivity_value(
+        _tradingview_ta_cache,
+        success_ttl=TRADINGVIEW_TA_SUCCESS_TTL_SECONDS,
+        failure_ttl=TRADINGVIEW_TA_FAILURE_TTL_SECONDS,
+    )
+    if cached_value is not None:
+        return cached_value
+
+    try:
+        import tradingview_ta  # noqa: F401
+        _tradingview_ta_cache = (monotonic(), True)
+        return True
+    except ImportError:
+        _tradingview_ta_cache = (monotonic(), False)
+        return False
+
+
+def fetch_tradingview_metrics(symbol: str, *, screener: str = "america", exchange: str = "NASDAQ") -> dict[str, object]:
+    """Fetch a broad set of TradingView TA metrics for a ticker."""
+    from tradingview_ta import Interval, TA_Handler
+
+    handler = TA_Handler(
+        symbol=symbol,
+        screener=screener,
+        exchange=exchange,
+        interval=Interval.INTERVAL_1_DAY,
+    )
+    analysis = handler.get_analysis()
+    return {
+        "symbol": symbol,
+        "screener": screener,
+        "exchange": exchange,
+        "summary": analysis.summary,
+        "oscillators": analysis.oscillators,
+        "moving_averages": analysis.moving_averages,
+        "indicators": analysis.indicators,
+    }
+
+
 def reset_connectivity_caches() -> None:
-    global _remote_market_access_cache, _remote_logo_access_cache
+    global _remote_market_access_cache, _remote_logo_access_cache, _tradingview_ta_cache
     _remote_market_access_cache = None
     _remote_logo_access_cache = None
+    _tradingview_ta_cache = None

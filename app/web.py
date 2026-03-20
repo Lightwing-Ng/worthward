@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.21.0
+Code version: v3.21.1
 """
 
 from __future__ import annotations
@@ -19,7 +19,13 @@ from .email_settings import SmtpSettings, load_smtp_settings, sanitize_smtp_sett
 from strategies.backtest import run_single_ticker_backtest
 from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies
-from .connectivity import has_remote_logo_access, has_remote_market_access, reset_connectivity_caches
+from .connectivity import (
+    fetch_tradingview_metrics,
+    has_remote_logo_access,
+    has_remote_market_access,
+    has_tradingview_ta_available,
+    reset_connectivity_caches,
+)
 from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
 from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
@@ -47,7 +53,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
-SUPPORTED_MORE_SECTIONS = {"overview"}
+SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
@@ -282,6 +288,14 @@ def register_routes(app: Flask) -> None:
                 "meta": "UI",
             },
         ]
+
+    def build_more_timing_url(selected_ticker: str | None = None) -> str:
+        base_path = build_more_path("timing")
+        normalized_ticker = normalize_ticker_input(selected_ticker or "")
+        if not normalized_ticker:
+            return base_path
+        query_string = urlencode({"ticker": normalized_ticker})
+        return f"{base_path}?{query_string}"
 
     def build_local_store_page_url(page_number: int) -> str:
         params = request.args.to_dict(flat=False)
@@ -528,12 +542,22 @@ def register_routes(app: Flask) -> None:
                     "is_available": False,
                     "is_pending": True,
                 },
+                {
+                    "key": "tradingview-ta",
+                    "name": "tradingview-ta",
+                    "status": "Checking...",
+                    "note": "Checking if the tradingview-ta library is installed.",
+                    "is_available": False,
+                    "is_pending": True,
+                },
             ]
 
         remote_market_access = has_remote_market_access()
         remote_logo_access = has_remote_logo_access()
+        tradingview_ta_available = has_tradingview_ta_available()
         remote_market_access = bool(remote_market_access)
         remote_logo_access = bool(remote_logo_access)
+        tradingview_ta_available = bool(tradingview_ta_available)
         return [
             {
                 "key": "market",
@@ -557,6 +581,18 @@ def register_routes(app: Flask) -> None:
                     else "Remote logo sources are blocked here, so only logos already stored locally will appear."
                 ),
                 "is_available": remote_logo_access,
+                "is_pending": False,
+            },
+            {
+                "key": "tradingview-ta",
+                "name": "tradingview-ta",
+                "status": labels["service_ok"] if tradingview_ta_available else labels["service_down"],
+                "note": (
+                    "The tradingview-ta library is installed, so TradingView technical analysis indicators can be used."
+                    if tradingview_ta_available
+                    else "The tradingview-ta library is not installed, so features requiring it will be unavailable."
+                ),
+                "is_available": tradingview_ta_available,
                 "is_pending": False,
             },
         ]
@@ -991,6 +1027,13 @@ def register_routes(app: Flask) -> None:
             notice = "Using bundled local market_store data because remote market access is unavailable."
             notice_is_floating = True
 
+        top_tickers = []
+        timing_selected_ticker = ""
+        timing_metrics = []
+        timing_summary = []
+        timing_market = {}
+        timing_error = ""
+
         if current_view == "settings":
             if settings_section == "local-market-store" and notice and not error:
                 notice_is_floating = True
@@ -1013,6 +1056,141 @@ def register_routes(app: Flask) -> None:
                 )
         elif current_view == "more":
             more_cards = build_more_cards(more_section)
+            top_tickers = []
+            timing_selected_ticker = ""
+            timing_metrics = []
+            timing_summary = []
+            timing_error = ""
+            timing_market = {}
+            if more_section == "timing":
+                from app.storage import TICKER_USAGE_STORE_PATH
+                usage_path = TICKER_USAGE_STORE_PATH
+                if usage_path.exists():
+                    import json
+                    with usage_path.open("r", encoding="utf-8") as f:
+                        usage_data = json.load(f)
+                    sorted_tickers = sorted(
+                        usage_data.items(),
+                        key=lambda item: item[1].get("count", 0),
+                        reverse=True,
+                    )
+                    for ticker, item in sorted_tickers:
+                        count = item.get("count", 0)
+                        if count <= 0:
+                            continue
+                        profile_snapshot = load_local_profile_snapshot(ticker)
+                        company_name = profile_snapshot[0] if profile_snapshot else ticker
+                        logo_url = profile_snapshot[1] if profile_snapshot else ""
+                        top_tickers.append(
+                            {
+                                "ticker": ticker,
+                                "count": count,
+                                "company_name": company_name,
+                                "logo_url": logo_url,
+                                "url": build_more_timing_url(ticker),
+                            }
+                        )
+                        if len(top_tickers) >= 50:
+                            break
+                timing_selected_ticker = normalize_ticker_input(request.args.get("ticker", "MU")) or "MU"
+                if top_tickers and timing_selected_ticker not in {item["ticker"] for item in top_tickers}:
+                    timing_selected_ticker = top_tickers[0]["ticker"]
+                try:
+                    tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
+                    default_screener = str(tradingview_settings.get("default_screener", "america"))
+                    default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
+                    screener_overrides = tradingview_settings.get("screener_overrides", {}) or {}
+                    exchange_overrides = tradingview_settings.get("exchange_overrides", {}) or {}
+                    selected_screener = str(screener_overrides.get(timing_selected_ticker, default_screener))
+                    selected_exchange = str(exchange_overrides.get(timing_selected_ticker, default_exchange))
+                    analysis = fetch_tradingview_metrics(
+                        timing_selected_ticker,
+                        screener=selected_screener,
+                        exchange=selected_exchange,
+                    )
+                    summary = analysis.get("summary", {}) or {}
+                    oscillators = (analysis.get("oscillators", {}) or {}).get("COMPUTE", {}) or {}
+                    moving_averages = (analysis.get("moving_averages", {}) or {}).get("COMPUTE", {}) or {}
+                    indicators = analysis.get("indicators", {}) or {}
+                    timing_market = {
+                        "exchange": str(analysis.get("exchange", "NASDAQ")),
+                        "screener": str(analysis.get("screener", "america")),
+                    }
+                    timing_summary = [
+                        {"label": "Recommendation", "value": str(summary.get("RECOMMENDATION", "N/A"))},
+                        {"label": "Buy", "value": str(summary.get("BUY", "0"))},
+                        {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
+                        {"label": "Sell", "value": str(summary.get("SELL", "0"))},
+                    ]
+
+                    def format_metric_value(value: object) -> str:
+                        if isinstance(value, bool):
+                            return "True" if value else "False"
+                        if isinstance(value, int):
+                            return f"{value:,}" if abs(value) >= 1000 else str(value)
+                        if isinstance(value, float):
+                            if value.is_integer():
+                                integer_value = int(value)
+                                return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
+                            return f"{value:,.2f}"
+                        return str(value)
+                    preferred_metric_keys = [
+                        "close",
+                        "open",
+                        "volume",
+                        "RSI",
+                        "RSI[1]",
+                        "Stoch.K",
+                        "Stoch.D",
+                        "CCI20",
+                        "ADX",
+                        "AO",
+                        "Mom",
+                        "MACD.macd",
+                        "MACD.signal",
+                        "Rec.Stoch.RSI",
+                        "Rec.WR",
+                        "Rec.BBPower",
+                        "EMA5",
+                        "EMA10",
+                        "EMA20",
+                        "EMA30",
+                        "EMA50",
+                        "EMA100",
+                        "EMA200",
+                        "SMA10",
+                        "SMA20",
+                        "SMA50",
+                        "SMA100",
+                        "SMA200",
+                        "VWMA",
+                        "HullMA9",
+                        "Pivot.M.Classic.S1",
+                        "Pivot.M.Classic.R1",
+                        "BB.lower",
+                        "BB.upper",
+                    ]
+                    metric_rows = []
+                    for key in preferred_metric_keys:
+                        if key not in indicators:
+                            continue
+                        value = indicators.get(key)
+                        metric_rows.append({"label": key, "value": format_metric_value(value)})
+                    for key, value in oscillators.items():
+                        metric_rows.append({"label": f"Oscillator · {key}", "value": format_metric_value(value)})
+                    for key, value in moving_averages.items():
+                        metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
+                    seen_labels = set()
+                    deduped_metric_rows = []
+                    for row in metric_rows:
+                        if row["label"] in seen_labels:
+                            continue
+                        seen_labels.add(row["label"])
+                        deduped_metric_rows.append(row)
+                    timing_metrics = deduped_metric_rows
+                except Exception as exc:
+                    timing_error = str(exc)
+
 
         if current_view == "trade-messages":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -1061,6 +1239,12 @@ def register_routes(app: Flask) -> None:
             current_view=current_view,
             settings_section=settings_section,
             more_section=more_section,
+            top_tickers=top_tickers,
+            timing_selected_ticker=timing_selected_ticker,
+            timing_metrics=timing_metrics,
+            timing_summary=timing_summary,
+            timing_market=timing_market,
+            timing_error=timing_error,
             remote_market_access=remote_market_access,
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
@@ -1078,7 +1262,7 @@ def register_routes(app: Flask) -> None:
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("overview",)},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,

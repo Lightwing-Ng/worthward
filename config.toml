@@ -93,6 +93,7 @@ more_title = "More"
 more_overview = "Overview"
 more_workflows = "Workflows"
 more_library = "Library"
+more_timing = "Timing"
 local_store_summary = "Bundled local market data available in this workspace."
 email_smtp_summary = "Configure the Outlook SMTP relay used for strategy-trade notifications. Enter your Outlook email and password, and the app will use that same address for SMTP login."
 email_smtp_host = "SMTP host"
@@ -137,6 +138,9 @@ glass_highlight = "rgba(255, 255, 255, 0.55)"
 radius_shell = "10px"
 radius_panel = "10px"
 radius_control = "10px"
+trade_capital_slider_radius = "10px"
+timing_list_panel_radius = "10px"
+timing_list_item_inline_pad = "10px"
 
 [ui.chart]
 zero_line_color = "rgba(160, 167, 178, 0.85)"
@@ -154,3 +158,26 @@ point_hit_radius = 18
 search_size = 18
 card_size = 20
 tooltip_size = 16
+
+[integrations.tradingview_ta]
+default_screener = "america"
+default_exchange = "NASDAQ"
+
+[integrations.tradingview_ta.screener_overrides]
+TSM = "taiwan"
+NVO = "america"
+
+[integrations.tradingview_ta.exchange_overrides]
+JEPQ = "NASDAQ"
+JEPI = "AMEX"
+QQQ = "NASDAQ"
+QQQM = "NASDAQ"
+QQQI = "NASDAQ"
+QQQJ = "NASDAQ"
+QQQG = "AMEX"
+SPY = "AMEX"
+VOO = "AMEX"
+SOXL = "AMEX"
+SQQQ = "NASDAQ"
+TQQQ = "NASDAQ"
+MU = "NASDAQ"
