@@ -2992,6 +2992,21 @@
 			}
 			return;
 		}
+		const calloutForm = event.target.closest(".settings-callout-form");
+		if (calloutForm) {
+			const actionInput = calloutForm.querySelector('input[name="action"]');
+			const submitButton = calloutForm.querySelector("button[type='submit']");
+			submitButton?.classList.add("is-pending");
+			submitButton?.setAttribute("aria-busy", "true");
+			if (actionInput?.value === "maintain") {
+				showWorkspaceModal({
+					title: "Maintaining all local market data",
+					copy: "We are checking every cached ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
+					iconClass: "icon-overlay-local-cache",
+				});
+			}
+			return;
+		}
 		const smtpForm = event.target.closest(".settings-stack-form");
 		if (!smtpForm) return;
 		const submitter = event.submitter;

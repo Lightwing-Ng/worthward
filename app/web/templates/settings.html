@@ -40,12 +40,27 @@
     </div>
     <div class="settings-body">
         {% if settings_section == "about" %}
-        <dl class="footer-meta about-meta">
-            <dt>{{ labels.code_version }}</dt>
-            <dd>{{ version }}</dd>
-            <dt>{{ labels.updated_on }}</dt>
-            <dd>{{ updated_on }}</dd>
-        </dl>
+        <section class="about-section">
+            <h2 class="about-heading">What this service does</h2>
+            <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies — all from locally cached daily market data.</p>
+        </section>
+
+        <section class="about-section">
+            <h2 class="about-heading">System information</h2>
+            <dl class="footer-meta about-meta">
+                <dt>{{ labels.code_version }}</dt>
+                <dd>{{ version }}</dd>
+                <dt>{{ labels.updated_on }}</dt>
+                <dd>{{ updated_on }}</dd>
+            </dl>
+        </section>
+
+        <section class="about-section about-disclaimer">
+            <h2 class="about-heading">Disclaimer</h2>
+            <p class="about-copy"><strong>This service does not provide financial advice.</strong> All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.</p>
+            <p class="about-copy">The value of investments can go down as well as up. Past performance is not a reliable indicator of future results. Seek independent professional advice before making investment decisions.</p>
+            <p class="about-copy">Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.</p>
+        </section>
         {% elif settings_section == "general" %}
         <p class="settings-summary">Preview the current type scale before wiring it into more UI controls.</p>
         <section class="font-preview-card">
