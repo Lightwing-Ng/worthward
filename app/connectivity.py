@@ -20,13 +20,25 @@ FALLBACK_LOGO_PING_URLS = (
     "https://www.google.com/s2/favicons?domain_url=apple.com&sz=32",
     "https://icon.horse/icon/apple.com",
 )
+GOOGLE_HK_PING_URLS = (
+    "https://www.google.com.hk/",
+    "https://www.google.com/",
+)
+CHATGPT_PING_URLS = (
+    "https://chatgpt.com/",
+    "https://chat.openai.com/",
+)
 REMOTE_MARKET_SUCCESS_TTL_SECONDS = 900
 REMOTE_MARKET_FAILURE_TTL_SECONDS = 45
 REMOTE_MARKET_STALE_GRACE_SECONDS = 3600
 REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
+GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS = 300
+GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS = 60
 _remote_market_access_cache: tuple[float, bool] | None = None
 _remote_logo_access_cache: tuple[float, bool] | None = None
+_google_hk_access_cache: tuple[float, bool] | None = None
+_chatgpt_access_cache: tuple[float, bool] | None = None
 _tradingview_ta_cache: tuple[float, bool] | None = None
 TRADINGVIEW_TA_SUCCESS_TTL_SECONDS = 86400
 TRADINGVIEW_TA_FAILURE_TTL_SECONDS = 300
@@ -127,6 +139,53 @@ def has_remote_logo_access() -> bool:
     return False
 
 
+def _probe_http_endpoints(remote_urls: tuple[str, ...]) -> bool:
+    for remote_url in remote_urls:
+        request_obj = Request(
+            remote_url,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        try:
+            with urlopen(request_obj, timeout=4) as response:
+                if response.status < 500:
+                    return True
+        except (HTTPError, URLError, TimeoutError, ValueError):
+            continue
+    return False
+
+
+def has_google_hk_access() -> bool:
+    global _google_hk_access_cache
+
+    cached_value = _cached_connectivity_value(
+        _google_hk_access_cache,
+        success_ttl=GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS,
+        failure_ttl=GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS,
+    )
+    if cached_value is not None:
+        return cached_value
+
+    is_available = _probe_http_endpoints(GOOGLE_HK_PING_URLS)
+    _google_hk_access_cache = (monotonic(), is_available)
+    return is_available
+
+
+def has_chatgpt_access() -> bool:
+    global _chatgpt_access_cache
+
+    cached_value = _cached_connectivity_value(
+        _chatgpt_access_cache,
+        success_ttl=GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS,
+        failure_ttl=GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS,
+    )
+    if cached_value is not None:
+        return cached_value
+
+    is_available = _probe_http_endpoints(CHATGPT_PING_URLS)
+    _chatgpt_access_cache = (monotonic(), is_available)
+    return is_available
+
+
 def has_tradingview_ta_available() -> bool:
     """Check if the tradingview-ta library is installed and importable."""
     global _tradingview_ta_cache
@@ -171,7 +230,10 @@ def fetch_tradingview_metrics(symbol: str, *, screener: str = "america", exchang
 
 
 def reset_connectivity_caches() -> None:
-    global _remote_market_access_cache, _remote_logo_access_cache, _tradingview_ta_cache
+    global _remote_market_access_cache, _remote_logo_access_cache
+    global _google_hk_access_cache, _chatgpt_access_cache, _tradingview_ta_cache
     _remote_market_access_cache = None
     _remote_logo_access_cache = None
+    _google_hk_access_cache = None
+    _chatgpt_access_cache = None
     _tradingview_ta_cache = None

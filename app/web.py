@@ -15,12 +15,23 @@ import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from .comparisons import build_series_payload, slice_dataset_for_period
-from .email_settings import SmtpSettings, load_smtp_settings, sanitize_smtp_settings_for_view, save_smtp_settings, test_smtp_connection
+from .email_settings import (
+    SmtpSettings,
+    build_oauth_settings_message,
+    finish_outlook_oauth_device_flow,
+    load_smtp_settings,
+    sanitize_smtp_settings_for_view,
+    save_smtp_settings,
+    start_outlook_oauth_device_flow,
+    test_smtp_connection,
+)
 from strategies.backtest import run_single_ticker_backtest
 from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies
 from .connectivity import (
     fetch_tradingview_metrics,
+    has_chatgpt_access,
+    has_google_hk_access,
     has_remote_logo_access,
     has_remote_market_access,
     has_tradingview_ta_available,
@@ -524,6 +535,9 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def build_network_service_rows(*, pending: bool) -> list[dict[str, str | bool]]:
+        def service_logo_url(filename: str) -> str:
+            return url_for("static", filename=f"images/{filename}")
+
         if pending:
             return [
                 {
@@ -531,6 +545,7 @@ def register_routes(app: Flask) -> None:
                     "name": "yfinance",
                     "status": "Checking...",
                     "note": "Checking whether Yahoo Finance can be reached from this device.",
+                    "logo_url": service_logo_url("Yahoo-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
@@ -539,6 +554,25 @@ def register_routes(app: Flask) -> None:
                     "name": labels["logo_network"],
                     "status": "Checking...",
                     "note": "Checking whether the primary ticker logo service and its fallbacks can be reached from this device.",
+                    "logo_url": service_logo_url("network.svg"),
+                    "is_available": False,
+                    "is_pending": True,
+                },
+                {
+                    "key": "google-hk",
+                    "name": "Google (Hong Kong)",
+                    "status": "Checking...",
+                    "note": "Checking whether Google (Hong Kong) can be reached from this device.",
+                    "logo_url": service_logo_url("Google__G__logo.svg"),
+                    "is_available": False,
+                    "is_pending": True,
+                },
+                {
+                    "key": "chatgpt",
+                    "name": "ChatGPT",
+                    "status": "Checking...",
+                    "note": "Checking whether ChatGPT can be reached from this device.",
+                    "logo_url": service_logo_url("ChatGPT-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
@@ -547,6 +581,7 @@ def register_routes(app: Flask) -> None:
                     "name": "tradingview-ta",
                     "status": "Checking...",
                     "note": "Checking if the tradingview-ta library is installed.",
+                    "logo_url": service_logo_url("TradingView-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
@@ -554,9 +589,13 @@ def register_routes(app: Flask) -> None:
 
         remote_market_access = has_remote_market_access()
         remote_logo_access = has_remote_logo_access()
+        google_hk_access = has_google_hk_access()
+        chatgpt_access = has_chatgpt_access()
         tradingview_ta_available = has_tradingview_ta_available()
         remote_market_access = bool(remote_market_access)
         remote_logo_access = bool(remote_logo_access)
+        google_hk_access = bool(google_hk_access)
+        chatgpt_access = bool(chatgpt_access)
         tradingview_ta_available = bool(tradingview_ta_available)
         return [
             {
@@ -568,6 +607,7 @@ def register_routes(app: Flask) -> None:
                     if remote_market_access
                     else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
                 ),
+                "logo_url": service_logo_url("Yahoo-Logo.svg"),
                 "is_available": remote_market_access,
                 "is_pending": False,
             },
@@ -580,7 +620,34 @@ def register_routes(app: Flask) -> None:
                     if remote_logo_access
                     else "Remote logo sources are blocked here, so only logos already stored locally will appear."
                 ),
+                "logo_url": service_logo_url("network.svg"),
                 "is_available": remote_logo_access,
+                "is_pending": False,
+            },
+            {
+                "key": "google-hk",
+                "name": "Google (Hong Kong)",
+                "status": labels["service_ok"] if google_hk_access else labels["service_down"],
+                "note": (
+                    "Google (Hong Kong) is reachable from this device."
+                    if google_hk_access
+                    else "Google (Hong Kong) could not be reached from this device."
+                ),
+                "logo_url": service_logo_url("Google__G__logo.svg"),
+                "is_available": google_hk_access,
+                "is_pending": False,
+            },
+            {
+                "key": "chatgpt",
+                "name": "ChatGPT",
+                "status": labels["service_ok"] if chatgpt_access else labels["service_down"],
+                "note": (
+                    "ChatGPT is reachable from this device."
+                    if chatgpt_access
+                    else "ChatGPT could not be reached from this device."
+                ),
+                "logo_url": service_logo_url("ChatGPT-Logo.svg"),
+                "is_available": chatgpt_access,
                 "is_pending": False,
             },
             {
@@ -592,6 +659,7 @@ def register_routes(app: Flask) -> None:
                     if tradingview_ta_available
                     else "The tradingview-ta library is not installed, so features requiring it will be unavailable."
                 ),
+                "logo_url": service_logo_url("TradingView-Logo.svg"),
                 "is_available": tradingview_ta_available,
                 "is_pending": False,
             },
@@ -1339,12 +1407,41 @@ def register_routes(app: Flask) -> None:
             password=request.form.get("password", ""),
             from_email=mailbox,
             use_starttls=request.form.getlist("use_starttls")[-1] == "1" if request.form.getlist("use_starttls") else False,
+            oauth_client_id=request.form.get("oauth_client_id", current_settings.oauth_client_id).strip(),
+            oauth_access_token=current_settings.oauth_access_token,
+            oauth_refresh_token=current_settings.oauth_refresh_token,
+            oauth_token_expires_at=current_settings.oauth_token_expires_at,
+            oauth_device_code=current_settings.oauth_device_code,
+            oauth_user_code=current_settings.oauth_user_code,
+            oauth_verification_uri=current_settings.oauth_verification_uri,
+            oauth_verification_uri_complete=current_settings.oauth_verification_uri_complete,
+            oauth_device_expires_at=current_settings.oauth_device_expires_at,
+            oauth_device_interval_seconds=current_settings.oauth_device_interval_seconds,
         )
         if not updated_settings.password:
             updated_settings.password = current_settings.password
+        if updated_settings.oauth_client_id != current_settings.oauth_client_id:
+            updated_settings.oauth_access_token = ""
+            updated_settings.oauth_refresh_token = ""
+            updated_settings.oauth_token_expires_at = 0.0
+            updated_settings.oauth_device_code = ""
+            updated_settings.oauth_user_code = ""
+            updated_settings.oauth_verification_uri = ""
+            updated_settings.oauth_verification_uri_complete = ""
+            updated_settings.oauth_device_expires_at = 0.0
+            updated_settings.oauth_device_interval_seconds = 5.0
         save_smtp_settings(updated_settings)
-        redirect_url = build_settings_path("email-smtp")
-        success, message = test_smtp_connection(updated_settings) if action == "test" else (True, "SMTP settings saved.")
+        if action == "start-oauth":
+            updated_settings, success, message = start_outlook_oauth_device_flow(updated_settings)
+            save_smtp_settings(updated_settings)
+        elif action == "finish-oauth":
+            updated_settings, success, message = finish_outlook_oauth_device_flow(updated_settings)
+            save_smtp_settings(updated_settings)
+        elif action == "test":
+            success, message, updated_settings = test_smtp_connection(updated_settings)
+            save_smtp_settings(updated_settings)
+        else:
+            success, message = True, f"SMTP settings saved. {build_oauth_settings_message(updated_settings)}"
         params = urlencode({
             "notice": message if success else "",
             "error": "" if success else message,
