@@ -194,6 +194,20 @@
         </form>
         {% elif settings_section == "local-market-store" %}
         <div class="local-store-layout" id="local_store_region" data-local-store-region>
+            <section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
+                <div class="settings-callout-copy">
+                    <span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
+                    <div class="settings-callout-text">
+                        <p class="settings-service-name">{{ labels.local_store_maintain_title }}</p>
+                        <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
+                    </div>
+                </div>
+                <form method="post" action="/settings/local-market-store/action" class="settings-stack-form settings-callout-form">
+                    <input type="hidden" name="action" value="maintain">
+                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                    <button type="submit" class="settings-inline-button settings-inline-button-primary">{{ labels.local_store_maintain_button }}</button>
+                </form>
+            </section>
             <p class="settings-summary">{{ labels.local_store_summary }}</p>
             <div class="settings-table-wrap local-store-table-wrap">
                 <table class="settings-table local-store-table">
@@ -292,15 +306,15 @@
             {% endif %}
         </div>
         {% elif settings_section == "clear-caches" %}
-        <section class="settings-danger-card">
-            <div class="settings-danger-copy">
-                <span class="settings-nav-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
-                <div class="settings-danger-text">
+        <section class="settings-callout-card settings-danger-card">
+            <div class="settings-callout-copy settings-danger-copy">
+                <span class="settings-nav-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-callout-text settings-danger-text">
                     <p class="settings-service-name">Clear caches</p>
-                    <p class="settings-service-note">This removes cached profiles, logos, search results, and recent ticker history from this device. Daily parquet market data will be kept.</p>
+                    <p class="settings-service-note">This removes privacy-sensitive usage records plus non-local search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, and logo images.</p>
                 </div>
             </div>
-            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-danger-form">
+            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-danger-form">
                 <input type="hidden" name="section" value="clear-caches">
                 <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear caches</button>
             </form>

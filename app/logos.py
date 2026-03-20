@@ -229,6 +229,26 @@ def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | N
     return None
 
 
+def refresh_logo_store(
+    ticker: str,
+    website: str | None,
+    force_refresh: bool = False,
+    namespace: str = "primary",
+) -> None:
+    ensure_market_store_dir()
+    path = logo_store_path_for(ticker, namespace=namespace)
+    if path.exists() and not force_refresh:
+        return
+
+    if not has_remote_market_access():
+        return
+
+    domain = extract_domain(website)
+    logo_bytes = fetch_remote_logo_bytes(ticker, domain)
+    if logo_bytes is not None:
+        path.write_bytes(logo_bytes)
+
+
 def fetch_and_store_logo(
     ticker: str,
     website: str | None,
@@ -237,19 +257,9 @@ def fetch_and_store_logo(
 ) -> str | None:
     ensure_market_store_dir()
     path = logo_store_path_for(ticker, namespace=namespace)
-    if path.exists() and not force_refresh:
-        return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
-
-    if not has_remote_market_access():
-        return build_market_store_logo_url(path.name, path.stat().st_mtime_ns) if path.exists() else None
-
-    domain = extract_domain(website)
-    logo_bytes = fetch_remote_logo_bytes(ticker, domain)
-    if logo_bytes is None:
-        if not path.exists():
-            return None
-    else:
-        path.write_bytes(logo_bytes)
+    refresh_logo_store(ticker, website, force_refresh=force_refresh, namespace=namespace)
+    if not path.exists():
+        return None
 
     return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
 
@@ -310,6 +320,30 @@ def fetch_quote_profile(
             namespace=namespace,
         ),
     )
+
+
+def refresh_quote_profile_cache(
+    ticker: str,
+    force_refresh: bool = False,
+    namespace: str = "primary",
+) -> bool:
+    ensure_market_store_dir()
+    if not has_remote_market_access():
+        return False
+
+    try:
+        path = profile_store_path_for(ticker, namespace=namespace)
+        payload = build_quote_profile_payload(ticker)
+        path.write_text(json.dumps(payload))
+        refresh_logo_store(
+            payload["ticker"],
+            payload.get("website"),
+            force_refresh=force_refresh,
+            namespace=namespace,
+        )
+    except Exception:
+        return False
+    return True
 
 
 def _build_recent_suggestion(symbol: str) -> dict[str, str]:

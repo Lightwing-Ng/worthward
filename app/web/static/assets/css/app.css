@@ -1911,6 +1911,18 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-field-span-full { grid-column: 1 / -1; }
 .settings-form-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-inline-button { width: auto; min-width: 180px; }
+.settings-inline-button-primary {
+	width: fit-content;
+	min-width: 0;
+	background: #0055cc;
+	color: #ffffff;
+	box-shadow: none;
+}
+.settings-inline-button-primary:hover,
+.settings-inline-button-primary:focus-visible {
+	background: #0047ad;
+	box-shadow: none;
+}
 .settings-inline-button-danger {
 	width: fit-content;
 	min-width: 0;
@@ -1924,7 +1936,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	box-shadow: none;
 }
 .settings-service-note-params { margin-top: 6px; }
-.settings-danger-card {
+.settings-callout-card {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -1937,30 +1949,39 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	-webkit-backdrop-filter: var(--glass-surface-blur);
 	border: var(--glass-surface-border);
 }
-.settings-danger-copy {
+.settings-callout-copy {
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
 	min-width: 0;
 }
-.settings-danger-icon-shell {
+.settings-callout-icon-shell {
 	flex: 0 0 auto;
+}
+.settings-callout-card-primary .settings-callout-icon-shell {
+	--settings-icon-tint: #0055cc;
+	--settings-icon-surface: rgba(0, 85, 204, 0.14);
+}
+.settings-danger-icon-shell {
 	--settings-icon-tint: #c81e1e;
 	--settings-icon-surface: rgba(200, 30, 30, 0.14);
 }
-.settings-danger-text {
+.settings-callout-text {
 	min-width: 0;
 }
-.settings-danger-text .settings-service-name,
-.settings-danger-text .settings-service-note {
+.settings-callout-text .settings-service-name,
+.settings-callout-text .settings-service-note {
 	margin: 0;
 }
-.settings-danger-text .settings-service-note {
+.settings-callout-text .settings-service-note {
 	margin-top: 2px;
 }
-.settings-danger-form {
+.settings-callout-form {
 	flex: 0 0 auto;
 }
+.settings-danger-card {}
+.local-store-maintain-card { margin-bottom: 4px; }
+.icon-store-maintain { background-color: currentColor; mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; }
 .trade-sidebar-card { padding: 12px 12px 10px; background: var(--glass-surface-background); }
 .trade-sidebar-eyebrow { margin: 0 0 8px; font-size: var(--font-form-label); line-height: 1.2; font-weight: var(--font-weight-bold); color: var(--text); }
 .trade-sidebar-copy { margin: 0; font-size: var(--font-form-label); line-height: 1.45; color: var(--muted); }

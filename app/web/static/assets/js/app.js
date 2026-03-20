@@ -760,6 +760,77 @@
 		applyReplacement();
 	};
 
+	const buildLocalStorePendingRegion = () => {
+		const article = document.createElement("article");
+		article.className = "chart-surface settings-surface";
+		article.id = "settings_workspace_region";
+		article.dataset.settingsWorkspaceRegion = "";
+		article.dataset.settingsSection = "local-market-store";
+		article.innerHTML = `
+			<div class="chart-heading-row">
+				<p class="chart-heading">${labels.local_market_store || "Local Market Store"}</p>
+			</div>
+			<div class="settings-body">
+				<div class="local-store-layout" id="local_store_region" data-local-store-region>
+					<section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
+						<div class="settings-callout-copy">
+							<span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
+							<div class="settings-callout-text">
+								<p class="settings-service-name">${labels.local_store_maintain_title || "Maintain all data"}</p>
+								<p class="settings-service-note">${labels.local_store_maintain_note || ""}</p>
+							</div>
+						</div>
+						<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_button || "Maintain all data"}</span>
+					</section>
+					<p class="settings-summary">${labels.local_store_summary || ""}</p>
+					<div class="settings-table-wrap local-store-table-wrap">
+						<table class="settings-table local-store-table">
+							<colgroup>
+								<col class="local-store-col-symbol">
+								<col class="local-store-col-name">
+								<col class="local-store-col-range">
+								<col class="local-store-col-update">
+								<col class="local-store-col-delete">
+							</colgroup>
+							<thead>
+								<tr>
+									<th>${labels.local_store_symbol || "Ticker"}</th>
+									<th>${labels.local_store_name || "Name"}</th>
+									<th>${labels.local_store_range || "Range"}</th>
+									<th>${labels.local_store_update || ""}</th>
+									<th>${labels.local_store_delete || ""}</th>
+								</tr>
+							</thead>
+							<tbody>
+								${Array.from({ length: 6 }, (_, index) => `
+									<tr data-local-store-ticker="pending-${index + 1}">
+										<td>
+											<span class="settings-symbol-cell">
+												<span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
+												<span class="is-pending-value" data-workspace-mask="company-name">TICK</span>
+											</span>
+										</td>
+										<td data-local-store-company class="is-pending-value" data-workspace-mask="company-name">Loading</td>
+										<td class="local-store-range-cell">
+											<span class="local-store-range-value">
+												<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">0000/00/00</span>
+												<span class="local-store-range-separator"> - </span>
+												<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">0000/00/00</span>
+											</span>
+										</td>
+										<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>
+										<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		`;
+		return article;
+	};
+
 	const setActiveSettingsNav = (targetSection) => {
 		$$(".settings-nav-item").forEach((link) => {
 			const isTarget = link.getAttribute("href")?.includes(`/settings/${targetSection}`);
@@ -783,6 +854,9 @@
 			if (targetSection === state.settingsSection && parsed.search === window.location.search) return;
 			event.preventDefault();
 			setActiveSettingsNav(targetSection);
+			if (targetSection === "local-market-store") {
+				replaceSettingsWorkspaceRegion(buildLocalStorePendingRegion());
+			}
 			try {
 				const responseText = await fetch(nextUrl, {
 					credentials: "same-origin",

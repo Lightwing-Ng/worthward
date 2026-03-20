@@ -7,6 +7,7 @@ Code version: v3.21.1
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from typing import Any
 from urllib.parse import urlencode
@@ -30,7 +31,6 @@ from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies
 from .connectivity import (
     fetch_tradingview_metrics,
-    has_chatgpt_access,
     has_google_hk_access,
     has_remote_logo_access,
     has_remote_market_access,
@@ -39,7 +39,7 @@ from .connectivity import (
 )
 from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
 from .date_constraints import build_date_constraint_payload
-from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, search_tickers
+from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, search_tickers
 from .market_data import fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
@@ -50,6 +50,7 @@ from .storage import (
     delete_ticker_data,
     history_store_path_for,
     list_local_tickers,
+    list_historical_tickers,
     logo_store_path_for,
     profile_store_path_for,
     record_ticker_usage,
@@ -169,8 +170,23 @@ def register_routes(app: Flask) -> None:
                 return values[-1] == "1"
         return default
 
-    def format_store_range_date(raw_value: pd.Timestamp) -> str:
-        return pd.to_datetime(raw_value).strftime("%Y/%m/%d")
+    def format_store_range_date(raw_value: object) -> str:
+        if raw_value is None:
+            return ""
+        if isinstance(raw_value, pd.DataFrame):
+            if raw_value.empty:
+                return ""
+            raw_value = raw_value.min().min()
+        elif isinstance(raw_value, (pd.Series, pd.Index, list, tuple)):
+            values = pd.Series(raw_value).dropna()
+            if values.empty:
+                return ""
+            raw_value = values.iloc[0]
+
+        timestamp = pd.Timestamp(raw_value)
+        if pd.isna(timestamp):
+            return ""
+        return timestamp.strftime("%Y/%m/%d")
 
     def build_default_weights(count: int) -> list[int]:
         if count <= 0:
@@ -548,8 +564,11 @@ def register_routes(app: Flask) -> None:
                     dataset = pd.read_parquet(history_path, columns=["Date"])
                     if dataset.empty:
                         continue
-                    range_start = format_store_range_date(dataset["Date"].min())
-                    range_end = format_store_range_date(dataset["Date"].max())
+                    date_values = dataset["Date"]
+                    if isinstance(date_values, pd.DataFrame):
+                        date_values = date_values.iloc[:, 0]
+                    range_start = format_store_range_date(date_values.min())
+                    range_end = format_store_range_date(date_values.max())
                 except Exception:
                     pass
             rows.append(
@@ -598,15 +617,6 @@ def register_routes(app: Flask) -> None:
                     "is_pending": True,
                 },
                 {
-                    "key": "chatgpt",
-                    "name": "ChatGPT",
-                    "status": "Checking...",
-                    "note": "Checking whether ChatGPT can be reached from this device.",
-                    "logo_url": service_logo_url("ChatGPT-Logo.svg"),
-                    "is_available": False,
-                    "is_pending": True,
-                },
-                {
                     "key": "tradingview-ta",
                     "name": "tradingview-ta",
                     "status": "Checking...",
@@ -620,12 +630,10 @@ def register_routes(app: Flask) -> None:
         remote_market_access = has_remote_market_access()
         remote_logo_access = has_remote_logo_access()
         google_hk_access = has_google_hk_access()
-        chatgpt_access = has_chatgpt_access()
         tradingview_ta_available = has_tradingview_ta_available()
         remote_market_access = bool(remote_market_access)
         remote_logo_access = bool(remote_logo_access)
         google_hk_access = bool(google_hk_access)
-        chatgpt_access = bool(chatgpt_access)
         tradingview_ta_available = bool(tradingview_ta_available)
         return [
             {
@@ -668,19 +676,6 @@ def register_routes(app: Flask) -> None:
                 "is_pending": False,
             },
             {
-                "key": "chatgpt",
-                "name": "ChatGPT",
-                "status": labels["service_ok"] if chatgpt_access else labels["service_down"],
-                "note": (
-                    "ChatGPT is reachable from this device."
-                    if chatgpt_access
-                    else "ChatGPT could not be reached from this device."
-                ),
-                "logo_url": service_logo_url("ChatGPT-Logo.svg"),
-                "is_available": chatgpt_access,
-                "is_pending": False,
-            },
-            {
                 "key": "tradingview-ta",
                 "name": "tradingview-ta",
                 "status": labels["service_ok"] if tradingview_ta_available else labels["service_down"],
@@ -694,6 +689,47 @@ def register_routes(app: Flask) -> None:
                 "is_pending": False,
             },
         ]
+
+    def maintain_local_market_store() -> dict[str, Any]:
+        historical_tickers = list_historical_tickers()
+        if not historical_tickers:
+            return {
+                "total_count": 0,
+                "history_refreshed_count": 0,
+                "metadata_refreshed_count": 0,
+                "metadata_blocked_count": 0,
+                "history_failed_tickers": [],
+            }
+
+        def refresh_local_entry(ticker: str) -> tuple[str, bool]:
+            refresh_history_store(ticker)
+            metadata_refreshed = refresh_quote_profile_cache(ticker, force_refresh=True)
+            if not metadata_refreshed:
+                fetch_quote_profile(ticker, force_refresh=False)
+            return ticker, metadata_refreshed
+
+        history_refreshed_count = 0
+        metadata_refreshed_count = 0
+        history_failed_tickers: list[str] = []
+        worker_count = min(6, len(historical_tickers))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(refresh_local_entry, ticker): ticker for ticker in historical_tickers}
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    _, metadata_refreshed = future.result()
+                    history_refreshed_count += 1
+                    if metadata_refreshed:
+                        metadata_refreshed_count += 1
+                except Exception:
+                    history_failed_tickers.append(ticker)
+        return {
+            "total_count": len(historical_tickers),
+            "history_refreshed_count": history_refreshed_count,
+            "metadata_refreshed_count": metadata_refreshed_count,
+            "metadata_blocked_count": max(history_refreshed_count - metadata_refreshed_count, 0),
+            "history_failed_tickers": history_failed_tickers,
+        }
 
     def local_store_page_value() -> int:
         return max(parse_int_value(request.args.get("page", request.args.get("local_page")), 1), 1)
@@ -1495,10 +1531,54 @@ def register_routes(app: Flask) -> None:
 
         redirect_url = build_local_store_redirect()
 
-        if not ticker:
-            return redirect(redirect_url)
-
         try:
+            if action == "maintain":
+                maintenance = maintain_local_market_store()
+                total_count = int(maintenance["total_count"])
+                history_refreshed_count = int(maintenance["history_refreshed_count"])
+                metadata_refreshed_count = int(maintenance["metadata_refreshed_count"])
+                metadata_blocked_count = int(maintenance["metadata_blocked_count"])
+                history_failed_tickers = list(maintenance["history_failed_tickers"])
+                if history_failed_tickers and history_refreshed_count == 0:
+                    failed_preview = ", ".join(history_failed_tickers[:3])
+                    return redirect(
+                        build_local_store_redirect(
+                            error=f"Unable to refresh historical market data for {failed_preview}."
+                        )
+                    )
+
+                notice_parts: list[str] = []
+                if total_count == 0:
+                    notice = "Local Market Store is already up to date."
+                    return redirect(build_local_store_redirect(notice=notice))
+
+                if history_refreshed_count > 0:
+                    notice_parts.append(
+                        f"Updated {history_refreshed_count:,} historical parquet dataset"
+                        f"{'' if history_refreshed_count == 1 else 's'}."
+                    )
+                if metadata_refreshed_count > 0:
+                    notice_parts.append(
+                        f"Refreshed {metadata_refreshed_count:,} logo and company profile entr"
+                        f"{'y' if metadata_refreshed_count == 1 else 'ies'}."
+                    )
+                if metadata_blocked_count > 0:
+                    notice_parts.append(
+                        f"Yahoo blocked {metadata_blocked_count:,} metadata refresh request"
+                        f"{'' if metadata_blocked_count == 1 else 's'}, so cached logos and profiles were kept."
+                    )
+                if history_failed_tickers:
+                    failed_count = len(history_failed_tickers)
+                    preview = ", ".join(history_failed_tickers[:3])
+                    notice_parts.append(
+                        f"{failed_count:,} historical dataset"
+                        f"{'' if failed_count == 1 else 's'} could not be refreshed yet"
+                        f"{': ' + preview if preview else '.'}"
+                    )
+                notice = " ".join(part.rstrip(".") + "." for part in notice_parts if part)
+                return redirect(build_local_store_redirect(notice=notice))
+            if not ticker:
+                return redirect(redirect_url)
             if action == "refresh":
                 refresh_history_store(ticker)
                 try:
@@ -1524,9 +1604,19 @@ def register_routes(app: Flask) -> None:
     def settings_cache_action():
         section_name = normalize_settings_section(request.form.get("section", "clear-caches"))
         try:
-            clear_nonhistorical_market_cache()
+            cache_summary = clear_nonhistorical_market_cache()
             reset_connectivity_caches()
-            notice = "Cleared cached profiles, logos, search results, and recent ticker history. Daily parquet market data was kept."
+            notice = (
+                f"Cleared {cache_summary['removed_search_queries']:,} search result cache entr"
+                f"{'y' if cache_summary['removed_search_queries'] == 1 else 'ies'}, "
+                f"{cache_summary['removed_search_profiles']:,} non-local search profile entr"
+                f"{'y' if cache_summary['removed_search_profiles'] == 1 else 'ies'}, "
+                f"{cache_summary['removed_search_logos']:,} non-local search logo image"
+                f"{'' if cache_summary['removed_search_logos'] == 1 else 's'}, "
+                "and recent ticker usage records. "
+                f"Protected {cache_summary['protected_tickers']:,} Local Market Store ticker entr"
+                f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, and kept all parquet history plus logo images."
+            )
             return redirect(f"{build_settings_path(section_name)}?{urlencode({'notice': notice})}")
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or "Unable to clear cached settings data."

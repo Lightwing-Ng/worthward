@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v3.5.0
+Code version: v3.6.0
 """
 
 from __future__ import annotations
@@ -76,6 +76,15 @@ def list_local_tickers() -> list[str]:
     return sorted(tickers)
 
 
+def list_historical_tickers() -> list[str]:
+    ensure_market_store_dir()
+    return sorted(
+        ticker_from_store_path(path)
+        for path in HISTORICAL_STORE_DIR.glob("*.parquet")
+        if path.is_file() and path.stat().st_size > 0
+    )
+
+
 def is_store_entry_fresh(path: Path) -> bool:
     if not path.exists():
         return False
@@ -123,18 +132,44 @@ def top_used_tickers(query: str = "", limit: int = 5) -> list[str]:
     return [ticker for ticker, _, _ in ranked[:limit]]
 
 
-def clear_nonhistorical_market_cache() -> None:
+def clear_nonhistorical_market_cache() -> dict[str, int]:
     ensure_market_store_dir()
-    for directory in (
-        PRIMARY_PROFILES_STORE_DIR,
-        SEARCH_PROFILES_STORE_DIR,
-        PRIMARY_LOGOS_STORE_DIR,
-        SEARCH_LOGOS_STORE_DIR,
-        SEARCH_STORE_DIR,
-    ):
-        for path in directory.glob("*"):
-            if path.is_file():
-                path.unlink()
+    protected_tickers = {normalize_ticker(ticker) for ticker in list_historical_tickers()}
+    removed_search_queries = 0
+    removed_search_profiles = 0
+    removed_search_logos = 0
+    removed_usage_records = 0
+
+    for path in SEARCH_STORE_DIR.glob("*.json"):
+        if path == TICKER_USAGE_STORE_PATH:
+            continue
+        if path.is_file():
+            path.unlink()
+            removed_search_queries += 1
+
+    for path in SEARCH_PROFILES_STORE_DIR.glob("*.json"):
+        if not path.is_file() or path.stem in protected_tickers:
+            continue
+        path.unlink()
+        removed_search_profiles += 1
+
+    for path in SEARCH_LOGOS_STORE_DIR.glob("*.png"):
+        if not path.is_file() or path.stem in protected_tickers:
+            continue
+        path.unlink()
+        removed_search_logos += 1
+
+    if TICKER_USAGE_STORE_PATH.exists():
+        TICKER_USAGE_STORE_PATH.unlink()
+        removed_usage_records = 1
+
+    return {
+        "removed_search_queries": removed_search_queries,
+        "removed_search_profiles": removed_search_profiles,
+        "removed_search_logos": removed_search_logos,
+        "removed_usage_records": removed_usage_records,
+        "protected_tickers": len(protected_tickers),
+    }
 
 
 def delete_ticker_data(ticker: str) -> None:
