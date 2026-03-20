@@ -443,6 +443,40 @@
 		}
 	};
 
+	const collectKnownTickerLogoMap = () => {
+		const logoMap = new Map();
+		getTickerInputs().forEach((input) => {
+			const ticker = sanitizeTicker(input.value || input.dataset.symbol || "");
+			if (!ticker) return;
+			const control = input.closest(".ticker-input-control");
+			const image = control?.querySelector(".ticker-input-logo");
+			const logoUrl = input.dataset.logoUrl || image?.getAttribute("src") || "";
+			if (!logoUrl) return;
+			logoMap.set(ticker, logoUrl);
+		});
+		(state.chart?.profiles || []).forEach((profile) => {
+			const ticker = sanitizeTicker(profile?.ticker || "");
+			const logoUrl = profile?.logo_url || "";
+			if (!ticker || !logoUrl || logoMap.has(ticker)) return;
+			logoMap.set(ticker, logoUrl);
+		});
+		return logoMap;
+	};
+
+	const mergeKnownTickerLogosIntoState = (nextState) => {
+		if (!nextState || !["tickers", "portfolio"].includes(nextState.currentView)) return nextState;
+		if (!Array.isArray(nextState.chart?.profiles) || !nextState.chart.profiles.length) return nextState;
+		const logoMap = collectKnownTickerLogoMap();
+		if (!logoMap.size) return nextState;
+		nextState.chart.profiles = nextState.chart.profiles.map((profile) => {
+			if (profile?.logo_url) return profile;
+			const ticker = sanitizeTicker(profile?.ticker || "");
+			const logoUrl = logoMap.get(ticker) || "";
+			return logoUrl ? { ...profile, logo_url: logoUrl } : profile;
+		});
+		return nextState;
+	};
+
 	const abortActiveWorkspaceHydration = () => {
 		if (!activeWorkspaceHydration) return;
 		activeWorkspaceHydration.abort();
@@ -497,7 +531,7 @@
 			workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
 		}
 		delete workspacePanel.dataset.workspacePending;
-		const nextState = parseStateFromHtmlDocument(doc);
+		const nextState = mergeKnownTickerLogosIntoState(parseStateFromHtmlDocument(doc));
 		if (nextState) {
 			window.ANTIGRAVITY_APP = nextState;
 			Object.assign(state, nextState);
