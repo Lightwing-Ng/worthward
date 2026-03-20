@@ -254,6 +254,18 @@ def fetch_and_store_logo(
     return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
 
 
+def resolve_logo_url_with_fallback(
+    ticker: str,
+    website: str | None,
+    force_refresh: bool = False,
+    namespace: str = "primary",
+) -> str | None:
+    logo_url = fetch_and_store_logo(ticker, website, force_refresh=force_refresh, namespace=namespace)
+    if logo_url or namespace != "primary":
+        return logo_url
+    return fetch_and_store_logo(ticker, website, force_refresh=False, namespace="search")
+
+
 def fetch_quote_profile(
     ticker: str,
     force_refresh: bool = False,
@@ -268,11 +280,16 @@ def fetch_quote_profile(
             ticker=payload["ticker"],
             company_name=payload["company_name"],
             website=payload.get("website"),
-            logo_url=fetch_and_store_logo(payload["ticker"], payload.get("website"), namespace=namespace),
+            logo_url=resolve_logo_url_with_fallback(
+                payload["ticker"],
+                payload.get("website"),
+                force_refresh=False,
+                namespace=namespace,
+            ),
         )
 
     if not has_remote_market_access():
-        existing_logo = fetch_and_store_logo(ticker, None, namespace=namespace)
+        existing_logo = resolve_logo_url_with_fallback(ticker, None, force_refresh=False, namespace=namespace)
         return QuoteProfile(
             ticker=ticker.upper(),
             company_name=ticker.upper(),
@@ -286,7 +303,12 @@ def fetch_quote_profile(
         ticker=payload["ticker"],
         company_name=payload["company_name"],
         website=payload.get("website"),
-        logo_url=fetch_and_store_logo(payload["ticker"], payload.get("website"), force_refresh, namespace=namespace),
+        logo_url=resolve_logo_url_with_fallback(
+            payload["ticker"],
+            payload.get("website"),
+            force_refresh=force_refresh,
+            namespace=namespace,
+        ),
     )
 
 
