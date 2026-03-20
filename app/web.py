@@ -62,7 +62,10 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "SPY": "#8e8e93",
     "QQQ": "#c7c7cc",
 }
-SUPPORTED_VIEWS = {"tickers", "portfolio", "trade-messages", "more", "settings"}
+LEGACY_VIEW_ALIASES = {
+    "trade-messages": "backtest",
+}
+SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
 SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
@@ -75,7 +78,7 @@ STRATEGY_CATEGORY_LABELS = {
 VIEW_PATHS = {
     "tickers": "/compare",
     "portfolio": "/portfolio",
-    "trade-messages": "/trade-messages",
+    "backtest": "/backtest",
     "more": "/more/overview",
     "settings": "/settings/about",
 }
@@ -254,6 +257,7 @@ def register_routes(app: Flask) -> None:
 
     def resolve_view() -> str:
         requested_view = request.args.get("view", "tickers").strip().lower()
+        requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
         return requested_view if requested_view in SUPPORTED_VIEWS else "tickers"
 
     def build_view_path(view_name: str) -> str:
@@ -855,12 +859,12 @@ def register_routes(app: Flask) -> None:
                 if normalize_ticker_input(value)
             ][:MAX_TICKERS]
             include_dividends = True
-        elif current_view == "trade-messages" and not requested_tickers:
+        elif current_view == "backtest" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
-                defaults.get("trade_messages_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
+                defaults.get("backtest_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
             )
             requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
-            include_dividends = bool(defaults.get("trade_messages_include_dividends", True))
+            include_dividends = bool(defaults.get("backtest_include_dividends", True))
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
@@ -881,8 +885,8 @@ def register_routes(app: Flask) -> None:
         strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = request.args.get(
             "strategy",
-            defaults.get("trade_messages_strategy", strategy_options[0]["id"] if strategy_options else "")
-            if current_view == "trade-messages"
+            defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
+            if current_view == "backtest"
             else (strategy_options[0]["id"] if strategy_options else ""),
         ).strip()
         strategy_ids = {str(item["id"]) for item in strategy_options}
@@ -893,11 +897,11 @@ def register_routes(app: Flask) -> None:
         backtest_initial_capital = max(
             parse_float_value(
                 request.args.get("capital", request.args.get("initial_capital")),
-                float(defaults.get("trade_messages_capital", 10000.0)) if current_view == "trade-messages" else 10000.0,
+                float(defaults.get("backtest_capital", 10000.0)) if current_view == "backtest" else 10000.0,
             ),
             1.0,
         )
-        trade_backtest_result = None
+        backtest_result = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
@@ -924,7 +928,6 @@ def register_routes(app: Flask) -> None:
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
         more_cards: list[dict[str, str]] = []
-        submit_label = labels["update_chart"]
 
         settings_section = normalize_settings_section(settings_section)
         more_section = normalize_more_section(more_section)
@@ -937,9 +940,8 @@ def register_routes(app: Flask) -> None:
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
             chart_heading = labels["portfolio_chart"]
-            submit_label = labels["compute"]
-        elif current_view == "trade-messages":
-            page_title = labels["trade_messages_title"]
+        elif current_view == "backtest":
+            page_title = labels["backtest_title"]
         elif current_view == "settings":
             page_title = labels["settings_title"]
             if settings_section == "network":
@@ -962,7 +964,7 @@ def register_routes(app: Flask) -> None:
             period = DEFAULT_PERIOD
 
         try:
-            if current_view == "trade-messages":
+            if current_view == "backtest":
                 if not requested_tickers:
                     raise ValueError("")
                 trade_ticker = validate_ticker_or_raise(requested_tickers[0])
@@ -996,7 +998,7 @@ def register_routes(app: Flask) -> None:
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
                 signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
-                trade_backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
+                backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
@@ -1286,7 +1288,7 @@ def register_routes(app: Flask) -> None:
                     timing_error = str(exc)
 
 
-        if current_view == "trade-messages":
+        if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
         else:
             while len(ticker_slots) < MIN_TICKERS:
@@ -1300,7 +1302,7 @@ def register_routes(app: Flask) -> None:
         template_name = {
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
-            "trade-messages": "trade_messages.html",
+            "backtest": "backtest.html",
             "more": "more.html",
             "settings": "settings.html",
         }[current_view]
@@ -1350,11 +1352,10 @@ def register_routes(app: Flask) -> None:
             local_store_prev_slot=local_store_prev_slot,
             local_store_page_slots=local_store_page_slots,
             local_store_next_slot=local_store_next_slot,
-            submit_label=submit_label,
             page_title=page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "trade-messages", "more", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
@@ -1370,7 +1371,7 @@ def register_routes(app: Flask) -> None:
             strategy_form_fields=strategy_form_fields,
             selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
-            trade_backtest_result=trade_backtest_result,
+            backtest_result=backtest_result,
             current_view_name=current_view,
             current_path=request.path,
             endpoints={
@@ -1402,9 +1403,15 @@ def register_routes(app: Flask) -> None:
     def portfolio_page():
         return render_workspace_page("portfolio")
 
+    @app.get("/backtest")
+    def backtest_page():
+        return render_workspace_page("backtest")
+
     @app.get("/trade-messages")
-    def trade_messages_page():
-        return render_workspace_page("trade-messages")
+    def legacy_trade_messages_page():
+        query_string = request.query_string.decode().strip()
+        target_path = build_view_path("backtest")
+        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     @app.get("/more")
     def more_root():
@@ -1545,7 +1552,8 @@ def register_routes(app: Flask) -> None:
     def date_constraints_api():
         requested_tickers = parse_requested_tickers()
         requested_view = request.args.get("view", request.args.get("mode", "tickers")).strip().lower()
-        minimum_required = 1 if requested_view == "trade-messages" else MIN_TICKERS
+        requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
+        minimum_required = 1 if requested_view == "backtest" else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
             return jsonify(asdict(build_date_constraint_payload()))
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]

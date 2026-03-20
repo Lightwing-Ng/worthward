@@ -6,7 +6,7 @@
     <div class="field ticker-field" data-index="1">
         <div class="ticker-input-row">
             <div class="ticker-input-main">
-                <label for="ticker_1">{{ labels.trade_messages_ticker }}</label>
+                <label for="ticker_1">{{ labels.backtest_ticker }}</label>
                 <div class="ticker-input-control">
                     <span class="ticker-leading-slot" aria-hidden="true">
                         <span class="ticker-logo-placeholder"></span>
@@ -22,7 +22,7 @@
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
     <div class="field trade-capital-field">
-        <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
+        <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>
         <div class="trade-capital-row">
             <input id="trade_initial_capital" name="capital" class="trade-capital-input" type="text" value="{{ "{:,.2f}".format(backtest_initial_capital) }}" inputmode="decimal" autocomplete="off">
         </div>
@@ -40,7 +40,7 @@
         </label>
     </div>
     <div class="field trade-strategy-field" data-trade-strategy-field>
-        <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
+        <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
                 {% for group in strategy_option_groups %}
@@ -73,28 +73,28 @@
 <div class="workspace-header">
     <article class="report-card trade-performance-card">
         <div class="report-heading-row">
-            <p class="report-heading">{{ labels.trade_messages_metrics }}</p>
+            <p class="report-heading">{{ labels.backtest_metrics }}</p>
         </div>
-        {% if trade_backtest_result %}
+        {% if backtest_result %}
         <div class="trade-detail-tabs">
             {{ render_segmented_control(
                 "range-mode-shell trade-detail-shell",
                 "trade_detail_tab",
                 "metrics",
                 [
-                    {"id": "trade_detail_metrics", "value": "metrics", "label": labels.trade_messages_metrics_tab},
-                    {"id": "trade_detail_transactions", "value": "transactions", "label": labels.trade_messages_transactions_tab},
+                    {"id": "trade_detail_metrics", "value": "metrics", "label": labels.backtest_metrics_tab},
+                    {"id": "trade_detail_transactions", "value": "transactions", "label": labels.backtest_transactions_tab},
                 ],
                 'data-trade-detail-shell data-active="metrics"'
             ) }}
             <div class="trade-detail-panel" data-trade-detail-panel="metrics">
                 <div class="trade-metrics-grid">
-                    <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.initial_capital) }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(trade_backtest_result.summary.final_equity) }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.net_return_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ trade_backtest_result.summary.trade_count }}</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.win_rate_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(trade_backtest_result.summary.max_drawdown_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(backtest_result.summary.initial_capital) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(backtest_result.summary.final_equity) }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.net_return_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Closed trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ backtest_result.summary.trade_count }}</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.win_rate_pct) }}%</span></div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.max_drawdown_pct) }}%</span></div>
                 </div>
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
@@ -112,7 +112,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for row in trade_backtest_result.trades %}
+                            {% for row in backtest_result.trades %}
                             <tr>
                                 <td class="trade-transactions-index">{{ loop.index }}</td>
                                 <td class="trade-transactions-date">{{ row.date }}</td>
@@ -129,15 +129,15 @@
             </div>
         </div>
         {% else %}
-        <p class="trade-pane-placeholder">{{ labels.trade_messages_no_result }}</p>
+        <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
         {% endif %}
     </article>
 </div>
-<article class="chart-surface trade-messages-surface">
+<article class="chart-surface backtest-surface">
     <div class="chart-heading-row">
-        <p class="chart-heading">{{ labels.trade_messages_chart }}</p>
+        <p class="chart-heading">{{ labels.backtest_chart }}</p>
     </div>
-    {% if trade_backtest_result %}
+    {% if backtest_result %}
     <div class="trade-chart-stack">
                 <div class="trade-chart-panel">
                     <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
@@ -151,7 +151,7 @@
                 </div>
     </div>
     {% else %}
-    <p class="trade-pane-placeholder">{{ labels.trade_messages_detail_placeholder }}</p>
+    <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>
     {% endif %}
 </article>
 {% endblock %}

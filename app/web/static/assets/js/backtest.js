@@ -2,10 +2,10 @@
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
-	const consumeTradeMessagesRefreshTransition = () => {
-		const transition = bootstrap.tradeMessagesRefreshTransition;
+	const consumeBacktestRefreshTransition = () => {
+		const transition = bootstrap.backtestRefreshTransition;
 		if (!transition?.labels?.length) return null;
-		delete bootstrap.tradeMessagesRefreshTransition;
+		delete bootstrap.backtestRefreshTransition;
 		return transition;
 	};
 
@@ -41,7 +41,7 @@
 		return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
 	};
 
-	const animateTradeMessagesRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity) => {
+	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity) => {
 		if (!priceChart || !equityChart || !transition) return;
 		const nextLabels = priceChart.data.labels || [];
 		const fromClose = buildAlignedSeries(transition.labels, transition.close, nextLabels, nextClose);
@@ -73,9 +73,9 @@
 		});
 	};
 
-	const initTradeMessagesWorkspace = () => {
+	const initBacktestWorkspace = () => {
 		const state = window.ANTIGRAVITY_APP;
-		if (!state || state.currentView !== "trade-messages" || !window.Chart || !state.tradeBacktest) return;
+		if (!state || state.currentView !== "backtest" || !window.Chart || !state.backtestResult) return;
 
 		const priceCanvas = document.getElementById("tradePriceChart");
 		const equityCanvas = document.getElementById("tradeEquityChart");
@@ -87,15 +87,15 @@
 		priceCanvas.dataset.tradeChartMounted = "1";
 		equityCanvas.dataset.tradeChartMounted = "1";
 
-		const { tradeBacktest, theme } = state;
-		const labels = tradeBacktest.chart.dates;
-		const close = tradeBacktest.chart.close;
-		const equity = tradeBacktest.chart.equity;
-		const initialCapital = Number(tradeBacktest.summary?.initial_capital || 0);
+		const { backtestResult, theme } = state;
+		const labels = backtestResult.chart.dates;
+		const close = backtestResult.chart.close;
+		const equity = backtestResult.chart.equity;
+		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-		const buyMarkers = tradeBacktest.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
-		const sellMarkers = tradeBacktest.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
+		const buyMarkers = backtestResult.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
+		const sellMarkers = backtestResult.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
 		const allInShares = close.length && close[0] > 0 ? Math.floor(initialCapital / close[0]) : 0;
 		const allInCash = initialCapital - (allInShares * (close[0] || 0));
 		const allInEquity = close.map((value) => Number((allInCash + (allInShares * value)).toFixed(4)));
@@ -348,7 +348,7 @@
 			});
 		};
 
-		const refreshTransition = consumeTradeMessagesRefreshTransition();
+		const refreshTransition = consumeBacktestRefreshTransition();
 		const priceSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.labels, refreshTransition.close, labels, close)
 			: close;
@@ -405,10 +405,10 @@
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
 		if (refreshTransition) {
-			animateTradeMessagesRefreshTransition(priceChart, equityChart, refreshTransition, close, equity);
+			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity);
 		}
 	};
 
-	bootstrap.initTradeMessagesWorkspace = initTradeMessagesWorkspace;
-	initTradeMessagesWorkspace();
+	bootstrap.initBacktestWorkspace = initBacktestWorkspace;
+	initBacktestWorkspace();
 })();

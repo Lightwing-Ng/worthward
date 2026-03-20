@@ -6,10 +6,10 @@
 
 	const { defaults, labels, endpoints, constraints, theme } = state;
 	const isPortfolioView = state.currentView === "portfolio";
-	const isTradeMessagesView = state.currentView === "trade-messages";
+	const isBacktestView = state.currentView === "backtest";
 	const MIN_TICKERS = constraints?.minTickers || 2;
 	const MAX_TICKERS = constraints?.maxTickers || 5;
-	const minimumRequiredTickers = isTradeMessagesView ? 1 : MIN_TICKERS;
+	const minimumRequiredTickers = isBacktestView ? 1 : MIN_TICKERS;
 	const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
 	const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
 	const $ = (selector) => document.querySelector(selector);
@@ -17,8 +17,8 @@
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
-	const hasInitialResult = isTradeMessagesView
-		? Boolean(state.tradeBacktest)
+	const hasInitialResult = isBacktestView
+		? Boolean(state.backtestResult)
 		: Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
@@ -57,7 +57,7 @@
 				'[data-workspace-mask="chart-area"]',
 			],
 		},
-		"trade-messages": {
+		"backtest": {
 			masks: [
 				'[data-workspace-mask="trade-metric"]',
 				'[data-workspace-mask="trade-price-chart"]',
@@ -133,19 +133,19 @@
 		};
 	};
 
-	const captureTradeMessagesRefreshTransition = () => {
-		if (!isTradeMessagesView || !state.tradeBacktest?.chart) return;
-		const chartState = state.tradeBacktest.chart;
+	const captureBacktestRefreshTransition = () => {
+		if (!isBacktestView || !state.backtestResult?.chart) return;
+		const chartState = state.backtestResult.chart;
 		if (!Array.isArray(chartState.dates) || !chartState.dates.length) {
-			delete bootstrap.tradeMessagesRefreshTransition;
+			delete bootstrap.backtestRefreshTransition;
 			return;
 		}
-		bootstrap.tradeMessagesRefreshTransition = {
+		bootstrap.backtestRefreshTransition = {
 			capturedAt: performance.now(),
 			labels: [...chartState.dates],
 			close: Array.isArray(chartState.close) ? [...chartState.close] : [],
 			equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
-			initialCapital: Number(state.tradeBacktest.summary?.initial_capital || 0),
+			initialCapital: Number(state.backtestResult.summary?.initial_capital || 0),
 		};
 	};
 
@@ -290,7 +290,7 @@
 		window.requestAnimationFrame(() => {
 			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
 			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
-			window.ANTIGRAVITY_BOOTSTRAP?.initTradeMessagesWorkspace?.();
+			window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
 			if (state.currentView === "portfolio") {
 				dispatchPortfolioPreviewUpdate();
 			}
@@ -299,9 +299,9 @@
 
 	const buildPendingWorkspaceMarkup = () => {
 		const currentValues = getFilledTickers();
-		const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.trade_messages_metrics || "Loading";
+		const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.backtest_metrics || "Loading";
 		const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || "Loading";
-		if (state.currentView === "trade-messages") {
+		if (state.currentView === "backtest") {
 			const tradeMetricLabels = [
 				"Net return",
 				"Final equity",
@@ -316,8 +316,8 @@
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 						<div class="trade-detail-tabs">
 							<div class="range-mode-shell trade-detail-shell" data-active="metrics">
-								<span class="segmented-control-option"><span>${labels.trade_messages_metrics_tab}</span></span>
-								<span class="segmented-control-option"><span>${labels.trade_messages_transactions_tab}</span></span>
+								<span class="segmented-control-option"><span>${labels.backtest_metrics_tab}</span></span>
+								<span class="segmented-control-option"><span>${labels.backtest_transactions_tab}</span></span>
 							</div>
 							<div class="trade-detail-panel">
 								<div class="trade-metrics-grid">
@@ -339,7 +339,7 @@
 						</div>
 					</article>
 				</div>
-				<article class="chart-surface trade-messages-surface">
+				<article class="chart-surface backtest-surface">
 					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
 					<div class="trade-chart-stack">
 						<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
@@ -403,7 +403,7 @@
 		delete workspacePanel.dataset.workspacePending;
 	};
 
-	const applyTradeMessagesPendingState = () => {
+	const applyBacktestPendingState = () => {
 		const workspacePanel = document.getElementById("workspace_panel");
 		if (!workspacePanel) return;
 		const metricNodes = Array.from(workspacePanel.querySelectorAll('[data-workspace-mask="trade-metric"]'));
@@ -423,8 +423,8 @@
 			applyPortfolioPendingState();
 			return;
 		}
-		if (state.currentView === "trade-messages") {
-			applyTradeMessagesPendingState();
+		if (state.currentView === "backtest") {
+			applyBacktestPendingState();
 			return;
 		}
 		const workspacePanel = document.getElementById("workspace_panel");
@@ -536,7 +536,7 @@
 	};
 
 	const attachDockMemory = () => {
-		const viewByDockIndex = ["tickers", "portfolio", "trade-messages", "more", "settings"];
+		const viewByDockIndex = ["tickers", "portfolio", "backtest", "more", "settings"];
 		const dockLinks = $$(".sidebar-dock-item");
 		const setDockPreviewTarget = (targetView) => {
 			dockLinks.forEach((link, index) => {
@@ -1173,7 +1173,7 @@
 			const suggestions = field.querySelector(".suggestions");
 			if (label) {
 				label.setAttribute("for", `ticker_${index}`);
-				label.textContent = isTradeMessagesView ? labels.trade_messages_ticker : `Ticker ${index}`;
+				label.textContent = isBacktestView ? labels.backtest_ticker : `Ticker ${index}`;
 			}
 			if (input) {
 				input.id = `ticker_${index}`;
@@ -1701,7 +1701,7 @@
 		};
 
 		input.addEventListener("input", async () => {
-			if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
+			if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 			hideTickerValidationTooltip(input);
 			input.dataset.logoUrl = "";
 			input.dataset.symbol = "";
@@ -1775,7 +1775,7 @@
 			}
 		});
 		input.addEventListener("change", () => {
-			if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
+			if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 			validateAllTickerInputs();
 			void validateTickerExistence(input, { preferFresh: true });
 			syncDateConstraints();
@@ -1835,8 +1835,8 @@
 
 	const showCompareOverlay = () => {
 		showWorkspaceModal({
-			title: isTradeMessagesView ? "Running your backtest" : "Preparing your chart",
-			copy: isTradeMessagesView
+			title: isBacktestView ? "Running your backtest" : "Preparing your chart",
+			copy: isBacktestView
 				? "Please wait while the app prepares the selected daily data and runs the backtest."
 				: "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
 			iconClass: "icon-overlay-processing",
@@ -1864,7 +1864,7 @@
 			if (button.dataset.bound === "1") return;
 			button.dataset.bound = "1";
 			button.addEventListener("click", () => {
-				if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
+				if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 				const field = button.closest(".ticker-field");
 				const removedWeight = isPortfolioView
 					? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
@@ -1975,6 +1975,7 @@
 	const form = $("form.controls");
 	const periodPanel = $("#period_panel");
 	const exactPanel = $("#exact_panel");
+	const periodSelect = $("#period");
 	const rangeModeInputs = $$("input[name='range']");
 	const exactStartInput = $("#exact_start");
 	const exactEndInput = $("#exact_end");
@@ -2025,6 +2026,112 @@
 		if (maxDate && date > maxDate) return maxDate;
 		return date;
 	};
+	const MS_PER_DAY = 24 * 60 * 60 * 1000;
+	const PERIOD_MONTH_SPANS = {
+		"1mo": 1,
+		"3mo": 3,
+		"6mo": 6,
+		"1y": 12,
+		"2y": 24,
+		"5y": 60,
+		"10y": 120,
+	};
+
+	const shiftMonthsUtc = (date, months) => {
+		const year = date.getUTCFullYear();
+		const month = date.getUTCMonth();
+		const day = date.getUTCDate();
+		const targetMonthStart = new Date(Date.UTC(year, month + months, 1));
+		const targetYear = targetMonthStart.getUTCFullYear();
+		const targetMonth = targetMonthStart.getUTCMonth();
+		const targetMonthEnd = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+		return new Date(Date.UTC(targetYear, targetMonth, Math.min(day, targetMonthEnd)));
+	};
+
+	const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
+
+	const getRenderedChartDateRange = () => {
+		if (isBacktestView) {
+			const dates = state.backtestResult?.chart?.dates;
+			if (Array.isArray(dates) && dates.length) {
+				return {
+					start: String(dates[0]),
+					end: String(dates[dates.length - 1]),
+				};
+			}
+		}
+		const firstSeriesDates = state.chart?.series?.[0]?.dates;
+		if (Array.isArray(firstSeriesDates) && firstSeriesDates.length) {
+			return {
+				start: String(firstSeriesDates[0]),
+				end: String(firstSeriesDates[firstSeriesDates.length - 1]),
+			};
+		}
+		if (exactStartInput?.value && exactEndInput?.value) {
+			return {
+				start: exactStartInput.value,
+				end: exactEndInput.value,
+			};
+		}
+		return null;
+	};
+
+	const syncExactInputsToRenderedRange = () => {
+		if (!exactStartInput || !exactEndInput) return false;
+		const range = getRenderedChartDateRange();
+		if (!range?.start || !range?.end) return false;
+		exactStartInput.value = range.start;
+		exactEndInput.value = range.end;
+		refreshDatePickers();
+		return true;
+	};
+
+	const chooseRelativePeriodForExactRange = () => {
+		if (!periodSelect || !exactStartInput?.value || !exactEndInput?.value) return null;
+		const exactStartDate = parseIsoDate(exactStartInput.value);
+		const exactEndDate = parseIsoDate(exactEndInput.value);
+		const maxDate = parseIsoDate(exactEndInput.max || exactEndInput.value);
+		const minDate = parseIsoDate(exactStartInput.min || exactStartInput.value);
+		if (!exactStartDate || !exactEndDate || !maxDate) return null;
+
+		const exactDurationDays = diffDaysUtc(exactStartDate, exactEndDate);
+		const availableDurationDays = minDate ? diffDaysUtc(minDate, maxDate) : exactDurationDays;
+		const nonMaxOptions = Array.from(periodSelect.options)
+			.map((option) => option.value)
+			.filter((value) => value && value !== "max" && PERIOD_MONTH_SPANS[value]);
+		if (!nonMaxOptions.length) return periodSelect.value || null;
+
+		const candidates = nonMaxOptions.map((value) => {
+			const months = PERIOD_MONTH_SPANS[value];
+			const candidateStart = shiftMonthsUtc(maxDate, -months);
+			const candidateDurationDays = diffDaysUtc(candidateStart, maxDate);
+			const coversExactEnd = exactEndDate >= candidateStart && exactEndDate <= maxDate;
+			return {
+				value,
+				candidateDurationDays,
+				durationGap: Math.abs(candidateDurationDays - exactDurationDays),
+				coveragePenalty: coversExactEnd ? 0 : 1,
+			};
+		});
+
+		candidates.sort((left, right) => (
+			left.durationGap - right.durationGap
+			|| left.coveragePenalty - right.coveragePenalty
+			|| left.candidateDurationDays - right.candidateDurationDays
+		));
+
+		const longestCandidateDays = Math.max(...candidates.map((item) => item.candidateDurationDays));
+		if (periodSelect.querySelector('option[value="max"]')) {
+			const closeToEarliestBound = minDate && diffDaysUtc(minDate, exactStartDate) <= 3;
+			if (exactDurationDays > longestCandidateDays || closeToEarliestBound || exactDurationDays >= availableDurationDays - 3) {
+				return "max";
+			}
+		}
+
+		return candidates[0]?.value || periodSelect.value || null;
+	};
+
+	let lastRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
 
 	const clampTradeCapital = (value) => Math.min(1000000, Math.max(1, value || 1));
 	const parseTradeCapitalValue = (rawValue) => {
@@ -2060,7 +2167,7 @@
 
 	const canAutoSubmit = () => {
 		if (!form) return false;
-		if (!hasInitialResult && !isTradeMessagesView) return false;
+		if (!hasInitialResult && !isBacktestView) return false;
 		const values = getFilledTickers();
 		if (values.length < minimumRequiredTickers) return false;
 		if (new Set(values).size !== values.length) return false;
@@ -2254,7 +2361,7 @@
 			});
 		}
 
-		if (isTradeMessagesView) {
+		if (isBacktestView) {
 			const strategySelect = $("#trade_strategy");
 			const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
 			if (strategySelect?.value) params.set("strategy", strategySelect.value);
@@ -2326,35 +2433,46 @@
 	scheduleDockPosition();
 
 	$("#add_ticker")?.addEventListener("click", () => {
-		if (!isTradeMessagesView) clearWorkspaceChartTransitionRequest();
+		if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 		addTickerField();
 	});
 	rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
+		const nextRangeMode = input.value;
+		const previousRangeMode = lastRangeMode;
+		if (previousRangeMode !== nextRangeMode) {
+			if (nextRangeMode === "exact") {
+				syncExactInputsToRenderedRange();
+			} else if (nextRangeMode === "period") {
+				const matchedPeriod = chooseRelativePeriodForExactRange();
+				if (matchedPeriod && periodSelect) periodSelect.value = matchedPeriod;
+			}
+		}
 		updateRangePanels();
 		syncDateConstraints();
-		if (!isTradeMessagesView) requestWorkspaceChartTransition("range-mode");
+		lastRangeMode = nextRangeMode;
+		if (!isBacktestView) requestWorkspaceChartTransition("range-mode");
 		scheduleAutoSubmit();
 	}));
 	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
 		if (!input) return;
 		input.addEventListener("change", () => {
 			syncDateConstraints();
-			if (!isTradeMessagesView) requestWorkspaceChartTransition("range-controls");
+			if (!isBacktestView) requestWorkspaceChartTransition("range-controls");
 			scheduleAutoSubmit();
 		});
 	});
 	if (includeDividendsInput && form) {
 		includeDividendsInput.addEventListener("change", () => {
-			if (!isTradeMessagesView) requestWorkspaceChartTransition("dividends");
+			if (!isBacktestView) requestWorkspaceChartTransition("dividends");
 			scheduleAutoSubmit(80);
 		});
 	}
 	$("#period")?.addEventListener("change", () => {
-		if (!isTradeMessagesView) requestWorkspaceChartTransition("period");
+		if (!isBacktestView) requestWorkspaceChartTransition("period");
 		scheduleAutoSubmit();
 	});
 
-	if (isTradeMessagesView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
+	if (isBacktestView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
 		const scheduleTradeAutoSubmit = () => {
 			scheduleAutoSubmit(180);
 		};
@@ -2758,8 +2876,8 @@
 					iconClass: "icon-overlay-local-cache",
 				});
 			}
-			if (state.currentView === "trade-messages") {
-				captureTradeMessagesRefreshTransition();
+			if (state.currentView === "backtest") {
+				captureBacktestRefreshTransition();
 			} else if (pendingWorkspaceChartTransition?.view === state.currentView) {
 				captureLineChartRefreshTransition();
 			} else {
