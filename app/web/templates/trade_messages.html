@@ -20,7 +20,6 @@
             </div>
         </div>
     </div>
-    {# Dynamic parameter form removed — always use default parameters for selected strategy #}
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.trade_messages_capital }}</label>
@@ -40,20 +39,32 @@
             </span>
         </label>
     </div>
-    <div class="field">
+    <div class="field trade-strategy-field" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.trade_messages_strategy }}</label>
-        <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
-            {% for group in strategy_option_groups %}
-            <optgroup label="{{ group.label }}">
-                {% for strategy in group['items'] %}
-                <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+        <div class="trade-strategy-row">
+            <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
+                {% for group in strategy_option_groups %}
+                <optgroup label="{{ group.label }}">
+                    {% for strategy in group['items'] %}
+                    <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
-            </optgroup>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="field">
-        <button id="submit" type="submit" class="sidebar-action-button">{{ labels.trade_messages_backtest }}</button>
+            </select>
+            <button
+                type="button"
+                class="trade-strategy-tune-button{% if not strategy_form_fields %} is-hidden{% endif %}"
+                data-trade-strategy-tune-button
+                aria-label="Tune strategy parameters"
+                aria-pressed="false"
+                {% if not strategy_form_fields %}hidden{% endif %}
+            >
+                <span class="icon icon-strategy-tune" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div class="trade-strategy-params-popover" data-trade-strategy-panel hidden>
+            {% include "_trade_strategy_params_panel.html" %}
+        </div>
     </div>
 </form>
 {% endblock %}

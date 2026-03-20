@@ -347,6 +347,9 @@ def register_routes(app: Flask) -> None:
         slider_min: int | float | None = None
         slider_max: int | float | None = None
         slider_step: int | float | None = None
+        switch_checked = False
+        switch_on_value: str | int = 1
+        switch_off_value: str | int = 0
 
         if definition.kind in {"integer", "number"}:
             field_type = "number"
@@ -367,8 +370,17 @@ def register_routes(app: Flask) -> None:
                     slider_max = max(float(slider_min) + float(slider_step), round(float(slider_max), 4))
         elif definition.kind == "string":
             field_type = "text"
+        elif definition.kind == "boolean":
+            field_type = "switch"
+            switch_checked = bool(resolved_value)
         else:
             field_type = "select"
+            options = tuple(str(option) for option in definition.options)
+            if options in {("Off", "On"), ("On", "Off")}:
+                field_type = "switch"
+                switch_on_value = "On"
+                switch_off_value = "Off"
+                switch_checked = str(resolved_value) == "On"
 
         return {
             "key": definition.key,
@@ -389,6 +401,9 @@ def register_routes(app: Flask) -> None:
             "help_text": definition.help_text,
             "unit_hint": definition.unit_hint,
             "placeholder": definition.placeholder,
+            "switch_checked": switch_checked,
+            "switch_on_value": switch_on_value,
+            "switch_off_value": switch_off_value,
         }
 
     def collect_strategy_form_values(strategy_id: str) -> dict[str, Any]:
@@ -1350,6 +1365,7 @@ def register_routes(app: Flask) -> None:
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",
+                "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
@@ -1530,6 +1546,28 @@ def register_routes(app: Flask) -> None:
         datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         return jsonify(asdict(payload))
+
+    @app.get("/api/trade-strategy-fields")
+    def trade_strategy_fields_api():
+        strategy_id = request.args.get("strategy", "").strip()
+        if not strategy_id:
+            return jsonify({"is_tunable": False, "html": ""})
+
+        strategy_ids = {str(item["id"]) for item in list_enabled_strategies()}
+        if strategy_id not in strategy_ids:
+            return jsonify({"is_tunable": False, "html": ""})
+
+        strategy_form_fields = build_strategy_form_fields(strategy_id)
+        html = render_template(
+            "_trade_strategy_params_panel.html",
+            strategy_form_fields=strategy_form_fields,
+        )
+        return jsonify(
+            {
+                "is_tunable": bool(strategy_form_fields),
+                "html": html,
+            }
+        )
 
     @app.get("/api/settings/network-status")
     def settings_network_status_api():

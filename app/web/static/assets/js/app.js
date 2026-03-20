@@ -2207,7 +2207,9 @@
 			const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
 			if (strategySelect?.value) params.set("strategy", strategySelect.value);
 			if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
-			// Dynamic strategy parameters removed — always use defaults, no need to collect
+			collectStrategyParamEntries().forEach(([key, value]) => {
+				if (key) params.set(key, value);
+			});
 		}
 
 		const queryString = params.toString();
@@ -2334,240 +2336,171 @@
 		tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
 	}
 
-	const strategyParamFields = Array.from(document.querySelectorAll("[data-strategy-param-key]"));
+	const tradeStrategyField = document.querySelector("[data-trade-strategy-field]");
+	const tradeStrategySelect = $("#trade_strategy");
+	const tradeStrategyTuneButton = document.querySelector("[data-trade-strategy-tune-button]");
+	const tradeStrategyPanel = document.querySelector("[data-trade-strategy-panel]");
+	let strategySwitchAnimationTimer = null;
+	let strategyFieldsRequestToken = 0;
+
 	const scheduleStrategyParamSubmit = (delay = 160) => {
 		if (!hasInitialResult) return;
 		scheduleAutoSubmit(delay);
 	};
-	strategyParamFields.forEach((field) => {
-		if (!(field instanceof HTMLElement)) return;
-		const textInput = field.querySelector("[data-strategy-param-input='text']");
-		const clearButton = field.querySelector("[data-strategy-param-clear]");
-		if (textInput instanceof HTMLInputElement && clearButton instanceof HTMLButtonElement) {
-			const suggestions = field.querySelector("[data-strategy-param-suggestions]");
-			const emptyState = field.querySelector("[data-strategy-param-empty]");
-			const suggestionButtons = Array.from(field.querySelectorAll("[data-strategy-param-suggestion-value]"));
-			const escapeHtml = (value) => String(value)
-				.replaceAll("&", "&amp;")
-				.replaceAll("<", "&lt;")
-				.replaceAll(">", "&gt;")
-				.replaceAll('"', "&quot;")
-				.replaceAll("'", "&#39;");
-			const highlightMatch = (value, query) => {
-				const text = String(value ?? "");
-				const needle = String(query ?? "").trim();
-				if (!needle) return escapeHtml(text);
-				const lowerText = text.toLowerCase();
-				const lowerNeedle = needle.toLowerCase();
-				const index = lowerText.indexOf(lowerNeedle);
-				if (index === -1) return escapeHtml(text);
-				const before = escapeHtml(text.slice(0, index));
-				const match = escapeHtml(text.slice(index, index + needle.length));
-				const after = escapeHtml(text.slice(index + needle.length));
-				return `${before}<mark class="strategy-param-suggestion-mark">${match}</mark>${after}`;
-			};
-			let activeSuggestionIndex = -1;
-			const visibleButtons = () => suggestionButtons.filter((button) => !button.hidden);
-			const syncClearVisibility = () => {
-				const hasValue = textInput.value.trim().length > 0;
-				clearButton.classList.toggle("is-visible", hasValue);
-				clearButton.tabIndex = hasValue ? 0 : -1;
-			};
-			const syncActiveSuggestion = () => {
-				const visible = visibleButtons();
-				suggestionButtons.forEach((button, index) => {
-					button.classList.toggle("is-active", visible[index] === button && index === activeSuggestionIndex);
-				});
-				const active = visible[activeSuggestionIndex];
-				if (active instanceof HTMLElement) active.scrollIntoView({ block: "nearest" });
-			};
-			const setActiveSuggestion = (index) => {
-				const visible = visibleButtons();
-				if (!visible.length) {
-					activeSuggestionIndex = -1;
-					suggestionButtons.forEach((button) => button.classList.remove("is-active"));
-					return;
-				}
-				activeSuggestionIndex = Math.max(0, Math.min(index, visible.length - 1));
-				suggestionButtons.forEach((button) => button.classList.toggle("is-active", button === visible[activeSuggestionIndex]));
-				visible[activeSuggestionIndex]?.scrollIntoView({ block: "nearest" });
-			};
-			const applySuggestion = (button) => {
-				if (!(button instanceof HTMLButtonElement)) return;
-				const value = button.dataset.strategyParamSuggestionValue || "";
-				textInput.value = value;
-				syncClearVisibility();
-				filterSuggestions();
-				closeSuggestions();
-				textInput.focus();
-				scheduleStrategyParamSubmit(80);
-			};
-			const filterSuggestions = () => {
-				const query = textInput.value.trim().toLowerCase();
-				let visibleCount = 0;
-				suggestionButtons.forEach((button) => {
-					if (!(button instanceof HTMLButtonElement)) return;
-					const rawValue = button.dataset.strategyParamSuggestionValue || "";
-					const label = button.querySelector("[data-strategy-param-suggestion-symbol]");
-					const matches = !query || rawValue.toLowerCase().startsWith(query) || rawValue.toLowerCase().includes(query);
-					button.hidden = !matches;
-					button.setAttribute("aria-hidden", matches ? "false" : "true");
-					if (label instanceof HTMLElement) {
-						label.innerHTML = highlightMatch(rawValue, query);
-					}
-					if (matches) visibleCount += 1;
-				});
-				if (emptyState instanceof HTMLElement) emptyState.hidden = visibleCount > 0;
-				const visible = visibleButtons();
-				if (!visible.length) {
-					activeSuggestionIndex = -1;
-					suggestionButtons.forEach((button) => button.classList.remove("is-active"));
-					return;
-				}
-				if (activeSuggestionIndex < 0 || activeSuggestionIndex >= visible.length) {
-					activeSuggestionIndex = 0;
-				}
-				setActiveSuggestion(activeSuggestionIndex);
-			};
-			const openSuggestions = () => {
-				if (!(suggestions instanceof HTMLElement)) return;
-				filterSuggestions();
-				suggestions.classList.add("is-open");
-			};
-			const closeSuggestions = () => {
-				if (!(suggestions instanceof HTMLElement)) return;
-				suggestions.classList.remove("is-open");
-				activeSuggestionIndex = -1;
-				suggestionButtons.forEach((button) => button.classList.remove("is-active"));
-			};
-			textInput.addEventListener("focus", openSuggestions);
-			textInput.addEventListener("click", openSuggestions);
-			textInput.addEventListener("input", () => {
-				syncClearVisibility();
-				openSuggestions();
-				scheduleStrategyParamSubmit();
-			});
-			textInput.addEventListener("change", () => {
-				syncClearVisibility();
-				filterSuggestions();
-				scheduleStrategyParamSubmit(80);
-			});
-			textInput.addEventListener("keydown", (event) => {
-				const visible = visibleButtons();
-				if (event.key === "ArrowDown") {
-					event.preventDefault();
-					openSuggestions();
-					setActiveSuggestion((activeSuggestionIndex < 0 ? -1 : activeSuggestionIndex) + 1);
-					return;
-				}
-				if (event.key === "ArrowUp") {
-					event.preventDefault();
-					openSuggestions();
-					setActiveSuggestion((activeSuggestionIndex < 0 ? visible.length : activeSuggestionIndex) - 1);
-					return;
-				}
-				if (event.key === "Enter" && visible.length && activeSuggestionIndex >= 0 && suggestions instanceof HTMLElement && suggestions.classList.contains("is-open")) {
-					event.preventDefault();
-					applySuggestion(visible[activeSuggestionIndex]);
-					return;
-				}
-				if (event.key === "Escape") {
-					closeSuggestions();
-				}
-			});
-			clearButton.addEventListener("click", () => {
-				textInput.value = "";
-				syncClearVisibility();
-				openSuggestions();
-				textInput.focus();
-				scheduleStrategyParamSubmit(80);
-			});
-			suggestionButtons.forEach((button) => {
-				if (!(button instanceof HTMLButtonElement)) return;
-				button.addEventListener("mouseenter", () => {
-					const visible = visibleButtons();
-					const index = visible.indexOf(button);
-					if (index >= 0) setActiveSuggestion(index);
-				});
-				button.addEventListener("click", () => applySuggestion(button));
-			});
-			field.addEventListener("focusout", () => window.setTimeout(() => {
-				if (field.matches(":focus-within")) return;
-				closeSuggestions();
-			}, 100));
-			syncClearVisibility();
-			filterSuggestions();
-		}
 
-		const numberInput = field.querySelector("[data-strategy-param-input='number']");
-		const numberSlider = field.querySelector("[data-strategy-param-slider]");
-		if (numberInput instanceof HTMLInputElement && numberSlider instanceof HTMLInputElement) {
-			const normalizeNumberValue = (value) => {
-				const parsed = Number.parseFloat(String(value));
-				if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || numberSlider.min || "0") || 0;
-				const min = Number.parseFloat(numberInput.min || numberSlider.min || "");
-				const max = Number.parseFloat(numberInput.max || numberSlider.max || "");
-				let normalized = parsed;
-				if (Number.isFinite(min)) normalized = Math.max(min, normalized);
-				if (Number.isFinite(max)) normalized = Math.min(max, normalized);
-				return normalized;
-			};
-			const syncNumberPair = (value, fromSlider = false) => {
-				const normalized = normalizeNumberValue(value);
-				numberInput.value = numberInput.step && numberInput.step !== "1" ? String(normalized) : String(Math.round(normalized));
-				numberSlider.value = String(normalized);
-				if (fromSlider) scheduleStrategyParamSubmit();
-			};
-			numberInput.addEventListener("focus", () => field.classList.add("is-open"));
-			numberInput.addEventListener("click", () => field.classList.add("is-open"));
-			numberInput.addEventListener("input", () => {
-				syncNumberPair(numberInput.value);
-				scheduleStrategyParamSubmit();
-			});
-			numberInput.addEventListener("change", () => {
-				syncNumberPair(numberInput.value);
-				scheduleStrategyParamSubmit(80);
-			});
-			numberSlider.addEventListener("focus", () => field.classList.add("is-open"));
-			numberSlider.addEventListener("input", () => {
-				syncNumberPair(numberSlider.value, true);
-			});
-			field.addEventListener("focusout", () => window.setTimeout(() => {
-				if (field.matches(":focus-within")) return;
-				field.classList.remove("is-open");
-				syncNumberPair(numberInput.value);
-			}, 80));
-			syncNumberPair(numberInput.value);
-		}
+	const collectStrategyParamEntries = () => {
+		if (!(tradeStrategyField instanceof HTMLElement)) return [];
+		const controls = Array.from(tradeStrategyField.querySelectorAll("[data-strategy-param-input][name]"));
+		return controls.flatMap((control) => {
+			if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement)) {
+				return [];
+			}
+			const key = control.name?.trim();
+			if (!key) return [];
+			const value = control.value ?? "";
+			return value === "" ? [] : [[key, value]];
+		});
+	};
 
-		const selectInput = field.querySelector("[data-strategy-param-input='select']");
-		if (selectInput instanceof HTMLSelectElement) {
-			selectInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+	const setTradeStrategyPanelOpen = (isOpen) => {
+		if (!(tradeStrategyPanel instanceof HTMLElement) || !(tradeStrategyTuneButton instanceof HTMLButtonElement)) return;
+		const shouldOpen = isOpen && !tradeStrategyTuneButton.hidden;
+		tradeStrategyPanel.hidden = !shouldOpen;
+		tradeStrategyTuneButton.classList.toggle("is-active", shouldOpen);
+		tradeStrategyTuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
+		if (tradeStrategyField instanceof HTMLElement) {
+			tradeStrategyField.classList.toggle("is-open", shouldOpen);
 		}
-	});
+	};
 
-	const tradeStrategySelect = $("#trade_strategy");
-	const tradeStrategyParamsField = document.querySelector(".trade-strategy-params-field");
-	let strategySwitchAnimationTimer = null;
+	const initStrategyParamControls = (root = document) => {
+		const fields = Array.from(root.querySelectorAll("[data-strategy-param-key]"));
+		fields.forEach((field) => {
+			if (!(field instanceof HTMLElement) || field.dataset.strategyParamBound === "1") return;
+			field.dataset.strategyParamBound = "1";
+
+			const textInput = field.querySelector("[data-strategy-param-input='text']");
+			if (textInput instanceof HTMLInputElement) {
+				textInput.addEventListener("input", () => scheduleStrategyParamSubmit());
+				textInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+			}
+
+			const numberInput = field.querySelector("[data-strategy-param-input='number']");
+			const numberSlider = field.querySelector("[data-strategy-param-slider]");
+			if (numberInput instanceof HTMLInputElement && numberSlider instanceof HTMLInputElement) {
+				const normalizeNumberValue = (value) => {
+					const parsed = Number.parseFloat(String(value));
+					if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || numberSlider.min || "0") || 0;
+					const min = Number.parseFloat(numberInput.min || numberSlider.min || "");
+					const max = Number.parseFloat(numberInput.max || numberSlider.max || "");
+					let normalized = parsed;
+					if (Number.isFinite(min)) normalized = Math.max(min, normalized);
+					if (Number.isFinite(max)) normalized = Math.min(max, normalized);
+					return normalized;
+				};
+				const syncNumberPair = (value, fromSlider = false) => {
+					const normalized = normalizeNumberValue(value);
+					numberInput.value = numberInput.step && numberInput.step !== "1" ? String(normalized) : String(Math.round(normalized));
+					numberSlider.value = String(normalized);
+					if (fromSlider) scheduleStrategyParamSubmit();
+				};
+				numberInput.addEventListener("focus", () => field.classList.add("is-open"));
+				numberInput.addEventListener("click", () => field.classList.add("is-open"));
+				numberInput.addEventListener("input", () => {
+					syncNumberPair(numberInput.value);
+					scheduleStrategyParamSubmit();
+				});
+				numberInput.addEventListener("change", () => {
+					syncNumberPair(numberInput.value);
+					scheduleStrategyParamSubmit(80);
+				});
+				numberSlider.addEventListener("focus", () => field.classList.add("is-open"));
+				numberSlider.addEventListener("input", () => syncNumberPair(numberSlider.value, true));
+				field.addEventListener("focusout", () => window.setTimeout(() => {
+					if (field.matches(":focus-within")) return;
+					field.classList.remove("is-open");
+					syncNumberPair(numberInput.value);
+				}, 80));
+				syncNumberPair(numberInput.value);
+			}
+
+			const booleanInput = field.querySelector("[data-strategy-param-input='boolean']");
+			const booleanSwitch = field.querySelector("[data-strategy-param-switch]");
+			if (booleanInput instanceof HTMLInputElement && booleanSwitch instanceof HTMLInputElement) {
+				const syncBooleanValue = () => {
+					booleanInput.value = booleanSwitch.checked ? "1" : "0";
+				};
+				booleanSwitch.addEventListener("change", () => {
+					syncBooleanValue();
+					scheduleStrategyParamSubmit(80);
+				});
+				syncBooleanValue();
+			}
+
+			const selectInput = field.querySelector("[data-strategy-param-input='select']");
+			if (selectInput instanceof HTMLSelectElement) {
+				selectInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+			}
+		});
+	};
+
+	const syncTradeStrategyTuningAvailability = () => {
+		if (!(tradeStrategyTuneButton instanceof HTMLButtonElement) || !(tradeStrategyPanel instanceof HTMLElement)) return;
+		const hasFields = Boolean(tradeStrategyPanel.querySelector("[data-strategy-param-key]"));
+		tradeStrategyTuneButton.hidden = !hasFields;
+		tradeStrategyTuneButton.classList.toggle("is-hidden", !hasFields);
+		if (!hasFields) setTradeStrategyPanelOpen(false);
+	};
+
 	const pulseStrategySwitch = () => {
 		if (!(tradeStrategySelect instanceof HTMLSelectElement)) return;
 		tradeStrategySelect.classList.remove("is-switching");
-		if (tradeStrategyParamsField instanceof HTMLElement) {
-			tradeStrategyParamsField.classList.remove("is-switching");
+		if (tradeStrategyPanel instanceof HTMLElement) {
+			tradeStrategyPanel.classList.remove("is-switching");
 		}
 		void tradeStrategySelect.offsetWidth;
 		tradeStrategySelect.classList.add("is-switching");
-		if (tradeStrategyParamsField instanceof HTMLElement) {
-			tradeStrategyParamsField.classList.add("is-switching");
+		if (tradeStrategyPanel instanceof HTMLElement && !tradeStrategyPanel.hidden) {
+			tradeStrategyPanel.classList.add("is-switching");
 		}
 		if (strategySwitchAnimationTimer) window.clearTimeout(strategySwitchAnimationTimer);
 		strategySwitchAnimationTimer = window.setTimeout(() => {
 			tradeStrategySelect.classList.remove("is-switching", "is-pressing");
-			if (tradeStrategyParamsField instanceof HTMLElement) {
-				tradeStrategyParamsField.classList.remove("is-switching");
+			if (tradeStrategyPanel instanceof HTMLElement) {
+				tradeStrategyPanel.classList.remove("is-switching");
 			}
 		}, 380);
 	};
+
+	const refreshTradeStrategyFields = async (strategyId) => {
+		if (!(tradeStrategyPanel instanceof HTMLElement) || !endpoints.strategyFields || !strategyId) return;
+		const requestToken = ++strategyFieldsRequestToken;
+		try {
+			const response = await fetch(`${endpoints.strategyFields}?strategy=${encodeURIComponent(strategyId)}`, {
+				credentials: "same-origin",
+			});
+			if (!response.ok) return;
+			const payload = await response.json();
+			if (requestToken !== strategyFieldsRequestToken) return;
+			tradeStrategyPanel.innerHTML = payload.html || "";
+			initStrategyParamControls(tradeStrategyPanel);
+			syncTradeStrategyTuningAvailability();
+			if (!payload.is_tunable) {
+				setTradeStrategyPanelOpen(false);
+			}
+		} catch (_error) {
+		}
+	};
+
+	initStrategyParamControls(tradeStrategyField || document);
+	syncTradeStrategyTuningAvailability();
+
+	if (tradeStrategyTuneButton instanceof HTMLButtonElement) {
+		tradeStrategyTuneButton.addEventListener("click", () => {
+			setTradeStrategyPanelOpen(tradeStrategyPanel instanceof HTMLElement ? tradeStrategyPanel.hidden : false);
+		});
+	}
+
 	if (tradeStrategySelect instanceof HTMLSelectElement) {
 		const releaseStrategyPress = () => tradeStrategySelect.classList.remove("is-pressing");
 		tradeStrategySelect.addEventListener("pointerdown", () => {
@@ -2576,10 +2509,11 @@
 		tradeStrategySelect.addEventListener("pointerup", releaseStrategyPress);
 		tradeStrategySelect.addEventListener("pointercancel", releaseStrategyPress);
 		tradeStrategySelect.addEventListener("blur", releaseStrategyPress);
-		tradeStrategySelect.addEventListener("change", () => {
+		tradeStrategySelect.addEventListener("change", async () => {
+			pulseStrategySwitch();
+			await refreshTradeStrategyFields(tradeStrategySelect.value);
 			if (!form) return;
 			if (!hasInitialResult) return;
-			pulseStrategySwitch();
 			window.setTimeout(() => form.requestSubmit(), 72);
 		});
 	}

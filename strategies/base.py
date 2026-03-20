@@ -1,7 +1,7 @@
 """
 Base strategy interfaces.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ class StrategySignalResult:
 class StrategyParameterDefinition:
     key: str
     label: str
-    kind: Literal["integer", "number", "choice", "string"] = "integer"
+    kind: Literal["integer", "number", "choice", "string", "boolean"] = "integer"
     default: Any = None
     minimum: int | float | None = None
     maximum: int | float | None = None
@@ -37,6 +37,8 @@ class StrategyParameterDefinition:
     def display_default(self) -> str:
         if self.default is None:
             return "None"
+        if self.kind == "boolean":
+            return "On" if bool(self.default) else "Off"
         return str(self.default)
 
 
@@ -127,6 +129,12 @@ class BaseStrategy:
             elif definition.kind == "choice":
                 if definition.options and value not in definition.options:
                     value = definition.default
+            elif definition.kind == "boolean":
+                if isinstance(value, str):
+                    normalized_bool = value.strip().lower()
+                    value = normalized_bool in {"1", "true", "yes", "on"}
+                else:
+                    value = bool(value)
             else:
                 value = str(value) if value is not None else str(definition.default or "")
 
