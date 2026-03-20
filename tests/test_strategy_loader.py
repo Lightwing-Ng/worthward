@@ -1,7 +1,7 @@
 """
 Tests for strategy loader catalog discovery.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ class StrategyLoaderTests(unittest.TestCase):
         registry = load_strategy_registry()
         self.assertEqual(registry["version"], "v2.0.0")
         strategies = registry["strategies"]
-        self.assertGreaterEqual(len(strategies), 4)
+        self.assertGreaterEqual(len(strategies), 3)
 
         macd = next(item for item in strategies if item["id"] == "macd")
         self.assertEqual(macd["name"], "MACD")
@@ -33,9 +33,10 @@ class StrategyLoaderTests(unittest.TestCase):
     def test_enabled_strategy_list_is_sorted_by_display_order(self) -> None:
         strategy_ids = [item["id"] for item in list_enabled_strategies()]
         self.assertEqual(
-            strategy_ids,
-            ["buy-and-hold", "macd", "supertrend-ai", "supertrend-double-ai"],
+            strategy_ids[:3],
+            ["buy-and-hold", "macd", "supertrend-ai"],
         )
+        self.assertNotIn("supertrend-double-ai", strategy_ids)
 
     def test_enabled_strategy_list_exposes_categories_for_grouped_ui(self) -> None:
         categories = {item["id"]: item["category"] for item in list_enabled_strategies()}

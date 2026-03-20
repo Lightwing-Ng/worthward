@@ -1,4 +1,4 @@
-/* Code version: v1.11.0 */
+/* Code version: v1.13.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -41,21 +41,73 @@
 		return closeSeries.map((value) => Number((cash + (shares * Number(value || 0))).toFixed(4)));
 	};
 
-	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity) => {
+	const readPxToken = (element, tokenName, fallbackValue) => {
+		if (!(element instanceof Element)) return fallbackValue;
+		const rawValue = getComputedStyle(element).getPropertyValue(tokenName).trim();
+		const parsed = Number.parseFloat(rawValue);
+		return Number.isFinite(parsed) ? parsed : fallbackValue;
+	};
+
+	const collectFiniteValues = (datasets) => {
+		if (!Array.isArray(datasets)) return [];
+		return datasets.flatMap((dataset) => (Array.isArray(dataset) ? dataset : []))
+			.map((value) => Number(value))
+			.filter((value) => Number.isFinite(value));
+	};
+
+	const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
+		const values = collectFiniteValues(datasets);
+		if (!values.length) return {};
+		const rawMin = Math.min(...values);
+		const rawMax = Math.max(...values);
+		if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) return {};
+		if (rawMin === rawMax) {
+			const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
+			return {
+				min: rawMin - fallbackPadding,
+				max: rawMax + fallbackPadding,
+				rawMin,
+				rawMax,
+			};
+		}
+		const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
+		const safePaddingPx = Math.max(0, paddingPx);
+		const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+		const dataRange = rawMax - rawMin;
+		const dataPadding = dataRange * (safePaddingPx / usableHeight);
+		return {
+			min: rawMin - dataPadding,
+			max: rawMax + dataPadding,
+			rawMin,
+			rawMax,
+		};
+	};
+
+	const applyBacktestYAxisScale = (chart, canvas, datasets, paddingPx) => {
+		if (!chart?.options?.scales?.y) return;
+		const nextScale = buildPixelPaddedYScale(canvas, datasets, paddingPx);
+		chart.options.scales.y.min = nextScale.min;
+		chart.options.scales.y.max = nextScale.max;
+	};
+
+	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, chartYPaddingPx) => {
 		if (!priceChart || !equityChart || !transition) return;
 		const nextLabels = priceChart.data.labels || [];
+		const nextAllIn = buildAllInSeries(nextClose, transition.initialCapital);
 		const fromClose = buildAlignedSeries(transition.labels, transition.close, nextLabels, nextClose);
 		const fromEquity = buildAlignedSeries(transition.labels, transition.equity, nextLabels, nextEquity);
 		const fromAllIn = buildAlignedSeries(
 			transition.labels,
 			buildAllInSeries(transition.close, transition.initialCapital),
 			nextLabels,
-			buildAllInSeries(nextClose, transition.initialCapital),
+			nextAllIn,
 		);
 
 		priceChart.data.datasets[0].data = fromClose;
 		equityChart.data.datasets[0].data = fromEquity;
 		equityChart.data.datasets[1].data = fromAllIn;
+		applyBacktestYAxisScale(priceChart, priceChart.canvas, [fromClose], chartYPaddingPx);
+		applyBacktestYAxisScale(equityChart, equityChart.canvas, [fromEquity, fromAllIn], chartYPaddingPx);
 		priceChart.update("none");
 		equityChart.update("none");
 
@@ -68,6 +120,9 @@
 			equityChart.options.animation = animationConfig;
 			priceChart.data.datasets[0].data = nextClose;
 			equityChart.data.datasets[0].data = nextEquity;
+			equityChart.data.datasets[1].data = nextAllIn;
+			applyBacktestYAxisScale(priceChart, priceChart.canvas, [nextClose], chartYPaddingPx);
+			applyBacktestYAxisScale(equityChart, equityChart.canvas, [nextEquity, nextAllIn], chartYPaddingPx);
 			priceChart.update();
 			equityChart.update();
 		});
@@ -104,6 +159,7 @@
 		const fixedYAxisWidth = 52;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
+		const chartYPaddingPx = readPxToken(tradeChartStack, "--trade-chart-y-padding-px", 5);
 		const existingHoverLine = tradeChartStack.querySelector(".trade-chart-hover-line");
 		if (existingHoverLine) existingHoverLine.remove();
 		const hoverLine = document.createElement("div");
@@ -211,8 +267,8 @@
 				if (!chartArea || !xScale || !labels.length) return;
 				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
-				const baselineY = chartArea.bottom + 16;
-				const lineHeight = 12;
+				const baselineY = chartArea.bottom;
+				const lineHeight = 10;
 				ctx.save();
 				ctx.fillStyle = theme.muted;
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
@@ -236,7 +292,7 @@
 		const commonOptions = {
 			responsive: true,
 			maintainAspectRatio: false,
-			layout: { padding: { bottom: 34 } },
+			layout: { padding: { bottom: 22 } },
 			interaction: { mode: "index", intersect: false },
 			plugins: { legend: { display: false }, tooltip: { enabled: false } },
 			scales: {
@@ -246,12 +302,21 @@
 					ticks: { display: false },
 				},
 				y: {
+					bounds: "ticks",
 					grid: { display: false, drawTicks: false },
 					border: { display: false },
 					afterFit: (scale) => {
 						scale.width = fixedYAxisWidth;
 					},
-					ticks: { color: theme.muted, display: true, padding: 8 },
+					ticks: {
+						color: theme.muted,
+						display: true,
+						padding: 8,
+						callback(value, index, ticks) {
+							if (index === 0 || index === ticks.length - 1) return "";
+							return typeof this.getLabelForValue === "function" ? this.getLabelForValue(value) : String(value);
+						},
+					},
 				},
 			},
 		};
@@ -355,6 +420,8 @@
 		const equitySeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.labels, refreshTransition.equity, labels, equity)
 			: equity;
+		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], chartYPaddingPx);
+		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInEquity], chartYPaddingPx);
 
 		priceChart = new Chart(priceCanvas, {
 			type: "line",
@@ -369,7 +436,11 @@
 			options: {
 				...commonOptions,
 				animation: refreshTransition ? false : undefined,
-				scales: { ...commonOptions.scales, x: { ...commonOptions.scales.x, display: false } },
+				scales: {
+					...commonOptions.scales,
+					x: { ...commonOptions.scales.x, display: false },
+					y: { ...commonOptions.scales.y, ...priceYScale },
+				},
 			},
 			plugins: [],
 		});
@@ -398,6 +469,10 @@
 			options: {
 				...commonOptions,
 				animation: refreshTransition ? false : undefined,
+				scales: {
+					...commonOptions.scales,
+					y: { ...commonOptions.scales.y, ...equityYScale },
+				},
 			},
 			plugins: [referenceLinePlugin, xAxisLabelPlugin],
 		});
@@ -405,7 +480,7 @@
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
 		if (refreshTransition) {
-			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity);
+			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, chartYPaddingPx);
 		}
 	};
 

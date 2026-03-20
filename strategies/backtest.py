@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.4.1
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -40,6 +40,26 @@ def _build_trade_pairs(trades: list[dict[str, object]]) -> list[tuple[dict[str, 
             continue
         trade_pairs.append((first_trade, second_trade))
     return trade_pairs
+
+
+def _build_win_rate_trade_pairs(
+    trades: list[dict[str, object]],
+    final_close_price: float,
+    final_trade_date: pd.Timestamp,
+    open_shares: int,
+) -> list[tuple[dict[str, object], dict[str, object]]]:
+    metric_trades = list(trades)
+    if metric_trades and str(metric_trades[-1].get("side", "")) == "Buy" and open_shares > 0 and final_close_price > 0:
+        entry_price = float(metric_trades[-1].get("price", 0.0))
+        metric_trades.append({
+            "date": final_trade_date.strftime("%Y/%m/%d"),
+            "side": "Sell",
+            "price": round(final_close_price, 4),
+            "shares": open_shares,
+            "pnl": round((final_close_price - entry_price) * open_shares, 4),
+            "equity": 0.0,
+        })
+    return _build_trade_pairs(metric_trades)
 
 
 def run_single_ticker_backtest(
@@ -100,7 +120,9 @@ def run_single_ticker_backtest(
     frame["Equity"] = equity_points
     drawdown = (frame["Equity"] / frame["Equity"].cummax()) - 1.0
     sell_trades = [trade for trade in trades if trade["side"] == "Sell"]
-    trade_pairs = _build_trade_pairs(trades)
+    final_close_price = float(frame["Close"].iloc[-1])
+    final_trade_date = pd.Timestamp(frame["Date"].iloc[-1])
+    trade_pairs = _build_win_rate_trade_pairs(trades, final_close_price, final_trade_date, shares)
     wins = [pair for pair in trade_pairs if _is_winning_trade_pair(*pair)]
     final_equity = float(frame["Equity"].iloc[-1])
     total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0

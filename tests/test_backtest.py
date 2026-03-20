@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -80,6 +80,28 @@ class BacktestMetricTests(unittest.TestCase):
 
         self.assertEqual(result["summary"]["trade_count"], 2)
         self.assertAlmostEqual(result["summary"]["win_rate_pct"], 33.33, places=2)
+
+    def test_win_rate_counts_open_buy_as_win_when_last_price_is_higher(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=5, freq="D"),
+                "Close": [100.0, 110.0, 90.0, 95.0, 120.0],
+                "buy_signal": [True, False, True, False, False],
+                "sell_signal": [False, True, False, False, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+        )
+
+        self.assertEqual(result["summary"]["trade_count"], 1)
+        self.assertEqual(result["summary"]["win_rate_pct"], 100.0)
 
 
 if __name__ == "__main__":

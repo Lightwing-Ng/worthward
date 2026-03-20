@@ -1,4 +1,4 @@
-/* Code version: v3.3.0 */
+/* Code version: v3.4.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const consumeChartWorkspaceRefreshTransition = (viewName) => {
@@ -26,6 +26,48 @@
 			const candidate = Number(sourceValues[sourceIndex] ?? fallbackValues?.[index] ?? 0);
 			return Number.isFinite(candidate) ? candidate : 0;
 		});
+	};
+
+	const readPxToken = (element, tokenName, fallbackValue) => {
+		if (!(element instanceof Element)) return fallbackValue;
+		const rawValue = getComputedStyle(element).getPropertyValue(tokenName).trim();
+		const parsed = Number.parseFloat(rawValue);
+		return Number.isFinite(parsed) ? parsed : fallbackValue;
+	};
+
+	const collectFiniteValues = (datasets) => {
+		if (!Array.isArray(datasets)) return [];
+		return datasets.flatMap((dataset) => (Array.isArray(dataset) ? dataset : []))
+			.map((value) => Number(value))
+			.filter((value) => Number.isFinite(value));
+	};
+
+	const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
+		const values = collectFiniteValues(datasets);
+		if (!values.length) return {};
+		const rawMin = Math.min(...values);
+		const rawMax = Math.max(...values);
+		if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) return {};
+		if (rawMin === rawMax) {
+			const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
+			return {
+				min: rawMin - fallbackPadding,
+				max: rawMax + fallbackPadding,
+				rawMin,
+				rawMax,
+			};
+		}
+		const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
+		const safePaddingPx = Math.max(0, paddingPx);
+		const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+		const dataRange = rawMax - rawMin;
+		const dataPadding = dataRange * (safePaddingPx / usableHeight);
+		return {
+			min: rawMin - dataPadding,
+			max: rawMax + dataPadding,
+			rawMin,
+			rawMax,
+		};
 	};
 
 	const initChartWorkspace = () => {
@@ -60,6 +102,8 @@
 
 		const labels = series[0].dates;
 		const refreshTransition = consumeChartWorkspaceRefreshTransition(state.currentView);
+		const chartWrap = canvas.closest(".chart-wrap") || canvas.parentElement;
+		const chartYPaddingPx = readPxToken(chartWrap, "--trade-chart-y-padding-px", 5);
 		const previousSeriesMap = new Map((refreshTransition?.series || []).map((item) => [item.ticker, item]));
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const portfolioLabelMap = {
@@ -113,8 +157,8 @@
 				if (!chartArea || !xScale || !labels.length) return;
 				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
-				const baselineY = chartArea.bottom + 16;
-				const lineHeight = 12;
+				const baselineY = chartArea.bottom;
+				const lineHeight = 10;
 				ctx.save();
 				ctx.fillStyle = theme.muted;
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
@@ -306,6 +350,7 @@
 		};
 
 		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
+		const chartYScale = buildPixelPaddedYScale(canvas, targetSeriesByIndex, chartYPaddingPx);
 		const chart = new Chart(canvas, {
 			type: "line",
 			data: {
@@ -332,7 +377,7 @@
 				animation: refreshTransition ? false : undefined,
 				responsive: true,
 				maintainAspectRatio: false,
-				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 34, left: 4 } },
+				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 22, left: 4 } },
 				interaction: { mode: "index", intersect: false },
 				hover: { mode: "index", intersect: false },
 				onHover(_event, activeElements, chartInstance) {
@@ -358,7 +403,21 @@
 						border: { display: false },
 						ticks: { display: false },
 					},
-					y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: theme.muted, padding: 10, font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 }, callback(value) { return `${value}%`; } } },
+					y: {
+						bounds: "ticks",
+						...chartYScale,
+						grid: { display: false, drawBorder: false },
+						border: { display: false },
+						ticks: {
+							color: theme.muted,
+							padding: 10,
+							font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 },
+							callback(value, index, ticks) {
+								if (index === 0 || index === ticks.length - 1) return "";
+								return `${value}%`;
+							},
+						},
+					},
 				},
 			},
 		});

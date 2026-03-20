@@ -143,27 +143,28 @@
         </div>
         {% elif settings_section == "strategies" %}
         <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
-        <div class="settings-service-list">
+        <div class="settings-service-list settings-strategy-list">
             {% for row in strategy_settings_rows %}
-            <div class="settings-service-row">
-                <div class="settings-service-main">
-                    <p class="settings-service-name">{{ row.name }}</p>
-                    <p class="settings-service-note">{{ row.category }} · {{ row.description }}</p>
-                    {% if row.parameters %}
-                    <p class="settings-service-note settings-service-note-params">
+            <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
+                <summary class="settings-strategy-summary">
+                    <div class="settings-service-main settings-strategy-main">
+                        <p class="settings-service-name">{{ row.name }}</p>
+                        <p class="settings-service-note">{{ row.category }} · {{ row.description }}</p>
+                    </div>
+                </summary>
+                {% if row.parameters %}
+                <div class="settings-strategy-params-shell">
+                    <ul class="settings-strategy-params" role="list" aria-label="{{ row.name }} parameters">
                         {% for parameter in row.parameters %}
-                        <span>{{ parameter.label }}: {{ parameter.default_display }}</span>{% if not loop.last %}<span> · </span>{% endif %}
+                        <li class="settings-strategy-param-item">
+                            <span class="settings-strategy-param-label">{{ parameter.label }}</span>
+                            <span class="settings-strategy-param-value">{{ parameter.default_display }}</span>
+                        </li>
                         {% endfor %}
-                    </p>
-                    {% endif %}
+                    </ul>
                 </div>
-                <div class="settings-service-state is-muted">
-                    <span>
-                        {% if row.supports.long_only %}Long only{% endif %}
-                        {% if row.supports.single_ticker %} · Single ticker{% endif %}
-                    </span>
-                </div>
-            </div>
+                {% endif %}
+            </details>
             {% endfor %}
         </div>
         {% elif settings_section == "email-smtp" %}

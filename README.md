@@ -7,7 +7,7 @@ Source code: <https://github.com/Lightwing-Ng/compareStocks>
 ## What it does
 
 - compares up to five securities on a normalized cumulative return basis
-- runs single-ticker backtests with built-in trading strategies (Buy and Hold, MACD, SuperTrend AI, SuperTrend Double AI)
+- runs single-ticker backtests with built-in trading strategies (Buy and Hold, MACD, SuperTrend AI)
 - supports relative time ranges (1mo → max) and exact date ranges
 - can include or exclude cash dividends in total return calculations
 - stores historical data, ticker profiles, logos, and symbol search results locally
@@ -77,7 +77,7 @@ Trading strategy registry and backtest implementation.
 - `registry.json`
   - strategy registry metadata
 - `algorithms/`
-  - concrete strategy implementations (Buy and Hold, MACD, SuperTrend AI, SuperTrend Double AI)
+  - concrete strategy implementations (Buy and Hold, MACD, SuperTrend AI)
 
 ### `market_store/`
 
