@@ -1910,7 +1910,16 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .about-list { margin: 0 0 10px; padding-left: 20px; font-size: var(--font-form-label); line-height: 1.5; color: var(--text); }
 .about-list li { margin-bottom: 4px; }
 .about-list li:last-child { margin-bottom: 0; }
-.about-disclaimer { margin-top: 24px; padding: 14px; border-radius: var(--radius-panel); border-left: 3px solid rgba(244, 197, 66, 0.82); background: rgba(244, 197, 66, 0.06); }
+.about-disclaimer {
+	margin-top: 24px;
+	padding: 14px;
+	border: 1px solid #f4c542;
+	border-radius: 10px;
+	background: rgba(244, 197, 66, 0.12);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+.about-disclaimer .about-heading,
+.about-disclaimer .about-copy { color: #6b5200; }
 .about-meta { grid-template-columns: 110px 1fr; gap: 4px 10px; }
 .about-meta dt { white-space: nowrap; }
 .settings-surface { height: 100%; }
