@@ -2448,6 +2448,10 @@
 				}, 80));
 				syncNumberPair(numberInput.value);
 			}
+			else if (numberInput instanceof HTMLInputElement) {
+				numberInput.addEventListener("input", () => scheduleStrategyParamSubmit());
+				numberInput.addEventListener("change", () => scheduleStrategyParamSubmit(80));
+			}
 
 			const booleanInput = field.querySelector("[data-strategy-param-input='boolean']");
 			const booleanSwitch = field.querySelector("[data-strategy-param-switch]");

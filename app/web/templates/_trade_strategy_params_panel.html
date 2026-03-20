@@ -9,7 +9,7 @@
                 <input
                     id="strategy_param_{{ field.key }}"
                     name="{{ field.key }}"
-                    class="trade-strategy-number-input"
+                    class="trade-strategy-number-input {% if field.kind == 'integer' %}trade-strategy-number-input--integer{% else %}trade-strategy-number-input--float{% endif %}"
                     data-strategy-param-input="number"
                     type="number"
                     inputmode="{{ field.input_mode }}"
@@ -20,6 +20,7 @@
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
                 >
             </div>
+            {% if field.kind == "integer" %}
             <div class="trade-strategy-slider-shell" aria-hidden="true">
                 <input
                     class="portfolio-weight-slider"
@@ -31,6 +32,7 @@
                     value="{{ field.value }}"
                 >
             </div>
+            {% endif %}
         </div>
         {% elif field.field_type == "switch" %}
         <label class="switch-row trade-strategy-boolean-row" for="strategy_param_{{ field.key }}_switch">
