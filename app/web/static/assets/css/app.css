@@ -305,6 +305,10 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	background-image: none;
 	background-color: #ffffff;
 }
+.trade-strategy-select:disabled {
+	opacity: 0.68;
+	cursor: default;
+}
 .trade-strategy-select option { color: #111827; }
 .trade-strategy-select {
 	transform: translateZ(0);
@@ -735,6 +739,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	left: 0;
 	right: 0;
 	padding: 10px;
+	overflow: hidden;
 	border-radius: 10px;
 	background: var(--glass-popover-background);
 	box-shadow: var(--glass-popover-shadow), 0 12px 24px rgba(15, 23, 42, 0.12);
@@ -766,6 +771,24 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	max-height: min(420px, 58vh);
 	overflow-y: auto;
 	padding-right: 2px;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(0, 85, 204, 0.42) transparent;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior: contain;
+}
+.trade-strategy-params-grid::-webkit-scrollbar {
+	width: 6px;
+}
+.trade-strategy-params-grid::-webkit-scrollbar-track {
+	background: transparent;
+	margin: 4px 0;
+}
+.trade-strategy-params-grid::-webkit-scrollbar-thumb {
+	background: rgba(0, 85, 204, 0.42);
+	border-radius: 999px;
+}
+.trade-strategy-params-grid::-webkit-scrollbar-corner {
+	background: transparent;
 }
 .trade-strategy-params-grid:empty {
 	display: none;
@@ -775,6 +798,10 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	grid-template-rows: var(--trade-control-label-height) var(--trade-control-input-height);
 	row-gap: 6px;
 	min-height: var(--strategy-param-field-height);
+}
+.trade-strategy-param + .trade-strategy-param {
+	border-top: 1px solid rgba(15, 23, 42, 0.06);
+	padding-top: 10px;
 }
 .trade-strategy-param > label {
 	margin: 0;

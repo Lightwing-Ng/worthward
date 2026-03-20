@@ -2008,7 +2008,8 @@
 	};
 
 	const canAutoSubmit = () => {
-		if (!hasInitialResult || !form) return false;
+		if (!form) return false;
+		if (!hasInitialResult && !isTradeMessagesView) return false;
 		const values = getFilledTickers();
 		if (values.length < minimumRequiredTickers) return false;
 		if (new Set(values).size !== values.length) return false;
@@ -2297,7 +2298,6 @@
 
 	if (isTradeMessagesView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
 		const scheduleTradeAutoSubmit = () => {
-			if (!hasInitialResult) return;
 			scheduleAutoSubmit(180);
 		};
 		const openTradeCapitalSlider = () => tradeCapitalField.classList.add("is-open");
@@ -2362,14 +2362,39 @@
 		});
 	};
 
+	const positionTradeStrategyPanel = () => {
+		if (!(tradeStrategyPanel instanceof HTMLElement) || tradeStrategyPanel.hidden) return;
+		if (!(tradeStrategyField instanceof HTMLElement)) return;
+		const sidebar = document.querySelector(".sidebar");
+		if (!(sidebar instanceof HTMLElement)) return;
+		const panelRect = tradeStrategyField.getBoundingClientRect();
+		const sidebarRect = sidebar.getBoundingClientRect();
+		const dock = document.querySelector(".sidebar-dock");
+		const rootStyles = getComputedStyle(document.documentElement);
+		const pageEdgePad = Number.parseFloat(rootStyles.getPropertyValue("--page-edge-pad")) || 10;
+		const lowerBoundary = dock instanceof HTMLElement
+			? Math.min(sidebarRect.bottom, dock.getBoundingClientRect().top) - pageEdgePad
+			: sidebarRect.bottom - pageEdgePad;
+		const availableHeight = Math.max(160, lowerBoundary - panelRect.bottom);
+		tradeStrategyPanel.style.maxHeight = `${Math.round(availableHeight)}px`;
+	};
+
 	const setTradeStrategyPanelOpen = (isOpen) => {
 		if (!(tradeStrategyPanel instanceof HTMLElement) || !(tradeStrategyTuneButton instanceof HTMLButtonElement)) return;
 		const shouldOpen = isOpen && !tradeStrategyTuneButton.hidden;
 		tradeStrategyPanel.hidden = !shouldOpen;
 		tradeStrategyTuneButton.classList.toggle("is-active", shouldOpen);
 		tradeStrategyTuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
+		if (tradeStrategySelect instanceof HTMLSelectElement) {
+			tradeStrategySelect.disabled = shouldOpen;
+		}
 		if (tradeStrategyField instanceof HTMLElement) {
 			tradeStrategyField.classList.toggle("is-open", shouldOpen);
+		}
+		if (shouldOpen) {
+			positionTradeStrategyPanel();
+		} else {
+			tradeStrategyPanel.style.maxHeight = "";
 		}
 	};
 
@@ -2428,7 +2453,9 @@
 			const booleanSwitch = field.querySelector("[data-strategy-param-switch]");
 			if (booleanInput instanceof HTMLInputElement && booleanSwitch instanceof HTMLInputElement) {
 				const syncBooleanValue = () => {
-					booleanInput.value = booleanSwitch.checked ? "1" : "0";
+					const onValue = booleanInput.dataset.switchOnValue || "1";
+					const offValue = booleanInput.dataset.switchOffValue || "0";
+					booleanInput.value = booleanSwitch.checked ? onValue : offValue;
 				};
 				booleanSwitch.addEventListener("change", () => {
 					syncBooleanValue();
@@ -2487,6 +2514,8 @@
 			syncTradeStrategyTuningAvailability();
 			if (!payload.is_tunable) {
 				setTradeStrategyPanelOpen(false);
+			} else if (!tradeStrategyPanel.hidden) {
+				positionTradeStrategyPanel();
 			}
 		} catch (_error) {
 		}
@@ -2513,10 +2542,12 @@
 			pulseStrategySwitch();
 			await refreshTradeStrategyFields(tradeStrategySelect.value);
 			if (!form) return;
-			if (!hasInitialResult) return;
 			window.setTimeout(() => form.requestSubmit(), 72);
 		});
 	}
+
+	window.addEventListener("resize", positionTradeStrategyPanel);
+	document.addEventListener("scroll", positionTradeStrategyPanel, true);
 
 	if (form) {
 		form.noValidate = true;
