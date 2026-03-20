@@ -33,6 +33,7 @@ class MacdStrategy(BaseStrategy):
                 default=12,
                 minimum=1,
                 unit_hint="bars",
+                help_text="Sets the number of bars used for the fast moving average. Lower values react faster and create more signals.",
             ),
             StrategyParameterDefinition(
                 key="slow_span",
@@ -40,6 +41,7 @@ class MacdStrategy(BaseStrategy):
                 kind="integer",
                 default=26,
                 minimum=2,
+                help_text="Sets the number of bars used for the slow moving average. Higher values smooth more of the day-to-day noise.",
             ),
             StrategyParameterDefinition(
                 key="signal_span",
@@ -47,6 +49,7 @@ class MacdStrategy(BaseStrategy):
                 kind="integer",
                 default=9,
                 minimum=1,
+                help_text="Sets the smoothing period for the signal line. This controls how quickly MACD crossovers are confirmed.",
             ),
         )
 

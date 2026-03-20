@@ -164,14 +164,26 @@
                 </summary>
                 {% if row.parameters %}
                 <div class="settings-strategy-params-shell">
-                    <ul class="settings-strategy-params" role="list" aria-label="{{ row.name }} parameters">
-                        {% for parameter in row.parameters %}
-                        <li class="settings-strategy-param-item">
-                            <span class="settings-strategy-param-label">{{ parameter.label }}</span>
-                            <span class="settings-strategy-param-value">{{ parameter.default_display }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
+                    <div class="settings-strategy-params-table-wrap">
+                        <table class="settings-table settings-strategy-params-table" aria-label="{{ row.name }} parameters">
+                            <thead>
+                                <tr>
+                                    <th>Value name</th>
+                                    <th>Default</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for parameter in row.parameters %}
+                                <tr>
+                                    <td class="settings-strategy-param-label">{{ parameter.label }}</td>
+                                    <td class="settings-strategy-param-value">{{ parameter.default_display }}</td>
+                                    <td class="settings-strategy-param-meaning">{{ parameter.meaning }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 {% endif %}
             </details>

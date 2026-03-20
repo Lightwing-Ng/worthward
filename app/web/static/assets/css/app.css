@@ -20,6 +20,8 @@
 	--sidebar-dock-bottom-gap: 14px;
 	--backtest-surface-bottom-pad: 10px;
 	--settings-strategy-params-indent: 64px;
+	--settings-strategy-param-cell-pad-block: 5px;
+	--settings-strategy-param-cell-pad-inline: 6px;
 	--trade-chart-y-padding-px: 2px;
 	--app-shell-gap: 14px;
 	--control-glass-background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 247, 252, 0.68) 100%);
@@ -31,7 +33,7 @@
 	--control-liquid-background-hover: rgba(255, 255, 255, 0.04);
 	--control-liquid-border: 1px solid transparent;
 	--control-liquid-shadow: none;
-	--control-liquid-shadow-focus: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 0 0 3px rgba(0, 85, 204, 0.10);
+	--control-liquid-shadow-focus: none;
 	--control-liquid-blur: saturate(160%) blur(18px);
 	--glass-surface-background-soft: rgba(255, 255, 255, 0.46);
 	--glass-surface-background: rgba(255, 255, 255, 0.48);
@@ -814,7 +816,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	left: 0;
 	right: 0;
 	padding: 10px;
-	overflow: hidden;
+	overflow-x: hidden;
+	overflow-x: clip;
+	overflow-y: visible;
 	border-radius: 10px;
 	background: var(--glass-popover-background);
 	box-shadow: var(--glass-popover-shadow), 0 12px 24px rgba(15, 23, 42, 0.12);
@@ -845,8 +849,11 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-strategy-params-grid {
 	display: grid;
+	width: 100%;
+	min-width: 0;
 	gap: 10px;
 	max-height: min(420px, 58vh);
+	overflow-x: hidden;
 	overflow-y: hidden;
 	padding-right: 10px;
 	scrollbar-width: thin;
@@ -895,6 +902,13 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	column-gap: 12px;
 	align-items: center;
 	min-height: var(--strategy-param-field-height);
+	position: relative;
+	z-index: var(--layer-base);
+}
+.trade-strategy-param:has(.trade-strategy-param-label-trigger:hover),
+.trade-strategy-param:has(.trade-strategy-param-label-trigger:focus),
+.trade-strategy-param:has(.trade-strategy-param-label-trigger:focus-visible) {
+	z-index: var(--layer-inline-overlay-host);
 }
 .trade-strategy-param + .trade-strategy-param {
 	border-top: 1px solid rgba(15, 23, 42, 0.06);
@@ -902,12 +916,42 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-strategy-param > label {
 	margin: 0;
+	min-width: 0;
 	font-size: var(--font-form-label);
 	line-height: 1;
 	font-weight: var(--font-weight-bold);
 	color: var(--text);
 	display: flex;
 	align-items: center;
+}
+.trade-strategy-param-label-trigger {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+	outline: none;
+}
+.trade-strategy-param-help {
+	position: absolute;
+	left: 0;
+	top: calc(100% + 8px);
+	width: max-content;
+	max-width: min(280px, 56vw);
+	margin-top: 0;
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transform: translateY(4px);
+	transition: opacity 160ms var(--motion-standard), visibility 160ms var(--motion-standard), transform 160ms var(--motion-standard);
+	z-index: var(--layer-inline-overlay);
+}
+.trade-strategy-param-label-trigger:hover .trade-strategy-param-help,
+.trade-strategy-param-label-trigger:focus .trade-strategy-param-help,
+.trade-strategy-param-label-trigger:focus-visible .trade-strategy-param-help {
+	opacity: 1;
+	visibility: visible;
+	transform: translateY(0);
 }
 .trade-strategy-param-select,
 .trade-strategy-number-input,
@@ -950,6 +994,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-strategy-number-field {
 	position: relative;
 	grid-column: 2;
+	min-width: 0;
 }
 .trade-strategy-number-field {
 	display: grid;
@@ -967,12 +1012,14 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-strategy-number-row {
 	grid-column: 2;
+	min-width: 0;
 }
 .trade-strategy-number-row {
 	min-height: var(--strategy-param-field-height);
 }
 .trade-strategy-param-select {
 	grid-column: 2;
+	min-width: 0;
 }
 .trade-strategy-stepper {
 	display: grid;
@@ -1041,6 +1088,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	line-height: 1;
 	font-weight: var(--font-weight-bold);
 	color: var(--text);
+}
+.trade-strategy-boolean-row .trade-strategy-param-label-trigger {
+	display: inline-flex;
 }
 .ticker-clear, .ticker-remove { padding: 0; border: 0; background: rgba(148, 163, 184, 0.76); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms ease, background 160ms ease, transform 160ms ease; }
 .ticker-clear { position: absolute; top: 50%; right: calc((var(--trade-control-input-height) - 18px) / 2); width: 18px; height: 18px; min-width: 18px; min-height: 18px; border-radius: 50%; transform: translateY(-50%); z-index: var(--layer-control-affordance); opacity: 0; pointer-events: none; }
@@ -1840,28 +1890,47 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	opacity: 1;
 	padding-bottom: 14px;
 }
-.settings-strategy-params {
+.settings-strategy-params-table-wrap {
 	min-height: 0;
-	overflow: hidden;
-	margin: 0;
-	padding: 0 16px 0 var(--settings-strategy-params-indent);
-	list-style-position: outside;
-	list-style-type: disc;
-	display: grid;
-	gap: 4px;
+	overflow-x: hidden;
+	overflow-y: auto;
+	margin: 0 16px 0 var(--settings-strategy-params-indent);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.32);
 }
-.settings-strategy-param-item {
-	padding-left: 2px;
-	color: var(--text);
-	font-size: var(--font-table-body);
-	line-height: 1.35;
+.settings-strategy-params-table {
+	width: 100%;
+	min-width: 0;
+	table-layout: fixed;
 }
-.settings-strategy-param-item::marker {
-	color: rgba(0, 85, 204, 0.72);
+.settings-strategy-params-table th,
+.settings-strategy-params-table td {
+	padding: var(--settings-strategy-param-cell-pad-block) var(--settings-strategy-param-cell-pad-inline);
+}
+.settings-strategy-params-table thead th {
+	position: sticky;
+	top: 0;
+	z-index: var(--layer-raised-control);
+	background: rgba(255, 255, 255, 0.84);
+	backdrop-filter: var(--glass-popover-blur);
+	-webkit-backdrop-filter: var(--glass-popover-blur);
+}
+.settings-strategy-params-table th:nth-child(1),
+.settings-strategy-params-table td:nth-child(1) {
+	width: 24%;
+}
+.settings-strategy-params-table th:nth-child(2),
+.settings-strategy-params-table td:nth-child(2) {
+	width: 16%;
+}
+.settings-strategy-params-table th:nth-child(3),
+.settings-strategy-params-table td:nth-child(3) {
+	width: 60%;
 }
 .settings-strategy-param-label {
 	font-size: var(--font-table-body);
 	line-height: 1.35;
+	white-space: normal;
 	font-weight: var(--font-weight-regular);
 	color: var(--text);
 	overflow-wrap: anywhere;
@@ -1870,8 +1939,18 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-strategy-param-value {
 	font-size: var(--font-table-body);
 	line-height: 1.35;
+	white-space: normal;
+	text-align: right;
 	color: var(--muted);
 	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.settings-strategy-param-meaning {
+	font-size: var(--font-table-body);
+	line-height: 1.35;
+	white-space: normal;
+	color: var(--muted);
 	overflow-wrap: anywhere;
 	word-break: break-word;
 }
@@ -1897,6 +1976,13 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-table-wrap { overflow: auto; }
 .settings-table { width: 100%; border-collapse: collapse; min-width: 680px; }
 .settings-table th, .settings-table td { padding: 10px 12px; text-align: left; vertical-align: middle; font-size: var(--font-table-body); line-height: 1.35; }
+.settings-strategy-params-table th,
+.settings-strategy-params-table td {
+	padding: var(--settings-strategy-param-cell-pad-block) var(--settings-strategy-param-cell-pad-inline);
+}
+.settings-strategy-params-table .settings-strategy-param-value {
+	text-align: right;
+}
 .settings-table th { color: var(--muted); font-weight: var(--font-weight-bold); }
 .settings-table tbody tr + tr td { border-top: 1px solid rgba(15, 23, 42, 0.06); }
 .settings-table-logo { width: 20px; height: 20px; border-radius: 6px; object-fit: contain; background: rgba(255, 255, 255, 0.92); display: block; }

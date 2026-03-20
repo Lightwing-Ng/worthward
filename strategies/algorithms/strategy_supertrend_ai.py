@@ -138,6 +138,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=10,
                 minimum=1,
+                help_text="Sets how many bars are used to measure recent price movement. Higher values make the stop line steadier.",
             ),
             StrategyParameterDefinition(
                 key="min_factor",
@@ -145,6 +146,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=1,
                 minimum=0,
+                help_text="Sets the lowest SuperTrend multiplier to test. Smaller values keep the stop line closer to price.",
             ),
             StrategyParameterDefinition(
                 key="max_factor",
@@ -152,6 +154,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=5,
                 minimum=0,
+                help_text="Sets the highest SuperTrend multiplier to test. Larger values keep the stop line further away from price.",
             ),
             StrategyParameterDefinition(
                 key="factor_step",
@@ -160,6 +163,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 default=0.5,
                 minimum=0.1,
                 step=0.1,
+                help_text="Sets the gap between tested factor values. Smaller steps check more candidates but take longer to evaluate.",
             ),
             StrategyParameterDefinition(
                 key="performance_memory",
@@ -167,6 +171,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="number",
                 default=10.0,
                 minimum=2.0,
+                help_text="Controls how quickly the performance score forgets older bars. Lower values react faster to recent changes.",
             ),
             StrategyParameterDefinition(
                 key="from_cluster",
@@ -174,6 +179,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="choice",
                 default="Best",
                 options=("Best", "Average", "Worst"),
+                help_text="Chooses whether the final factor comes from the best, middle, or weakest performance cluster.",
             ),
             StrategyParameterDefinition(
                 key="max_iteration_steps",
@@ -182,6 +188,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 default=1_000,
                 minimum=0,
                 unit_hint="iters",
+                help_text="Sets the maximum number of clustering passes on each run. Higher values give the clusters more chances to settle.",
             ),
             StrategyParameterDefinition(
                 key="historical_bars_calculation",
@@ -189,6 +196,7 @@ class SupertrendAiStrategy(BaseStrategy):
                 kind="integer",
                 default=10_000,
                 minimum=1,
+                help_text="Sets how many recent bars the strategy can use while tuning the factor. Lower values reduce workload but use less history.",
             ),
         )
 

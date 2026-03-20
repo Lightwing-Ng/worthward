@@ -223,6 +223,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Close",
                 options=("Close", "HLC3", "OHLC4"),
+                help_text="Chooses which price series the model studies. Close is the simplest option, while HLC3 and OHLC4 smooth price using more of each bar.",
             ),
             StrategyParameterDefinition(
                 key="neighbors_count",
@@ -231,6 +232,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 default=5,
                 minimum=1,
                 maximum=100,
+                help_text="Sets how many nearby historical matches vote on the next move. Lower values react faster but can be noisier.",
             ),
             StrategyParameterDefinition(
                 key="max_bars_back",
@@ -238,6 +240,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=2_000,
                 minimum=100,
+                help_text="Sets how much history the model is allowed to search. More bars give broader context but cost more time to process.",
             ),
             StrategyParameterDefinition(
                 key="feature_count",
@@ -246,6 +249,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 default=4,
                 minimum=2,
                 maximum=5,
+                help_text="Sets how many engineered features are fed into the Lorentzian distance model. More features add context but can make the model slower and more selective.",
             ),
             StrategyParameterDefinition(
                 key="use_dynamic_exits",
@@ -253,6 +257,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="On",
                 options=("Off", "On"),
+                help_text="Lets the strategy close trades early when the trend estimate weakens, instead of always waiting for the fixed holding rule.",
             ),
             StrategyParameterDefinition(
                 key="use_volatility_filter",
@@ -260,6 +265,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Only allows trades when the short-term volatility check says the market is active enough.",
             ),
             StrategyParameterDefinition(
                 key="use_regime_filter",
@@ -267,6 +273,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Only allows trades when the regime test says price action is trending rather than drifting sideways.",
             ),
             StrategyParameterDefinition(
                 key="use_adx_filter",
@@ -274,6 +281,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Only allows trades when ADX is strong enough to suggest a trend is present.",
             ),
             StrategyParameterDefinition(
                 key="regime_threshold",
@@ -283,6 +291,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 minimum=-10.0,
                 maximum=10.0,
                 step=0.1,
+                help_text="Sets how strict the regime filter is. Higher values demand clearer trend conditions before the model can trade.",
             ),
             StrategyParameterDefinition(
                 key="adx_threshold",
@@ -291,6 +300,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 default=20,
                 minimum=0,
                 maximum=100,
+                help_text="Sets the minimum ADX score needed when the ADX filter is on. Higher values require a stronger trend.",
             ),
             StrategyParameterDefinition(
                 key="f1_string",
@@ -298,6 +308,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="RSI",
                 options=feature_options,
+                help_text="Chooses the first feature fed into the model. Each feature captures a different kind of market behaviour.",
             ),
             StrategyParameterDefinition(
                 key="f1_param_a",
@@ -305,6 +316,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=14,
                 minimum=1,
+                help_text="Sets the main lookback period for Feature 1.",
             ),
             StrategyParameterDefinition(
                 key="f1_param_b",
@@ -312,6 +324,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=1,
                 minimum=1,
+                help_text="Sets the secondary tuning value for Feature 1 when that indicator uses one.",
             ),
             StrategyParameterDefinition(
                 key="f2_string",
@@ -319,6 +332,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="WT",
                 options=feature_options,
+                help_text="Chooses the second feature fed into the model so it can compare more than one market signal at once.",
             ),
             StrategyParameterDefinition(
                 key="f2_param_a",
@@ -326,6 +340,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=10,
                 minimum=1,
+                help_text="Sets the main lookback period for Feature 2.",
             ),
             StrategyParameterDefinition(
                 key="f2_param_b",
@@ -333,6 +348,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=11,
                 minimum=1,
+                help_text="Sets the secondary tuning value for Feature 2 when that indicator uses one.",
             ),
             StrategyParameterDefinition(
                 key="f3_string",
@@ -340,6 +356,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="CCI",
                 options=feature_options,
+                help_text="Chooses the third feature used by the classifier.",
             ),
             StrategyParameterDefinition(
                 key="f3_param_a",
@@ -347,6 +364,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=20,
                 minimum=1,
+                help_text="Sets the main lookback period for Feature 3.",
             ),
             StrategyParameterDefinition(
                 key="f3_param_b",
@@ -354,6 +372,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=1,
                 minimum=1,
+                help_text="Sets the secondary tuning value for Feature 3 when that indicator uses one.",
             ),
             StrategyParameterDefinition(
                 key="f4_string",
@@ -361,6 +380,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="ADX",
                 options=feature_options,
+                help_text="Chooses the fourth feature used by the classifier.",
             ),
             StrategyParameterDefinition(
                 key="f4_param_a",
@@ -368,6 +388,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=20,
                 minimum=1,
+                help_text="Sets the main lookback period for Feature 4.",
             ),
             StrategyParameterDefinition(
                 key="f4_param_b",
@@ -375,6 +396,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=2,
                 minimum=1,
+                help_text="Sets the secondary tuning value for Feature 4 when that indicator uses one.",
             ),
             StrategyParameterDefinition(
                 key="f5_string",
@@ -382,6 +404,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="RSI",
                 options=feature_options,
+                help_text="Chooses the optional fifth feature used when Feature Count is set to 5.",
             ),
             StrategyParameterDefinition(
                 key="f5_param_a",
@@ -389,6 +412,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=9,
                 minimum=1,
+                help_text="Sets the main lookback period for Feature 5.",
             ),
             StrategyParameterDefinition(
                 key="f5_param_b",
@@ -396,6 +420,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=1,
                 minimum=1,
+                help_text="Sets the secondary tuning value for Feature 5 when that indicator uses one.",
             ),
             StrategyParameterDefinition(
                 key="use_ema_filter",
@@ -403,6 +428,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Only allows long trades above the EMA and short signals below it when switched on.",
             ),
             StrategyParameterDefinition(
                 key="ema_period",
@@ -410,6 +436,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=200,
                 minimum=1,
+                help_text="Sets the EMA lookback used by the EMA trend filter.",
             ),
             StrategyParameterDefinition(
                 key="use_sma_filter",
@@ -417,6 +444,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Only allows trades that agree with the SMA trend check when switched on.",
             ),
             StrategyParameterDefinition(
                 key="sma_period",
@@ -424,6 +452,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=200,
                 minimum=1,
+                help_text="Sets the SMA lookback used by the SMA trend filter.",
             ),
             StrategyParameterDefinition(
                 key="use_kernel_filter",
@@ -431,6 +460,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Requires the kernel trend estimate to agree with the machine learning signal before the strategy trades.",
             ),
             StrategyParameterDefinition(
                 key="use_kernel_smoothing",
@@ -438,6 +468,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Uses the smoother crossover version of the kernel signal. This usually cuts down the number of colour changes and trade flips.",
             ),
             StrategyParameterDefinition(
                 key="kernel_lookback",
@@ -445,6 +476,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=5,
                 minimum=3,
+                help_text="Sets how many recent bars the kernel estimate studies at one time.",
             ),
             StrategyParameterDefinition(
                 key="kernel_relative_weighting",
@@ -454,6 +486,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 minimum=0.25,
                 maximum=25.0,
                 step=0.25,
+                help_text="Sets how strongly the kernel favours nearby bars over older ones. Lower values lean more on longer-term structure.",
             ),
             StrategyParameterDefinition(
                 key="kernel_regression_level",
@@ -461,6 +494,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=8,
                 minimum=2,
+                help_text="Sets how tightly the kernel line follows price. Lower values hug price more closely.",
             ),
             StrategyParameterDefinition(
                 key="kernel_lag",
@@ -468,6 +502,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 kind="integer",
                 default=2,
                 minimum=1,
+                help_text="Sets the lag used when the smoothed kernel crossover is checked. Lower values react earlier.",
             ),
         )
 

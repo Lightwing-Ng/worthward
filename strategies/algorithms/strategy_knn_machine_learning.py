@@ -147,6 +147,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 kind="choice",
                 default="All",
                 options=("RSI", "ROC", "CCI", "Volume", "All"),
+                help_text="Chooses which feature pair the kNN model compares. 'All' blends every supported feature into one average view.",
             ),
             StrategyParameterDefinition(
                 key="short_window",
@@ -155,6 +156,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 default=14,
                 minimum=1,
                 unit_hint="bars",
+                help_text="Sets the fast lookback window for the selected feature. Smaller values react more quickly to new price moves.",
             ),
             StrategyParameterDefinition(
                 key="long_window",
@@ -163,6 +165,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 default=28,
                 minimum=2,
                 unit_hint="bars",
+                help_text="Sets the slow lookback window for the selected feature. Larger values smooth more short-term noise.",
             ),
             StrategyParameterDefinition(
                 key="base_k",
@@ -170,6 +173,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 kind="integer",
                 default=252,
                 minimum=5,
+                help_text="Sets the base neighbour pool used before the square-root rule picks the final k. Larger values make the classifier look further back.",
             ),
             StrategyParameterDefinition(
                 key="volatility_filter",
@@ -177,6 +181,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 kind="choice",
                 default="Off",
                 options=("Off", "On"),
+                help_text="Turns the ATR filter on or off. When on, the strategy only trades when short-term volatility is stronger than the slower baseline.",
             ),
             StrategyParameterDefinition(
                 key="bar_threshold",
@@ -186,6 +191,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 minimum=2,
                 maximum=5_000,
                 unit_hint="bars",
+                help_text="Sets the maximum holding length in bars before the strategy clears the position.",
             ),
         )
 

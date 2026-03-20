@@ -3,7 +3,14 @@
     {% for field in strategy_form_fields %}
     <div class="trade-strategy-param" data-strategy-param-key="{{ field.key }}" data-strategy-param-kind="{{ field.kind }}">
         {% if field.field_type == "number" %}
-        <label for="strategy_param_{{ field.key }}">{{ field.label }}</label>
+        <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
+            <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
+                <span>{{ field.label }}</span>
+                {% if field.help_text %}
+                <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
+                {% endif %}
+            </span>
+        </label>
         <div class="trade-strategy-number-field">
             <div class="trade-strategy-stepper" aria-hidden="true">
                 <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="up" aria-label="Increase value">▲</button>
@@ -27,7 +34,12 @@
         </div>
         {% elif field.field_type == "switch" %}
         <label class="switch-row trade-strategy-boolean-row" for="strategy_param_{{ field.key }}_switch">
-            <span class="switch-label">{{ field.label }}</span>
+            <span class="switch-label trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
+                <span>{{ field.label }}</span>
+                {% if field.help_text %}
+                <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
+                {% endif %}
+            </span>
             <span class="ios-switch-shell">
                 <input
                     id="strategy_param_{{ field.key }}_switch"
@@ -48,7 +60,14 @@
             data-switch-off-value="{{ field.switch_off_value }}"
         >
         {% elif field.field_type == "text" %}
-        <label for="strategy_param_{{ field.key }}">{{ field.label }}</label>
+        <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
+            <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
+                <span>{{ field.label }}</span>
+                {% if field.help_text %}
+                <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
+                {% endif %}
+            </span>
+        </label>
         <div class="strategy-param-text-control">
             <input
                 id="strategy_param_{{ field.key }}"
@@ -61,7 +80,14 @@
             >
         </div>
         {% else %}
-        <label for="strategy_param_{{ field.key }}">{{ field.label }}</label>
+        <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
+            <span class="trade-strategy-param-label-trigger"{% if field.help_text %} tabindex="0"{% endif %}>
+                <span>{{ field.label }}</span>
+                {% if field.help_text %}
+                <span class="field-tooltip trade-strategy-param-help" role="tooltip">{{ field.help_text }}</span>
+                {% endif %}
+            </span>
+        </label>
         <select
             id="strategy_param_{{ field.key }}"
             name="{{ field.key }}"

@@ -39,6 +39,19 @@ class StrategyParameterDefinition:
             return "None"
         if self.kind == "boolean":
             return "On" if bool(self.default) else "Off"
+        if self.kind == "integer":
+            try:
+                return str(int(self.default))
+            except (TypeError, ValueError):
+                return str(self.default)
+        if self.kind == "number":
+            try:
+                numeric_value = float(self.default)
+            except (TypeError, ValueError):
+                return str(self.default)
+            step_text = "" if self.step is None else str(self.step)
+            decimals = len(step_text.split(".", 1)[1]) if "." in step_text else 1
+            return f"{numeric_value:.{decimals}f}"
         return str(self.default)
 
 
