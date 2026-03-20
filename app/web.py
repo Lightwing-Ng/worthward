@@ -1167,7 +1167,7 @@ def register_routes(app: Flask) -> None:
         timing_error = ""
 
         if current_view == "settings":
-            if settings_section == "local-market-store" and notice and not error:
+            if settings_section in {"local-market-store", "clear-caches"} and (notice or error):
                 notice_is_floating = True
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
