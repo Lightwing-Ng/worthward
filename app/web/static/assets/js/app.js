@@ -2711,6 +2711,7 @@
 
 			const numberInput = field.querySelector("[data-strategy-param-input='number']");
 			if (numberInput instanceof HTMLInputElement) {
+				const isIntegerField = field.dataset.strategyParamKind === "integer";
 				const normalizeStandaloneNumber = (value) => {
 					const parsed = Number.parseFloat(String(value));
 					if (!Number.isFinite(parsed)) return Number.parseFloat(numberInput.min || "0") || 0;
@@ -2719,13 +2720,18 @@
 					let normalized = parsed;
 					if (Number.isFinite(min)) normalized = Math.max(min, normalized);
 					if (Number.isFinite(max)) normalized = Math.min(max, normalized);
+					if (isIntegerField) normalized = Math.round(normalized);
 					return normalized;
 				};
 				const stepValue = () => {
+					if (isIntegerField) return 1;
 					const parsed = Number.parseFloat(numberInput.step || "0.1");
 					return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.1;
 				};
 				const formatStandaloneNumber = (value) => {
+					if (isIntegerField) {
+						return String(Math.round(value));
+					}
 					const stepText = String(numberInput.step || "");
 					const decimals = stepText.includes(".") ? stepText.split(".")[1].length : 0;
 					return decimals > 0 ? value.toFixed(decimals) : String(value);
