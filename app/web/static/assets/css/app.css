@@ -824,6 +824,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	padding-bottom: 0;
 	text-align: left;
 }
+.trade-strategy-number-input {
+	text-align: right;
+}
 .trade-strategy-number-input--integer {
 	appearance: textfield;
 	-moz-appearance: textfield;
