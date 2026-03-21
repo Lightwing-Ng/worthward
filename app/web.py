@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.31.0
+Code version: v3.31.11
 """
 
 from __future__ import annotations
@@ -1443,10 +1443,15 @@ def register_routes(app: Flask) -> None:
                     tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
                     default_screener = str(tradingview_settings.get("default_screener", "america"))
                     default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
-                    screener_overrides = tradingview_settings.get("screener_overrides", {}) or {}
-                    exchange_overrides = tradingview_settings.get("exchange_overrides", {}) or {}
-                    selected_screener = str(screener_overrides.get(timing_selected_ticker, default_screener))
-                    selected_exchange = str(exchange_overrides.get(timing_selected_ticker, default_exchange))
+                    profile_record = load_profile_record(timing_selected_ticker) or {}
+                    selected_screener = str(
+                        profile_record.get("tradingview_screener")
+                        or default_screener
+                    )
+                    selected_exchange = str(
+                        profile_record.get("tradingview_exchange")
+                        or default_exchange
+                    )
                     analysis = fetch_tradingview_metrics(
                         timing_selected_ticker,
                         screener=selected_screener,

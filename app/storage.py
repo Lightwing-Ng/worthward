@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v4.0.2
+Code version: v4.1.0
 """
 
 from __future__ import annotations
@@ -36,7 +36,15 @@ TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.json"
 PROFILE_SCOPE_LOCAL = "local_store"
 PROFILE_SCOPE_SEARCH = "search_cache"
 
-_PROFILE_COLUMNS = ["ticker", "company_name", "website", "storage_scope", "updated_at"]
+_PROFILE_COLUMNS = [
+    "ticker",
+    "company_name",
+    "website",
+    "storage_scope",
+    "tradingview_screener",
+    "tradingview_exchange",
+    "updated_at",
+]
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
 
 _MIGRATION_COMPLETED = False
@@ -188,6 +196,14 @@ def _normalize_profile_scope(scope: str | None) -> str:
     return PROFILE_SCOPE_LOCAL if scope == PROFILE_SCOPE_LOCAL else PROFILE_SCOPE_SEARCH
 
 
+def _normalize_tradingview_screener(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_tradingview_exchange(value: str | None) -> str:
+    return str(value or "").strip().upper()
+
+
 def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> dict[str, str]:
     current_scope = _normalize_profile_scope(current.get("storage_scope"))
     incoming_scope = _normalize_profile_scope(incoming.get("storage_scope"))
@@ -209,11 +225,18 @@ def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> di
     incoming_updated = str(incoming.get("updated_at") or "")
     updated_at = max(current_updated, incoming_updated)
 
+    current_screener = _normalize_tradingview_screener(current.get("tradingview_screener"))
+    incoming_screener = _normalize_tradingview_screener(incoming.get("tradingview_screener"))
+    current_exchange = _normalize_tradingview_exchange(current.get("tradingview_exchange"))
+    incoming_exchange = _normalize_tradingview_exchange(incoming.get("tradingview_exchange"))
+
     return {
         "ticker": str(current.get("ticker") or incoming.get("ticker") or "").strip().upper(),
         "company_name": company_name,
         "website": website,
         "storage_scope": merged_scope,
+        "tradingview_screener": incoming_screener or current_screener,
+        "tradingview_exchange": incoming_exchange or current_exchange,
         "updated_at": updated_at,
     }
 
@@ -227,6 +250,8 @@ def _save_profiles_table(table: pd.DataFrame) -> None:
     if not normalized.empty:
         normalized["ticker"] = normalized["ticker"].astype(str).str.upper()
         normalized["storage_scope"] = normalized["storage_scope"].map(_normalize_profile_scope)
+        normalized["tradingview_screener"] = normalized["tradingview_screener"].map(_normalize_tradingview_screener)
+        normalized["tradingview_exchange"] = normalized["tradingview_exchange"].map(_normalize_tradingview_exchange)
         normalized = normalized.sort_values(["ticker", "updated_at"], ascending=[True, False])
         normalized = normalized.drop_duplicates(subset=["ticker"], keep="first")
     _write_parquet_table(PROFILES_PARQUET_PATH, normalized, _PROFILE_COLUMNS)
@@ -246,6 +271,8 @@ def load_profile_record(ticker: str) -> dict[str, str] | None:
         "company_name": str(row.get("company_name") or "").strip(),
         "website": str(row.get("website") or "").strip() or None,
         "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
+        "tradingview_screener": _normalize_tradingview_screener(str(row.get("tradingview_screener") or "")) or None,
+        "tradingview_exchange": _normalize_tradingview_exchange(str(row.get("tradingview_exchange") or "")) or None,
         "updated_at": str(row.get("updated_at") or ""),
     }
 
@@ -260,6 +287,8 @@ def upsert_profile_record(
     website: str | None,
     *,
     scope: str,
+    tradingview_screener: str | None = None,
+    tradingview_exchange: str | None = None,
     updated_at: str | None = None,
 ) -> dict[str, str]:
     normalized_ticker = normalize_ticker(ticker)
@@ -268,6 +297,8 @@ def upsert_profile_record(
         "company_name": (company_name or normalized_ticker).strip(),
         "website": (website or "").strip(),
         "storage_scope": _normalize_profile_scope(scope),
+        "tradingview_screener": _normalize_tradingview_screener(tradingview_screener),
+        "tradingview_exchange": _normalize_tradingview_exchange(tradingview_exchange),
         "updated_at": updated_at or _utc_iso_timestamp(),
     }
     with _parquet_table_lock(PROFILES_PARQUET_PATH):
@@ -282,6 +313,8 @@ def upsert_profile_record(
                     "company_name": str(row.get("company_name") or "").strip(),
                     "website": str(row.get("website") or "").strip() or None,
                     "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
+                    "tradingview_screener": _normalize_tradingview_screener(str(row.get("tradingview_screener") or "")) or None,
+                    "tradingview_exchange": _normalize_tradingview_exchange(str(row.get("tradingview_exchange") or "")) or None,
                     "updated_at": str(row.get("updated_at") or ""),
                 }
         merged = incoming if current is None else _merge_profile_rows(current, incoming)

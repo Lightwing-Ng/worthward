@@ -2,7 +2,7 @@
 name = "antigravity"
 version = "v2.11.0"
 debug = true
-updated_on = "18 Mar 2026"
+updated_on = "21 Mar 2026"
 
 [server]
 host = "0.0.0.0"
@@ -163,22 +163,3 @@ tooltip_size = 16
 [integrations.tradingview_ta]
 default_screener = "america"
 default_exchange = "NASDAQ"
-
-[integrations.tradingview_ta.screener_overrides]
-TSM = "taiwan"
-NVO = "america"
-
-[integrations.tradingview_ta.exchange_overrides]
-JEPQ = "NASDAQ"
-JEPI = "AMEX"
-QQQ = "NASDAQ"
-QQQM = "NASDAQ"
-QQQI = "NASDAQ"
-QQQJ = "NASDAQ"
-QQQG = "AMEX"
-SPY = "AMEX"
-VOO = "AMEX"
-SOXL = "AMEX"
-SQQQ = "NASDAQ"
-TQQQ = "NASDAQ"
-MU = "NASDAQ"
