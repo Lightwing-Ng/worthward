@@ -334,6 +334,12 @@ def register_routes(app: Flask) -> None:
             or normalized.startswith("Failed to perform, curl: (35) TLS connect error:")
         )
 
+    def modal_banner_icon_class(message: str | None) -> str:
+        normalized = (message or "").strip()
+        if normalized.startswith("Backtest execution model updated:"):
+            return "icon-modal-dialog-banner-backtest-execution"
+        return "icon-modal-dialog-banner-default"
+
     def build_more_timing_url(selected_ticker: str | None = None) -> str:
         base_path = build_more_path("timing")
         normalized_ticker = normalize_ticker_input(selected_ticker or "")
@@ -615,7 +621,7 @@ def register_routes(app: Flask) -> None:
                 "sample_copy": "",
                 "sample_button": "",
                 "sample_button_class": "",
-                "sample_icon_class": "icon-settings-general",
+                "sample_icon_class": "icon-modal-dialog-banner-backtest-execution",
                 "sample_icon_shell_class": "",
                 "tokens": [
                     px_token("--workspace-modal-radius", 10),
@@ -1091,6 +1097,7 @@ def register_routes(app: Flask) -> None:
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
         notice_is_floating = False
+        floating_banner_icon_class = "icon-modal-dialog-banner-default"
         exact_start_value = exact_start
         exact_end_value = exact_end
         display_range = ""
@@ -1346,6 +1353,7 @@ def register_routes(app: Flask) -> None:
             error = str(exc) or None
             if should_use_modal_banner_message(error):
                 notice_is_floating = True
+                floating_banner_icon_class = modal_banner_icon_class(error)
 
         remote_market_access = True
         remote_logo_access = False
@@ -1371,6 +1379,7 @@ def register_routes(app: Flask) -> None:
         if current_view == "settings":
             if settings_section in {"general", "email-smtp", "local-market-store", "clear-caches"} and (notice or error):
                 notice_is_floating = True
+                floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
             style_token_rows = build_style_token_rows()
@@ -1551,6 +1560,7 @@ def register_routes(app: Flask) -> None:
             error=error,
             notice=notice,
             notice_is_floating=notice_is_floating,
+            floating_banner_icon_class=floating_banner_icon_class,
             period=period,
             period_label=period_label,
             display_range=display_range,

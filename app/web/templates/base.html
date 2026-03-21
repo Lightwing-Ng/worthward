@@ -48,7 +48,7 @@
             {% if error %}
             <div class="error{% if notice_is_floating %} notice-floating notice-floating-banner{% endif %}" data-dismissible-notice>
                 {% if notice_is_floating %}
-                <span class="icon icon-settings-general workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
+                <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
                 <span class="workspace-modal-title notice-floating-banner-title">{{ error }}</span>
                 {% else %}
                 <span>{{ error }}</span>
@@ -61,7 +61,7 @@
             {% if notice %}
             <div class="notice{% if notice_is_floating %} notice-floating notice-floating-banner{% endif %}" data-dismissible-notice>
                 {% if notice_is_floating %}
-                <span class="icon icon-settings-general workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
+                <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
                 <span class="workspace-modal-title notice-floating-banner-title">{{ notice }}</span>
                 {% else %}
                 <span>{{ notice }}</span>

@@ -2950,6 +2950,8 @@ div.style-token-modal-demo {
 .icon-settings-store { mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; -webkit-mask: url("../../images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat; }
 .icon-settings-clear-cache { mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; }
 .icon-settings-style-tokens { mask: url("../../images/wand.and.sparkles.inverse.svg") center/contain no-repeat; -webkit-mask: url("../../images/wand.and.sparkles.inverse.svg") center/contain no-repeat; }
+.icon-modal-dialog-banner-default { mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; }
+.icon-modal-dialog-banner-backtest-execution { mask: url("../../images/square.and.line.vertical.and.square.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.and.line.vertical.and.square.svg") center/contain no-repeat; }
 .icon-strategy-tune { mask: url("../../images/slider.horizontal.2.square.svg") center/contain no-repeat; -webkit-mask: url("../../images/slider.horizontal.2.square.svg") center/contain no-repeat; }
 .workspace-modal-overlay { position: fixed; inset: 0; z-index: var(--layer-modal-overlay); display: grid; place-items: center; background: rgba(255, 255, 255, 0.04); }
 .workspace-modal-overlay[hidden] { display: none; }
@@ -3004,6 +3006,9 @@ div.style-token-modal-demo {
 	font-size: var(--font-form-label);
 	line-height: 1.45;
 	color: var(--muted);
+}
+.style-token-modal-demo .workspace-modal-title {
+	font-weight: var(--font-weight-regular);
 }
 .settings-status-banner {
 	width: 100%;

@@ -94,7 +94,7 @@
 			const image = new Image();
 			image.decoding = "async";
 			image.src = url;
-			image.onload = () => chartInstance.draw();
+			image.onload = () => chartInstance.update("none");
 			image.onerror = () => logoCache.delete(url);
 			logoCache.set(url, image);
 			return image;
