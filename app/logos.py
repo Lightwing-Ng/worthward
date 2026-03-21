@@ -217,7 +217,11 @@ def resolve_website(ticker: str, company_name: str, website: str | None) -> str 
 
 
 def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
-    info = yf.Ticker(ticker).info
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception as exc:
+        LOGGER.warning("Quote profile remote lookup failed for %s: %s", ticker, exc)
+        info = {}
     company_name = info.get("longName") or info.get("shortName") or ticker.upper()
     website = resolve_website(ticker, company_name, info.get("website"))
     return {

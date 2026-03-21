@@ -616,7 +616,7 @@ def register_routes(app: Flask) -> None:
             {
                 "id": style_token_id("Modal dialog banner message"),
                 "name": "Modal dialog banner message",
-                "sample_kind": "modal-dialog",
+                "sample_kind": "floating-banner",
                 "sample_title": "Backtest execution model updated: Signal bar close.",
                 "sample_copy": "",
                 "sample_button": "",
@@ -1903,6 +1903,8 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/api/settings/network-status")
     def settings_network_status_api():
+        if request.args.get("refresh", "").strip() == "1":
+            reset_connectivity_caches()
         return jsonify({"rows": build_network_service_rows(pending=False)})
 
     @app.get("/api/settings/local-market-store/page-data")

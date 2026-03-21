@@ -158,6 +158,20 @@
             </section>
         </div>
         {% elif settings_section == "network" %}
+        <section class="settings-action-package settings-callout-card-primary">
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">Check connectivity again</p>
+                <p class="settings-service-note">Run the network checks again and refresh the availability results shown below.</p>
+            </div>
+            <div class="settings-action-package-form">
+                <button
+                    type="button"
+                    class="settings-inline-button settings-inline-button-primary"
+                    data-network-refresh-button
+                >Check again</button>
+            </div>
+        </section>
         <p class="settings-summary">{{ labels.service_status }}</p>
         <div class="settings-service-list">
             {% for row in settings_service_rows %}
@@ -169,7 +183,7 @@
                         {% endif %}
                         <p class="settings-service-name">{{ row.name }}</p>
                     </div>
-                    <p class="settings-service-note" data-settings-service-note>{{ row.note }}</p>
+                    <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}Checking whether Yahoo Finance can be reached from this device.{% elif row.key == 'logo' %}Checking whether the primary ticker logo service and its fallbacks can be reached from this device.{% elif row.key == 'google-hk' %}Checking whether Google (Hong Kong) can be reached from this device.{% elif row.key == 'tradingview-ta' %}Checking if the tradingview-ta library is installed.{% else %}Checking...{% endif %}">{{ row.note }}</p>
                 </div>
                 <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
                     <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
@@ -418,11 +432,21 @@
                     <div class="style-token-modal-shell">
                         <div class="workspace-modal-dialog style-token-modal-demo">
                             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close">
-                                <span class="icon icon-close"></span>
+                                <span class="icon icon-dismiss-control"></span>
                             </button>
                             <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" aria-hidden="true"></span>
                             <p class="workspace-modal-title">{{ row.sample_title }}</p>
                             <p class="workspace-modal-copy">{{ row.sample_copy }}</p>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "floating-banner" %}
+                    <div class="style-token-modal-shell">
+                        <div class="notice notice-floating notice-floating-banner style-token-modal-demo">
+                            <button type="button" class="dismiss-button notice-close" aria-label="Dismiss">
+                                <span class="icon icon-dismiss-control"></span>
+                            </button>
+                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
+                            <span class="workspace-modal-title notice-floating-banner-title">{{ row.sample_title }}</span>
                         </div>
                     </div>
                     {% elif row.sample_kind == "trade-strategy-stepper" %}

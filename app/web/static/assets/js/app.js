@@ -316,9 +316,11 @@
 		});
 		const syncHandleY = () => {
 			const rect = shell.getBoundingClientRect();
-			const vhCenter = window.innerHeight / 2;
-			let targetY = vhCenter - rect.top;
-			targetY = Math.max(16, Math.min(rect.height - 16, targetY));
+			const visibleTop = Math.max(0, rect.top);
+			const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+			const visibleCenterY = visibleTop + (visibleBottom - visibleTop) / 2;
+			let targetY = visibleCenterY - rect.top;
+			targetY = Math.max(16, targetY);
 			shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
 		};
 		window.addEventListener("scroll", syncHandleY, { passive: true });
@@ -447,6 +449,55 @@
 		});
 	};
 
+	const attachStyleTokenDemoInteractions = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!shell) return;
+		shell.addEventListener("click", (event) => {
+			if (!(event.target instanceof Node)) return;
+			const dismissButton = event.target.closest(".dismiss-button");
+			if (dismissButton) {
+				const container = dismissButton.closest(".style-token-modal-demo");
+				if (container) {
+					container.style.display = "none";
+					setTimeout(() => {
+						container.style.display = "";
+					}, 800);
+				}
+				return;
+			}
+			const actionButton = event.target.closest(".settings-action-package-form button");
+			if (actionButton) {
+				const controlContainer = document.querySelector('[data-style-token-name="--settings-action-button-background"]');
+				if (controlContainer) {
+					controlContainer.scrollIntoView({ behavior: "smooth", block: "center" });
+					const input = controlContainer.querySelector('input');
+					if (input) {
+						setTimeout(() => input.focus(), 400);
+					}
+				}
+				return;
+			}
+			const pageButton = event.target.closest(".local-store-page-button");
+			if (pageButton && !pageButton.classList.contains("local-store-page-nav") && !pageButton.classList.contains("local-store-page-placeholder")) {
+				const container = pageButton.closest(".local-store-pagination");
+				if (container) {
+					const buttons = Array.from(container.querySelectorAll(".local-store-page-button:not(.local-store-page-nav):not(.local-store-page-placeholder)"));
+					const index = buttons.indexOf(pageButton);
+					if (index !== -1) {
+						buttons.forEach(b => b.classList.remove("is-active"));
+						pageButton.classList.add("is-active");
+						const indicator = container.querySelector(".local-store-pagination-indicator");
+						if (indicator) {
+							// Each side has 1 nav button, so index + 1 is the slot pos
+							indicator.style.transform = `translate3d(calc(var(--local-store-pagination-slot-size) * ${index + 1}), 0, 0)`;
+						}
+					}
+				}
+				return;
+			}
+		});
+	};
+
 	const setFormBusyState = (isBusy) => {
 		if (!form) return;
 		form.setAttribute("aria-busy", String(isBusy));
@@ -469,10 +520,12 @@
 	const initializeWorkspaceEnhancements = () => {
 		attachNoticeHandlers();
 		attachTradeDetailTabs();
+		attachNetworkRefreshButton();
 		attachStyleTokenResizer();
 		attachStyleTokenControls();
 		attachStyleTokenReferences();
 		attachStyleTokenModeSwitches();
+		attachStyleTokenDemoInteractions();
 		window.requestAnimationFrame(() => {
 			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
 			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
@@ -1209,13 +1262,33 @@
 		}
 	};
 
-	const hydrateNetworkStatuses = async () => {
+	const setNetworkStatusesPending = () => {
+		document.querySelectorAll("[data-settings-service-row]").forEach((row) => {
+			const statusNode = row.querySelector("[data-settings-service-status]");
+			const noteNode = row.querySelector("[data-settings-service-note]");
+			const iconNode = row.querySelector("[data-settings-service-icon]");
+			const stateNode = row.querySelector(".settings-service-state");
+			if (statusNode) statusNode.textContent = "Checking...";
+			if (iconNode) {
+				iconNode.classList.remove("is-visible");
+				iconNode.classList.add("is-pending-status");
+			}
+			if (stateNode) stateNode.classList.add("is-muted");
+			if (noteNode instanceof HTMLElement) {
+				const pendingNote = noteNode.dataset.pendingNote || "";
+				if (pendingNote) noteNode.textContent = pendingNote;
+			}
+		});
+	};
+
+	const hydrateNetworkStatuses = async ({ force = false } = {}) => {
 		if (state.currentView !== "settings" || state.settingsSection !== "network") return;
 		try {
+			if (force) progressiveResourceCache.delete("settings-network-status");
 			const payload = await fetchJsonCached(
 				"settings-network-status",
-				endpoints.settingsNetworkStatus,
-				{ ttlMs: 45000 },
+				force ? `${endpoints.settingsNetworkStatus}?refresh=1` : endpoints.settingsNetworkStatus,
+				{ ttlMs: force ? 0 : 45000 },
 			);
 			(payload.rows || []).forEach((item) => {
 				const row = document.querySelector(`[data-settings-service-row][data-service-key="${CSS.escape(item.key || "")}"]`);
@@ -1234,6 +1307,25 @@
 			});
 		} catch (_error) {
 		}
+	};
+
+	const attachNetworkRefreshButton = () => {
+		const button = document.querySelector("[data-network-refresh-button]");
+		if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
+		button.dataset.bound = "1";
+		button.addEventListener("click", async () => {
+			setNetworkStatusesPending();
+			button.disabled = true;
+			button.classList.add("is-pending");
+			button.setAttribute("aria-busy", "true");
+			try {
+				await hydrateNetworkStatuses({ force: true });
+			} finally {
+				button.disabled = false;
+				button.classList.remove("is-pending");
+				button.removeAttribute("aria-busy");
+			}
+		});
 	};
 
 	const fetchLocalStorePage = async (url, { pushHistory = true } = {}) => {
