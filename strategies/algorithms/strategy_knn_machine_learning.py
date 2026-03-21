@@ -18,7 +18,6 @@ import pandas as pd
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
-
 BUY = 1
 SELL = -1
 CLEAR = 0
@@ -98,15 +97,15 @@ def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
 
 
 def _select_feature_pair(
-    indicator_name: str,
-    rs: pd.Series,
-    rf: pd.Series,
-    cs: pd.Series,
-    cf: pd.Series,
-    os: pd.Series,
-    of: pd.Series,
-    vs: pd.Series,
-    vf: pd.Series,
+        indicator_name: str,
+        rs: pd.Series,
+        rf: pd.Series,
+        cs: pd.Series,
+        cf: pd.Series,
+        os: pd.Series,
+        of: pd.Series,
+        vs: pd.Series,
+        vf: pd.Series,
 ) -> tuple[pd.Series, pd.Series]:
     if indicator_name == "RSI":
         return rs, rf
@@ -196,9 +195,9 @@ class KnnMachineLearningStrategy(BaseStrategy):
         )
 
     def compute_signals(
-        self,
-        dataset: pd.DataFrame,
-        params: dict | None = None,
+            self,
+            dataset: pd.DataFrame,
+            params: dict | None = None,
     ) -> StrategySignalResult:
         frame = _ensure_ohlcv_columns(dataset).reset_index(drop=True)
         if frame.empty:
@@ -256,9 +255,9 @@ class KnnMachineLearningStrategy(BaseStrategy):
                 history_f2 = feature2_values[:index]
                 history_directions = direction_values[:index]
                 valid_mask = (
-                    np.isfinite(history_f1)
-                    & np.isfinite(history_f2)
-                    & (history_directions != 0)
+                        np.isfinite(history_f1)
+                        & np.isfinite(history_f2)
+                        & (history_directions != 0)
                 )
                 if np.any(valid_mask):
                     distances = np.sqrt(

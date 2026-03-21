@@ -333,6 +333,16 @@
 	const attachStyleTokenControls = () => {
 		const shell = document.querySelector("[data-style-token-shell]");
 		if (!shell) return;
+		let activeControl = null;
+		const setActiveControl = (nextControl) => {
+			if (activeControl instanceof HTMLElement && activeControl !== nextControl) {
+				activeControl.classList.remove("is-editing");
+			}
+			activeControl = nextControl instanceof HTMLElement ? nextControl : null;
+			if (activeControl instanceof HTMLElement) {
+				activeControl.classList.add("is-editing");
+			}
+		};
 		const controlsByToken = new Map();
 		shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
 			if (!(control instanceof HTMLElement)) return;
@@ -347,6 +357,7 @@
 			const tokenName = control.dataset.styleTokenName || "";
 			const unit = control.dataset.styleTokenUnit || "";
 			const minValue = Number.parseInt(control.dataset.styleTokenMin || "0", 10);
+			const valueInput = control.querySelector(".style-token-value-input");
 			const applyValue = (nextValue) => {
 				if (!tokenName || !Number.isFinite(nextValue)) return;
 				const safeValue = Math.max(Number.isFinite(minValue) ? minValue : 0, nextValue);
@@ -354,16 +365,85 @@
 				(controlsByToken.get(tokenName) || []).forEach((peerControl) => {
 					peerControl.dataset.styleTokenValue = String(safeValue);
 					const peerValueText = peerControl.querySelector("[data-style-token-value-text]");
-					if (peerValueText) peerValueText.textContent = `${safeValue}${unit}`;
+					if (peerValueText instanceof HTMLInputElement) {
+						peerValueText.value = `${safeValue}${unit}`;
+					} else if (peerValueText) {
+						peerValueText.textContent = `${safeValue}${unit}`;
+					}
 				});
 			};
+			if (valueInput instanceof HTMLElement) {
+				valueInput.addEventListener("click", () => {
+					setActiveControl(control);
+				});
+				valueInput.addEventListener("focus", () => {
+					setActiveControl(control);
+				});
+			}
 			control.querySelectorAll("[data-style-token-stepper]").forEach((button) => {
 				button.addEventListener("click", () => {
+					setActiveControl(control);
 					const direction = button.getAttribute("data-style-token-stepper") === "down" ? -1 : 1;
 					const currentValue = Number.parseInt(control.dataset.styleTokenValue || "0", 10);
 					applyValue(currentValue + direction);
 				});
 			});
+		});
+		document.addEventListener("pointerdown", (event) => {
+			if (!(event.target instanceof Node)) return;
+			if (activeControl instanceof HTMLElement && !activeControl.contains(event.target)) {
+				activeControl.classList.remove("is-editing");
+				activeControl = null;
+			}
+		});
+	};
+
+	const attachStyleTokenReferences = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!shell) return;
+		const pulseTargetCard = (targetId) => {
+			if (!targetId) return;
+			const targetCard = shell.querySelector(`[data-style-token-card="${targetId}"]`);
+			if (!(targetCard instanceof HTMLElement)) return;
+			targetCard.classList.remove("is-linked-highlight");
+			void targetCard.offsetWidth;
+			targetCard.classList.add("is-linked-highlight");
+			window.setTimeout(() => {
+				targetCard.classList.remove("is-linked-highlight");
+			}, 700);
+		};
+		shell.querySelectorAll("[data-style-token-reference]").forEach((reference) => {
+			if (!(reference instanceof HTMLElement) || reference.dataset.bound === "1") return;
+			reference.dataset.bound = "1";
+			const targetId = reference.dataset.styleTokenReference || "";
+			reference.addEventListener("pointerenter", () => {
+				pulseTargetCard(targetId);
+			});
+			reference.addEventListener("focus", () => {
+				pulseTargetCard(targetId);
+			});
+			reference.addEventListener("click", (event) => {
+				event.preventDefault();
+				pulseTargetCard(targetId);
+			});
+		});
+	};
+
+	const attachStyleTokenModeSwitches = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!shell) return;
+		shell.querySelectorAll(".style-token-demo .range-mode-shell").forEach((switchShell) => {
+			if (!(switchShell instanceof HTMLElement) || switchShell.dataset.bound === "1") return;
+			switchShell.dataset.bound = "1";
+			const syncActiveValue = () => {
+				const checkedInput = switchShell.querySelector('input[type="radio"]:checked');
+				const nextValue = checkedInput instanceof HTMLInputElement ? checkedInput.value : "period";
+				switchShell.setAttribute("data-active", nextValue === "exact" ? "exact" : "period");
+			};
+			switchShell.querySelectorAll('input[type="radio"]').forEach((input) => {
+				input.addEventListener("change", syncActiveValue);
+			});
+			syncActiveValue();
 		});
 	};
 
@@ -391,6 +471,8 @@
 		attachTradeDetailTabs();
 		attachStyleTokenResizer();
 		attachStyleTokenControls();
+		attachStyleTokenReferences();
+		attachStyleTokenModeSwitches();
 		window.requestAnimationFrame(() => {
 			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
 			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
@@ -1176,12 +1258,12 @@
 	const initLocalStorePaginationPhysics = () => {
 		const pagination = document.querySelector("[data-local-store-pagination]");
 		if (!(pagination instanceof HTMLElement)) return;
-		const active = pagination.querySelector(".settings-page-button.is-active");
+		const active = pagination.querySelector(".local-store-page-button.is-active");
 		if (!(active instanceof HTMLElement)) return;
 		pagination.classList.remove("is-animating");
 		pagination.classList.add("is-animated");
 		positionLocalStorePaginationIndicator(pagination, active, { immediate: true });
-		pagination.querySelectorAll(".settings-page-button[data-pagination-target]").forEach((button) => {
+		pagination.querySelectorAll(".local-store-page-button[data-pagination-target]").forEach((button) => {
 			if (button instanceof HTMLElement) button.dataset.paginationCurrent = button.classList.contains("is-active") ? "1" : "0";
 		});
 	};
@@ -1189,10 +1271,10 @@
 		const pagination = document.querySelector("[data-local-store-pagination]");
 		if (!(pagination instanceof HTMLElement)) return;
 		const page = String(pageValue || "1");
-		const buttons = Array.from(pagination.querySelectorAll(".settings-page-button"));
+		const buttons = Array.from(pagination.querySelectorAll(".local-store-page-button"));
 		const target = buttons.find((button) => {
 			if (!(button instanceof HTMLElement)) return false;
-			if (button.classList.contains("settings-page-nav") || button.classList.contains("settings-page-placeholder")) return false;
+			if (button.classList.contains("local-store-page-nav") || button.classList.contains("local-store-page-placeholder")) return false;
 			return button.textContent?.trim() === page;
 		});
 		if (!(target instanceof HTMLElement)) {
@@ -1217,7 +1299,7 @@
 			resolve();
 			return;
 		}
-		const current = pagination.querySelector(".settings-page-button.is-active") || pagination.querySelector(".settings-page-button[data-pagination-current='1']");
+		const current = pagination.querySelector(".local-store-page-button.is-active") || pagination.querySelector(".local-store-page-button[data-pagination-current='1']");
 		if (!(current instanceof HTMLElement)) {
 			positionLocalStorePaginationIndicator(pagination, link, { immediate: true });
 			resolve();

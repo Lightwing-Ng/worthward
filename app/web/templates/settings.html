@@ -252,9 +252,9 @@
             {% endif %}
             <div class="settings-form-actions">
                 <button type="submit" name="action" value="save" class="secondary-button settings-inline-button">{{ labels.email_smtp_save }}</button>
-                <button type="submit" name="action" value="start-oauth" class="settings-inline-button">Start Outlook OAuth</button>
+                <button type="submit" name="action" value="start-oauth" class="settings-inline-button settings-inline-button-primary">Start Outlook OAuth</button>
                 <button type="submit" name="action" value="finish-oauth" class="secondary-button settings-inline-button">Finish Outlook OAuth</button>
-                <button type="submit" name="action" value="test" class="settings-inline-button">{{ labels.email_smtp_test }}</button>
+                <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
             </div>
         </form>
         {% elif settings_section == "local-market-store" %}
@@ -345,25 +345,25 @@
             {% if local_store_total_pages > 1 %}
             <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
                 {% if local_store_prev_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="settings-page-button settings-page-nav" aria-label="Previous pages">
+                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
                     <span class="icon icon-page-prev" aria-hidden="true"></span>
                 </a>
                 {% else %}
-                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
                 {% endif %}
                 {% for slot in local_store_page_slots %}
                 {% if slot.page %}
-                <a href="{{ local_store_page_urls[slot.page] }}" class="settings-page-button{% if slot.is_active %} is-active{% endif %}">{{ slot.page }}</a>
+                <a href="{{ local_store_page_urls[slot.page] }}" class="local-store-page-button{% if slot.is_active %} is-active{% endif %}">{{ slot.page }}</a>
                 {% else %}
-                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
                 {% endif %}
                 {% endfor %}
                 {% if local_store_next_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="settings-page-button settings-page-nav" aria-label="Next pages">
+                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Next pages">
                     <span class="icon icon-page-next" aria-hidden="true"></span>
                 </a>
                 {% else %}
-                <span class="settings-page-button settings-page-placeholder" aria-hidden="true"></span>
+                <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
                 {% endif %}
             </nav>
             {% endif %}
@@ -385,9 +385,22 @@
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
-            <section class="style-token-card">
+            <section class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
-                    {% if row.sample_kind == "action-package" %}
+                    {% if row.sample_kind == "range-mode" %}
+                    <div class="range-mode-shell" data-active="period">
+                        <label class="range-mode-option" for="style_token_range_relative">
+                            <input id="style_token_range_relative" name="style_token_range_mode" type="radio" value="period" checked>
+                            <span>Relative</span>
+                        </label>
+                        <label class="range-mode-option" for="style_token_range_exact">
+                            <input id="style_token_range_exact" name="style_token_range_mode" type="radio" value="exact">
+                            <span>Exact</span>
+                        </label>
+                    </div>
+                    {% elif row.sample_kind == "action-button" %}
+                    <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
+                    {% elif row.sample_kind == "action-package" %}
                     <div class="settings-action-package {{ row.sample_icon_shell_class }}">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
@@ -419,6 +432,21 @@
                             </div>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "local-store-pagination" %}
+                    <nav class="settings-pagination local-store-pagination" aria-label="Local store pagination demo" data-local-store-pagination-demo>
+                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-slot-size) * 2), 0, 0); opacity: 1;"></span>
+                        <button type="button" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
+                            <span class="icon icon-page-prev" aria-hidden="true"></span>
+                        </button>
+                        <button type="button" class="local-store-page-button">1</button>
+                        <button type="button" class="local-store-page-button is-active">2</button>
+                        <button type="button" class="local-store-page-button">3</button>
+                        <button type="button" class="local-store-page-button">4</button>
+                        <button type="button" class="local-store-page-button">5</button>
+                        <button type="button" class="local-store-page-button local-store-page-nav" aria-label="Next pages">
+                            <span class="icon icon-page-next" aria-hidden="true"></span>
+                        </button>
+                    </nav>
                     {% endif %}
                 </div>
                 <div class="style-token-meta">
@@ -432,7 +460,7 @@
                                     <td class="style-token-value">
                                         {% if token.editable %}
                                         <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
-                                            <span class="style-token-value-text" data-style-token-value-text>{{ token.value }}</span>
+                                            <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
                                             <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
                                                 <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="Increase value">▲</button>
                                                 <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="Decrease value">▼</button>
@@ -441,6 +469,16 @@
                                         {% else %}
                                         <span class="style-token-value-text">{{ token.value }}</span>
                                         {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% for related_style in row.related_styles %}
+                                <tr class="style-token-related-row">
+                                    <td class="style-token-name">
+                                        <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
+                                    </td>
+                                    <td class="style-token-value">
+                                        <span class="style-token-related-value">Reusable style</span>
                                     </td>
                                 </tr>
                                 {% endfor %}

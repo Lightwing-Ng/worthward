@@ -481,6 +481,9 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def build_style_token_rows() -> list[dict[str, object]]:
+        def style_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
         def px_token(name: str, value: int, min_value: int = 0) -> dict[str, object]:
             return {
                 "name": name,
@@ -498,8 +501,52 @@ def register_routes(app: Flask) -> None:
                 "editable": False,
             }
 
-        return [
+        rows = [
             {
+                "id": style_token_id("Segmented control"),
+                "name": "Segmented control",
+                "sample_kind": "range-mode",
+                "sample_title": "",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--mode-switch-radius", 999, 0),
+                    px_token("--mode-switch-pad", 4, 0),
+                    px_token("--mode-switch-gap", 4, 0),
+                    px_token("--mode-switch-min-height", 36, 1),
+                    px_token("--mode-switch-thumb-inset", 4, 0),
+                    px_token("--mode-switch-thumb-offset", 6, 0),
+                    px_token("--mode-switch-label-pad-inline", 12, 0),
+                    px_token("--mode-switch-label-min-height", 28, 1),
+                    raw_token("--mode-switch-thumb-background", "#0055cc"),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Settings action button"),
+                "name": "Settings action button",
+                "sample_kind": "action-button",
+                "sample_title": "",
+                "sample_copy": "",
+                "sample_button": labels["local_store_maintain_button"],
+                "sample_button_class": "settings-inline-button settings-inline-button-primary",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--settings-action-button-radius", 999, 0),
+                    px_token("--settings-action-button-pad-block", 0, 0),
+                    px_token("--settings-action-button-pad-inline", 18, 0),
+                    px_token("--settings-action-button-min-height", 32, 1),
+                    raw_token("--settings-action-button-background", "#0055cc"),
+                    raw_token("--settings-action-button-color", "#ffffff"),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Settings action package"),
                 "name": "Settings action package",
                 "sample_kind": "action-package",
                 "sample_title": labels["local_store_maintain_title"],
@@ -518,8 +565,15 @@ def register_routes(app: Flask) -> None:
                     raw_token("--settings-action-package-background", "rgba(255, 255, 255, 0.58)"),
                     raw_token("--settings-action-package-border", "1px solid rgba(15, 23, 42, 0.06)"),
                 ],
+                "related_styles": [
+                    {
+                        "name": "Settings action button",
+                        "target_id": style_token_id("Settings action button"),
+                    },
+                ],
             },
             {
+                "id": style_token_id("Modal dialog"),
                 "name": "Modal dialog",
                 "sample_kind": "modal-dialog",
                 "sample_title": "Saving daily market data to local cache",
@@ -538,8 +592,32 @@ def register_routes(app: Flask) -> None:
                     px_token("--workspace-modal-row-gap", 4),
                     px_token("--workspace-modal-title-margin-end", 32),
                 ],
+                "related_styles": [],
             },
             {
+                "id": style_token_id("Modal dialog banner message"),
+                "name": "Modal dialog banner message",
+                "sample_kind": "modal-dialog",
+                "sample_title": "Backtest execution model updated: Signal bar close.",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "icon-settings-general",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--workspace-modal-radius", 10),
+                    px_token("--workspace-modal-pad-block", 18),
+                    px_token("--workspace-modal-pad-inline", 18),
+                    px_token("--workspace-modal-close-offset", 10),
+                    px_token("--workspace-modal-icon-size", 36),
+                    px_token("--workspace-modal-column-gap", 12),
+                    px_token("--workspace-modal-row-gap", 4),
+                    px_token("--workspace-modal-title-margin-end", 32),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Trade strategy stepper"),
                 "name": "Trade strategy stepper",
                 "sample_kind": "trade-strategy-stepper",
                 "sample_title": "",
@@ -555,8 +633,30 @@ def register_routes(app: Flask) -> None:
                     px_token("--strategy-stepper-button-height", 18, 1),
                     px_token("--strategy-stepper-font-size", 9, 1),
                 ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Local store pagination"),
+                "name": "Local store pagination",
+                "sample_kind": "local-store-pagination",
+                "sample_title": "",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--local-store-pagination-slot-size", 30, 1),
+                    px_token("--local-store-pagination-button-radius", 999, 0),
+                    px_token("--local-store-pagination-indicator-radius", 999, 0),
+                    raw_token("--local-store-pagination-indicator-background", "#0055cc"),
+                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px rgba(0, 85, 204, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.18)"),
+                    raw_token("--local-store-pagination-button-border", "1px solid rgba(0, 85, 204, 0.28)"),
+                ],
+                "related_styles": [],
             },
         ]
+        return rows
 
     def build_local_store_pagination_slots(
         current_page: int,
