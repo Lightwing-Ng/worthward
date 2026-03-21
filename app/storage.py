@@ -103,6 +103,11 @@ def history_store_path_for(ticker: str) -> Path:
     return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}.parquet"
 
 
+def intraday_history_store_path_for(ticker: str, interval: str = "1m") -> Path:
+    normalized_interval = str(interval).strip().lower() or "1m"
+    return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.parquet"
+
+
 def profile_store_path_for(ticker: str, namespace: str = "primary") -> Path:
     del ticker, namespace
     return PROFILES_PARQUET_PATH

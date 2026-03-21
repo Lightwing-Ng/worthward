@@ -16,6 +16,14 @@ import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
+from .broker_market_data import has_recent_one_minute_store, refresh_longbridge_one_minute_store
+from .broker_settings import (
+    BrokerSettings,
+    has_longbridge_credentials,
+    load_broker_settings,
+    sanitize_broker_settings_for_view,
+    save_broker_settings,
+)
 from .comparisons import build_series_payload, slice_dataset_for_period
 from .email_settings import (
     SmtpSettings,
@@ -69,7 +77,7 @@ LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches", "style-tokens"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
@@ -770,6 +778,7 @@ def register_routes(app: Flask) -> None:
                     "range_start": range_start,
                     "range_end": range_end,
                     "range": f"{range_start} - {range_end}" if range_start and range_end else "",
+                    "has_1m": has_recent_one_minute_store(ticker),
                 }
             )
         return rows
@@ -1151,6 +1160,7 @@ def register_routes(app: Flask) -> None:
         strategy_settings_rows: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
+        broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
         local_market_rows: list[dict[str, str]] = []
         local_store_total_pages = 1
         local_store_current_page = 1
@@ -1182,6 +1192,8 @@ def register_routes(app: Flask) -> None:
                 settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
                 settings_title = labels["email_smtp"]
+            elif settings_section == "broker-access":
+                settings_title = "Broker access"
             elif settings_section == "local-market-store":
                 settings_title = labels["local_market_store"]
             elif settings_section == "clear-caches":
@@ -1377,7 +1389,7 @@ def register_routes(app: Flask) -> None:
         timing_error = ""
 
         if current_view == "settings":
-            if settings_section in {"general", "email-smtp", "local-market-store", "clear-caches"} and (notice or error):
+            if settings_section in {"general", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
                 notice_is_floating = True
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
@@ -1601,6 +1613,7 @@ def register_routes(app: Flask) -> None:
             strategy_settings_rows=strategy_settings_rows,
             style_token_rows=style_token_rows,
             backtest_execution_mode=backtest_execution_mode,
+            broker_settings=broker_settings,
             more_cards=more_cards,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
@@ -1612,7 +1625,7 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches", "style-tokens")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
@@ -1745,6 +1758,25 @@ def register_routes(app: Flask) -> None:
         })
         return redirect(f"{build_settings_path('email-smtp')}?{params}" if params else build_settings_path("email-smtp"))
 
+    @app.post("/settings/broker-access/action")
+    def broker_access_action():
+        current_settings = load_broker_settings()
+        selected_broker = str(
+            request.form.get("selected_broker", current_settings.selected_broker)
+        ).strip().lower() or "longbridge"
+        updated_settings = BrokerSettings(
+            selected_broker=selected_broker,
+            longbridge_app_key=str(request.form.get("longbridge_app_key", "")).strip() or current_settings.longbridge_app_key,
+            longbridge_app_secret=str(request.form.get("longbridge_app_secret", "")).strip() or current_settings.longbridge_app_secret,
+            longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
+        )
+        save_broker_settings(updated_settings)
+        notice = (
+            "Broker credentials were saved only on this device. "
+            "This project is open source, and the developer cannot retrieve your local secrets."
+        )
+        return redirect(f"{build_settings_path('broker-access')}?{urlencode({'notice': notice})}")
+
     @app.post("/settings/local-market-store/action")
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
@@ -1816,6 +1848,15 @@ def register_routes(app: Flask) -> None:
                     except Exception:
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
+                return redirect(build_local_store_redirect(notice=notice))
+            elif action == "refresh-1m":
+                broker_settings = load_broker_settings()
+                if broker_settings.selected_broker != "longbridge":
+                    raise ValueError("1-minute history fetch is currently available only through Longbridge.")
+                if not has_longbridge_credentials(broker_settings):
+                    raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+                refresh_longbridge_one_minute_store(ticker, broker_settings)
+                notice = f"Saved the latest 1-minute market data for {ticker} to local cache."
                 return redirect(build_local_store_redirect(notice=notice))
             elif action == "delete":
                 delete_ticker_data(ticker)

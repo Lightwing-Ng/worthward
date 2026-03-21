@@ -22,6 +22,10 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
         <span class="settings-nav-label">{{ labels.email_smtp }}</span>
     </a>
+    <a href="{{ settings_urls['broker-access'] }}" class="settings-nav-item settings-nav-item-broker{% if settings_section == 'broker-access' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+        <span class="settings-nav-label">Broker access</span>
+    </a>
     <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item settings-nav-item-store{% if settings_section == 'local-market-store' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
         <span class="settings-nav-label">{{ labels.local_market_store }}</span>
