@@ -16,7 +16,11 @@ import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
-from .broker_market_data import has_recent_one_minute_store, refresh_longbridge_one_minute_store
+from .broker_market_data import (
+    has_recent_one_minute_store,
+    refresh_longbridge_one_minute_store,
+    test_broker_connection,
+)
 from .broker_settings import (
     BrokerSettings,
     has_longbridge_credentials,
@@ -1105,8 +1109,12 @@ def register_routes(app: Flask) -> None:
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
-        notice_is_floating = False
+        notice_is_floating = bool(error or notice)
         floating_banner_icon_class = "icon-modal-dialog-banner-default"
+        if notice and "Successfully connected" in notice:
+            floating_banner_icon_class = "icon-settings-broker"
+        elif error:
+            floating_banner_icon_class = "icon-modal-dialog-banner-default" # Or some error icon
         exact_start_value = exact_start
         exact_end_value = exact_end
         display_range = ""
@@ -1771,11 +1779,24 @@ def register_routes(app: Flask) -> None:
             longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
         )
         save_broker_settings(updated_settings)
-        notice = (
-            "Broker credentials were saved only on this device. "
-            "This project is open source, and the developer cannot retrieve your local secrets."
-        )
-        return redirect(f"{build_settings_path('broker-access')}?{urlencode({'notice': notice})}")
+        action = request.form.get("action", "save")
+        if action == "test":
+            success, message = test_broker_connection(updated_settings)
+            notice = message if success else ""
+            error = "" if success else message
+        else:
+            success = True
+            notice = (
+                "Broker credentials were saved only on this device. "
+                "This project is open source, and the developer cannot retrieve your local secrets."
+            )
+            error = ""
+        
+        params = urlencode({
+            "notice": notice,
+            "error": error,
+        })
+        return redirect(f"{build_settings_path('broker-access')}?{params}")
 
     @app.post("/settings/local-market-store/action")
     def local_market_store_action():

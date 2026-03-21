@@ -528,10 +528,7 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
             profiles_table = profiles_table.loc[keep_mask].copy()
             _save_profiles_table(profiles_table)
 
-    active_profile_tickers = {normalize_ticker(value) for value in profiles_table["ticker"].astype(str).tolist()} if not profiles_table.empty else set()
-    active_search_tickers = {normalize_ticker(value) for value in filtered_search_cache["symbol"].astype(str).tolist()} if not filtered_search_cache.empty else set()
-    retained_tickers = protected_tickers | active_profile_tickers | active_search_tickers
-
+    retained_tickers = protected_tickers
     removed_logos = 0
     for path in LOGOS_STORE_DIR.glob("*.png"):
         if not path.is_file() or normalize_ticker(path.stem) in retained_tickers:

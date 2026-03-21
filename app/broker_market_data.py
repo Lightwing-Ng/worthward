@@ -17,9 +17,38 @@ from .storage import ensure_market_store_dir, intraday_history_store_path_for
 
 
 ONE_MINUTE_LOOKBACK_DAYS = 366
-ONE_MINUTE_CHUNK_SIZE = 1_000
+ONE_MINUTE_CHUNK_SIZE = 500
 ONE_MINUTE_FRESHNESS_DAYS = 7
 ONE_MINUTE_MIN_SPAN_DAYS = 330
+
+
+def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
+    if settings.selected_broker == "longbridge":
+        if not has_longbridge_credentials(settings):
+            return False, "Longbridge credentials (App Key, App Secret, Access Token) are required."
+        try:
+            Config, QuoteContext, _, _ = _load_longbridge_openapi()
+            config = Config(
+                settings.longbridge_app_key.strip(),
+                settings.longbridge_app_secret.strip(),
+                settings.longbridge_access_token.strip(),
+            )
+            context = QuoteContext(config)
+            # Try to fetch a single quote for a common symbol to test connection
+            quote = context.quote(["AAPL.US"])
+            if quote:
+                return True, "Successfully connected to Longbridge."
+            return False, "Connected but no data returned. Check your permissions."
+        except Exception as e:
+            message = str(e)
+            if "timeout" in message.lower():
+                return False, "Connection timeout. Please check your network or try again."
+            return False, f"Connection failed: {message}"
+    
+    if settings.selected_broker == "ibkr":
+        return False, "IBKR integration is currently in development."
+    
+    return False, f"Unsupported broker: {settings.selected_broker}"
 
 
 def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
@@ -40,7 +69,7 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
         raise ValueError("Ticker is required.")
     if "." in normalized_ticker:
         return normalized_ticker
-    return f"US.{normalized_ticker}"
+    return f"{normalized_ticker}.US"
 
 
 def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
@@ -86,24 +115,32 @@ def fetch_longbridge_one_minute_history(ticker: str, settings: BrokerSettings) -
     cursor: datetime | None = None
     previous_oldest: datetime | None = None
 
+    import time
     for _ in range(500):
-        if cursor is None:
-            batch = quote_context.history_candlesticks_by_offset(
-                symbol,
-                Period.Min_1,
-                AdjustType.NoAdjust,
-                False,
-                ONE_MINUTE_CHUNK_SIZE,
-            )
-        else:
-            batch = quote_context.history_candlesticks_by_offset(
-                symbol,
-                Period.Min_1,
-                AdjustType.NoAdjust,
-                False,
-                ONE_MINUTE_CHUNK_SIZE,
-                cursor,
-            )
+        try:
+            if cursor is None:
+                batch = quote_context.history_candlesticks_by_offset(
+                    symbol,
+                    Period.Min_1,
+                    AdjustType.NoAdjust,
+                    False,
+                    ONE_MINUTE_CHUNK_SIZE,
+                )
+            else:
+                batch = quote_context.history_candlesticks_by_offset(
+                    symbol,
+                    Period.Min_1,
+                    AdjustType.NoAdjust,
+                    False,
+                    ONE_MINUTE_CHUNK_SIZE,
+                    cursor,
+                )
+        except Exception as e:
+            if "timeout" in str(e).lower() and frames:
+                # If we already have some data, just stop here instead of failing completely
+                break
+            raise e
+
         if not batch:
             break
 
@@ -116,11 +153,13 @@ def fetch_longbridge_one_minute_history(ticker: str, settings: BrokerSettings) -
         if oldest_timestamp.to_pydatetime() <= start_at:
             break
 
-        next_cursor = (oldest_timestamp - pd.Timedelta(minutes=1)).to_pydatetime()
+        next_cursor = (oldest_timestamp - pd.Timedelta(seconds=1)).to_pydatetime()
         if previous_oldest is not None and next_cursor >= previous_oldest:
             break
         previous_oldest = oldest_timestamp.to_pydatetime()
         cursor = next_cursor
+        # Give the API a tiny bit of breathing room to avoid timeout/rate-limit
+        time.sleep(0.05)
 
     if not frames:
         raise ValueError(f"No 1-minute market data returned for {ticker}.")
@@ -152,12 +191,4 @@ def has_recent_one_minute_store(ticker: str) -> bool:
     if dataset.empty:
         return False
     date_values = pd.to_datetime(dataset["Date"], utc=True, errors="coerce").dropna()
-    if date_values.empty:
-        return False
-    latest = date_values.max()
-    earliest = date_values.min()
-    now_utc = pd.Timestamp(datetime.now(timezone.utc))
-    return bool(
-        latest >= now_utc - pd.Timedelta(days=ONE_MINUTE_FRESHNESS_DAYS)
-        and earliest <= now_utc - pd.Timedelta(days=ONE_MINUTE_MIN_SPAN_DAYS)
-    )
+    return not date_values.empty

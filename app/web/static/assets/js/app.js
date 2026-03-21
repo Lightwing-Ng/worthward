@@ -265,6 +265,17 @@
 		syncPanels();
 	};
 
+	const attachBrokerSettingsHandlers = () => {
+		const brokerSelect = $("#selected_broker");
+		if (!brokerSelect) return;
+		brokerSelect.addEventListener("change", () => {
+			const selected = brokerSelect.value;
+			$$("[data-broker-fields]").forEach((el) => {
+				el.hidden = el.dataset.brokerFields !== selected;
+			});
+		});
+	};
+
 	const attachStyleTokenResizer = () => {
 		const shell = document.querySelector("[data-style-token-shell]");
 		const handle = shell?.querySelector("[data-style-token-resizer]");
@@ -526,6 +537,7 @@
 		attachStyleTokenReferences();
 		attachStyleTokenModeSwitches();
 		attachStyleTokenDemoInteractions();
+		attachBrokerSettingsHandlers();
 		window.requestAnimationFrame(() => {
 			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
 			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();

@@ -300,6 +300,7 @@
                         <col class="local-store-col-name">
                         <col class="local-store-col-range">
                         <col class="local-store-col-update">
+                        <col class="local-store-col-1m">
                         <col class="local-store-col-delete">
                     </colgroup>
                     <thead>
@@ -307,8 +308,9 @@
                             <th>{{ labels.local_store_symbol }}</th>
                             <th>{{ labels.local_store_name }}</th>
                             <th>{{ labels.local_store_range }}</th>
-                            <th>{{ labels.local_store_update }}</th>
-                            <th>{{ labels.local_store_delete }}</th>
+                            <th class="local-store-col-update">1d</th>
+                            <th class="local-store-col-1m">1m</th>
+                            <th class="local-store-col-delete">{{ labels.local_store_delete }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -338,10 +340,24 @@
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
                                     <input type="hidden" name="action" value="refresh">
                                     <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                    <button type="submit" class="settings-action-button" aria-label="{{ labels.local_store_update }}">
+                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1d history">
                                         <span class="icon icon-store-refresh" aria-hidden="true"></span>
                                     </button>
                                 </form>
+                            </td>
+                            <td>
+                                {% if row.has_1m %}
+                                <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                {% else %}
+                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                    <input type="hidden" name="action" value="refresh-1m">
+                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1m history">
+                                        <span class="icon icon-store-fetch-1m" aria-hidden="true"></span>
+                                    </button>
+                                </form>
+                                {% endif %}
                             </td>
                             <td>
                                 <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
@@ -357,7 +373,7 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="5">{{ labels.local_store_empty }}</td>
+                            <td colspan="6">{{ labels.local_store_empty }}</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -389,6 +405,54 @@
             </nav>
             {% endif %}
         </div>
+        {% elif settings_section == "broker-access" %}
+        <section class="settings-action-package settings-callout-card-warning">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
+                <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+            </button>
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">Security & Privacy</p>
+                <p class="settings-service-note">This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.</p>
+            </div>
+        </section>
+
+        <section class="settings-card">
+            <form method="post" action="/settings/broker-access/action" class="settings-stack-form">
+                <div class="settings-form-row">
+                    <label class="settings-form-label" for="selected_broker">Broker</label>
+                    <select id="selected_broker" name="selected_broker" class="trade-strategy-select">
+                        <option value="longbridge" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
+                        <option value="ibkr" {% if broker_settings.selected_broker == 'ibkr' %}selected{% endif %}>IBKR (TWS/Gateway)</option>
+                    </select>
+                </div>
+
+                <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    <p class="settings-service-note">Get your credentials from the <a href="https://open.longbridge.com/zh-CN/docs" target="_blank" rel="noopener noreferrer">Longbridge Developer Portal</a>.</p>
+                    <div class="settings-form-row">
+                        <label class="settings-form-label" for="longbridge_app_key">App Key</label>
+                        <input type="password" id="longbridge_app_key" name="longbridge_app_key" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_app_key %}••••••••••••{% else %}Enter your App Key{% endif %}">
+                    </div>
+                    <div class="settings-form-row">
+                        <label class="settings-form-label" for="longbridge_app_secret">App Secret</label>
+                        <input type="password" id="longbridge_app_secret" name="longbridge_app_secret" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_app_secret %}••••••••••••{% else %}Enter your App Secret{% endif %}">
+                    </div>
+                    <div class="settings-form-row">
+                        <label class="settings-form-label" for="longbridge_access_token">Access Token</label>
+                        <input type="password" id="longbridge_access_token" name="longbridge_access_token" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_access_token %}••••••••••••{% else %}Enter your Access Token{% endif %}">
+                    </div>
+                </div>
+
+                <div data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
+                    <p class="settings-service-note">IBKR integration is currently being finalized. Please use Longbridge for 1-minute market data for now.</p>
+                </div>
+
+                <div class="settings-form-actions">
+                    <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-primary">Save credentials</button>
+                    <button type="submit" name="action" value="test" class="settings-inline-button secondary-button">Test connection</button>
+                </div>
+            </form>
+        </section>
         {% elif settings_section == "clear-caches" %}
         <section class="settings-action-package settings-danger-option">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
