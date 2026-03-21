@@ -23,12 +23,8 @@ from .config import MARKET_STORE_DIR
 
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
-PRIMARY_PROFILES_STORE_DIR = PROFILES_STORE_DIR / "primary"
-SEARCH_PROFILES_STORE_DIR = PROFILES_STORE_DIR / "search"
 PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"
 LOGOS_STORE_DIR = MARKET_STORE_DIR / "logos"
-PRIMARY_LOGOS_STORE_DIR = LOGOS_STORE_DIR / "primary"
-SEARCH_LOGOS_STORE_DIR = LOGOS_STORE_DIR / "search"
 SEARCH_STORE_DIR = MARKET_STORE_DIR / "search"
 SEARCH_CACHE_PARQUET_PATH = SEARCH_STORE_DIR / "search_cache.parquet"
 TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.json"
@@ -56,7 +52,6 @@ _TABLE_THREAD_LOCKS_GUARD = threading.Lock()
 
 def ensure_market_store_dir() -> None:
     _ensure_market_store_directories()
-    _migrate_legacy_market_store_once()
 
 
 def _ensure_market_store_directories() -> None:
@@ -64,35 +59,10 @@ def _ensure_market_store_directories() -> None:
         MARKET_STORE_DIR,
         HISTORICAL_STORE_DIR,
         PROFILES_STORE_DIR,
-        PRIMARY_PROFILES_STORE_DIR,
-        SEARCH_PROFILES_STORE_DIR,
         LOGOS_STORE_DIR,
-        PRIMARY_LOGOS_STORE_DIR,
-        SEARCH_LOGOS_STORE_DIR,
         SEARCH_STORE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
-
-
-def _migrate_legacy_market_store_once() -> None:
-    global _MIGRATION_COMPLETED, _MIGRATION_RUNNING
-    if _MIGRATION_COMPLETED or _MIGRATION_RUNNING:
-        return
-    with _MIGRATION_LOCK:
-        if _MIGRATION_COMPLETED or _MIGRATION_RUNNING:
-            return
-        _MIGRATION_RUNNING = True
-        try:
-            migrate_legacy_market_store()
-            _MIGRATION_COMPLETED = True
-        finally:
-            _MIGRATION_RUNNING = False
-
-
-def migrate_legacy_market_store() -> None:
-    _migrate_legacy_profiles_to_parquet()
-    _migrate_legacy_search_cache_to_parquet()
-    _migrate_legacy_logos_to_single_store()
 
 
 def normalize_ticker(ticker: str) -> str:
@@ -536,8 +506,6 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
         path.unlink()
         removed_logos += 1
 
-    _delete_redundant_legacy_artifacts(retained_tickers)
-
     return {
         "removed_search_queries": removed_search_queries,
         "removed_profiles": removed_profiles,
@@ -560,129 +528,10 @@ def delete_ticker_data(ticker: str) -> None:
     logo_path = logo_store_path_for(normalized_ticker)
     if logo_path.exists():
         logo_path.unlink()
-
-    for legacy_path in (
-        PRIMARY_PROFILES_STORE_DIR / f"{normalized_ticker}.json",
-        SEARCH_PROFILES_STORE_DIR / f"{normalized_ticker}.json",
-        PRIMARY_LOGOS_STORE_DIR / f"{normalized_ticker}.png",
-        SEARCH_LOGOS_STORE_DIR / f"{normalized_ticker}.png",
-        SEARCH_STORE_DIR / f"{normalized_ticker}.json",
-    ):
-        if legacy_path.exists():
-            legacy_path.unlink()
+ 
+    legacy_search_json = SEARCH_STORE_DIR / f"{normalized_ticker}.json"
+    if legacy_search_json.exists():
+        legacy_search_json.unlink()
 
 
-def _load_legacy_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return None
 
-
-def _migrate_legacy_profiles_to_parquet() -> None:
-    existing_rows = {
-        str(row["ticker"]): row
-        for row in _load_profiles_table().to_dict("records")
-    }
-
-    for directory, default_scope in (
-        (PRIMARY_PROFILES_STORE_DIR, PROFILE_SCOPE_LOCAL),
-        (SEARCH_PROFILES_STORE_DIR, PROFILE_SCOPE_SEARCH),
-    ):
-        for path in directory.glob("*.json"):
-            if not path.is_file():
-                continue
-            payload = _load_legacy_json(path)
-            if not isinstance(payload, dict):
-                continue
-            ticker = normalize_ticker(str(payload.get("ticker") or path.stem))
-            row = {
-                "ticker": ticker,
-                "company_name": str(payload.get("company_name") or ticker).strip(),
-                "website": str(payload.get("website") or "").strip(),
-                "storage_scope": PROFILE_SCOPE_LOCAL if history_store_path_for(ticker).exists() else default_scope,
-                "updated_at": _utc_iso_timestamp(path),
-            }
-            current = existing_rows.get(ticker)
-            existing_rows[ticker] = row if current is None else _merge_profile_rows(current, row)
-
-    if existing_rows:
-        _save_profiles_table(pd.DataFrame(existing_rows.values(), columns=_PROFILE_COLUMNS))
-
-    for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
-        for path in directory.glob("*.json"):
-            if path.is_file():
-                path.unlink()
-
-
-def _migrate_legacy_search_cache_to_parquet() -> None:
-    existing_rows = {
-        (str(row["query"]), str(row["symbol"])): row
-        for row in _load_search_cache_table().to_dict("records")
-    }
-
-    for path in SEARCH_STORE_DIR.glob("*.json"):
-        if path == TICKER_USAGE_STORE_PATH or not path.is_file():
-            continue
-        payload = _load_legacy_json(path)
-        if not isinstance(payload, list):
-            continue
-        query = normalize_ticker(path.stem)
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            symbol = normalize_ticker(str(item.get("symbol") or ""))
-            if not symbol:
-                continue
-            key = (query, symbol)
-            incoming = {
-                "query": query,
-                "symbol": symbol,
-                "name": str(item.get("name") or symbol).strip(),
-                "asset_type": str(item.get("asset_type") or "").strip(),
-                "logo_url": str(item.get("logo_url") or "").strip(),
-                "source": str(item.get("source") or "remote").strip() or "remote",
-                "updated_at": _utc_iso_timestamp(path),
-            }
-            current = existing_rows.get(key)
-            if current is None or str(incoming["updated_at"]) >= str(current.get("updated_at") or ""):
-                existing_rows[key] = incoming
-
-    if existing_rows:
-        _save_search_cache_table(pd.DataFrame(existing_rows.values(), columns=_SEARCH_CACHE_COLUMNS))
-
-    for path in SEARCH_STORE_DIR.glob("*.json"):
-        if path == TICKER_USAGE_STORE_PATH or not path.is_file():
-            continue
-        path.unlink()
-
-
-def _migrate_legacy_logos_to_single_store() -> None:
-    for ticker in sorted({
-        path.stem for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR) for path in directory.glob("*.png") if path.is_file()
-    }):
-        consolidated_path = logo_store_path_for(ticker)
-        if not consolidated_path.exists():
-            primary_path = PRIMARY_LOGOS_STORE_DIR / f"{ticker}.png"
-            search_path = SEARCH_LOGOS_STORE_DIR / f"{ticker}.png"
-            source_path = primary_path if primary_path.exists() else search_path
-            if source_path.exists():
-                shutil.copy2(source_path, consolidated_path)
-
-    _delete_redundant_legacy_artifacts(set())
-
-
-def _delete_redundant_legacy_artifacts(retained_tickers: set[str]) -> None:
-    for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR):
-        for path in directory.glob("*.png"):
-            if not path.is_file():
-                continue
-            ticker = normalize_ticker(path.stem)
-            consolidated_path = logo_store_path_for(ticker)
-            if consolidated_path.exists() and (not retained_tickers or ticker not in retained_tickers or True):
-                path.unlink()
-
-    for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
-        for path in directory.glob("*.json"):
-            if path.is_file():
-                path.unlink()
