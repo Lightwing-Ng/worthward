@@ -11,7 +11,6 @@
     <article class="report-card">
         <div class="report-heading-row">
             <p class="report-heading">{{ report_heading }}</p>
-            {{ render_report_info("Show comparison details") }}
         </div>
         <div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
             {% for item in performance_items %}

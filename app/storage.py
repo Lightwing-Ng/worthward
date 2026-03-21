@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v3.6.0
+Code version: v3.6.3
 """
 
 from __future__ import annotations
@@ -138,14 +138,18 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
     removed_search_queries = 0
     removed_profiles = 0
     removed_logos = 0
-    removed_usage_records = 0
+    protected_search_queries = 0
 
     for path in SEARCH_STORE_DIR.glob("*.json"):
         if path == TICKER_USAGE_STORE_PATH:
             continue
-        if path.is_file():
-            path.unlink()
-            removed_search_queries += 1
+        if not path.is_file():
+            continue
+        if normalize_ticker(path.stem) in protected_tickers:
+            protected_search_queries += 1
+            continue
+        path.unlink()
+        removed_search_queries += 1
 
     for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
         for path in directory.glob("*.json"):
@@ -161,15 +165,11 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
             path.unlink()
             removed_logos += 1
 
-    if TICKER_USAGE_STORE_PATH.exists():
-        TICKER_USAGE_STORE_PATH.unlink()
-        removed_usage_records = 1
-
     return {
         "removed_search_queries": removed_search_queries,
         "removed_profiles": removed_profiles,
         "removed_logos": removed_logos,
-        "removed_usage_records": removed_usage_records,
+        "protected_search_queries": protected_search_queries,
         "protected_tickers": len(protected_tickers),
     }
 

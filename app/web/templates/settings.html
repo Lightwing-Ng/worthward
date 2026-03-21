@@ -30,6 +30,10 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
         <span class="settings-nav-label">Clear caches</span>
     </a>
+    <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
+        <span class="settings-nav-label">Style tokens</span>
+    </a>
 </nav>
 {% endblock %}
 
@@ -255,15 +259,13 @@
         </form>
         {% elif settings_section == "local-market-store" %}
         <div class="local-store-layout" id="local_store_region" data-local-store-region>
-            <section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
-                <div class="settings-callout-copy">
-                    <span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
-                    <div class="settings-callout-text">
+            <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
+                <div class="settings-action-package-copy settings-callout-text">
                         <p class="settings-service-name">{{ labels.local_store_maintain_title }}</p>
                         <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
-                    </div>
                 </div>
-                <form method="post" action="/settings/local-market-store/action" class="settings-stack-form settings-callout-form">
+                <form method="post" action="/settings/local-market-store/action" class="settings-stack-form settings-callout-form settings-action-package-form">
                     <input type="hidden" name="action" value="maintain">
                     <input type="hidden" name="page" value="{{ local_store_current_page }}">
                     <button type="submit" class="settings-inline-button settings-inline-button-primary">{{ labels.local_store_maintain_button }}</button>
@@ -367,19 +369,89 @@
             {% endif %}
         </div>
         {% elif settings_section == "clear-caches" %}
-        <section class="settings-callout-card settings-danger-card">
-            <div class="settings-callout-copy settings-danger-copy">
-                <span class="settings-nav-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
-                <div class="settings-callout-text settings-danger-text">
-                    <p class="settings-service-name">Clear caches</p>
-                    <p class="settings-service-note">This removes privacy-sensitive usage records plus non-local search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, and logo images.</p>
-                </div>
+        <section class="settings-action-package settings-danger-option">
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+            <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                <p class="settings-service-name">Clear caches</p>
+                <p class="settings-service-note">This removes non-local search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
             </div>
-            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-danger-form">
+            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
                 <input type="hidden" name="section" value="clear-caches">
                 <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear caches</button>
             </form>
         </section>
+        {% elif settings_section == "style-tokens" %}
+        <div class="style-token-shell" data-style-token-shell>
+            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
+            <div class="style-token-list">
+            {% for row in style_token_rows %}
+            <section class="style-token-card">
+                <div class="style-token-demo">
+                    {% if row.sample_kind == "action-package" %}
+                    <div class="settings-action-package {{ row.sample_icon_shell_class }}">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">{{ row.sample_title }}</p>
+                            <p class="settings-service-note">{{ row.sample_copy }}</p>
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "modal-dialog" %}
+                    <div class="style-token-modal-shell">
+                        <div class="workspace-modal-dialog style-token-modal-demo">
+                            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close">
+                                <span class="icon icon-close"></span>
+                            </button>
+                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" aria-hidden="true"></span>
+                            <p class="workspace-modal-title">{{ row.sample_title }}</p>
+                            <p class="workspace-modal-copy">{{ row.sample_copy }}</p>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "trade-strategy-stepper" %}
+                    <div class="style-token-stepper-shell">
+                        <div class="style-token-stepper-preview">
+                            <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-stepper-input" value="10px" readonly>
+                            <div class="trade-strategy-stepper style-token-stepper-demo" aria-hidden="false">
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="Increase value">▲</button>
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="Decrease value">▼</button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="style-token-meta">
+                    <p class="style-token-title">{{ row.name }}</p>
+                    <div class="style-token-table-wrap">
+                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value">
+                                        {% if token.editable %}
+                                        <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
+                                            <span class="style-token-value-text" data-style-token-value-text>{{ token.value }}</span>
+                                            <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="Increase value">▲</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="Decrease value">▼</button>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <span class="style-token-value-text">{{ token.value }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+            </div>
+        </div>
         {% endif %}
     </div>
 </article>

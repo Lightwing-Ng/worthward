@@ -265,6 +265,108 @@
 		syncPanels();
 	};
 
+	const attachStyleTokenResizer = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		const handle = shell?.querySelector("[data-style-token-resizer]");
+		if (!shell || !handle || handle.dataset.bound === "1") return;
+		handle.dataset.bound = "1";
+		const minWidth = 220;
+		const clampWidth = (desiredWidth) => {
+			const rect = shell.getBoundingClientRect();
+			if (!rect.width) return null;
+			const computed = getComputedStyle(shell);
+			const columnGap = Number.parseFloat(computed.getPropertyValue("--style-token-column-gap")) || 24;
+			const maxWidth = Math.max(minWidth, rect.width - columnGap - 280);
+			return Math.min(Math.max(desiredWidth, minWidth), maxWidth);
+		};
+		const syncWidth = (clientX) => {
+			const rect = shell.getBoundingClientRect();
+			if (!rect.width) return;
+			const computed = getComputedStyle(shell);
+			const columnGap = Number.parseFloat(computed.getPropertyValue("--style-token-column-gap")) || 24;
+			const nextWidth = clampWidth(clientX - rect.left - (columnGap / 2));
+			if (!Number.isFinite(nextWidth)) return;
+			shell.style.setProperty("--style-token-demo-width-current", `${nextWidth}px`);
+		};
+		const syncWidthToViewport = () => {
+			const computed = getComputedStyle(shell);
+			const currentWidth = Number.parseFloat(computed.getPropertyValue("--style-token-demo-width-current"))
+				|| Number.parseFloat(computed.getPropertyValue("--style-token-demo-width"))
+				|| minWidth;
+			const nextWidth = clampWidth(currentWidth);
+			if (!Number.isFinite(nextWidth)) return;
+			shell.style.setProperty("--style-token-demo-width-current", `${nextWidth}px`);
+		};
+		const stopResize = () => {
+			shell.classList.remove("is-resizing");
+			window.removeEventListener("pointermove", onPointerMove);
+			window.removeEventListener("pointerup", stopResize);
+			window.removeEventListener("pointercancel", stopResize);
+		};
+		const onPointerMove = (event) => {
+			syncWidth(event.clientX);
+		};
+		handle.addEventListener("pointerdown", (event) => {
+			event.preventDefault();
+			shell.classList.add("is-resizing");
+			syncWidth(event.clientX);
+			window.addEventListener("pointermove", onPointerMove);
+			window.addEventListener("pointerup", stopResize);
+			window.addEventListener("pointercancel", stopResize);
+		});
+		const syncHandleY = () => {
+			const rect = shell.getBoundingClientRect();
+			const vhCenter = window.innerHeight / 2;
+			let targetY = vhCenter - rect.top;
+			targetY = Math.max(16, Math.min(rect.height - 16, targetY));
+			shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
+		};
+		window.addEventListener("scroll", syncHandleY, { passive: true });
+		window.addEventListener("resize", () => {
+			syncWidthToViewport();
+			syncHandleY();
+		}, { passive: true });
+		syncWidthToViewport();
+		syncHandleY();
+	};
+
+	const attachStyleTokenControls = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!shell) return;
+		const controlsByToken = new Map();
+		shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
+			if (!(control instanceof HTMLElement)) return;
+			const tokenName = control.dataset.styleTokenName || "";
+			if (!tokenName) return;
+			if (!controlsByToken.has(tokenName)) controlsByToken.set(tokenName, []);
+			controlsByToken.get(tokenName).push(control);
+		});
+		shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
+			if (!(control instanceof HTMLElement) || control.dataset.bound === "1") return;
+			control.dataset.bound = "1";
+			const tokenName = control.dataset.styleTokenName || "";
+			const unit = control.dataset.styleTokenUnit || "";
+			const minValue = Number.parseInt(control.dataset.styleTokenMin || "0", 10);
+			const applyValue = (nextValue) => {
+				if (!tokenName || !Number.isFinite(nextValue)) return;
+				const safeValue = Math.max(Number.isFinite(minValue) ? minValue : 0, nextValue);
+				shell.style.setProperty(tokenName, `${safeValue}${unit}`);
+				(controlsByToken.get(tokenName) || []).forEach((peerControl) => {
+					peerControl.dataset.styleTokenValue = String(safeValue);
+					const peerValueText = peerControl.querySelector("[data-style-token-value-text]");
+					if (peerValueText) peerValueText.textContent = `${safeValue}${unit}`;
+				});
+			};
+			control.querySelectorAll("[data-style-token-stepper]").forEach((button) => {
+				button.addEventListener("click", () => {
+					const direction = button.getAttribute("data-style-token-stepper") === "down" ? -1 : 1;
+					const currentValue = Number.parseInt(control.dataset.styleTokenValue || "0", 10);
+					applyValue(currentValue + direction);
+				});
+			});
+		});
+	};
+
 	const setFormBusyState = (isBusy) => {
 		if (!form) return;
 		form.setAttribute("aria-busy", String(isBusy));
@@ -287,6 +389,8 @@
 	const initializeWorkspaceEnhancements = () => {
 		attachNoticeHandlers();
 		attachTradeDetailTabs();
+		attachStyleTokenResizer();
+		attachStyleTokenControls();
 		window.requestAnimationFrame(() => {
 			window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
 			window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
@@ -2998,6 +3102,7 @@
 		const calloutForm = event.target.closest(".settings-callout-form");
 		if (calloutForm) {
 			const actionInput = calloutForm.querySelector('input[name="action"]');
+			const sectionInput = calloutForm.querySelector('input[name="section"]');
 			const submitButton = calloutForm.querySelector("button[type='submit']");
 			submitButton?.classList.add("is-pending");
 			submitButton?.setAttribute("aria-busy", "true");
@@ -3006,6 +3111,12 @@
 					title: "Maintaining all local market data",
 					copy: "We are checking every cached ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
 					iconClass: "icon-overlay-local-cache",
+				});
+			} else if (sectionInput?.value === "clear-caches") {
+				showWorkspaceModal({
+					title: "Clearing local caches",
+					copy: "We are removing privacy-sensitive usage records and non-local caches. Please keep this page open while this finishes.",
+					iconClass: "icon-settings-clear-cache",
 				});
 			}
 			return;

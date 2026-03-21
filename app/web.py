@@ -68,7 +68,7 @@ LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
@@ -479,6 +479,84 @@ def register_routes(app: Flask) -> None:
                 }
             )
         return rows
+
+    def build_style_token_rows() -> list[dict[str, object]]:
+        def px_token(name: str, value: int, min_value: int = 0) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": f"{value}px",
+                "editable": True,
+                "numeric_value": value,
+                "unit": "px",
+                "min_value": min_value,
+            }
+
+        def raw_token(name: str, value: str) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": value,
+                "editable": False,
+            }
+
+        return [
+            {
+                "name": "Settings action package",
+                "sample_kind": "action-package",
+                "sample_title": labels["local_store_maintain_title"],
+                "sample_copy": labels["local_store_maintain_note"],
+                "sample_button": labels["local_store_maintain_button"],
+                "sample_button_class": "settings-inline-button settings-inline-button-primary",
+                "sample_icon_class": "icon-store-maintain",
+                "sample_icon_shell_class": "settings-callout-card-primary",
+                "tokens": [
+                    px_token("--settings-action-package-radius", 10),
+                    px_token("--settings-action-package-pad-block", 14),
+                    px_token("--settings-action-package-pad-inline", 16),
+                    px_token("--settings-action-package-column-gap", 12),
+                    px_token("--settings-action-package-row-gap", 8),
+                    px_token("--settings-action-package-copy-gap", 4),
+                    raw_token("--settings-action-package-background", "rgba(255, 255, 255, 0.58)"),
+                    raw_token("--settings-action-package-border", "1px solid rgba(15, 23, 42, 0.06)"),
+                ],
+            },
+            {
+                "name": "Modal dialog",
+                "sample_kind": "modal-dialog",
+                "sample_title": "Saving daily market data to local cache",
+                "sample_copy": "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "icon-overlay-local-cache",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--workspace-modal-radius", 10),
+                    px_token("--workspace-modal-pad-block", 18),
+                    px_token("--workspace-modal-pad-inline", 18),
+                    px_token("--workspace-modal-close-offset", 10),
+                    px_token("--workspace-modal-icon-size", 36),
+                    px_token("--workspace-modal-column-gap", 12),
+                    px_token("--workspace-modal-row-gap", 4),
+                    px_token("--workspace-modal-title-margin-end", 32),
+                ],
+            },
+            {
+                "name": "Trade strategy stepper",
+                "sample_kind": "trade-strategy-stepper",
+                "sample_title": "",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--strategy-stepper-width", 20, 1),
+                    px_token("--strategy-stepper-radius", 6, 0),
+                    px_token("--strategy-param-control-height", 36, 1),
+                    px_token("--strategy-stepper-button-height", 18, 1),
+                    px_token("--strategy-stepper-font-size", 9, 1),
+                ],
+            },
+        ]
 
     def build_local_store_pagination_slots(
         current_page: int,
@@ -959,6 +1037,7 @@ def register_routes(app: Flask) -> None:
         settings_title = labels["about"]
         settings_service_rows: list[dict[str, str | bool]] = []
         strategy_settings_rows: list[dict[str, object]] = []
+        style_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         local_market_rows: list[dict[str, str]] = []
         local_store_total_pages = 1
@@ -995,6 +1074,8 @@ def register_routes(app: Flask) -> None:
                 settings_title = labels["local_market_store"]
             elif settings_section == "clear-caches":
                 settings_title = "Clear caches"
+            elif settings_section == "style-tokens":
+                settings_title = "Style tokens"
         elif current_view == "more":
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
@@ -1178,6 +1259,7 @@ def register_routes(app: Flask) -> None:
                 notice_is_floating = True
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
+            style_token_rows = build_style_token_rows()
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
@@ -1388,6 +1470,7 @@ def register_routes(app: Flask) -> None:
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
+            style_token_rows=style_token_rows,
             backtest_execution_mode=backtest_execution_mode,
             more_cards=more_cards,
             local_market_rows=local_market_rows,
@@ -1400,7 +1483,7 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "local-market-store", "clear-caches", "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
@@ -1627,10 +1710,12 @@ def register_routes(app: Flask) -> None:
                 f"{cache_summary['removed_profiles']:,} non-local profile entr"
                 f"{'y' if cache_summary['removed_profiles'] == 1 else 'ies'}, "
                 f"{cache_summary['removed_logos']:,} non-local logo image"
-                f"{'' if cache_summary['removed_logos'] == 1 else 's'}, "
-                "and recent ticker usage records. "
+                f"{'' if cache_summary['removed_logos'] == 1 else 's'}. "
                 f"Protected {cache_summary['protected_tickers']:,} Local Market Store ticker entr"
-                f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, and kept all parquet history plus logo images."
+                f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, "
+                f"kept {cache_summary['protected_search_queries']:,} matching search cache entr"
+                f"{'y' if cache_summary['protected_search_queries'] == 1 else 'ies'}, "
+                "and left ticker usage records untouched."
             )
             return redirect(f"{build_settings_path(section_name)}?{urlencode({'notice': notice})}")
         except Exception as exc:  # noqa: BLE001
