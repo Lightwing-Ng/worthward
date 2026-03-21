@@ -1,17 +1,20 @@
 """
 Logo and quote profile services.
 
-Code version: v3.0.2
+Code version: v3.0.3
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from curl_cffi.curl import CurlError
+from curl_cffi.requests.exceptions import RequestException
 import yfinance as yf
 from flask import url_for
 
@@ -37,6 +40,7 @@ from .storage import (
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
+LOGGER = logging.getLogger(__name__)
 
 
 TICKER_WEBSITE_OVERRIDES = {
@@ -481,14 +485,19 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     elif not has_remote_market_access():
         remote_items = []
     else:
-        results = yf.Search(
-            normalized_query,
-            max_results=20,
-            news_count=0,
-            lists_count=0,
-            recommended=0,
-            raise_errors=False,
-        ).quotes
+        try:
+            search = yf.Search(
+                normalized_query,
+                max_results=20,
+                news_count=0,
+                lists_count=0,
+                recommended=0,
+                raise_errors=False,
+            )
+            results = search.quotes
+        except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
+            LOGGER.warning("Ticker search remote lookup failed for %s: %s", normalized_query, exc)
+            results = []
 
         filtered: list[dict[str, str]] = []
         for item in results:
