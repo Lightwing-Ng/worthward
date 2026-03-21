@@ -5,9 +5,3 @@ __pycache__/
 .idea/
 settings_store/
 node_modules/
-market_store/logos/
-market_store/profiles/*.parquet
-market_store/profiles/*.lock
-market_store/search/search_cache.parquet
-market_store/search/*.lock
-market_store/search/ticker_usage.json
