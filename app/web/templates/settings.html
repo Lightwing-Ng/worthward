@@ -246,7 +246,10 @@
                     </span>
                 </label>
             </div>
-            <div class="field-tooltip">Status: {% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet.{% endif %}</div>
+            <div class="workspace-modal-dialog settings-status-banner" role="status" aria-live="polite">
+                <span class="icon icon-settings-email workspace-modal-icon settings-status-banner-icon" aria-hidden="true"></span>
+                <p class="workspace-modal-title settings-status-banner-title">Status: {% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet.{% endif %}</p>
+            </div>
             {% if smtp_settings.oauth_pending %}
             <div class="field-tooltip">Open <a href="{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}" target="_blank" rel="noopener noreferrer">{{ smtp_settings.oauth_verification_uri }}</a> and enter code <strong>{{ smtp_settings.oauth_user_code }}</strong>.</div>
             {% endif %}

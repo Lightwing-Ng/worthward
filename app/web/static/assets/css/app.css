@@ -1649,6 +1649,32 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 .notice[hidden],
 .error[hidden] { display: none !important; }
 .notice-floating { position: absolute; top: 0; right: 0; width: min(420px, calc(100% - 12px)); margin: 0; padding: 12px 12px 12px 14px; background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); z-index: var(--layer-chart-tooltip); }
+.notice-floating-banner {
+	display: grid !important;
+	grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr) auto;
+	column-gap: var(--workspace-modal-column-gap);
+	row-gap: 0;
+	align-items: center !important;
+	padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
+	border-radius: var(--workspace-modal-radius);
+}
+.notice-floating-banner-icon {
+	grid-column: 1;
+	grid-row: 1;
+	background-color: #0055cc;
+}
+.notice-floating-banner-title {
+	grid-column: 2;
+	grid-row: 1;
+	margin: 0;
+	margin-right: 0;
+	font-weight: var(--font-weight-regular);
+}
+.notice-floating-banner .notice-close {
+	grid-column: 3;
+	grid-row: 1;
+	align-self: start;
+}
 .dismiss-button {
 	width: 24px;
 	min-width: 24px;
@@ -2975,6 +3001,18 @@ div.style-token-modal-demo {
 	font-size: var(--font-form-label);
 	line-height: 1.45;
 	color: var(--muted);
+}
+.settings-status-banner {
+	width: 100%;
+	max-width: none;
+	margin-bottom: 10px;
+	padding-bottom: var(--workspace-modal-pad-block);
+}
+.settings-status-banner-icon {
+	background-color: #0055cc;
+}
+.settings-status-banner-title {
+	margin-right: 0;
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 980px) {

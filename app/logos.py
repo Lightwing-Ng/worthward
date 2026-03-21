@@ -1,12 +1,12 @@
 """
 Logo and quote profile services.
 
-Code version: v2.8.0
+Code version: v3.0.2
 """
 
 from __future__ import annotations
 
-import json
+from datetime import datetime, timezone
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
@@ -16,8 +16,22 @@ import yfinance as yf
 from flask import url_for
 
 from .connectivity import has_remote_market_access
-from .storage import history_store_path_for, is_store_entry_fresh, ensure_market_store_dir, list_local_tickers, logo_store_path_for, profile_store_path_for, top_used_tickers
 from .schemas import QuoteProfile
+from .storage import (
+    PROFILE_SCOPE_LOCAL,
+    PROFILE_SCOPE_SEARCH,
+    ensure_market_store_dir,
+    has_logo_asset,
+    has_profile_record,
+    history_store_path_for,
+    list_local_tickers,
+    load_profile_record,
+    load_search_cache_items,
+    logo_store_path_for,
+    store_search_cache_items,
+    top_used_tickers,
+    upsert_profile_record,
+)
 
 
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
@@ -44,11 +58,9 @@ ISSUER_WEBSITE_HINTS = {
 
 def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None) -> str:
     if modified_at_ns is None:
-        for namespace in ("primary", "search"):
-            logo_path = logo_store_path_for(filename.removesuffix(".png"), namespace=namespace)
-            if logo_path.exists():
-                modified_at_ns = logo_path.stat().st_mtime_ns
-                break
+        logo_path = logo_store_path_for(filename.removesuffix(".png"))
+        if logo_path.exists():
+            modified_at_ns = logo_path.stat().st_mtime_ns
     if modified_at_ns is None:
         return url_for("market_store_logo", filename=filename)
     return url_for("market_store_logo", filename=filename, v=modified_at_ns)
@@ -62,11 +74,21 @@ def has_valid_ticker_format(ticker: str) -> bool:
     return bool(TICKER_PATTERN.fullmatch(ticker))
 
 
+def _record_is_fresh(updated_at: str | None) -> bool:
+    if not updated_at:
+        return False
+    try:
+        timestamp = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return False
+    return timestamp.astimezone(timezone.utc).date() >= datetime.now(timezone.utc).date()
+
+
 def is_known_ticker(ticker: str) -> bool:
     normalized_ticker = normalize_ticker_input(ticker)
     if not has_valid_ticker_format(normalized_ticker):
         return False
-    if history_store_path_for(normalized_ticker).exists() or profile_store_path_for(normalized_ticker).exists():
+    if history_store_path_for(normalized_ticker).exists() or has_profile_record(normalized_ticker):
         return True
     if not has_remote_market_access():
         return False
@@ -111,6 +133,8 @@ def search_text_matches(query: str, symbol: str, company_name: str) -> bool:
         return True
     if normalized_symbol.startswith(normalized_query):
         return True
+    if len(normalized_query) <= 1:
+        return False
     if normalized_query in normalized_name:
         return True
     return False
@@ -235,8 +259,9 @@ def refresh_logo_store(
     force_refresh: bool = False,
     namespace: str = "primary",
 ) -> None:
+    del namespace
     ensure_market_store_dir()
-    path = logo_store_path_for(ticker, namespace=namespace)
+    path = logo_store_path_for(ticker)
     if path.exists() and not force_refresh:
         return
 
@@ -255,12 +280,12 @@ def fetch_and_store_logo(
     force_refresh: bool = False,
     namespace: str = "primary",
 ) -> str | None:
+    del namespace
     ensure_market_store_dir()
-    path = logo_store_path_for(ticker, namespace=namespace)
-    refresh_logo_store(ticker, website, force_refresh=force_refresh, namespace=namespace)
+    path = logo_store_path_for(ticker)
+    refresh_logo_store(ticker, website, force_refresh=force_refresh)
     if not path.exists():
         return None
-
     return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
 
 
@@ -270,10 +295,7 @@ def resolve_logo_url_with_fallback(
     force_refresh: bool = False,
     namespace: str = "primary",
 ) -> str | None:
-    logo_url = fetch_and_store_logo(ticker, website, force_refresh=force_refresh, namespace=namespace)
-    if logo_url or namespace != "primary":
-        return logo_url
-    return fetch_and_store_logo(ticker, website, force_refresh=False, namespace="search")
+    return fetch_and_store_logo(ticker, website, force_refresh=force_refresh, namespace=namespace)
 
 
 def fetch_quote_profile(
@@ -282,40 +304,46 @@ def fetch_quote_profile(
     namespace: str = "primary",
 ) -> QuoteProfile:
     ensure_market_store_dir()
-    path = profile_store_path_for(ticker, namespace=namespace)
+    normalized_ticker = normalize_ticker_input(ticker)
+    scope = PROFILE_SCOPE_LOCAL if namespace == "primary" else PROFILE_SCOPE_SEARCH
+    record = load_profile_record(normalized_ticker)
 
-    if path.exists() and (is_store_entry_fresh(path) or not has_remote_market_access() or not force_refresh):
-        payload = json.loads(path.read_text())
+    if record and (_record_is_fresh(record.get("updated_at")) or not has_remote_market_access() or not force_refresh):
         return QuoteProfile(
-            ticker=payload["ticker"],
-            company_name=payload["company_name"],
-            website=payload.get("website"),
+            ticker=record["ticker"],
+            company_name=record.get("company_name") or normalized_ticker,
+            website=record.get("website"),
             logo_url=resolve_logo_url_with_fallback(
-                payload["ticker"],
-                payload.get("website"),
+                record["ticker"],
+                record.get("website"),
                 force_refresh=False,
                 namespace=namespace,
             ),
         )
 
     if not has_remote_market_access():
-        existing_logo = resolve_logo_url_with_fallback(ticker, None, force_refresh=False, namespace=namespace)
+        existing_logo = resolve_logo_url_with_fallback(normalized_ticker, record.get("website") if record else None)
         return QuoteProfile(
-            ticker=ticker.upper(),
-            company_name=ticker.upper(),
-            website=None,
+            ticker=normalized_ticker,
+            company_name=(record or {}).get("company_name") or normalized_ticker,
+            website=(record or {}).get("website"),
             logo_url=existing_logo,
         )
 
-    payload = build_quote_profile_payload(ticker)
-    path.write_text(json.dumps(payload))
+    payload = build_quote_profile_payload(normalized_ticker)
+    stored = upsert_profile_record(
+        payload["ticker"],
+        str(payload.get("company_name") or payload["ticker"]),
+        payload.get("website"),
+        scope=scope,
+    )
     return QuoteProfile(
-        ticker=payload["ticker"],
-        company_name=payload["company_name"],
-        website=payload.get("website"),
+        ticker=stored["ticker"],
+        company_name=stored.get("company_name") or stored["ticker"],
+        website=stored.get("website"),
         logo_url=resolve_logo_url_with_fallback(
-            payload["ticker"],
-            payload.get("website"),
+            stored["ticker"],
+            stored.get("website"),
             force_refresh=force_refresh,
             namespace=namespace,
         ),
@@ -332,14 +360,17 @@ def refresh_quote_profile_cache(
         return False
 
     try:
-        path = profile_store_path_for(ticker, namespace=namespace)
         payload = build_quote_profile_payload(ticker)
-        path.write_text(json.dumps(payload))
+        upsert_profile_record(
+            payload["ticker"],
+            str(payload.get("company_name") or payload["ticker"]),
+            payload.get("website"),
+            scope=PROFILE_SCOPE_LOCAL if namespace == "primary" else PROFILE_SCOPE_SEARCH,
+        )
         refresh_logo_store(
             payload["ticker"],
             payload.get("website"),
             force_refresh=force_refresh,
-            namespace=namespace,
         )
     except Exception:
         return False
@@ -362,47 +393,93 @@ def build_local_search_items(query: str) -> list[dict[str, str]]:
     for symbol in list_local_tickers():
         if symbol in seen or not history_store_path_for(symbol).exists():
             continue
-        search_profile_path = profile_store_path_for(symbol, namespace="search")
-        namespace = "search" if search_profile_path.exists() else "primary"
-        profile = fetch_quote_profile(symbol, force_refresh=False, namespace=namespace)
-        if not is_supported_local_symbol(symbol, query, profile.company_name):
+        profile_record = load_profile_record(symbol)
+        company_name = (
+            str((profile_record or {}).get("company_name") or "").strip()
+            or symbol
+        )
+        if not is_supported_local_symbol(symbol, query, company_name):
             continue
         seen.add(symbol)
+        logo_url = ""
+        logo_path = logo_store_path_for(symbol)
+        if has_logo_asset(symbol):
+            logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
         items.append(
             {
                 "symbol": symbol,
-                "name": profile.company_name or symbol,
-                "logo_url": profile.logo_url or "",
-                "source": "remote",
+                "name": company_name,
+                "logo_url": logo_url,
+                "source": "local",
             }
         )
-    return items
+    return sorted(items, key=lambda item: search_result_sort_key(item, query))
 
 
 def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     ensure_market_store_dir()
-    from .storage import search_store_path_for
-
     normalized_query = normalize_ticker_input(query)
     recent_symbols = top_used_tickers(normalized_query, limit=limit)
     recent_items = [_build_recent_suggestion(symbol) for symbol in recent_symbols]
+    local_items = build_local_search_items(normalized_query) if normalized_query else []
 
     if len(normalized_query) < 1:
-        return recent_items[:limit]
+        combined_recent: list[dict[str, str]] = []
+        seen_recent: set[str] = set()
+        for item in recent_items + local_items:
+            symbol = item["symbol"]
+            if symbol in seen_recent:
+                continue
+            seen_recent.add(symbol)
+            combined_recent.append(item)
+            if len(combined_recent) >= limit:
+                break
+        return combined_recent[:limit]
 
-    path = search_store_path_for(normalized_query)
-    cached_items: list[dict[str, str]] = []
-    if path.exists():
-        cached_items = json.loads(path.read_text())
+    if len(normalized_query) == 1 and local_items:
+        combined_local: list[dict[str, str]] = []
+        seen_local: set[str] = set()
+        for item in recent_items + local_items:
+            symbol = item["symbol"]
+            if symbol in seen_local:
+                continue
+            seen_local.add(symbol)
+            combined_local.append(item)
+            if len(combined_local) >= limit:
+                break
+        return combined_local
 
+    if any(
+        str(item.get("symbol") or "").upper() == normalized_query
+        for item in local_items
+    ):
+        combined_exact: list[dict[str, str]] = []
+        seen_exact: set[str] = set()
+        prioritized_local_items = sorted(
+            local_items,
+            key=lambda item: 0 if str(item.get("symbol") or "").upper() == normalized_query else 1,
+        )
+        for item in prioritized_local_items + recent_items:
+            symbol = item["symbol"]
+            if symbol in seen_exact:
+                continue
+            seen_exact.add(symbol)
+            combined_exact.append(item)
+            if len(combined_exact) >= limit:
+                break
+        return combined_exact
+
+    cached_items = load_search_cache_items(normalized_query)
     remote_items: list[dict[str, str]] = []
-    if cached_items and all("logo_url" in item for item in cached_items):
+    if len(local_items) >= limit:
+        remote_items = []
+    elif cached_items and all("logo_url" in item for item in cached_items):
         remote_items = [
             item for item in cached_items
             if is_supported_local_symbol(item.get("symbol", ""), normalized_query)
         ]
     elif not has_remote_market_access():
-        remote_items = build_local_search_items(normalized_query)
+        remote_items = []
     else:
         results = yf.Search(
             normalized_query,
@@ -437,14 +514,14 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         deduped_remote = {item["symbol"]: item for item in filtered}
         remote_items = sorted(deduped_remote.values(), key=lambda item: search_result_sort_key(item, normalized_query))
         if should_cache_search_results(normalized_query, remote_items):
-            path.write_text(json.dumps(remote_items))
+            store_search_cache_items(normalized_query, remote_items)
 
     if not remote_items and not has_remote_market_access():
-        remote_items = build_local_search_items(normalized_query)
+        remote_items = []
 
     combined: list[dict[str, str]] = []
     seen: set[str] = set()
-    for item in recent_items + remote_items:
+    for item in recent_items + local_items + remote_items:
         symbol = item["symbol"]
         if symbol in seen:
             continue

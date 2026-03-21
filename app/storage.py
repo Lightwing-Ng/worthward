@@ -1,14 +1,22 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v3.6.3
+Code version: v4.0.2
 """
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
+import fcntl
 import json
 from pathlib import Path
+import shutil
+import threading
+from typing import Any
+from uuid import uuid4
+
+import pandas as pd
 
 from .config import MARKET_STORE_DIR
 
@@ -17,14 +25,33 @@ HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
 PRIMARY_PROFILES_STORE_DIR = PROFILES_STORE_DIR / "primary"
 SEARCH_PROFILES_STORE_DIR = PROFILES_STORE_DIR / "search"
+PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"
 LOGOS_STORE_DIR = MARKET_STORE_DIR / "logos"
 PRIMARY_LOGOS_STORE_DIR = LOGOS_STORE_DIR / "primary"
 SEARCH_LOGOS_STORE_DIR = LOGOS_STORE_DIR / "search"
 SEARCH_STORE_DIR = MARKET_STORE_DIR / "search"
+SEARCH_CACHE_PARQUET_PATH = SEARCH_STORE_DIR / "search_cache.parquet"
 TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.json"
+
+PROFILE_SCOPE_LOCAL = "local_store"
+PROFILE_SCOPE_SEARCH = "search_cache"
+
+_PROFILE_COLUMNS = ["ticker", "company_name", "website", "storage_scope", "updated_at"]
+_SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
+
+_MIGRATION_COMPLETED = False
+_MIGRATION_RUNNING = False
+_MIGRATION_LOCK = threading.RLock()
+_TABLE_THREAD_LOCKS: dict[str, threading.RLock] = {}
+_TABLE_THREAD_LOCKS_GUARD = threading.Lock()
 
 
 def ensure_market_store_dir() -> None:
+    _ensure_market_store_directories()
+    _migrate_legacy_market_store_once()
+
+
+def _ensure_market_store_directories() -> None:
     for path in (
         MARKET_STORE_DIR,
         HISTORICAL_STORE_DIR,
@@ -39,6 +66,27 @@ def ensure_market_store_dir() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def _migrate_legacy_market_store_once() -> None:
+    global _MIGRATION_COMPLETED, _MIGRATION_RUNNING
+    if _MIGRATION_COMPLETED or _MIGRATION_RUNNING:
+        return
+    with _MIGRATION_LOCK:
+        if _MIGRATION_COMPLETED or _MIGRATION_RUNNING:
+            return
+        _MIGRATION_RUNNING = True
+        try:
+            migrate_legacy_market_store()
+            _MIGRATION_COMPLETED = True
+        finally:
+            _MIGRATION_RUNNING = False
+
+
+def migrate_legacy_market_store() -> None:
+    _migrate_legacy_profiles_to_parquet()
+    _migrate_legacy_search_cache_to_parquet()
+    _migrate_legacy_logos_to_single_store()
+
+
 def normalize_ticker(ticker: str) -> str:
     return ticker.upper().replace("/", "_")
 
@@ -48,31 +96,300 @@ def history_store_path_for(ticker: str) -> Path:
 
 
 def profile_store_path_for(ticker: str, namespace: str = "primary") -> Path:
-    base_dir = PRIMARY_PROFILES_STORE_DIR if namespace == "primary" else SEARCH_PROFILES_STORE_DIR
-    return base_dir / f"{normalize_ticker(ticker)}.json"
+    del ticker, namespace
+    return PROFILES_PARQUET_PATH
 
 
 def logo_store_path_for(ticker: str, namespace: str = "primary") -> Path:
-    base_dir = PRIMARY_LOGOS_STORE_DIR if namespace == "primary" else SEARCH_LOGOS_STORE_DIR
-    return base_dir / f"{normalize_ticker(ticker)}.png"
+    del namespace
+    return LOGOS_STORE_DIR / f"{normalize_ticker(ticker)}.png"
 
 
 def search_store_path_for(query: str) -> Path:
-    return SEARCH_STORE_DIR / f"{query.upper().replace('/', '_')}.json"
+    del query
+    return SEARCH_CACHE_PARQUET_PATH
 
 
 def ticker_from_store_path(path: Path) -> str:
     return path.stem.replace("_", "/").upper()
 
 
+def _empty_frame(columns: list[str]) -> pd.DataFrame:
+    return pd.DataFrame({column: pd.Series(dtype="object") for column in columns})
+
+
+def _read_parquet_table(path: Path, columns: list[str]) -> pd.DataFrame:
+    ensure_market_store_dir()
+    if not path.exists() or path.stat().st_size == 0:
+        return _empty_frame(columns)
+
+    try:
+        table = pd.read_parquet(path)
+    except Exception:
+        return _empty_frame(columns)
+
+    if table.empty:
+        return _empty_frame(columns)
+
+    for column in columns:
+        if column not in table.columns:
+            table[column] = ""
+
+    return table[columns].copy()
+
+
+def _write_parquet_table(path: Path, table: pd.DataFrame, columns: list[str]) -> None:
+    ensure_market_store_dir()
+    normalized = table.copy()
+    for column in columns:
+        if column not in normalized.columns:
+            normalized[column] = ""
+    normalized = normalized[columns].fillna("")
+    tmp_path = path.with_name(f"{path.stem}.{uuid4().hex}.tmp{path.suffix}")
+    normalized.to_parquet(tmp_path, index=False)
+    tmp_path.replace(path)
+
+
+def _table_lock_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.lock")
+
+
+def _table_thread_lock(path: Path) -> threading.RLock:
+    lock_key = str(path.resolve())
+    with _TABLE_THREAD_LOCKS_GUARD:
+        lock = _TABLE_THREAD_LOCKS.get(lock_key)
+        if lock is None:
+            lock = threading.RLock()
+            _TABLE_THREAD_LOCKS[lock_key] = lock
+        return lock
+
+
+@contextmanager
+def _parquet_table_lock(path: Path):
+    ensure_market_store_dir()
+    thread_lock = _table_thread_lock(path)
+    with thread_lock:
+        lock_path = _table_lock_path(path)
+        with lock_path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _utc_iso_timestamp(path: Path | None = None) -> str:
+    if path is None:
+        return datetime.now(timezone.utc).isoformat()
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _normalize_profile_scope(scope: str | None) -> str:
+    return PROFILE_SCOPE_LOCAL if scope == PROFILE_SCOPE_LOCAL else PROFILE_SCOPE_SEARCH
+
+
+def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> dict[str, str]:
+    current_scope = _normalize_profile_scope(current.get("storage_scope"))
+    incoming_scope = _normalize_profile_scope(incoming.get("storage_scope"))
+    merged_scope = PROFILE_SCOPE_LOCAL if PROFILE_SCOPE_LOCAL in {current_scope, incoming_scope} else PROFILE_SCOPE_SEARCH
+
+    current_company = str(current.get("company_name") or "").strip()
+    incoming_company = str(incoming.get("company_name") or "").strip()
+    company_name = current_company
+    if incoming_scope == PROFILE_SCOPE_LOCAL and incoming_company:
+        company_name = incoming_company
+    elif not company_name or company_name == str(current.get("ticker") or ""):
+        company_name = incoming_company or company_name
+
+    current_website = str(current.get("website") or "").strip()
+    incoming_website = str(incoming.get("website") or "").strip()
+    website = incoming_website or current_website
+
+    current_updated = str(current.get("updated_at") or "")
+    incoming_updated = str(incoming.get("updated_at") or "")
+    updated_at = max(current_updated, incoming_updated)
+
+    return {
+        "ticker": str(current.get("ticker") or incoming.get("ticker") or "").strip().upper(),
+        "company_name": company_name,
+        "website": website,
+        "storage_scope": merged_scope,
+        "updated_at": updated_at,
+    }
+
+
+def _load_profiles_table() -> pd.DataFrame:
+    return _read_parquet_table(PROFILES_PARQUET_PATH, _PROFILE_COLUMNS)
+
+
+def _save_profiles_table(table: pd.DataFrame) -> None:
+    normalized = table.copy()
+    if not normalized.empty:
+        normalized["ticker"] = normalized["ticker"].astype(str).str.upper()
+        normalized["storage_scope"] = normalized["storage_scope"].map(_normalize_profile_scope)
+        normalized = normalized.sort_values(["ticker", "updated_at"], ascending=[True, False])
+        normalized = normalized.drop_duplicates(subset=["ticker"], keep="first")
+    _write_parquet_table(PROFILES_PARQUET_PATH, normalized, _PROFILE_COLUMNS)
+
+
+def load_profile_record(ticker: str) -> dict[str, str] | None:
+    normalized_ticker = normalize_ticker(ticker)
+    table = _load_profiles_table()
+    if table.empty:
+        return None
+    matches = table.loc[table["ticker"] == normalized_ticker]
+    if matches.empty:
+        return None
+    row = matches.iloc[0]
+    return {
+        "ticker": str(row.get("ticker") or normalized_ticker),
+        "company_name": str(row.get("company_name") or "").strip(),
+        "website": str(row.get("website") or "").strip() or None,
+        "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def has_profile_record(ticker: str) -> bool:
+    return load_profile_record(ticker) is not None
+
+
+def upsert_profile_record(
+    ticker: str,
+    company_name: str,
+    website: str | None,
+    *,
+    scope: str,
+    updated_at: str | None = None,
+) -> dict[str, str]:
+    normalized_ticker = normalize_ticker(ticker)
+    incoming = {
+        "ticker": normalized_ticker,
+        "company_name": (company_name or normalized_ticker).strip(),
+        "website": (website or "").strip(),
+        "storage_scope": _normalize_profile_scope(scope),
+        "updated_at": updated_at or _utc_iso_timestamp(),
+    }
+    with _parquet_table_lock(PROFILES_PARQUET_PATH):
+        table = _load_profiles_table()
+        current = None
+        if not table.empty:
+            matches = table.loc[table["ticker"] == normalized_ticker]
+            if not matches.empty:
+                row = matches.iloc[0]
+                current = {
+                    "ticker": str(row.get("ticker") or normalized_ticker),
+                    "company_name": str(row.get("company_name") or "").strip(),
+                    "website": str(row.get("website") or "").strip() or None,
+                    "storage_scope": _normalize_profile_scope(str(row.get("storage_scope") or PROFILE_SCOPE_SEARCH)),
+                    "updated_at": str(row.get("updated_at") or ""),
+                }
+        merged = incoming if current is None else _merge_profile_rows(current, incoming)
+        filtered = table.loc[table["ticker"] != normalized_ticker].copy() if not table.empty else _empty_frame(_PROFILE_COLUMNS)
+        filtered = pd.concat([filtered, pd.DataFrame([merged])], ignore_index=True)
+        _save_profiles_table(filtered)
+        return merged
+
+
+def delete_profile_record(ticker: str) -> None:
+    normalized_ticker = normalize_ticker(ticker)
+    with _parquet_table_lock(PROFILES_PARQUET_PATH):
+        table = _load_profiles_table()
+        if table.empty:
+            return
+        filtered = table.loc[table["ticker"] != normalized_ticker].copy()
+        _save_profiles_table(filtered)
+
+
+def list_profile_tickers(scope: str | None = None) -> list[str]:
+    table = _load_profiles_table()
+    if table.empty:
+        return []
+    filtered = table
+    if scope is not None:
+        filtered = filtered.loc[filtered["storage_scope"] == _normalize_profile_scope(scope)]
+    if filtered.empty:
+        return []
+    return sorted(str(value).upper() for value in filtered["ticker"].dropna().astype(str).tolist())
+
+
+def _load_search_cache_table() -> pd.DataFrame:
+    return _read_parquet_table(SEARCH_CACHE_PARQUET_PATH, _SEARCH_CACHE_COLUMNS)
+
+
+def _save_search_cache_table(table: pd.DataFrame) -> None:
+    normalized = table.copy()
+    if not normalized.empty:
+        normalized["query"] = normalized["query"].astype(str).str.upper()
+        normalized["symbol"] = normalized["symbol"].astype(str).str.upper()
+        normalized = normalized.sort_values(["query", "symbol", "updated_at"], ascending=[True, True, False])
+        normalized = normalized.drop_duplicates(subset=["query", "symbol"], keep="first")
+    _write_parquet_table(SEARCH_CACHE_PARQUET_PATH, normalized, _SEARCH_CACHE_COLUMNS)
+
+
+def load_search_cache_items(query: str) -> list[dict[str, str]]:
+    normalized_query = normalize_ticker(query)
+    table = _load_search_cache_table()
+    if table.empty:
+        return []
+    matches = table.loc[table["query"] == normalized_query].copy()
+    if matches.empty:
+        return []
+    matches = matches.sort_values(["updated_at", "symbol"], ascending=[False, True])
+    return [
+        {
+            "symbol": str(row.get("symbol") or "").upper(),
+            "name": str(row.get("name") or "").strip(),
+            "asset_type": str(row.get("asset_type") or "").strip(),
+            "logo_url": str(row.get("logo_url") or "").strip(),
+            "source": str(row.get("source") or "remote").strip() or "remote",
+        }
+        for _, row in matches.iterrows()
+        if str(row.get("symbol") or "").strip()
+    ]
+
+
+def store_search_cache_items(query: str, items: list[dict[str, str]]) -> None:
+    normalized_query = normalize_ticker(query)
+    with _parquet_table_lock(SEARCH_CACHE_PARQUET_PATH):
+        table = _load_search_cache_table()
+        filtered = table.loc[table["query"] != normalized_query].copy() if not table.empty else _empty_frame(_SEARCH_CACHE_COLUMNS)
+        rows: list[dict[str, str]] = []
+        now = _utc_iso_timestamp()
+        for item in items:
+            symbol = normalize_ticker(str(item.get("symbol") or ""))
+            if not symbol:
+                continue
+            rows.append(
+                {
+                    "query": normalized_query,
+                    "symbol": symbol,
+                    "name": str(item.get("name") or symbol).strip(),
+                    "asset_type": str(item.get("asset_type") or "").strip(),
+                    "logo_url": str(item.get("logo_url") or "").strip(),
+                    "source": str(item.get("source") or "remote").strip() or "remote",
+                    "updated_at": now,
+                }
+            )
+        if rows:
+            filtered = pd.concat([filtered, pd.DataFrame(rows)], ignore_index=True)
+        _save_search_cache_table(filtered)
+
+
+def remove_search_cache_entries_for_ticker(ticker: str) -> None:
+    normalized_ticker = normalize_ticker(ticker)
+    with _parquet_table_lock(SEARCH_CACHE_PARQUET_PATH):
+        table = _load_search_cache_table()
+        if table.empty:
+            return
+        filtered = table.loc[(table["symbol"] != normalized_ticker) & (table["query"] != normalized_ticker)].copy()
+        _save_search_cache_table(filtered)
+
+
 def list_local_tickers() -> list[str]:
     ensure_market_store_dir()
-    tickers = {
-        ticker_from_store_path(path)
-        for directory in (HISTORICAL_STORE_DIR, PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR)
-        for path in directory.glob("*")
-        if path.is_file()
-    }
+    tickers = set(list_historical_tickers())
+    tickers.update(list_profile_tickers())
     return sorted(tickers)
 
 
@@ -83,6 +400,11 @@ def list_historical_tickers() -> list[str]:
         for path in HISTORICAL_STORE_DIR.glob("*.parquet")
         if path.is_file() and path.stat().st_size > 0
     )
+
+
+def has_logo_asset(ticker: str) -> bool:
+    path = logo_store_path_for(ticker)
+    return path.exists() and path.stat().st_size > 0
 
 
 def is_store_entry_fresh(path: Path) -> bool:
@@ -135,35 +457,51 @@ def top_used_tickers(query: str = "", limit: int = 5) -> list[str]:
 def clear_nonhistorical_market_cache() -> dict[str, int]:
     ensure_market_store_dir()
     protected_tickers = {normalize_ticker(ticker) for ticker in list_historical_tickers()}
-    removed_search_queries = 0
-    removed_profiles = 0
-    removed_logos = 0
-    protected_search_queries = 0
+    with _parquet_table_lock(PROFILES_PARQUET_PATH), _parquet_table_lock(SEARCH_CACHE_PARQUET_PATH):
+        search_cache_table = _load_search_cache_table()
+        kept_queries: set[str] = set()
+        removed_search_queries = 0
+        protected_search_queries = 0
+        if not search_cache_table.empty:
+            for query, group in search_cache_table.groupby("query", sort=True):
+                normalized_query = normalize_ticker(str(query or ""))
+                symbols = {normalize_ticker(symbol) for symbol in group["symbol"].dropna().astype(str).tolist()}
+                if normalized_query in protected_tickers or bool(symbols & protected_tickers):
+                    kept_queries.add(normalized_query)
+                    protected_search_queries += 1
+                else:
+                    removed_search_queries += 1
+            if kept_queries:
+                filtered_search_cache = search_cache_table.loc[search_cache_table["query"].isin(kept_queries)].copy()
+            else:
+                filtered_search_cache = _empty_frame(_SEARCH_CACHE_COLUMNS)
+        else:
+            filtered_search_cache = search_cache_table
+        _save_search_cache_table(filtered_search_cache)
 
-    for path in SEARCH_STORE_DIR.glob("*.json"):
-        if path == TICKER_USAGE_STORE_PATH:
-            continue
-        if not path.is_file():
-            continue
-        if normalize_ticker(path.stem) in protected_tickers:
-            protected_search_queries += 1
+        profiles_table = _load_profiles_table()
+        removed_profiles = 0
+        if not profiles_table.empty:
+            keep_mask = (
+                (profiles_table["storage_scope"] == PROFILE_SCOPE_LOCAL)
+                | profiles_table["ticker"].isin(protected_tickers)
+            )
+            removed_profiles = int((~keep_mask).sum())
+            profiles_table = profiles_table.loc[keep_mask].copy()
+            _save_profiles_table(profiles_table)
+
+    active_profile_tickers = {normalize_ticker(value) for value in profiles_table["ticker"].astype(str).tolist()} if not profiles_table.empty else set()
+    active_search_tickers = {normalize_ticker(value) for value in filtered_search_cache["symbol"].astype(str).tolist()} if not filtered_search_cache.empty else set()
+    retained_tickers = protected_tickers | active_profile_tickers | active_search_tickers
+
+    removed_logos = 0
+    for path in LOGOS_STORE_DIR.glob("*.png"):
+        if not path.is_file() or normalize_ticker(path.stem) in retained_tickers:
             continue
         path.unlink()
-        removed_search_queries += 1
+        removed_logos += 1
 
-    for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
-        for path in directory.glob("*.json"):
-            if not path.is_file() or path.stem in protected_tickers:
-                continue
-            path.unlink()
-            removed_profiles += 1
-
-    for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR):
-        for path in directory.glob("*.png"):
-            if not path.is_file() or path.stem in protected_tickers:
-                continue
-            path.unlink()
-            removed_logos += 1
+    _delete_redundant_legacy_artifacts(retained_tickers)
 
     return {
         "removed_search_queries": removed_search_queries,
@@ -176,13 +514,140 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
 
 def delete_ticker_data(ticker: str) -> None:
     ensure_market_store_dir()
-    paths = [
-        history_store_path_for(ticker),
-        profile_store_path_for(ticker, namespace="primary"),
-        profile_store_path_for(ticker, namespace="search"),
-        logo_store_path_for(ticker, namespace="primary"),
-        logo_store_path_for(ticker, namespace="search"),
-    ]
-    for path in paths:
-        if path.exists():
-            path.unlink()
+    normalized_ticker = normalize_ticker(ticker)
+    history_path = history_store_path_for(normalized_ticker)
+    if history_path.exists():
+        history_path.unlink()
+
+    delete_profile_record(normalized_ticker)
+    remove_search_cache_entries_for_ticker(normalized_ticker)
+
+    logo_path = logo_store_path_for(normalized_ticker)
+    if logo_path.exists():
+        logo_path.unlink()
+
+    for legacy_path in (
+        PRIMARY_PROFILES_STORE_DIR / f"{normalized_ticker}.json",
+        SEARCH_PROFILES_STORE_DIR / f"{normalized_ticker}.json",
+        PRIMARY_LOGOS_STORE_DIR / f"{normalized_ticker}.png",
+        SEARCH_LOGOS_STORE_DIR / f"{normalized_ticker}.png",
+        SEARCH_STORE_DIR / f"{normalized_ticker}.json",
+    ):
+        if legacy_path.exists():
+            legacy_path.unlink()
+
+
+def _load_legacy_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+def _migrate_legacy_profiles_to_parquet() -> None:
+    existing_rows = {
+        str(row["ticker"]): row
+        for row in _load_profiles_table().to_dict("records")
+    }
+
+    for directory, default_scope in (
+        (PRIMARY_PROFILES_STORE_DIR, PROFILE_SCOPE_LOCAL),
+        (SEARCH_PROFILES_STORE_DIR, PROFILE_SCOPE_SEARCH),
+    ):
+        for path in directory.glob("*.json"):
+            if not path.is_file():
+                continue
+            payload = _load_legacy_json(path)
+            if not isinstance(payload, dict):
+                continue
+            ticker = normalize_ticker(str(payload.get("ticker") or path.stem))
+            row = {
+                "ticker": ticker,
+                "company_name": str(payload.get("company_name") or ticker).strip(),
+                "website": str(payload.get("website") or "").strip(),
+                "storage_scope": PROFILE_SCOPE_LOCAL if history_store_path_for(ticker).exists() else default_scope,
+                "updated_at": _utc_iso_timestamp(path),
+            }
+            current = existing_rows.get(ticker)
+            existing_rows[ticker] = row if current is None else _merge_profile_rows(current, row)
+
+    if existing_rows:
+        _save_profiles_table(pd.DataFrame(existing_rows.values(), columns=_PROFILE_COLUMNS))
+
+    for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
+        for path in directory.glob("*.json"):
+            if path.is_file():
+                path.unlink()
+
+
+def _migrate_legacy_search_cache_to_parquet() -> None:
+    existing_rows = {
+        (str(row["query"]), str(row["symbol"])): row
+        for row in _load_search_cache_table().to_dict("records")
+    }
+
+    for path in SEARCH_STORE_DIR.glob("*.json"):
+        if path == TICKER_USAGE_STORE_PATH or not path.is_file():
+            continue
+        payload = _load_legacy_json(path)
+        if not isinstance(payload, list):
+            continue
+        query = normalize_ticker(path.stem)
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            symbol = normalize_ticker(str(item.get("symbol") or ""))
+            if not symbol:
+                continue
+            key = (query, symbol)
+            incoming = {
+                "query": query,
+                "symbol": symbol,
+                "name": str(item.get("name") or symbol).strip(),
+                "asset_type": str(item.get("asset_type") or "").strip(),
+                "logo_url": str(item.get("logo_url") or "").strip(),
+                "source": str(item.get("source") or "remote").strip() or "remote",
+                "updated_at": _utc_iso_timestamp(path),
+            }
+            current = existing_rows.get(key)
+            if current is None or str(incoming["updated_at"]) >= str(current.get("updated_at") or ""):
+                existing_rows[key] = incoming
+
+    if existing_rows:
+        _save_search_cache_table(pd.DataFrame(existing_rows.values(), columns=_SEARCH_CACHE_COLUMNS))
+
+    for path in SEARCH_STORE_DIR.glob("*.json"):
+        if path == TICKER_USAGE_STORE_PATH or not path.is_file():
+            continue
+        path.unlink()
+
+
+def _migrate_legacy_logos_to_single_store() -> None:
+    for ticker in sorted({
+        path.stem for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR) for path in directory.glob("*.png") if path.is_file()
+    }):
+        consolidated_path = logo_store_path_for(ticker)
+        if not consolidated_path.exists():
+            primary_path = PRIMARY_LOGOS_STORE_DIR / f"{ticker}.png"
+            search_path = SEARCH_LOGOS_STORE_DIR / f"{ticker}.png"
+            source_path = primary_path if primary_path.exists() else search_path
+            if source_path.exists():
+                shutil.copy2(source_path, consolidated_path)
+
+    _delete_redundant_legacy_artifacts(set())
+
+
+def _delete_redundant_legacy_artifacts(retained_tickers: set[str]) -> None:
+    for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR):
+        for path in directory.glob("*.png"):
+            if not path.is_file():
+                continue
+            ticker = normalize_ticker(path.stem)
+            consolidated_path = logo_store_path_for(ticker)
+            if consolidated_path.exists() and (not retained_tickers or ticker not in retained_tickers or True):
+                path.unlink()
+
+    for directory in (PRIMARY_PROFILES_STORE_DIR, SEARCH_PROFILES_STORE_DIR):
+        for path in directory.glob("*.json"):
+            if path.is_file():
+                path.unlink()

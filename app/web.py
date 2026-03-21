@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.22.2
+Code version: v3.31.0
 """
 
 from __future__ import annotations
@@ -45,15 +45,16 @@ from .market_data import fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
 from .storage import (
-    PRIMARY_LOGOS_STORE_DIR,
-    SEARCH_LOGOS_STORE_DIR,
+    LOGOS_STORE_DIR,
     clear_nonhistorical_market_cache,
     delete_ticker_data,
+    has_logo_asset,
+    has_profile_record,
     history_store_path_for,
     list_local_tickers,
     list_historical_tickers,
+    load_profile_record,
     logo_store_path_for,
-    profile_store_path_for,
     record_ticker_usage,
 )
 
@@ -99,8 +100,6 @@ def register_routes(app: Flask) -> None:
         normalized_ticker = normalize_ticker_input(raw_ticker)
         if not has_valid_ticker_format(normalized_ticker):
             raise ValueError(f"Invalid ticker format: {raw_ticker}.")
-        if not is_known_ticker(normalized_ticker):
-            raise ValueError(f"Unknown or unsupported ticker: {normalized_ticker}.")
         return normalized_ticker
 
     def parse_int_value(raw_value: object, fallback: int) -> int:
@@ -252,7 +251,10 @@ def register_routes(app: Flask) -> None:
         benchmark_profiles = []
         reference_date_frame = pd.DataFrame({"Date": reference_dates})
         for ticker in PORTFOLIO_BENCHMARK_TICKERS:
-            dataset = fetch_history(ticker, include_dividends)
+            try:
+                dataset = fetch_history(ticker, include_dividends)
+            except Exception:
+                continue
             aligned = pd.merge(
                 reference_date_frame,
                 dataset[["Date", "Close"]],
@@ -320,6 +322,17 @@ def register_routes(app: Flask) -> None:
                 "meta": "UI",
             },
         ]
+
+    def should_use_modal_banner_message(message: str | None) -> bool:
+        normalized = (message or "").strip()
+        if not normalized:
+            return False
+        return (
+            normalized.startswith("No market data returned for ")
+            or normalized.startswith("Local market data for ")
+            or normalized.startswith("Unknown or unsupported ticker: ")
+            or normalized.startswith("Failed to perform, curl: (35) TLS connect error:")
+        )
 
     def build_more_timing_url(selected_ticker: str | None = None) -> str:
         base_path = build_more_path("timing")
@@ -689,16 +702,10 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def has_local_profile_snapshot(ticker: str) -> bool:
-        return any(
-            profile_store_path_for(ticker, namespace=namespace).exists()
-            for namespace in ("primary", "search")
-        )
+        return has_profile_record(ticker)
 
     def has_local_logo_snapshot(ticker: str) -> bool:
-        return any(
-            logo_store_path_for(ticker, namespace=namespace).exists() and logo_store_path_for(ticker, namespace=namespace).stat().st_size > 0
-            for namespace in ("primary", "search")
-        )
+        return has_logo_asset(ticker)
 
     def list_local_market_tickers() -> list[str]:
         return [
@@ -709,18 +716,16 @@ def register_routes(app: Flask) -> None:
         ]
 
     def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
-        for namespace in ("primary", "search"):
-            profile_path = profile_store_path_for(ticker, namespace=namespace)
-            if not profile_path.exists():
-                continue
-            logo_path = logo_store_path_for(ticker, namespace=namespace)
-            if not logo_path.exists():
-                continue
-            payload = json.loads(profile_path.read_text())
-            logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns) if logo_path.exists() else ""
-            company_name = str(payload.get("company_name") or "").strip()
-            if company_name:
-                return company_name, logo_url
+        profile_record = load_profile_record(ticker)
+        if profile_record is None:
+            return None
+        logo_path = logo_store_path_for(ticker)
+        if not logo_path.exists():
+            return None
+        logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+        company_name = str(profile_record.get("company_name") or "").strip()
+        if company_name:
+            return company_name, logo_url
         return None
 
     def build_local_market_rows_for_tickers(
@@ -1339,13 +1344,22 @@ def register_routes(app: Flask) -> None:
                         record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
+            if should_use_modal_banner_message(error):
+                notice_is_floating = True
 
-        remote_market_access = has_remote_market_access() if current_view != "settings" else True
+        remote_market_access = True
         remote_logo_access = False
 
-        if current_view != "settings" and not remote_market_access and not error and not notice:
-            notice = "Using bundled local market_store data because remote market access is unavailable."
-            notice_is_floating = True
+        if current_view != "settings" and not error and not notice:
+            requires_remote_probe = any(
+                not history_store_path_for(ticker).exists()
+                for ticker in validated_tickers
+            )
+            if requires_remote_probe:
+                remote_market_access = has_remote_market_access()
+                if not remote_market_access:
+                    notice = "Using bundled local market_store data because remote market access is unavailable."
+                    notice_is_floating = True
 
         top_tickers = []
         timing_selected_ticker = ""
@@ -1824,10 +1838,9 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/market-store/logos/<path:filename>")
     def market_store_logo(filename: str):
-        for directory in (PRIMARY_LOGOS_STORE_DIR, SEARCH_LOGOS_STORE_DIR):
-            candidate = directory / filename
-            if candidate.exists():
-                return send_from_directory(directory, filename)
+        candidate = LOGOS_STORE_DIR / filename
+        if candidate.exists():
+            return send_from_directory(LOGOS_STORE_DIR, filename)
         return ("Not Found", 404)
 
     @app.get("/api/symbol-search")

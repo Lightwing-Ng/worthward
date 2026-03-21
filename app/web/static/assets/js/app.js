@@ -1,4 +1,4 @@
-/* Code version: v3.25.0 */
+/* Code version: v3.31.8 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -848,6 +848,25 @@
 		input.classList.toggle("is-pending", isPending);
 	};
 
+	const rememberValidatedTicker = (input, ticker, isKnown) => {
+		if (!input) return;
+		input.dataset.validatedTicker = ticker || "";
+		input.dataset.validatedKnown = isKnown ? "1" : "0";
+		if (ticker) tickerValidationCache.set(ticker, isKnown);
+	};
+
+	const seedTickerValidationState = () => {
+		if (!hasInitialResult) return;
+		getTickerInputs().forEach((input) => {
+			if (!(input instanceof HTMLInputElement)) return;
+			const value = sanitizeTicker(input.value.trim());
+			if (!value || !tickerPattern.test(value) || input.dataset.unknown === "1") return;
+			rememberValidatedTicker(input, value, true);
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+		});
+	};
+
 	const validateTickerExistence = async (input, { preferFresh = false } = {}) => {
 		if (!input) return false;
 		const value = sanitizeTicker(input.value.trim());
@@ -855,12 +874,14 @@
 		validateTickerInput(input);
 		if (!value) {
 			input.dataset.unknown = "";
+			rememberValidatedTicker(input, "", false);
 			setTickerValidationPending(input, false);
 			validateTickerInput(input);
 			return false;
 		}
 		if (!tickerPattern.test(value)) {
 			input.dataset.unknown = "";
+			rememberValidatedTicker(input, "", false);
 			setTickerValidationPending(input, false);
 			validateTickerInput(input);
 			return false;
@@ -869,16 +890,27 @@
 		getFilledTickers().forEach((ticker) => counts.set(ticker, (counts.get(ticker) || 0) + 1));
 		if ((counts.get(value) || 0) > 1) {
 			input.dataset.unknown = "";
+			rememberValidatedTicker(input, "", false);
 			setTickerValidationPending(input, false);
 			validateTickerInput(input);
 			return false;
 		}
 
-		if (!preferFresh && tickerValidationCache.has(value)) {
-			input.dataset.unknown = tickerValidationCache.get(value) ? "" : "1";
+		if (!preferFresh && input.dataset.validatedTicker === value) {
+			const known = input.dataset.validatedKnown !== "0";
+			input.dataset.unknown = known ? "" : "1";
 			setTickerValidationPending(input, false);
 			validateTickerInput(input);
-			return tickerValidationCache.get(value);
+			return known;
+		}
+
+		if (!preferFresh && tickerValidationCache.has(value)) {
+			const isKnown = Boolean(tickerValidationCache.get(value));
+			input.dataset.unknown = isKnown ? "" : "1";
+			rememberValidatedTicker(input, value, isKnown);
+			setTickerValidationPending(input, false);
+			validateTickerInput(input);
+			return isKnown;
 		}
 
 		setTickerValidationPending(input, true);
@@ -888,15 +920,16 @@
 			if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
 			const payload = await response.json();
 			const isKnown = payload.some((item) => String(item.symbol || "").toUpperCase() === value);
-			tickerValidationCache.set(value, isKnown);
 			if (input.dataset.validationTicker === value) {
 				input.dataset.unknown = isKnown ? "" : "1";
+				rememberValidatedTicker(input, value, isKnown);
 				setTickerValidationPending(input, false);
 				validateTickerInput(input);
 			}
 			return isKnown;
 		} catch (_error) {
 			if (input.dataset.validationTicker === value) {
+				rememberValidatedTicker(input, value, input.dataset.unknown !== "1");
 				setTickerValidationPending(input, false);
 				validateTickerInput(input);
 			}
@@ -906,7 +939,7 @@
 
 	const ensureTickerValidityBeforeSubmit = async () => {
 		const inputs = getTickerInputs();
-		const results = await Promise.all(inputs.map((input) => validateTickerExistence(input, { preferFresh: true })));
+		const results = await Promise.all(inputs.map((input) => validateTickerExistence(input, { preferFresh: false })));
 		validateAllTickerInputs();
 		return results.every((item, index) => {
 			const input = inputs[index];
@@ -3057,6 +3090,7 @@
 		}
 	};
 
+	seedTickerValidationState();
 	initStrategyParamControls(tradeStrategyField || document);
 	syncTradeStrategyTuningAvailability();
 
