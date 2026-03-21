@@ -1,4 +1,4 @@
-/* Code version: v1.13.0 */
+/* Code version: v1.14.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -144,6 +144,7 @@
 
 		const { backtestResult, theme } = state;
 		const labels = backtestResult.chart.dates;
+		const rawDates = Array.isArray(backtestResult.chart.raw_dates) ? backtestResult.chart.raw_dates : [];
 		const close = backtestResult.chart.close;
 		const equity = backtestResult.chart.equity;
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
@@ -214,14 +215,20 @@
 		let priceChart;
 		let equityChart;
 
-		const parseLabelDate = (value) => {
-			const parsed = new Date(value);
-			return Number.isNaN(parsed.getTime()) ? null : parsed;
+		const parseRawDate = (value) => {
+			if (typeof value !== "string") return null;
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+			if (!match) return null;
+			return {
+				year: Number(match[1]),
+				monthIndex: Number(match[2]) - 1,
+				day: Number(match[3]),
+			};
 		};
 
-		const formatChartDate = (date) => `${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+		const formatChartDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
 
-		const formatChartDateLines = (date) => [`${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]}`, `${date.getUTCFullYear()}`];
+		const formatChartDateLines = (dateParts) => [`${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`, `${dateParts.year}`];
 
 		const buildTickIndexSet = (count, plotWidth) => {
 			if (count <= 0) return new Set();
@@ -274,7 +281,7 @@
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
-					const parsedDate = parseLabelDate(labels[index]);
+					const parsedDate = parseRawDate(rawDates[index]);
 					if (!parsedDate) return;
 					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
 					const x = xScale.getPixelForValue(index);
@@ -359,7 +366,7 @@
 			const allInValue = Number(allInEquity[index] || 0);
 			const netReturn = initialCapital > 0 ? ((equityValue / initialCapital) - 1) * 100 : 0;
 			const versusAllIn = equityValue - allInValue;
-			const parsedLabelDate = parseLabelDate(labels[index]);
+			const parsedLabelDate = parseRawDate(rawDates[index]);
 			tooltip.querySelector(".chart-tooltip-date").textContent = parsedLabelDate ? formatChartDate(parsedLabelDate) : labels[index];
 			tooltip.querySelector('[data-role="close"]').textContent = formatMoney(closeValue);
 			tooltip.querySelector('[data-role="return"]').textContent = formatReturn(netReturn);
