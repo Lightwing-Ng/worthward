@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.1.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -102,6 +102,78 @@ class BacktestMetricTests(unittest.TestCase):
 
         self.assertEqual(result["summary"]["trade_count"], 1)
         self.assertEqual(result["summary"]["win_rate_pct"], 100.0)
+
+    def test_chart_markers_only_reflect_executed_trades_not_raw_signals(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=5, freq="D"),
+                "Close": [100.0, 105.0, 110.0, 115.0, 120.0],
+                "buy_signal": [True, True, True, False, False],
+                "sell_signal": [False, False, False, True, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+        )
+
+        self.assertEqual(result["chart"]["buy_markers"], [True, False, False, False, False])
+        self.assertEqual(result["chart"]["sell_markers"], [False, False, False, True, False])
+
+    def test_chart_raw_dates_and_trade_dates_stay_aligned(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-19", "2026-02-20", "2026-02-21"]),
+                "Close": [100.0, 110.0, 108.0],
+                "buy_signal": [False, True, False],
+                "sell_signal": [False, False, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+        )
+
+        self.assertEqual(result["trades"][0]["date"], "2026/02/20")
+        self.assertEqual(result["chart"]["raw_dates"][1], "2026-02-20")
+        self.assertTrue(result["chart"]["buy_markers"][1])
+        self.assertEqual(result["chart"]["dates"][1], "20 Feb 2026")
+
+    def test_next_open_execution_uses_following_session_open_price(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-19", "2026-02-20", "2026-02-21", "2026-02-24"]),
+                "Open": [100.0, 101.0, 112.0, 118.0],
+                "Close": [100.0, 110.0, 115.0, 120.0],
+                "buy_signal": [False, True, False, False],
+                "sell_signal": [False, False, True, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            execution_mode="next_open",
+        )
+
+        self.assertEqual(result["trades"][0]["date"], "2026/02/21")
+        self.assertEqual(result["trades"][0]["price"], 112.0)
+        self.assertEqual(result["trades"][1]["date"], "2026/02/24")
+        self.assertEqual(result["trades"][1]["price"], 118.0)
 
 
 if __name__ == "__main__":

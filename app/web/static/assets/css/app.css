@@ -1,4 +1,4 @@
-/* Code version: v3.21.4 */
+/* Code version: v3.21.6 */
 :root {
 	color-scheme: var(--color-scheme);
 	--bg: var(--theme-background);
@@ -22,6 +22,11 @@
 	--settings-strategy-params-indent: 64px;
 	--settings-strategy-param-cell-pad-block: 5px;
 	--settings-strategy-param-cell-pad-inline: 6px;
+	--settings-general-card-radius: 10px;
+	--settings-general-panel-pad: 10px;
+	--settings-general-panel-gap: 10px;
+	--settings-general-panel-background: rgba(255, 255, 255, 0.54);
+	--settings-general-panel-border: 1px solid rgba(15, 23, 42, 0.06);
 	--trade-chart-y-padding-px: 2px;
 	--app-shell-gap: 14px;
 	--control-glass-background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 247, 252, 0.68) 100%);
@@ -1746,11 +1751,20 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	box-shadow: 0 8px 22px rgba(17, 24, 39, 0.04);
 }
 .settings-service-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 10px 12px; min-width: 0; }
-.font-preview-card {
+.settings-general-stack {
 	display: grid;
+	gap: 10px;
+}
+.settings-general-panel {
+	display: grid;
+	gap: var(--settings-general-panel-gap);
+	padding: var(--settings-general-panel-pad);
+	border-radius: var(--settings-general-card-radius);
+	background: var(--settings-general-panel-background);
+	border: var(--settings-general-panel-border);
+}
+.font-preview-card {
 	gap: 16px;
-	padding: 14px;
-	background: var(--glass-surface-background);
 }
 .font-preview-header,
 .font-preview-row {
@@ -1850,6 +1864,69 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 }
 .settings-service-state { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 18px; white-space: normal; text-align: right; max-width: min(100%, 220px); flex: 0 1 220px; font-size: var(--font-table-body); line-height: 1.3; font-weight: var(--font-weight-bold); color: #0f6b2f; overflow-wrap: anywhere; word-break: break-word; }
 .settings-service-state.is-muted { color: var(--muted); }
+.settings-general-card {
+	margin-bottom: 0;
+}
+.settings-general-header {
+	display: grid;
+	gap: 6px;
+}
+.settings-general-kicker {
+	margin: 0;
+	font-size: var(--font-ui-lg);
+	line-height: 1.2;
+	font-weight: var(--font-weight-bold);
+	color: var(--text);
+}
+.settings-general-copy {
+	margin: 0;
+	font-size: var(--font-table-body);
+	line-height: 1.35;
+	color: var(--muted);
+}
+.settings-general-form {
+	display: grid;
+	gap: 12px;
+}
+.settings-general-option {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 14px 16px;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.58);
+	border: 1px solid rgba(15, 23, 42, 0.06);
+	cursor: pointer;
+}
+.settings-general-option input {
+	margin: 2px 0 0;
+	width: auto;
+	min-width: 0;
+	height: auto;
+	padding: 0;
+	background: transparent;
+	accent-color: #0055cc;
+	cursor: pointer;
+	flex: 0 0 auto;
+}
+.settings-general-option-copy {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+.settings-general-option-title {
+	font-size: var(--font-form-control);
+	line-height: 1.3;
+	font-weight: var(--font-weight-bold);
+	color: var(--text);
+}
+.settings-general-option-desc {
+	font-size: var(--font-table-body);
+	line-height: 1.35;
+	font-weight: var(--font-weight-regular);
+	color: var(--muted);
+}
 .settings-strategy-list {
 	--settings-strategy-card-min-height: 88px;
 	gap: 12px;

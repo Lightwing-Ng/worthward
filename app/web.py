@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.21.1
+Code version: v3.22.2
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
 
+from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from .comparisons import build_series_payload, slice_dataset_for_period
 from .email_settings import (
     SmtpSettings,
@@ -872,6 +873,7 @@ def register_routes(app: Flask) -> None:
         return fallback_period, notice
 
     def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "overview"):
+        backtest_execution_mode = load_backtest_execution_mode()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         range_mode = request.args.get(
@@ -1035,7 +1037,11 @@ def register_routes(app: Flask) -> None:
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
                 strategy = instantiate_strategy(selected_strategy_id)
                 signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
-                backtest_result = run_single_ticker_backtest(signal_result, backtest_initial_capital)
+                backtest_result = run_single_ticker_backtest(
+                    signal_result,
+                    backtest_initial_capital,
+                    execution_mode=backtest_execution_mode,
+                )
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
@@ -1168,7 +1174,7 @@ def register_routes(app: Flask) -> None:
         timing_error = ""
 
         if current_view == "settings":
-            if settings_section in {"email-smtp", "local-market-store", "clear-caches"} and (notice or error):
+            if settings_section in {"general", "email-smtp", "local-market-store", "clear-caches"} and (notice or error):
                 notice_is_floating = True
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
@@ -1382,6 +1388,7 @@ def register_routes(app: Flask) -> None:
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
+            backtest_execution_mode=backtest_execution_mode,
             more_cards=more_cards,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
@@ -1465,6 +1472,13 @@ def register_routes(app: Flask) -> None:
     @app.get("/settings/<section_name>")
     def settings_page(section_name: str):
         return render_workspace_page("settings", section_name)
+
+    @app.post("/settings/general/action")
+    def general_settings_action():
+        selected_mode = save_backtest_execution_mode(request.form.get("backtest_execution_mode", "next_open"))
+        selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
+        params = urlencode({"notice": f"Backtest execution model updated: {selected_label}."})
+        return redirect(f"{build_settings_path('general')}?{params}")
 
     @app.post("/settings/email-smtp/action")
     def email_smtp_action():
@@ -1610,10 +1624,10 @@ def register_routes(app: Flask) -> None:
             notice = (
                 f"Cleared {cache_summary['removed_search_queries']:,} search result cache entr"
                 f"{'y' if cache_summary['removed_search_queries'] == 1 else 'ies'}, "
-                f"{cache_summary['removed_search_profiles']:,} non-local search profile entr"
-                f"{'y' if cache_summary['removed_search_profiles'] == 1 else 'ies'}, "
-                f"{cache_summary['removed_search_logos']:,} non-local search logo image"
-                f"{'' if cache_summary['removed_search_logos'] == 1 else 's'}, "
+                f"{cache_summary['removed_profiles']:,} non-local profile entr"
+                f"{'y' if cache_summary['removed_profiles'] == 1 else 'ies'}, "
+                f"{cache_summary['removed_logos']:,} non-local logo image"
+                f"{'' if cache_summary['removed_logos'] == 1 else 's'}, "
                 "and recent ticker usage records. "
                 f"Protected {cache_summary['protected_tickers']:,} Local Market Store ticker entr"
                 f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, and kept all parquet history plus logo images."

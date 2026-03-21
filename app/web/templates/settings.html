@@ -72,64 +72,87 @@
             </ol>
         </section>
         {% elif settings_section == "general" %}
-        <p class="settings-summary">Preview the current type scale before wiring it into more UI controls.</p>
-        <section class="font-preview-card">
-            <div class="font-preview-header">
-                <p class="font-preview-kicker">Type preview</p>
-                <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
-            </div>
-            <div class="font-preview-stack">
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Card title</p>
-                        <p class="font-preview-unit">24</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Backtest</p>
+        <div class="settings-general-stack">
+            <section class="settings-card settings-general-card settings-general-panel">
+                <div class="settings-general-header">
+                    <p class="settings-general-kicker">Backtest execution model</p>
+                    <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
                 </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Card subtitle</p>
-                        <p class="font-preview-unit">15</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
+                <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
+                    <label class="settings-general-option">
+                        <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">Signal bar close</span>
+                            <span class="settings-general-option-desc">When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.</span>
+                        </span>
+                    </label>
+                    <label class="settings-general-option">
+                        <input type="radio" name="backtest_execution_mode" value="next_open" onchange="this.form.submit()" {% if backtest_execution_mode == 'next_open' %}checked{% endif %}>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">Next bar open</span>
+                            <span class="settings-general-option-desc">When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.</span>
+                        </span>
+                    </label>
+                </form>
+            </section>
+            <section class="font-preview-card settings-general-panel">
+                <div class="font-preview-header">
+                    <p class="font-preview-kicker">Type preview</p>
+                    <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
                 </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Metric value</p>
-                        <p class="font-preview-unit">32</p>
+                <div class="font-preview-stack">
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Card title</p>
+                            <p class="font-preview-unit">24</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Backtest</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Form label</p>
-                        <p class="font-preview-unit">14</p>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Card subtitle</p>
+                            <p class="font-preview-unit">15</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Form control</p>
-                        <p class="font-preview-unit">15</p>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Metric value</p>
+                            <p class="font-preview-unit">32</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Table body</p>
-                        <p class="font-preview-unit">13</p>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Form label</p>
+                            <p class="font-preview-unit">14</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Tooltip</p>
-                        <p class="font-preview-unit">12</p>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Form control</p>
+                            <p class="font-preview-unit">15</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Table body</p>
+                            <p class="font-preview-unit">13</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
+                    </div>
+                    <div class="font-preview-row">
+                        <div class="font-preview-meta">
+                            <p class="font-preview-label">Tooltip</p>
+                            <p class="font-preview-unit">12</p>
+                        </div>
+                        <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
+        </div>
         {% elif settings_section == "network" %}
         <p class="settings-summary">{{ labels.service_status }}</p>
         <div class="settings-service-list">

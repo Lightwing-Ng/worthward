@@ -1,4 +1,4 @@
-/* Code version: v3.4.2 */
+/* Code version: v3.5.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const consumeChartWorkspaceRefreshTransition = (viewName) => {
@@ -101,6 +101,7 @@
 		};
 
 		const labels = series[0].dates;
+		const rawDates = Array.isArray(series[0].raw_dates) ? series[0].raw_dates : [];
 		const refreshTransition = consumeChartWorkspaceRefreshTransition(state.currentView);
 		const chartWrap = canvas.closest(".chart-wrap") || canvas.parentElement;
 		const chartYPaddingPx = readPxToken(chartWrap, "--trade-chart-y-padding-px", 5);
@@ -164,7 +165,7 @@
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
-					const parsedDate = parseLabelDate(labels[index]);
+					const parsedDate = parseRawDate(rawDates[index]);
 					if (!parsedDate) return;
 					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
 					const ratio = labels.length <= 1 ? 0 : index / (labels.length - 1);
@@ -257,9 +258,10 @@
 			}
 			const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
 			const listEl = tooltipEl.querySelector(".chart-tooltip-list");
-			if (tooltip.title?.length) {
-				const parsedDate = parseLabelDate(tooltip.title[0]);
-				dateEl.textContent = parsedDate ? `${parsedDate.getUTCDate()} ${monthAbbreviations[parsedDate.getUTCMonth()]} ${parsedDate.getUTCFullYear()}` : tooltip.title[0];
+			if (tooltip.dataPoints?.length) {
+				const pointIndex = tooltip.dataPoints[0].dataIndex;
+				const parsedDate = parseRawDate(rawDates[pointIndex]);
+				dateEl.textContent = parsedDate ? formatChartDate(parsedDate) : (tooltip.title?.[0] || "");
 			}
 
 			const bodyLines = tooltip.dataPoints.map((point) => {
@@ -327,12 +329,20 @@
 			return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 		};
 
-		const parseLabelDate = (value) => {
-			const parsed = new Date(value);
-			return Number.isNaN(parsed.getTime()) ? null : parsed;
+		const parseRawDate = (value) => {
+			if (typeof value !== "string") return null;
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+			if (!match) return null;
+			return {
+				year: Number(match[1]),
+				monthIndex: Number(match[2]) - 1,
+				day: Number(match[3]),
+			};
 		};
 
-		const formatChartDateLines = (date) => [`${date.getUTCDate()} ${monthAbbreviations[date.getUTCMonth()]}`, `${date.getUTCFullYear()}`];
+		const formatChartDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+
+		const formatChartDateLines = (dateParts) => [`${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`, `${dateParts.year}`];
 
 		const buildTickIndexSet = (count, plotWidth) => {
 			if (count <= 0) return new Set();

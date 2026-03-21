@@ -1,7 +1,7 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v3.1.0
+Code version: v3.2.0
 """
 
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ from dataclasses import dataclass
 class SeriesPayload:
     ticker: str
     dates: list[str]
+    raw_dates: list[str]
     normalized_returns: list[float]
     color: str | None = None
     glow: bool = True

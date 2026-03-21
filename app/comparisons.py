@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v3.2.0
+Code version: v3.3.0
 """
 
 from __future__ import annotations
@@ -87,6 +87,7 @@ def build_series_payload(
     return SeriesPayload(
         ticker=ticker.upper(),
         dates=dataset["Date"].map(format_display_date).tolist(),
+        raw_dates=dataset["Date"].map(lambda value: pd.Timestamp(value).strftime("%Y-%m-%d")).tolist(),
         normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
         color=color,
         glow=glow,
