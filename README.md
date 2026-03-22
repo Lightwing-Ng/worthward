@@ -118,3 +118,13 @@ Supported examples include:
 - symbol search depends partly on Yahoo Finance coverage and may vary by ticker class
 - logo retrieval uses provider fallbacks and local persistence
 - the app is designed for local development, not production deployment
+
+## Timezone & Data Integrity
+
+- **System Standard**: The application internally standardizes all market data to **New York Time (America/New_York)**, including robust handling of Daylight Saving Time (DST) via standard IANA zone identifiers.
+- **Broker Data (Longbridge)**: The Longbridge OpenAPI returns 1-minute timestamps aligned with **Hong Kong Time (HKT)** numerically for US markets.
+  - The fetcher (`app/broker_market_data.py`) robustly localizes these raw values as `Asia/Hong_Kong` before converting to `America/New_York`.
+  - **Storage (Parquet)**: 1-minute Parquet files in `market_store/historical/` store timestamps strictly in **NYT** (naive) for cross-layer consistency.
+- **Verification Tool**: A dedicated test route is available at `/test/chart/1m/<ticker>/<date>` (or `/last5`) to visually audit 1-minute bars against your broker's terminal curve for terminal-level accuracy.
+
+

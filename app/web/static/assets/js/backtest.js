@@ -397,7 +397,7 @@
 		const syncHoverState = (index, sourceCanvas, sourceChart) => {
 			activeIndex = index;
 			const setActive = (chart) => {
-				if (!chart) return;
+				if (!chart || !chart.ctx) return;
 				chart.setActiveElements(index === null ? [] : [{ datasetIndex: 0, index }]);
 				chart.update("none");
 			};
@@ -407,17 +407,25 @@
 		};
 
 		const attachHover = (canvas, chart) => {
+			if (canvas._abortController) canvas._abortController.abort();
+			const controller = new AbortController();
+			canvas._abortController = controller;
+			const { signal } = controller;
+
 			canvas.addEventListener("mousemove", (event) => {
+				if (!chart || !chart.ctx) return;
 				const points = chart.getElementsAtEventForMode(event, "index", { intersect: false }, false);
 				if (!points.length) {
 					syncHoverState(null, canvas, chart);
 					return;
 				}
 				syncHoverState(points[0].index, canvas, chart);
-			});
+			}, { signal });
+
 			canvas.addEventListener("mouseleave", () => {
+				if (!chart || !chart.ctx) return;
 				syncHoverState(null, canvas, chart);
-			});
+			}, { signal });
 		};
 
 		const refreshTransition = consumeBacktestRefreshTransition();
@@ -484,8 +492,76 @@
 			plugins: [referenceLinePlugin, xAxisLabelPlugin],
 		});
 
+		const initTransactionsPagination = () => {
+			const table = document.getElementById("tradeTransactionsTable");
+			const nav = document.getElementById("tradeTransactionsPagination");
+			if (!table || !nav) return;
+
+			const rows = Array.from(table.querySelectorAll("tbody tr"));
+			if (!rows.length) return;
+
+			const PAGE_SIZE = 10;
+			const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+			if (totalPages <= 1) {
+				nav.hidden = true;
+				return;
+			}
+
+			nav.hidden = false;
+			let currentPage = 1;
+
+			const renderButtons = () => {
+				nav.innerHTML = "";
+				
+				// Prev button
+				const prevBtn = document.createElement("button");
+				prevBtn.type = "button";
+				prevBtn.className = "local-store-page-button local-store-page-nav";
+				prevBtn.disabled = currentPage === 1;
+				prevBtn.innerHTML = '<span class="icon icon-page-prev"></span>';
+				prevBtn.onclick = () => { if(currentPage > 1) goToPage(currentPage - 1); };
+				nav.appendChild(prevBtn);
+
+				// Page numbers (Simple window of 5)
+				let start = Math.max(1, currentPage - 2);
+				let end = Math.min(totalPages, start + 4);
+				if (end === totalPages) start = Math.max(1, end - 4);
+
+				for (let i = start; i <= end; i++) {
+					const btn = document.createElement("button");
+					btn.type = "button";
+					btn.className = `local-store-page-button${i === currentPage ? " is-active" : ""}`;
+					btn.textContent = i;
+					btn.onclick = () => goToPage(i);
+					nav.appendChild(btn);
+				}
+
+				// Next button
+				const nextBtn = document.createElement("button");
+				nextBtn.type = "button";
+				nextBtn.className = "local-store-page-button local-store-page-nav";
+				nextBtn.disabled = currentPage === totalPages;
+				nextBtn.innerHTML = '<span class="icon icon-page-next"></span>';
+				nextBtn.onclick = () => { if(currentPage < totalPages) goToPage(currentPage + 1); };
+				nav.appendChild(nextBtn);
+			};
+
+			const goToPage = (p) => {
+				currentPage = p;
+				const start = (p - 1) * PAGE_SIZE;
+				const end = start + PAGE_SIZE;
+				rows.forEach((row, i) => {
+					row.hidden = !(i >= start && i < end);
+				});
+				renderButtons();
+			};
+
+			goToPage(1);
+		};
+
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
+		initTransactionsPagination();
 		if (refreshTransition) {
 			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, chartYPaddingPx);
 		}

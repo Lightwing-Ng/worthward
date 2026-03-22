@@ -63,6 +63,7 @@ from .storage import (
     has_logo_asset,
     has_profile_record,
     history_store_path_for,
+    intraday_history_store_path_for,
     list_local_tickers,
     list_historical_tickers,
     load_profile_record,
@@ -2016,3 +2017,57 @@ def register_routes(app: Flask) -> None:
                 "hasMissingHistory": bool(missing_history),
             }
         )
+
+    @app.get("/test/chart/1m/<ticker>/<date_str>")
+    def test_chart_1m_view(ticker: str, date_str: str):
+        path = intraday_history_store_path_for(ticker, "1m")
+        if not path.exists():
+            return f"No 1m data for {ticker} at {path}", 404
+
+        try:
+            df = pd.read_parquet(path)
+            # 1m Parquet storage is now standardized strictly to New York Time (NYT).
+            df['DateNYT'] = pd.to_datetime(df['Date'])
+            
+            # Audit unique dates for debugging
+            all_unique_dates = sorted(df['DateNYT'].dt.date.unique())
+            print(f"DEBUG: All unique NYT dates in file: {all_unique_dates[-10:]}")
+
+            if date_str == 'last5':
+                target_dates = all_unique_dates[-5:]
+                print(f"DEBUG: Filtering for target dates: {target_dates}")
+                day_data = df[df['DateNYT'].dt.date.isin(target_dates)].copy()
+                display_date = f"Last 5 Days ({target_dates[0]} to {target_dates[-1]})"
+            else:
+                day_data = df[df['DateNYT'].dt.strftime('%Y-%m-%d') == date_str].copy()
+                display_date = date_str
+
+            if day_data.empty:
+                print(f"DEBUG: No rows found for {ticker} on {date_str} NYT")
+                return f"No data found for {ticker} on {date_str}. NYT range: {df['DateNYT'].min()} to {df['DateNYT'].max()}", 404
+
+            day_data = day_data.sort_values("DateNYT")
+            print(f"DEBUG: Found {len(day_data)} rows for {ticker} in final selection (NYT Store).")
+
+
+
+
+
+            rows = []
+            is_multi = date_str == 'last5'
+            for _, row in day_data.iterrows():
+                rows.append({
+                    "time": row['DateNYT'].strftime('%m-%d %H:%M') if is_multi else row['DateNYT'].strftime('%H:%M:%S'),
+                    "close": float(row['Close']),
+                    "volume": int(row['Volume']),
+                })
+
+            return render_template(
+                "test_chart_1m.html",
+                ticker=ticker,
+                date=display_date,
+                rows=rows
+            )
+        except Exception as e:
+            return f"Error loading chart: {str(e)}", 500
+

@@ -99,7 +99,7 @@
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
                 <div class="trade-transactions-wrap">
-                    <table class="settings-table trade-transactions-table">
+                    <table id="tradeTransactionsTable" class="settings-table trade-transactions-table">
                         <thead>
                             <tr>
                                 <th>No.</th>
@@ -113,7 +113,7 @@
                         </thead>
                         <tbody>
                             {% for row in backtest_result.trades %}
-                            <tr>
+                            <tr data-trade-index="{{ loop.index0 }}">
                                 <td class="trade-transactions-index">{{ loop.index }}</td>
                                 <td class="trade-transactions-date">{{ row.date }}</td>
                                 <td class="trade-transactions-side">{{ row.side }}</td>
@@ -126,6 +126,9 @@
                         </tbody>
                     </table>
                 </div>
+                <nav class="settings-pagination local-store-pagination trade-transactions-pagination" id="tradeTransactionsPagination" aria-label="Transaction pages" hidden>
+                    <!-- Pagination buttons will be injected by JS -->
+                </nav>
             </div>
         </div>
         {% else %}

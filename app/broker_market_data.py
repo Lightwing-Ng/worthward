@@ -73,16 +73,31 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
 
 
 def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
+    """
+    Robustly converts Longbridge candlesticks to a DataFrame stored in NYT.
+    
+    Longbridge provides timestamps that are conceptually Asia/Hong_Kong (HKT).
+    According to the user's unified decision, we store 1m data in local Parquet 
+    strictly using America/New_York (NYT).
+    
+    This handles Summer/Winter time transitions (Daylight Saving Time) correctly
+    via standard IANA zone names.
+    """
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
-        timestamp = pd.Timestamp(getattr(candle, "timestamp"))
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.tz_localize("UTC")
-        else:
-            timestamp = timestamp.tz_convert("UTC")
+        raw_ts = getattr(candle, "timestamp")
+        
+        # 1. Parse raw timestamp (numeric epoch) as HKT as requested.
+        # Longbridge timestamps for US stocks are often numerically aligned with HKT.
+        ts_hkt = pd.Timestamp(raw_ts, unit="s").tz_localize("Asia/Hong_Kong")
+        
+        # 2. Convert to US Eastern Time (NYT), preserving the mapping of a specific 
+        # point in time regardless of future DST law changes.
+        ts_nyt = ts_hkt.tz_convert("America/New_York")
+            
         rows.append(
             {
-                "Date": timestamp.tz_convert(None),
+                "Date": ts_nyt.tz_localize(None), # Store as naive NYT (System Standard)
                 "Open": float(getattr(candle, "open")),
                 "High": float(getattr(candle, "high")),
                 "Low": float(getattr(candle, "low")),
