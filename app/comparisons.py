@@ -54,6 +54,14 @@ def slice_dataset_for_period(dataset: pd.DataFrame, period: str, reference_end_d
     if period == "max":
         return bounded_dataset
 
+    if period == "1d":
+        last_date = bounded_dataset["Date"].dt.date.max()
+        return bounded_dataset[bounded_dataset["Date"].dt.date == last_date].copy()
+    if period == "3d":
+        unique_dates = sorted(bounded_dataset["Date"].dt.date.unique(), reverse=True)
+        target_dates = unique_dates[:3]
+        return bounded_dataset[bounded_dataset["Date"].dt.date.isin(target_dates)].copy()
+
     start_date = (reference_end_date - PERIOD_OFFSETS[period]).normalize()
     sliced = bounded_dataset[bounded_dataset["Date"] >= start_date].copy()
     return sliced if not sliced.empty else bounded_dataset.tail(1).copy()

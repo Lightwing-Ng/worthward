@@ -2471,13 +2471,15 @@ div.style-token-modal-demo {
 }
 .settings-service-status-icon {
 	position: relative;
+	display: inline-block;
+	vertical-align: middle;
 	width: 14px;
 	height: 14px;
 	flex: 0 0 auto;
 	align-self: center;
-	margin-top: 0;
+	margin-top: 1px;
 	opacity: 0;
-	background-color: #0f6b2f;
+	background-color: #2fff9c;
 	mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat;
 	-webkit-mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat;
 }
@@ -3011,7 +3013,7 @@ div.style-token-modal-demo {
 .icon-settings-clear-cache { mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/arrow.up.trash.fill.svg") center/contain no-repeat; }
 .icon-settings-style-tokens { mask: url("../../images/wand.and.sparkles.inverse.svg") center/contain no-repeat; -webkit-mask: url("../../images/wand.and.sparkles.inverse.svg") center/contain no-repeat; }
 .icon-store-fetch-1m { mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/tray.and.arrow.down.fill.svg") center/contain no-repeat; }
-.icon-store-has-1m { background-color: #0f6b2f; mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat; -webkit-mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat; }
+.icon-store-has-1m { background-color: #2fff9c; mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat; -webkit-mask: url("../../images/checkmark.circle.fill.green.svg") center/contain no-repeat; }
 .settings-callout-card-warning { background: rgba(255, 249, 196, 0.48); border: 1px solid rgba(251, 192, 45, 0.12); }
 .icon-modal-dialog-banner-default { mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; }
 .icon-modal-dialog-banner-backtest-execution { mask: url("../../images/square.and.line.vertical.and.square.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.and.line.vertical.and.square.svg") center/contain no-repeat; }

@@ -150,11 +150,16 @@
 		const high = backtestResult.chart.high || [];
 		const low = backtestResult.chart.low || [];
 		const equity = backtestResult.chart.equity;
-		const durationMs = rawDates.length > 1
-			? new Date(rawDates[rawDates.length - 1]) - new Date(rawDates[0])
-			: 0;
-		const isUnderOneYear = durationMs < (366 * 24 * 60 * 60 * 1000);
-		const isCandlestick = labels.length > 0 && open.length > 0 && high.length > 0 && low.length > 0 && isUnderOneYear;
+		
+		const interval = backtestResult.interval || "1d";
+		const uniqueDays = new Set();
+		rawDates.forEach(dateStr => {
+			const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+			if (match) uniqueDays.add(match[1]);
+		});
+		const tradingDaysCount = uniqueDays.size;
+		const isCandlestick = interval === "1m" && tradingDaysCount <= 1 && open.length > 0 && high.length > 0 && low.length > 0;
+		
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -508,6 +513,8 @@
 						borderWidth: isCandlestick ? 0 : 2.5,
 						pointRadius: 0,
 						tension: 0,
+						borderJoinStyle: "round",
+						borderCapStyle: "round",
 					},
 					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#2fff9c" },
 					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#ff2f92" },
@@ -536,6 +543,8 @@
 						borderWidth: 2.5,
 						pointRadius: 0,
 						tension: 0,
+						borderJoinStyle: "round",
+						borderCapStyle: "round",
 						segment: {
 							borderColor: (context) => {
 								const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialCapital);
@@ -543,7 +552,7 @@
 							},
 						},
 					},
-					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0 },
+					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0, borderJoinStyle: "round", borderCapStyle: "round" },
 				],
 			},
 			options: {

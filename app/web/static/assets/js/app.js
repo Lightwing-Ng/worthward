@@ -2475,12 +2475,19 @@
 		return date;
 	};
 	const MS_PER_DAY = 24 * 60 * 60 * 1000;
+	const PERIOD_DAY_SPANS = {
+		"1d": 1,
+		"3d": 3,
+		"1w": 7,
+		"2w": 14,
+	};
 	const PERIOD_MONTH_SPANS = {
 		"1mo": 1,
 		"3mo": 3,
 		"6mo": 6,
 		"1y": 12,
 		"2y": 24,
+		"3y": 36,
 		"5y": 60,
 		"10y": 120,
 	};
@@ -2546,12 +2553,26 @@
 		const availableDurationDays = minDate ? diffDaysUtc(minDate, maxDate) : exactDurationDays;
 		const nonMaxOptions = Array.from(periodSelect.options)
 			.map((option) => option.value)
-			.filter((value) => value && value !== "max" && PERIOD_MONTH_SPANS[value]);
-		if (!nonMaxOptions.length) return periodSelect.value || null;
+			.filter((value) => value && value !== "max" && (PERIOD_MONTH_SPANS[value] || PERIOD_DAY_SPANS[value]));
+			
+		const intervalSelect = document.getElementById("backtest_interval");
+		const currentInterval = intervalSelect ? intervalSelect.value : "1d";
+		const fallbackOption = currentInterval === "1m" ? "1w" : "1y";
+
+		if (!nonMaxOptions.length) {
+			const fallbackEl = periodSelect.querySelector(`option[value="${fallbackOption}"]`);
+			return fallbackEl ? fallbackOption : (periodSelect.value || null);
+		}
 
 		const candidates = nonMaxOptions.map((value) => {
-			const months = PERIOD_MONTH_SPANS[value];
-			const candidateStart = shiftMonthsUtc(maxDate, -months);
+			let candidateStart;
+			if (PERIOD_MONTH_SPANS[value]) {
+				const months = PERIOD_MONTH_SPANS[value];
+				candidateStart = shiftMonthsUtc(maxDate, -months);
+			} else {
+				const days = PERIOD_DAY_SPANS[value];
+				candidateStart = new Date(maxDate.getTime() - days * MS_PER_DAY);
+			}
 			const candidateDurationDays = diffDaysUtc(candidateStart, maxDate);
 			const coversExactEnd = exactEndDate >= candidateStart && exactEndDate <= maxDate;
 			return {
@@ -2576,7 +2597,7 @@
 			}
 		}
 
-		return candidates[0]?.value || periodSelect.value || null;
+		return candidates[0]?.value || fallbackOption;
 	};
 
 	let lastRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
@@ -2970,8 +2991,6 @@
 		if (periodSelect) {
 			const currentPeriod = periodSelect.value;
 			const options1d = [
-				{ value: "1mo", label: "1 month" },
-				{ value: "3mo", label: "3 months" },
 				{ value: "6mo", label: "6 months" },
 				{ value: "1y", label: "1 year" },
 				{ value: "2y", label: "2 years" },
@@ -2981,12 +3000,10 @@
 				{ value: "max", label: "Max" }
 			];
 			const options1m = [
+				{ value: "1d", label: "1 day" },
+				{ value: "3d", label: "3 days" },
 				{ value: "1w", label: "1 week" },
-				{ value: "2w", label: "2 weeks" },
-				{ value: "1mo", label: "1 month" },
-				{ value: "3mo", label: "3 months" },
-				{ value: "6mo", label: "6 months" },
-				{ value: "1y", label: "1 year" }
+				{ value: "2w", label: "2 weeks" }
 			];
 			
 			const newOptions = interval === "1m" ? options1m : options1d;
@@ -2998,21 +3015,12 @@
 				if (opt.value === currentPeriod) el.selected = true;
 				periodSelect.appendChild(el);
 			});
-
-			if (interval === "1m") {
-				const allowed = ["1w", "1mo", "3mo", "6mo", "1y"];
-				if (!allowed.includes(periodSelect.value)) {
-					periodSelect.value = "1w";
-				}
-			} else {
-				const allowed = ["1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max"];
-				if (!allowed.includes(periodSelect.value)) {
-					periodSelect.value = "1y";
-				}
+			const allowed = newOptions.map(opt => opt.value);
+			if (!allowed.includes(periodSelect.value)) {
+				periodSelect.value = interval === "1m" ? "1d" : "1y";
 			}
 		}
 		// Force full reload for interval change to refresh sidebar period options
-		isSubmittingWithOverlay = true;
 		scheduleAutoSubmit(20);
 	});
 

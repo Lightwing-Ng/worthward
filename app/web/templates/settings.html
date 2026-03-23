@@ -336,6 +336,9 @@
                                 </span>
                             </td>
                             <td>
+                                {% if row.has_1d %}
+                                <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                {% else %}
                                 <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
                                     <input type="hidden" name="action" value="refresh">
@@ -344,6 +347,7 @@
                                         <span class="icon icon-store-refresh" aria-hidden="true"></span>
                                     </button>
                                 </form>
+                                {% endif %}
                             </td>
                             <td>
                                 {% if row.has_1m %}

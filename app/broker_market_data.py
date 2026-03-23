@@ -13,13 +13,15 @@ from typing import Any
 import pandas as pd
 
 from .broker_settings import BrokerSettings, has_longbridge_credentials
-from .storage import ensure_market_store_dir, intraday_history_store_path_for
+from .storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 
 
 ONE_MINUTE_LOOKBACK_DAYS = 366
 ONE_MINUTE_CHUNK_SIZE = 500
 ONE_MINUTE_FRESHNESS_DAYS = 7
 ONE_MINUTE_MIN_SPAN_DAYS = 330
+DAILY_FRESHNESS_DAYS = 7
+DAILY_MIN_SPAN_DAYS = 330
 
 
 def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
@@ -207,3 +209,64 @@ def has_recent_one_minute_store(ticker: str) -> bool:
         return False
     date_values = pd.to_datetime(dataset["Date"], utc=True, errors="coerce").dropna()
     return not date_values.empty
+
+
+def is_one_minute_store_complete(ticker: str) -> bool:
+    path = intraday_history_store_path_for(ticker, "1m")
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        dataset = pd.read_parquet(path, columns=["Date"])
+    except Exception:
+        return False
+    if dataset.empty:
+        return False
+    
+    date_values = pd.to_datetime(dataset["Date"])
+    if date_values.empty:
+        return False
+        
+    min_date = date_values.min()
+    max_date = date_values.max()
+    
+    # Check if we have at least approx 1 year spanning (trading days context)
+    span_days = (max_date - min_date).days
+    if span_days < ONE_MINUTE_MIN_SPAN_DAYS:
+        return False
+        
+    # Check if max date is reasonably fresh (within last 7 days)
+    now = datetime.now()
+    if (now - max_date).days > ONE_MINUTE_FRESHNESS_DAYS:
+        return False
+        
+    return True
+
+
+def is_daily_store_complete(ticker: str) -> bool:
+    path = history_store_path_for(ticker)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        dataset = pd.read_parquet(path, columns=["Date"])
+    except Exception:
+        return False
+    if dataset.empty:
+        return False
+        
+    date_values = pd.to_datetime(dataset["Date"])
+    if date_values.empty:
+        return False
+        
+    min_date = date_values.min()
+    max_date = date_values.max()
+    
+    # Check span and freshness for daily data (same logic as 1m)
+    span_days = (max_date - min_date).days
+    if span_days < DAILY_MIN_SPAN_DAYS:
+        return False
+        
+    now = datetime.now()
+    if (now - max_date).days > DAILY_FRESHNESS_DAYS:
+        return False
+        
+    return True

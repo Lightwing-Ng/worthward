@@ -11,6 +11,8 @@ import pandas as pd
 
 def format_period_label(period: str) -> str:
     labels = {
+        "1d": "1 day",
+        "3d": "3 days",
         "1w": "1 week",
         "2w": "2 weeks",
         "1mo": "1 month",

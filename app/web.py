@@ -17,6 +17,8 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from .broker_market_data import (
     has_recent_one_minute_store,
+    is_one_minute_store_complete,
+    is_daily_store_complete,
     refresh_longbridge_one_minute_store,
     test_broker_connection,
 )
@@ -858,7 +860,8 @@ def register_routes(app: Flask) -> None:
                     "range_start": range_start,
                     "range_end": range_end,
                     "range": f"{range_start} - {range_end}" if range_start and range_end else "",
-                    "has_1m": has_recent_one_minute_store(ticker),
+                    "has_1m": is_one_minute_store_complete(ticker),
+                    "has_1d": is_daily_store_complete(ticker),
                 }
             )
         return rows
