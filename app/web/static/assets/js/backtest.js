@@ -507,7 +507,7 @@
 						borderColor: isCandlestick ? "transparent" : theme.accent_primary,
 						borderWidth: isCandlestick ? 0 : 2.5,
 						pointRadius: 0,
-						tension: 0.18,
+						tension: 0,
 					},
 					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#2fff9c" },
 					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#ff2f92" },
@@ -535,7 +535,7 @@
 						data: equitySeriesStart,
 						borderWidth: 2.5,
 						pointRadius: 0,
-						tension: 0.18,
+						tension: 0,
 						segment: {
 							borderColor: (context) => {
 								const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialCapital);
@@ -543,7 +543,7 @@
 							},
 						},
 					},
-					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0.18 },
+					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0 },
 				],
 			},
 			options: {
