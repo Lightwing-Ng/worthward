@@ -8,8 +8,16 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import json
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 from pathlib import Path
 import shutil
 import threading
@@ -154,11 +162,25 @@ def _parquet_table_lock(path: Path):
     with thread_lock:
         lock_path = _table_lock_path(path)
         with lock_path.open("a+b") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
+            if fcntl:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            elif msvcrt:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    yield
+                finally:
+                    try:
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+            else:
                 yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _utc_iso_timestamp(path: Path | None = None) -> str:
