@@ -50,7 +50,15 @@ from .connectivity import (
     has_tradingview_ta_available,
     reset_connectivity_caches,
 )
-from .config import CODE_VERSION, DEFAULT_PERIOD, DEFAULT_TICKERS, PERIOD_OFFSETS, SUPPORTED_PERIODS
+from .config import (
+    CODE_VERSION,
+    DEFAULT_INTERVAL,
+    DEFAULT_PERIOD,
+    DEFAULT_TICKERS,
+    PERIOD_OFFSETS,
+    SUPPORTED_PERIODS_1D,
+    SUPPORTED_PERIODS_1M,
+)
 from .date_constraints import build_date_constraint_payload
 from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, search_tickers
 from .market_data import fetch_history, refresh_history_store
@@ -1057,7 +1065,7 @@ def register_routes(app: Flask) -> None:
             return requested_period, None
 
         fallback_period = "max"
-        for candidate in SUPPORTED_PERIODS:
+        for candidate in SUPPORTED_PERIODS_1D:
             if candidate == "max":
                 break
             candidate_start = (common_end - PERIOD_OFFSETS[candidate]).normalize()
@@ -1148,6 +1156,23 @@ def register_routes(app: Flask) -> None:
             ),
             1.0,
         )
+        requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
+        supported_intervals = ["1d"]
+        if current_view == "backtest" and requested_tickers:
+            try:
+                trade_ticker = validate_ticker_or_raise(requested_tickers[0])
+                if has_recent_one_minute_store(trade_ticker):
+                    supported_intervals.append("1m")
+            except ValueError:
+                pass
+        
+        # Smart default for 1w period if interval is not specified
+        if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
+            requested_interval = "1m"
+            
+        if requested_interval not in supported_intervals:
+            requested_interval = supported_intervals[0]
+            
         backtest_result = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
@@ -1213,7 +1238,11 @@ def register_routes(app: Flask) -> None:
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
 
-        if period not in SUPPORTED_PERIODS:
+        supported_periods = (
+            SUPPORTED_PERIODS_1M if requested_interval == "1m" and "1m" in supported_intervals else SUPPORTED_PERIODS_1D
+        )
+
+        if period not in supported_periods:
             period = DEFAULT_PERIOD
 
         try:
@@ -1222,7 +1251,12 @@ def register_routes(app: Flask) -> None:
                     raise ValueError("")
                 trade_ticker = validate_ticker_or_raise(requested_tickers[0])
                 ticker_slots = [trade_ticker]
-                trade_dataset = fetch_history(trade_ticker, include_dividends)
+                trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
+                
+                if requested_interval == "1m":
+                    one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
+                    trade_dataset = trade_dataset[trade_dataset["Date"] >= one_year_ago.tz_localize(None)]
+
                 profiles = [fetch_quote_profile(trade_ticker, False)]
                 date_constraints = build_date_constraint_payload(
                     trade_dataset,
@@ -1233,7 +1267,7 @@ def register_routes(app: Flask) -> None:
                     if not date_constraints.trading_dates:
                         raise ValueError("The selected exact range does not contain trading dates.")
                     aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-                    aligned_end = pd.to_datetime(date_constraints.adjusted_end)
+                    aligned_end = pd.to_datetime(date_constraints.adjusted_end).replace(hour=23, minute=59, second=59)
                     trade_dataset = trade_dataset[
                         (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
                     ].copy()
@@ -1255,6 +1289,7 @@ def register_routes(app: Flask) -> None:
                     signal_result,
                     backtest_initial_capital,
                     execution_mode=backtest_execution_mode,
+                    interval=requested_interval,
                 )
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
@@ -1590,8 +1625,8 @@ def register_routes(app: Flask) -> None:
             period=period,
             period_label=period_label,
             display_range=display_range,
-            periods=SUPPORTED_PERIODS,
-            period_labels={item: format_period_label(item) for item in SUPPORTED_PERIODS},
+            periods=supported_periods,
+            period_labels={item: format_period_label(item) for item in supported_periods},
             series=series,
             profiles_json=[asdict(profile) for profile in profiles],
             performance_items=performance_items,
@@ -1650,6 +1685,8 @@ def register_routes(app: Flask) -> None:
             selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
             backtest_result=backtest_result,
+            supported_intervals=supported_intervals,
+            requested_interval=requested_interval,
             current_view_name=current_view,
             current_path=request.path,
             endpoints={
@@ -2010,11 +2047,16 @@ def register_routes(app: Flask) -> None:
             for ticker in unique_tickers
             if not history_store_path_for(ticker).exists()
         ]
+        has_1m_mapping = {
+            ticker: has_recent_one_minute_store(ticker)
+            for ticker in unique_tickers
+        }
         return jsonify(
             {
                 "tickers": unique_tickers,
                 "missingHistory": missing_history,
                 "hasMissingHistory": bool(missing_history),
+                "has1m": has_1m_mapping,
             }
         )
 

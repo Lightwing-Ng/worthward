@@ -4,7 +4,7 @@
 
 	const consumeBacktestRefreshTransition = () => {
 		const transition = bootstrap.backtestRefreshTransition;
-		if (!transition?.labels?.length) return null;
+		if (!transition?.rawLabels?.length) return null;
 		delete bootstrap.backtestRefreshTransition;
 		return transition;
 	};
@@ -92,14 +92,14 @@
 
 	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, chartYPaddingPx) => {
 		if (!priceChart || !equityChart || !transition) return;
-		const nextLabels = priceChart.data.labels || [];
+		const nextRawLabels = priceChart.data.rawLabels || [];
 		const nextAllIn = buildAllInSeries(nextClose, transition.initialCapital);
-		const fromClose = buildAlignedSeries(transition.labels, transition.close, nextLabels, nextClose);
-		const fromEquity = buildAlignedSeries(transition.labels, transition.equity, nextLabels, nextEquity);
+		const fromClose = buildAlignedSeries(transition.rawLabels, transition.close, nextRawLabels, nextClose);
+		const fromEquity = buildAlignedSeries(transition.rawLabels, transition.equity, nextRawLabels, nextEquity);
 		const fromAllIn = buildAlignedSeries(
-			transition.labels,
-			buildAllInSeries(transition.close, transition.initialCapital),
-			nextLabels,
+			transition.rawLabels,
+			transition.allIn,
+			nextRawLabels,
 			nextAllIn,
 		);
 
@@ -146,7 +146,15 @@
 		const labels = backtestResult.chart.dates;
 		const rawDates = Array.isArray(backtestResult.chart.raw_dates) ? backtestResult.chart.raw_dates : [];
 		const close = backtestResult.chart.close;
+		const open = backtestResult.chart.open || [];
+		const high = backtestResult.chart.high || [];
+		const low = backtestResult.chart.low || [];
 		const equity = backtestResult.chart.equity;
+		const durationMs = rawDates.length > 1
+			? new Date(rawDates[rawDates.length - 1]) - new Date(rawDates[0])
+			: 0;
+		const isUnderOneYear = durationMs < (366 * 24 * 60 * 60 * 1000);
+		const isCandlestick = labels.length > 0 && open.length > 0 && high.length > 0 && low.length > 0 && isUnderOneYear;
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -217,7 +225,8 @@
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
-			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+			// Match date part only (yyyy-mm-dd) from ISO strings or simple date strings
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
 			if (!match) return null;
 			return {
 				year: Number(match[1]),
@@ -291,6 +300,55 @@
 					else ctx.textAlign = "center";
 					ctx.fillText(firstLine, x, baselineY);
 					ctx.fillText(secondLine, x, baselineY + lineHeight);
+				});
+				ctx.restore();
+			},
+		};
+
+		const candlestickPlugin = {
+			id: "tradeCandlestickPlugin",
+			afterDatasetsDraw(chart) {
+				if (!isCandlestick || chart.canvas !== priceCanvas) return;
+				const { ctx, chartArea, data, scales } = chart;
+				const meta = chart.getDatasetMeta(0);
+				const xScale = scales.x;
+				const yScale = scales.y;
+				if (!meta || !meta.data.length) return;
+
+				const columnWidth = (chartArea.right - chartArea.left) / labels.length;
+				const candleWidth = Math.min(20, Math.max(1.5, columnWidth * 0.72));
+				const wickWidth = 1.25;
+
+				ctx.save();
+				meta.data.forEach((point, i) => {
+					const o = open[i];
+					const h = high[i];
+					const l = low[i];
+					const c = close[i];
+					if (!Number.isFinite(o) || !Number.isFinite(c)) return;
+
+					const x = point.x;
+					const openY = yScale.getPixelForValue(o);
+					const highY = yScale.getPixelForValue(h);
+					const lowY = yScale.getPixelForValue(l);
+					const closeY = yScale.getPixelForValue(c);
+					
+					const color = "#0055cc";
+					ctx.strokeStyle = color;
+					ctx.fillStyle = color;
+
+					// Wick
+					ctx.lineWidth = wickWidth;
+					ctx.beginPath();
+					ctx.moveTo(x, highY);
+					ctx.lineTo(x, lowY);
+					ctx.stroke();
+
+					// Body
+					const bodyTop = Math.min(openY, closeY);
+					const bodyBottom = Math.max(openY, closeY);
+					const bodyHeight = Math.max(0.75, bodyBottom - bodyTop);
+					ctx.fillRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
 				});
 				ctx.restore();
 			},
@@ -443,9 +501,16 @@
 			data: {
 				labels,
 				datasets: [
-					{ label: "Close", data: priceSeriesStart, borderColor: theme.accent_primary, borderWidth: 2.5, pointRadius: 0, tension: 0.18 },
-					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#16a34a" },
-					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#dc2626" },
+					{
+						label: "Close",
+						data: priceSeriesStart,
+						borderColor: isCandlestick ? "transparent" : theme.accent_primary,
+						borderWidth: isCandlestick ? 0 : 2.5,
+						pointRadius: 0,
+						tension: 0.18,
+					},
+					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#2fff9c" },
+					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#ff2f92" },
 				],
 			},
 			options: {
@@ -457,7 +522,7 @@
 					y: { ...commonOptions.scales.y, ...priceYScale },
 				},
 			},
-			plugins: [],
+			plugins: [candlestickPlugin],
 		});
 
 		equityChart = new Chart(equityCanvas, {
@@ -495,25 +560,30 @@
 		const initTransactionsPagination = () => {
 			const table = document.getElementById("tradeTransactionsTable");
 			const nav = document.getElementById("tradeTransactionsPagination");
-			if (!table || !nav) return;
+			const tbody = table?.querySelector("tbody");
+			if (!table || !nav || !tbody) return;
 
-			const rows = Array.from(table.querySelectorAll("tbody tr"));
-			if (!rows.length) return;
-
-			const PAGE_SIZE = 10;
-			const totalPages = Math.ceil(rows.length / PAGE_SIZE);
-			if (totalPages <= 1) {
+			const trades = backtestResult.trades || [];
+			if (!trades.length) {
 				nav.hidden = true;
 				return;
 			}
 
-			nav.hidden = false;
+			const PAGE_SIZE = 10;
+			const totalPages = Math.ceil(trades.length / PAGE_SIZE);
+			
+			if (totalPages <= 1) {
+				nav.style.display = "none";
+			} else {
+				nav.style.display = "grid";
+			}
+
 			let currentPage = 1;
 
 			const renderButtons = () => {
 				nav.innerHTML = "";
+				if (totalPages <= 1) return;
 				
-				// Prev button
 				const prevBtn = document.createElement("button");
 				prevBtn.type = "button";
 				prevBtn.className = "local-store-page-button local-store-page-nav";
@@ -522,7 +592,6 @@
 				prevBtn.onclick = () => { if(currentPage > 1) goToPage(currentPage - 1); };
 				nav.appendChild(prevBtn);
 
-				// Page numbers (Simple window of 5)
 				let start = Math.max(1, currentPage - 2);
 				let end = Math.min(totalPages, start + 4);
 				if (end === totalPages) start = Math.max(1, end - 4);
@@ -536,7 +605,6 @@
 					nav.appendChild(btn);
 				}
 
-				// Next button
 				const nextBtn = document.createElement("button");
 				nextBtn.type = "button";
 				nextBtn.className = "local-store-page-button local-store-page-nav";
@@ -546,13 +614,29 @@
 				nav.appendChild(nextBtn);
 			};
 
+			const formatNumber = (num) => Number(num || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+			const formatShares = (num) => Math.round(Number(num || 0)).toLocaleString();
+
 			const goToPage = (p) => {
 				currentPage = p;
 				const start = (p - 1) * PAGE_SIZE;
-				const end = start + PAGE_SIZE;
-				rows.forEach((row, i) => {
-					row.hidden = !(i >= start && i < end);
-				});
+				const end = Math.min(start + PAGE_SIZE, trades.length);
+				
+				tbody.innerHTML = "";
+				for (let i = start; i < end; i++) {
+					const trade = trades[i];
+					const tr = document.createElement("tr");
+					tr.innerHTML = `
+						<td class="trade-transactions-index">${i + 1}</td>
+						<td class="trade-transactions-date">${trade.date}</td>
+						<td class="trade-transactions-side">${trade.side}</td>
+						<td class="trade-transactions-number">${formatNumber(trade.price)}</td>
+						<td class="trade-transactions-number">${formatShares(trade.shares)}</td>
+						<td class="trade-transactions-number">${formatNumber(trade.pnl)}</td>
+						<td class="trade-transactions-number">${formatNumber(trade.equity)}</td>
+					`;
+					tbody.appendChild(tr);
+				}
 				renderButtons();
 			};
 

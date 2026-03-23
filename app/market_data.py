@@ -14,7 +14,7 @@ import yfinance as yf
 
 from .config import DEFAULT_INTERVAL
 from .connectivity import has_remote_market_access
-from .storage import ensure_market_store_dir, history_store_path_for
+from .storage import ensure_market_store_dir, history_store_path_for, intraday_history_store_path_for
 
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
@@ -31,24 +31,36 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
     if "Date" not in history.columns and "Datetime" in history.columns:
         history = history.rename(columns={"Datetime": "Date"})
 
-    required_columns = ["Date", "Close", "Adj Close"]
-    missing_columns = [column for column in required_columns if column not in history.columns]
-    if missing_columns:
-        raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_columns)}.")
+    required_columns = ["Date", "Close"]
+    ohlc_columns = ["Open", "High", "Low", "Adj Close"]
+    missing_required = [column for column in required_columns if column not in history.columns]
+    if missing_required:
+        raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_required)}.")
 
-    dataset = history[required_columns].copy()
+    all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
+    dataset = history[all_to_keep].copy()
     dataset["Date"] = pd.to_datetime(dataset["Date"], utc=True).dt.tz_convert(None)
-    dataset["Close"] = pd.to_numeric(dataset["Close"], errors="coerce")
-    dataset["Adj Close"] = pd.to_numeric(dataset["Adj Close"], errors="coerce")
-    return dataset.dropna(subset=["Date", "Close", "Adj Close"]).sort_values("Date")
+    for col in (ohlc_columns + ["Close"]):
+        if col in dataset.columns:
+            dataset[col] = pd.to_numeric(dataset[col], errors="coerce")
+    
+    subset_for_drop = ["Date", "Close"]
+    if "Adj Close" in dataset.columns:
+        subset_for_drop.append("Adj Close")
+    return dataset.dropna(subset=subset_for_drop).sort_values("Date")
 
 
 def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.DataFrame:
-    price_column = "Adj Close" if include_dividends else "Close"
-    return dataset[["Date", price_column]].rename(columns={price_column: "Close"}).copy()
+    price_column = "Adj Close" if include_dividends and "Adj Close" in dataset.columns else "Close"
+    cols = ["Date", "Open", "High", "Low", price_column]
+    available_cols = [c for c in cols if c in dataset.columns]
+    result = dataset[available_cols].copy()
+    if price_column != "Close":
+        result = result.rename(columns={price_column: "Close"})
+    return result
 
 
-def download_full_history(ticker: str) -> pd.DataFrame:
+def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
     last_error: Exception | None = None
     for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
         if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS):
@@ -60,8 +72,8 @@ def download_full_history(ticker: str) -> pd.DataFrame:
         try:
             return yf.download(
                 tickers=ticker,
-                period="max",
-                interval=DEFAULT_INTERVAL,
+                period="7d" if interval == "1m" else "max",
+                interval=interval,
                 auto_adjust=False,
                 progress=False,
                 multi_level_index=False,
@@ -78,9 +90,10 @@ def download_full_history(ticker: str) -> pd.DataFrame:
 def fetch_history(
     ticker: str,
     include_dividends: bool,
+    interval: str = "1d",
 ) -> pd.DataFrame:
     ensure_market_store_dir()
-    path = history_store_path_for(ticker)
+    path = intraday_history_store_path_for(ticker) if interval == "1m" else history_store_path_for(ticker)
     if path.exists():
         return select_price_series(pd.read_parquet(path), include_dividends)
 
@@ -90,7 +103,7 @@ def fetch_history(
             "Sync the latest market_store/ directory from a connected machine first."
         )
 
-    history = download_full_history(ticker)
+    history = download_full_history(ticker, interval=interval)
     normalized_dataset = normalize_history_frame(history, ticker)
     normalized_dataset.to_parquet(path, index=False)
     return select_price_series(normalized_dataset, include_dividends)

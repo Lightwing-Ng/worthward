@@ -1,6 +1,7 @@
 /* Code version: v3.21.6 */
 :root {
 	color-scheme: var(--color-scheme);
+	--sidebar-form-gap: 10px;
 	--bg: var(--theme-background);
 	--panel: var(--theme-panel);
 	--panel-strong: var(--theme-panel-strong);
@@ -292,7 +293,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--glass-highlight) 0%, rgba(255, 255, 255, 0.18) 100%); pointer-events: none; }
 .workspace.panel { background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; overflow: visible; }
 .workspace.panel::before { display: none; }
-.controls { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: var(--layer-surface-content); }
+.controls { display: flex; flex-direction: column; gap: var(--sidebar-form-gap); position: relative; z-index: var(--layer-surface-content); }
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -351,6 +352,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .ticker-input-logo[hidden] { display: none; }
 .ticker-input-control input,
 .trade-strategy-select,
+.backtest-interval-select,
 .form-select,
 .trade-capital-input,
 .date-picker-trigger,
@@ -375,6 +377,8 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .ticker-input-control input:focus,
 .trade-strategy-select:hover,
 .trade-strategy-select:focus,
+.backtest-interval-select:hover,
+.backtest-interval-select:focus,
 .form-select:hover,
 .form-select:focus,
 .trade-capital-input:hover,
@@ -398,6 +402,8 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .ticker-input-control input:focus,
 .trade-strategy-select:hover,
 .trade-strategy-select:focus,
+.backtest-interval-select:hover,
+.backtest-interval-select:focus,
 .form-select:hover,
 .form-select:focus,
 .trade-capital-input:hover,
@@ -414,6 +420,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	transform: none;
 }
 .trade-strategy-select,
+.backtest-interval-select,
 .trade-capital-input,
 .date-picker-trigger,
 .trade-strategy-param-select,
@@ -421,7 +428,8 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .strategy-param-text-control input {
 	color: var(--text);
 }
-.trade-strategy-select {
+.trade-strategy-select,
+.backtest-interval-select {
 	padding-right: 10px;
 	font-size: var(--font-form-control);
 	line-height: 1;
@@ -440,8 +448,10 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	opacity: 0.68;
 	cursor: default;
 }
-.trade-strategy-select option { color: #111827; }
-.trade-strategy-select {
+.trade-strategy-select option,
+.backtest-interval-select option { color: #111827; }
+.trade-strategy-select,
+.backtest-interval-select {
 	transform: translateZ(0);
 	will-change: transform, box-shadow, background;
 }
@@ -460,7 +470,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .form-select::-ms-expand { display: none; }
 .trade-strategy-select:active,
-.trade-strategy-select.is-pressing {
+.trade-strategy-select.is-pressing,
+.backtest-interval-select:active,
+.backtest-interval-select.is-pressing {
 	transform: translateY(0.5px) scale(0.992);
 	box-shadow: none;
 }
@@ -487,6 +499,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-controls .ticker-input-control input,
 .trade-controls .trade-strategy-select,
+.trade-controls .backtest-interval-select,
 .trade-controls .trade-capital-input,
 .trade-controls .date-picker-trigger,
 .trade-controls .field-switch .switch-row {
@@ -500,6 +513,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-controls #period_panel,
 .trade-controls .field-checkbox.field-switch,
 .trade-controls .field:has(.trade-strategy-select),
+.trade-controls .field:has(.backtest-interval-select),
 .trade-controls .date-picker-field {
 	height: var(--trade-control-height) !important;
 	min-height: var(--trade-control-height) !important;
@@ -541,6 +555,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-controls .trade-capital-field > label,
 .trade-controls .field.range-panel > label,
 .trade-controls .field:has(.trade-strategy-select) > label,
+.trade-controls .field:has(.backtest-interval-select) > label,
 .trade-controls .trade-strategy-field > label,
 .trade-controls .date-picker-field > label {
 	margin: 0;
@@ -553,7 +568,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-controls .field.range-panel > select,
 .trade-controls .date-picker-trigger,
 .trade-controls .trade-strategy-row,
-.trade-controls .trade-strategy-select {
+.trade-controls .trade-strategy-select,
+.trade-controls .backtest-interval-row,
+.trade-controls .backtest-interval-select {
 	width: 100%;
 }
 .trade-controls .field.range-panel > select {
@@ -586,7 +603,9 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 .trade-controls .field.range-panel > select,
 .trade-controls .date-picker-field > button,
 .trade-controls .field:has(.trade-strategy-select) > select,
-.trade-controls .trade-strategy-row {
+.trade-controls .field:has(.backtest-interval-select) > select,
+.trade-controls .trade-strategy-row,
+.trade-controls .backtest-interval-row {
 	grid-row: 2;
 }
 .trade-controls .trade-capital-field {
@@ -2999,6 +3018,7 @@ div.style-token-modal-demo {
 .icon-overlay-processing { background-color: #0055cc; mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; -webkit-mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; }
 .icon-overlay-network { background-color: #0055cc; mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; -webkit-mask: url("../../images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat; }
 .icon-overlay-local-cache { background-color: #0055cc; mask: url("../../images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat; }
+.icon-hourglass { background-color: #0055cc; mask: url("../../images/hourglass.bottomhalf.filled.svg") center/contain no-repeat; -webkit-mask: url("../../images/hourglass.bottomhalf.filled.svg") center/contain no-repeat; }
 .workspace-modal-title {
 	grid-column: 2;
 	grid-row: 1;

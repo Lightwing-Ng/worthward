@@ -21,6 +21,16 @@
         </div>
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
+    <div class="field backtest-interval-field">
+        <label for="backtest_interval">{{ labels.backtest_interval }}</label>
+        <div class="backtest-interval-row">
+            <select id="backtest_interval" name="interval" class="backtest-interval-select form-select">
+                {% for item in supported_intervals %}
+                <option value="{{ item }}" {% if item == requested_interval %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
     <div class="field trade-capital-field">
         <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>
         <div class="trade-capital-row">
@@ -112,17 +122,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for row in backtest_result.trades %}
-                            <tr data-trade-index="{{ loop.index0 }}">
-                                <td class="trade-transactions-index">{{ loop.index }}</td>
-                                <td class="trade-transactions-date">{{ row.date }}</td>
-                                <td class="trade-transactions-side">{{ row.side }}</td>
-                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.price) }}</td>
-                                <td class="trade-transactions-number">{{ "{:,}".format(row.shares) }}</td>
-                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.pnl) }}</td>
-                                <td class="trade-transactions-number">{{ "{:,.2f}".format(row.equity) }}</td>
-                            </tr>
-                            {% endfor %}
+                            <!-- Transactions will be rendered by JS with pagination -->
                         </tbody>
                     </table>
                 </div>
@@ -157,4 +157,10 @@
     <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>
     {% endif %}
 </article>
+{% endblock %}
+{% block scripts %}
+<script>
+    window.ANTIGRAVITY_APP = window.ANTIGRAVITY_APP || {};
+    window.ANTIGRAVITY_APP.backtestResult = {{ backtest_result|tojson if backtest_result else 'null' }};
+</script>
 {% endblock %}

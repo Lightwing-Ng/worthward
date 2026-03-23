@@ -331,7 +331,8 @@
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
-			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+			// Match date part only (yyyy-mm-dd) from ISO strings or simple date strings
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
 			if (!match) return null;
 			return {
 				year: Number(match[1]),

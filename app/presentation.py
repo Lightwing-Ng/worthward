@@ -11,11 +11,14 @@ import pandas as pd
 
 def format_period_label(period: str) -> str:
     labels = {
+        "1w": "1 week",
+        "2w": "2 weeks",
         "1mo": "1 month",
         "3mo": "3 months",
         "6mo": "6 months",
         "1y": "1 year",
         "2y": "2 years",
+        "3y": "3 years",
         "5y": "5 years",
         "10y": "10 years",
         "max": "Max",

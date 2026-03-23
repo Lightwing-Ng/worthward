@@ -62,15 +62,16 @@ def _build_win_rate_trade_pairs(
     return _build_trade_pairs(metric_trades)
 
 
-def _build_trade_markers(frame: pd.DataFrame, trades: list[dict[str, object]]) -> tuple[list[bool], list[bool]]:
+def _build_trade_markers(frame: pd.DataFrame, trades: list[dict[str, object]], interval: str = "1d") -> tuple[list[bool], list[bool]]:
     buy_markers = [False] * len(frame)
     sell_markers = [False] * len(frame)
     if frame.empty or not trades:
         return buy_markers, sell_markers
 
+    date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
     date_index_by_key: dict[str, int] = {}
     for index, value in enumerate(frame["Date"].tolist()):
-        date_index_by_key[pd.Timestamp(value).strftime("%Y/%m/%d")] = index
+        date_index_by_key[pd.Timestamp(value).strftime(date_format)] = index
 
     for trade in trades:
         trade_date = str(trade.get("date", ""))
@@ -90,11 +91,13 @@ def run_single_ticker_backtest(
     signal_result: StrategySignalResult,
     initial_capital: float,
     execution_mode: str = "signal_close",
+    interval: str = "1d",
 ) -> dict[str, object]:
     frame = signal_result.frame.copy()
     if frame.empty:
         raise ValueError("No market data available for backtest.")
 
+    trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
     cash = float(initial_capital)
     shares = 0
     entry_price = None
@@ -105,7 +108,7 @@ def run_single_ticker_backtest(
     buy_column = signal_result.buy_signal_column
     sell_column = signal_result.sell_signal_column
     pending_order: str | None = None
-
+    is_at_backtest_start = True
     for row in frame.itertuples(index=False):
         trade_date = pd.Timestamp(row.Date)
         open_price = float(getattr(row, "Open", 0.0))
@@ -113,8 +116,28 @@ def run_single_ticker_backtest(
         buy_signal = bool(getattr(row, buy_column))
         sell_signal = bool(getattr(row, sell_column))
 
+        # Special Case: Buy-at-Point-Zero for strategies with initial signals (like Buy and Hold)
+        if is_at_backtest_start and buy_signal and shares == 0 and open_price > 0:
+            shares = floor(cash / open_price)
+            if shares > 0:
+                spent = shares * open_price
+                cash -= spent
+                entry_price = open_price
+                trades.append({
+                    "date": trade_date.strftime(trade_date_format),
+                    "side": "Buy",
+                    "price": round(open_price, 4),
+                    "shares": shares,
+                    "pnl": 0.0,
+                    "equity": round(cash + (shares * close_price), 4),
+                })
+            # Important: bypass subsequent signal booking since we entered here
+            buy_signal = False 
+            is_at_backtest_start = False
+
         if normalized_execution_mode == "next_open" and pending_order:
             execution_price = open_price if open_price > 0 else close_price
+            
             if pending_order == "buy" and shares == 0 and execution_price > 0:
                 shares = floor(cash / execution_price)
                 if shares > 0:
@@ -122,19 +145,20 @@ def run_single_ticker_backtest(
                     cash -= spent
                     entry_price = execution_price
                     trades.append({
-                        "date": trade_date.strftime("%Y/%m/%d"),
+                        "date": trade_date.strftime(trade_date_format),
                         "side": "Buy",
                         "price": round(execution_price, 4),
                         "shares": shares,
                         "pnl": 0.0,
                         "equity": round(cash + (shares * close_price), 4),
                     })
+                pending_order = None
             elif pending_order == "sell" and shares > 0 and execution_price > 0:
                 proceeds = shares * execution_price
                 pnl = proceeds - (shares * float(entry_price or execution_price))
                 cash += proceeds
                 trades.append({
-                    "date": trade_date.strftime("%Y/%m/%d"),
+                    "date": trade_date.strftime(trade_date_format),
                     "side": "Sell",
                     "price": round(execution_price, 4),
                     "shares": shares,
@@ -143,7 +167,7 @@ def run_single_ticker_backtest(
                 })
                 shares = 0
                 entry_price = None
-            pending_order = None
+                pending_order = None
 
         if normalized_execution_mode == "signal_close":
             if buy_signal and shares == 0 and close_price > 0:
@@ -153,7 +177,7 @@ def run_single_ticker_backtest(
                     cash -= spent
                     entry_price = close_price
                     trades.append({
-                        "date": trade_date.strftime("%Y/%m/%d"),
+                        "date": trade_date.strftime(trade_date_format),
                         "side": "Buy",
                         "price": round(close_price, 4),
                         "shares": shares,
@@ -165,7 +189,7 @@ def run_single_ticker_backtest(
                 pnl = proceeds - (shares * float(entry_price or close_price))
                 cash += proceeds
                 trades.append({
-                    "date": trade_date.strftime("%Y/%m/%d"),
+                    "date": trade_date.strftime(trade_date_format),
                     "side": "Sell",
                     "price": round(close_price, 4),
                     "shares": shares,
@@ -189,11 +213,12 @@ def run_single_ticker_backtest(
     final_trade_date = pd.Timestamp(frame["Date"].iloc[-1])
     trade_pairs = _build_win_rate_trade_pairs(trades, final_close_price, final_trade_date, shares)
     wins = [pair for pair in trade_pairs if _is_winning_trade_pair(*pair)]
-    buy_markers, sell_markers = _build_trade_markers(frame, trades)
+    buy_markers, sell_markers = _build_trade_markers(frame, trades, interval)
     final_equity = float(frame["Equity"].iloc[-1])
     total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
 
     return {
+        "interval": interval,
         "summary": {
             "initial_capital": round(float(initial_capital), 2),
             "final_equity": round(final_equity, 2),
@@ -204,7 +229,10 @@ def run_single_ticker_backtest(
         },
         "chart": {
             "dates": frame["Date"].map(_format_display_date).tolist(),
-            "raw_dates": [pd.Timestamp(value).strftime("%Y-%m-%d") for value in frame["Date"].tolist()],
+            "raw_dates": [pd.Timestamp(value).isoformat() for value in frame["Date"].tolist()],
+            "open": [round(float(getattr(row, "Open", row.Close)), 4) for row in frame.itertuples(index=False)],
+            "high": [round(float(getattr(row, "High", row.Close)), 4) for row in frame.itertuples(index=False)],
+            "low": [round(float(getattr(row, "Low", row.Close)), 4) for row in frame.itertuples(index=False)],
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
             "buy_markers": buy_markers,

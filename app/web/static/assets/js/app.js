@@ -2073,6 +2073,7 @@
 			closePanel();
 			input.focus();
 			syncDateConstraints();
+			if (isBacktestView) syncBacktestIntervals();
 			scheduleAutoSubmit(120);
 		};
 
@@ -2210,6 +2211,7 @@
 			validateAllTickerInputs();
 			void validateTickerExistence(input, { preferFresh: true });
 			syncDateConstraints();
+			if (isBacktestView) syncBacktestIntervals();
 			scheduleAutoSubmit();
 		});
 	};
@@ -2793,8 +2795,10 @@
 		}
 
 		if (isBacktestView) {
+			const intervalSelect = $("#backtest_interval");
 			const strategySelect = $("#trade_strategy");
 			const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
+			if (intervalSelect?.value) params.set("interval", intervalSelect.value);
 			if (strategySelect?.value) params.set("strategy", strategySelect.value);
 			if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
 			collectStrategyParamEntries().forEach(([key, value]) => {
@@ -2804,6 +2808,49 @@
 
 		const queryString = params.toString();
 		return queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+	};
+
+	const syncBacktestIntervals = async () => {
+		if (!isBacktestView) return;
+		const tickerInput = getTickerInputs()[0];
+		if (!tickerInput) return;
+		const ticker = sanitizeTicker(tickerInput.value.trim());
+		if (!ticker) return;
+
+		try {
+			const params = new URLSearchParams({ ticker });
+			const response = await fetch(`${endpoints.marketStorePresence}?${params.toString()}`, { credentials: "same-origin" });
+			if (!response.ok) return;
+			const payload = await response.json();
+			const has1m = payload.has1m && payload.has1m[ticker];
+			
+			const intervalSelect = document.getElementById("backtest_interval");
+			if (intervalSelect) {
+				const currentInterval = intervalSelect.value;
+				const options = ["1d"];
+				if (has1m) options.push("1m");
+				
+				// Keep current value if possible
+				intervalSelect.innerHTML = "";
+				// Order: 1d, 1m (if exists) or reverse? Let's use 1d, 1m.
+				options.forEach(opt => {
+					const el = document.createElement("option");
+					el.value = opt;
+					el.textContent = opt;
+					if (opt === currentInterval) el.selected = true;
+					intervalSelect.appendChild(el);
+				});
+
+				const nextInterval = intervalSelect.value;
+				if (currentInterval === "1m" && !has1m) {
+					intervalSelect.value = "1d";
+					intervalSelect.dispatchEvent(new Event("change"));
+				} else if (currentInterval !== nextInterval) {
+					intervalSelect.dispatchEvent(new Event("change"));
+				}
+			}
+		} catch (_error) {
+		}
 	};
 
 	const syncDateConstraints = async () => {
@@ -2901,6 +2948,57 @@
 	$("#period")?.addEventListener("change", () => {
 		if (!isBacktestView) requestWorkspaceChartTransition("period");
 		scheduleAutoSubmit();
+	});
+	$("#backtest_interval")?.addEventListener("change", (event) => {
+		const interval = event.target.value;
+		const periodSelect = document.getElementById("period");
+		if (periodSelect) {
+			const currentPeriod = periodSelect.value;
+			const options1d = [
+				{ value: "1mo", label: "1 month" },
+				{ value: "3mo", label: "3 months" },
+				{ value: "6mo", label: "6 months" },
+				{ value: "1y", label: "1 year" },
+				{ value: "2y", label: "2 years" },
+				{ value: "3y", label: "3 years" },
+				{ value: "5y", label: "5 years" },
+				{ value: "10y", label: "10 years" },
+				{ value: "max", label: "Max" }
+			];
+			const options1m = [
+				{ value: "1w", label: "1 week" },
+				{ value: "2w", label: "2 weeks" },
+				{ value: "1mo", label: "1 month" },
+				{ value: "3mo", label: "3 months" },
+				{ value: "6mo", label: "6 months" },
+				{ value: "1y", label: "1 year" }
+			];
+			
+			const newOptions = interval === "1m" ? options1m : options1d;
+			periodSelect.innerHTML = "";
+			newOptions.forEach(opt => {
+				const el = document.createElement("option");
+				el.value = opt.value;
+				el.textContent = opt.label;
+				if (opt.value === currentPeriod) el.selected = true;
+				periodSelect.appendChild(el);
+			});
+
+			if (interval === "1m") {
+				const allowed = ["1w", "1mo", "3mo", "6mo", "1y"];
+				if (!allowed.includes(periodSelect.value)) {
+					periodSelect.value = "1w";
+				}
+			} else {
+				const allowed = ["1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max"];
+				if (!allowed.includes(periodSelect.value)) {
+					periodSelect.value = "1y";
+				}
+			}
+		}
+		// Force full reload for interval change to refresh sidebar period options
+		isSubmittingWithOverlay = true;
+		scheduleAutoSubmit(20);
 	});
 
 	if (isBacktestView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
@@ -3278,6 +3376,11 @@
 				});
 			}
 			if (state.currentView === "backtest") {
+				showWorkspaceModal({
+					title: "Running Backtest",
+					copy: "Calculating strategy signals and performance metrics. This may take a moment depending on the data resolution and strategy complexity.",
+					iconClass: "icon-hourglass"
+				});
 				captureBacktestRefreshTransition();
 			} else if (pendingWorkspaceChartTransition?.view === state.currentView) {
 				captureLineChartRefreshTransition();

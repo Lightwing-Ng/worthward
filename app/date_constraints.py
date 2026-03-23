@@ -23,7 +23,7 @@ def align_requested_exact_dates(
     min_date = available[0]
     max_date = available[-1]
     start = pd.to_datetime(requested_start).normalize() if requested_start else min_date
-    end = pd.to_datetime(requested_end).normalize() if requested_end else max_date
+    end = pd.to_datetime(requested_end).replace(hour=23, minute=59, second=59) if requested_end else max_date
 
     adjusted = False
     if start < min_date:
