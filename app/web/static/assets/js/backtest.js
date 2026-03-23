@@ -317,7 +317,7 @@
 
 				const columnWidth = (chartArea.right - chartArea.left) / labels.length;
 				const candleWidth = Math.min(20, Math.max(1.5, columnWidth * 0.72));
-				const wickWidth = 1.25;
+				const wickWidth = 1;
 
 				ctx.save();
 				meta.data.forEach((point, i) => {

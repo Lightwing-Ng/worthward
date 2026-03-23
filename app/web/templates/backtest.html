@@ -82,6 +82,9 @@
 {% block workspace_content %}
 <div class="workspace-header">
     <article class="report-card trade-performance-card">
+        <button type="button" class="export-transactions-button" id="export_transactions_button" aria-label="Export Transactions" title="Export Transactions" hidden>
+            <span class="icon" style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
+        </button>
         <div class="report-heading-row">
             <p class="report-heading">{{ labels.backtest_metrics }}</p>
         </div>

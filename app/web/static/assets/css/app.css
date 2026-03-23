@@ -1,7 +1,7 @@
 /* Code version: v3.21.6 */
 :root {
 	color-scheme: var(--color-scheme);
-	--sidebar-form-gap: 10px;
+	--sidebar-form-gap: 2px;
 	--bg: var(--theme-background);
 	--panel: var(--theme-panel);
 	--panel-strong: var(--theme-panel-strong);
@@ -2833,7 +2833,39 @@ div.style-token-modal-demo {
 	row-gap: 10px;
 	min-height: calc(var(--trade-detail-track-height) + var(--trade-detail-panel-height) + 68px);
 	overflow: hidden;
-	align-content: start;
+    align-content: start;
+    position: relative;
+}
+.export-transactions-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    border: 0;
+    background: var(--glass-surface-background-dense);
+    color: #0055cc;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: var(--layer-surface-content);
+    transition: background 180ms var(--motion-standard), transform 180ms var(--motion-standard);
+}
+.export-transactions-button:hover { background: var(--glass-chip-background-hover); transform: translateY(-1px); }
+.export-transactions-button:active { transform: translateY(0); }
+.export-transactions-button .icon {
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    mask-repeat: no-repeat;
+    -webkit-mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-position: center;
+    mask-size: contain;
+    -webkit-mask-size: contain;
 }
 .trade-detail-tabs { display: grid; grid-template-rows: var(--trade-detail-track-height) var(--trade-detail-panel-height); gap: 10px; justify-items: center; min-height: 0; min-width: 0; align-content: start; overflow: hidden; }
 .trade-detail-shell { width: min(320px, 100%); max-width: 320px; margin: 0 auto; min-height: var(--trade-detail-track-height); }

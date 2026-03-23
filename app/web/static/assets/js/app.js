@@ -256,6 +256,10 @@
 			panels.forEach((panel) => {
 				panel.hidden = panel.dataset.tradeDetailPanel !== active;
 			});
+			const exportButton = document.getElementById("export_transactions_button");
+			if (exportButton) {
+				exportButton.hidden = (active !== "transactions");
+			}
 		};
 		shell.querySelectorAll('input[name="trade_detail_tab"]').forEach((input) => {
 			if (input.dataset.bound === "1") return;
@@ -528,9 +532,20 @@
 		return Array.isArray(payload?.missingHistory) ? payload.missingHistory : [];
 	};
 
+	const attachExportButtonHandler = () => {
+		const button = document.getElementById("export_transactions_button");
+		if (!button || button.dataset.bound === "1") return;
+		button.dataset.bound = "1";
+		button.addEventListener("click", () => {
+			const exportUrl = "/api/export-transactions" + window.location.search;
+			window.location.assign(exportUrl);
+		});
+	};
+
 	const initializeWorkspaceEnhancements = () => {
 		attachNoticeHandlers();
 		attachTradeDetailTabs();
+		attachExportButtonHandler();
 		attachNetworkRefreshButton();
 		attachStyleTokenResizer();
 		attachStyleTokenControls();

@@ -5,15 +5,14 @@ Code version: v3.31.11
 """
 
 from __future__ import annotations
-
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
+from io import BytesIO
 from typing import Any
 from urllib.parse import urlencode
-
 import pandas as pd
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for, send_file
 
 from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from .broker_market_data import (
@@ -382,6 +381,74 @@ def register_routes(app: Flask) -> None:
     def format_strategy_category_label(category: str) -> str:
         normalized = (category or "general").strip().lower()
         return STRATEGY_CATEGORY_LABELS.get(normalized, normalized.replace("-", " ").title())
+
+    def _run_backtest_from_request():
+        backtest_execution_mode = load_backtest_execution_mode()
+        requested_tickers = parse_requested_tickers()
+        if not requested_tickers:
+            raise ValueError("No ticker selected for backtest.")
+        trade_ticker = validate_ticker_or_raise(requested_tickers[0])
+        include_dividends = parse_bool_flag("dividends", "include_dividends")
+        range_mode = request.args.get("range", defaults.get("range_mode", "period")).strip().lower()
+        period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
+        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
+        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        supported_intervals = ["1d"]
+        if has_recent_one_minute_store(trade_ticker):
+            supported_intervals.append("1m")
+        requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
+        if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
+            requested_interval = "1m"
+        if requested_interval not in supported_intervals:
+            requested_interval = supported_intervals[0]
+        trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
+        
+        if requested_interval == "1m":
+            one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
+            trade_dataset = trade_dataset[trade_dataset["Date"] >= one_year_ago.tz_localize(None)]
+            
+        date_constraints = build_date_constraint_payload(
+            trade_dataset,
+            requested_start=exact_start or None,
+            requested_end=exact_end or None,
+        )
+        if range_mode == "exact":
+            if not date_constraints.trading_dates:
+                raise ValueError("The selected exact range does not contain trading dates.")
+            aligned_start = pd.to_datetime(date_constraints.adjusted_start)
+            aligned_end = pd.to_datetime(date_constraints.adjusted_end).replace(hour=23, minute=59, second=59)
+            trade_dataset = trade_dataset[
+                (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
+            ].copy()
+            if trade_dataset.empty:
+                raise ValueError("The selected exact range does not contain trading dates.")
+        else:
+            common_end_date = trade_dataset["Date"].max()
+            trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
+            
+        strategy_options = list_enabled_strategies()
+        selected_strategy_id = request.args.get("strategy", defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")).strip()
+        strategy_ids = {str(item["id"]) for item in strategy_options}
+        if selected_strategy_id not in strategy_ids and strategy_options:
+            selected_strategy_id = str(strategy_options[0]["id"])
+        selected_strategy_params = collect_strategy_form_values(selected_strategy_id) if selected_strategy_id else {}
+        backtest_initial_capital = max(
+            parse_float_value(
+                request.args.get("capital", request.args.get("initial_capital")),
+                float(defaults.get("backtest_capital", 10000.0)),
+            ),
+            1.0,
+        )
+        
+        strategy = instantiate_strategy(selected_strategy_id)
+        signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
+        backtest_result = run_single_ticker_backtest(
+            signal_result,
+            backtest_initial_capital,
+            execution_mode=backtest_execution_mode,
+            interval=requested_interval,
+        )
+        return backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
         grouped: dict[str, list[dict[str, object]]] = {}
@@ -1247,50 +1314,16 @@ def register_routes(app: Flask) -> None:
 
         try:
             if current_view == "backtest":
-                if not requested_tickers:
-                    raise ValueError("")
-                trade_ticker = validate_ticker_or_raise(requested_tickers[0])
+                backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset = _run_backtest_from_request()
                 ticker_slots = [trade_ticker]
-                trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
-                
-                if requested_interval == "1m":
-                    one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
-                    trade_dataset = trade_dataset[trade_dataset["Date"] >= one_year_ago.tz_localize(None)]
-
                 profiles = [fetch_quote_profile(trade_ticker, False)]
-                date_constraints = build_date_constraint_payload(
-                    trade_dataset,
-                    requested_start=exact_start or None,
-                    requested_end=exact_end or None,
-                )
+                exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
+                exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
                 if range_mode == "exact":
-                    if not date_constraints.trading_dates:
-                        raise ValueError("The selected exact range does not contain trading dates.")
-                    aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-                    aligned_end = pd.to_datetime(date_constraints.adjusted_end).replace(hour=23, minute=59, second=59)
-                    trade_dataset = trade_dataset[
-                        (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
-                    ].copy()
-                    if trade_dataset.empty:
-                        raise ValueError("The selected exact range does not contain trading dates.")
-                    exact_start_value = date_constraints.adjusted_start or exact_start
-                    exact_end_value = date_constraints.adjusted_end or exact_end
                     period_label = "Exact range"
                 else:
-                    common_end_date = trade_dataset["Date"].max()
-                    trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
-                    exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
-                    exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
                     period_label = format_period_label(period)
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
-                strategy = instantiate_strategy(selected_strategy_id)
-                signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
-                backtest_result = run_single_ticker_backtest(
-                    signal_result,
-                    backtest_initial_capital,
-                    execution_mode=backtest_execution_mode,
-                    interval=requested_interval,
-                )
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
@@ -1698,6 +1731,49 @@ def register_routes(app: Flask) -> None:
                 "marketStorePresence": "/api/market-store/presence",
             },
         )
+
+    @app.get("/api/export-transactions")
+    def export_transactions_api():
+        try:
+            # Re-run backtest to get the full transaction list
+            backtest_result, trade_ticker, *remaining = _run_backtest_from_request()
+            
+            trades = backtest_result.get("trades", [])
+            if not trades:
+                return "No transactions to export.", 404
+
+            df = pd.DataFrame(trades)
+            
+            # Format numbers to be strings to control appearance in Excel
+            for col in ["price", "pnl", "equity"]:
+                if col in df.columns:
+                    df[col] = df[col].apply(lambda x: f"{x:,.2f}")
+            if "shares" in df.columns:
+                    df["shares"] = df["shares"].apply(lambda x: f"{x:,.0f}")
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Transactions')
+                worksheet = writer.sheets['Transactions']
+                # Auto-adjust columns
+                for idx, col in enumerate(df):
+                    series = df[col]
+                    max_len = max((
+                        series.astype(str).map(len).max(),
+                        len(str(series.name))
+                    )) + 2
+                    worksheet.column_dimensions[chr(65 + idx)].width = max_len
+
+            output.seek(0)
+            
+            return send_file(
+                output,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f"{trade_ticker}_transactions.xlsx"
+            )
+        except Exception as exc:
+            return str(exc), 500
 
     @app.get("/")
     def root():
