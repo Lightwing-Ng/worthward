@@ -1757,7 +1757,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 }
 .chart-tooltip { position: absolute; pointer-events: none; transform: none; min-width: 164px; max-width: min(260px, calc(100% - 24px)); padding: 10px 12px; opacity: 0; transition: opacity 120ms var(--motion-standard); z-index: var(--layer-chart-tooltip); }
 .chart-tooltip.is-visible { opacity: 1; }
-.chart-tooltip-date { margin: 0 0 8px; font-size: var(--font-form-label); line-height: 1.2; color: var(--text); font-weight: var(--font-weight-regular); }
+.chart-tooltip-date { margin: 0 0 8px; font-size: var(--font-size-5); line-height: 1.2; color: var(--text); font-weight: var(--font-weight-regular); }
 .chart-tooltip-list { display: grid; gap: 6px; }
 .chart-tooltip-row { display: grid; grid-template-columns: 10px var(--logo-tooltip-size) minmax(86px, auto) minmax(72px, auto); align-items: center; column-gap: 8px; font-size: var(--font-table-body); line-height: 1.2; font-variant-numeric: tabular-nums; }
 .chart-tooltip-dot { width: 8px; height: 8px; border-radius: var(--radius-soft); }

@@ -153,19 +153,8 @@ def run_single_ticker_backtest(
                         "equity": round(cash + (shares * close_price), 4),
                     })
                 buy_signal = False 
+            # Do NOT allow short selling when starting with zero shares (long-only)
             elif sell_signal:
-                shares = -floor(cash / open_price)
-                if shares < 0:
-                    cash += (abs(shares) * open_price)
-                    entry_price = open_price
-                    trades.append({
-                        "date": trade_date.strftime(trade_date_format),
-                        "side": "Sell",
-                        "price": round(open_price, 4),
-                        "shares": abs(shares),
-                        "pnl": 0.0,
-                        "equity": round(cash + (shares * close_price), 4),
-                    })
                 sell_signal = False
             is_at_backtest_start = False
 
@@ -217,19 +206,7 @@ def run_single_ticker_backtest(
                     })
                     shares = 0
                     entry_price = None
-                elif shares == 0: # Entry Short
-                    shares = -floor(cash / execution_price)
-                    if shares < 0:
-                        cash += (abs(shares) * execution_price)
-                        entry_price = execution_price
-                        trades.append({
-                            "date": trade_date.strftime(trade_date_format),
-                            "side": "Sell",
-                            "price": round(execution_price, 4),
-                            "shares": abs(shares),
-                            "pnl": 0.0,
-                            "equity": round(cash + (shares * close_price), 4),
-                        })
+                # Do NOT allow entry short in long-only mode
                 pending_order = None
 
         if normalized_execution_mode == "signal_close":
@@ -277,24 +254,12 @@ def run_single_ticker_backtest(
                     })
                     shares = 0
                     entry_price = None
-                elif shares == 0: # Entry Short
-                    shares = -floor(cash / close_price)
-                    if shares < 0:
-                        cash += (abs(shares) * close_price)
-                        entry_price = close_price
-                        trades.append({
-                            "date": trade_date.strftime(trade_date_format),
-                            "side": "Sell",
-                            "price": round(close_price, 4),
-                            "shares": abs(shares),
-                            "pnl": 0.0,
-                            "equity": round(cash + (shares * close_price), 4),
-                        })
+                # Do NOT allow entry short in long-only mode
         else:
             if buy_signal and pending_order is None:
                 if shares <= 0: pending_order = "buy"
             elif sell_signal and pending_order is None:
-                if shares >= 0: pending_order = "sell"
+                if shares > 0: pending_order = "sell"
 
         equity_points.append(cash + (shares * close_price))
 

@@ -68,12 +68,12 @@ class MacdStrategy(BaseStrategy):
         previous_macd = frame["macd_line"].shift(1)
         previous_signal = frame["signal_line"].shift(1)
         frame["buy_signal"] = (
-            (frame["macd_line"] > frame["signal_line"])
-            & (previous_macd <= previous_signal)
+                (frame["macd_line"] > frame["signal_line"])
+                & (previous_macd <= previous_signal)
         ).fillna(False)
         frame["sell_signal"] = (
-            (frame["macd_line"] < frame["signal_line"])
-            & (previous_macd >= previous_signal)
+                (frame["macd_line"] < frame["signal_line"])
+                & (previous_macd >= previous_signal)
         ).fillna(False)
 
         return StrategySignalResult(
