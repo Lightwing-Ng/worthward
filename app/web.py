@@ -9,6 +9,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 import pandas as pd
@@ -42,7 +43,7 @@ from .email_settings import (
 )
 from strategies.backtest import run_single_ticker_backtest
 from strategies.base import StrategyParameterDefinition
-from strategies.loader import instantiate_strategy, list_enabled_strategies
+from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
 from .connectivity import (
     fetch_tradingview_metrics,
     has_google_hk_access,
@@ -450,7 +451,7 @@ def register_routes(app: Flask) -> None:
             execution_mode=backtest_execution_mode,
             interval=requested_interval,
         )
-        return backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset
+        return backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
         grouped: dict[str, list[dict[str, object]]] = {}
@@ -1317,7 +1318,7 @@ def register_routes(app: Flask) -> None:
 
         try:
             if current_view == "backtest":
-                backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset = _run_backtest_from_request()
+                backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _run_backtest_from_request()
                 ticker_slots = [trade_ticker]
                 profiles = [fetch_quote_profile(trade_ticker, False)]
                 exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
@@ -1739,41 +1740,93 @@ def register_routes(app: Flask) -> None:
     def export_transactions_api():
         try:
             # Re-run backtest to get the full transaction list
-            backtest_result, trade_ticker, *remaining = _run_backtest_from_request()
+            backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, strategy_id, strategy_params = _run_backtest_from_request()
             
+            summary = backtest_result.get("summary", {})
             trades = backtest_result.get("trades", [])
             if not trades:
                 return "No transactions to export.", 404
 
-            df = pd.DataFrame(trades)
+            strategy_definition = get_strategy_definition(strategy_id)
+            # 0. Context for Filename
+            start_str = trade_dataset["Date"].min().strftime("%Y%m%d")
+            end_str = trade_dataset["Date"].max().strftime("%Y%m%d")
+            strategy_name = strategy_definition.get('name', strategy_id)
+            report_filename = f"{trade_ticker} Backtest Report {start_str} - {end_str} ({strategy_name}).md"
+
+            # 1. Performance Summary
+            md_lines = [
+                f"## Backtest Report: {trade_ticker}",
+                f"**Generated on**: {pd.Timestamp.now().strftime('%d %b %Y %H:%M:%S HKT')}",
+                "",
+                "### Performance Summary",
+                f"- **Final Net Return**: {summary.get('net_return_pct', 0):,.2f}%",
+                f"- **Final Equity**: ${summary.get('final_equity', 0):,.2f}",
+                f"- **Max Drawdown**: {summary.get('max_drawdown_pct', 0):,.2f}%",
+                f"- **Win Rate**: {summary.get('win_rate_pct', 0):,.2f}%",
+                f"- **Alpha vs Buy-and-Hold**: ${summary.get('benchmark_alpha', 0):,.2f}",
+                f"- **Realized Long P&L**: ${summary.get('long_gain', 0):,.2f}",
+                f"- **Realized Short P&L**: ${summary.get('short_gain', 0):,.2f}",
+                f"- **Total Trade Cycles**: {summary.get('trade_count', 0)}",
+                f"- **Initial Capital**: ${summary.get('initial_capital', 0):,.2f}",
+                "",
+            ]
+
+            # 2. Transaction Details
+            md_lines.extend([
+                "### Transaction History",
+                "",
+                "| No. | Date | Side | Price | Shares | P&L | Equity |",
+                "| ---: | :--- | :--- | ---: | ---: | ---: | ---: |"
+            ])
+            for i, trade in enumerate(trades):
+                trade_date = pd.to_datetime(trade.get('date')).strftime('%Y/%m/%d %H:%M') if trade.get('date') else "N/A"
+                md_lines.append(
+                    f"| {i+1} | {trade_date} | {trade.get('side')} | "
+                    f"{trade.get('price'):,.2f} | {trade.get('shares'):,.0f} | "
+                    f"{trade.get('pnl', 0):,.2f} | {trade.get('equity'):,.2f} |"
+                )
+
+            # 3. Strategy Context
+            md_lines.extend([
+                "",
+                "### Strategy Context",
+                f"**Algorithm**: {strategy_name}",
+                "",
+                "#### Parameters",
+                "| Parameter | Value |",
+                "| :--- | :--- |"
+            ])
+            for key, val in strategy_params.items():
+                md_lines.append(f"| {key} | {val} |")
             
-            # Format numbers to be strings to control appearance in Excel
-            for col in ["price", "pnl", "equity"]:
-                if col in df.columns:
-                    df[col] = df[col].apply(lambda x: f"{x:,.2f}")
-            if "shares" in df.columns:
-                    df["shares"] = df["shares"].apply(lambda x: f"{x:,.0f}")
+            # Read Strategy Code
+            try:
+                module_name = strategy_definition.get("module", "")
+                if module_name:
+                    file_name = module_name.split(".")[-1] + ".py"
+                    algo_path = Path(__file__).resolve().parent.parent / "strategies" / "algorithms" / file_name
+                    if algo_path.exists():
+                        with open(algo_path, "r", encoding="utf-8") as f:
+                            strategy_code = f.read()
+                        md_lines.extend([
+                            "",
+                            "#### Strategy Implementation",
+                            "```python",
+                            strategy_code,
+                            "```",
+                            ""
+                        ])
+            except Exception as e:
+                md_lines.append(f"\n*(Failed to load strategy source: {str(e)})*")
 
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Transactions')
-                worksheet = writer.sheets['Transactions']
-                # Auto-adjust columns
-                for idx, col in enumerate(df):
-                    series = df[col]
-                    max_len = max((
-                        series.astype(str).map(len).max(),
-                        len(str(series.name))
-                    )) + 2
-                    worksheet.column_dimensions[chr(65 + idx)].width = max_len
-
-            output.seek(0)
+            md_content = "\n".join(md_lines)
             
             return send_file(
-                output,
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                BytesIO(md_content.encode("utf-8")),
+                mimetype='text/markdown',
                 as_attachment=True,
-                download_name=f"{trade_ticker}_transactions.xlsx"
+                download_name=report_filename
             )
         except Exception as exc:
             return str(exc), 500

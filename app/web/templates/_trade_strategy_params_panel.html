@@ -12,10 +12,6 @@
             </span>
         </label>
         <div class="trade-strategy-number-field">
-            <div class="trade-strategy-stepper" aria-hidden="true">
-                <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="up" aria-label="Increase value">▲</button>
-                <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="down" aria-label="Decrease value">▼</button>
-            </div>
             <div class="trade-strategy-number-row">
                 <input
                     id="strategy_param_{{ field.key }}"
@@ -30,6 +26,10 @@
                     {% if field.step is not none %}step="{{ field.step }}"{% endif %}
                     {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
                 >
+            </div>
+            <div class="trade-strategy-stepper" aria-hidden="true">
+                <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="up" aria-label="Increase value">▲</button>
+                <button type="button" class="trade-strategy-stepper-button" data-strategy-stepper="down" aria-label="Decrease value">▼</button>
             </div>
         </div>
         {% elif field.field_type == "switch" %}
@@ -68,16 +68,19 @@
                 {% endif %}
             </span>
         </label>
-        <div class="strategy-param-text-control">
-            <input
-                id="strategy_param_{{ field.key }}"
-                name="{{ field.key }}"
-                data-strategy-param-input="text"
-                type="text"
-                value="{{ field.value }}"
-                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
-                {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
-            >
+        <div class="trade-strategy-number-field">
+            <div class="trade-strategy-number-row">
+                <input
+                    id="strategy_param_{{ field.key }}"
+                    name="{{ field.key }}"
+                    data-strategy-param-input="text"
+                    type="text"
+                    value="{{ field.value }}"
+                    {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
+                    {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
+                >
+            </div>
+            <div class="trade-strategy-stepper-spacer" aria-hidden="true"></div>
         </div>
         {% else %}
         <label class="trade-strategy-param-label" for="strategy_param_{{ field.key }}">
@@ -88,17 +91,22 @@
                 {% endif %}
             </span>
         </label>
-        <select
-            id="strategy_param_{{ field.key }}"
-            name="{{ field.key }}"
-            class="trade-strategy-param-select form-select"
-            data-strategy-param-input="select"
-            {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
-        >
-            {% for option in field.options %}
-            <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
-            {% endfor %}
-        </select>
+        <div class="trade-strategy-number-field">
+            <div class="trade-strategy-number-row">
+                <select
+                    id="strategy_param_{{ field.key }}"
+                    name="{{ field.key }}"
+                    class="trade-strategy-param-select form-select"
+                    data-strategy-param-input="select"
+                    {% if field.help_text %}title="{{ field.help_text }}"{% endif %}
+                >
+                    {% for option in field.options %}
+                    <option value="{{ option }}" {% if option == field.value %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="trade-strategy-stepper-spacer" aria-hidden="true"></div>
+        </div>
         {% endif %}
     </div>
     {% endfor %}
