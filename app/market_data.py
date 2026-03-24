@@ -114,8 +114,47 @@ def refresh_history_store(ticker: str) -> Path:
     if not has_remote_market_access():
         raise ValueError("Remote market access is unavailable.")
 
+    path = history_store_path_for(ticker)
+    
+    start_date = None
+    existing_df = None
+    if path.exists():
+        try:
+            existing_df = pd.read_parquet(path)
+            if not existing_df.empty:
+                # Get the max date and go back 1 day to ensure overlap and consistency
+                max_date = pd.to_datetime(existing_df["Date"].max())
+                start_date = (max_date - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        except:
+            pass
+            
+    if start_date:
+        # Incremental download logic
+        try:
+            new_history = yf.download(
+                tickers=ticker,
+                start=start_date,
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                multi_level_index=False,
+                threads=False,
+                timeout=12,
+            )
+            if not new_history.empty:
+                new_df = normalize_history_frame(new_history, ticker)
+                if existing_df is not None:
+                    # Merge and drop duplicates, keeping newer data for the overlap
+                    combined = pd.concat([existing_df, new_df])
+                    combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+                    combined.to_parquet(path, index=False)
+                    return path
+        except:
+            # Fallback to full download if incremental fails
+            pass
+
+    # Fallback / Initial download
     history = download_full_history(ticker)
     normalized_dataset = normalize_history_frame(history, ticker)
-    path = history_store_path_for(ticker)
     normalized_dataset.to_parquet(path, index=False)
     return path
