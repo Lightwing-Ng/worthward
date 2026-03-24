@@ -165,8 +165,9 @@
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const buyMarkers = backtestResult.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
 		const sellMarkers = backtestResult.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
-		const allInShares = close.length && close[0] > 0 ? Math.floor(initialCapital / close[0]) : 0;
-		const allInCash = initialCapital - (allInShares * (close[0] || 0));
+		const firstOpen = open.length > 0 ? open[0] : (close.length > 0 ? close[0] : 0);
+		const allInShares = firstOpen > 0 ? Math.floor(initialCapital / firstOpen) : 0;
+		const allInCash = initialCapital - (allInShares * firstOpen);
 		const allInEquity = close.map((value) => Number((allInCash + (allInShares * value)).toFixed(4)));
 
 		const axisLineColor = "rgba(160, 167, 178, 0.85)";
