@@ -331,20 +331,41 @@
 		});
 		const syncHandleY = () => {
 			const rect = shell.getBoundingClientRect();
+			if (!rect.height) return;
+			// Use the visible portion of the resizer bar within the viewport
 			const visibleTop = Math.max(0, rect.top);
 			const visibleBottom = Math.min(window.innerHeight, rect.bottom);
-			const visibleCenterY = visibleTop + (visibleBottom - visibleTop) / 2;
+			const visibleHeight = visibleBottom - visibleTop;
+			if (visibleHeight <= 0) return;
+			
+			const visibleCenterY = visibleTop + (visibleHeight / 2);
 			let targetY = visibleCenterY - rect.top;
-			targetY = Math.max(16, targetY);
+			
+			// Clamp to ensure it doesn't go off the edges (with 16px buffer)
+			targetY = Math.min(Math.max(16, targetY), rect.height - 16);
 			shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
 		};
+
+		// Track viewport and container changes for centering
 		window.addEventListener("scroll", syncHandleY, { passive: true });
 		window.addEventListener("resize", () => {
 			syncWidthToViewport();
 			syncHandleY();
 		}, { passive: true });
+		
+		// Also track shell size changes (e.g. when meta list expands)
+		if (window.ResizeObserver) {
+			const ro = new ResizeObserver(() => {
+				syncHandleY();
+			});
+			ro.observe(shell);
+		}
+
 		syncWidthToViewport();
 		syncHandleY();
+		
+		// Delay a sync to compensate for layout settling
+		setTimeout(syncHandleY, 150);
 	};
 
 	const attachStyleTokenControls = () => {

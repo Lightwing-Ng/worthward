@@ -47,7 +47,7 @@
 	--settings-general-panel-border: 1px solid rgba(15, 23, 42, 0.06);
 	--style-token-demo-width: 360px;
 	--style-token-column-gap: 24px;
-	--style-token-resizer-width: 16px;
+	--style-token-resizer-width: 32px;
 	--style-token-divider-gap: 24px;
 	--local-store-pagination-slot-size: 30px;
 	--local-store-pagination-button-radius: 999px;
@@ -2120,6 +2120,8 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .style-token-demo {
 	width: min(100%, var(--style-token-demo-width-current));
 	transition: width 320ms var(--motion-inertial);
+	position: relative;
+	overflow: hidden;
 }
 .style-token-title {
 	margin: 0 0 8px;
@@ -2230,7 +2232,25 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	padding: 8px 0;
 }
 div.style-token-modal-demo {
-	width: min(420px, 100%);
+	width: 100%;
+	max-width: 420px;
+	box-sizing: border-box;
+}
+.style-token-demo .workspace-modal-dialog,
+.style-token-demo .notice-floating-banner {
+	width: 100% !important;
+	max-width: 100% !important;
+	box-sizing: border-box !important;
+	margin-left: 0 !important;
+	margin-right: 0 !important;
+	left: 0 !important;
+	right: 0 !important;
+}
+.style-token-demo .notice-floating {
+	position: relative;
+	top: 0;
+	right: 0;
+	width: 100%;
 }
 .style-token-stepper-shell {
 	padding: 8px 0;
@@ -2297,6 +2317,8 @@ div.style-token-modal-demo {
 	box-shadow: none;
 	cursor: col-resize;
 	z-index: var(--layer-inline-overlay);
+	touch-action: none;
+	-webkit-tap-highlight-color: transparent;
 }
 .style-token-shell:not(.is-resizing) .style-token-resizer {
 	transition: left 320ms var(--motion-inertial);
@@ -2317,14 +2339,14 @@ div.style-token-modal-demo {
 	position: absolute;
 	top: var(--style-token-resizer-y, 50%);
 	left: 50%;
-	width: 10px;
-	height: 32px;
+	width: 12px;
+	height: 48px;
 	transform: translate(-50%, -50%);
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.88);
-	box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.94);
-	border: 1px solid rgba(148, 163, 184, 0.24);
-	transition: top 320ms var(--motion-inertial);
+	background: rgba(255, 255, 255, 0.94);
+	box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.94);
+	border: 1px solid rgba(148, 163, 184, 0.28);
+	transition: top 420ms var(--motion-inertial);
 	will-change: top;
 }
 .style-token-resizer:hover::after,
@@ -2628,6 +2650,8 @@ div.style-token-modal-demo {
 	z-index: var(--layer-surface-content);
 	width: var(--local-store-pagination-slot-size);
 	height: var(--local-store-pagination-slot-size);
+	flex-shrink: 0;
+	padding: 0;
 	border-radius: var(--local-store-pagination-button-radius);
 	border: var(--local-store-pagination-button-border);
 	color: #0055cc;
