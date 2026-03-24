@@ -18,7 +18,7 @@
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
 	const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
-	const hasInitialResult = isBacktestView
+	let hasInitialResult = isBacktestView
 		? Boolean(state.backtestResult)
 		: Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
@@ -3409,6 +3409,14 @@
 				window.clearTimeout(autoSubmitTimer);
 				autoSubmitTimer = null;
 			}
+			const nextUrl = buildCleanWorkspaceUrl();
+			const currentUrlObj = new URL(window.location.href);
+			const nextUrlObj = new URL(nextUrl, window.location.origin);
+			currentUrlObj.searchParams.sort();
+			nextUrlObj.searchParams.sort();
+			if (hasInitialResult && currentUrlObj.pathname === nextUrlObj.pathname && currentUrlObj.searchParams.toString() === nextUrlObj.searchParams.toString()) {
+				return;
+			}
 			let missingLocalTickers = [];
 			try {
 				missingLocalTickers = await fetchMissingLocalMarketTickers(values);
@@ -3417,7 +3425,6 @@
 			}
 			isSubmittingWithOverlay = true;
 			setFormBusyState(true);
-			const nextUrl = buildCleanWorkspaceUrl();
 			rememberCurrentViewUrl(nextUrl);
 
 			const strategySelect = document.getElementById("trade_strategy");
@@ -3454,6 +3461,7 @@
 			try {
 				const hydrated = await hydrateWorkspaceFromUrl(nextUrl);
 				if (hydrated === false) return;
+				hasInitialResult = true;
 			} catch (error) {
 				console.error("Hydration Error: ", error);
 				if (error?.name === "AbortError") return;

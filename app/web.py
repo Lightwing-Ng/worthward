@@ -12,6 +12,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+import hashlib
 import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for, send_file
 
@@ -119,6 +120,29 @@ def register_routes(app: Flask) -> None:
     chart_config = settings["ui"]["chart"]
     logos = settings["ui"]["logos"]
     app_meta = settings["app"]
+
+    # Backtest result cache: skip redundant computation when config doesn't change
+    _cached_backtest: dict[str, tuple] = {}
+    def _get_backtest_cache_key() -> str:
+        """Generate a cache key from all backtest configuration parameters."""
+        params = [
+            request.args.get("ticker", ""),
+            request.args.get("strategy", ""),
+            request.args.get("capital", ""),
+            request.args.get("period", ""),
+            request.args.get("range", ""),
+            request.args.get("from", ""),
+            request.args.get("to", ""),
+            request.args.get("interval", ""),
+            str(request.args.get("dividends", "")),
+            # Include all strategy parameters in cache key
+            sorted([(k, request.args.get(k, "")) for k in request.args.keys() if k not in {
+                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "dividends",
+                "view", "section", "view", "tickers", "weight",
+            }]),
+        ]
+        key_string = json.dumps(params, sort_keys=True)
+        return hashlib.sha256(key_string.encode("utf-8")).hexdigest()[:16]
 
     def validate_ticker_or_raise(raw_ticker: str) -> str:
         normalized_ticker = normalize_ticker_input(raw_ticker)
@@ -1343,7 +1367,23 @@ def register_routes(app: Flask) -> None:
 
         try:
             if current_view == "backtest":
-                backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _run_backtest_from_request()
+                # Check cache: skip re-computation if config unchanged
+                cache_key = _get_backtest_cache_key()
+                if cache_key in _cached_backtest:
+                    # Cache hit - use cached result directly
+                    backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _cached_backtest[cache_key]
+                else:
+                    # Cache miss - need to recompute and cache
+                    backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _run_backtest_from_request()
+                    _cached_backtest[cache_key] = (
+                        backtest_result, trade_ticker, requested_interval, date_constraints,
+                        trade_dataset, selected_strategy_id, selected_strategy_params
+                    )
+                    # Limit cache size to prevent memory growth (keep last 8 cached results)
+                    if len(_cached_backtest) > 8:
+                        # Remove oldest entry
+                        oldest_key = next(iter(_cached_backtest.keys()))
+                        del _cached_backtest[oldest_key]
                 record_strategy_usage(selected_strategy_id)
                 ticker_slots = [trade_ticker]
                 profiles = [fetch_quote_profile(trade_ticker, False)]
