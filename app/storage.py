@@ -445,11 +445,17 @@ def is_store_entry_fresh(path: Path) -> bool:
     return modified_at >= datetime.now(timezone.utc).date()
 
 
+STRATEGY_USAGE_STORE_PATH = SEARCH_STORE_DIR / "strategy_usage.json"
+
+
 def load_ticker_usage_store() -> dict[str, dict[str, int | str]]:
     ensure_market_store_dir()
     if not TICKER_USAGE_STORE_PATH.exists():
         return {}
-    return json.loads(TICKER_USAGE_STORE_PATH.read_text())
+    try:
+        return json.loads(TICKER_USAGE_STORE_PATH.read_text())
+    except Exception:
+        return {}
 
 
 def record_ticker_usage(tickers: list[str]) -> None:
@@ -482,6 +488,52 @@ def top_used_tickers(query: str = "", limit: int = 5) -> list[str]:
         )
     ranked.sort(key=lambda item: (-item[1], -datetime.fromisoformat(item[2]).timestamp() if item[2] else 0.0, item[0]))
     return [ticker for ticker, _, _ in ranked[:limit]]
+
+
+def load_strategy_usage_store() -> dict[str, dict[str, int | str]]:
+    ensure_market_store_dir()
+    if not STRATEGY_USAGE_STORE_PATH.exists():
+        return {}
+    try:
+        return json.loads(STRATEGY_USAGE_STORE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def record_strategy_usage(strategy_id: str) -> None:
+    ensure_market_store_dir()
+    payload = load_strategy_usage_store()
+    now = datetime.now(timezone.utc).isoformat()
+    current = payload.get(strategy_id, {"count": 0, "last_used_at": now})
+    payload[strategy_id] = {
+        "count": int(current.get("count", 0)) + 1,
+        "last_used_at": now,
+    }
+    STRATEGY_USAGE_STORE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def top_used_strategies(limit: int = 3) -> list[str]:
+    payload = load_strategy_usage_store()
+    ranked: list[tuple[str, int, str]] = []
+    for strategy_id, meta in payload.items():
+        if strategy_id == "buy-and-hold":
+            continue
+        ranked.append(
+            (
+                strategy_id,
+                int(meta.get("count", 0)),
+                str(meta.get("last_used_at", "")),
+            )
+        )
+    # Sort by last_used_at timestamp DESC, then by count DESC
+    ranked.sort(
+        key=lambda item: (
+            -datetime.fromisoformat(item[2]).timestamp() if item[2] else 0.0,
+            -item[1],
+            item[0],
+        )
+    )
+    return [strategy_id for strategy_id, _, _ in ranked[:limit]]
 
 
 def clear_nonhistorical_market_cache() -> dict[str, int]:

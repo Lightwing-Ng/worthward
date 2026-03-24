@@ -17,6 +17,7 @@
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
+	const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
 	const hasInitialResult = isBacktestView
 		? Boolean(state.backtestResult)
 		: Boolean(state.chart?.series?.length);
@@ -3412,6 +3413,17 @@
 			setFormBusyState(true);
 			const nextUrl = buildCleanWorkspaceUrl();
 			rememberCurrentViewUrl(nextUrl);
+
+			const strategySelect = document.getElementById("trade_strategy");
+			if (strategySelect) {
+				const strategyId = strategySelect.value;
+				if (strategyId && strategyId !== "buy-and-hold") {
+					let recent = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
+					recent = [strategyId, ...recent.filter((id) => id !== strategyId)].slice(0, 3);
+					localStorage.setItem(STRATEGY_MEMORY_KEY, JSON.stringify(recent));
+					refreshStrategyDropdownUI();
+				}
+			}
 			if (missingLocalTickers.length) {
 				showWorkspaceModal({
 					title: "Fetching remote market data",
@@ -3507,7 +3519,39 @@
 	void hydrateNetworkStatuses();
 	void hydrateLocalStoreRanges();
 
+	const refreshStrategyDropdownUI = () => {
+		const select = document.getElementById("trade_strategy");
+		if (!select) return;
+		let recentIds = [];
+		try {
+			recentIds = JSON.parse(localStorage.getItem(STRATEGY_MEMORY_KEY) || "[]");
+		} catch (_e) {
+			return;
+		}
+		const recentGroup = select.querySelector('optgroup[data-strategy-group="recent"]');
+		if (!recentGroup) return;
+
+		const currentSelection = select.value;
+		recentGroup.innerHTML = "";
+		recentIds.forEach((id) => {
+			if (id === "buy-and-hold") return;
+			// Find reference option in any other group
+			const reference = select.querySelector(`optgroup:not([data-strategy-group="recent"]) option[value="${id}"]`);
+			if (reference) {
+				const clone = reference.cloneNode(true);
+				recentGroup.appendChild(clone);
+			}
+		});
+
+		recentGroup.hidden = recentGroup.children.length === 0;
+		// Restore selection because DOM change might reset it
+		select.value = currentSelection;
+	};
+
 	window.addEventListener("resize", scheduleDockPosition);
 	window.addEventListener("orientationchange", scheduleDockPosition);
 	window.addEventListener("pageshow", scheduleDockPosition);
+	
+	initializeWorkspaceEnhancements();
+	refreshStrategyDropdownUI();
 })();

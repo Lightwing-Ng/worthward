@@ -613,45 +613,34 @@ class LorentzianClassificationStrategy(BaseStrategy):
             is_bearish_smooth if use_kernel_smoothing else is_bearish_rate.fillna(False)
         ) if use_kernel_filter else pd.Series(True, index=frame.index)
 
+        # Optimization: Use numpy for k-NN search
+        features = np.stack(feature_matrix, axis=1)  # (N, features)
+        training_labels_np = training_labels.astype(np.int64)
         current_signal = NEUTRAL
-        for index in range(len(frame)):
-            start = max(0, index - max_bars_back)
-            last_distance = -1.0
-            distances: list[float] = []
-            predictions: list[int] = []
 
-            current_features = [series[index] for series in feature_matrix]
-            if all(np.isfinite(value) for value in current_features) and index > 0:
-                for history_index in range(start, index):
-                    if history_index % 4 == 0:
-                        distance = 0.0
-                        valid_history = True
-                        for feature_values, current_value in zip(feature_matrix, current_features, strict=True):
-                            historical_value = feature_values[history_index]
-                            if not np.isfinite(historical_value):
-                                valid_history = False
-                                break
-                            distance += math.log1p(abs(current_value - historical_value))
+        for i in range(1, len(frame)):
+            start = max(0, i - max_bars_back)
+            prediction = 0.0
 
-                        if valid_history and distance >= last_distance:
-                            last_distance = distance
-                            distances.append(distance)
-                            predictions.append(int(training_labels[history_index]))
-                            if len(predictions) > neighbors_count:
-                                quartile_index = min(
-                                    len(distances) - 1,
-                                    int(round(neighbors_count * 3 / 4)),
-                                )
-                                last_distance = distances[quartile_index]
-                                distances.pop(0)
-                                predictions.pop(0)
-
-            prediction = float(sum(predictions))
-            prediction_values[index] = prediction
-
-            volatility_ok = (atr_fast.iloc[index] > atr_slow.iloc[index]) if use_volatility_filter else True
-            regime_ok = (regime_series.iloc[index] > regime_threshold) if use_regime_filter else True
-            adx_ok = (adx_series.iloc[index] > adx_threshold) if use_adx_filter else True
+            if np.all(np.isfinite(features[i])):
+                # Vectorized Lorentzian distance: sum(log(1 + abs(F_current - F_history)))
+                hist_features = features[start:i]
+                sub_indices = np.arange(0, len(hist_features), step=4)
+                
+                if len(sub_indices) > 0:
+                    sampled_hist = hist_features[sub_indices]
+                    dist = np.log1p(np.abs(sampled_hist - features[i])).sum(axis=1)
+                    
+                    k = min(neighbors_count, len(dist))
+                    if k > 0:
+                        near_idx = np.argpartition(dist, k - 1)[:k]
+                        actual_indices = start + sub_indices[near_idx]
+                        prediction = float(np.sum(training_labels_np[actual_indices]))
+            
+            prediction_values[i] = prediction
+            volatility_ok = (atr_fast.iloc[i] > atr_slow.iloc[i]) if use_volatility_filter else True
+            regime_ok = (regime_series.iloc[i] > regime_threshold) if use_regime_filter else True
+            adx_ok = (adx_series.iloc[i] > adx_threshold) if use_adx_filter else True
             filter_all = bool(volatility_ok and regime_ok and adx_ok)
 
             if prediction > 0 and filter_all:
@@ -659,7 +648,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             elif prediction < 0 and filter_all:
                 current_signal = SHORT
 
-            signal_values[index] = current_signal
+            signal_values[i] = current_signal
 
         signal_series = pd.Series(signal_values, index=frame.index, dtype="int64")
         signal_changed = signal_series.ne(_shift_int(signal_series, 1, fill_value=NEUTRAL))
@@ -672,17 +661,23 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 bars_held[index] = bars_held[index - 1] + 1
         bars_held_series = pd.Series(bars_held, index=frame.index, dtype="int64")
 
+        # Entry/Exit Logic
         is_held_four_bars = bars_held_series.eq(4)
         is_held_less_than_four_bars = bars_held_series.gt(0) & bars_held_series.lt(4)
+        
         is_buy_signal = signal_series.eq(LONG) & is_ema_uptrend & is_sma_uptrend
         is_sell_signal = signal_series.eq(SHORT) & is_ema_downtrend & is_sma_downtrend
+        
         is_new_buy_signal = is_buy_signal & signal_changed
         is_new_sell_signal = is_sell_signal & signal_changed
-        is_last_signal_buy = _shift_int(signal_series, 4, fill_value=NEUTRAL).eq(LONG) & _shift_bool(is_ema_uptrend, 4) & _shift_bool(is_sma_uptrend, 4)
+        
+        # Look back 4 bars for Signal validation (matching PineScript logic)
+        is_last_signal_buy = _shift_int(signal_series, 4, fill_value=NEUTRAL).eq(LONG)
 
         start_long_trade = is_new_buy_signal & is_bullish & is_ema_uptrend & is_sma_uptrend
         start_short_trade = is_new_sell_signal & is_bearish & is_ema_downtrend & is_sma_downtrend
 
+        # Exit Logic
         bars_since_long_entry = _bars_since(start_long_trade)
         bars_since_bearish_exit = _bars_since(alert_bearish)
         is_valid_long_exit = bars_since_bearish_exit > bars_since_long_entry
@@ -691,17 +686,18 @@ class LorentzianClassificationStrategy(BaseStrategy):
         end_long_trade_strict = (
             (
                 (is_held_four_bars & is_last_signal_buy)
-                | (is_held_less_than_four_bars & is_new_sell_signal & is_last_signal_buy)
+                | (is_held_less_than_four_bars & is_new_sell_signal)
             )
-            & _shift_bool(start_long_trade, 4)
+            & _shift_bool(start_long_trade.rolling(window=100, min_periods=1).max().astype(bool), 1)
         )
+        
         is_dynamic_exit_valid = (not use_ema_filter) and (not use_sma_filter) and (not use_kernel_smoothing)
-        end_long_trade = end_long_trade_dynamic if (use_dynamic_exits and is_dynamic_exit_valid) else end_long_trade_strict
+        end_long = end_long_trade_dynamic if (use_dynamic_exits and is_dynamic_exit_valid) else end_long_trade_strict
 
         frame["lorentzian_prediction"] = prediction_values
         frame["lorentzian_signal"] = signal_series
         frame["buy_signal"] = start_long_trade.fillna(False).astype(bool)
-        frame["sell_signal"] = (start_short_trade | end_long_trade).fillna(False).astype(bool)
+        frame["sell_signal"] = (start_short_trade | end_long).fillna(False).astype(bool)
 
         return StrategySignalResult(
             frame=frame,

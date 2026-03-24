@@ -54,7 +54,7 @@
         <div class="trade-strategy-row">
             <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
                 {% for group in strategy_option_groups %}
-                <optgroup label="{{ group.label }}">
+                <optgroup label="{{ group.label }}" data-strategy-group="{{ group.key }}">
                     {% for strategy in group['items'] %}
                     <option value="{{ strategy.id }}" {% if strategy.id == selected_strategy_id %}selected{% endif %}>{{ strategy.name }}</option>
                     {% endfor %}

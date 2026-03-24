@@ -79,6 +79,8 @@ from .storage import (
     load_profile_record,
     logo_store_path_for,
     record_ticker_usage,
+    record_strategy_usage,
+    top_used_strategies,
 )
 
 MAX_TICKERS = 5
@@ -97,9 +99,8 @@ SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
-    "momentum": "Momentum",
-    "trend": "Trend",
-    "general": "General",
+    "recent": "Recent",
+    "all": "All",
 }
 VIEW_PATHS = {
     "tickers": "/compare",
@@ -454,22 +455,46 @@ def register_routes(app: Flask) -> None:
         return backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
-        grouped: dict[str, list[dict[str, object]]] = {}
-        category_order: list[str] = []
-        for item in strategy_options:
-            category = str(item.get("category", "general"))
-            if category not in grouped:
-                grouped[category] = []
-                category_order.append(category)
-            grouped[category].append(item)
-        return [
-            {
-                "key": category,
-                "label": format_strategy_category_label(category),
-                "items": grouped[category],
-            }
-            for category in category_order
-        ]
+        baseline_items = [item for item in strategy_options if item.get("id") == "buy-and-hold"]
+        
+        recent_ids = top_used_strategies(limit=3)
+        recent_items = []
+        for sid in recent_ids:
+            # Avoid showing baseline in recent
+            if sid == "buy-and-hold":
+                continue
+            matching = [item for item in strategy_options if item.get("id") == sid]
+            if matching:
+                recent_items.append(matching[0])
+        
+        all_other_items = sorted(
+            [item for item in strategy_options if item.get("id") != "buy-and-hold"],
+            key=lambda item: str(item.get("name", "")).lower()
+        )
+        
+        groups = []
+        if baseline_items:
+            groups.append({
+                "key": "baseline",
+                "label": STRATEGY_CATEGORY_LABELS["baseline"],
+                "items": baseline_items
+            })
+        
+        if recent_items:
+            groups.append({
+                "key": "recent",
+                "label": STRATEGY_CATEGORY_LABELS["recent"],
+                "items": recent_items
+            })
+            
+        if all_other_items:
+            groups.append({
+                "key": "all",
+                "label": STRATEGY_CATEGORY_LABELS["all"],
+                "items": all_other_items
+            })
+            
+        return groups
 
     def build_strategy_form_field(definition: StrategyParameterDefinition, value: Any) -> dict[str, object]:
         def format_numeric_value(raw_value: Any, *, kind: str, step: Any) -> Any:
@@ -1319,6 +1344,7 @@ def register_routes(app: Flask) -> None:
         try:
             if current_view == "backtest":
                 backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _run_backtest_from_request()
+                record_strategy_usage(selected_strategy_id)
                 ticker_slots = [trade_ticker]
                 profiles = [fetch_quote_profile(trade_ticker, False)]
                 exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
@@ -1783,8 +1809,8 @@ def register_routes(app: Flask) -> None:
                 trade_date = pd.to_datetime(trade.get('date')).strftime('%Y/%m/%d %H:%M') if trade.get('date') else "N/A"
                 md_lines.append(
                     f"| {i+1} | {trade_date} | {trade.get('side')} | "
-                    f"{trade.get('price'):,.2f} | {trade.get('shares'):,.0f} | "
-                    f"{trade.get('pnl', 0):,.2f} | {trade.get('equity'):,.2f} |"
+                    f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
+                    f"{trade.get('pnl', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
                 )
 
             # 3. Strategy Context
@@ -1819,6 +1845,97 @@ def register_routes(app: Flask) -> None:
                         ])
             except Exception as e:
                 md_lines.append(f"\n*(Failed to load strategy source: {str(e)})*")
+
+            # 4. LLM Strategy Developer Prompt
+            md_lines.extend([
+                "",
+                "### LLM Strategy Developer Prompt",
+                "",
+                "*Copy and paste the prompt below into any SOTA LLMs to recreate or iterate on this strategy.*",
+                "",
+                "```text",
+                "You are an elite quantitative trading developer and Python engineer. Your task is to write a trading strategy plugin for the `antigravity` trading system.",
+                "",
+                "The user will provide a trading logic or indicator concept. You must output a fully functional, production-ready Python file named `strategy_{strategy_id}.py` that acts as a drop-in component for the `strategies/algorithms/` directory.",
+                "",
+                "### Core Architecture & Constraints",
+                "",
+                "1. **Imports & Inheritance**:",
+                "   - Must include `from __future__ import annotations` at the very top.",
+                "   - Must import `import pandas as pd` and `import numpy as np`.",
+                "   - Must import: `from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix`.",
+                "   - The strategy class must inherit from `BaseStrategy`.",
+                "",
+                "2. **Class Metadata (Class Attributes)**:",
+                "   Every strategy must define the following class-level attributes exactly:",
+                "   - `strategy_id` (str): Unique snake_case identifier (e.g., \"macd\", \"rsi_reversion\").",
+                "   - `strategy_name` (str): Human-readable name for the UI.",
+                "   - `strategy_description` (str): Clear, concise description of the logic.",
+                "   - `strategy_category` (str): Must be one of: \"trend\", \"momentum\", \"mean_reversion\", \"volatility\", \"volume\", or \"machine_learning\".",
+                "   - `strategy_display_order` (int): An integer (10-90) indicating UI sorting priority.",
+                "   - `strategy_supports` (StrategySupportMatrix): Usually `StrategySupportMatrix(single_ticker=True, multi_ticker=False, long_only=True, short=False)`.",
+                "",
+                "3. **Parameter Definitions (`get_parameter_definitions`)**:",
+                "   Override `def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:` to declare all user-configurable parameters.",
+                "   Supported kwargs for `StrategyParameterDefinition`: `key`, `label`, `kind` (\"integer\", \"number\", \"boolean\", \"choice\", \"string\"), `default`, `minimum`, `maximum`, `step`, `options`, `help_text`, `unit_hint`.",
+                "",
+                "4. **Signal Computation (`compute_signals`)**:",
+                "   Override `def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:`.",
+                "   - **CRITICAL**: Never modify `dataset` in-place. Always start with `frame = dataset.copy()`.",
+                "   - **CRITICAL**: Always normalize parameters first via `normalized_params = self.normalize_params(params)`.",
+                "   - Extract your parameters with explicit type casting.",
+                "   - Compute your indicators using vectorized pandas operations. Avoid loops for performance unless mathematically required.",
+                "   - Create exactly two boolean signal columns: `\"buy_signal\"` and `\"sell_signal\"`.",
+                "   - **CRITICAL**: Use `.fillna(False)` on signal columns.",
+                "   - Return: `return StrategySignalResult(frame=frame, buy_signal_column=\"buy_signal\", sell_signal_column=\"sell_signal\")`.",
+                "",
+                "5. **Output Format**:",
+                "   - Provide ONLY the Python code block. No surrounding markdown explanations.",
+                "   - The code must be pristine, strictly typed (Python 3.10+), and adhere to standard Black formatting.",
+                "",
+                "### Gold Standard Reference (MACD Strategy)",
+                "```python",
+                "from __future__ import annotations",
+                "import pandas as pd",
+                "from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix",
+                "",
+                "class MacdStrategy(BaseStrategy):",
+                "    strategy_id = \"macd\"",
+                "    strategy_name = \"MACD\"",
+                "    strategy_description = \"MACD crossover strategy using default settings.\"",
+                "    strategy_category = \"momentum\"",
+                "    strategy_display_order = 20",
+                "    strategy_supports = StrategySupportMatrix(single_ticker=True, multi_ticker=False, long_only=True, short=False)",
+                "",
+                "    def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:",
+                "        return (",
+                "            StrategyParameterDefinition(key=\"fast_span\", label=\"Fast EMA\", kind=\"integer\", default=12, minimum=1),",
+                "            StrategyParameterDefinition(key=\"slow_span\", label=\"Slow EMA\", kind=\"integer\", default=26, minimum=2),",
+                "            StrategyParameterDefinition(key=\"signal_span\", label=\"Signal EMA\", kind=\"integer\", default=9, minimum=1),",
+                "        )",
+                "",
+                "    def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:",
+                "        frame = dataset.copy()",
+                "        normalized_params = self.normalize_params(params)",
+                "        fast_span, slow_span, signal_span = int(normalized_params[\"fast_span\"]), int(normalized_params[\"slow_span\"]), int(normalized_params[\"signal_span\"])",
+                "        ema_fast = frame[\"Close\"].ewm(span=fast_span, adjust=False).mean()",
+                "        ema_slow = frame[\"Close\"].ewm(span=slow_span, adjust=False).mean()",
+                "        frame[\"macd_line\"] = ema_fast - ema_slow",
+                "        frame[\"signal_line\"] = frame[\"macd_line\"].ewm(span=signal_span, adjust=False).mean()",
+                "        frame[\"buy_signal\"] = ((frame[\"macd_line\"] > frame[\"signal_line\"]) & (frame[\"macd_line\"].shift(1) <= frame[\"signal_line\"].shift(1))).fillna(False)",
+                "        frame[\"sell_signal\"] = ((frame[\"macd_line\"] < frame[\"signal_line\"]) & (frame[\"macd_line\"].shift(1) >= frame[\"signal_line\"].shift(1))).fillna(False)",
+                "        return StrategySignalResult(frame=frame, buy_signal_column=\"buy_signal\", sell_signal_column=\"sell_signal\")",
+            ])
+
+            # 5. Source market data
+            md_lines.extend([
+                "### Source market data",
+                "",
+                "```",
+                trade_dataset.to_csv(index=False),
+                "```",
+                ""
+            ])
 
             md_content = "\n".join(md_lines)
             
