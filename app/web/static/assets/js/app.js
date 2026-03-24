@@ -2975,9 +2975,13 @@
 	rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
 		const nextRangeMode = input.value;
 		const previousRangeMode = lastRangeMode;
+		let shouldAutoSubmit = true;
 		if (previousRangeMode !== nextRangeMode) {
 			if (nextRangeMode === "exact") {
-				syncExactInputsToRenderedRange();
+				const synced = syncExactInputsToRenderedRange();
+				if (synced && hasInitialResult) {
+					shouldAutoSubmit = false;
+				}
 			} else if (nextRangeMode === "period") {
 				const matchedPeriod = chooseRelativePeriodForExactRange();
 				if (matchedPeriod && periodSelect) periodSelect.value = matchedPeriod;
@@ -2986,8 +2990,10 @@
 		updateRangePanels();
 		syncDateConstraints();
 		lastRangeMode = nextRangeMode;
-		if (!isBacktestView) requestWorkspaceChartTransition("range-mode");
-		scheduleAutoSubmit();
+		if (!isBacktestView && shouldAutoSubmit) requestWorkspaceChartTransition("range-mode");
+		if (shouldAutoSubmit) {
+			scheduleAutoSubmit();
+		}
 	}));
 	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
 		if (!input) return;
