@@ -3450,9 +3450,53 @@
 					copy: "Calculating strategy signals and performance metrics. This may take a moment depending on the data resolution and strategy complexity.",
 					iconClass: "icon-hourglass"
 				});
-				captureBacktestRefreshTransition();
+				// Only capture refresh transition if date range (x-axis) hasn't changed:
+				// - If ticker/period/interval/exact dates change: full rebuild from scratch (original behavior)
+				// - If only strategy parameters / dividends / capital change: animate y-values keeping same x-axis with smooth transition
+				function doesRequestChangedXAxis(currentParams, nextParams) {
+					const xAxisKeys = ["ticker", "period", "interval", "from", "exact_start", "to", "exact_end"];
+					for (const key of xAxisKeys) {
+						const current = (currentParams.get(key) || "").toString().trim();
+						const next = (nextParams.get(key) || "").toString().trim();
+						if (current !== next) return true;
+					}
+					return false;
+				}
+
+				const currentParams = new URLSearchParams(currentUrlObj.search);
+				const nextParams = new URLSearchParams(nextUrlObj.search);
+				const xAxisChanged = doesRequestChangedXAxis(currentParams, nextParams);
+				if (!xAxisChanged) {
+					captureBacktestRefreshTransition();
+				} else {
+					delete bootstrap.backtestRefreshTransition;
+				}
 			} else if (pendingWorkspaceChartTransition?.view === state.currentView) {
-				captureLineChartRefreshTransition();
+				// Same logic: only capture line chart transition if x-axis hasn't changed
+				function doesRequestChangedXAxisCompare(currentParams, nextParams) {
+					// For compare page, ticker list changes = x-axis changes
+					const currentTickers = Array.from(currentParams.getAll("ticker")).sort().join(",");
+					const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
+					if (currentTickers !== nextTickers) return true;
+
+					const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "include_dividends"];
+					// include_dividends doesn't change x-axis (dates stay same), so not in xAxisKeys
+					for (const key of xAxisKeys) {
+						const current = (currentParams.get(key) || "").toString().trim();
+						const next = (nextParams.get(key) || "").toString().trim();
+						if (current !== next) return true;
+					}
+					return false;
+				}
+
+				const currentParams = new URLSearchParams(currentUrlObj.search);
+				const nextParams = new URLSearchParams(nextUrlObj.search);
+				const xAxisChanged = doesRequestChangedXAxisCompare(currentParams, nextParams);
+				if (!xAxisChanged) {
+					captureLineChartRefreshTransition();
+				} else {
+					delete bootstrap.chartWorkspaceRefreshTransition;
+				}
 			} else {
 				delete bootstrap.chartWorkspaceRefreshTransition;
 			}
