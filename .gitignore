@@ -3,5 +3,6 @@ __pycache__/
 .venv/
 .DS_Store
 .idea/
+.trash/
 settings_store/
 node_modules/
