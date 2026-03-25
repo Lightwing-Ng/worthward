@@ -722,6 +722,7 @@ def register_routes(app: Flask) -> None:
                     px_token("--settings-action-package-column-gap", 12),
                     px_token("--settings-action-package-row-gap", 8),
                     px_token("--settings-action-package-copy-gap", 4),
+                    px_token("--style-token-demo-width", 360),
                     raw_token("--settings-action-package-background", "rgba(255, 255, 255, 0.58)"),
                     raw_token("--settings-action-package-border", "1px solid rgba(15, 23, 42, 0.06)"),
                 ],
