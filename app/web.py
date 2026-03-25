@@ -1365,6 +1365,19 @@ def register_routes(app: Flask) -> None:
         if period not in supported_periods:
             period = DEFAULT_PERIOD
 
+        def handle_fetch_history_failure(ticker: str, include_dividends: bool) -> pd.DataFrame:
+            """
+            If fetching fails because remote data cannot be retrieved, try to load whatever local data exists.
+            If any local parquet exists, even if incomplete, return it instead of raising immediately.
+            """
+            path = history_store_path_for(ticker)
+            if path.exists():
+                try:
+                    return select_price_series(pd.read_parquet(path), include_dividends)
+                except Exception:
+                    pass
+            raise ValueError(f"No market data returned for {ticker}.")
+
         try:
             if current_view == "backtest":
                 # Check cache: skip re-computation if config unchanged
@@ -1418,13 +1431,55 @@ def register_routes(app: Flask) -> None:
                         if len(set(validated_tickers)) != len(validated_tickers):
                             raise ValueError("Ticker symbols must be unique.")
 
-                        datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
+                        # Try to fetch datasets, handle missing remote data by falling back to any available local data
+                        datasets: list[pd.DataFrame] = []
+                        failed_fetches: list[str] = []
+                        for ticker in validated_tickers:
+                            try:
+                                datasets.append(fetch_history(ticker, include_dividends))
+                            except ValueError as fetch_exc:
+                                if "No market data returned" in str(fetch_exc) or "Local market data for" in str(fetch_exc):
+                                    dataset = handle_fetch_history_failure(ticker, include_dividends)
+                                    datasets.append(dataset)
+                                    failed_fetches.append(ticker)
+                                else:
+                                    raise
+
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         date_constraints = build_date_constraint_payload(
                             *datasets,
                             requested_start=exact_start or None,
                             requested_end=exact_end or None,
                         )
+
+                        # Auto-switch to Exact mode if we're in Relative mode and any ticker couldn't fetch full recent data
+                        auto_notice = None
+                        if range_mode != "exact" and len(failed_fetches) > 0:
+                            # Get the minimal max date across all datasets (latest available data is bounded by the ticker with incomplete data)
+                            common_max_end = min(dataset["Date"].max() for dataset in datasets)
+                            # The requested period offset stays the same but end is now at the latest available common date
+                            requested_start = (common_max_end - PERIOD_OFFSETS[period]).normalize()
+                            adjusted_start = requested_start.strftime("%Y-%m-%d")
+                            adjusted_end = common_max_end.strftime("%Y-%m-%d")
+                            # Rebuild date constraints with the new exact range
+                            date_constraints = build_date_constraint_payload(
+                                *datasets,
+                                requested_start=adjusted_start,
+                                requested_end=adjusted_end,
+                            )
+                            range_mode = "exact"
+                            period_label = "Exact range"
+                            ticker_list = ", ".join(failed_fetches)
+                            auto_notice = (
+                                f"Could not retrieve the latest market data for {ticker_list}. "
+                                f"Automatically switched to exact range from {format_display_date(pd.to_datetime(adjusted_start))} "
+                                f"to {format_display_date(common_max_end)} based on available local data."
+                            )
+                            if notice is None:
+                                notice = auto_notice
+                            else:
+                                notice += " " + auto_notice
+
                         if range_mode == "exact":
                             if not date_constraints.trading_dates:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
@@ -1437,11 +1492,15 @@ def register_routes(app: Flask) -> None:
                             ]
                             if any(dataset.empty for dataset in aligned_datasets):
                                 raise ValueError("The selected exact range does not contain shared trading dates.")
-                            exact_start_value = date_constraints.adjusted_start or exact_start
-                            exact_end_value = date_constraints.adjusted_end or exact_end
+                            exact_start_value = date_constraints.adjusted_start or adjusted_start
+                            exact_end_value = date_constraints.adjusted_end or adjusted_end
                             period_label = "Exact range"
                         else:
-                            period, notice = resolve_effective_period_for_many(period, datasets)
+                            period, notice_resolve = resolve_effective_period_for_many(period, datasets)
+                            if notice_resolve and notice is None:
+                                notice = notice_resolve
+                            elif notice_resolve:
+                                notice = (notice or "") + " " + notice_resolve
                             common_end_date = min(dataset["Date"].max() for dataset in datasets)
                             sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
                             aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
