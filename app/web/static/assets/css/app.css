@@ -2968,13 +2968,15 @@ div.style-token-modal-demo {
 	text-align: center !important;
 }
 .trade-transactions-table th,
-.trade-transactions-table th.trade-transactions-number { text-align: center !important; }
+.trade-transactions-table th.trade-transactions-number { text-align: center !important; vertical-align: top; }
+.trade-transactions-table td { vertical-align: top; }
 .trade-transactions-index {
 	text-align: center !important;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 	width: 8%;
 	min-width: 32px;
+	vertical-align: top;
 }
 .trade-transactions-date {
 	text-align: right !important;
@@ -2982,33 +2984,41 @@ div.style-token-modal-demo {
 	white-space: normal;
 	width: 20%;
 	min-width: 128px;
+	vertical-align: top;
 }
 .trade-transactions-side {
 	text-align: center !important;
 	white-space: nowrap;
 	width: 8%;
 	min-width: 36px;
+	vertical-align: top;
 }
 .trade-transactions-number {
 	text-align: right !important;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 	width: 12%;
+	vertical-align: top;
 }
 .trade-transactions-number.price {
 	min-width: 64px;
+	vertical-align: top;
 }
 .trade-transactions-number.shares {
 	min-width: 72px;
+	vertical-align: top;
 }
 .trade-transactions-number.pnl {
 	min-width: 72px;
+	vertical-align: top;
 }
 .trade-transactions-number.cash {
 	min-width: 72px;
+	vertical-align: top;
 }
 .trade-transactions-number.equity {
 	min-width: 72px;
+	vertical-align: top;
 }
 .field-switch { display: grid; gap: 8px; }
 .field-switch .switch-row { padding-left: 0; background: transparent; min-height: 24px; }

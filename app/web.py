@@ -1925,7 +1925,7 @@ def register_routes(app: Flask) -> None:
                 f"- **Final Net Return**: {summary.get('net_return_pct', 0):,.2f}%",
                 f"- **Final Equity**: ${summary.get('final_equity', 0):,.2f}",
                 f"- **Max Drawdown**: {summary.get('max_drawdown_pct', 0):,.2f}%",
-                f"- **Total Trades**: {summary.get('total_trades', 0)}",
+                f"- **Total trades**: {summary.get('total_trades', 0)}",
                 f"- **Win Rate**: {summary.get('win_rate_pct', 0):,.2f}%",
                 f"- **Alpha vs Buy-and-Hold**: ${summary.get('benchmark_alpha', 0):,.2f}",
                 f"- **Realized Long P&L**: ${summary.get('long_gain', 0):,.2f}",
