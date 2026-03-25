@@ -1924,11 +1924,11 @@ def register_routes(app: Flask) -> None:
                 f"- **Final Net Return**: {summary.get('net_return_pct', 0):,.2f}%",
                 f"- **Final Equity**: ${summary.get('final_equity', 0):,.2f}",
                 f"- **Max Drawdown**: {summary.get('max_drawdown_pct', 0):,.2f}%",
+                f"- **Total Trades**: {summary.get('total_trades', 0)}",
                 f"- **Win Rate**: {summary.get('win_rate_pct', 0):,.2f}%",
                 f"- **Alpha vs Buy-and-Hold**: ${summary.get('benchmark_alpha', 0):,.2f}",
                 f"- **Realized Long P&L**: ${summary.get('long_gain', 0):,.2f}",
                 f"- **Realized Short P&L**: ${summary.get('short_gain', 0):,.2f}",
-                f"- **Total Trade Cycles**: {summary.get('trade_count', 0)}",
                 f"- **Initial Capital**: ${summary.get('initial_capital', 0):,.2f}",
                 "",
             ]
@@ -1937,15 +1937,17 @@ def register_routes(app: Flask) -> None:
             md_lines.extend([
                 "### Transaction History",
                 "",
-                "| No. | Date | Side | Price | Shares | P&L | Equity |",
-                "| ---: | :--- | :--- | ---: | ---: | ---: | ---: |"
+                "| No. | Date | Side | Price | Shares | P&L | Cash | Equity |",
+                "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: |"
             ])
             for i, trade in enumerate(trades):
+                if trade.get("_virtual_close"):
+                    continue  # Skip virtual closing trade, same as table display
                 trade_date = pd.to_datetime(trade.get('date')).strftime('%Y/%m/%d %H:%M') if trade.get('date') else "N/A"
                 md_lines.append(
                     f"| {i+1} | {trade_date} | {trade.get('side')} | "
                     f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
-                    f"{trade.get('pnl', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
+                    f"{trade.get('pnl', 0):,.2f} | {trade.get('cash', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
                 )
 
             # 3. Strategy Context

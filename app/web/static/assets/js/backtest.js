@@ -231,17 +231,26 @@
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
-			// Match date part only (yyyy-mm-dd) from ISO strings or simple date strings
-			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+			// Match ISO date with optional time part: yyyy-mm-dd HH:MM
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
 			if (!match) return null;
 			return {
 				year: Number(match[1]),
 				monthIndex: Number(match[2]) - 1,
 				day: Number(match[3]),
+				hours: match[4] ? Number(match[4]) : null,
+				minutes: match[5] ? Number(match[5]) : null,
 			};
 		};
 
-		const formatChartDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+		const padTwo = (num) => num < 10 ? `0${num}` : `${num}`;
+		const formatChartDate = (dateParts) => {
+			const baseDate = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+			if (dateParts.hours !== null && dateParts.minutes !== null) {
+				return `${baseDate} ${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
+			}
+			return baseDate;
+		};
 
 		const formatChartDateLines = (dateParts) => [`${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`, `${dateParts.year}`];
 

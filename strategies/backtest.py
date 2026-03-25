@@ -48,6 +48,8 @@ def _build_win_rate_trade_pairs(
     final_trade_date: pd.Timestamp,
     open_shares: int,
 ) -> list[tuple[dict[str, object], dict[str, object]]]:
+    # We work on a copy for win rate calculation only
+    # Original trades list remains unchanged for UI display
     metric_trades = list(trades)
     if not metric_trades or final_close_price <= 0:
         return _build_trade_pairs(metric_trades)
@@ -289,7 +291,7 @@ def run_single_ticker_backtest(
 
     frame["Equity"] = equity_points
     drawdown = (frame["Equity"] / frame["Equity"].cummax()) - 1.0
-    sell_trades = [trade for trade in trades if trade["side"] == "Sell"]
+    total_trades = len([trade for trade in trades if not trade.get("_virtual_close")])
     final_close_price = float(frame["Close"].iloc[-1])
     final_trade_date = pd.Timestamp(frame["Date"].iloc[-1])
     trade_pairs = _build_win_rate_trade_pairs(trades, final_close_price, final_trade_date, shares)
@@ -298,8 +300,7 @@ def run_single_ticker_backtest(
     final_equity = float(frame["Equity"].iloc[-1])
     total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
 
-    # Advanced Metrics
-    # 1. Benchmark P&L (Buy and Hold at first open)
+    # Advanced Metrics    # 1. Benchmark P&L (Buy and Hold at first open)
     first_open = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
     bh_shares = floor(initial_capital / first_open) if first_open > 0 else 0
     bh_cash = initial_capital - (bh_shares * first_open)
@@ -339,7 +340,7 @@ def run_single_ticker_backtest(
             "final_equity": round(final_equity, 2),
             "net_return_pct": round(total_return, 2),
             "max_drawdown_pct": round(float(drawdown.min()) * 100.0, 2),
-            "trade_count": len(sell_trades),
+            "total_trades": total_trades,
             "win_rate_pct": round((len(wins) / len(trade_pairs)) * 100.0, 2) if trade_pairs else 0.0,
             "benchmark_alpha": round(benchmark_alpha, 2),
             "long_gain": round(long_gain, 2),

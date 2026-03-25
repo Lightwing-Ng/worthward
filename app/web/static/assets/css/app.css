@@ -2952,28 +2952,42 @@ div.style-token-modal-demo {
 	text-align: center !important;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
-	width: 6%;
-	min-width: 40px;
+	width: 8%;
+	min-width: 32px;
 }
 .trade-transactions-date {
 	text-align: right !important;
 	font-variant-numeric: tabular-nums;
 	white-space: normal;
-	width: 18%;
-	min-width: 100px;
+	width: 20%;
+	min-width: 128px;
 }
 .trade-transactions-side {
 	text-align: center !important;
 	white-space: nowrap;
-	width: 7%;
-	min-width: 40px;
+	width: 8%;
+	min-width: 36px;
 }
 .trade-transactions-number {
 	text-align: right !important;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
-	width: 12.4%;
-	min-width: 78px;
+	width: 12%;
+}
+.trade-transactions-number.price {
+	min-width: 64px;
+}
+.trade-transactions-number.shares {
+	min-width: 72px;
+}
+.trade-transactions-number.pnl {
+	min-width: 72px;
+}
+.trade-transactions-number.cash {
+	min-width: 72px;
+}
+.trade-transactions-number.equity {
+	min-width: 72px;
 }
 .field-switch { display: grid; gap: 8px; }
 .field-switch .switch-row { padding-left: 0; background: transparent; min-height: 24px; }

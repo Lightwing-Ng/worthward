@@ -30,7 +30,8 @@ class BuyAndHoldStrategy(BaseStrategy):
         frame["sell_signal"] = False
         if not frame.empty:
             frame.loc[frame.index[0], "buy_signal"] = True
-            frame.loc[frame.index[-1], "sell_signal"] = True
+            # Do NOT generate sell signal on last bar - we hold forever
+            # Closing for win rate calculation will happen automatically if needed
         return StrategySignalResult(
             frame=frame,
             buy_signal_column="buy_signal",
