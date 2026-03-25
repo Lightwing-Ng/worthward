@@ -1434,16 +1434,51 @@ def register_routes(app: Flask) -> None:
                         # Try to fetch datasets, handle missing remote data by falling back to any available local data
                         datasets: list[pd.DataFrame] = []
                         failed_fetches: list[str] = []
+                        completely_missing: list[str] = []
                         for ticker in validated_tickers:
                             try:
                                 datasets.append(fetch_history(ticker, include_dividends))
                             except ValueError as fetch_exc:
                                 if "No market data returned" in str(fetch_exc) or "Local market data for" in str(fetch_exc):
-                                    dataset = handle_fetch_history_failure(ticker, include_dividends)
-                                    datasets.append(dataset)
-                                    failed_fetches.append(ticker)
+                                    try:
+                                        dataset = handle_fetch_history_failure(ticker, include_dividends)
+                                        datasets.append(dataset)
+                                        failed_fetches.append(ticker)
+                                    except ValueError:
+                                        completely_missing.append(ticker)
                                 else:
                                     raise
+
+                        # If any ticker is completely missing (no local + no remote), replace it with the first available local ticker from usage history
+                        if completely_missing:
+                            local_tickers = [t for t in list_local_market_tickers() if t not in completely_missing]
+                            if not local_tickers:
+                                # If no local tickers available at all, use the default tickers to guarantee something renders
+                                from .config import DEFAULT_TICKERS
+                                local_tickers = [normalize_ticker_input(t) for t in DEFAULT_TICKERS if normalize_ticker_input(t) not in completely_missing]
+
+                            for missing_ticker in completely_missing:
+                                # Pick the first available local ticker that has data
+                                replacement = local_tickers[0] if len(local_tickers) > 0 else DEFAULT_TICKERS[0]
+                                replacement = normalize_ticker_input(replacement)
+                                # Replace in validated_tickers
+                                idx = validated_tickers.index(missing_ticker)
+                                validated_tickers[idx] = replacement
+                                # Fetch dataset for replacement
+                                try:
+                                    dataset = fetch_history(replacement, include_dividends)
+                                    # Remove the placeholder None we appended when skipping
+                                    if len(datasets) > idx:
+                                        datasets.pop(idx)
+                                    datasets.insert(idx, dataset)
+                                except Exception:
+                                    # This should not happen since we filtered local_tickers to only include available ones
+                                    pass
+                                # Add to notice
+                                if notice is None:
+                                    notice = f"{missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
+                                else:
+                                    notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         date_constraints = build_date_constraint_payload(
