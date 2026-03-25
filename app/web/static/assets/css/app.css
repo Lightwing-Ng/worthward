@@ -436,13 +436,6 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	font-weight: var(--font-weight-regular);
 	color: var(--text);
 	cursor: pointer;
-	background-image: none;
-	background-color: transparent;
-	background: transparent;
-	backdrop-filter: none;
-	-webkit-backdrop-filter: none;
-	box-shadow: none;
-	border-radius: 0;
 }
 .trade-strategy-select:disabled {
 	opacity: 0.68;
