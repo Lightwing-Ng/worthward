@@ -1,28 +1,31 @@
 # compareStocks
 
-A local-first web app for comparing stock tickers and running single-ticker strategy backtests with full static rendering.
+A local-first web app for comparing stock tickers and running single-ticker strategy backtests with full server-side static rendering.
 
 Source code: <https://github.com/Lightwing-Ng/compareStocks>
 
 ## What it does
 
-- compares up to five securities on a normalized cumulative return basis
-- runs single-ticker backtests with built-in trading strategies (Buy and Hold, MACD, SuperTrend AI)
-- supports relative time ranges (1mo → max) and exact date ranges
-- can include or exclude cash dividends in total return calculations
-- stores historical data, ticker profiles, logos, and symbol search results locally
-- renders a lightweight responsive UI with mobile-first behavior
-- works entirely in-browser after server render, no external dependencies for viewing
+- Compare up to five securities on a normalized cumulative return basis
+- Build weighted equity comparison portfolios with custom percentages
+- Run single-ticker backtests with a growing library of open-source trading strategies
+- Supports both relative time ranges (1d → 10y → max) and exact custom date ranges
+- Optionally include cash dividends in total return calculations
+- Stores all historical data, ticker profiles, logos, and symbol search results locally on your device
+- Renders a lightweight, responsive UI with a mobile-first layout
+- Works entirely client-side in-browser after initial server render—no external JavaScript dependencies for viewing
+- Includes 1-minute intraday historical data support when connected to your broker
+- Full glassmorphism/frosted-glass UI styling that adapts to light/dark system appearance
 
 ## Run
 
-Use the interpreter that already has the project dependencies installed:
+Use the Python interpreter that already has project dependencies installed (requires Python 3.11+):
 
 ```bash
 /usr/local/bin/python3.13 main.py
 ```
 
-Then open:
+Then open this URL in your browser:
 
 ```text
 http://127.0.0.1:5000
@@ -31,77 +34,77 @@ http://127.0.0.1:5000
 ## Project layout
 
 ```text
-main.py
-config.toml
-README.md
-app/
-strategies/
-market_store/
+main.py                  → Flask application entry point
+config.toml              → Local configuration (endpoints, credentials, defaults)
+README.md               → This file
+app/                    → Main Python application package
+strategies/              → Trading strategy framework and implementations
+market_store/            → Persistent local storage for cached data
 ```
 
 ### `app/`
 
-Application package.
+Core application package:
 
 - `web.py`
-  - HTTP routes and page rendering
+  - HTTP route handlers and full HTML page rendering
 - `market_data.py`
-  - price history retrieval and normalization
+  - Price history retrieval, caching, and normalization
 - `comparisons.py`
-  - shared-window return comparison logic
+  - Shared-window cumulative return comparison logic
 - `date_constraints.py`
-  - exact-range trading-day alignment
+  - Exact-date-range valid trading day alignment
 - `logos.py`
-  - ticker profiles and logo retrieval
+  - Ticker company profile fetching and logo caching
 - `presentation.py`
-  - human-readable labels and presentation helpers
+  - Human-readable date formatting and presentation helpers
 - `schemas.py`
-  - dataclass schemas
+  - Typed dataclass schemas for API payloads and strategy outputs
 - `storage.py`
-  - persistence paths under `market_store/`
+  - Path resolution and persistence helpers for `market_store/`
 - `settings.py`
-  - config loading from `config.toml`
+  - Configuration loading from `config.toml`
 - `config.py`
-  - static application constants
-- `web/static/`
-  - front-end CSS, JS, images, and HTML templates
+  - Static application constants and default values
+- `web/templates/`
+  - Jinja2 HTML templates
+- `web/static/assets/`
+  - Front-end CSS, JavaScript, SVG icons, and static images
 
 ### `strategies/`
 
-Trading strategy registry and backtest implementation.
+Trading strategy registry, base interface, and concrete implementations:
 
 - `base.py`
-  - base strategy interface and parameter schema
+  - Base strategy abstract interface, parameter definition schema
 - `loader.py`
-  - dynamic strategy loading
+  - Dynamic strategy discovery and loading
 - `registry.json`
-  - strategy registry metadata
+  - Strategy registry metadata for UI rendering
 - `algorithms/`
-  - concrete strategy implementations (Buy and Hold, MACD, SuperTrend AI)
+  - Concrete strategy implementations (Buy and Hold, MACD Crossover, SuperTrend, Lorentzian Classification, etc.)
 
 ### `market_store/`
 
-Persistent local store.
+Persistent local cache storage (created automatically on first run):
 
 - `historical/`
-  - canonical ticker parquet files
+  - Per-ticker normalized OHLCV parquet files (daily + 1-minute)
 - `profiles/`
-  - per-ticker profile JSON files
+  - Per-ticker company profile JSON cache
 - `logos/`
-  - cached logo images
+  - Cached ticker logo images
 - `search/`
-  - cached symbol search results
+  - Cached symbol search result JSONs
 
 ## Ticker input rules
 
-Ticker inputs are validated in both places:
+Ticker symbols are validated on both the front-end and back-end:
 
-- front end
-  - blocks illegal characters and invalid formats before submit
-- back end
-  - rejects malformed or unsupported tickers before data fetch
+- Front-end: Blocks invalid characters and malformed formats before form submission
+- Back-end: Rejects malformed or unsupported tickers before attempting data fetch
 
-Supported examples include:
+Common examples of supported tickers:
 
 - `MSFT`
 - `GOOGL`
@@ -112,19 +115,19 @@ Supported examples include:
 - `META`
 - `QQQ`
 - `JEPQ`
+- `TQQQ`
 
 ## Notes
 
-- symbol search depends partly on Yahoo Finance coverage and may vary by ticker class
-- logo retrieval uses provider fallbacks and local persistence
-- the app is designed for local development, not production deployment
+- Symbol search quality depends partly on Yahoo Finance coverage and may vary across ticker classes
+- Logo retrieval uses multiple fallbacks and persists results locally after first fetch
+- This project is designed for local personal use, not public production deployment
+- All sensitive broker credentials are kept locally on your machine and never transmitted elsewhere
 
-## Timezone & Data Integrity
+## Timezone & Data Integrity (critical for 1-minute data)
 
-- **System Standard**: The application internally standardizes all market data to **New York Time (America/New_York)**, including robust handling of Daylight Saving Time (DST) via standard IANA zone identifiers.
-- **Broker Data (Longbridge)**: The Longbridge OpenAPI returns 1-minute timestamps aligned with **Hong Kong Time (HKT)** numerically for US markets.
-  - The fetcher (`app/broker_market_data.py`) robustly localizes these raw values as `Asia/Hong_Kong` before converting to `America/New_York`.
-  - **Storage (Parquet)**: 1-minute Parquet files in `market_store/historical/` store timestamps strictly in **NYT** (naive) for cross-layer consistency.
-- **Verification Tool**: A dedicated test route is available at `/test/chart/1m/<ticker>/<date>` (or `/last5`) to visually audit 1-minute bars against your broker's terminal curve for terminal-level accuracy.
-
-
+- **System-wide Standard**: The application internally normalizes all market data timestamps to **New York Time (America/New_York)** using standard IANA timezone identifiers, with robust Daylight Saving Time handling.
+- **Broker Data (Longbridge)**: The Longbridge OpenAPI returns 1-minute timestamp values numerically aligned with **Hong Kong Time (HKT)** for US market data.
+  - The fetcher (`app/broker_market_data.py`) correctly parses these raw values as `Asia/Hong_Kong` before converting to `America/New_York`.
+  - **Persistent Storage (Parquet)**: 1-minute parquet files in `market_store/historical/` store timestamps as naive datetimes strictly in **NYT** for cross-layer consistency.
+- **Visual Verification Tool**: A dedicated test route is available at `/test/chart/1m/<ticker>/<date>` (or `/test/chart/1m/last5`) to visually compare 1-minute candle shapes against your broker's trading terminal for end-to-end accuracy.
