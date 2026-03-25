@@ -379,6 +379,7 @@ def register_routes(app: Flask) -> None:
             normalized.startswith("No market data returned for ")
             or normalized.startswith("Local market data for ")
             or normalized.startswith("Unknown or unsupported ticker: ")
+            or normalized.startswith("has no local or remote market data")
             or normalized.startswith("Failed to perform, curl: (35) TLS connect error:")
         )
 
