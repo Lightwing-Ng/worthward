@@ -53,32 +53,50 @@ def _build_win_rate_trade_pairs(
         return _build_trade_pairs(metric_trades)
 
     last_side = str(metric_trades[-1].get("side", ""))
+    added_close_trade = False
     
     # 1. Handle unclosed Long positions (Last was Buy)
     if last_side == "Buy" and open_shares > 0:
         entry_price = float(metric_trades[-1].get("price", 0.0))
+        # Calculate current cash after closing position
+        current_cash = 0.0
+        if len(metric_trades) > 0:
+            # Get cash from previous trade, which is before this closing trade
+            prev_cash = float(metric_trades[-1].get("cash", 0.0))
+            current_cash = prev_cash + (open_shares * final_close_price)
         metric_trades.append({
             "date": final_trade_date.strftime("%Y/%m/%d"),
             "side": "Sell",
             "price": round(final_close_price, 4),
             "shares": open_shares,
             "pnl": round((final_close_price - entry_price) * open_shares, 4),
-            "equity": 0.0,
+            "cash": round(current_cash, 4),
+            "equity": round(current_cash, 4),
+            "_virtual_close": True,
         })
+        added_close_trade = True
     # 2. Handle unclosed Short positions (Last was Sell)
     # Note: Currently the backtester is primarily long-only, but this logic
     # ensures that if a Short strategy is implemented, the win rate counts it.
     elif last_side == "Sell" and open_shares < 0:
         entry_price = float(metric_trades[-1].get("price", 0.0))
         short_shares = abs(open_shares)
+        # Calculate current cash after closing position
+        current_cash = 0.0
+        if len(metric_trades) > 0:
+            prev_cash = float(metric_trades[-1].get("cash", 0.0))
+            current_cash = prev_cash - (short_shares * final_close_price)
         metric_trades.append({
             "date": final_trade_date.strftime("%Y/%m/%d"),
             "side": "Buy",
             "price": round(final_close_price, 4),
             "shares": short_shares,
             "pnl": round((entry_price - final_close_price) * short_shares, 4),
-            "equity": 0.0,
+            "cash": round(current_cash, 4),
+            "equity": round(current_cash, 4),
+            "_virtual_close": True,
         })
+        added_close_trade = True
         
     return _build_trade_pairs(metric_trades)
 
@@ -150,6 +168,7 @@ def run_single_ticker_backtest(
                         "price": round(open_price, 4),
                         "shares": shares,
                         "pnl": 0.0,
+                        "cash": round(cash, 4),
                         "equity": round(cash + (shares * close_price), 4),
                     })
                 buy_signal = False 
@@ -186,6 +205,7 @@ def run_single_ticker_backtest(
                         "price": round(execution_price, 4),
                         "shares": short_shares,
                         "pnl": round(pnl, 4),
+                        "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
                     shares = 0
@@ -202,6 +222,7 @@ def run_single_ticker_backtest(
                         "price": round(execution_price, 4),
                         "shares": shares,
                         "pnl": round(pnl, 4),
+                        "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
                     shares = 0
@@ -222,6 +243,7 @@ def run_single_ticker_backtest(
                             "price": round(close_price, 4),
                             "shares": shares,
                             "pnl": 0.0,
+                            "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
                 elif shares < 0: # Exit Short (Cover)
@@ -235,6 +257,7 @@ def run_single_ticker_backtest(
                         "price": round(close_price, 4),
                         "shares": short_shares,
                         "pnl": round(pnl, 4),
+                        "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
                     shares = 0
@@ -250,6 +273,7 @@ def run_single_ticker_backtest(
                         "price": round(close_price, 4),
                         "shares": shares,
                         "pnl": round(pnl, 4),
+                        "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
                     shares = 0

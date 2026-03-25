@@ -633,16 +633,22 @@
 				const end = Math.min(start + PAGE_SIZE, trades.length);
 				
 				tbody.innerHTML = "";
+				let displayIndex = 1;
 				for (let i = start; i < end; i++) {
 					const trade = trades[i];
+					// Skip virtual closing trades that are only used for win rate calculation
+					if (trade._virtual_close) {
+						continue;
+					}
 					const tr = document.createElement("tr");
 					tr.innerHTML = `
-						<td class="trade-transactions-index">${i + 1}</td>
+						<td class="trade-transactions-index">${displayIndex++}</td>
 						<td class="trade-transactions-date">${trade.date}</td>
 						<td class="trade-transactions-side">${trade.side}</td>
 						<td class="trade-transactions-number">${formatNumber(trade.price)}</td>
 						<td class="trade-transactions-number">${formatShares(trade.shares)}</td>
 						<td class="trade-transactions-number">${formatNumber(trade.pnl)}</td>
+						<td class="trade-transactions-number">${formatNumber(trade.cash)}</td>
 						<td class="trade-transactions-number">${formatNumber(trade.equity)}</td>
 					`;
 					tbody.appendChild(tr);

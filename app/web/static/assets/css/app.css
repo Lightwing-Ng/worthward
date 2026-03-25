@@ -2948,10 +2948,33 @@ div.style-token-modal-demo {
 }
 .trade-transactions-table th,
 .trade-transactions-table th.trade-transactions-number { text-align: center !important; }
-.trade-transactions-index { text-align: center !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.trade-transactions-date { text-align: center !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.trade-transactions-side { text-align: right !important; white-space: nowrap; }
-.trade-transactions-number { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trade-transactions-index {
+	text-align: center !important;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	width: 6%;
+	min-width: 40px;
+}
+.trade-transactions-date {
+	text-align: right !important;
+	font-variant-numeric: tabular-nums;
+	white-space: normal;
+	width: 18%;
+	min-width: 100px;
+}
+.trade-transactions-side {
+	text-align: center !important;
+	white-space: nowrap;
+	width: 7%;
+	min-width: 40px;
+}
+.trade-transactions-number {
+	text-align: right !important;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	width: 12.4%;
+	min-width: 78px;
+}
 .field-switch { display: grid; gap: 8px; }
 .field-switch .switch-row { padding-left: 0; background: transparent; min-height: 24px; }
 .field-switch .switch-label { text-align: left; }
