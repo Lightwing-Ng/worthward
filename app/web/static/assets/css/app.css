@@ -2572,12 +2572,33 @@ div.style-token-modal-demo {
 .icon-store-delete { background-color: currentColor; mask: url("../../images/trash.svg") center/contain no-repeat; -webkit-mask: url("../../images/trash.svg") center/contain no-repeat; }
 .local-store-table { width: 100%; table-layout: fixed; min-width: 0; }
 .local-store-table th, .local-store-table td { padding: 8px 8px; font-size: var(--font-tooltip); line-height: 1.3; }
-.local-store-col-symbol { width: 86px; }
-.local-store-col-name { width: auto; }
-.local-store-col-range { width: 138px; }
-.local-store-col-update,
-.local-store-col-1m,
-.local-store-col-delete { width: 44px; text-align: center; }
+.local-store-col-symbol {
+	width: 15%;
+	min-width: 64px;
+}
+.local-store-col-name {
+	width: 30%;
+	min-width: 128px;
+}
+.local-store-col-range {
+	width: 25%;
+	min-width: 128px;
+}
+.local-store-col-update {
+	width: 10%;
+	min-width: 48px;
+	text-align: center;
+}
+.local-store-col-1m {
+	width: 10%;
+	min-width: 48px;
+	text-align: center;
+}
+.local-store-col-delete {
+	width: 10%;
+	min-width: 48px;
+	text-align: center;
+}
 .local-store-table th:nth-child(n+4),
 .local-store-table td:nth-child(n+4) { text-align: center; }
 .local-store-table .settings-symbol-cell { gap: 6px; }
