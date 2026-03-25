@@ -1,4 +1,4 @@
-# compareStocks 
+# compareStocks
 
 A local-first web app for comparing stock tickers and running single-ticker strategy backtests with full server-side static rendering.
 
