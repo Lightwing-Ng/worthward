@@ -176,6 +176,40 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["chart"]["raw_dates"][1], "2026-02-20T09:31:00")
         self.assertEqual(result["chart"]["dates"][1], "20 Feb 2026 09:31")
 
+    def test_realized_long_and_short_metrics_only_accumulate_positive_pairs(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(
+                    [
+                        "2026-02-20 09:30",
+                        "2026-02-20 09:31",
+                        "2026-02-20 09:32",
+                        "2026-02-20 09:33",
+                        "2026-02-20 09:34",
+                        "2026-02-20 09:35",
+                        "2026-02-20 09:36",
+                    ]
+                ),
+                "Open": [10.0, 10.0, 12.0, 12.0, 11.0, 10.0, 10.0],
+                "Close": [10.0, 10.5, 12.0, 11.5, 11.0, 10.0, 10.0],
+                "buy_signal": [True, False, False, False, True, False, False],
+                "sell_signal": [False, False, True, False, False, True, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=100.0,
+            interval="1m",
+        )
+
+        self.assertEqual(result["summary"]["long_gain"], 20.0)
+        self.assertEqual(result["summary"]["short_gain"], 10.0)
+
     def test_next_open_execution_uses_following_session_open_price(self) -> None:
         frame = pd.DataFrame(
             {

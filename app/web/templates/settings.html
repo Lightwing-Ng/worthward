@@ -521,6 +521,22 @@
                             <span class="workspace-modal-title notice-floating-banner-title">{{ row.sample_title }}</span>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "chart-tooltip" %}
+                    <div class="style-token-chart-tooltip-shell">
+                        <div class="chart-tooltip is-visible style-token-chart-tooltip-demo">
+                            <p class="chart-tooltip-date">{{ row.sample_title }}</p>
+                            <div class="chart-tooltip-list">
+                                {% for item in row.sample_rows %}
+                                <div class="chart-tooltip-row">
+                                    <span class="chart-tooltip-dot" style="background: {{ item.color }}"></span>
+                                    <span></span>
+                                    <span class="chart-tooltip-label">{{ item.label }}</span>
+                                    <span class="chart-tooltip-value">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
                     {% elif row.sample_kind == "trade-strategy-stepper" %}
                     <div class="style-token-stepper-shell">
                         <div class="style-token-stepper-preview">

@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.31.13
+Code version: v3.31.14
 """
 
 from __future__ import annotations
@@ -820,13 +820,20 @@ def register_routes(app: Flask) -> None:
             {
                 "id": style_token_id("Chart tooltip"),
                 "name": "Chart tooltip",
-                "sample_kind": "floating-banner",
-                "sample_title": "Chart tooltip (hover)",
-                "sample_copy": "Glassmorphism tooltip for interactive chart points",
+                "sample_kind": "chart-tooltip",
+                "sample_title": "26 Mar 2026 10:08",
+                "sample_copy": "",
                 "sample_button": "",
                 "sample_button_class": "",
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
+                "sample_rows": [
+                    {"label": "Close", "value": "44.38", "color": "#0055cc"},
+                    {"label": "Net return", "value": "3.34%", "color": "#2fff9c"},
+                    {"label": "Equity", "value": "10,333.71", "color": "#111827"},
+                    {"label": "If all in", "value": "9,840.88", "color": "#8e8e93"},
+                    {"label": "vs all in", "value": "+492.83", "color": "#2fff9c"},
+                ],
                 "tokens": [
                     raw_token("--tooltip-background", "rgba(255, 255, 255, 0.68)"),
                     raw_token("--tooltip-border", "1px solid rgba(255, 255, 255, 0.42)"),

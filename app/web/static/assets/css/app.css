@@ -2116,7 +2116,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	width: min(100%, var(--style-token-demo-width-current));
 	transition: width 320ms var(--motion-inertial);
 	position: relative;
-	overflow: hidden;
+	overflow: visible;
 }
 .style-token-title {
 	margin: 0 0 8px;
@@ -2224,7 +2224,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	white-space: nowrap;
 }
 .style-token-modal-shell {
-	padding: 8px 0;
+	padding: 20px 0;
 }
 div.style-token-modal-demo {
 	width: 100%;
@@ -2246,6 +2246,19 @@ div.style-token-modal-demo {
 	top: 0;
 	right: 0;
 	width: 100%;
+}
+.style-token-chart-tooltip-shell {
+	padding: 20px 0;
+	position: relative;
+	min-height: 196px;
+}
+.style-token-demo .style-token-chart-tooltip-demo.chart-tooltip {
+	position: relative;
+	left: 0;
+	top: 0;
+	min-width: 220px;
+	max-width: min(280px, 100%);
+	opacity: 1;
 }
 .style-token-stepper-shell {
 	padding: 8px 0;

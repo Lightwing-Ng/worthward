@@ -315,8 +315,8 @@ def run_single_ticker_backtest(
     benchmark_alpha = final_equity - bh_final_equity
 
     # 2. Strategy Component Gains
-    # Long Gain: Realized P&L from Buy -> Sell cycles
-    # Short Gain: 'Avoidance Gain' from Sell -> Buy intervals (including real shorts)
+    # Long Gain: realized positive gain from Buy -> Sell cycles
+    # Short Gain: realized positive avoidance gain from Sell -> Buy intervals
     long_gain = 0.0
     short_gain = 0.0
     
@@ -327,18 +327,17 @@ def run_single_ticker_backtest(
         t2_side = str(t2.get("side"))
         
         if t1_side == "Buy" and t2_side == "Sell":
-            # Realized Long P&L from a Buy -> Sell cycle
-            # Note: The 'pnl' in the Sell action already contains (Sell - Buy) * Shares
-            long_gain += float(t2.get("pnl", 0.0))
+            # Only count realized profitable long cycles here.
+            realized_long_pnl = float(t2.get("pnl", 0.0))
+            long_gain += max(realized_long_pnl, 0.0)
             
         elif t1_side == "Sell" and t2_side == "Buy":
-            # Avoidance Gain / Realized Short P&L from a Sell -> Buy interval
-            # Gain = (Price_at_Sell - Price_at_Buy) * Shares
-            # This counts how much we saved by being out (or how much we made by shorting)
+            # Only count realized profitable sell-high / buy-back-lower intervals here.
             s_price = float(t1.get("price", 0.0))
             b_price = float(t2.get("price", 0.0))
             s_shares = float(t1.get("shares", 0.0))
-            short_gain += (s_price - b_price) * s_shares
+            realized_short_pnl = (s_price - b_price) * s_shares
+            short_gain += max(realized_short_pnl, 0.0)
 
     return {
         "interval": interval,

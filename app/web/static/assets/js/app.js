@@ -3036,7 +3036,8 @@
 				{ value: "1d", label: "1 day" },
 				{ value: "3d", label: "3 days" },
 				{ value: "1w", label: "1 week" },
-				{ value: "2w", label: "2 weeks" }
+				{ value: "2w", label: "2 weeks" },
+				{ value: "1mo", label: "1 month" }
 			];
 			
 			const newOptions = interval === "1m" ? options1m : options1d;
