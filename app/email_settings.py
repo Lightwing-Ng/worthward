@@ -21,7 +21,6 @@ from urllib.request import Request, urlopen
 
 from .config import BASE_DIR
 
-
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 SMTP_SETTINGS_PATH = SETTINGS_STORE_DIR / "smtp.json"
 OUTLOOK_SMTP_HOST = "smtp-mail.outlook.com"

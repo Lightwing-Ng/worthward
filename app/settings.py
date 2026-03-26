@@ -12,7 +12,6 @@ from typing import Any
 
 from .config import BASE_DIR
 
-
 CONFIG_PATH = BASE_DIR / "config.toml"
 
 

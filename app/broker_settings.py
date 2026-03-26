@@ -12,7 +12,6 @@ from pathlib import Path
 
 from .config import BASE_DIR
 
-
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 BROKER_SETTINGS_PATH = SETTINGS_STORE_DIR / "brokers.json"
 

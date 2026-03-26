@@ -14,9 +14,9 @@ from .schemas import SeriesPayload
 
 
 def resolve_effective_period(
-    requested_period: str,
-    dataset_a: pd.DataFrame,
-    dataset_b: pd.DataFrame,
+        requested_period: str,
+        dataset_a: pd.DataFrame,
+        dataset_b: pd.DataFrame,
 ) -> tuple[str, str | None]:
     if requested_period == "max":
         return "max", None
@@ -84,11 +84,11 @@ def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFr
 
 
 def build_series_payload(
-    ticker: str,
-    dataset: pd.DataFrame,
-    color: str | None = None,
-    *,
-    glow: bool = True,
+        ticker: str,
+        dataset: pd.DataFrame,
+        color: str | None = None,
+        *,
+        glow: bool = True,
 ) -> SeriesPayload:
     first_close = float(dataset["Close"].iloc[0])
     normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0

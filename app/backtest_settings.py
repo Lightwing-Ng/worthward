@@ -12,7 +12,6 @@ from typing import Literal
 
 from .config import MARKET_STORE_DIR
 
-
 BacktestExecutionMode = Literal["signal_close", "next_open"]
 BACKTEST_SETTINGS_PATH = MARKET_STORE_DIR / "backtest_settings.json"
 DEFAULT_BACKTEST_EXECUTION_MODE: BacktestExecutionMode = "next_open"

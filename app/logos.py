@@ -36,18 +36,15 @@ from .storage import (
     upsert_profile_record,
 )
 
-
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
 LOGGER = logging.getLogger(__name__)
 
-
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
     "JEPQ": "https://www.jpmorganchase.com",
 }
-
 
 ISSUER_WEBSITE_HINTS = {
     "INVESCO": "https://www.invesco.com",
@@ -262,10 +259,10 @@ def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | N
 
 
 def refresh_logo_store(
-    ticker: str,
-    website: str | None,
-    force_refresh: bool = False,
-    namespace: str = "primary",
+        ticker: str,
+        website: str | None,
+        force_refresh: bool = False,
+        namespace: str = "primary",
 ) -> None:
     del namespace
     ensure_market_store_dir()
@@ -283,10 +280,10 @@ def refresh_logo_store(
 
 
 def fetch_and_store_logo(
-    ticker: str,
-    website: str | None,
-    force_refresh: bool = False,
-    namespace: str = "primary",
+        ticker: str,
+        website: str | None,
+        force_refresh: bool = False,
+        namespace: str = "primary",
 ) -> str | None:
     del namespace
     ensure_market_store_dir()
@@ -298,18 +295,18 @@ def fetch_and_store_logo(
 
 
 def resolve_logo_url_with_fallback(
-    ticker: str,
-    website: str | None,
-    force_refresh: bool = False,
-    namespace: str = "primary",
+        ticker: str,
+        website: str | None,
+        force_refresh: bool = False,
+        namespace: str = "primary",
 ) -> str | None:
     return fetch_and_store_logo(ticker, website, force_refresh=force_refresh, namespace=namespace)
 
 
 def fetch_quote_profile(
-    ticker: str,
-    force_refresh: bool = False,
-    namespace: str = "primary",
+        ticker: str,
+        force_refresh: bool = False,
+        namespace: str = "primary",
 ) -> QuoteProfile:
     ensure_market_store_dir()
     normalized_ticker = normalize_ticker_input(ticker)
@@ -359,9 +356,9 @@ def fetch_quote_profile(
 
 
 def refresh_quote_profile_cache(
-    ticker: str,
-    force_refresh: bool = False,
-    namespace: str = "primary",
+        ticker: str,
+        force_refresh: bool = False,
+        namespace: str = "primary",
 ) -> bool:
     ensure_market_store_dir()
     if not has_remote_market_access():
@@ -403,8 +400,8 @@ def build_local_search_items(query: str) -> list[dict[str, str]]:
             continue
         profile_record = load_profile_record(symbol)
         company_name = (
-            str((profile_record or {}).get("company_name") or "").strip()
-            or symbol
+                str((profile_record or {}).get("company_name") or "").strip()
+                or symbol
         )
         if not is_supported_local_symbol(symbol, query, company_name):
             continue
@@ -458,8 +455,8 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         return combined_local
 
     if any(
-        str(item.get("symbol") or "").upper() == normalized_query
-        for item in local_items
+            str(item.get("symbol") or "").upper() == normalized_query
+            for item in local_items
     ):
         combined_exact: list[dict[str, str]] = []
         seen_exact: set[str] = set()

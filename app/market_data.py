@@ -16,7 +16,6 @@ from .config import DEFAULT_INTERVAL
 from .connectivity import has_remote_market_access
 from .storage import ensure_market_store_dir, history_store_path_for, intraday_history_store_path_for
 
-
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 
@@ -43,7 +42,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
     for col in (ohlc_columns + ["Close"]):
         if col in dataset.columns:
             dataset[col] = pd.to_numeric(dataset[col], errors="coerce")
-    
+
     subset_for_drop = ["Date", "Close"]
     if "Adj Close" in dataset.columns:
         subset_for_drop.append("Adj Close")
@@ -88,9 +87,9 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
 
 
 def fetch_history(
-    ticker: str,
-    include_dividends: bool,
-    interval: str = "1d",
+        ticker: str,
+        include_dividends: bool,
+        interval: str = "1d",
 ) -> pd.DataFrame:
     ensure_market_store_dir()
     path = intraday_history_store_path_for(ticker) if interval == "1m" else history_store_path_for(ticker)
@@ -115,7 +114,7 @@ def refresh_history_store(ticker: str) -> Path:
         raise ValueError("Remote market access is unavailable.")
 
     path = history_store_path_for(ticker)
-    
+
     start_date = None
     existing_df = None
     if path.exists():
@@ -127,7 +126,7 @@ def refresh_history_store(ticker: str) -> Path:
                 start_date = (max_date - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
         except:
             pass
-            
+
     if start_date:
         # Incremental download logic
         try:

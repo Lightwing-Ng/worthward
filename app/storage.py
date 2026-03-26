@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+
 try:
     import fcntl
 except ImportError:
@@ -27,7 +28,6 @@ from uuid import uuid4
 import pandas as pd
 
 from .config import MARKET_STORE_DIR
-
 
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
@@ -64,11 +64,11 @@ def ensure_market_store_dir() -> None:
 
 def _ensure_market_store_directories() -> None:
     for path in (
-        MARKET_STORE_DIR,
-        HISTORICAL_STORE_DIR,
-        PROFILES_STORE_DIR,
-        LOGOS_STORE_DIR,
-        SEARCH_STORE_DIR,
+            MARKET_STORE_DIR,
+            HISTORICAL_STORE_DIR,
+            PROFILES_STORE_DIR,
+            LOGOS_STORE_DIR,
+            SEARCH_STORE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
 
@@ -279,14 +279,14 @@ def has_profile_record(ticker: str) -> bool:
 
 
 def upsert_profile_record(
-    ticker: str,
-    company_name: str,
-    website: str | None,
-    *,
-    scope: str,
-    tradingview_screener: str | None = None,
-    tradingview_exchange: str | None = None,
-    updated_at: str | None = None,
+        ticker: str,
+        company_name: str,
+        website: str | None,
+        *,
+        scope: str,
+        tradingview_screener: str | None = None,
+        tradingview_exchange: str | None = None,
+        updated_at: str | None = None,
 ) -> dict[str, str]:
     normalized_ticker = normalize_ticker(ticker)
     incoming = {
@@ -565,8 +565,8 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
         removed_profiles = 0
         if not profiles_table.empty:
             keep_mask = (
-                (profiles_table["storage_scope"] == PROFILE_SCOPE_LOCAL)
-                | profiles_table["ticker"].isin(protected_tickers)
+                    (profiles_table["storage_scope"] == PROFILE_SCOPE_LOCAL)
+                    | profiles_table["ticker"].isin(protected_tickers)
             )
             removed_profiles = int((~keep_mask).sum())
             profiles_table = profiles_table.loc[keep_mask].copy()
@@ -602,10 +602,7 @@ def delete_ticker_data(ticker: str) -> None:
     logo_path = logo_store_path_for(normalized_ticker)
     if logo_path.exists():
         logo_path.unlink()
- 
+
     legacy_search_json = SEARCH_STORE_DIR / f"{normalized_ticker}.json"
     if legacy_search_json.exists():
         legacy_search_json.unlink()
-
-
-

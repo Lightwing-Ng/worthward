@@ -12,9 +12,9 @@ from .schemas import DateConstraintPayload
 
 
 def align_requested_exact_dates(
-    available_dates: pd.Series,
-    requested_start: str | None,
-    requested_end: str | None,
+        available_dates: pd.Series,
+        requested_start: str | None,
+        requested_end: str | None,
 ) -> tuple[pd.Timestamp, pd.Timestamp, str | None]:
     if available_dates.empty:
         raise ValueError("No shared trading dates are available for the selected tickers.")
@@ -59,9 +59,9 @@ def align_requested_exact_dates(
 
 
 def build_date_constraint_payload(
-    *datasets: pd.DataFrame,
-    requested_start: str | None = None,
-    requested_end: str | None = None,
+        *datasets: pd.DataFrame,
+        requested_start: str | None = None,
+        requested_end: str | None = None,
 ) -> DateConstraintPayload:
     if not datasets:
         return DateConstraintPayload(min_date=None, max_date=None, trading_dates=[])

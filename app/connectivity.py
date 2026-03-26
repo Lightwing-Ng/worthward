@@ -13,7 +13,6 @@ from urllib.request import Request, urlopen
 
 import yfinance as yf
 
-
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d&interval=1d"
 PRIMARY_LOGO_PING_URL = "https://eodhd.com/img/logos/US/TQQQ.png"
 FALLBACK_LOGO_PING_URLS = (
@@ -45,10 +44,10 @@ TRADINGVIEW_TA_FAILURE_TTL_SECONDS = 300
 
 
 def _cached_connectivity_value(
-    cache_entry: tuple[float, float, bool] | None,
-    *,
-    success_ttl: int,
-    failure_ttl: int,
+        cache_entry: tuple[float, float, bool] | None,
+        *,
+        success_ttl: int,
+        failure_ttl: int,
 ) -> bool | None:
     if cache_entry is None:
         return None

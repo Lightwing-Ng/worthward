@@ -15,7 +15,6 @@ import pandas as pd
 from .broker_settings import BrokerSettings, has_longbridge_credentials
 from .storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 
-
 ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
 ONE_MINUTE_FRESHNESS_DAYS = 7
@@ -51,10 +50,10 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             if "timeout" in message.lower():
                 return False, "Connection timeout. Please check your network or try again."
             return False, f"Connection failed: {message}"
-    
+
     if settings.selected_broker == "ibkr":
         return False, "IBKR integration is currently in development."
-    
+
     return False, f"Unsupported broker: {settings.selected_broker}"
 
 
@@ -103,18 +102,18 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
         raw_ts = getattr(candle, "timestamp")
-        
+
         # 1. Parse raw timestamp (numeric epoch) as HKT as requested.
         # Longbridge timestamps for US stocks are often numerically aligned with HKT.
         ts_hkt = pd.Timestamp(raw_ts, unit="s").tz_localize("Asia/Hong_Kong")
-        
+
         # 2. Convert to US Eastern Time (NYT), preserving the mapping of a specific 
         # point in time regardless of future DST law changes.
         ts_nyt = ts_hkt.tz_convert("America/New_York")
-            
+
         rows.append(
             {
-                "Date": ts_nyt.tz_localize(None), # Store as naive NYT (System Standard)
+                "Date": ts_nyt.tz_localize(None),  # Store as naive NYT (System Standard)
                 "Open": float(getattr(candle, "open")),
                 "High": float(getattr(candle, "high")),
                 "Low": float(getattr(candle, "low")),
@@ -129,9 +128,9 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
 
 
 def fetch_longbridge_one_minute_history(
-    ticker: str, 
-    settings: BrokerSettings, 
-    since: datetime | None = None
+        ticker: str,
+        settings: BrokerSettings,
+        since: datetime | None = None
 ) -> pd.DataFrame:
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
@@ -140,12 +139,12 @@ def fetch_longbridge_one_minute_history(
     config = _build_longbridge_config(Config, settings)
     quote_context = QuoteContext(config)
     symbol = _normalize_longbridge_symbol(ticker)
-    
+
     # We fetch backwards from current time
     end_at = datetime.now(timezone.utc)
     # The absolute lookback limit (6 months)
     global_start_at = one_minute_lookback_start(end_at).to_pydatetime()
-    
+
     # The incremental lookback limit (if provided)
     # We add 2 hours overlap to ensure no gaps or partial bars at the boundary
     effective_start_at = global_start_at
@@ -199,7 +198,7 @@ def fetch_longbridge_one_minute_history(
         # Or better: treat them as naive for comparison if effective_start_at is naive.
         oldest_ts_naive = pd.Timestamp(batch_min_date).replace(tzinfo=None)
         start_at_naive = pd.Timestamp(effective_start_at).tz_convert(None).replace(tzinfo=None)
-        
+
         if oldest_ts_naive <= start_at_naive:
             break
 
@@ -215,11 +214,11 @@ def fetch_longbridge_one_minute_history(
 
     dataset = pd.concat(frames, ignore_index=True)
     dataset = dataset.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
-    
+
     # Filter by the global 6-month limit
     cut_off = pd.Timestamp(global_start_at).tz_convert(None).replace(tzinfo=None)
     dataset = dataset.loc[dataset["Date"] >= cut_off].copy()
-    
+
     if dataset.empty:
         raise ValueError(f"No 1-minute market data returned for {ticker}.")
     return dataset.reset_index(drop=True)
@@ -228,7 +227,7 @@ def fetch_longbridge_one_minute_history(
 def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -> pd.DataFrame:
     ensure_market_store_dir()
     path = intraday_history_store_path_for(ticker, "1m")
-    
+
     since: datetime | None = None
     existing_df: pd.DataFrame | None = None
     if path.exists():
@@ -240,17 +239,17 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
             pass
 
     new_dataset = fetch_longbridge_one_minute_history(ticker, settings, since=since)
-    
+
     if existing_df is not None:
         # Merge new and old
         combined = pd.concat([existing_df, new_dataset])
         # Keep the latest record for any duplicate timestamps
         combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
-        
+
         # Enforce the 6-month limit on the combined store
         cut_off = one_minute_lookback_start().tz_localize(None)
         combined = combined.loc[combined["Date"] >= cut_off].copy()
-        
+
         combined.to_parquet(path, index=False)
         return combined
     else:
@@ -280,17 +279,17 @@ def _is_market_data_fresh(max_date: datetime) -> bool:
     # Estimate New York time (UTC-4 in March/Daylight Saving)
     now_bj = datetime.now()
     now_ny = now_bj - timedelta(hours=12)
-    
+
     # Target is the last completed trading day
     target_date = now_ny.date()
     if now_ny.hour < 16:
         # Before or during current trading day close, we expect at least the previous day
         target_date -= timedelta(days=1)
-        
+
     # Skip weekends to find the last required trading day
-    while target_date.weekday() >= 5: # Sat=5, Sun=6
+    while target_date.weekday() >= 5:  # Sat=5, Sun=6
         target_date -= timedelta(days=1)
-        
+
     # If the latest record date is at least the target_date, it's fresh
     return max_date.date() >= target_date
 
@@ -305,19 +304,19 @@ def is_one_minute_store_complete(ticker: str) -> bool:
         return False
     if dataset.empty:
         return False
-    
+
     date_values = pd.to_datetime(dataset["Date"])
     if date_values.empty:
         return False
-        
+
     min_date = date_values.min()
     max_date = date_values.max()
-    
+
     # Check span context
     span_days = (max_date - min_date).days
     if span_days < ONE_MINUTE_MIN_SPAN_DAYS:
         return False
-        
+
     # Check freshness against last trading day
     return _is_market_data_fresh(max_date)
 
@@ -332,18 +331,18 @@ def is_daily_store_complete(ticker: str) -> bool:
         return False
     if dataset.empty:
         return False
-        
+
     date_values = pd.to_datetime(dataset["Date"])
     if date_values.empty:
         return False
-        
+
     min_date = date_values.min()
     max_date = date_values.max()
-    
+
     # Check span context
     span_days = (max_date - min_date).days
     if span_days < DAILY_MIN_SPAN_DAYS:
         return False
-        
+
     # Check freshness against last trading day
     return _is_market_data_fresh(max_date)
