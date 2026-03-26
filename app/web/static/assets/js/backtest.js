@@ -583,13 +583,14 @@
 			if (!table || !nav || !tbody) return;
 
 			const trades = backtestResult.trades || [];
-			if (!trades.length) {
+			const displayTrades = trades.filter((trade) => !trade._virtual_close);
+			if (!displayTrades.length) {
 				nav.hidden = true;
 				return;
 			}
 
 			const PAGE_SIZE = 10;
-			const totalPages = Math.ceil(trades.length / PAGE_SIZE);
+			const totalPages = Math.ceil(displayTrades.length / PAGE_SIZE);
 			
 			if (totalPages <= 1) {
 				nav.style.display = "none";
@@ -639,12 +640,12 @@
 			const goToPage = (p) => {
 				currentPage = p;
 				const start = (p - 1) * PAGE_SIZE;
-				const end = Math.min(start + PAGE_SIZE, trades.length);
+				const end = Math.min(start + PAGE_SIZE, displayTrades.length);
 				
 				tbody.innerHTML = "";
 				let displayIndex = 1;
 				for (let i = start; i < end; i++) {
-					const trade = trades[i];
+					const trade = displayTrades[i];
 					// Skip virtual closing trades that are only used for win rate calculation
 					if (trade._virtual_close) {
 						continue;

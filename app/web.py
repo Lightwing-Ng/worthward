@@ -816,6 +816,24 @@ def register_routes(app: Flask) -> None:
                 ],
                 "related_styles": [],
             },
+            {
+                "id": style_token_id("Chart tooltip"),
+                "name": "Chart tooltip",
+                "sample_kind": "floating-banner",
+                "sample_title": "Chart tooltip (hover)",
+                "sample_copy": "Glassmorphism tooltip for interactive chart points",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    raw_token("--tooltip-background", "rgba(255, 255, 255, 0.68)"),
+                    raw_token("--tooltip-border", "1px solid rgba(255, 255, 255, 0.42)"),
+                    raw_token("--tooltip-shadow", "0 18px 40px rgba(17, 24, 39, 0.10)"),
+                    raw_token("--tooltip-blur", "saturate(180%) blur(24px)"),
+                ],
+                "related_styles": [],
+            },
         ]
         return rows
 
@@ -1456,7 +1474,6 @@ def register_routes(app: Flask) -> None:
                             local_tickers = [t for t in list_local_market_tickers() if t not in completely_missing]
                             if not local_tickers:
                                 # If no local tickers available at all, use the default tickers to guarantee something renders
-                                from .config import DEFAULT_TICKERS
                                 local_tickers = [normalize_ticker_input(t) for t in DEFAULT_TICKERS if normalize_ticker_input(t) not in completely_missing]
 
                             for missing_ticker in completely_missing:
