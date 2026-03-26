@@ -1221,7 +1221,7 @@
 									<th>${labels.local_store_name || "Name"}</th>
 									<th>${labels.local_store_range || "Range"}</th>
 									<th>1d</th>
-									<th>${labels.local_store_intraday || "1m (6mo)"}</th>
+									<th>${labels.local_store_intraday || "1m"}</th>
 									<th>${labels.local_store_delete || ""}</th>
 								</tr>
 							</thead>

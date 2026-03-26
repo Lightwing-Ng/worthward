@@ -49,26 +49,18 @@
         </aside>
         <section class="panel chart-panel workspace" id="workspace_panel">
             {% if error %}
-            <div class="error{% if notice_is_floating %} notice-floating notice-floating-banner{% endif %}" data-dismissible-notice>
-                {% if notice_is_floating %}
+            <div class="error notice-floating notice-floating-banner" data-dismissible-notice>
                 <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
                 <span class="workspace-modal-title notice-floating-banner-title">{{ error }}</span>
-                {% else %}
-                <span>{{ error }}</span>
-                {% endif %}
                 <button type="button" class="dismiss-button notice-close" aria-label="Close error notice">
                     <span class="icon icon-dismiss-control" aria-hidden="true"></span>
                 </button>
             </div>
             {% endif %}
             {% if notice %}
-            <div class="notice{% if notice_is_floating %} notice-floating notice-floating-banner{% endif %}" data-dismissible-notice>
-                {% if notice_is_floating %}
+            <div class="notice notice-floating notice-floating-banner" data-dismissible-notice>
                 <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
                 <span class="workspace-modal-title notice-floating-banner-title">{{ notice }}</span>
-                {% else %}
-                <span>{{ notice }}</span>
-                {% endif %}
                 <button type="button" class="dismiss-button notice-close" aria-label="Close notice">
                     <span class="icon icon-dismiss-control" aria-hidden="true"></span>
                 </button>

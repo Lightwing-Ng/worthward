@@ -1366,7 +1366,6 @@ def register_routes(app: Flask) -> None:
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
-        notice_is_floating = bool(error or notice)
         floating_banner_icon_class = "icon-modal-dialog-banner-default"
         if notice and "Successfully connected" in notice:
             floating_banner_icon_class = "icon-settings-broker"
@@ -1735,7 +1734,6 @@ def register_routes(app: Flask) -> None:
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
             if should_use_modal_banner_message(error):
-                notice_is_floating = True
                 floating_banner_icon_class = modal_banner_icon_class(error)
 
         remote_market_access = True
@@ -1750,7 +1748,6 @@ def register_routes(app: Flask) -> None:
                 remote_market_access = has_remote_market_access()
                 if not remote_market_access:
                     notice = "Using bundled local market_store data because remote market access is unavailable."
-                    notice_is_floating = True
 
         top_tickers = []
         timing_selected_ticker = ""
@@ -1761,7 +1758,6 @@ def register_routes(app: Flask) -> None:
 
         if current_view == "settings":
             if settings_section in {"general", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
-                notice_is_floating = True
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
@@ -1947,7 +1943,6 @@ def register_routes(app: Flask) -> None:
             template_name,
             error=error,
             notice=notice,
-            notice_is_floating=notice_is_floating,
             floating_banner_icon_class=floating_banner_icon_class,
             period=period,
             period_label=period_label,
