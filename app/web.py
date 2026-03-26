@@ -1954,6 +1954,7 @@ def register_routes(app: Flask) -> None:
                 f"- **Win Rate**: {summary.get('win_rate_pct', 0):,.2f}%",
                 f"- **Alpha vs Buy-and-Hold**: ${summary.get('benchmark_alpha', 0):,.2f}",
                 f"- **Realized Long P&L**: ${summary.get('long_gain', 0):,.2f}",
+                f"- **Realized Long Loss**: -${summary.get('long_loss', 0):,.2f}",
                 f"- **Realized Short P&L**: ${summary.get('short_gain', 0):,.2f}",
                 f"- **Initial Capital**: ${summary.get('initial_capital', 0):,.2f}",
                 "",

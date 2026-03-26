@@ -2942,8 +2942,8 @@ div.style-token-modal-demo {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	grid-auto-rows: min-content;
-	gap: 6px;
-	padding: 1px;
+	gap: 8px;
+	padding: 2px 2px 4px;
 	align-content: flex-start;
 	overflow-y: auto;
 	overflow-x: hidden;
@@ -2958,17 +2958,61 @@ div.style-token-modal-demo {
 .trade-metrics-grid:hover::-webkit-scrollbar { display: block; }
 .trade-metrics-grid:hover::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 4px; }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
 	.trade-metrics-grid {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+.trade-metric-card {
+	min-width: 0;
+	min-height: 0;
+	overflow: visible;
+	padding: 6px 8px 8px;
+	border-radius: var(--radius-panel);
+	background: var(--glass-surface-background-dense);
+	display: grid;
+	grid-template-rows: minmax(24px, auto) minmax(0, 1fr);
+	row-gap: 4px;
+	align-items: stretch;
+}
+.trade-metric-label {
+	display: flex;
+	align-items: flex-start;
+	margin-bottom: 0;
+	font-size: var(--font-tooltip);
+	line-height: 1.1;
+	font-weight: var(--font-weight-bold);
+	color: var(--muted);
+}
+.trade-metric-value {
+	display: flex;
+	align-items: flex-end;
+	justify-content: flex-end;
+	min-width: 0;
+	min-height: calc(var(--font-title-md) * 1.16);
+	overflow: visible;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--font-title-md);
+	line-height: 1.16;
+	letter-spacing: -0.03em;
+	color: var(--text);
+	font-weight: var(--font-weight-regular);
+	padding-bottom: 2px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+@media (min-width: 1024px) {
+	.trade-performance-card {
+		--trade-detail-panel-height: 196px;
+	}
+	.trade-metrics-grid {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		grid-auto-rows: 1fr;
 		align-content: stretch;
 		overflow-y: hidden;
 	}
 }
-.trade-metric-card { min-width: 0; min-height: 0; overflow: hidden; padding: 2px; border-radius: var(--radius-panel); background: var(--glass-surface-background-dense); }
-.trade-metric-label { display: block; margin-bottom: 3px; font-size: var(--font-tooltip); line-height: 1.1; font-weight: var(--font-weight-bold); color: var(--muted); }
-.trade-metric-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-title-md); line-height: 1; letter-spacing: -0.03em; color: var(--text); font-weight: var(--font-weight-regular); }
 .trade-transactions-wrap { width: 100%; height: 100%; max-height: none; overflow-y: auto; overflow-x: hidden; }
 .trade-transactions-table { width: 100%; min-width: 100%; table-layout: fixed; }
 .trade-transactions-table thead th {

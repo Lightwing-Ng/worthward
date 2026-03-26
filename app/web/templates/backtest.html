@@ -107,7 +107,6 @@
                     <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.net_return_pct) }}%</span></div>
                     <div class="trade-metric-card"><span class="trade-metric-label">Total trades</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ backtest_result.summary.total_trades }}</span></div>
                     <div class="trade-metric-card"><span class="trade-metric-label">Win rate</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.win_rate_pct) }}%</span></div>
-                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.max_drawdown_pct) }}%</span></div>
                     <div class="trade-metric-card">
                         <span class="trade-metric-label">Alpha vs B&H</span>
                         <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.benchmark_alpha >= 0 else '#ff2f92' }};">
@@ -126,6 +125,13 @@
                             {{ "+" if backtest_result.summary.short_gain >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.short_gain|abs) }}
                         </span>
                     </div>
+                    <div class="trade-metric-card">
+                        <span class="trade-metric-label">Realized Long Loss</span>
+                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#ff2f92' if backtest_result.summary.long_loss > 0 else '#2fff9c' }};">
+                            {{ "-" if backtest_result.summary.long_loss > 0 else "+" }}${{ "{:,.2f}".format(backtest_result.summary.long_loss|abs) }}
+                        </span>
+                    </div>
+                    <div class="trade-metric-card"><span class="trade-metric-label">Max drawdown</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.max_drawdown_pct) }}%</span></div>
                 </div>
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>

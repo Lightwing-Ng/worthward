@@ -208,6 +208,7 @@ class BacktestMetricTests(unittest.TestCase):
         )
 
         self.assertEqual(result["summary"]["long_gain"], 20.0)
+        self.assertEqual(result["summary"]["long_loss"], 10.0)
         self.assertEqual(result["summary"]["short_gain"], 10.0)
 
     def test_next_open_execution_uses_following_session_open_price(self) -> None:

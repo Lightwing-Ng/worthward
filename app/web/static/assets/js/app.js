@@ -599,12 +599,16 @@
 		const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || "Loading";
 		if (state.currentView === "backtest") {
 			const tradeMetricLabels = [
-				"Net return",
-				"Final equity",
-				"Max drawdown",
-				"Win rate",
-				"Closed trades",
 				"Initial capital",
+				"Final equity",
+				"Net return",
+				"Total trades",
+				"Win rate",
+				"Alpha vs B&H",
+				"Realized long P&L",
+				"Realized short P&L",
+				"Realized long loss",
+				"Max drawdown",
 			];
 			return `
 				<div class="workspace-header">

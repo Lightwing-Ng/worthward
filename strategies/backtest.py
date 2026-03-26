@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.8.1
+Code version: v1.8.2
 """
 
 from __future__ import annotations
@@ -316,8 +316,10 @@ def run_single_ticker_backtest(
 
     # 2. Strategy Component Gains
     # Long Gain: realized positive gain from Buy -> Sell cycles
+    # Long Loss: realized loss from Buy -> Sell cycles where the exit is lower than the entry
     # Short Gain: realized positive avoidance gain from Sell -> Buy intervals
     long_gain = 0.0
+    long_loss = 0.0
     short_gain = 0.0
     
     # Process sequential trade interactions
@@ -327,9 +329,10 @@ def run_single_ticker_backtest(
         t2_side = str(t2.get("side"))
         
         if t1_side == "Buy" and t2_side == "Sell":
-            # Only count realized profitable long cycles here.
+            # Split long round-trips into realized gains vs realized losses.
             realized_long_pnl = float(t2.get("pnl", 0.0))
             long_gain += max(realized_long_pnl, 0.0)
+            long_loss += max(-realized_long_pnl, 0.0)
             
         elif t1_side == "Sell" and t2_side == "Buy":
             # Only count realized profitable sell-high / buy-back-lower intervals here.
@@ -350,6 +353,7 @@ def run_single_ticker_backtest(
             "win_rate_pct": round((len(wins) / len(trade_pairs)) * 100.0, 2) if trade_pairs else 0.0,
             "benchmark_alpha": round(benchmark_alpha, 2),
             "long_gain": round(long_gain, 2),
+            "long_loss": round(long_loss, 2),
             "short_gain": round(short_gain, 2),
         },
         "chart": {
