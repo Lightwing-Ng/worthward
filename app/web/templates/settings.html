@@ -10,33 +10,33 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
         <span class="settings-nav-label">General</span>
     </a>
+    <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
+        <span class="settings-nav-label">Style tokens</span>
+    </a>
     <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-item-network settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
         <span class="settings-nav-label">{{ labels.network_self_check }}</span>
-    </a>
-    <a href="{{ settings_urls.strategies }}" class="settings-nav-item settings-nav-item-strategies{% if settings_section == 'strategies' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-strategies"></span></span>
-        <span class="settings-nav-label">{{ labels.strategy_settings }}</span>
-    </a>
-    <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item settings-nav-item-email{% if settings_section == 'email-smtp' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
-        <span class="settings-nav-label">{{ labels.email_smtp }}</span>
     </a>
     <a href="{{ settings_urls['broker-access'] }}" class="settings-nav-item settings-nav-item-broker{% if settings_section == 'broker-access' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
         <span class="settings-nav-label">Broker access</span>
     </a>
+    <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item settings-nav-item-email{% if settings_section == 'email-smtp' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+        <span class="settings-nav-label">{{ labels.email_smtp }}</span>
+    </a>
     <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item settings-nav-item-store{% if settings_section == 'local-market-store' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
         <span class="settings-nav-label">{{ labels.local_market_store }}</span>
     </a>
+    <a href="{{ settings_urls.strategies }}" class="settings-nav-item settings-nav-item-strategies{% if settings_section == 'strategies' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-strategies"></span></span>
+        <span class="settings-nav-label">{{ labels.strategy_settings }}</span>
+    </a>
     <a href="{{ settings_urls['clear-caches'] }}" class="settings-nav-item settings-nav-item-clear-cache{% if settings_section == 'clear-caches' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
         <span class="settings-nav-label">Clear caches</span>
-    </a>
-    <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
-        <span class="settings-nav-label">Style tokens</span>
     </a>
 </nav>
 {% endblock %}
@@ -627,6 +627,13 @@
                                 </div>
                                 {% endfor %}
                             </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "metric-value" %}
+                    <div class="style-token-metric-demo-shell">
+                        <div class="trade-metric-card style-token-metric-card-demo">
+                            <span class="trade-metric-label">{{ row.sample_title }}</span>
+                            <span class="trade-metric-value style-token-metric-value-demo">{{ row.sample_value }}</span>
                         </div>
                     </div>
                     {% elif row.sample_kind == "trade-strategy-stepper" %}

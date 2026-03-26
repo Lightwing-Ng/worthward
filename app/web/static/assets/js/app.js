@@ -1,4 +1,4 @@
-/* Code version: v3.34.0 */
+/* Code version: v3.35.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -156,6 +156,16 @@
 			allIn: closeSeries.map((value) => Number((allInCash + (allInShares * Number(value || 0))).toFixed(4))),
 			initialCapital,
 		};
+	};
+
+	const didPortfolioRequestChangeXAxis = (currentParams, nextParams) => {
+		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
+		for (const key of xAxisKeys) {
+			const current = (currentParams.get(key) || "").toString().trim();
+			const next = (nextParams.get(key) || "").toString().trim();
+			if (current !== next) return true;
+		}
+		return false;
 	};
 
 	const appShell = $(".app-shell");
@@ -1397,6 +1407,7 @@
 			input.focus();
 			syncDateConstraints();
 			if (isBacktestView) syncBacktestIntervals();
+			if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
 			scheduleAutoSubmit(120);
 		};
 
@@ -1456,7 +1467,8 @@
 		};
 
 		input.addEventListener("input", async () => {
-			if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+			if (isPortfolioView) requestWorkspaceChartTransition("ticker-edit");
+			else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 			hideTickerValidationTooltip(input);
 			input.dataset.logoUrl = "";
 			input.dataset.symbol = "";
@@ -1530,7 +1542,8 @@
 			}
 		});
 		input.addEventListener("change", () => {
-			if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+			if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
+			else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 			validateAllTickerInputs();
 			void validateTickerExistence(input, { preferFresh: true });
 			syncDateConstraints();
@@ -1556,6 +1569,7 @@
 				syncTickerInputDecoration(input);
 				validateAllTickerInputs();
 				syncDateConstraints();
+				if (isPortfolioView) requestWorkspaceChartTransition("ticker-clear");
 				scheduleAutoSubmit(120);
 				input.focus();
 			});
@@ -1622,7 +1636,8 @@
 			button.addEventListener("click", () => {
 				const field = button.closest(".ticker-field");
 				const removedTicker = sanitizeTicker(field?.querySelector("[data-ticker-input]")?.value || "");
-				if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+				if (isPortfolioView) requestWorkspaceChartTransition("ticker-remove");
+				else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 				const removedWeight = isPortfolioView
 					? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
 					: 0;
@@ -2283,7 +2298,7 @@
 			scheduleAutoSubmit();
 		}
 	}));
-	[exactStartInput, exactEndInput, includeDividendsInput].forEach((input) => {
+	[exactStartInput, exactEndInput].forEach((input) => {
 		if (!input) return;
 		input.addEventListener("change", () => {
 			syncDateConstraints();
@@ -2765,7 +2780,10 @@
 				// Same logic: only capture line chart transition if x-axis hasn't changed
 				const currentParams = new URLSearchParams(currentUrlObj.search);
 				const nextParams = new URLSearchParams(nextUrlObj.search);
-				const xAxisChanged = bootstrap.didCompareRequestChangeXAxis?.(currentParams, nextParams) ?? true;
+				const didRequestChangeXAxis = state.currentView === "portfolio"
+					? didPortfolioRequestChangeXAxis
+					: bootstrap.didCompareRequestChangeXAxis;
+				const xAxisChanged = didRequestChangeXAxis?.(currentParams, nextParams) ?? true;
 				if (!xAxisChanged) {
 					captureLineChartRefreshTransition();
 				} else {

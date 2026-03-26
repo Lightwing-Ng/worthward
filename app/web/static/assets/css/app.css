@@ -1,4 +1,4 @@
-/* Code version: v3.21.12 */
+/* Code version: v3.21.13 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -99,6 +99,10 @@
 	--workspace-modal-column-gap: 12px;
 	--workspace-modal-row-gap: 4px;
 	--workspace-modal-title-margin-end: 32px;
+	--workspace-metric-value-font-size: var(--font-metric-lg);
+	--workspace-metric-value-line-height: 1;
+	--workspace-metric-value-letter-spacing: -0.04em;
+	--workspace-metric-value-font-weight: var(--font-weight-regular);
 	--trade-chart-y-padding-px: 2px;
 	--app-shell-gap: 14px;
 	--control-glass-background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 247, 252, 0.68) 100%);
@@ -1432,7 +1436,14 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 .portfolio-summary { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 0; padding: 4px 0 4px; }
 .portfolio-summary-main { min-width: 0; }
 .portfolio-total-label { margin: 0 0 6px; font-size: var(--font-form-label); line-height: 1.2; font-weight: var(--font-weight-bold); color: var(--muted); }
-.portfolio-total-value { margin: 0; font-size: var(--font-metric-xl); line-height: 1; letter-spacing: -0.04em; font-weight: var(--font-weight-regular); color: var(--text); }
+.portfolio-total-value {
+	margin: 0;
+	font-size: var(--workspace-metric-value-font-size);
+	line-height: var(--workspace-metric-value-line-height);
+	letter-spacing: var(--workspace-metric-value-letter-spacing);
+	font-weight: var(--workspace-metric-value-font-weight);
+	color: var(--text);
+}
 .portfolio-donut-block { display: flex; align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 0; padding: 14px 0 10px 16px; width: 100%; min-width: 0; overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; }
 .portfolio-donut-orbit { --portfolio-donut-size: 120px; --portfolio-donut-ring-width: 10px; --portfolio-donut-logo-size: var(--logo-card-size); --portfolio-donut-logo-gap: 10px; --portfolio-donut-frame-padding: calc((var(--portfolio-donut-logo-size) / 2) + var(--portfolio-donut-logo-gap)); position: relative; width: calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2)); height: calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2)); flex: 0 0 auto; }
 .portfolio-donut { --portfolio-donut-fill: rgba(148, 163, 184, 0.16); width: var(--portfolio-donut-size); height: var(--portfolio-donut-size); border-radius: 50%; position: absolute; top: var(--portfolio-donut-frame-padding); left: var(--portfolio-donut-frame-padding); overflow: visible; isolation: isolate; }
@@ -2398,6 +2409,15 @@ div.style-token-modal-demo {
 	position: relative;
 	min-height: 196px;
 }
+.style-token-metric-demo-shell {
+	padding: 8px 0;
+}
+.style-token-metric-card-demo {
+	width: min(100%, 280px);
+}
+.style-token-metric-value-demo {
+	color: var(--text);
+}
 .style-token-demo .style-token-chart-tooltip-demo.chart-tooltip {
 	position: relative;
 	left: 0;
@@ -3192,19 +3212,22 @@ div.style-token-modal-demo {
 	color: var(--muted);
 }
 .trade-metric-value {
-	display: flex;
+	display: inline-flex;
 	align-items: flex-end;
 	justify-content: flex-end;
+	inline-size: fit-content;
+	max-inline-size: 100%;
+	justify-self: start;
 	min-width: 0;
-	min-height: calc(var(--font-title-md) * 1.16);
+	min-height: calc(var(--workspace-metric-value-line-height) * 1em);
 	overflow: visible;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: var(--font-title-md);
-	line-height: 1.16;
-	letter-spacing: -0.03em;
+	font-size: var(--workspace-metric-value-font-size);
+	line-height: var(--workspace-metric-value-line-height);
+	letter-spacing: var(--workspace-metric-value-letter-spacing);
 	color: var(--text);
-	font-weight: var(--font-weight-regular);
+	font-weight: var(--workspace-metric-value-font-weight);
 	padding-bottom: 2px;
 	text-align: right;
 	font-variant-numeric: tabular-nums;

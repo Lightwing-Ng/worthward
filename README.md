@@ -122,13 +122,13 @@ The Settings workspace currently includes:
 
 - About
 - General
-- Network self-check
-- Strategies
-- Email (SMTP)
-- Broker access
-- Local Market Store
-- Clear caches
 - Style tokens
+- Network self-check
+- Broker access
+- Email (SMTP)
+- Local Market Store
+- Strategies
+- Clear caches
 
 ## Outlook SMTP setup
 
