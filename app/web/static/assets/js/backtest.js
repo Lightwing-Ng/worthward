@@ -1,4 +1,4 @@
-/* Code version: v1.14.1 */
+/* Code version: v1.14.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -90,10 +90,9 @@
 		chart.options.scales.y.max = nextScale.max;
 	};
 
-	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, chartYPaddingPx) => {
+	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, nextAllIn, chartYPaddingPx) => {
 		if (!priceChart || !equityChart || !transition) return;
-		const nextRawLabels = priceChart.data.rawLabels || [];
-		const nextAllIn = buildAllInSeries(nextClose, transition.initialCapital);
+		const nextRawLabels = Array.isArray(priceChart.data.rawLabels) ? priceChart.data.rawLabels : [];
 		const fromClose = buildAlignedSeries(transition.rawLabels, transition.close, nextRawLabels, nextClose);
 		const fromEquity = buildAlignedSeries(transition.rawLabels, transition.equity, nextRawLabels, nextEquity);
 		const fromAllIn = buildAlignedSeries(
@@ -514,18 +513,22 @@
 
 		const refreshTransition = consumeBacktestRefreshTransition();
 		const priceSeriesStart = refreshTransition
-			? buildAlignedSeries(refreshTransition.labels, refreshTransition.close, labels, close)
+			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.close, rawDates, close)
 			: close;
 		const equitySeriesStart = refreshTransition
-			? buildAlignedSeries(refreshTransition.labels, refreshTransition.equity, labels, equity)
+			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.equity, rawDates, equity)
 			: equity;
+		const allInSeriesStart = refreshTransition
+			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.allIn, rawDates, allInEquity)
+			: allInEquity;
 		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], chartYPaddingPx);
-		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInEquity], chartYPaddingPx);
+		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInSeriesStart], chartYPaddingPx);
 
 		priceChart = new Chart(priceCanvas, {
 			type: "line",
 			data: {
 				labels,
+				rawLabels: rawDates,
 				datasets: [
 					{
 						label: "Close",
@@ -564,6 +567,7 @@
 			type: "line",
 			data: {
 				labels,
+				rawLabels: rawDates,
 				datasets: [
 					{
 						label: "Equity",
@@ -585,7 +589,7 @@
 					},
 					{
 						label: "If all in",
-						data: allInEquity,
+						data: allInSeriesStart,
 						borderColor: allInReferenceColor,
 						borderWidth: 2,
 						pointRadius: 0,
@@ -710,7 +714,7 @@
 		attachHover(equityCanvas, equityChart);
 		initTransactionsPagination();
 		if (refreshTransition) {
-			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, chartYPaddingPx);
+			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, allInEquity, chartYPaddingPx);
 		}
 	};
 

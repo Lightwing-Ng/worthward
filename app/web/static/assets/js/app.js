@@ -141,15 +141,21 @@
 			delete bootstrap.backtestRefreshTransition;
 			return;
 		}
-	bootstrap.backtestRefreshTransition = {
-		capturedAt: performance.now(),
-		rawLabels: Array.isArray(chartState.raw_dates) && chartState.raw_dates.length
-			? [...chartState.raw_dates]
-			: [...chartState.dates],
-		close: Array.isArray(chartState.close) ? [...chartState.close] : [],
-		equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
-		initialCapital: Number(state.backtestResult.summary?.initial_capital || 0),
-	};
+		const initialCapital = Number(state.backtestResult.summary?.initial_capital || 0);
+		const closeSeries = Array.isArray(chartState.close) ? [...chartState.close] : [];
+		const openingPrice = Number(closeSeries[0] || 0);
+		const allInShares = openingPrice > 0 ? Math.floor(initialCapital / openingPrice) : 0;
+		const allInCash = initialCapital - (allInShares * openingPrice);
+		bootstrap.backtestRefreshTransition = {
+			capturedAt: performance.now(),
+			rawLabels: Array.isArray(chartState.raw_dates) && chartState.raw_dates.length
+				? [...chartState.raw_dates]
+				: [...chartState.dates],
+			close: closeSeries,
+			equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
+			allIn: closeSeries.map((value) => Number((allInCash + (allInShares * Number(value || 0))).toFixed(4))),
+			initialCapital,
+		};
 	};
 
 	const appShell = $(".app-shell");
