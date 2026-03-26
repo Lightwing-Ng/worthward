@@ -1,4 +1,4 @@
-/* Code version: v3.31.10 */
+/* Code version: v3.31.13 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -298,17 +298,39 @@
 			} catch (_error) {
 			}
 		}
+		const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const selection = window.getSelection ? window.getSelection() : null;
+		const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
 		const textarea = document.createElement("textarea");
 		textarea.value = value;
-		textarea.setAttribute("readonly", "readonly");
 		textarea.style.position = "fixed";
+		textarea.style.top = "0";
+		textarea.style.left = "0";
+		textarea.style.width = "1px";
+		textarea.style.height = "1px";
+		textarea.style.padding = "0";
+		textarea.style.border = "0";
+		textarea.style.outline = "0";
+		textarea.style.boxShadow = "none";
+		textarea.style.background = "transparent";
 		textarea.style.opacity = "0";
 		textarea.style.pointerEvents = "none";
 		document.body.append(textarea);
+		textarea.focus({ preventScroll: true });
 		textarea.select();
 		textarea.setSelectionRange(0, textarea.value.length);
-		const didCopy = document.execCommand("copy");
+		let didCopy = false;
+		try {
+			didCopy = document.execCommand("copy");
+		} catch (_error) {
+			didCopy = false;
+		}
 		textarea.remove();
+		if (selection) {
+			selection.removeAllRanges();
+			if (previousRange) selection.addRange(previousRange);
+		}
+		activeElement?.focus?.({ preventScroll: true });
 		return didCopy;
 	};
 
@@ -741,6 +763,39 @@
 		`;
 	};
 
+	const removeTickerFromComparePreview = (ticker) => {
+		const normalizedTicker = sanitizeTicker(ticker || "");
+		if (state.currentView !== "tickers" || !normalizedTicker) return;
+		if (!Array.isArray(state.chart?.series) || !state.chart.series.length) return;
+
+		const nextSeries = state.chart.series.filter((item) => sanitizeTicker(item?.ticker || "") !== normalizedTicker);
+		const nextProfiles = Array.isArray(state.chart?.profiles)
+			? state.chart.profiles.filter((item) => sanitizeTicker(item?.ticker || "") !== normalizedTicker)
+			: [];
+		if (nextSeries.length === state.chart.series.length) return;
+
+		state.chart.series = nextSeries;
+		state.chart.profiles = nextProfiles;
+
+		const summaryRegion = document.getElementById("compare_summary_region");
+		if (summaryRegion) {
+			Array.from(summaryRegion.querySelectorAll(".performance-item")).forEach((item) => {
+				const symbol = sanitizeTicker(item.querySelector(".report-symbol")?.textContent || "");
+				if (symbol === normalizedTicker) item.remove();
+			});
+			const remainingCards = summaryRegion.querySelectorAll(".performance-item").length;
+			if (remainingCards > 0) {
+				summaryRegion.style.gridTemplateColumns = `repeat(${remainingCards}, minmax(0, 1fr))`;
+			}
+		}
+
+		if (nextSeries.length >= minimumRequiredTickers) {
+			window.requestAnimationFrame(() => {
+				window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
+			});
+		}
+	};
+
 	const replaceDomRegion = (currentRegion, nextRegion) => {
 		if (!currentRegion || !nextRegion) return;
 		currentRegion.replaceChildren(...Array.from(nextRegion.childNodes).map((node) => node.cloneNode(true)));
@@ -798,37 +853,73 @@
 		}
 	};
 
-	const collectKnownTickerLogoMap = () => {
-		const logoMap = new Map();
+	const collectKnownTickerProfileMap = () => {
+		const profileMap = new Map();
 		getTickerInputs().forEach((input) => {
 			const ticker = sanitizeTicker(input.value || input.dataset.symbol || "");
 			if (!ticker) return;
 			const control = input.closest(".ticker-input-control");
 			const image = control?.querySelector(".ticker-input-logo");
 			const logoUrl = input.dataset.logoUrl || image?.getAttribute("src") || "";
-			if (!logoUrl) return;
-			logoMap.set(ticker, logoUrl);
+			const companyName = input.dataset.companyName || ticker;
+			profileMap.set(ticker, {
+				ticker,
+				company_name: companyName,
+				logo_url: logoUrl,
+			});
 		});
 		(state.chart?.profiles || []).forEach((profile) => {
 			const ticker = sanitizeTicker(profile?.ticker || "");
-			const logoUrl = profile?.logo_url || "";
-			if (!ticker || !logoUrl || logoMap.has(ticker)) return;
-			logoMap.set(ticker, logoUrl);
+			if (!ticker) return;
+			const currentProfile = profileMap.get(ticker) || {
+				ticker,
+				company_name: ticker,
+				logo_url: "",
+			};
+			profileMap.set(ticker, {
+				...currentProfile,
+				company_name: currentProfile.company_name || profile?.company_name || ticker,
+				logo_url: currentProfile.logo_url || profile?.logo_url || "",
+			});
 		});
-		return logoMap;
+		return profileMap;
 	};
 
-	const mergeKnownTickerLogosIntoState = (nextState) => {
+	const mergeKnownTickerProfilesIntoState = (nextState) => {
 		if (!nextState || !["tickers", "portfolio"].includes(nextState.currentView)) return nextState;
-		if (!Array.isArray(nextState.chart?.profiles) || !nextState.chart.profiles.length) return nextState;
-		const logoMap = collectKnownTickerLogoMap();
-		if (!logoMap.size) return nextState;
-		nextState.chart.profiles = nextState.chart.profiles.map((profile) => {
-			if (profile?.logo_url) return profile;
+		if (!nextState.chart) return nextState;
+		const profileMap = collectKnownTickerProfileMap();
+		if (!profileMap.size) return nextState;
+		const existingProfiles = Array.isArray(nextState.chart.profiles) ? nextState.chart.profiles : [];
+		const mergedProfiles = existingProfiles.map((profile) => {
 			const ticker = sanitizeTicker(profile?.ticker || "");
-			const logoUrl = logoMap.get(ticker) || "";
-			return logoUrl ? { ...profile, logo_url: logoUrl } : profile;
+			if (!ticker) return profile;
+			const knownProfile = profileMap.get(ticker);
+			if (!knownProfile) return profile;
+			return {
+				...profile,
+				company_name: profile?.company_name || knownProfile.company_name || ticker,
+				logo_url: profile?.logo_url || knownProfile.logo_url || "",
+			};
 		});
+		const mergedTickerSet = new Set(
+			mergedProfiles
+				.map((profile) => sanitizeTicker(profile?.ticker || ""))
+				.filter(Boolean),
+		);
+		(Array.isArray(nextState.chart.series) ? nextState.chart.series : []).forEach((seriesItem) => {
+			const ticker = sanitizeTicker(seriesItem?.ticker || "");
+			if (!ticker || mergedTickerSet.has(ticker)) return;
+			const knownProfile = profileMap.get(ticker);
+			if (!knownProfile) return;
+			mergedProfiles.push({
+				ticker,
+				company_name: knownProfile.company_name || ticker,
+				logo_url: knownProfile.logo_url || "",
+			});
+			mergedTickerSet.add(ticker);
+		});
+		nextState.chart.profiles = mergedProfiles;
 		return nextState;
 	};
 
@@ -886,7 +977,7 @@
 			workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
 		}
 		delete workspacePanel.dataset.workspacePending;
-		const nextState = mergeKnownTickerLogosIntoState(parseStateFromHtmlDocument(doc));
+		const nextState = mergeKnownTickerProfilesIntoState(parseStateFromHtmlDocument(doc));
 		if (nextState) {
 			window.ANTIGRAVITY_APP = nextState;
 			Object.assign(state, nextState);
@@ -1633,10 +1724,12 @@
 		if (suggestion) {
 			input.dataset.logoUrl = suggestion.logo_url || "";
 			input.dataset.symbol = suggestion.symbol || "";
+			input.dataset.companyName = suggestion.name || suggestion.symbol || "";
 		}
 		if (!hasTickerLikeValue) {
 			input.dataset.logoUrl = "";
 			input.dataset.symbol = "";
+			input.dataset.companyName = "";
 		}
 	};
 
@@ -2413,13 +2506,15 @@
 			if (button.dataset.bound === "1") return;
 			button.dataset.bound = "1";
 			button.addEventListener("click", () => {
-				if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 				const field = button.closest(".ticker-field");
+				const removedTicker = sanitizeTicker(field?.querySelector("[data-ticker-input]")?.value || "");
+				if (!isBacktestView) clearWorkspaceChartTransitionRequest();
 				const removedWeight = isPortfolioView
 					? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
 					: 0;
 				field?.remove();
 				reindexTickerFields();
+				removeTickerFromComparePreview(removedTicker);
 				if (isPortfolioView) {
 					rebalancePortfolioWeightsAfterRemoval(removedWeight);
 					ensurePortfolioWeightTouches();
@@ -3559,8 +3654,8 @@
 					const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 					if (currentTickers !== nextTickers) return true;
 
-					const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "include_dividends"];
-					// include_dividends doesn't change x-axis (dates stay same), so not in xAxisKeys
+					const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
+					// include_dividends only changes y-values, so it should keep the existing x-axis transition path.
 					for (const key of xAxisKeys) {
 						const current = (currentParams.get(key) || "").toString().trim();
 						const next = (nextParams.get(key) || "").toString().trim();

@@ -637,18 +637,18 @@
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
                     <nav class="settings-pagination local-store-pagination" aria-label="Local store pagination demo" data-local-store-pagination-demo>
-                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc(var(--local-store-pagination-slot-size) * 2), 0, 0); opacity: 1;"></span>
-                        <button type="button" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
+                        <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc((var(--local-store-pagination-slot-size) + var(--local-store-pagination-gap)) * 2), 0, 0); opacity: 1;"></span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true">
                             <span class="icon icon-page-prev" aria-hidden="true"></span>
-                        </button>
-                        <button type="button" class="local-store-page-button">1</button>
-                        <button type="button" class="local-store-page-button is-active">2</button>
-                        <button type="button" class="local-store-page-button">3</button>
-                        <button type="button" class="local-store-page-button">4</button>
-                        <button type="button" class="local-store-page-button">5</button>
-                        <button type="button" class="local-store-page-button local-store-page-nav" aria-label="Next pages">
+                        </span>
+                        <span class="local-store-page-button" aria-hidden="true">1</span>
+                        <span class="local-store-page-button is-active" aria-hidden="true">2</span>
+                        <span class="local-store-page-button" aria-hidden="true">3</span>
+                        <span class="local-store-page-button" aria-hidden="true">4</span>
+                        <span class="local-store-page-button" aria-hidden="true">5</span>
+                        <span class="local-store-page-button local-store-page-nav" aria-hidden="true">
                             <span class="icon icon-page-next" aria-hidden="true"></span>
-                        </button>
+                        </span>
                     </nav>
                     {% endif %}
                 </div>
