@@ -3537,6 +3537,7 @@
 		tradeStrategySelect.addEventListener("pointercancel", releaseStrategyPress);
 		tradeStrategySelect.addEventListener("blur", releaseStrategyPress);
 		tradeStrategySelect.addEventListener("change", async () => {
+			syncStrategyOptionSelection(tradeStrategySelect, tradeStrategySelect.value);
 			pulseStrategySwitch();
 			await refreshTradeStrategyFields(tradeStrategySelect.value);
 			if (!form) return;
@@ -3758,6 +3759,23 @@
 	void hydrateNetworkStatuses();
 	void hydrateLocalStoreRanges();
 
+	const syncStrategyOptionSelection = (select, selectedValue) => {
+		if (!(select instanceof HTMLSelectElement)) return;
+		const normalizedValue = String(selectedValue || "");
+		Array.from(select.options).forEach((option) => {
+			const isSelected = Boolean(normalizedValue) && option.value === normalizedValue;
+			option.defaultSelected = isSelected;
+			if (isSelected) {
+				option.setAttribute("selected", "selected");
+			} else {
+				option.removeAttribute("selected");
+			}
+		});
+		if (normalizedValue) {
+			select.value = normalizedValue;
+		}
+	};
+
 	const refreshStrategyDropdownUI = () => {
 		const select = document.getElementById("trade_strategy");
 		if (!select) return;
@@ -3783,8 +3801,9 @@
 		});
 
 		recentGroup.hidden = recentGroup.children.length === 0;
-		// Restore selection because DOM change might reset it
-		select.value = currentSelection;
+		// Restore selection because DOM change might reset it, then mirror
+		// the selected marker onto every duplicate option in Recent and All.
+		syncStrategyOptionSelection(select, currentSelection);
 	};
 
 	window.addEventListener("resize", scheduleDockPosition);
