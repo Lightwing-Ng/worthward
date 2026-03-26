@@ -128,6 +128,7 @@ def register_routes(app: Flask) -> None:
 
     # Backtest result cache: skip redundant computation when config doesn't change
     _cached_backtest: dict[str, tuple] = {}
+
     def _get_backtest_cache_key() -> str:
         """Generate a cache key from all backtest configuration parameters."""
         params = [
@@ -297,8 +298,8 @@ def register_routes(app: Flask) -> None:
         ]
 
     def build_benchmark_series_payloads(
-        reference_dates: pd.Series,
-        include_dividends: bool,
+            reference_dates: pd.Series,
+            include_dividends: bool,
     ) -> tuple[list, list]:
         benchmark_series = []
         benchmark_profiles = []
@@ -381,11 +382,11 @@ def register_routes(app: Flask) -> None:
         if not normalized:
             return False
         return (
-            normalized.startswith("No market data returned for ")
-            or normalized.startswith("Local market data for ")
-            or normalized.startswith("Unknown or unsupported ticker: ")
-            or normalized.startswith("has no local or remote market data")
-            or normalized.startswith("Failed to perform, curl: (35) TLS connect error:")
+                normalized.startswith("No market data returned for ")
+                or normalized.startswith("Local market data for ")
+                or normalized.startswith("Unknown or unsupported ticker: ")
+                or normalized.startswith("has no local or remote market data")
+                or normalized.startswith("Failed to perform, curl: (35) TLS connect error:")
         )
 
     def modal_banner_icon_class(message: str | None) -> str:
@@ -436,11 +437,11 @@ def register_routes(app: Flask) -> None:
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
         trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
-        
+
         if requested_interval == "1m":
             six_months_ago = one_minute_lookback_start().tz_localize(None)
             trade_dataset = trade_dataset[trade_dataset["Date"] >= six_months_ago]
-            
+
         date_constraints = build_date_constraint_payload(
             trade_dataset,
             requested_start=exact_start or None,
@@ -453,13 +454,13 @@ def register_routes(app: Flask) -> None:
             aligned_end = pd.to_datetime(date_constraints.adjusted_end).replace(hour=23, minute=59, second=59)
             trade_dataset = trade_dataset[
                 (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
-            ].copy()
+                ].copy()
             if trade_dataset.empty:
                 raise ValueError("The selected exact range does not contain trading dates.")
         else:
             common_end_date = trade_dataset["Date"].max()
             trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
-            
+
         strategy_options = list_enabled_strategies()
         selected_strategy_id = request.args.get("strategy", defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")).strip()
         strategy_ids = {str(item["id"]) for item in strategy_options}
@@ -473,7 +474,7 @@ def register_routes(app: Flask) -> None:
             ),
             1.0,
         )
-        
+
         strategy = instantiate_strategy(selected_strategy_id)
         signal_result = strategy.compute_signals(trade_dataset, selected_strategy_params)
         backtest_result = run_single_ticker_backtest(
@@ -486,7 +487,7 @@ def register_routes(app: Flask) -> None:
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
         baseline_items = [item for item in strategy_options if item.get("id") == "buy-and-hold"]
-        
+
         recent_ids = top_used_strategies(limit=3)
         recent_items = []
         for sid in recent_ids:
@@ -496,12 +497,12 @@ def register_routes(app: Flask) -> None:
             matching = [item for item in strategy_options if item.get("id") == sid]
             if matching:
                 recent_items.append(matching[0])
-        
+
         all_other_items = sorted(
             [item for item in strategy_options if item.get("id") != "buy-and-hold"],
             key=lambda item: str(item.get("name", "")).lower()
         )
-        
+
         groups = []
         if baseline_items:
             groups.append({
@@ -509,21 +510,21 @@ def register_routes(app: Flask) -> None:
                 "label": STRATEGY_CATEGORY_LABELS["baseline"],
                 "items": baseline_items
             })
-        
+
         if recent_items:
             groups.append({
                 "key": "recent",
                 "label": STRATEGY_CATEGORY_LABELS["recent"],
                 "items": recent_items
             })
-            
+
         if all_other_items:
             groups.append({
                 "key": "all",
                 "label": STRATEGY_CATEGORY_LABELS["all"],
                 "items": all_other_items
             })
-            
+
         return groups
 
     def build_strategy_form_field(definition: StrategyParameterDefinition, value: Any) -> dict[str, object]:
@@ -796,7 +797,7 @@ def register_routes(app: Flask) -> None:
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
                 "tokens": [
-                    px_token("--settings-form-control-max-width", 384, 0),
+                    px_token("--settings-general-option-max-width", 640, 0),
                     px_token("--settings-general-option-radius", 10, 0),
                     px_token("--settings-general-option-pad-block", 14, 0),
                     px_token("--settings-general-option-pad-inline", 16, 0),
@@ -931,8 +932,8 @@ def register_routes(app: Flask) -> None:
         return rows
 
     def build_local_store_pagination_slots(
-        current_page: int,
-        total_pages: int,
+            current_page: int,
+            total_pages: int,
     ) -> tuple[dict[str, int | None], list[dict[str, int | None]], dict[str, int | None]]:
         page_group_index = (current_page - 1) // 5
         page_start = (page_group_index * 5) + 1
@@ -971,7 +972,7 @@ def register_routes(app: Flask) -> None:
             ticker
             for ticker in list_local_tickers()
             if history_store_path_for(ticker).exists() and history_store_path_for(ticker).stat().st_size > 0
-            and has_local_profile_snapshot(ticker) and has_local_logo_snapshot(ticker)
+               and has_local_profile_snapshot(ticker) and has_local_logo_snapshot(ticker)
         ]
 
     def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
@@ -988,9 +989,9 @@ def register_routes(app: Flask) -> None:
         return None
 
     def build_local_market_rows_for_tickers(
-        tickers: list[str],
-        *,
-        include_ranges: bool,
+            tickers: list[str],
+            *,
+            include_ranges: bool,
     ) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
         for ticker in tickers:
@@ -1351,10 +1352,10 @@ def register_routes(app: Flask) -> None:
             include_dividends = True
         elif current_view == "portfolio" and not requested_tickers:
             requested_tickers = [
-                normalize_ticker_input(value)
-                for value in defaults.get("portfolio_tickers", ["NVDA", "AAPL", "QQQ"])
-                if normalize_ticker_input(value)
-            ][:MAX_TICKERS]
+                                    normalize_ticker_input(value)
+                                    for value in defaults.get("portfolio_tickers", ["NVDA", "AAPL", "QQQ"])
+                                    if normalize_ticker_input(value)
+                                ][:MAX_TICKERS]
             include_dividends = True
         elif current_view == "backtest" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
@@ -1370,7 +1371,7 @@ def register_routes(app: Flask) -> None:
         if notice and "Successfully connected" in notice:
             floating_banner_icon_class = "icon-settings-broker"
         elif error:
-            floating_banner_icon_class = "icon-modal-dialog-banner-default" # Or some error icon
+            floating_banner_icon_class = "icon-modal-dialog-banner-default"  # Or some error icon
         exact_start_value = exact_start
         exact_end_value = exact_end
         display_range = ""
@@ -1412,14 +1413,14 @@ def register_routes(app: Flask) -> None:
                     supported_intervals.append("1m")
             except ValueError:
                 pass
-        
+
         # Smart default for 1w period if interval is not specified
         if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
             requested_interval = "1m"
-            
+
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
-            
+
         backtest_result = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
@@ -1429,9 +1430,9 @@ def register_routes(app: Flask) -> None:
         )
         if current_view == "portfolio" and not has_weight_query:
             requested_weights = [
-                min(max(parse_int_value(value, 0), 0), 100)
-                for value in defaults.get("portfolio_weights", [25, 25, 50])
-            ][:max(len(requested_tickers), MIN_TICKERS)]
+                                    min(max(parse_int_value(value, 0), 0), 100)
+                                    for value in defaults.get("portfolio_weights", [25, 25, 50])
+                                ][:max(len(requested_tickers), MIN_TICKERS)]
         period_label = format_period_label(period)
         page_title = labels["hero_title"]
         report_heading = labels["performance_summary"]
@@ -1541,11 +1542,14 @@ def register_routes(app: Flask) -> None:
                         profiles = [type("Mock", (), {"company_name": t, "logo_url": ""})() for t in validated_tickers]
                         if current_view == "portfolio":
                             portfolio_weights = requested_weights or [0] * len(validated_tickers)
-                            portfolio_items = [{"ticker": t, "company_name": t, "logo_url": "", "weight": w, "growth_multiple": 1.0, "color": "transparent"} for t, w in zip(validated_tickers, portfolio_weights)]
+                            portfolio_items = [{"ticker": t, "company_name": t, "logo_url": "", "weight": w, "growth_multiple": 1.0, "color": "transparent"} for t, w in
+                                               zip(validated_tickers, portfolio_weights)]
                             portfolio_total_return = 0.0
                         else:
                             series = [type("Mock", (), {"ticker": t, "normalized_returns": [0.0], "color": "transparent"})() for t in validated_tickers]
-                            performance_items = [{"ticker": t, "company_name": t, "logo_url": "", "ending_return": 0.0, "color": "transparent", "shadow_color": "transparent", "is_winner": False} for t in validated_tickers]
+                            performance_items = [
+                                {"ticker": t, "company_name": t, "logo_url": "", "ending_return": 0.0, "color": "transparent", "shadow_color": "transparent", "is_winner": False}
+                                for t in validated_tickers]
                         common_start = pd.Timestamp.now()
                         common_end = pd.Timestamp.now()
                         display_range = "Loading range..."
@@ -1862,6 +1866,7 @@ def register_routes(app: Flask) -> None:
                                 return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
                             return f"{value:,.2f}"
                         return str(value)
+
                     preferred_metric_keys = [
                         "close",
                         "open",
@@ -1918,7 +1923,6 @@ def register_routes(app: Flask) -> None:
                     timing_metrics = deduped_metric_rows
                 except Exception as exc:
                     timing_error = str(exc)
-
 
         if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -1992,7 +1996,8 @@ def register_routes(app: Flask) -> None:
             report_heading=report_heading,
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
-            settings_urls={section_name: build_settings_url(section_name) for section_name in ("about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
+            settings_urls={section_name: build_settings_url(section_name) for section_name in
+                           ("about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
@@ -2027,7 +2032,7 @@ def register_routes(app: Flask) -> None:
         try:
             # Re-run backtest to get the full transaction list
             backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, strategy_id, strategy_params = _run_backtest_from_request()
-            
+
             summary = backtest_result.get("summary", {})
             trades = backtest_result.get("trades", [])
             if not trades:
@@ -2084,7 +2089,7 @@ def register_routes(app: Flask) -> None:
                     continue  # Skip virtual closing trade, same as table display
                 trade_date = pd.to_datetime(trade.get('date')).strftime('%Y/%m/%d %H:%M') if trade.get('date') else "N/A"
                 md_lines.append(
-                    f"| {i+1} | {trade_date} | {trade.get('side')} | "
+                    f"| {i + 1} | {trade_date} | {trade.get('side')} | "
                     f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
                     f"{trade.get('pnl', 0):,.2f} | {trade.get('cash', 0):,.2f} | {trade.get('equity', 0):,.2f} |"
                 )
@@ -2101,7 +2106,7 @@ def register_routes(app: Flask) -> None:
             ])
             for key, val in strategy_params.items():
                 md_lines.append(f"| {key} | {val} |")
-            
+
             # Read Strategy Code
             try:
                 module_name = strategy_definition.get("module", "")
@@ -2216,7 +2221,7 @@ def register_routes(app: Flask) -> None:
             ])
 
             md_content = "\n".join(md_lines)
-            
+
             return send_file(
                 BytesIO(md_content.encode("utf-8")),
                 mimetype='text/markdown',
@@ -2305,9 +2310,9 @@ def register_routes(app: Flask) -> None:
         if not updated_settings.password:
             updated_settings.password = current_settings.password
         if (
-            updated_settings.oauth_client_id != current_settings.oauth_client_id
-            or updated_settings.oauth_tenant != current_settings.oauth_tenant
-            or updated_settings.from_email != current_settings.from_email
+                updated_settings.oauth_client_id != current_settings.oauth_client_id
+                or updated_settings.oauth_tenant != current_settings.oauth_tenant
+                or updated_settings.from_email != current_settings.from_email
         ):
             updated_settings.oauth_access_token = ""
             updated_settings.oauth_refresh_token = ""
@@ -2361,7 +2366,7 @@ def register_routes(app: Flask) -> None:
                 "This project is open source, and the developer cannot retrieve your local secrets."
             )
             error = ""
-        
+
         params = urlencode({
             "notice": notice,
             "error": error,
@@ -2603,7 +2608,7 @@ def register_routes(app: Flask) -> None:
             df = pd.read_parquet(path)
             # 1m Parquet storage is now standardized strictly to New York Time (NYT).
             df['DateNYT'] = pd.to_datetime(df['Date'])
-            
+
             # Audit unique dates for debugging
             all_unique_dates = sorted(df['DateNYT'].dt.date.unique())
             print(f"DEBUG: All unique NYT dates in file: {all_unique_dates[-10:]}")
@@ -2623,10 +2628,6 @@ def register_routes(app: Flask) -> None:
 
             day_data = day_data.sort_values("DateNYT")
             print(f"DEBUG: Found {len(day_data)} rows for {ticker} in final selection (NYT Store).")
-
-
-
-
 
             rows = []
             is_multi = date_str == 'last5'

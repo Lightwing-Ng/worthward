@@ -242,7 +242,16 @@
             {% endfor %}
         </div>
         {% elif settings_section == "email-smtp" %}
-        <p class="settings-summary">Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.</p>
+        <section class="settings-action-package settings-callout-card-warning">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
+                <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+            </button>
+            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+            <div class="settings-action-package-copy settings-callout-text">
+                <p class="settings-service-name">Status</p>
+                <p class="settings-service-note">{% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet. Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.{% endif %}</p>
+            </div>
+        </section>
         <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
             <div class="settings-form-grid">
                 <div class="field">
@@ -274,10 +283,6 @@
                         <span class="ios-switch-slider" aria-hidden="true"></span>
                     </span>
                 </label>
-            </div>
-            <div class="workspace-modal-dialog settings-status-banner" role="status" aria-live="polite">
-                <span class="icon icon-settings-email workspace-modal-icon settings-status-banner-icon" aria-hidden="true"></span>
-                <p class="workspace-modal-title settings-status-banner-title">Status: {% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet.{% endif %}</p>
             </div>
             {% if smtp_settings.oauth_pending %}
             <div class="field-tooltip">Open <a href="{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}" target="_blank" rel="noopener noreferrer">{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}</a> and enter code <strong>{{ smtp_settings.oauth_user_code }}</strong>. If Microsoft opens the wrong account type, go back and switch the tenant above before restarting OAuth.</div>
