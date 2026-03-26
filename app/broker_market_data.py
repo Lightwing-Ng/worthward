@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations
@@ -16,12 +16,21 @@ from .broker_settings import BrokerSettings, has_longbridge_credentials
 from .storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 
 
-ONE_MINUTE_LOOKBACK_DAYS = 366
+ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
 ONE_MINUTE_FRESHNESS_DAYS = 7
-ONE_MINUTE_MIN_SPAN_DAYS = 330
+ONE_MINUTE_MIN_SPAN_DAYS = 150
 DAILY_FRESHNESS_DAYS = 7
 DAILY_MIN_SPAN_DAYS = 330
+
+
+def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) -> pd.Timestamp:
+    anchor = pd.Timestamp.now(tz="UTC") if reference is None else pd.Timestamp(reference)
+    if anchor.tzinfo is None:
+        anchor = anchor.tz_localize("UTC")
+    else:
+        anchor = anchor.tz_convert("UTC")
+    return anchor - pd.DateOffset(months=ONE_MINUTE_LOOKBACK_MONTHS)
 
 
 def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
@@ -132,8 +141,8 @@ def fetch_longbridge_one_minute_history(
     
     # We fetch backwards from current time
     end_at = datetime.now(timezone.utc)
-    # The absolute lookback limit (1 year)
-    global_start_at = end_at - timedelta(days=ONE_MINUTE_LOOKBACK_DAYS)
+    # The absolute lookback limit (6 months)
+    global_start_at = one_minute_lookback_start(end_at).to_pydatetime()
     
     # The incremental lookback limit (if provided)
     # We add 2 hours overlap to ensure no gaps or partial bars at the boundary
@@ -205,7 +214,7 @@ def fetch_longbridge_one_minute_history(
     dataset = pd.concat(frames, ignore_index=True)
     dataset = dataset.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
     
-    # Filter by global 1yr limit
+    # Filter by the global 6-month limit
     cut_off = pd.Timestamp(global_start_at).tz_convert(None).replace(tzinfo=None)
     dataset = dataset.loc[dataset["Date"] >= cut_off].copy()
     
@@ -236,10 +245,8 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
         # Keep the latest record for any duplicate timestamps
         combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
         
-        # Enforce 1-year limit on the combined store
-        end_at = datetime.now()
-        global_start_at = end_at - timedelta(days=ONE_MINUTE_LOOKBACK_DAYS)
-        cut_off = pd.Timestamp(global_start_at).replace(tzinfo=None)
+        # Enforce the 6-month limit on the combined store
+        cut_off = one_minute_lookback_start().tz_localize(None)
         combined = combined.loc[combined["Date"] >= cut_off].copy()
         
         combined.to_parquet(path, index=False)

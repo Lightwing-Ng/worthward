@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.8.0
+Code version: v1.8.1
 """
 
 from __future__ import annotations
@@ -16,6 +16,13 @@ from .base import StrategySignalResult
 def _format_display_date(value: pd.Timestamp | str) -> str:
     timestamp = pd.Timestamp(value)
     return f"{timestamp.day} {timestamp.strftime('%b %Y')}"
+
+
+def _format_chart_date(value: pd.Timestamp | str, interval: str) -> str:
+    timestamp = pd.Timestamp(value)
+    if interval == "1m":
+        return f"{timestamp.day} {timestamp.strftime('%b %Y %H:%M')}"
+    return _format_display_date(timestamp)
 
 
 def _is_winning_trade_pair(first_trade: dict[str, object], second_trade: dict[str, object]) -> bool:
@@ -347,7 +354,7 @@ def run_single_ticker_backtest(
             "short_gain": round(short_gain, 2),
         },
         "chart": {
-            "dates": frame["Date"].map(_format_display_date).tolist(),
+            "dates": frame["Date"].map(lambda value: _format_chart_date(value, interval)).tolist(),
             "raw_dates": [pd.Timestamp(value).isoformat() for value in frame["Date"].tolist()],
             "open": [round(float(getattr(row, "Open", row.Close)), 4) for row in frame.itertuples(index=False)],
             "high": [round(float(getattr(row, "High", row.Close)), 4) for row in frame.itertuples(index=False)],

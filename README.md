@@ -1,133 +1,169 @@
-# compareStocks 
+# antigravity
 
-A local-first web app for comparing stock tickers and running single-ticker strategy backtests with full server-side static rendering.
+A local-first Flask web app for comparing US stock tickers, building weighted portfolios, and running single-ticker strategy backtests with server-rendered pages and locally persisted market data.
 
 Source code: <https://github.com/Lightwing-Ng/compareStocks>
 
-## What it does
+## Current scope
 
-- Compare up to five securities on a normalized cumulative return basis
-- Build weighted equity comparison portfolios with custom percentages
-- Run single-ticker backtests with a growing library of open-source trading strategies
-- Supports both relative time ranges (1d → 10y → max) and exact custom date ranges
-- Optionally include cash dividends in total return calculations
-- Stores all historical data, ticker profiles, logos, and symbol search results locally on your device
-- Renders a lightweight, responsive UI with a mobile-first layout
-- Works entirely client-side in-browser after initial server render—no external JavaScript dependencies for viewing
-- Includes 1-minute intraday historical data support when connected to your broker
-- Full glassmorphism/frosted-glass UI styling that adapts to light/dark system appearance
+- Compare up to 5 tickers on a normalized return basis
+- Build weighted portfolios with custom allocations
+- Run single-ticker backtests across the built-in strategy library
+- Switch between relative periods and exact date ranges
+- Choose backtest execution mode between signal-bar close and next-bar open
+- Optionally include cash dividends in daily return calculations
+- Cache daily history, company profiles, logos, and search results locally
+- Cache broker-backed 1-minute history locally for the latest 6 months of trading days
+- Manage broker access, SMTP delivery, connectivity checks, Local Market Store, and style tokens from the Settings workspace
 
-## Run
+## Runtime requirements
 
-Use the Python interpreter that already has project dependencies installed (requires Python 3.11+):
+- Python 3.11+
+- Dependencies from `requirements.txt`
+- `pyarrow` for parquet persistence
+- Longbridge credentials if you want broker-backed `1m` history
+
+Install dependencies in your existing environment:
 
 ```bash
-/usr/local/bin/python3.13 main.py
+pip install -r requirements.txt
 ```
 
-Then open this URL in your browser:
+## Run locally
+
+Start the app with the Python interpreter that has the project dependencies installed:
+
+```bash
+python3 main.py
+```
+
+Default server endpoint:
 
 ```text
-http://127.0.0.1:5000
+http://127.0.0.1:8688
 ```
+
+The host and port are configured in `config.toml`.
 
 ## Project layout
 
 ```text
-main.py                  → Flask application entry point
-config.toml              → Local configuration (endpoints, credentials, defaults)
-README.md               → This file
-app/                    → Main Python application package
-strategies/              → Trading strategy framework and implementations
-market_store/            → Persistent local storage for cached data
+main.py                  → Flask entry point
+config.toml              → Local configuration, defaults, and UI labels
+README.md                → Project documentation
+app/                     → Main application package
+strategies/              → Strategy framework and implementations
+tests/                   → Focused regression tests
+market_store/            → Local parquet, profile, logo, and search caches
+settings_store/          → Locally stored broker and SMTP settings
 ```
+
+## Key modules
 
 ### `app/`
 
-Core application package:
-
 - `web.py`
-  - HTTP route handlers and full HTML page rendering
+  - Route registration, workspace rendering, settings actions, Local Market Store maintenance
 - `market_data.py`
-  - Price history retrieval, caching, and normalization
-- `comparisons.py`
-  - Shared-window cumulative return comparison logic
+  - Daily history retrieval and local persistence
+- `broker_market_data.py`
+  - Broker-backed `1m` history retrieval, cache trimming, and completeness checks
 - `date_constraints.py`
-  - Exact-date-range valid trading day alignment
+  - Trading-day alignment for exact date ranges
+- `comparisons.py`
+  - Shared-window comparison calculations
 - `logos.py`
-  - Ticker company profile fetching and logo caching
-- `presentation.py`
-  - Human-readable date formatting and presentation helpers
-- `schemas.py`
-  - Typed dataclass schemas for API payloads and strategy outputs
+  - Profile lookup, logo retrieval, and search-result caching
+- `email_settings.py`
+  - Outlook SMTP settings and connection testing
+- `broker_settings.py`
+  - Broker credential persistence and normalization
+- `connectivity.py`
+  - External service reachability checks with short-lived in-memory caching
 - `storage.py`
-  - Path resolution and persistence helpers for `market_store/`
-- `settings.py`
-  - Configuration loading from `config.toml`
-- `config.py`
-  - Static application constants and default values
-- `web/templates/`
-  - Jinja2 HTML templates
-- `web/static/assets/`
-  - Front-end CSS, JavaScript, SVG icons, and static images
+  - Local filesystem paths and cache persistence helpers
+- `presentation.py`
+  - Human-readable labels and date formatting helpers
 
 ### `strategies/`
 
-Trading strategy registry, base interface, and concrete implementations:
-
 - `base.py`
-  - Base strategy abstract interface, parameter definition schema
+  - Strategy interface and parameter schema
 - `loader.py`
-  - Dynamic strategy discovery and loading
+  - Strategy discovery, loading, and registry generation
+- `backtest.py`
+  - Backtest execution and trade log formatting
 - `registry.json`
-  - Strategy registry metadata for UI rendering
+  - UI-facing strategy catalog metadata
 - `algorithms/`
-  - Concrete strategy implementations (Buy and Hold, MACD Crossover, SuperTrend, Lorentzian Classification, etc.)
+  - Concrete strategy implementations
 
-### `market_store/`
+## Data sources and storage
 
-Persistent local cache storage (created automatically on first run):
+### Daily history
 
-- `historical/`
-  - Per-ticker normalized OHLCV parquet files (daily + 1-minute)
-- `profiles/`
-  - Per-ticker company profile JSON cache
-- `logos/`
-  - Cached ticker logo images
-- `search/`
-  - Cached symbol search result JSONs
+- Retrieved through `yfinance`
+- Stored in `market_store/historical/` as parquet
+- Used by comparison views, portfolio views, and default backtests
 
-## Ticker input rules
+### 1-minute history
 
-Ticker symbols are validated on both the front-end and back-end:
+- Retrieved through Longbridge only
+- Stored in `market_store/historical/` as parquet
+- Trimmed to the latest 6 months of trading days on refresh
+- Used when local `1m` data is available for the selected ticker
 
-- Front-end: Blocks invalid characters and malformed formats before form submission
-- Back-end: Rejects malformed or unsupported tickers before attempting data fetch
+### Metadata and search
 
-Common examples of supported tickers:
+- Company profiles and logo assets are cached locally
+- Search-result caches are also stored locally and can be cleared from Settings
 
-- `MSFT`
-- `GOOGL`
-- `NVDA`
-- `AMZN`
-- `MU`
-- `AMD`
-- `META`
-- `QQQ`
-- `JEPQ`
-- `TQQQ`
+## Settings workspace
 
-## Notes
+The Settings workspace currently includes:
 
-- Symbol search quality depends partly on Yahoo Finance coverage and may vary across ticker classes
-- Logo retrieval uses multiple fallbacks and persists results locally after first fetch
-- This project is designed for local personal use, not public production deployment
-- All sensitive broker credentials are kept locally on your machine and never transmitted elsewhere
+- About
+- General
+- Network self-check
+- Strategies
+- Email (SMTP)
+- Broker access
+- Local Market Store
+- Clear caches
+- Style tokens
 
-## Timezone & Data Integrity (critical for 1-minute data)
+## Broker support
 
-- **System-wide Standard**: The application internally normalizes all market data timestamps to **New York Time (America/New_York)** using standard IANA timezone identifiers, with robust Daylight Saving Time handling.
-- **Broker Data (Longbridge)**: The Longbridge OpenAPI returns 1-minute timestamp values numerically aligned with **Hong Kong Time (HKT)** for US market data.
-  - The fetcher (`app/broker_market_data.py`) correctly parses these raw values as `Asia/Hong_Kong` before converting to `America/New_York`.
-  - **Persistent Storage (Parquet)**: 1-minute parquet files in `market_store/historical/` store timestamps as naive datetimes strictly in **NYT** for cross-layer consistency.
-- **Visual Verification Tool**: A dedicated test route is available at `/test/chart/1m/<ticker>/<date>` (or `/test/chart/1m/last5`) to visually compare 1-minute candle shapes against your broker's trading terminal for end-to-end accuracy.
+### Longbridge
+
+- Supported for fetching `1m` history
+- Requires App Key, App Secret, and Access Token
+
+### IBKR
+
+- The UI exposes IBKR configuration status, but historical `1m` fetching is not implemented yet
+
+## Local Market Store behavior
+
+- Daily history can be refreshed per ticker
+- `1m` history can be refreshed per ticker
+- Bulk maintenance refreshes cached daily datasets plus protected metadata assets
+- Bulk maintenance does not fetch `1m` history for every ticker
+- Deleting a ticker removes its locally cached market and metadata records
+
+## Timezone and `1m` integrity
+
+- The application standardizes market timestamps to `America/New_York`
+- Longbridge `1m` timestamps for US symbols are interpreted as `Asia/Hong_Kong` before conversion
+- Stored parquet timestamps are saved as naive New York Time values for consistency across the app
+- A dedicated verification route is available at `/test/chart/1m/<ticker>/<date>` and `/test/chart/1m/last5`
+
+## Running tests
+
+Run the focused test suite with:
+
+```bash
+python3 -m pytest tests
+```
+
+If your environment uses a different interpreter path, substitute the matching Python executable.

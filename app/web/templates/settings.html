@@ -50,7 +50,7 @@
         {% if settings_section == "about" %}
         <section class="about-section">
             <h2 class="about-heading">What this service does</h2>
-            <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies — all from locally cached daily market data.</p>
+            <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.</p>
         </section>
 
         <section class="about-section">
@@ -309,7 +309,7 @@
                             <th>{{ labels.local_store_name }}</th>
                             <th>{{ labels.local_store_range }}</th>
                             <th class="local-store-col-update">1d</th>
-                            <th class="local-store-col-1m">1m</th>
+                            <th class="local-store-col-1m">{{ labels.local_store_intraday }}</th>
                             <th class="local-store-col-delete">{{ labels.local_store_delete }}</th>
                         </tr>
                     </thead>
@@ -357,7 +357,7 @@
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
                                     <input type="hidden" name="action" value="refresh-1m">
                                     <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1m history">
+                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1m history for the latest 6 months of trading days">
                                         <span class="icon icon-store-fetch-1m" aria-hidden="true"></span>
                                     </button>
                                 </form>

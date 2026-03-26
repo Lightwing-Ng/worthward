@@ -1,4 +1,4 @@
-/* Code version: v1.14.0 */
+/* Code version: v1.14.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -152,6 +152,17 @@
 		const equity = backtestResult.chart.equity;
 		
 		const interval = backtestResult.interval || "1d";
+		const rawTimestamps = rawDates.map((value) => {
+			const parsed = Date.parse(value);
+			return Number.isFinite(parsed) ? parsed : null;
+		});
+		const isSessionGap = (leftIndex, rightIndex) => {
+			if (interval !== "1m") return false;
+			const left = rawTimestamps[leftIndex];
+			const right = rawTimestamps[rightIndex];
+			if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+			return (right - left) > (90 * 60 * 1000);
+		};
 		const uniqueDays = new Set();
 		rawDates.forEach(dateStr => {
 			const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -525,6 +536,13 @@
 						tension: 0,
 						borderJoinStyle: "round",
 						borderCapStyle: "round",
+						segment: {
+							borderColor: (context) => (
+								isSessionGap(context.p0DataIndex, context.p1DataIndex)
+									? "rgba(0, 0, 0, 0)"
+									: theme.accent_primary
+							),
+						},
 					},
 					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#2fff9c" },
 					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#ff2f92" },
@@ -557,12 +575,31 @@
 						borderCapStyle: "round",
 						segment: {
 							borderColor: (context) => {
+								if (isSessionGap(context.p0DataIndex, context.p1DataIndex)) {
+									return "rgba(0, 0, 0, 0)";
+								}
 								const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialCapital);
 								return target >= initialCapital ? theme.accent_positive : theme.accent_secondary;
 							},
 						},
 					},
-					{ label: "If all in", data: allInEquity, borderColor: allInReferenceColor, borderWidth: 2, pointRadius: 0, tension: 0, borderJoinStyle: "round", borderCapStyle: "round" },
+					{
+						label: "If all in",
+						data: allInEquity,
+						borderColor: allInReferenceColor,
+						borderWidth: 2,
+						pointRadius: 0,
+						tension: 0,
+						borderJoinStyle: "round",
+						borderCapStyle: "round",
+						segment: {
+							borderColor: (context) => (
+								isSessionGap(context.p0DataIndex, context.p1DataIndex)
+									? "rgba(0, 0, 0, 0)"
+									: allInReferenceColor
+							),
+						},
+					},
 				],
 			},
 			options: {

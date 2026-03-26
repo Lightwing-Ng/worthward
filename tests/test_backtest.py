@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.4.0
+Code version: v1.4.1
 """
 
 from __future__ import annotations
@@ -148,6 +148,33 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["chart"]["raw_dates"][1], "2026-02-20")
         self.assertTrue(result["chart"]["buy_markers"][1])
         self.assertEqual(result["chart"]["dates"][1], "20 Feb 2026")
+
+    def test_intraday_chart_labels_preserve_time_component(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-20 09:30", "2026-02-20 09:31", "2026-02-20 09:32"]),
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.5, 100.5, 101.5],
+                "Close": [100.5, 101.5, 102.5],
+                "buy_signal": [False, True, False],
+                "sell_signal": [False, False, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            interval="1m",
+        )
+
+        self.assertEqual(result["trades"][0]["date"], "2026/02/20 09:31")
+        self.assertEqual(result["chart"]["raw_dates"][1], "2026-02-20T09:31:00")
+        self.assertEqual(result["chart"]["dates"][1], "20 Feb 2026 09:31")
 
     def test_next_open_execution_uses_following_session_open_price(self) -> None:
         frame = pd.DataFrame(

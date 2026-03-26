@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.31.11
+Code version: v3.31.13
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from .broker_market_data import (
     has_recent_one_minute_store,
     is_one_minute_store_complete,
     is_daily_store_complete,
+    one_minute_lookback_start,
     refresh_longbridge_one_minute_store,
     test_broker_connection,
 )
@@ -433,8 +434,8 @@ def register_routes(app: Flask) -> None:
         trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
         
         if requested_interval == "1m":
-            one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
-            trade_dataset = trade_dataset[trade_dataset["Date"] >= one_year_ago.tz_localize(None)]
+            six_months_ago = one_minute_lookback_start().tz_localize(None)
+            trade_dataset = trade_dataset[trade_dataset["Date"] >= six_months_ago]
             
         date_constraints = build_date_constraint_payload(
             trade_dataset,
@@ -2319,7 +2320,7 @@ def register_routes(app: Flask) -> None:
                 if not has_longbridge_credentials(broker_settings):
                     raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
                 refresh_longbridge_one_minute_store(ticker, broker_settings)
-                notice = f"Saved the latest 1-minute market data for {ticker} to local cache."
+                notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache."
                 return redirect(build_local_store_redirect(notice=notice))
             elif action == "delete":
                 delete_ticker_data(ticker)
@@ -2516,4 +2517,3 @@ def register_routes(app: Flask) -> None:
             )
         except Exception as e:
             return f"Error loading chart: {str(e)}", 500
-

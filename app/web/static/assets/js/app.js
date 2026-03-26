@@ -141,13 +141,15 @@
 			delete bootstrap.backtestRefreshTransition;
 			return;
 		}
-		bootstrap.backtestRefreshTransition = {
-			capturedAt: performance.now(),
-			labels: [...chartState.dates],
-			close: Array.isArray(chartState.close) ? [...chartState.close] : [],
-			equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
-			initialCapital: Number(state.backtestResult.summary?.initial_capital || 0),
-		};
+	bootstrap.backtestRefreshTransition = {
+		capturedAt: performance.now(),
+		rawLabels: Array.isArray(chartState.raw_dates) && chartState.raw_dates.length
+			? [...chartState.raw_dates]
+			: [...chartState.dates],
+		close: Array.isArray(chartState.close) ? [...chartState.close] : [],
+		equity: Array.isArray(chartState.equity) ? [...chartState.equity] : [],
+		initialCapital: Number(state.backtestResult.summary?.initial_capital || 0),
+	};
 	};
 
 	const appShell = $(".app-shell");
@@ -1145,6 +1147,7 @@
 								<col class="local-store-col-name">
 								<col class="local-store-col-range">
 								<col class="local-store-col-update">
+								<col class="local-store-col-1m">
 								<col class="local-store-col-delete">
 							</colgroup>
 							<thead>
@@ -1152,7 +1155,8 @@
 									<th>${labels.local_store_symbol || "Ticker"}</th>
 									<th>${labels.local_store_name || "Name"}</th>
 									<th>${labels.local_store_range || "Range"}</th>
-									<th>${labels.local_store_update || ""}</th>
+									<th>1d</th>
+									<th>${labels.local_store_intraday || "1m (6mo)"}</th>
 									<th>${labels.local_store_delete || ""}</th>
 								</tr>
 							</thead>
@@ -1174,6 +1178,7 @@
 											</span>
 										</td>
 										<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>
+										<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-fetch-1m"></span></span></td>
 										<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
 									</tr>
 								`).join("")}
@@ -3531,6 +3536,12 @@
 				showWorkspaceModal({
 					title: "Saving daily market data to local cache",
 					copy: "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
+					iconClass: "icon-overlay-local-cache",
+				});
+			} else if (actionInput?.value === "refresh-1m") {
+				showWorkspaceModal({
+					title: "Saving 1-minute market data to local cache",
+					copy: "We are refreshing the latest 6 months of trading days for this ticker and saving the result on this device. Please keep this page open while the download finishes.",
 					iconClass: "icon-overlay-local-cache",
 				});
 			}
