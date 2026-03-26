@@ -47,7 +47,7 @@ class SupertrendAiStrategy(BaseStrategy):
     strategy_name = "SuperTrend AI (Gemini)"
     strategy_description = "Optimized adaptive multi-factor SuperTrend strategy using NumPy array broadcasting for fast factor clustering."
     strategy_category = "trend"
-    strategy_display_order = 30
+    strategy_display_order = 31
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
         multi_ticker=False,

@@ -2275,6 +2275,9 @@ def register_routes(app: Flask) -> None:
             params = {"page": page, **extra_params}
             return f"{base_path}?{urlencode(params)}"
 
+        def redirect_local_store(**extra_params: str):
+            return redirect(build_local_store_redirect(**extra_params), code=303)
+
         redirect_url = build_local_store_redirect()
 
         try:
@@ -2287,16 +2290,14 @@ def register_routes(app: Flask) -> None:
                 history_failed_tickers = list(maintenance["history_failed_tickers"])
                 if history_failed_tickers and history_refreshed_count == 0:
                     failed_preview = ", ".join(history_failed_tickers[:3])
-                    return redirect(
-                        build_local_store_redirect(
-                            error=f"Unable to refresh historical market data for {failed_preview}."
-                        )
+                    return redirect_local_store(
+                        error=f"Unable to refresh historical market data for {failed_preview}."
                     )
 
                 notice_parts: list[str] = []
                 if total_count == 0:
                     notice = "Local Market Store is already up to date."
-                    return redirect(build_local_store_redirect(notice=notice))
+                    return redirect_local_store(notice=notice)
 
                 if history_refreshed_count > 0:
                     notice_parts.append(
@@ -2322,9 +2323,9 @@ def register_routes(app: Flask) -> None:
                         f"{': ' + preview if preview else '.'}"
                     )
                 notice = " ".join(part.rstrip(".") + "." for part in notice_parts if part)
-                return redirect(build_local_store_redirect(notice=notice))
+                return redirect_local_store(notice=notice)
             if not ticker:
-                return redirect(redirect_url)
+                return redirect(redirect_url, code=303)
             if action == "refresh":
                 refresh_history_store(ticker)
                 try:
@@ -2335,7 +2336,7 @@ def register_routes(app: Flask) -> None:
                     except Exception:
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
-                return redirect(build_local_store_redirect(notice=notice))
+                return redirect_local_store(notice=notice)
             elif action == "refresh-1m":
                 broker_settings = load_broker_settings()
                 if broker_settings.selected_broker != "longbridge":
@@ -2344,16 +2345,16 @@ def register_routes(app: Flask) -> None:
                     raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
                 refresh_longbridge_one_minute_store(ticker, broker_settings)
                 notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache."
-                return redirect(build_local_store_redirect(notice=notice))
+                return redirect_local_store(notice=notice)
             elif action == "delete":
                 delete_ticker_data(ticker)
                 notice = f"Removed all cached data for {ticker} from local storage."
-                return redirect(build_local_store_redirect(notice=notice))
+                return redirect_local_store(notice=notice)
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or f"Unable to update local cache for {ticker}."
-            return redirect(build_local_store_redirect(error=message))
+            return redirect_local_store(error=message)
 
-        return redirect(redirect_url)
+        return redirect(redirect_url, code=303)
 
     @app.post("/settings/cache/action")
     def settings_cache_action():

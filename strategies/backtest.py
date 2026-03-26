@@ -166,25 +166,36 @@ def run_single_ticker_backtest(
 
         # Special Case: Entry-at-Point-Zero for strategies with initial signals
         if is_at_backtest_start and (buy_signal or sell_signal) and shares == 0 and open_price > 0:
-            if buy_signal:
-                shares = floor(cash / open_price)
-                if shares > 0:
-                    cash -= (shares * open_price)
-                    entry_price = open_price
-                    trades.append({
-                        "date": trade_date.strftime(trade_date_format),
-                        "side": "Buy",
-                        "price": round(open_price, 4),
-                        "shares": shares,
-                        "pnl": 0.0,
-                        "cash": round(cash, 4),
-                        "equity": round(cash + (shares * close_price), 4),
-                    })
-                buy_signal = False 
-            # Do NOT allow short selling when starting with zero shares (long-only)
-            elif sell_signal:
-                sell_signal = False
-            is_at_backtest_start = False
+            if normalized_execution_mode == "next_open":
+                # In next_open mode, even initial signals get deferred to the next bar open
+                if buy_signal:
+                    pending_order = "buy"
+                    buy_signal = False
+                elif sell_signal:
+                    pending_order = "sell"
+                    sell_signal = False
+            else:
+                # In signal_close mode, execute immediately at the open price
+                if buy_signal:
+                    shares = floor(cash / open_price)
+                    if shares > 0:
+                        cash -= (shares * open_price)
+                        entry_price = open_price
+                        trades.append({
+                            "date": trade_date.strftime(trade_date_format),
+                            "side": "Buy",
+                            "price": round(open_price, 4),
+                            "shares": shares,
+                            "pnl": 0.0,
+                            "cash": round(cash, 4),
+                            "equity": round(cash + (shares * close_price), 4),
+                        })
+                    buy_signal = False
+                # Do NOT allow short selling when starting with zero shares (long-only)
+                elif sell_signal:
+                    sell_signal = False
+        # Always mark the first row processed, regardless whether we hit the special case
+        is_at_backtest_start = False
 
         if normalized_execution_mode == "next_open" and pending_order:
             execution_price = open_price if open_price > 0 else close_price

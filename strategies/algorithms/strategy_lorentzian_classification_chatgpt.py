@@ -278,7 +278,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
         "and kernel-based exit logic."
     )
     strategy_category = "machine_learning"
-    strategy_display_order = 50
+    strategy_display_order = 52
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
         multi_ticker=False,

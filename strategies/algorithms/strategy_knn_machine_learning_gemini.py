@@ -102,7 +102,7 @@ class KnnMachineLearningStrategy(BaseStrategy):
     strategy_name = "kNN Machine Learning (Gemini)"
     strategy_description = "kNN regime classifier adhering strictly to the antigravity LLM Strategy Developer Prompt guidelines."
     strategy_category = "machine_learning"
-    strategy_display_order = 40
+    strategy_display_order = 41
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
         multi_ticker=False,

@@ -17,7 +17,7 @@ class MacdStrategy(BaseStrategy):
     strategy_name = "MACD (Gemini)"
     strategy_description = "MACD crossover strategy using default daily 12, 26, and 9 settings."
     strategy_category = "momentum"
-    strategy_display_order = 20
+    strategy_display_order = 21
     strategy_supports = StrategySupportMatrix(
         single_ticker=True,
         multi_ticker=False,

@@ -32,10 +32,13 @@ class StrategyLoaderTests(unittest.TestCase):
 
     def test_enabled_strategy_list_is_sorted_by_display_order(self) -> None:
         strategy_ids = [item["id"] for item in list_enabled_strategies()]
+        # With multiple MACD strategies, we have macd followed by macd-gemini at 21
         self.assertEqual(
             strategy_ids[:3],
-            ["buy-and-hold", "macd", "supertrend-ai"],
+            ["buy-and-hold", "macd", "macd-gemini"],
         )
+        # supertrend-ai comes next at 30
+        self.assertEqual(strategy_ids[3], "supertrend-ai")
         self.assertNotIn("supertrend-double-ai", strategy_ids)
 
     def test_enabled_strategy_list_exposes_categories_for_grouped_ui(self) -> None:
