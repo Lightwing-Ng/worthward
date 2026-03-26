@@ -6,5 +6,3 @@ __pycache__/
 .trash/
 settings_store/
 node_modules/
-tests/market_store/historical/TQQQ_1m.parquet
-market_store/historical/TQQQ_1m.parquet
