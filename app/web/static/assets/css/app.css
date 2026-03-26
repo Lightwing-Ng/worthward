@@ -1004,6 +1004,12 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	width: max-content;
 	max-width: min(280px, 56vw);
 	margin-top: 0;
+	background: rgba(255, 255, 255, 0.98);
+	border: 1px solid rgba(148, 163, 184, 0.28);
+	box-shadow: 0 18px 40px rgba(17, 24, 39, 0.14);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	color: rgba(15, 23, 42, 0.88);
 	opacity: 0;
 	visibility: hidden;
 	pointer-events: none;
@@ -1137,8 +1143,12 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-strategy-boolean-row {
 	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 	min-height: var(--strategy-param-field-height);
-	padding: 0 10px;
+	padding: 6px 10px 6px 0;
 	background: transparent;
 	border-radius: 0;
 	box-shadow: none !important;
@@ -1151,6 +1161,7 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 	outline: none;
 }
 .trade-strategy-boolean-row .switch-label {
+	flex: 1 1 auto;
 	font-size: var(--font-form-label);
 	line-height: 1;
 	font-weight: var(--font-weight-bold);
@@ -1158,6 +1169,10 @@ h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align
 }
 .trade-strategy-boolean-row .trade-strategy-param-label-trigger {
 	display: inline-flex;
+}
+.trade-strategy-boolean-row .ios-switch-shell {
+	flex: 0 0 40px;
+	justify-self: auto;
 }
 .ticker-clear, .ticker-remove { padding: 0; border: 0; background: rgba(148, 163, 184, 0.76); color: transparent; box-shadow: none; display: grid; place-items: center; transition: opacity 160ms ease, background 160ms ease, transform 160ms ease; }
 .ticker-clear { position: absolute; top: 50%; right: calc((var(--trade-control-input-height) - 18px) / 2); width: 18px; height: 18px; min-width: 18px; min-height: 18px; border-radius: 50%; transform: translateY(-50%); z-index: var(--layer-control-affordance); opacity: 0; pointer-events: none; }
@@ -1647,7 +1662,7 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 .checkbox input { width: auto; margin: 0; accent-color: var(--accent); }
 .checkbox span { font-size: var(--font-form-label); }
 .field-switch { padding-top: 2px; }
-.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; padding: 6px 10px; border-radius: var(--radius-control); background: var(--panel-strong); min-height: 38px; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; padding: 6px 10px 6px 0; border-radius: var(--radius-control); background: var(--panel-strong); min-height: 38px; }
 .switch-label { margin: 0; font-size: var(--font-form-label); font-weight: var(--font-weight-bold); color: var(--text); }
 .ios-switch-shell { position: relative; width: 40px; height: 24px; flex: 0 0 40px; }
 .ios-switch-shell input { position: absolute; inset: 0; opacity: 0; margin: 0; z-index: var(--layer-control-affordance); cursor: pointer; }

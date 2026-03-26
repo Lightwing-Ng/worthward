@@ -114,19 +114,19 @@
                         </span>
                     </div>
                     <div class="trade-metric-card">
-                        <span class="trade-metric-label">Realized Long P&L</span>
+                        <span class="trade-metric-label">Realized long P&L</span>
                         <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.long_gain >= 0 else '#ff2f92' }};">
                             {{ "+" if backtest_result.summary.long_gain >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.long_gain|abs) }}
                         </span>
                     </div>
                     <div class="trade-metric-card">
-                        <span class="trade-metric-label">Realized Short P&L</span>
+                        <span class="trade-metric-label">Realized short P&L</span>
                         <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.short_gain >= 0 else '#ff2f92' }};">
                             {{ "+" if backtest_result.summary.short_gain >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.short_gain|abs) }}
                         </span>
                     </div>
                     <div class="trade-metric-card">
-                        <span class="trade-metric-label">Realized Long Loss</span>
+                        <span class="trade-metric-label">Realized long loss</span>
                         <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#ff2f92' if backtest_result.summary.long_loss > 0 else '#2fff9c' }};">
                             {{ "-" if backtest_result.summary.long_loss > 0 else "+" }}${{ "{:,.2f}".format(backtest_result.summary.long_loss|abs) }}
                         </span>

@@ -1940,23 +1940,36 @@ def register_routes(app: Flask) -> None:
             end_str = trade_dataset["Date"].max().strftime("%Y%m%d")
             strategy_name = strategy_definition.get('name', strategy_id)
             report_filename = f"{trade_ticker} Backtest Report {start_str} - {end_str} ({strategy_name}).md"
+            period_start = pd.to_datetime(trade_dataset["Date"].min())
+            period_end = pd.to_datetime(trade_dataset["Date"].max())
+            period_label = f"{period_start.day} {period_start.strftime('%b %Y')} - {period_end.day} {period_end.strftime('%b %Y')}"
+            dataset_export_date_format = "%Y-%m-%d %H:%M" if requested_interval == "1m" else "%Y-%m-%d"
+            market_data_csv = trade_dataset.to_csv(index=False, date_format=dataset_export_date_format).rstrip()
 
             # 1. Performance Summary
+            benchmark_alpha = float(summary.get("benchmark_alpha", 0) or 0)
+            long_gain = float(summary.get("long_gain", 0) or 0)
+            short_gain = float(summary.get("short_gain", 0) or 0)
+            long_loss = float(summary.get("long_loss", 0) or 0)
+            max_drawdown = float(summary.get("max_drawdown_pct", 0) or 0)
+
             md_lines = [
                 f"## Backtest Report: {trade_ticker}",
                 f"**Generated on**: {pd.Timestamp.now().strftime('%d %b %Y %H:%M:%S HKT')}",
+                f"**Algorithm**: {strategy_name}",
+                f"**Period**: {period_label}",
                 "",
                 "### Performance Summary",
-                f"- **Final Net Return**: {summary.get('net_return_pct', 0):,.2f}%",
-                f"- **Final Equity**: ${summary.get('final_equity', 0):,.2f}",
-                f"- **Max Drawdown**: {summary.get('max_drawdown_pct', 0):,.2f}%",
+                f"- **Initial capital**: ${summary.get('initial_capital', 0):,.2f}",
+                f"- **Final equity**: ${summary.get('final_equity', 0):,.2f}",
+                f"- **Net return**: {summary.get('net_return_pct', 0):,.2f}%",
                 f"- **Total trades**: {summary.get('total_trades', 0)}",
-                f"- **Win Rate**: {summary.get('win_rate_pct', 0):,.2f}%",
-                f"- **Alpha vs Buy-and-Hold**: ${summary.get('benchmark_alpha', 0):,.2f}",
-                f"- **Realized Long P&L**: ${summary.get('long_gain', 0):,.2f}",
-                f"- **Realized Long Loss**: -${summary.get('long_loss', 0):,.2f}",
-                f"- **Realized Short P&L**: ${summary.get('short_gain', 0):,.2f}",
-                f"- **Initial Capital**: ${summary.get('initial_capital', 0):,.2f}",
+                f"- **Win rate**: {summary.get('win_rate_pct', 0):,.2f}%",
+                f"- **Alpha vs B&H**: {'+' if benchmark_alpha >= 0 else '-'}${abs(benchmark_alpha):,.2f}",
+                f"- **Realized long P&L**: {'+' if long_gain >= 0 else '-'}${abs(long_gain):,.2f}",
+                f"- **Realized short P&L**: {'+' if short_gain >= 0 else '-'}${abs(short_gain):,.2f}",
+                f"- **Realized long loss**: {'-' if long_loss > 0 else '+'}${abs(long_loss):,.2f}",
+                f"- **Max drawdown**: -{abs(max_drawdown):,.2f}%",
                 "",
             ]
 
@@ -1981,9 +1994,9 @@ def register_routes(app: Flask) -> None:
             md_lines.extend([
                 "",
                 "### Strategy Context",
-                f"**Algorithm**: {strategy_name}",
                 "",
                 "#### Parameters",
+                "",
                 "| Parameter | Value |",
                 "| :--- | :--- |"
             ])
@@ -2017,7 +2030,7 @@ def register_routes(app: Flask) -> None:
                 "",
                 "*Copy and paste the prompt below into any SOTA LLMs to recreate or iterate on this strategy.*",
                 "",
-                "```text",
+                "````",
                 "You are an elite quantitative trading developer and Python engineer. Your task is to write a trading strategy plugin for the `antigravity` trading system.",
                 "",
                 "The user will provide a trading logic or indicator concept. You must output a fully functional, production-ready Python file named `strategy_{strategy_id}.py` that acts as a drop-in component for the `strategies/algorithms/` directory.",
@@ -2089,14 +2102,16 @@ def register_routes(app: Flask) -> None:
                 "        frame[\"buy_signal\"] = ((frame[\"macd_line\"] > frame[\"signal_line\"]) & (frame[\"macd_line\"].shift(1) <= frame[\"signal_line\"].shift(1))).fillna(False)",
                 "        frame[\"sell_signal\"] = ((frame[\"macd_line\"] < frame[\"signal_line\"]) & (frame[\"macd_line\"].shift(1) >= frame[\"signal_line\"].shift(1))).fillna(False)",
                 "        return StrategySignalResult(frame=frame, buy_signal_column=\"buy_signal\", sell_signal_column=\"sell_signal\")",
+                "```",
+                "````",
             ])
 
             # 5. Source market data
             md_lines.extend([
                 "### Source market data",
                 "",
-                "```",
-                trade_dataset.to_csv(index=False),
+                "```text",
+                market_data_csv,
                 "```",
                 ""
             ])
