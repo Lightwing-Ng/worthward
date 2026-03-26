@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.8.2
+Code version: v1.8.3
 """
 
 from __future__ import annotations
@@ -158,6 +158,7 @@ def run_single_ticker_backtest(
     pending_order: str | None = None
     is_at_backtest_start = True
     for row in frame.itertuples(index=False):
+        is_first_row = is_at_backtest_start
         trade_date = pd.Timestamp(row.Date)
         open_price = float(getattr(row, "Open", 0.0))
         close_price = float(row.Close)
@@ -165,7 +166,7 @@ def run_single_ticker_backtest(
         sell_signal = bool(getattr(row, sell_column))
 
         # Special Case: Entry-at-Point-Zero for strategies with initial signals
-        if is_at_backtest_start and (buy_signal or sell_signal) and shares == 0 and open_price > 0:
+        if is_first_row and (buy_signal or sell_signal) and shares == 0 and open_price > 0:
             if normalized_execution_mode == "next_open":
                 # In next_open mode, even initial signals get deferred to the next bar open
                 if buy_signal:
@@ -194,10 +195,10 @@ def run_single_ticker_backtest(
                 # Do NOT allow short selling when starting with zero shares (long-only)
                 elif sell_signal:
                     sell_signal = False
-        # Always mark the first row processed, regardless whether we hit the special case
+        # Always retire the backtest-start sentinel after the first loop iteration.
         is_at_backtest_start = False
 
-        if normalized_execution_mode == "next_open" and pending_order:
+        if normalized_execution_mode == "next_open" and pending_order and not is_first_row:
             execution_price = open_price if open_price > 0 else close_price
             
             if pending_order == "buy" and execution_price > 0:

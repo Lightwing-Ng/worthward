@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.4.1
+Code version: v1.4.2
 """
 
 from __future__ import annotations
@@ -247,6 +247,58 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["trades"][0]["price"], 112.0)
         self.assertEqual(result["trades"][1]["date"], "2026/02/24")
         self.assertEqual(result["trades"][1]["price"], 118.0)
+
+    def test_signal_close_does_not_treat_later_signal_as_start_bar_trade(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-19", "2026-02-20", "2026-02-21"]),
+                "Open": [100.0, 101.0, 102.0],
+                "Close": [100.0, 110.0, 120.0],
+                "buy_signal": [False, True, False],
+                "sell_signal": [False, False, True],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            execution_mode="signal_close",
+        )
+
+        self.assertEqual(result["trades"][0]["date"], "2026/02/20")
+        self.assertEqual(result["trades"][0]["price"], 110.0)
+        self.assertEqual(result["trades"][1]["date"], "2026/02/21")
+        self.assertEqual(result["trades"][1]["price"], 120.0)
+
+    def test_next_open_initial_signal_executes_on_following_bar(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-02-19", "2026-02-20", "2026-02-21"]),
+                "Open": [100.0, 105.0, 110.0],
+                "Close": [102.0, 108.0, 112.0],
+                "buy_signal": [True, False, False],
+                "sell_signal": [False, True, False],
+            }
+        )
+
+        result = run_single_ticker_backtest(
+            StrategySignalResult(
+                frame=frame,
+                buy_signal_column="buy_signal",
+                sell_signal_column="sell_signal",
+            ),
+            initial_capital=10_000.0,
+            execution_mode="next_open",
+        )
+
+        self.assertEqual(result["trades"][0]["date"], "2026/02/20")
+        self.assertEqual(result["trades"][0]["price"], 105.0)
+        self.assertEqual(result["trades"][1]["date"], "2026/02/21")
+        self.assertEqual(result["trades"][1]["price"], 110.0)
 
 
 if __name__ == "__main__":
