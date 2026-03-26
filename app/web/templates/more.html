@@ -13,6 +13,10 @@
 </nav>
 {% endblock %}
 
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='assets/js/more.js', v=version) }}"></script>
+{% endblock %}
+
 {% block workspace_content %}
 <article class="chart-surface settings-surface">
     <div class="settings-body">

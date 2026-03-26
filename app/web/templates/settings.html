@@ -41,6 +41,10 @@
 </nav>
 {% endblock %}
 
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='assets/js/settings.js', v=version) }}"></script>
+{% endblock %}
+
 {% block workspace_content %}
 <article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
     <div class="chart-heading-row">
