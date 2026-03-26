@@ -42,6 +42,7 @@
 	--settings-action-package-copy-gap: 4px;
 	--settings-action-package-background: rgba(255, 255, 255, 0.58);
 	--settings-action-package-border: 1px solid rgba(15, 23, 42, 0.06);
+	--settings-action-package-max-width: 680px;
 	--settings-action-button-radius: 999px;
 	--settings-action-button-pad-block: 0px;
 	--settings-action-button-pad-inline: 18px;
@@ -1881,6 +1882,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-nav:has(.settings-nav-item:nth-child(7).is-active) { --settings-active-index: 6; }
 .settings-nav:has(.settings-nav-item:nth-child(8).is-active) { --settings-active-index: 7; }
 .settings-nav:has(.settings-nav-item:nth-child(9).is-active) { --settings-active-index: 8; }
+.settings-nav:has(.settings-nav-item:nth-child(10).is-active) { --settings-active-index: 9; }
 .settings-nav-item {
 	display: flex;
 	align-items: center;
@@ -1916,6 +1918,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-nav-icon-shell .icon { width: 16px; height: 16px; background-color: var(--settings-icon-tint, #6b7280); }
 .settings-nav-item-about { --settings-icon-tint: #1d4ed8; --settings-icon-surface: rgba(29, 78, 216, 0.14); }
 .settings-nav-item-general { --settings-icon-tint: #7c3aed; --settings-icon-surface: rgba(124, 58, 237, 0.14); }
+.settings-nav-item-font-tokens { --settings-icon-tint: #0f766e; --settings-icon-surface: rgba(15, 118, 110, 0.14); }
 .settings-nav-item-network { --settings-icon-tint: #0f766e; --settings-icon-surface: rgba(15, 118, 110, 0.14); }
 .settings-nav-item-strategies { --settings-icon-tint: #7c3aed; --settings-icon-surface: rgba(124, 58, 237, 0.14); }
 .settings-nav-item-email { --settings-icon-tint: #2563eb; --settings-icon-surface: rgba(37, 99, 235, 0.14); }
@@ -1929,6 +1932,10 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-status-check { width: 14px; height: 14px; display: block; }
 .settings-summary { margin: 0 0 12px; font-size: var(--font-form-label); line-height: 1.4; color: var(--muted); }
 .settings-service-list { display: grid; gap: 10px; min-width: 0; }
+.settings-service-list-network {
+	width: min(100%, var(--settings-action-package-max-width));
+	max-width: 100%;
+}
 .settings-reading-guard {
 	width: min(100%, var(--settings-reading-guard-single-column-width));
 	max-width: 100%;
@@ -1963,6 +1970,10 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	border-radius: var(--settings-general-card-radius);
 	background: var(--settings-general-panel-background);
 	border: var(--settings-general-panel-border);
+}
+.settings-general-panel-network {
+	width: min(100%, var(--settings-action-package-max-width));
+	max-width: 100%;
 }
 .font-preview-card {
 	gap: 16px;
@@ -2154,7 +2165,7 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	border-radius: var(--settings-action-package-radius);
 	background: var(--settings-action-package-background);
 	border: var(--settings-action-package-border);
-	max-width: 680px;
+	max-width: var(--settings-action-package-max-width);
 }
 .settings-action-package-icon-shell {
 	flex: 0 0 auto;
@@ -3399,6 +3410,7 @@ div.style-token-modal-demo {
 .icon-more-timing { mask: url("../../images/circle.badge.plus.svg") center/contain no-repeat; -webkit-mask: url("../../images/circle.badge.plus.svg") center/contain no-repeat; }
 .icon-settings-about { mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/info.circle.fill.svg") center/contain no-repeat; }
 .icon-settings-general { mask: url("../../images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat; -webkit-mask: url("../../images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat; }
+.icon-settings-font-tokens { mask: url("../../images/textformat.size.svg") center/contain no-repeat; -webkit-mask: url("../../images/textformat.size.svg") center/contain no-repeat; }
 .icon-settings-network { mask: url("../../images/network.svg") center/contain no-repeat; -webkit-mask: url("../../images/network.svg") center/contain no-repeat; }
 .icon-settings-strategies { mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; -webkit-mask: url("../../images/chart.bar.horizontal.page.svg") center/contain no-repeat; }
 .icon-settings-email { mask: url("../../images/envelope.fill.svg") center/contain no-repeat; -webkit-mask: url("../../images/envelope.fill.svg") center/contain no-repeat; }

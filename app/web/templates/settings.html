@@ -10,6 +10,10 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
         <span class="settings-nav-label">General</span>
     </a>
+    <a href="{{ settings_urls['font-tokens'] }}" class="settings-nav-item settings-nav-item-font-tokens{% if settings_section == 'font-tokens' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
+        <span class="settings-nav-label">Font tokens</span>
+    </a>
     <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
         <span class="settings-nav-label">Style tokens</span>
@@ -107,64 +111,65 @@
                     </label>
                 </form>
             </section>
-            <section class="font-preview-card settings-general-panel settings-reading-guard">
-                <div class="font-preview-header">
-                    <p class="font-preview-kicker">Type preview</p>
-                    <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
-                </div>
-                <div class="font-preview-stack">
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Card title</p>
-                            <p class="font-preview-unit">24</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Backtest</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Card subtitle</p>
-                            <p class="font-preview-unit">15</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Metric value</p>
-                            <p class="font-preview-unit">32</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Form label</p>
-                            <p class="font-preview-unit">14</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Form control</p>
-                            <p class="font-preview-unit">15</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Table body</p>
-                            <p class="font-preview-unit">13</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
-                    </div>
-                    <div class="font-preview-row">
-                        <div class="font-preview-meta">
-                            <p class="font-preview-label">Tooltip</p>
-                            <p class="font-preview-unit">12</p>
-                        </div>
-                        <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
-                    </div>
-                </div>
-            </section>
         </div>
+        {% elif settings_section == "font-tokens" %}
+        <section class="font-preview-card settings-general-panel settings-reading-guard">
+            <div class="font-preview-header">
+                <p class="font-preview-kicker">Type preview</p>
+                <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
+            </div>
+            <div class="font-preview-stack">
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Card title</p>
+                        <p class="font-preview-unit">24</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Backtest</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Card subtitle</p>
+                        <p class="font-preview-unit">15</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Metric value</p>
+                        <p class="font-preview-unit">32</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Form label</p>
+                        <p class="font-preview-unit">14</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Form control</p>
+                        <p class="font-preview-unit">15</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Table body</p>
+                        <p class="font-preview-unit">13</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
+                </div>
+                <div class="font-preview-row">
+                    <div class="font-preview-meta">
+                        <p class="font-preview-label">Tooltip</p>
+                        <p class="font-preview-unit">12</p>
+                    </div>
+                    <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
+                </div>
+            </div>
+        </section>
         {% elif settings_section == "network" %}
         <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
@@ -181,27 +186,32 @@
                 >Check again</button>
             </div>
         </section>
-        <p class="settings-summary">{{ labels.service_status }}</p>
-        <div class="settings-service-list">
-            {% for row in settings_service_rows %}
-            <div class="settings-service-row" data-settings-service-row data-service-key="{{ row.key }}">
-                <div class="settings-service-main settings-reading-guard-row">
-                    <div class="settings-service-heading">
-                        {% if row.logo_url %}
-                        <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} logo" loading="lazy" decoding="async">
-                        {% endif %}
-                        <p class="settings-service-name">{{ row.name }}</p>
-                    </div>
-                    <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}Checking whether Yahoo Finance can be reached from this device.{% elif row.key == 'logo' %}Checking whether the primary ticker logo service and its fallbacks can be reached from this device.{% elif row.key == 'google-hk' %}Checking whether Google (Hong Kong) can be reached from this device.{% elif row.key == 'tradingview-ta' %}Checking if the tradingview-ta library is installed.{% else %}Checking...{% endif %}">{{ row.note }}</p>
-                    <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
-                </div>
-                <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
-                    <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
-                    <span data-workspace-mask="settings-status-text" data-settings-service-status>{{ row.status }}</span>
-                </div>
+        <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
+            <div class="settings-general-header">
+                <p class="settings-general-kicker">{{ labels.service_status }}</p>
+                <p class="settings-general-copy">Review the latest connectivity and dependency availability checks for this device.</p>
             </div>
-            {% endfor %}
-        </div>
+            <div class="settings-service-list settings-service-list-network">
+                {% for row in settings_service_rows %}
+                <div class="settings-service-row" data-settings-service-row data-service-key="{{ row.key }}">
+                    <div class="settings-service-main settings-reading-guard-row">
+                        <div class="settings-service-heading">
+                            {% if row.logo_url %}
+                            <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} logo" loading="lazy" decoding="async">
+                            {% endif %}
+                            <p class="settings-service-name">{{ row.name }}</p>
+                        </div>
+                        <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}Checking whether Yahoo Finance can be reached from this device.{% elif row.key == 'logo' %}Checking whether the primary ticker logo service and its fallbacks can be reached from this device.{% elif row.key == 'google-hk' %}Checking whether Google (Hong Kong) can be reached from this device.{% elif row.key == 'tradingview-ta' %}Checking if the tradingview-ta library is installed.{% else %}Checking...{% endif %}">{{ row.note }}</p>
+                        <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
+                    </div>
+                    <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
+                        <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
+                        <span data-workspace-mask="settings-status-text" data-settings-service-status>{{ row.status }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
         {% elif settings_section == "strategies" %}
         <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
         <div class="settings-service-list settings-strategy-list settings-reading-guard-centered">

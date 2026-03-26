@@ -100,7 +100,7 @@ LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
@@ -1489,6 +1489,8 @@ def register_routes(app: Flask) -> None:
                 settings_title = labels["network_self_check"]
             elif settings_section == "general":
                 settings_title = "General"
+            elif settings_section == "font-tokens":
+                settings_title = "Font tokens"
             elif settings_section == "strategies":
                 settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
@@ -2012,7 +2014,7 @@ def register_routes(app: Flask) -> None:
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
-                           ("about", "general", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
+                           ("about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
