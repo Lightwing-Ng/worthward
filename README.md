@@ -2,8 +2,6 @@
 
 A local-first Flask web app for comparing US stock tickers, building weighted portfolios, and running single-ticker strategy backtests with server-rendered pages and locally persisted market data.
 
-Source code: <https://github.com/Lightwing-Ng/compareStocks>
-
 ## Current scope
 
 - Compare up to 5 tickers on a normalized return basis
