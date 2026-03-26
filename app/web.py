@@ -1,7 +1,7 @@
 """
 HTTP route registration.
 
-Code version: v3.31.14
+Code version: v3.31.18
 """
 
 from __future__ import annotations
@@ -52,6 +52,10 @@ from .connectivity import (
     has_remote_logo_access,
     has_remote_market_access,
     has_tradingview_ta_available,
+    last_google_hk_check_at,
+    last_remote_logo_check_at,
+    last_remote_market_check_at,
+    last_tradingview_ta_check_at,
     reset_connectivity_caches,
 )
 from .config import (
@@ -723,7 +727,7 @@ def register_routes(app: Flask) -> None:
                     px_token("--settings-action-package-column-gap", 12),
                     px_token("--settings-action-package-row-gap", 8),
                     px_token("--settings-action-package-copy-gap", 4),
-                    px_token("--style-token-demo-width", 360),
+                    px_token("--style-token-demo-width", 384),
                     raw_token("--settings-action-package-background", "rgba(255, 255, 255, 0.58)"),
                     raw_token("--settings-action-package-border", "1px solid rgba(15, 23, 42, 0.06)"),
                 ],
@@ -733,6 +737,73 @@ def register_routes(app: Flask) -> None:
                         "target_id": style_token_id("Settings action button"),
                     },
                 ],
+            },
+            {
+                "id": style_token_id("Circular icon button"),
+                "name": "Circular icon button",
+                "sample_kind": "round-icon-button",
+                "sample_title": "",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "settings-round-icon-button",
+                "sample_icon_class": "icon-sidebar-left",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--settings-round-icon-button-size", 36, 1),
+                    px_token("--settings-round-icon-button-icon-size", 18, 1),
+                    px_token("--settings-round-icon-button-radius", 999, 0),
+                    raw_token("--settings-round-icon-button-background", "var(--glass-chip-background-strong)"),
+                    raw_token("--settings-round-icon-button-background-hover", "var(--glass-chip-background-hover)"),
+                    raw_token("--settings-round-icon-button-shadow", "var(--glass-chip-shadow)"),
+                    raw_token("--settings-round-icon-button-shadow-hover", "var(--glass-chip-shadow-hover)"),
+                    raw_token("--settings-round-icon-button-shadow-active", "var(--glass-chip-shadow-active)"),
+                    raw_token("--settings-round-icon-button-color", "rgba(80, 90, 95, 0.82)"),
+                    raw_token("--settings-round-icon-button-color-hover", "#0055cc"),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Settings form input"),
+                "name": "Settings form input",
+                "sample_kind": "settings-form-input",
+                "sample_title": "Settings form input",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "sample_placeholder": "Azure app registration client ID",
+                "sample_value": "12345678-abcd-1234-abcd-1234567890ab",
+                "tokens": [
+                    px_token("--radius-control", 999, 0),
+                    px_token("--settings-text-input-pad-block", 5, 0),
+                    px_token("--settings-text-input-pad-inline", 10, 0),
+                    px_token("--settings-form-control-max-width", 384, 0),
+                    raw_token("--settings-text-input-background", "var(--panel-strong)"),
+                    raw_token("--settings-text-input-color", "var(--text)"),
+                    raw_token("--settings-text-input-font-size", "var(--font-form-control)"),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Settings execution option"),
+                "name": "Settings execution option",
+                "sample_kind": "settings-general-option",
+                "sample_title": "Signal bar close",
+                "sample_copy": "When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--settings-form-control-max-width", 384, 0),
+                    px_token("--settings-general-option-radius", 10, 0),
+                    px_token("--settings-general-option-pad-block", 14, 0),
+                    px_token("--settings-general-option-pad-inline", 16, 0),
+                    raw_token("--settings-general-option-background", "rgba(255, 255, 255, 0.58)"),
+                    raw_token("--settings-general-option-border", "1px solid rgba(15, 23, 42, 0.06)"),
+                ],
+                "related_styles": [],
             },
             {
                 "id": style_token_id("Modal dialog"),
@@ -843,6 +914,20 @@ def register_routes(app: Flask) -> None:
                 "related_styles": [],
             },
         ]
+        token_order = {
+            "Settings form input": 10,
+            "Settings execution option": 20,
+            "Segmented control": 30,
+            "Settings action button": 40,
+            "Settings action package": 50,
+            "Circular icon button": 60,
+            "Trade strategy stepper": 70,
+            "Local store pagination": 80,
+            "Modal dialog": 90,
+            "Modal dialog banner message": 100,
+            "Chart tooltip": 110,
+        }
+        rows.sort(key=lambda row: (token_order.get(str(row.get("name", "")), 999), str(row.get("name", ""))))
         return rows
 
     def build_local_store_pagination_slots(
@@ -948,6 +1033,12 @@ def register_routes(app: Flask) -> None:
         def service_logo_url(filename: str) -> str:
             return url_for("static", filename=f"images/{filename}")
 
+        def format_checked_at(value: float | None) -> str:
+            if value is None:
+                return "Last checked: Not checked yet."
+            stamp = pd.Timestamp(value, unit="s")
+            return f"Last checked: {stamp.day} {stamp.strftime('%b %Y %H:%M:%S')}"
+
         if pending:
             return [
                 {
@@ -955,6 +1046,7 @@ def register_routes(app: Flask) -> None:
                     "name": "yfinance",
                     "status": "Checking...",
                     "note": "Checking whether Yahoo Finance can be reached from this device.",
+                    "checked_at_text": "Last checked: Checking...",
                     "logo_url": service_logo_url("Yahoo-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
@@ -964,6 +1056,7 @@ def register_routes(app: Flask) -> None:
                     "name": labels["logo_network"],
                     "status": "Checking...",
                     "note": "Checking whether the primary ticker logo service and its fallbacks can be reached from this device.",
+                    "checked_at_text": "Last checked: Checking...",
                     "logo_url": service_logo_url("network.svg"),
                     "is_available": False,
                     "is_pending": True,
@@ -973,6 +1066,7 @@ def register_routes(app: Flask) -> None:
                     "name": "Google (Hong Kong)",
                     "status": "Checking...",
                     "note": "Checking whether Google (Hong Kong) can be reached from this device.",
+                    "checked_at_text": "Last checked: Checking...",
                     "logo_url": service_logo_url("Google__G__logo.svg"),
                     "is_available": False,
                     "is_pending": True,
@@ -982,6 +1076,7 @@ def register_routes(app: Flask) -> None:
                     "name": "tradingview-ta",
                     "status": "Checking...",
                     "note": "Checking if the tradingview-ta library is installed.",
+                    "checked_at_text": "Last checked: Checking...",
                     "logo_url": service_logo_url("TradingView-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
@@ -1006,6 +1101,7 @@ def register_routes(app: Flask) -> None:
                     if remote_market_access
                     else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
                 ),
+                "checked_at_text": format_checked_at(last_remote_market_check_at()),
                 "logo_url": service_logo_url("Yahoo-Logo.svg"),
                 "is_available": remote_market_access,
                 "is_pending": False,
@@ -1019,6 +1115,7 @@ def register_routes(app: Flask) -> None:
                     if remote_logo_access
                     else "Remote logo sources are blocked here, so only logos already stored locally will appear."
                 ),
+                "checked_at_text": format_checked_at(last_remote_logo_check_at()),
                 "logo_url": service_logo_url("network.svg"),
                 "is_available": remote_logo_access,
                 "is_pending": False,
@@ -1032,6 +1129,7 @@ def register_routes(app: Flask) -> None:
                     if google_hk_access
                     else "Google (Hong Kong) could not be reached from this device."
                 ),
+                "checked_at_text": format_checked_at(last_google_hk_check_at()),
                 "logo_url": service_logo_url("Google__G__logo.svg"),
                 "is_available": google_hk_access,
                 "is_pending": False,
@@ -1045,6 +1143,7 @@ def register_routes(app: Flask) -> None:
                     if tradingview_ta_available
                     else "The tradingview-ta library is not installed, so features requiring it will be unavailable."
                 ),
+                "checked_at_text": format_checked_at(last_tradingview_ta_check_at()),
                 "logo_url": service_logo_url("TradingView-Logo.svg"),
                 "is_available": tradingview_ta_available,
                 "is_pending": False,
@@ -2192,6 +2291,7 @@ def register_routes(app: Flask) -> None:
             from_email=mailbox,
             use_starttls=request.form.getlist("use_starttls")[-1] == "1" if request.form.getlist("use_starttls") else False,
             oauth_client_id=request.form.get("oauth_client_id", current_settings.oauth_client_id).strip(),
+            oauth_tenant=request.form.get("oauth_tenant", current_settings.oauth_tenant).strip(),
             oauth_access_token=current_settings.oauth_access_token,
             oauth_refresh_token=current_settings.oauth_refresh_token,
             oauth_token_expires_at=current_settings.oauth_token_expires_at,
@@ -2204,7 +2304,11 @@ def register_routes(app: Flask) -> None:
         )
         if not updated_settings.password:
             updated_settings.password = current_settings.password
-        if updated_settings.oauth_client_id != current_settings.oauth_client_id:
+        if (
+            updated_settings.oauth_client_id != current_settings.oauth_client_id
+            or updated_settings.oauth_tenant != current_settings.oauth_tenant
+            or updated_settings.from_email != current_settings.from_email
+        ):
             updated_settings.oauth_access_token = ""
             updated_settings.oauth_refresh_token = ""
             updated_settings.oauth_token_expires_at = 0.0

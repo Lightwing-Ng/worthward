@@ -71,7 +71,7 @@
             </a>
         </section>
 
-        <section class="about-section about-disclaimer">
+        <section class="about-section about-disclaimer settings-reading-guard">
             <h2 class="about-heading">Disclaimer</h2>
             <ol class="about-disclaimer-list">
                 <li class="about-copy">This service does not provide financial advice. All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.</li>
@@ -103,7 +103,7 @@
                     </label>
                 </form>
             </section>
-            <section class="font-preview-card settings-general-panel">
+            <section class="font-preview-card settings-general-panel settings-reading-guard">
                 <div class="font-preview-header">
                     <p class="font-preview-kicker">Type preview</p>
                     <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
@@ -167,6 +167,7 @@
             <div class="settings-action-package-copy settings-callout-text">
                 <p class="settings-service-name">Check connectivity again</p>
                 <p class="settings-service-note">Run the network checks again and refresh the availability results shown below.</p>
+                <p class="settings-service-note settings-service-meta" data-network-last-checked>Last checked: {% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text|replace('Last checked: ', '') }}{% else %}Not checked yet.{% endif %}</p>
             </div>
             <div class="settings-action-package-form">
                 <button
@@ -180,7 +181,7 @@
         <div class="settings-service-list">
             {% for row in settings_service_rows %}
             <div class="settings-service-row" data-settings-service-row data-service-key="{{ row.key }}">
-                <div class="settings-service-main">
+                <div class="settings-service-main settings-reading-guard-row">
                     <div class="settings-service-heading">
                         {% if row.logo_url %}
                         <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} logo" loading="lazy" decoding="async">
@@ -188,6 +189,7 @@
                         <p class="settings-service-name">{{ row.name }}</p>
                     </div>
                     <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}Checking whether Yahoo Finance can be reached from this device.{% elif row.key == 'logo' %}Checking whether the primary ticker logo service and its fallbacks can be reached from this device.{% elif row.key == 'google-hk' %}Checking whether Google (Hong Kong) can be reached from this device.{% elif row.key == 'tradingview-ta' %}Checking if the tradingview-ta library is installed.{% else %}Checking...{% endif %}">{{ row.note }}</p>
+                    <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
                 </div>
                 <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
                     <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
@@ -198,7 +200,7 @@
         </div>
         {% elif settings_section == "strategies" %}
         <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
-        <div class="settings-service-list settings-strategy-list">
+        <div class="settings-service-list settings-strategy-list settings-reading-guard-centered">
             {% for row in strategy_settings_rows %}
             <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
@@ -209,11 +211,16 @@
                 </summary>
                 {% if row.parameters %}
                 <div class="settings-strategy-params-shell">
-                    <div class="settings-strategy-params-table-wrap">
-                        <table class="settings-table settings-strategy-params-table" aria-label="{{ row.name }} parameters">
-                            <thead>
-                                <tr>
-                                    <th>Value name</th>
+	                    <div class="settings-strategy-params-table-wrap">
+	                        <table class="settings-table settings-strategy-params-table" aria-label="{{ row.name }} parameters">
+	                            <colgroup>
+	                                <col class="settings-strategy-params-col-label">
+	                                <col class="settings-strategy-params-col-value">
+	                                <col class="settings-strategy-params-col-meaning">
+	                            </colgroup>
+	                            <thead>
+	                                <tr>
+	                                    <th>Value name</th>
                                     <th>Default</th>
                                     <th>Meaning</th>
                                 </tr>
@@ -235,24 +242,28 @@
             {% endfor %}
         </div>
         {% elif settings_section == "email-smtp" %}
-        <p class="settings-summary">Use Outlook SMTP with Microsoft OAuth 2.0. Keep STARTTLS enabled, use `smtp-mail.outlook.com`, and connect this app with your own Azure app client ID.</p>
-        <form method="post" action="/settings/email-smtp/action" class="settings-stack-form">
+        <p class="settings-summary">Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.</p>
+        <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
             <div class="settings-form-grid">
                 <div class="field">
                     <label for="smtp_host">{{ labels.email_smtp_host }}</label>
-                    <input id="smtp_host" name="host" type="text" value="{{ smtp_settings.host }}" placeholder="smtp-mail.outlook.com">
+                    <input id="smtp_host" name="host" type="text" class="settings-form-control" value="{{ smtp_settings.host }}" placeholder="smtp-mail.outlook.com">
                 </div>
                 <div class="field">
                     <label for="smtp_port">{{ labels.email_smtp_port }}</label>
-                    <input id="smtp_port" name="port" type="number" min="1" max="65535" value="{{ smtp_settings.port }}" inputmode="numeric">
+                    <input id="smtp_port" name="port" type="number" class="settings-form-control settings-form-control-numeric" min="1" max="65535" value="{{ smtp_settings.port }}" inputmode="numeric">
                 </div>
                 <div class="field">
                     <label for="smtp_from_email">{{ labels.email_smtp_from }}</label>
-                    <input id="smtp_from_email" name="from_email" type="email" value="{{ smtp_settings.from_email }}" autocomplete="username email" placeholder="your-name@example.invalid">
+                    <input id="smtp_from_email" name="from_email" type="email" class="settings-form-control" value="{{ smtp_settings.from_email }}" autocomplete="username email" placeholder="your-name@example.invalid">
                 </div>
                 <div class="field settings-field-span-full">
                     <label for="smtp_oauth_client_id">Outlook OAuth client ID</label>
-                    <input id="smtp_oauth_client_id" name="oauth_client_id" type="text" value="{{ smtp_settings.oauth_client_id }}" autocomplete="off" placeholder="Azure app registration client ID">
+                    <input id="smtp_oauth_client_id" name="oauth_client_id" type="text" class="settings-form-control" value="{{ smtp_settings.oauth_client_id }}" autocomplete="off" placeholder="Azure app registration client ID">
+                </div>
+                <div class="field settings-field-span-full">
+                    <label for="smtp_oauth_tenant">Microsoft Entra tenant</label>
+                    <input id="smtp_oauth_tenant" name="oauth_tenant" type="text" class="settings-form-control" value="{{ smtp_settings.oauth_tenant }}" autocomplete="off" placeholder="{% if smtp_settings.oauth_mailbox_kind == 'personal' %}consumers{% else %}organizations{% endif %}">
                 </div>
             </div>
             <div class="field-checkbox field-switch settings-field-span-full">
@@ -269,13 +280,49 @@
                 <p class="workspace-modal-title settings-status-banner-title">Status: {% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet.{% endif %}</p>
             </div>
             {% if smtp_settings.oauth_pending %}
-            <div class="field-tooltip">Open <a href="{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}" target="_blank" rel="noopener noreferrer">{{ smtp_settings.oauth_verification_uri }}</a> and enter code <strong>{{ smtp_settings.oauth_user_code }}</strong>.</div>
+            <div class="field-tooltip">Open <a href="{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}" target="_blank" rel="noopener noreferrer">{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}</a> and enter code <strong>{{ smtp_settings.oauth_user_code }}</strong>. If Microsoft opens the wrong account type, go back and switch the tenant above before restarting OAuth.</div>
             {% endif %}
-            <div class="settings-form-actions">
-                <button type="submit" name="action" value="save" class="secondary-button settings-inline-button">{{ labels.email_smtp_save }}</button>
-                <button type="submit" name="action" value="start-oauth" class="settings-inline-button settings-inline-button-primary">Start Outlook OAuth</button>
-                <button type="submit" name="action" value="finish-oauth" class="secondary-button settings-inline-button">Finish Outlook OAuth</button>
-                <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
+            <div class="settings-action-package-grid">
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_save }}</p>
+                        <p class="settings-service-note">Store the current Outlook SMTP and OAuth configuration on this device.</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">{{ labels.email_smtp_save }}</button>
+                    </div>
+                </section>
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">Start Outlook OAuth</p>
+                        <p class="settings-service-note">Request a fresh Microsoft device code for this mailbox and tenant.</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="start-oauth" class="settings-inline-button settings-inline-button-primary">Start Outlook OAuth</button>
+                    </div>
+                </section>
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">Finish Outlook OAuth</p>
+                        <p class="settings-service-note">Poll Microsoft for the completed device-flow authorization result.</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="finish-oauth" class="settings-inline-button settings-inline-button-secondary-token">Finish Outlook OAuth</button>
+                    </div>
+                </section>
+                <section class="settings-action-package settings-callout-card-primary">
+                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
+                    <div class="settings-action-package-copy settings-callout-text">
+                        <p class="settings-service-name">{{ labels.email_smtp_test }}</p>
+                        <p class="settings-service-note">Verify SMTP `XOAUTH2` login against Outlook with the saved settings.</p>
+                    </div>
+                    <div class="settings-action-package-form">
+                        <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
+                    </div>
+                </section>
             </div>
         </form>
         {% elif settings_section == "local-market-store" %}
@@ -422,28 +469,27 @@
         </section>
 
         <section class="settings-card">
-            <form method="post" action="/settings/broker-access/action" class="settings-stack-form">
+            <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
                 <div class="settings-form-row">
                     <label class="settings-form-label" for="selected_broker">Broker</label>
-                    <select id="selected_broker" name="selected_broker" class="trade-strategy-select">
+                    <select id="selected_broker" name="selected_broker" class="settings-form-control settings-form-select">
                         <option value="longbridge" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
                         <option value="ibkr" {% if broker_settings.selected_broker == 'ibkr' %}selected{% endif %}>IBKR (TWS/Gateway)</option>
                     </select>
                 </div>
 
                 <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
-                    <p class="settings-service-note">Get your credentials from the <a href="https://open.longbridge.com/zh-CN/docs" target="_blank" rel="noopener noreferrer">Longbridge Developer Portal</a>.</p>
                     <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_app_key">App Key</label>
-                        <input type="password" id="longbridge_app_key" name="longbridge_app_key" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_app_key %}••••••••••••{% else %}Enter your App Key{% endif %}">
+                        <input type="password" id="longbridge_app_key" name="longbridge_app_key" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_key %}••••••••••••{% else %}Enter your App Key{% endif %}">
                     </div>
                     <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_app_secret">App Secret</label>
-                        <input type="password" id="longbridge_app_secret" name="longbridge_app_secret" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_app_secret %}••••••••••••{% else %}Enter your App Secret{% endif %}">
+                        <input type="password" id="longbridge_app_secret" name="longbridge_app_secret" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_secret %}••••••••••••{% else %}Enter your App Secret{% endif %}">
                     </div>
                     <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_access_token">Access Token</label>
-                        <input type="password" id="longbridge_access_token" name="longbridge_access_token" class="trade-strategy-number-input" placeholder="{% if broker_settings.longbridge_has_access_token %}••••••••••••{% else %}Enter your Access Token{% endif %}">
+                        <input type="password" id="longbridge_access_token" name="longbridge_access_token" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_access_token %}••••••••••••{% else %}Enter your Access Token{% endif %}">
                     </div>
                 </div>
 
@@ -451,9 +497,27 @@
                     <p class="settings-service-note">IBKR integration is currently being finalized. Please use Longbridge for 1-minute market data for now.</p>
                 </div>
 
-                <div class="settings-form-actions">
-                    <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-primary">Save credentials</button>
-                    <button type="submit" name="action" value="test" class="settings-inline-button secondary-button">Test connection</button>
+                <div class="settings-action-package-grid">
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">Test connection</p>
+                            <p class="settings-service-note">Try the current broker credentials against the selected service and report whether they work. This only verifies connectivity and does not place any order.</p>
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">Test connection</button>
+                        </div>
+                    </section>
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">Save credentials</p>
+                            <p class="settings-service-note">Store the current broker credentials only on this device so the app can reuse them later. This does not submit any trade and will not trigger any market action.</p>
+                        </div>
+                        <div class="settings-action-package-form">
+                            <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">Save credentials</button>
+                        </div>
+                    </section>
                 </div>
             </form>
         </section>
@@ -489,6 +553,10 @@
                     </div>
                     {% elif row.sample_kind == "action-button" %}
                     <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
+                    {% elif row.sample_kind == "round-icon-button" %}
+                    <button type="button" class="{{ row.sample_button_class }}" aria-label="{{ row.name }}">
+                        <span class="icon {{ row.sample_icon_class }}" aria-hidden="true"></span>
+                    </button>
                     {% elif row.sample_kind == "action-package" %}
                     <div class="settings-action-package {{ row.sample_icon_shell_class }}">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
@@ -500,6 +568,21 @@
                             <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "settings-form-input" %}
+                    <div class="style-token-settings-input-shell">
+                        <label class="style-token-settings-input-label" for="style_token_settings_text_input">{{ row.sample_title }}</label>
+                        <input id="style_token_settings_text_input" type="text" class="settings-form-control style-token-settings-input" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" readonly>
+                    </div>
+                    {% elif row.sample_kind == "settings-general-option" %}
+                    <form class="settings-general-form style-token-settings-general-form" action="#" method="get">
+                        <label class="settings-general-option">
+                            <input type="radio" name="style_token_execution_mode" value="signal_close" checked>
+                            <span class="settings-general-option-copy">
+                                <span class="settings-general-option-title">{{ row.sample_title }}</span>
+                                <span class="settings-general-option-desc">{{ row.sample_copy }}</span>
+                            </span>
+                        </label>
+                    </form>
                     {% elif row.sample_kind == "modal-dialog" %}
                     <div class="style-token-modal-shell">
                         <div class="workspace-modal-dialog style-token-modal-demo">
@@ -565,7 +648,18 @@
                     {% endif %}
                 </div>
                 <div class="style-token-meta">
-                    <p class="style-token-title">{{ row.name }}</p>
+                    <div class="style-token-title-row">
+                        <p class="style-token-title">{{ row.name }}</p>
+                        <button
+                            type="button"
+                            class="settings-round-icon-button style-token-copy-button"
+                            data-style-token-copy="{{ row.name }}"
+                            aria-label="Copy style name {{ row.name }}"
+                            title="Copy style name"
+                        >
+                            <span class="icon icon-style-token-copy" aria-hidden="true"></span>
+                        </button>
+                    </div>
                     <div class="style-token-table-wrap">
                         <table class="style-token-table" aria-label="{{ row.name }} tokens">
                             <tbody>

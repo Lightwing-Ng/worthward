@@ -1,7 +1,7 @@
 """
 SMTP settings persistence and Outlook OAuth checks.
 
-Code version: v2.0.0
+Code version: v2.1.0
 """
 
 from __future__ import annotations
@@ -26,9 +26,17 @@ SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 SMTP_SETTINGS_PATH = SETTINGS_STORE_DIR / "smtp.json"
 OUTLOOK_SMTP_HOST = "smtp-mail.outlook.com"
 OUTLOOK_SMTP_PORT = 587
-MICROSOFT_IDENTITY_TENANT = "consumers"
 OUTLOOK_SMTP_SCOPE = "offline_access https://outlook.office.com/SMTP.Send"
 DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
+OUTLOOK_PERSONAL_TENANT = "consumers"
+OUTLOOK_WORKFORCE_TENANT = "organizations"
+SUPPORTED_MICROSOFT_TENANTS = {"common", OUTLOOK_PERSONAL_TENANT, OUTLOOK_WORKFORCE_TENANT}
+OUTLOOK_PERSONAL_DOMAINS = {
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "msn.com",
+}
 
 
 @dataclass(slots=True)
@@ -40,6 +48,7 @@ class SmtpSettings:
     from_email: str = ""
     use_starttls: bool = True
     oauth_client_id: str = ""
+    oauth_tenant: str = ""
     oauth_access_token: str = ""
     oauth_refresh_token: str = ""
     oauth_token_expires_at: float = 0.0
@@ -68,6 +77,7 @@ def load_smtp_settings() -> SmtpSettings:
         from_email=str(payload.get("from_email", "")).strip(),
         use_starttls=bool(payload.get("use_starttls", True)),
         oauth_client_id=str(payload.get("oauth_client_id", "")).strip(),
+        oauth_tenant=normalize_oauth_tenant(str(payload.get("oauth_tenant", "")).strip()),
         oauth_access_token=str(payload.get("oauth_access_token", "")),
         oauth_refresh_token=str(payload.get("oauth_refresh_token", "")),
         oauth_token_expires_at=float(payload.get("oauth_token_expires_at", 0.0) or 0.0),
@@ -99,6 +109,9 @@ def has_pending_oauth_device_flow(settings: SmtpSettings) -> bool:
 
 def sanitize_smtp_settings_for_view(settings: SmtpSettings) -> dict[str, object]:
     mailbox = smtp_mailbox(settings)
+    effective_tenant = oauth_tenant_for(settings)
+    mailbox_domain = mailbox.partition("@")[2].strip().lower()
+    is_personal_mailbox = mailbox_domain in OUTLOOK_PERSONAL_DOMAINS
     return {
         "host": settings.host,
         "port": settings.port,
@@ -107,6 +120,9 @@ def sanitize_smtp_settings_for_view(settings: SmtpSettings) -> dict[str, object]
         "use_starttls": settings.use_starttls,
         "has_password": bool(settings.password),
         "oauth_client_id": settings.oauth_client_id,
+        "oauth_tenant": settings.oauth_tenant,
+        "oauth_effective_tenant": effective_tenant,
+        "oauth_mailbox_kind": "personal" if is_personal_mailbox else "workforce",
         "oauth_authorized": has_saved_oauth_authorization(settings),
         "oauth_pending": has_pending_oauth_device_flow(settings),
         "oauth_user_code": settings.oauth_user_code,
@@ -115,12 +131,33 @@ def sanitize_smtp_settings_for_view(settings: SmtpSettings) -> dict[str, object]
     }
 
 
-def oauth_device_code_endpoint() -> str:
-    return f"https://login.microsoftonline.com/{MICROSOFT_IDENTITY_TENANT}/oauth2/v2.0/devicecode"
+def normalize_oauth_tenant(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    lowered = normalized.lower()
+    if lowered in SUPPORTED_MICROSOFT_TENANTS:
+        return lowered
+    return normalized
 
 
-def oauth_token_endpoint() -> str:
-    return f"https://login.microsoftonline.com/{MICROSOFT_IDENTITY_TENANT}/oauth2/v2.0/token"
+def oauth_tenant_for(settings: SmtpSettings) -> str:
+    explicit_tenant = normalize_oauth_tenant(settings.oauth_tenant)
+    if explicit_tenant:
+        return explicit_tenant
+    mailbox = smtp_mailbox(settings)
+    mailbox_domain = mailbox.partition("@")[2].strip().lower()
+    if mailbox_domain in OUTLOOK_PERSONAL_DOMAINS:
+        return OUTLOOK_PERSONAL_TENANT
+    return OUTLOOK_WORKFORCE_TENANT
+
+
+def oauth_device_code_endpoint(settings: SmtpSettings) -> str:
+    return f"https://login.microsoftonline.com/{oauth_tenant_for(settings)}/oauth2/v2.0/devicecode"
+
+
+def oauth_token_endpoint(settings: SmtpSettings) -> str:
+    return f"https://login.microsoftonline.com/{oauth_tenant_for(settings)}/oauth2/v2.0/token"
 
 
 def post_oauth_form(url: str, payload: dict[str, str], timeout_seconds: float = 20.0) -> dict[str, Any]:
@@ -159,7 +196,10 @@ def build_oauth_settings_message(settings: SmtpSettings) -> str:
     if has_saved_oauth_authorization(settings):
         return "Outlook OAuth is connected."
     if has_pending_oauth_device_flow(settings):
-        return f"Use code {settings.oauth_user_code} at {settings.oauth_verification_uri} to finish Outlook sign-in."
+        return (
+            f"Use code {settings.oauth_user_code} at {settings.oauth_verification_uri} "
+            f"to finish Outlook sign-in for tenant {oauth_tenant_for(settings)}."
+        )
     return "Outlook OAuth is not connected yet."
 
 
@@ -171,7 +211,7 @@ def start_outlook_oauth_device_flow(settings: SmtpSettings, timeout_seconds: flo
         return settings, False, "Outlook OAuth client ID is required."
 
     payload = post_oauth_form(
-        oauth_device_code_endpoint(),
+        oauth_device_code_endpoint(settings),
         {
             "client_id": settings.oauth_client_id.strip(),
             "scope": OUTLOOK_SMTP_SCOPE,
@@ -193,7 +233,7 @@ def start_outlook_oauth_device_flow(settings: SmtpSettings, timeout_seconds: flo
     settings.oauth_token_expires_at = 0.0
     message = (
         f"Open {settings.oauth_verification_uri} and enter code {settings.oauth_user_code}. "
-        "Then return here and click Finish Outlook OAuth."
+        f"Then return here and click Finish Outlook OAuth. Tenant: {oauth_tenant_for(settings)}."
     )
     return settings, True, message
 
@@ -222,7 +262,7 @@ def finish_outlook_oauth_device_flow(settings: SmtpSettings, timeout_seconds: fl
     interval_seconds = max(settings.oauth_device_interval_seconds, 1.0)
     while time.time() <= deadline:
         payload = post_oauth_form(
-            oauth_token_endpoint(),
+            oauth_token_endpoint(settings),
             {
                 "grant_type": DEVICE_CODE_GRANT_TYPE,
                 "client_id": settings.oauth_client_id.strip(),
@@ -255,7 +295,7 @@ def refresh_outlook_oauth_access_token(settings: SmtpSettings, timeout_seconds: 
     if not settings.oauth_refresh_token.strip():
         return settings, False, "Outlook OAuth is not connected yet."
     payload = post_oauth_form(
-        oauth_token_endpoint(),
+        oauth_token_endpoint(settings),
         {
             "client_id": settings.oauth_client_id.strip(),
             "grant_type": "refresh_token",

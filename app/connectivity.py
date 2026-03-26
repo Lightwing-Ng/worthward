@@ -1,13 +1,13 @@
 """
 Remote connectivity helpers.
 
-Code version: v1.5.0
+Code version: v1.6.0
 """
 
 from __future__ import annotations
 
 import json
-from time import monotonic
+from time import monotonic, time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -35,28 +35,39 @@ REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
 GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS = 300
 GENERIC_CONNECTIVITY_FAILURE_TTL_SECONDS = 60
-_remote_market_access_cache: tuple[float, bool] | None = None
-_remote_logo_access_cache: tuple[float, bool] | None = None
-_google_hk_access_cache: tuple[float, bool] | None = None
-_chatgpt_access_cache: tuple[float, bool] | None = None
-_tradingview_ta_cache: tuple[float, bool] | None = None
+_remote_market_access_cache: tuple[float, float, bool] | None = None
+_remote_logo_access_cache: tuple[float, float, bool] | None = None
+_google_hk_access_cache: tuple[float, float, bool] | None = None
+_chatgpt_access_cache: tuple[float, float, bool] | None = None
+_tradingview_ta_cache: tuple[float, float, bool] | None = None
 TRADINGVIEW_TA_SUCCESS_TTL_SECONDS = 86400
 TRADINGVIEW_TA_FAILURE_TTL_SECONDS = 300
 
 
 def _cached_connectivity_value(
-    cache_entry: tuple[float, bool] | None,
+    cache_entry: tuple[float, float, bool] | None,
     *,
     success_ttl: int,
     failure_ttl: int,
 ) -> bool | None:
     if cache_entry is None:
         return None
-    cached_at, cached_value = cache_entry
+    cached_at, _, cached_value = cache_entry
     ttl = success_ttl if cached_value else failure_ttl
     if monotonic() - cached_at < ttl:
         return cached_value
     return None
+
+
+def _cache_checked_at(cache_entry: tuple[float, float, bool] | None) -> float | None:
+    if cache_entry is None:
+        return None
+    _, checked_at, _ = cache_entry
+    return checked_at
+
+
+def _cache_result(value: bool) -> tuple[float, float, bool]:
+    return monotonic(), time(), value
 
 
 def _probe_yahoo_chart_endpoint() -> bool:
@@ -96,17 +107,17 @@ def has_remote_market_access() -> bool:
     for probe in (_probe_yahoo_chart_endpoint, _probe_yfinance_history):
         try:
             if probe():
-                _remote_market_access_cache = (monotonic(), True)
+                _remote_market_access_cache = _cache_result(True)
                 return True
         except Exception:
             continue
 
     if _remote_market_access_cache is not None:
-        cached_at, cached_value = _remote_market_access_cache
+        cached_at, _, cached_value = _remote_market_access_cache
         if cached_value and monotonic() - cached_at < REMOTE_MARKET_STALE_GRACE_SECONDS:
             return True
 
-    _remote_market_access_cache = (monotonic(), False)
+    _remote_market_access_cache = _cache_result(False)
     return False
 
 
@@ -130,12 +141,12 @@ def has_remote_logo_access() -> bool:
             with urlopen(request_obj, timeout=4) as response:
                 is_available = response.status < 500
                 if is_available:
-                    _remote_logo_access_cache = (monotonic(), True)
+                    _remote_logo_access_cache = _cache_result(True)
                     return True
         except (HTTPError, URLError, TimeoutError, ValueError):
             continue
 
-    _remote_logo_access_cache = (monotonic(), False)
+    _remote_logo_access_cache = _cache_result(False)
     return False
 
 
@@ -166,7 +177,7 @@ def has_google_hk_access() -> bool:
         return cached_value
 
     is_available = _probe_http_endpoints(GOOGLE_HK_PING_URLS)
-    _google_hk_access_cache = (monotonic(), is_available)
+    _google_hk_access_cache = _cache_result(is_available)
     return is_available
 
 
@@ -182,7 +193,7 @@ def has_chatgpt_access() -> bool:
         return cached_value
 
     is_available = _probe_http_endpoints(CHATGPT_PING_URLS)
-    _chatgpt_access_cache = (monotonic(), is_available)
+    _chatgpt_access_cache = _cache_result(is_available)
     return is_available
 
 
@@ -200,10 +211,10 @@ def has_tradingview_ta_available() -> bool:
 
     try:
         import tradingview_ta  # noqa: F401
-        _tradingview_ta_cache = (monotonic(), True)
+        _tradingview_ta_cache = _cache_result(True)
         return True
     except ImportError:
-        _tradingview_ta_cache = (monotonic(), False)
+        _tradingview_ta_cache = _cache_result(False)
         return False
 
 
@@ -237,3 +248,19 @@ def reset_connectivity_caches() -> None:
     _google_hk_access_cache = None
     _chatgpt_access_cache = None
     _tradingview_ta_cache = None
+
+
+def last_remote_market_check_at() -> float | None:
+    return _cache_checked_at(_remote_market_access_cache)
+
+
+def last_remote_logo_check_at() -> float | None:
+    return _cache_checked_at(_remote_logo_access_cache)
+
+
+def last_google_hk_check_at() -> float | None:
+    return _cache_checked_at(_google_hk_access_cache)
+
+
+def last_tradingview_ta_check_at() -> float | None:
+    return _cache_checked_at(_tradingview_ta_cache)

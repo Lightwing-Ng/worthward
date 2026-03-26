@@ -1,4 +1,4 @@
-/* Code version: v3.31.8 */
+/* Code version: v3.31.10 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -289,6 +289,29 @@
 		});
 	};
 
+	const writeTextToClipboard = async (value) => {
+		if (!value) return false;
+		if (navigator.clipboard?.writeText) {
+			try {
+				await navigator.clipboard.writeText(value);
+				return true;
+			} catch (_error) {
+			}
+		}
+		const textarea = document.createElement("textarea");
+		textarea.value = value;
+		textarea.setAttribute("readonly", "readonly");
+		textarea.style.position = "fixed";
+		textarea.style.opacity = "0";
+		textarea.style.pointerEvents = "none";
+		document.body.append(textarea);
+		textarea.select();
+		textarea.setSelectionRange(0, textarea.value.length);
+		const didCopy = document.execCommand("copy");
+		textarea.remove();
+		return didCopy;
+	};
+
 	const attachStyleTokenResizer = () => {
 		const shell = document.querySelector("[data-style-token-shell]");
 		const handle = shell?.querySelector("[data-style-token-resizer]");
@@ -476,6 +499,37 @@
 		});
 	};
 
+	const attachStyleTokenCopyButtons = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!shell) return;
+		shell.querySelectorAll("[data-style-token-copy]").forEach((button) => {
+			if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
+			button.dataset.bound = "1";
+			const defaultLabel = button.getAttribute("aria-label") || "Copy style name";
+			const showCopiedState = () => {
+				button.classList.add("is-copied");
+				button.setAttribute("aria-label", "Copied");
+				button.setAttribute("title", "Copied");
+				window.clearTimeout(Number(button.dataset.copyResetTimer || "0"));
+				const timer = window.setTimeout(() => {
+					button.classList.remove("is-copied");
+					button.setAttribute("aria-label", defaultLabel);
+					button.setAttribute("title", "Copy style name");
+					delete button.dataset.copyResetTimer;
+				}, 1200);
+				button.dataset.copyResetTimer = String(timer);
+			};
+			button.addEventListener("click", async () => {
+				const value = button.dataset.styleTokenCopy || "";
+				try {
+					const copied = await writeTextToClipboard(value);
+					if (copied) showCopiedState();
+				} catch (_error) {
+				}
+			});
+		});
+	};
+
 	const attachStyleTokenModeSwitches = () => {
 		const shell = document.querySelector("[data-style-token-shell]");
 		if (!shell) return;
@@ -580,6 +634,7 @@
 		attachStyleTokenResizer();
 		attachStyleTokenControls();
 		attachStyleTokenReferences();
+		attachStyleTokenCopyButtons();
 		attachStyleTokenModeSwitches();
 		attachStyleTokenDemoInteractions();
 		attachBrokerSettingsHandlers();
@@ -1327,9 +1382,12 @@
 	};
 
 	const setNetworkStatusesPending = () => {
+		const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
+		if (summaryCheckedAtNode) summaryCheckedAtNode.textContent = "Last checked: Checking...";
 		document.querySelectorAll("[data-settings-service-row]").forEach((row) => {
 			const statusNode = row.querySelector("[data-settings-service-status]");
 			const noteNode = row.querySelector("[data-settings-service-note]");
+			const checkedAtNode = row.querySelector("[data-settings-service-checked-at]");
 			const iconNode = row.querySelector("[data-settings-service-icon]");
 			const stateNode = row.querySelector(".settings-service-state");
 			if (statusNode) statusNode.textContent = "Checking...";
@@ -1342,6 +1400,7 @@
 				const pendingNote = noteNode.dataset.pendingNote || "";
 				if (pendingNote) noteNode.textContent = pendingNote;
 			}
+			if (checkedAtNode) checkedAtNode.textContent = "Last checked: Checking...";
 		});
 	};
 
@@ -1349,21 +1408,26 @@
 		if (state.currentView !== "settings" || state.settingsSection !== "network") return;
 		try {
 			if (force) progressiveResourceCache.delete("settings-network-status");
-			const payload = await fetchJsonCached(
-				"settings-network-status",
-				force ? `${endpoints.settingsNetworkStatus}?refresh=1` : endpoints.settingsNetworkStatus,
-				{ ttlMs: force ? 0 : 45000 },
-			);
-			(payload.rows || []).forEach((item) => {
+				const payload = await fetchJsonCached(
+					"settings-network-status",
+					force ? `${endpoints.settingsNetworkStatus}?refresh=1` : endpoints.settingsNetworkStatus,
+					{ ttlMs: force ? 0 : 45000 },
+				);
+				const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
+				const firstCheckedAtText = payload.rows?.[0]?.checked_at_text || "";
+				if (summaryCheckedAtNode) summaryCheckedAtNode.textContent = firstCheckedAtText || "Last checked: Not checked yet.";
+				(payload.rows || []).forEach((item) => {
 				const row = document.querySelector(`[data-settings-service-row][data-service-key="${CSS.escape(item.key || "")}"]`);
 				if (!row) return;
-				const statusNode = row.querySelector("[data-settings-service-status]");
-				const noteNode = row.querySelector("[data-settings-service-note]");
-				const iconNode = row.querySelector("[data-settings-service-icon]");
-				const stateNode = row.querySelector(".settings-service-state");
-				if (statusNode) statusNode.textContent = item.status || "";
-				if (noteNode) noteNode.textContent = item.note || "";
-				if (stateNode) stateNode.classList.toggle("is-muted", !item.is_available);
+					const statusNode = row.querySelector("[data-settings-service-status]");
+					const noteNode = row.querySelector("[data-settings-service-note]");
+					const checkedAtNode = row.querySelector("[data-settings-service-checked-at]");
+					const iconNode = row.querySelector("[data-settings-service-icon]");
+					const stateNode = row.querySelector(".settings-service-state");
+					if (statusNode) statusNode.textContent = item.status || "";
+					if (noteNode) noteNode.textContent = item.note || "";
+					if (checkedAtNode) checkedAtNode.textContent = item.checked_at_text || "";
+					if (stateNode) stateNode.classList.toggle("is-muted", !item.is_available);
 				if (iconNode) {
 					iconNode.classList.remove("is-pending-status");
 					iconNode.classList.toggle("is-visible", Boolean(item.is_available));

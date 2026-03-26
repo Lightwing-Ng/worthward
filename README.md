@@ -73,7 +73,7 @@ settings_store/          → Locally stored broker and SMTP settings
 - `logos.py`
   - Profile lookup, logo retrieval, and search-result caching
 - `email_settings.py`
-  - Outlook SMTP settings and connection testing
+  - Outlook SMTP OAuth settings, Microsoft device-flow authorization, and connection testing
 - `broker_settings.py`
   - Broker credential persistence and normalization
 - `connectivity.py`
@@ -129,6 +129,14 @@ The Settings workspace currently includes:
 - Local Market Store
 - Clear caches
 - Style tokens
+
+## Outlook SMTP setup
+
+- Uses `smtp-mail.outlook.com:587` with `STARTTLS`
+- Targets Microsoft OAuth 2.0 rather than legacy password-first SMTP setup
+- Supports both Microsoft 365 work or school mailboxes and personal Outlook.com / Hotmail / Live / MSN mailboxes
+- Expects a Microsoft Entra app client ID plus the delegated SMTP scope `https://outlook.office.com/SMTP.Send`
+- Supports device-code authorization so the mailbox owner can approve the app in a browser and reuse refresh tokens locally
 
 ## Broker support
 

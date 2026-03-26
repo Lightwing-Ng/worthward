@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-Code version: v1.0.1
+    Code version: v1.0.2
 """
 
 from __future__ import annotations
@@ -39,11 +39,7 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             return False, "Longbridge credentials (App Key, App Secret, Access Token) are required."
         try:
             Config, QuoteContext, _, _ = _load_longbridge_openapi()
-            config = Config(
-                settings.longbridge_app_key.strip(),
-                settings.longbridge_app_secret.strip(),
-                settings.longbridge_access_token.strip(),
-            )
+            config = _build_longbridge_config(Config, settings)
             context = QuoteContext(config)
             # Try to fetch a single quote for a common symbol to test connection
             quote = context.quote(["AAPL.US"])
@@ -72,6 +68,16 @@ def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
     raise RuntimeError(
         "Longbridge OpenAPI is not installed. Add the official Python package before fetching 1-minute history."
     )
+
+
+def _build_longbridge_config(Config: Any, settings: BrokerSettings) -> Any:
+    app_key = settings.longbridge_app_key.strip()
+    app_secret = settings.longbridge_app_secret.strip()
+    access_token = settings.longbridge_access_token.strip()
+    factory = getattr(Config, "from_apikey", None)
+    if callable(factory):
+        return factory(app_key, app_secret, access_token)
+    return Config(app_key, app_secret, access_token)
 
 
 def _normalize_longbridge_symbol(ticker: str) -> str:
@@ -131,11 +137,7 @@ def fetch_longbridge_one_minute_history(
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
     Config, QuoteContext, Period, AdjustType = _load_longbridge_openapi()
-    config = Config(
-        settings.longbridge_app_key.strip(),
-        settings.longbridge_app_secret.strip(),
-        settings.longbridge_access_token.strip(),
-    )
+    config = _build_longbridge_config(Config, settings)
     quote_context = QuoteContext(config)
     symbol = _normalize_longbridge_symbol(ticker)
     
