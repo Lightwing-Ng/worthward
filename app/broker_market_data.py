@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-    Code version: v1.0.2
+    Code version: v1.2.1
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -17,10 +18,11 @@ from .storage import ensure_market_store_dir, intraday_history_store_path_for, h
 
 ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
-ONE_MINUTE_FRESHNESS_DAYS = 7
 ONE_MINUTE_MIN_SPAN_DAYS = 150
-DAILY_FRESHNESS_DAYS = 7
 DAILY_MIN_SPAN_DAYS = 330
+NEW_YORK_TIMEZONE = "America/New_York"
+UTC_TIMEZONE = "UTC"
+NEW_YORK_ZONE = ZoneInfo(NEW_YORK_TIMEZONE)
 
 
 def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) -> pd.Timestamp:
@@ -88,14 +90,65 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
     return f"{normalized_ticker}.US"
 
 
+def _normalize_to_new_york_naive(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        return timestamp
+    return timestamp.tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
+
+
+def _localize_new_york(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize(NEW_YORK_TIMEZONE)
+    return timestamp.tz_convert(NEW_YORK_TIMEZONE)
+
+
+def _coerce_to_new_york(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    """
+    Converts any supported timestamp input into an aware New York timestamp.
+
+    Naive values are treated as system-local wall time first, then converted to
+    New York. This avoids relying on fixed manual offsets between time zones.
+    """
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        local_datetime = timestamp.to_pydatetime().astimezone()
+        return pd.Timestamp(local_datetime.astimezone(NEW_YORK_ZONE))
+    return timestamp.tz_convert(NEW_YORK_TIMEZONE)
+
+
+def _read_store_dates_as_new_york_naive(values: pd.Series) -> pd.Series:
+    date_values = pd.to_datetime(values, errors="coerce")
+    if getattr(date_values.dt, "tz", None) is not None:
+        return date_values.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
+    return date_values
+
+
+def _parse_longbridge_timestamp(raw_timestamp: object) -> pd.Timestamp:
+    if isinstance(raw_timestamp, pd.Timestamp):
+        timestamp = raw_timestamp
+    elif isinstance(raw_timestamp, datetime):
+        timestamp = pd.Timestamp(raw_timestamp)
+    else:
+        timestamp = pd.Timestamp(raw_timestamp, unit="s", tz=UTC_TIMEZONE)
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize(UTC_TIMEZONE)
+    else:
+        timestamp = timestamp.tz_convert(UTC_TIMEZONE)
+    return timestamp
+
+
 def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     """
     Robustly converts Longbridge candlesticks to a DataFrame stored in NYT.
-    
-    Longbridge provides timestamps that are conceptually Asia/Hong_Kong (HKT).
-    According to the user's unified decision, we store 1m data in local Parquet 
+
+    Longbridge candlestick timestamps are absolute instants and must be parsed
+    as UTC-compatible epoch values before conversion.
+    According to the user's unified decision, we store 1m data in local Parquet
     strictly using America/New_York (NYT).
-    
+
     This handles Summer/Winter time transitions (Daylight Saving Time) correctly
     via standard IANA zone names.
     """
@@ -103,17 +156,12 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     for candle in candlesticks:
         raw_ts = getattr(candle, "timestamp")
 
-        # 1. Parse raw timestamp (numeric epoch) as HKT as requested.
-        # Longbridge timestamps for US stocks are often numerically aligned with HKT.
-        ts_hkt = pd.Timestamp(raw_ts, unit="s").tz_localize("Asia/Hong_Kong")
-
-        # 2. Convert to US Eastern Time (NYT), preserving the mapping of a specific 
-        # point in time regardless of future DST law changes.
-        ts_nyt = ts_hkt.tz_convert("America/New_York")
+        # Parse the absolute timestamp first, then convert to New York wall time.
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
 
         rows.append(
             {
-                "Date": ts_nyt.tz_localize(None),  # Store as naive NYT (System Standard)
+                "Date": ts_nyt.tz_localize(None),
                 "Open": float(getattr(candle, "open")),
                 "High": float(getattr(candle, "high")),
                 "Low": float(getattr(candle, "low")),
@@ -143,16 +191,14 @@ def fetch_longbridge_one_minute_history(
     # We fetch backwards from current time
     end_at = datetime.now(timezone.utc)
     # The absolute lookback limit (6 months)
-    global_start_at = one_minute_lookback_start(end_at).to_pydatetime()
+    global_start_at = one_minute_lookback_start(end_at)
+    global_start_nyt = _normalize_to_new_york_naive(global_start_at)
 
     # The incremental lookback limit (if provided)
     # We add 2 hours overlap to ensure no gaps or partial bars at the boundary
-    effective_start_at = global_start_at
+    effective_start_nyt = global_start_nyt
     if since is not None:
-        # Since date is likely in naive ET (NYT), converting to UTC for comparison
-        # We'll just assume UTC for the sake of the loop boundary check if since is already UTC-aware
-        since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
-        effective_start_at = max(global_start_at, since_utc - timedelta(hours=2))
+        effective_start_nyt = max(global_start_nyt, _normalize_to_new_york_naive(since) - timedelta(hours=2))
 
     frames: list[pd.DataFrame] = []
     cursor: datetime | None = None
@@ -192,17 +238,13 @@ def fetch_longbridge_one_minute_history(
         frames.append(frame)
 
         # check oldest record in current batch
-        batch_min_date = frame["Date"].min()
-        # Dates in frame are naive NYT. We need to compare with UTC effective_start_at.
-        # Simple heuristic: assume naive NYT is ~4-5 hours behind UTC.
-        # Or better: treat them as naive for comparison if effective_start_at is naive.
-        oldest_ts_naive = pd.Timestamp(batch_min_date).replace(tzinfo=None)
-        start_at_naive = pd.Timestamp(effective_start_at).tz_convert(None).replace(tzinfo=None)
+        batch_min_date = pd.Timestamp(frame["Date"].min())
+        oldest_ts_naive = _normalize_to_new_york_naive(batch_min_date)
 
-        if oldest_ts_naive <= start_at_naive:
+        if oldest_ts_naive <= effective_start_nyt:
             break
 
-        next_cursor_utc = (pd.Timestamp(batch_min_date).tz_localize("America/New_York").tz_convert("UTC") - pd.Timedelta(seconds=1)).to_pydatetime()
+        next_cursor_utc = (_localize_new_york(batch_min_date).tz_convert(UTC_TIMEZONE) - pd.Timedelta(seconds=1)).to_pydatetime()
         if previous_oldest is not None and next_cursor_utc >= previous_oldest:
             break
         previous_oldest = next_cursor_utc
@@ -216,8 +258,7 @@ def fetch_longbridge_one_minute_history(
     dataset = dataset.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
 
     # Filter by the global 6-month limit
-    cut_off = pd.Timestamp(global_start_at).tz_convert(None).replace(tzinfo=None)
-    dataset = dataset.loc[dataset["Date"] >= cut_off].copy()
+    dataset = dataset.loc[dataset["Date"] >= global_start_nyt].copy()
 
     if dataset.empty:
         raise ValueError(f"No 1-minute market data returned for {ticker}.")
@@ -247,7 +288,7 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
         combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
 
         # Enforce the 6-month limit on the combined store
-        cut_off = one_minute_lookback_start().tz_localize(None)
+        cut_off = one_minute_lookback_start().tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
         combined = combined.loc[combined["Date"] >= cut_off].copy()
 
         combined.to_parquet(path, index=False)
@@ -267,31 +308,27 @@ def has_recent_one_minute_store(ticker: str) -> bool:
         return False
     if dataset.empty:
         return False
-    date_values = pd.to_datetime(dataset["Date"], utc=True, errors="coerce").dropna()
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"]).dropna()
     return not date_values.empty
 
 
-def _is_market_data_fresh(max_date: datetime) -> bool:
+def _is_market_data_fresh(max_date: datetime, now: datetime | pd.Timestamp | None = None) -> bool:
     """
-    Checks if market data is fresh up to the most recent trading day.
-    Assumes current execution is in Beijing (UTC+8) and market is NY (UTC-4/5).
+    Checks if market data is fresh up to the most recent completed New York trading day.
     """
-    # Estimate New York time (UTC-4 in March/Daylight Saving)
-    now_bj = datetime.now()
-    now_ny = now_bj - timedelta(hours=12)
+    max_date_nyt = _normalize_to_new_york_naive(max_date)
+    current_source = pd.Timestamp.now(tz=timezone.utc) if now is None else now
+    current_ny = _coerce_to_new_york(current_source)
+    now_ny = current_ny.tz_localize(None)
 
-    # Target is the last completed trading day
     target_date = now_ny.date()
     if now_ny.hour < 16:
-        # Before or during current trading day close, we expect at least the previous day
         target_date -= timedelta(days=1)
 
-    # Skip weekends to find the last required trading day
     while target_date.weekday() >= 5:  # Sat=5, Sun=6
         target_date -= timedelta(days=1)
 
-    # If the latest record date is at least the target_date, it's fresh
-    return max_date.date() >= target_date
+    return max_date_nyt.date() >= target_date
 
 
 def is_one_minute_store_complete(ticker: str) -> bool:
@@ -305,7 +342,7 @@ def is_one_minute_store_complete(ticker: str) -> bool:
     if dataset.empty:
         return False
 
-    date_values = pd.to_datetime(dataset["Date"])
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"])
     if date_values.empty:
         return False
 
@@ -332,7 +369,7 @@ def is_daily_store_complete(ticker: str) -> bool:
     if dataset.empty:
         return False
 
-    date_values = pd.to_datetime(dataset["Date"])
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"])
     if date_values.empty:
         return False
 

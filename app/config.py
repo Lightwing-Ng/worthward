@@ -29,4 +29,4 @@ PERIOD_OFFSETS = {
     "5y": pd.DateOffset(years=5),
     "10y": pd.DateOffset(years=10),
 }
-CODE_VERSION = "v2.11.0"
+CODE_VERSION = "v2.11.11"

@@ -1,20 +1,24 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.4.2
+Code version: v1.4.3
 """
 
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
-from strategies.backtest import run_single_ticker_backtest
+from strategies.backtest import _calculate_win_rate_pct, run_single_ticker_backtest
 from strategies.base import StrategySignalResult
 
 
 class BacktestMetricTests(unittest.TestCase):
+    def test_win_rate_returns_none_when_trades_exist_without_valid_pairs(self) -> None:
+        self.assertIsNone(_calculate_win_rate_pct([], [], total_trades=1))
+
     def test_win_rate_counts_buy_then_higher_sell_as_win(self) -> None:
         frame = pd.DataFrame(
             {
@@ -113,6 +117,29 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total_trades"], 3)
         # One completed pair → it's a win → 1/1 = 100%
         self.assertEqual(result["summary"]["win_rate_pct"], 100.0)
+
+    def test_backtest_surfaces_na_win_rate_when_pair_builder_returns_empty(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Date": pd.date_range("2025-01-01", periods=3, freq="D"),
+                "Close": [100.0, 110.0, 105.0],
+                "buy_signal": [True, False, False],
+                "sell_signal": [False, True, False],
+            }
+        )
+
+        with patch("strategies.backtest._build_win_rate_trade_pairs", return_value=[]):
+            result = run_single_ticker_backtest(
+                StrategySignalResult(
+                    frame=frame,
+                    buy_signal_column="buy_signal",
+                    sell_signal_column="sell_signal",
+                ),
+                initial_capital=10_000.0,
+            )
+
+        self.assertEqual(result["summary"]["total_trades"], 2)
+        self.assertIsNone(result["summary"]["win_rate_pct"])
 
     def test_chart_markers_only_reflect_executed_trades_not_raw_signals(self) -> None:
         frame = pd.DataFrame(
