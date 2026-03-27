@@ -13,7 +13,6 @@ from typing import Any
 
 from .base import BaseStrategy
 
-
 ALGORITHMS_PACKAGE = "strategies.algorithms"
 ALGORITHMS_PATH = Path(__file__).resolve().parent / "algorithms"
 

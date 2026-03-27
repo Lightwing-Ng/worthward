@@ -67,10 +67,10 @@ def _mean_or_none(values: list[float]) -> float | None:
 
 
 def _cluster_factor_and_score(
-    perf_values: list[float],
-    factor_values: list[float],
-    cluster_name: str,
-    max_iter: int,
+        perf_values: list[float],
+        factor_values: list[float],
+        cluster_name: str,
+        max_iter: int,
 ) -> tuple[float | None, float | None]:
     if not perf_values or not factor_values:
         return None, None
@@ -108,8 +108,8 @@ def _cluster_factor_and_score(
             new_centroids.append(centroids[index] if cluster_mean is None else cluster_mean)
 
         if all(
-            math.isclose(old, new, rel_tol=1e-12, abs_tol=1e-12)
-            for old, new in zip(centroids, new_centroids)
+                math.isclose(old, new, rel_tol=1e-12, abs_tol=1e-12)
+                for old, new in zip(centroids, new_centroids)
         ):
             break
         centroids = new_centroids

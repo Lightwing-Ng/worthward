@@ -18,7 +18,6 @@ import pandas as pd
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
-
 LONG = 1
 SHORT = -1
 NEUTRAL = 0
@@ -126,12 +125,12 @@ def _wave_trend(hlc3: pd.Series, channel_length: int, average_length: int) -> pd
 
 
 def _feature_series(
-    feature_name: str,
-    frame: pd.DataFrame,
-    source: pd.Series,
-    hlc3: pd.Series,
-    param_a: int,
-    param_b: int,
+        feature_name: str,
+        frame: pd.DataFrame,
+        source: pd.Series,
+        hlc3: pd.Series,
+        param_a: int,
+        param_b: int,
 ) -> pd.Series:
     if feature_name == "RSI":
         return _ema(_rsi(source, param_a), max(param_b, 1))
@@ -507,9 +506,9 @@ class LorentzianClassificationStrategy(BaseStrategy):
         )
 
     def compute_signals(
-        self,
-        dataset: pd.DataFrame,
-        params: dict | None = None,
+            self,
+            dataset: pd.DataFrame,
+            params: dict | None = None,
     ) -> StrategySignalResult:
         frame = _ensure_ohlcv_columns(dataset).reset_index(drop=True)
         if frame.empty:
@@ -580,8 +579,8 @@ class LorentzianClassificationStrategy(BaseStrategy):
         adx_series = _adx(frame, 14)
         regime_basis = _ema(ohlc4, 20)
         regime_series = (
-            regime_basis.diff(5)
-            / regime_basis.abs().rolling(window=20, min_periods=1).mean().replace(0.0, np.nan)
+                regime_basis.diff(5)
+                / regime_basis.abs().rolling(window=20, min_periods=1).mean().replace(0.0, np.nan)
         ).fillna(0.0)
 
         ema_line = _ema(close, ema_period)
@@ -626,17 +625,17 @@ class LorentzianClassificationStrategy(BaseStrategy):
                 # Vectorized Lorentzian distance: sum(log(1 + abs(F_current - F_history)))
                 hist_features = features[start:i]
                 sub_indices = np.arange(0, len(hist_features), step=4)
-                
+
                 if len(sub_indices) > 0:
                     sampled_hist = hist_features[sub_indices]
                     dist = np.log1p(np.abs(sampled_hist - features[i])).sum(axis=1)
-                    
+
                     k = min(neighbors_count, len(dist))
                     if k > 0:
                         near_idx = np.argpartition(dist, k - 1)[:k]
                         actual_indices = start + sub_indices[near_idx]
                         prediction = float(np.sum(training_labels_np[actual_indices]))
-            
+
             prediction_values[i] = prediction
             volatility_ok = (atr_fast.iloc[i] > atr_slow.iloc[i]) if use_volatility_filter else True
             regime_ok = (regime_series.iloc[i] > regime_threshold) if use_regime_filter else True
@@ -664,13 +663,13 @@ class LorentzianClassificationStrategy(BaseStrategy):
         # Entry/Exit Logic
         is_held_four_bars = bars_held_series.eq(4)
         is_held_less_than_four_bars = bars_held_series.gt(0) & bars_held_series.lt(4)
-        
+
         is_buy_signal = signal_series.eq(LONG) & is_ema_uptrend & is_sma_uptrend
         is_sell_signal = signal_series.eq(SHORT) & is_ema_downtrend & is_sma_downtrend
-        
+
         is_new_buy_signal = is_buy_signal & signal_changed
         is_new_sell_signal = is_sell_signal & signal_changed
-        
+
         # Look back 4 bars for Signal validation (matching PineScript logic)
         is_last_signal_buy = _shift_int(signal_series, 4, fill_value=NEUTRAL).eq(LONG)
 
@@ -684,13 +683,13 @@ class LorentzianClassificationStrategy(BaseStrategy):
         end_long_trade_dynamic = is_bearish_change & _shift_bool(is_valid_long_exit, 1)
 
         end_long_trade_strict = (
-            (
-                (is_held_four_bars & is_last_signal_buy)
-                | (is_held_less_than_four_bars & is_new_sell_signal)
-            )
-            & _shift_bool(start_long_trade.rolling(window=100, min_periods=1).max().astype(bool), 1)
+                (
+                        (is_held_four_bars & is_last_signal_buy)
+                        | (is_held_less_than_four_bars & is_new_sell_signal)
+                )
+                & _shift_bool(start_long_trade.rolling(window=100, min_periods=1).max().astype(bool), 1)
         )
-        
+
         is_dynamic_exit_valid = (not use_ema_filter) and (not use_sma_filter) and (not use_kernel_smoothing)
         end_long = end_long_trade_dynamic if (use_dynamic_exits and is_dynamic_exit_valid) else end_long_trade_strict
 

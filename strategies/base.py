@@ -162,8 +162,8 @@ class BaseStrategy:
         return normalized
 
     def compute_signals(
-        self,
-        dataset: pd.DataFrame,
-        params: dict | None = None,
+            self,
+            dataset: pd.DataFrame,
+            params: dict | None = None,
     ) -> StrategySignalResult:
         raise NotImplementedError

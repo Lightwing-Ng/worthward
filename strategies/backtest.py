@@ -50,10 +50,10 @@ def _build_trade_pairs(trades: list[dict[str, object]]) -> list[tuple[dict[str, 
 
 
 def _build_win_rate_trade_pairs(
-    trades: list[dict[str, object]],
-    final_close_price: float,
-    final_trade_date: pd.Timestamp,
-    open_shares: int,
+        trades: list[dict[str, object]],
+        final_close_price: float,
+        final_trade_date: pd.Timestamp,
+        open_shares: int,
 ) -> list[tuple[dict[str, object], dict[str, object]]]:
     # We work on a copy for win rate calculation only
     # Original trades list remains unchanged for UI display
@@ -63,7 +63,7 @@ def _build_win_rate_trade_pairs(
 
     last_side = str(metric_trades[-1].get("side", ""))
     added_close_trade = False
-    
+
     # 1. Handle unclosed Long positions (Last was Buy)
     if last_side == "Buy" and open_shares > 0:
         entry_price = float(metric_trades[-1].get("price", 0.0))
@@ -106,14 +106,14 @@ def _build_win_rate_trade_pairs(
             "_virtual_close": True,
         })
         added_close_trade = True
-        
+
     return _build_trade_pairs(metric_trades)
 
 
 def _calculate_win_rate_pct(
-    trade_pairs: list[tuple[dict[str, object], dict[str, object]]],
-    wins: list[tuple[dict[str, object], dict[str, object]]],
-    total_trades: int,
+        trade_pairs: list[tuple[dict[str, object], dict[str, object]]],
+        wins: list[tuple[dict[str, object], dict[str, object]]],
+        total_trades: int,
 ) -> float | None:
     if trade_pairs:
         return round((len(wins) / len(trade_pairs)) * 100.0, 2)
@@ -148,10 +148,10 @@ def _build_trade_markers(frame: pd.DataFrame, trades: list[dict[str, object]], i
 
 
 def run_single_ticker_backtest(
-    signal_result: StrategySignalResult,
-    initial_capital: float,
-    execution_mode: str = "signal_close",
-    interval: str = "1d",
+        signal_result: StrategySignalResult,
+        initial_capital: float,
+        execution_mode: str = "signal_close",
+        interval: str = "1d",
 ) -> dict[str, object]:
     frame = signal_result.frame.copy()
     if frame.empty:
@@ -212,9 +212,9 @@ def run_single_ticker_backtest(
 
         if normalized_execution_mode == "next_open" and pending_order and not is_first_row:
             execution_price = open_price if open_price > 0 else close_price
-            
+
             if pending_order == "buy" and execution_price > 0:
-                if shares == 0: # Entry Long
+                if shares == 0:  # Entry Long
                     shares = floor(cash / execution_price)
                     if shares > 0:
                         cash -= (shares * execution_price)
@@ -227,7 +227,7 @@ def run_single_ticker_backtest(
                             "pnl": 0.0,
                             "equity": round(cash + (shares * close_price), 4),
                         })
-                elif shares < 0: # Exit Short (Cover)
+                elif shares < 0:  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * execution_price
                     pnl = (short_shares * float(entry_price or execution_price)) - cost
@@ -245,7 +245,7 @@ def run_single_ticker_backtest(
                     entry_price = None
                 pending_order = None
             elif pending_order == "sell" and execution_price > 0:
-                if shares > 0: # Exit Long (Sell)
+                if shares > 0:  # Exit Long (Sell)
                     proceeds = shares * execution_price
                     pnl = proceeds - (shares * float(entry_price or execution_price))
                     cash += proceeds
@@ -265,7 +265,7 @@ def run_single_ticker_backtest(
 
         if normalized_execution_mode == "signal_close":
             if buy_signal and close_price > 0:
-                if shares == 0: # Entry Long
+                if shares == 0:  # Entry Long
                     shares = floor(cash / close_price)
                     if shares > 0:
                         cash -= (shares * close_price)
@@ -279,7 +279,7 @@ def run_single_ticker_backtest(
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
-                elif shares < 0: # Exit Short (Cover)
+                elif shares < 0:  # Exit Short (Cover)
                     short_shares = abs(shares)
                     cost = short_shares * close_price
                     pnl = (short_shares * float(entry_price or close_price)) - cost
@@ -296,7 +296,7 @@ def run_single_ticker_backtest(
                     shares = 0
                     entry_price = None
             elif sell_signal and close_price > 0:
-                if shares > 0: # Exit Long (Sell)
+                if shares > 0:  # Exit Long (Sell)
                     proceeds = shares * close_price
                     pnl = proceeds - (shares * float(entry_price or close_price))
                     cash += proceeds
@@ -346,19 +346,19 @@ def run_single_ticker_backtest(
     long_gain = 0.0
     long_loss = 0.0
     short_gain = 0.0
-    
+
     # Process sequential trade interactions
     for i in range(len(trades) - 1):
-        t1, t2 = trades[i], trades[i+1]
+        t1, t2 = trades[i], trades[i + 1]
         t1_side = str(t1.get("side"))
         t2_side = str(t2.get("side"))
-        
+
         if t1_side == "Buy" and t2_side == "Sell":
             # Split long round-trips into realized gains vs realized losses.
             realized_long_pnl = float(t2.get("pnl", 0.0))
             long_gain += max(realized_long_pnl, 0.0)
             long_loss += max(-realized_long_pnl, 0.0)
-            
+
         elif t1_side == "Sell" and t2_side == "Buy":
             # Only count realized profitable sell-high / buy-back-lower intervals here.
             s_price = float(t1.get("price", 0.0))
