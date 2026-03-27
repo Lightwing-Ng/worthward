@@ -1,0 +1,83 @@
+@media (max-width: 980px) {
+	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+	.portfolio-summary { align-items: flex-start; }
+	.portfolio-donut-block { justify-content: flex-start; }
+	.settings-form-shell { width: 100%; }
+	.settings-form-grid { grid-template-columns: 1fr; }
+	.settings-action-package-grid { grid-template-columns: 1fr; }
+	.date-picker-grid { grid-template-columns: 1fr; }
+	.settings-danger-card { flex-direction: column; align-items: stretch; }
+	.settings-danger-form .settings-inline-button { width: fit-content; min-width: 0; }
+}
+@media (max-width: 767px) {
+	body { height: auto; overflow: auto; overflow-x: hidden; width: 100vw; }
+	.page { width: 100%; padding: 0 10px calc(80px + env(safe-area-inset-bottom, 0px)); min-height: auto; height: auto; display: block; overflow: visible; }
+	.app-shell { display: flex; flex-direction: column; width: 100%; overflow-x: hidden; gap: 0 !important; --sidebar-toggle-x: 0px !important; }
+	.sidebar { width: 100%; flex-basis: auto; padding: 16px; border-radius: var(--radius-panel); overflow: hidden; margin-top: 12px; margin-bottom: 0; transition: max-height 540ms var(--motion-inertial), padding 540ms var(--motion-inertial), margin 540ms var(--motion-inertial), opacity 400ms var(--motion-standard), border-width 540ms var(--motion-inertial); max-height: 2500px; opacity: 1; order: 0; }
+	.settings-surface { height: auto; min-height: auto; overflow: visible; }
+	.settings-body { min-height: auto; overflow: visible; }
+	.app-shell.is-sidebar-collapsed .sidebar { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; margin-left: 0; opacity: 0; border-width: 0; transform: none; pointer-events: none; }
+	html.sidebar-memory-collapsed .app-shell .sidebar { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; margin-left: 0; opacity: 0; border-width: 0; transform: none; pointer-events: none; }
+	.sidebar-toggle {
+		display: inline-flex;
+		position: sticky;
+		top: 12px;
+		left: auto;
+		right: auto;
+		bottom: auto;
+		order: 1;
+		margin: 16px auto 26px auto;
+		z-index: var(--layer-modal-overlay);
+		transition: transform 540ms var(--motion-inertial), margin 540ms var(--motion-inertial), background 160ms var(--motion-standard);
+	}
+	.app-shell.is-sidebar-collapsed .sidebar-toggle {
+		margin-top: 12px;
+		margin-bottom: -48px;
+		transform: translate3d(calc(50vw - 30px), 0, 0);
+	}
+	html.sidebar-memory-collapsed .app-shell .sidebar-toggle {
+		margin-top: 12px;
+		margin-bottom: -48px;
+		transform: translate3d(calc(50vw - 30px), 0, 0);
+	}
+	.app-shell .icon-sidebar-left { background-color: currentColor; mask: url("/static/images/menubar.arrow.up.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.up.rectangle.svg") center/contain no-repeat; }
+	.app-shell.is-sidebar-collapsed .icon-sidebar-left { mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; }
+	html.sidebar-memory-collapsed .app-shell .icon-sidebar-left { mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; }
+	.chart-panel {
+		min-height: auto;
+		padding: 0 var(--page-edge-pad) var(--backtest-surface-bottom-pad);
+		display: block;
+		order: 2;
+		z-index: var(--layer-surface-content);
+	}
+	.performance-grid { grid-template-columns: 1fr !important; grid-template-rows: none; }
+	.performance-item { grid-template-rows: auto auto auto; grid-row: auto; }
+	.performance-accent { bottom: 18px; }
+	.chart-wrap { min-height: 320px; }
+	.chart-wrap canvas { height: 100% !important; }
+	.sidebar-dock {
+		position: fixed;
+		left: 50%;
+		bottom: calc(var(--sidebar-dock-mobile-bottom-gap) + env(safe-area-inset-bottom, 0px));
+		transform: translateX(-50%);
+		margin: 0;
+		width: fit-content;
+		max-width: calc(100vw - 32px);
+		z-index: var(--layer-fixed-dock);
+		box-shadow: var(--sidebar-dock-mobile-shadow);
+		opacity: 1 !important;
+		pointer-events: auto !important;
+	}
+	.app-shell.is-sidebar-collapsed ~ .sidebar-dock {
+		transform: translateX(-50%) scale(1);
+	}
+	html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock {
+		transform: translateX(-50%) scale(1);
+		opacity: 1 !important;
+		pointer-events: auto !important;
+	}
+	.sidebar-dock-item:active {
+		transform: scale(0.9);
+		transition-duration: 80ms;
+	}
+}

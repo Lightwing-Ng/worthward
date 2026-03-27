@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	let settingsContext = null;
@@ -8,6 +8,8 @@
 	let didBindStyleTokenControlDismiss = false;
 	let styleTokenActiveControl = null;
 	let activeStyleTokenResizerCleanup = null;
+	let activeStyleTokenDemoDensityCleanup = null;
+	let refreshStyleTokenDemoDensity = null;
 
 	const getContext = () => settingsContext || {};
 	const getState = () => getContext().state || null;
@@ -110,6 +112,7 @@
 		}
 		if (!(shell instanceof HTMLElement) || !(handle instanceof HTMLElement) || handle.dataset.bound === "1") return;
 		handle.dataset.bound = "1";
+		const scrollViewport = shell.closest("[data-settings-workspace-region]");
 		const minWidth = 220;
 		const clampWidth = (desiredWidth) => {
 			const rect = shell.getBoundingClientRect();
@@ -127,15 +130,19 @@
 			const nextWidth = clampWidth(clientX - rect.left - (columnGap / 2));
 			if (!Number.isFinite(nextWidth)) return;
 			shell.style.setProperty("--style-token-demo-width-current", `${nextWidth}px`);
+			refreshStyleTokenDemoDensity?.();
 		};
 		const syncWidthToViewport = () => {
-			const computed = getComputedStyle(shell);
-			const currentWidth = Number.parseFloat(computed.getPropertyValue("--style-token-demo-width-current"))
-				|| Number.parseFloat(computed.getPropertyValue("--style-token-demo-width"))
-				|| minWidth;
-			const nextWidth = clampWidth(currentWidth);
-			if (!Number.isFinite(nextWidth)) return;
-			shell.style.setProperty("--style-token-demo-width-current", `${nextWidth}px`);
+			refreshStyleTokenDemoDensity?.();
+			syncHandleY();
+		};
+		let geometryFrame = 0;
+		const scheduleGeometrySync = () => {
+			if (geometryFrame) return;
+			geometryFrame = window.requestAnimationFrame(() => {
+				geometryFrame = 0;
+				syncWidthToViewport();
+			});
 		};
 		const stopResize = () => {
 			shell.classList.remove("is-resizing");
@@ -157,8 +164,11 @@
 		const syncHandleY = () => {
 			const rect = shell.getBoundingClientRect();
 			if (!rect.height) return;
-			const visibleTop = Math.max(0, rect.top);
-			const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+			const viewportRect = scrollViewport instanceof HTMLElement
+				? scrollViewport.getBoundingClientRect()
+				: { top: 0, bottom: window.innerHeight };
+			const visibleTop = Math.max(viewportRect.top, rect.top);
+			const visibleBottom = Math.min(viewportRect.bottom, rect.bottom);
 			const visibleHeight = visibleBottom - visibleTop;
 			if (visibleHeight <= 0) return;
 
@@ -168,28 +178,80 @@
 			shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
 		};
 
-		const onResize = () => {
-			syncWidthToViewport();
-			syncHandleY();
-		};
-		window.addEventListener("scroll", syncHandleY, { passive: true });
-		window.addEventListener("resize", onResize, { passive: true });
+		window.addEventListener("scroll", scheduleGeometrySync, { passive: true });
+		scrollViewport?.addEventListener?.("scroll", scheduleGeometrySync, { passive: true });
+		window.addEventListener("resize", scheduleGeometrySync, { passive: true });
 
 		let resizeObserver = null;
 		if (window.ResizeObserver) {
 			resizeObserver = new ResizeObserver(() => {
-				syncHandleY();
+				scheduleGeometrySync();
 			});
 			resizeObserver.observe(shell);
 		}
 
-		syncWidthToViewport();
-		syncHandleY();
-		setTimeout(syncHandleY, 150);
+		scheduleGeometrySync();
+		setTimeout(scheduleGeometrySync, 150);
 		activeStyleTokenResizerCleanup = () => {
-			window.removeEventListener("scroll", syncHandleY);
-			window.removeEventListener("resize", onResize);
+			window.removeEventListener("scroll", scheduleGeometrySync);
+			scrollViewport?.removeEventListener?.("scroll", scheduleGeometrySync);
+			window.removeEventListener("resize", scheduleGeometrySync);
 			resizeObserver?.disconnect();
+			if (geometryFrame) {
+				window.cancelAnimationFrame(geometryFrame);
+				geometryFrame = 0;
+			}
+		};
+	};
+
+	const attachStyleTokenDemoResponsiveness = () => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (typeof activeStyleTokenDemoDensityCleanup === "function") {
+			activeStyleTokenDemoDensityCleanup();
+			activeStyleTokenDemoDensityCleanup = null;
+		}
+		refreshStyleTokenDemoDensity = null;
+		if (!(shell instanceof HTMLElement)) return;
+		const demos = Array.from(shell.querySelectorAll(".style-token-demo")).filter((element) => element instanceof HTMLElement);
+		if (!demos.length) return;
+
+		const applyDensity = () => {
+			const computed = getComputedStyle(shell);
+			const width = Number.parseFloat(computed.getPropertyValue("--style-token-demo-width-effective"))
+				|| Number.parseFloat(computed.getPropertyValue("--style-token-demo-width-current"))
+				|| Number.parseFloat(computed.getPropertyValue("--style-token-demo-width"))
+				|| 0;
+			const density = width <= 320 ? "tight" : width <= 360 ? "compact" : "regular";
+			shell.dataset.styleTokenDensity = density;
+			demos.forEach((demo) => {
+				demo.dataset.styleTokenDensity = density;
+			});
+		};
+		refreshStyleTokenDemoDensity = applyDensity;
+
+		let resizeObserver = null;
+		if (window.ResizeObserver) {
+			resizeObserver = new ResizeObserver(() => {
+				applyDensity();
+			});
+			applyDensity();
+			resizeObserver.observe(shell);
+		} else {
+			const syncAllDensities = () => {
+				applyDensity();
+			};
+			syncAllDensities();
+			window.addEventListener("resize", syncAllDensities, { passive: true });
+			activeStyleTokenDemoDensityCleanup = () => {
+				window.removeEventListener("resize", syncAllDensities);
+				refreshStyleTokenDemoDensity = null;
+			};
+			return;
+		}
+
+		activeStyleTokenDemoDensityCleanup = () => {
+			resizeObserver?.disconnect();
+			refreshStyleTokenDemoDensity = null;
 		};
 	};
 
@@ -908,6 +970,7 @@
 		attachBrokerSettingsHandlers();
 		attachNetworkRefreshButton();
 		attachStyleTokenResizer();
+		attachStyleTokenDemoResponsiveness();
 		attachStyleTokenControls();
 		attachStyleTokenReferences();
 		attachStyleTokenCopyButtons();

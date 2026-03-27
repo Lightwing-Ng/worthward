@@ -36,7 +36,9 @@
         {% endfor %}
     </div>
     <div class="field" id="ticker_add_wrapper" {% if ticker_slots | length >= max_tickers %}hidden{% endif %}>
-        <button type="button" id="add_ticker" class="flat-link-button sidebar-action-button sidebar-secondary-button"><span class="icon icon-plus" aria-hidden="true"></span> Add a ticker</button>
+        <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="Add a ticker" title="Add a ticker">
+            <span class="icon icon-plus" aria-hidden="true"></span>
+        </button>
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
     <div class="field-checkbox field-switch">
