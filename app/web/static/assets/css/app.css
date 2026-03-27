@@ -65,7 +65,7 @@
 	--settings-text-input-background: var(--panel-strong);
 	--settings-text-input-color: var(--text);
 	--settings-text-input-font-size: var(--font-form-control);
-	--settings-reading-guard-single-column-width: 560px;
+	--settings-reading-guard-single-column-width: 768px;
 	--settings-general-panel-background: rgba(255, 255, 255, 0.54);
 	--settings-general-panel-border: 1px solid rgba(15, 23, 42, 0.06);
 	--style-token-demo-width: 384px;
@@ -2601,6 +2601,7 @@ div.style-token-modal-demo {
 	display: block;
 	padding: 0;
 	min-height: var(--settings-strategy-card-min-height);
+	min-width: 0;
 	overflow: hidden;
 	width: min(100%, var(--settings-reading-guard-single-column-width));
 	max-width: 100%;
@@ -2611,6 +2612,9 @@ div.style-token-modal-demo {
 .settings-strategy-summary {
 	list-style: none;
 	display: block;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
 	min-height: var(--settings-strategy-card-min-height);
 	padding: 14px 16px;
 	cursor: pointer;
@@ -2622,9 +2626,19 @@ div.style-token-modal-demo {
 }
 .settings-strategy-main {
 	min-width: 0;
+	grid-template-columns: minmax(0, 1fr);
+	column-gap: 0;
+}
+.settings-strategy-main .settings-service-name,
+.settings-strategy-main .settings-service-note {
+	grid-column: 1;
 }
 .settings-strategy-params-shell {
 	display: grid;
+	min-width: 0;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
 	grid-template-rows: 0fr;
 	transition: grid-template-rows 320ms var(--motion-emphasized), opacity 220ms var(--motion-emphasized), padding-bottom 320ms var(--motion-emphasized);
 	opacity: 0;
@@ -2636,39 +2650,51 @@ div.style-token-modal-demo {
 	padding-bottom: 14px;
 }
 .settings-strategy-params-table-wrap {
+	--settings-strategy-params-offset-left: clamp(16px, 4vw, var(--settings-strategy-params-indent));
+	--settings-strategy-params-offset-right: 16px;
 	min-height: 0;
+	min-width: 0;
 	overflow-x: auto;
 	overflow-y: auto;
-	margin: 0 16px 0 var(--settings-strategy-params-indent);
+	width: calc(100% - var(--settings-strategy-params-offset-left) - var(--settings-strategy-params-offset-right));
+	max-width: calc(100% - var(--settings-strategy-params-offset-left) - var(--settings-strategy-params-offset-right));
+	margin: 0 var(--settings-strategy-params-offset-right) 0 var(--settings-strategy-params-offset-left);
 	border-radius: 10px;
 	background: rgba(255, 255, 255, 0.32);
+	box-sizing: border-box;
 }
 .settings-strategy-params-table {
 	width: 100%;
-	min-width: 160px;
-	table-layout: auto;
+	max-width: 100%;
+	min-width: 100px;
+	box-sizing: border-box;
+	table-layout: fixed;
 }
 .settings-strategy-params-table .settings-strategy-params-col-label,
 .settings-strategy-params-table th:nth-child(1),
 .settings-strategy-params-table td:nth-child(1) {
-	min-width: 40px;
-	width: 30%;
+	min-width: 25px;
+	width: 25%;
 }
 .settings-strategy-params-table .settings-strategy-params-col-value,
 .settings-strategy-params-table th:nth-child(2),
 .settings-strategy-params-table td:nth-child(2) {
-	min-width: 20px;
-	width: 10%;
+	min-width: 15px;
+	width: 15%;
 }
 .settings-strategy-params-table .settings-strategy-params-col-meaning,
 .settings-strategy-params-table th:nth-child(3),
 .settings-strategy-params-table td:nth-child(3) {
-	min-width: 100px;
+	min-width: 60px;
 	width: 60%;
 }
 .settings-strategy-params-table th,
 .settings-strategy-params-table td {
 	padding: var(--settings-strategy-param-cell-pad-block) var(--settings-strategy-param-cell-pad-inline);
+	min-width: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	word-break: break-word;
 }
 .settings-strategy-params-table thead th {
 	position: sticky;
@@ -2729,17 +2755,17 @@ div.style-token-modal-demo {
 .settings-table-wrap { overflow: auto; }
 .settings-table { width: 100%; border-collapse: collapse; min-width: 680px; }
 .settings-table th, .settings-table td { padding: 10px 12px; text-align: left; vertical-align: middle; font-size: var(--font-table-body); line-height: 1.35; }
+.settings-table.settings-strategy-params-table {
+	min-width: 100px;
+}
 .settings-strategy-params-table-wrap {
-	width: 100%;
-	max-width: 100%;
-	box-sizing: border-box;
 	overflow-x: auto;
 }
 .settings-strategy-params-table {
 	width: 100%;
 	max-width: 100%;
-	min-width: 160px;
-	table-layout: auto;
+	min-width: 100px;
+	table-layout: fixed;
 }
 .settings-strategy-params-table th,
 .settings-strategy-params-table td {

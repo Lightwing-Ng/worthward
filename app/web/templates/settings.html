@@ -214,7 +214,7 @@
         </section>
         {% elif settings_section == "strategies" %}
         <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
-        <div class="settings-service-list settings-strategy-list settings-reading-guard-centered">
+        <div class="settings-service-list settings-strategy-list settings-reading-guard">
             {% for row in strategy_settings_rows %}
             <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
