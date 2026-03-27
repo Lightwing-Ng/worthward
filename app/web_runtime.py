@@ -6,6 +6,7 @@ Code version: v3.33.1
 
 from __future__ import annotations
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from io import BytesIO
@@ -101,7 +102,7 @@ LEGACY_VIEW_ALIASES = {
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
-SUPPORTED_MORE_SECTIONS = {"overview", "timing"}
+SUPPORTED_MORE_SECTIONS = {"timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
@@ -112,7 +113,7 @@ VIEW_PATHS = {
     "tickers": "/compare",
     "portfolio": "/portfolio",
     "backtest": "/backtest",
-    "more": "/more/overview",
+    "more": "/more/timing",
     "settings": "/settings/about",
 }
 
@@ -413,28 +414,14 @@ def build_web_runtime() -> WebRuntime:
         return build_settings_path(section_name)
 
     def normalize_more_section(section_name: str | None) -> str:
-        candidate = (section_name or "overview").strip().lower()
-        return candidate if candidate in SUPPORTED_MORE_SECTIONS else "overview"
+        candidate = (section_name or "timing").strip().lower()
+        return candidate if candidate in SUPPORTED_MORE_SECTIONS else "timing"
 
     def build_more_path(section_name: str) -> str:
         return f"/more/{normalize_more_section(section_name)}"
 
     def build_more_url(section_name: str) -> str:
         return build_more_path(section_name)
-
-    def build_more_cards(section_name: str) -> list[dict[str, str]]:
-        return [
-            {
-                "title": "Collection workspace",
-                "detail": "More is a reserved tool hub for secondary utilities that deserve full-size cards and readable side navigation.",
-                "meta": "Overview",
-            },
-            {
-                "title": "Consistent shell",
-                "detail": "This page intentionally mirrors the Settings structure so new utilities can be added without inventing a parallel layout system.",
-                "meta": "UI",
-            },
-        ]
 
     def should_use_modal_banner_message(message: str | None) -> bool:
         normalized = (message or "").strip()
@@ -728,9 +715,20 @@ def build_web_runtime() -> WebRuntime:
             }
 
         def raw_token(name: str, value: str) -> dict[str, object]:
+            text_value = str(value)
+            if re.fullmatch(r"-?\d+", text_value):
+                numeric_value = int(text_value)
+                return {
+                    "name": name,
+                    "value": text_value,
+                    "editable": True,
+                    "numeric_value": numeric_value,
+                    "unit": "",
+                    "min_value": 0 if numeric_value >= 0 else numeric_value,
+                }
             return {
                 "name": name,
-                "value": value,
+                "value": text_value,
                 "editable": False,
             }
 
@@ -842,7 +840,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_shell_class": "",
                 "sample_value": "67.01%",
                 "tokens": [
-                    raw_token("--workspace-metric-value-font-size", "var(--font-metric-lg)"),
+                    raw_token("--workspace-metric-value-font-size", "var(--font-metric-md)"),
                     raw_token("--workspace-metric-value-line-height", "1"),
                     raw_token("--workspace-metric-value-letter-spacing", "-0.04em"),
                     raw_token("--workspace-metric-value-font-weight", "var(--font-weight-regular)"),
@@ -1418,7 +1416,7 @@ def build_web_runtime() -> WebRuntime:
         )
         return fallback_period, notice
 
-    def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "overview"):
+    def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "timing"):
         backtest_execution_mode = load_backtest_execution_mode()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
@@ -1866,147 +1864,145 @@ def build_web_runtime() -> WebRuntime:
                     include_ranges=True,
                 )
         elif current_view == "more":
-            more_cards = build_more_cards(more_section)
             top_tickers = []
             timing_selected_ticker = ""
             timing_metrics = []
             timing_summary = []
             timing_error = ""
             timing_market = {}
-            if more_section == "timing":
-                from app.storage import TICKER_USAGE_STORE_PATH
-                usage_path = TICKER_USAGE_STORE_PATH
-                if usage_path.exists():
-                    import json
-                    with usage_path.open("r", encoding="utf-8") as f:
-                        usage_data = json.load(f)
-                    sorted_tickers = sorted(
-                        usage_data.items(),
-                        key=lambda item: item[1].get("count", 0),
-                        reverse=True,
+            from app.storage import TICKER_USAGE_STORE_PATH
+            usage_path = TICKER_USAGE_STORE_PATH
+            if usage_path.exists():
+                import json
+                with usage_path.open("r", encoding="utf-8") as f:
+                    usage_data = json.load(f)
+                sorted_tickers = sorted(
+                    usage_data.items(),
+                    key=lambda item: item[1].get("count", 0),
+                    reverse=True,
+                )
+                for ticker, item in sorted_tickers:
+                    count = item.get("count", 0)
+                    if count <= 0:
+                        continue
+                    profile_snapshot = load_local_profile_snapshot(ticker)
+                    company_name = profile_snapshot[0] if profile_snapshot else ticker
+                    logo_url = profile_snapshot[1] if profile_snapshot else ""
+                    top_tickers.append(
+                        {
+                            "ticker": ticker,
+                            "count": count,
+                            "company_name": company_name,
+                            "logo_url": logo_url,
+                            "url": build_more_timing_url(ticker),
+                        }
                     )
-                    for ticker, item in sorted_tickers:
-                        count = item.get("count", 0)
-                        if count <= 0:
-                            continue
-                        profile_snapshot = load_local_profile_snapshot(ticker)
-                        company_name = profile_snapshot[0] if profile_snapshot else ticker
-                        logo_url = profile_snapshot[1] if profile_snapshot else ""
-                        top_tickers.append(
-                            {
-                                "ticker": ticker,
-                                "count": count,
-                                "company_name": company_name,
-                                "logo_url": logo_url,
-                                "url": build_more_timing_url(ticker),
-                            }
-                        )
-                        if len(top_tickers) >= 50:
-                            break
-                timing_selected_ticker = normalize_ticker_input(request.args.get("ticker", "MU")) or "MU"
-                if top_tickers and timing_selected_ticker not in {item["ticker"] for item in top_tickers}:
-                    timing_selected_ticker = top_tickers[0]["ticker"]
-                try:
-                    tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
-                    default_screener = str(tradingview_settings.get("default_screener", "america"))
-                    default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
-                    profile_record = load_profile_record(timing_selected_ticker) or {}
-                    selected_screener = str(
-                        profile_record.get("tradingview_screener")
-                        or default_screener
-                    )
-                    selected_exchange = str(
-                        profile_record.get("tradingview_exchange")
-                        or default_exchange
-                    )
-                    analysis = fetch_tradingview_metrics(
-                        timing_selected_ticker,
-                        screener=selected_screener,
-                        exchange=selected_exchange,
-                    )
-                    summary = analysis.get("summary", {}) or {}
-                    oscillators = (analysis.get("oscillators", {}) or {}).get("COMPUTE", {}) or {}
-                    moving_averages = (analysis.get("moving_averages", {}) or {}).get("COMPUTE", {}) or {}
-                    indicators = analysis.get("indicators", {}) or {}
-                    timing_market = {
-                        "exchange": str(analysis.get("exchange", "NASDAQ")),
-                        "screener": str(analysis.get("screener", "america")),
-                    }
-                    timing_summary = [
-                        {"label": "Recommendation", "value": str(summary.get("RECOMMENDATION", "N/A"))},
-                        {"label": "Buy", "value": str(summary.get("BUY", "0"))},
-                        {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
-                        {"label": "Sell", "value": str(summary.get("SELL", "0"))},
-                    ]
+                    if len(top_tickers) >= 50:
+                        break
+            timing_selected_ticker = normalize_ticker_input(request.args.get("ticker", "MU")) or "MU"
+            if top_tickers and timing_selected_ticker not in {item["ticker"] for item in top_tickers}:
+                timing_selected_ticker = top_tickers[0]["ticker"]
+            try:
+                tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
+                default_screener = str(tradingview_settings.get("default_screener", "america"))
+                default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
+                profile_record = load_profile_record(timing_selected_ticker) or {}
+                selected_screener = str(
+                    profile_record.get("tradingview_screener")
+                    or default_screener
+                )
+                selected_exchange = str(
+                    profile_record.get("tradingview_exchange")
+                    or default_exchange
+                )
+                analysis = fetch_tradingview_metrics(
+                    timing_selected_ticker,
+                    screener=selected_screener,
+                    exchange=selected_exchange,
+                )
+                summary = analysis.get("summary", {}) or {}
+                oscillators = (analysis.get("oscillators", {}) or {}).get("COMPUTE", {}) or {}
+                moving_averages = (analysis.get("moving_averages", {}) or {}).get("COMPUTE", {}) or {}
+                indicators = analysis.get("indicators", {}) or {}
+                timing_market = {
+                    "exchange": str(analysis.get("exchange", "NASDAQ")),
+                    "screener": str(analysis.get("screener", "america")),
+                }
+                timing_summary = [
+                    {"label": "Recommendation", "value": str(summary.get("RECOMMENDATION", "N/A"))},
+                    {"label": "Buy", "value": str(summary.get("BUY", "0"))},
+                    {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
+                    {"label": "Sell", "value": str(summary.get("SELL", "0"))},
+                ]
 
-                    def format_metric_value(value: object) -> str:
-                        if isinstance(value, bool):
-                            return "True" if value else "False"
-                        if isinstance(value, int):
-                            return f"{value:,}" if abs(value) >= 1000 else str(value)
-                        if isinstance(value, float):
-                            if value.is_integer():
-                                integer_value = int(value)
-                                return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
-                            return f"{value:,.2f}"
-                        return str(value)
+                def format_metric_value(value: object) -> str:
+                    if isinstance(value, bool):
+                        return "True" if value else "False"
+                    if isinstance(value, int):
+                        return f"{value:,}" if abs(value) >= 1000 else str(value)
+                    if isinstance(value, float):
+                        if value.is_integer():
+                            integer_value = int(value)
+                            return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
+                        return f"{value:,.2f}"
+                    return str(value)
 
-                    preferred_metric_keys = [
-                        "close",
-                        "open",
-                        "volume",
-                        "RSI",
-                        "RSI[1]",
-                        "Stoch.K",
-                        "Stoch.D",
-                        "CCI20",
-                        "ADX",
-                        "AO",
-                        "Mom",
-                        "MACD.macd",
-                        "MACD.signal",
-                        "Rec.Stoch.RSI",
-                        "Rec.WR",
-                        "Rec.BBPower",
-                        "EMA5",
-                        "EMA10",
-                        "EMA20",
-                        "EMA30",
-                        "EMA50",
-                        "EMA100",
-                        "EMA200",
-                        "SMA10",
-                        "SMA20",
-                        "SMA50",
-                        "SMA100",
-                        "SMA200",
-                        "VWMA",
-                        "HullMA9",
-                        "Pivot.M.Classic.S1",
-                        "Pivot.M.Classic.R1",
-                        "BB.lower",
-                        "BB.upper",
-                    ]
-                    metric_rows = []
-                    for key in preferred_metric_keys:
-                        if key not in indicators:
-                            continue
-                        value = indicators.get(key)
-                        metric_rows.append({"label": key, "value": format_metric_value(value)})
-                    for key, value in oscillators.items():
-                        metric_rows.append({"label": f"Oscillator · {key}", "value": format_metric_value(value)})
-                    for key, value in moving_averages.items():
-                        metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
-                    seen_labels = set()
-                    deduped_metric_rows = []
-                    for row in metric_rows:
-                        if row["label"] in seen_labels:
-                            continue
-                        seen_labels.add(row["label"])
-                        deduped_metric_rows.append(row)
-                    timing_metrics = deduped_metric_rows
-                except Exception as exc:
-                    timing_error = str(exc)
+                preferred_metric_keys = [
+                    "close",
+                    "open",
+                    "volume",
+                    "RSI",
+                    "RSI[1]",
+                    "Stoch.K",
+                    "Stoch.D",
+                    "CCI20",
+                    "ADX",
+                    "AO",
+                    "Mom",
+                    "MACD.macd",
+                    "MACD.signal",
+                    "Rec.Stoch.RSI",
+                    "Rec.WR",
+                    "Rec.BBPower",
+                    "EMA5",
+                    "EMA10",
+                    "EMA20",
+                    "EMA30",
+                    "EMA50",
+                    "EMA100",
+                    "EMA200",
+                    "SMA10",
+                    "SMA20",
+                    "SMA50",
+                    "SMA100",
+                    "SMA200",
+                    "VWMA",
+                    "HullMA9",
+                    "Pivot.M.Classic.S1",
+                    "Pivot.M.Classic.R1",
+                    "BB.lower",
+                    "BB.upper",
+                ]
+                metric_rows = []
+                for key in preferred_metric_keys:
+                    if key not in indicators:
+                        continue
+                    value = indicators.get(key)
+                    metric_rows.append({"label": key, "value": format_metric_value(value)})
+                for key, value in oscillators.items():
+                    metric_rows.append({"label": f"Oscillator · {key}", "value": format_metric_value(value)})
+                for key, value in moving_averages.items():
+                    metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
+                seen_labels = set()
+                deduped_metric_rows = []
+                for row in metric_rows:
+                    if row["label"] in seen_labels:
+                        continue
+                    seen_labels.add(row["label"])
+                    deduped_metric_rows.append(row)
+                timing_metrics = deduped_metric_rows
+            except Exception as exc:
+                timing_error = str(exc)
 
         if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -2068,7 +2064,6 @@ def build_web_runtime() -> WebRuntime:
             style_token_rows=style_token_rows,
             backtest_execution_mode=backtest_execution_mode,
             broker_settings=broker_settings,
-            more_cards=more_cards,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_total_pages=local_store_total_pages,
@@ -2081,7 +2076,7 @@ def build_web_runtime() -> WebRuntime:
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("overview", "timing")},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("timing",)},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -2340,10 +2335,13 @@ def build_web_runtime() -> WebRuntime:
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def more_root():
-        return redirect(build_more_path("overview"))
+        return redirect(build_more_path("timing"))
 
     def more_page(section_name: str):
-        return render_workspace_page("more", more_section=section_name)
+        normalized_section = normalize_more_section(section_name)
+        if normalized_section != (section_name or "").strip().lower():
+            return redirect(build_more_path(normalized_section))
+        return render_workspace_page("more", more_section=normalized_section)
 
     def settings_root():
         return redirect(build_settings_path("about"))

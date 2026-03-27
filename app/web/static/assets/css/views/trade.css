@@ -51,18 +51,10 @@
     -webkit-mask-size: contain;
 }
 .trade-detail-tabs { display: grid; grid-template-rows: var(--trade-detail-track-height) var(--trade-detail-panel-height); gap: 10px; justify-items: center; min-height: 0; min-width: 0; align-content: start; overflow: hidden; }
-.trade-detail-shell { width: min(320px, 100%); max-width: 320px; margin: 0 auto; min-height: var(--trade-detail-track-height); }
+.trade-detail-shell { min-height: var(--trade-detail-track-height); }
 .trade-detail-shell::before { background: #0055cc; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 24px rgba(0, 85, 204, 0.16); }
 .trade-detail-panel { width: 100%; max-width: none; height: var(--trade-detail-panel-height); min-height: 0; min-width: 0; margin: 0 auto; overflow: hidden; }
-.trade-detail-shell .range-mode-option { align-items: stretch; }
-.trade-detail-shell .range-mode-option span {
-	min-height: calc(var(--trade-detail-track-height) - 8px);
-	padding: 0 12px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
-}
+.trade-detail-shell .segmented-control-option span { min-height: calc(var(--trade-detail-track-height) - 8px); }
 .trade-metrics-grid {
 	width: 100%;
 	height: 100%;
@@ -300,7 +292,6 @@
 .icon-dock-backtest { background-color: currentColor; mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat; -webkit-mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat; }
 .icon-dock-more { background-color: currentColor; mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat; -webkit-mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat; }
 .icon-dock-settings { background-color: currentColor; mask: url("/static/images/gear.svg") center/contain no-repeat; -webkit-mask: url("/static/images/gear.svg") center/contain no-repeat; }
-.icon-more-overview { mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat; -webkit-mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat; }
 .icon-more-timing { mask: url("/static/images/circle.badge.plus.svg") center/contain no-repeat; -webkit-mask: url("/static/images/circle.badge.plus.svg") center/contain no-repeat; }
 .icon-settings-about { mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat; -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat; }
 .icon-settings-general { mask: url("/static/images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat; -webkit-mask: url("/static/images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat; }

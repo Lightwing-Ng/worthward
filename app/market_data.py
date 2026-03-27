@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.5.0
+Code version: v3.6.0
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 
 
+def drop_duplicate_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    if not frame.columns.has_duplicates:
+        return frame
+    return frame.loc[:, ~frame.columns.duplicated()].copy()
+
+
 def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
     if history.empty:
         raise ValueError(f"No market data returned for {ticker}.")
@@ -27,6 +33,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
         history.columns = history.columns.get_level_values(0)
 
     history = history.reset_index()
+    history = drop_duplicate_columns(history)
     if "Date" not in history.columns and "Datetime" in history.columns:
         history = history.rename(columns={"Datetime": "Date"})
 
@@ -37,7 +44,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
         raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_required)}.")
 
     all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
-    dataset = history[all_to_keep].copy()
+    dataset = drop_duplicate_columns(history[all_to_keep].copy())
     dataset["Date"] = pd.to_datetime(dataset["Date"], utc=True).dt.tz_convert(None)
     for col in (ohlc_columns + ["Close"]):
         if col in dataset.columns:

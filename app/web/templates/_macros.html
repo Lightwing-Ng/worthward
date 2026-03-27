@@ -50,10 +50,10 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) -%}
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='') -%}
 <div class="field">
     {{ render_segmented_control(
-        "range-mode-shell",
+        "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
         "range",
         range_mode if range_mode == 'exact' else 'period',
         [

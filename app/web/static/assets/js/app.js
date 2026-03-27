@@ -356,7 +356,7 @@
 					<article class="report-card trade-performance-card">
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 						<div class="trade-detail-tabs">
-							<div class="range-mode-shell trade-detail-shell" data-active="metrics">
+							<div class="range-mode-shell segmented-control--compact trade-detail-shell" data-active="metrics">
 								<span class="segmented-control-option"><span>${labels.backtest_metrics_tab}</span></span>
 								<span class="segmented-control-option"><span>${labels.backtest_transactions_tab}</span></span>
 							</div>

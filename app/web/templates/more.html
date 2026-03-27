@@ -2,10 +2,6 @@
 
 {% block sidebar_content %}
 <nav class="settings-nav" aria-label="More sections">
-    <a href="{{ more_urls.overview }}" class="settings-nav-item settings-nav-item-more-overview{% if more_section == 'overview' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-overview"></span></span>
-        <span class="settings-nav-label">{{ labels.more_overview }}</span>
-    </a>
     <a href="{{ more_urls.timing }}" class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
         <span class="settings-nav-label">{{ labels.more_timing }}</span>
@@ -20,25 +16,6 @@
 {% block workspace_content %}
 <article class="chart-surface settings-surface">
     <div class="settings-body">
-        {% if more_section == 'overview' %}
-        <div class="chart-heading-row">
-            <p class="chart-heading">{{ settings_title }}</p>
-        </div>
-        <p class="settings-summary">A dedicated collection workspace for secondary tools and future utilities.</p>
-        <div class="settings-service-list">
-            {% for row in more_cards %}
-            <div class="settings-service-row">
-                <div class="settings-service-main">
-                    <p class="settings-service-name">{{ row.title }}</p>
-                    <p class="settings-service-note">{{ row.detail }}</p>
-                </div>
-                <div class="settings-service-state is-muted">
-                    <span>{{ row.meta }}</span>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% elif more_section == 'timing' %}
         <div class="timing-shell" id="timing_shell">
             <div class="chart-heading-row timing-heading-row">
                 <p class="chart-heading">{{ labels.more_timing }}</p>
@@ -98,7 +75,6 @@
             </div>
             </div>
         </div>
-        {% endif %}
     </div>
 </article>
 {% endblock %}

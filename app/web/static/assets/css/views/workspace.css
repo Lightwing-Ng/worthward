@@ -537,7 +537,6 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 .settings-nav-item-store { --settings-icon-tint: #16a34a; --settings-icon-surface: rgba(22, 163, 74, 0.14); }
 .settings-nav-item-clear-cache { --settings-icon-tint: #c81e1e; --settings-icon-surface: rgba(200, 30, 30, 0.14); }
 .settings-nav-item-style-tokens { --settings-icon-tint: #0055cc; --settings-icon-surface: rgba(0, 85, 204, 0.14); }
-.settings-nav-item-more-overview { --settings-icon-tint: #0055cc; --settings-icon-surface: rgba(0, 85, 204, 0.14); }
 .settings-nav-item.is-active .settings-nav-icon-shell { background: rgba(0, 85, 204, 0.12); }
 .settings-nav-item.is-active .icon { background-color: #0055cc; }
 .settings-status-check { width: 14px; height: 14px; display: block; }

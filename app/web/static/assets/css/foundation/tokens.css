@@ -102,7 +102,7 @@
 	--workspace-modal-column-gap: 12px;
 	--workspace-modal-row-gap: 4px;
 	--workspace-modal-title-margin-end: 32px;
-	--workspace-metric-value-font-size: var(--font-metric-lg);
+	--workspace-metric-value-font-size: var(--font-metric-md);
 	--workspace-metric-value-line-height: 1;
 	--workspace-metric-value-letter-spacing: -0.04em;
 	--workspace-metric-value-font-weight: var(--font-weight-regular);
@@ -193,6 +193,7 @@
 	--font-ui-md: var(--font-size-4);
 	--font-ui-lg: var(--font-size-5);
 	--font-title-md: var(--font-size-6);
+	--font-metric-md: var(--font-size-6);
 	--font-metric-lg: var(--font-size-7);
 	--font-metric-xl: var(--font-size-8);
 	--font-form-label: var(--font-ui-md);
@@ -202,7 +203,7 @@
 	--font-table-head: var(--font-size-3);
 	--font-card-title: var(--font-title-md);
 	--font-card-subtitle: var(--font-ui-lg);
-	--font-metric-value: var(--font-metric-lg);
+	--font-metric-value: var(--font-metric-md);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

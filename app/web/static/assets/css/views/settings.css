@@ -387,7 +387,11 @@
 	display: inline-block;
 	flex: 0 1 auto;
 	min-width: 0;
+	max-width: 100%;
+	padding-right: calc(var(--strategy-stepper-width) + 8px);
+	box-sizing: border-box;
 	white-space: nowrap;
+	text-align: right;
 }
 .style-token-modal-shell {
 	padding: 20px 0;

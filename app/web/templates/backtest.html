@@ -20,7 +20,7 @@
             </div>
         </div>
     </div>
-    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels) }}
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact") }}
     <div class="field backtest-interval-field">
         <label for="backtest_interval">{{ labels.backtest_interval }}</label>
         <div class="backtest-interval-row">
@@ -91,7 +91,7 @@
         {% if backtest_result %}
         <div class="trade-detail-tabs">
             {{ render_segmented_control(
-                "range-mode-shell trade-detail-shell",
+                "range-mode-shell segmented-control--compact trade-detail-shell",
                 "trade_detail_tab",
                 "metrics",
                 [
