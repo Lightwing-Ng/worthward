@@ -1,7 +1,7 @@
 """
 SuperTrend AI strategy with factor clustering.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import pandas as pd
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
 
 
-@dataclass(slots=True)
+@dataclass
 class _SupertrendState:
     upper: float
     lower: float
@@ -74,6 +74,8 @@ def _cluster_factor_and_score(
 ) -> tuple[float | None, float | None]:
     if not perf_values or not factor_values:
         return None, None
+    if len(perf_values) != len(factor_values):
+        raise ValueError("Performance values and factor values must have the same length.")
 
     centroids = [
         _percentile(perf_values, 0.25),
@@ -94,7 +96,7 @@ def _cluster_factor_and_score(
         factor_clusters = [[], [], []]
         perf_clusters = [[], [], []]
 
-        for factor, perf in zip(factor_values, perf_values, strict=True):
+        for factor, perf in zip(factor_values, perf_values):
             distances = [abs(perf - centroid) for centroid in centroids]
             cluster_index = distances.index(min(distances))
             factor_clusters[cluster_index].append(factor)
@@ -107,7 +109,7 @@ def _cluster_factor_and_score(
 
         if all(
             math.isclose(old, new, rel_tol=1e-12, abs_tol=1e-12)
-            for old, new in zip(centroids, new_centroids, strict=True)
+            for old, new in zip(centroids, new_centroids)
         ):
             break
         centroids = new_centroids

@@ -7,7 +7,6 @@ Code version: v1.0.0
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Literal
 
 from .config import MARKET_STORE_DIR

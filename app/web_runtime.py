@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.32.0
+Code version: v3.33.0
 """
 
 from __future__ import annotations
@@ -309,7 +309,9 @@ def build_web_runtime() -> WebRuntime:
     def build_portfolio_series_payload(datasets: list[pd.DataFrame], weights: list[int], color: str):
         first_dataset = datasets[0]
         cumulative_growth = pd.Series(0.0, index=first_dataset.index)
-        for dataset, weight in zip(datasets, weights, strict=True):
+        if len(datasets) != len(weights):
+            raise ValueError("Portfolio datasets and weights must have the same length.")
+        for dataset, weight in zip(datasets, weights):
             first_close = float(dataset["Close"].iloc[0])
             cumulative_growth += (weight / 100.0) * (dataset["Close"] / first_close)
         portfolio_frame = pd.DataFrame(
@@ -1755,13 +1757,12 @@ def build_web_runtime() -> WebRuntime:
                                     portfolio_weights,
                                     growth_multipliers,
                                     colors,
-                                    strict=True,
                                 )
                             ]
                         else:
                             series = [
                                 build_series_payload(ticker, dataset, color=color)
-                                for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors, strict=True)
+                                for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
                             ]
                         best_return = max(item.normalized_returns[-1] for item in series)
                         common_start = aligned_datasets[0]["Date"].min()
@@ -1778,7 +1779,7 @@ def build_web_runtime() -> WebRuntime:
                                     "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
                                     "is_winner": item.normalized_returns[-1] == best_return,
                                 }
-                                for item, profile in zip(series, profiles, strict=True)
+                                for item, profile in zip(series, profiles)
                             ]
                         ticker_slots = validated_tickers.copy()
                         record_ticker_usage(validated_tickers)

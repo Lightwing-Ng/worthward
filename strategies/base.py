@@ -12,14 +12,14 @@ from typing import Any, Literal
 import pandas as pd
 
 
-@dataclass(slots=True)
+@dataclass
 class StrategySignalResult:
     frame: pd.DataFrame
     buy_signal_column: str
     sell_signal_column: str
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class StrategyParameterDefinition:
     key: str
     label: str
@@ -55,7 +55,7 @@ class StrategyParameterDefinition:
         return str(self.default)
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class StrategySupportMatrix:
     single_ticker: bool = True
     multi_ticker: bool = False
@@ -63,7 +63,7 @@ class StrategySupportMatrix:
     short: bool = False
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class StrategyMetadata:
     strategy_id: str
     name: str

@@ -1,35 +1,36 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v3.2.0
+Code version: v3.2.1
 """
 
 from dataclasses import dataclass
+from typing import Optional, List
 
 
-@dataclass(slots=True)
+@dataclass
 class SeriesPayload:
     ticker: str
-    dates: list[str]
-    raw_dates: list[str]
-    normalized_returns: list[float]
-    color: str | None = None
+    dates: List[str]
+    raw_dates: List[str]
+    normalized_returns: List[float]
+    color: Optional[str] = None
     glow: bool = True
 
 
-@dataclass(slots=True)
+@dataclass
 class QuoteProfile:
     ticker: str
     company_name: str
-    website: str | None = None
-    logo_url: str | None = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
-@dataclass(slots=True)
+@dataclass
 class DateConstraintPayload:
-    min_date: str | None
-    max_date: str | None
-    trading_dates: list[str]
-    adjusted_start: str | None = None
-    adjusted_end: str | None = None
-    message: str | None = None
+    min_date: Optional[str]
+    max_date: Optional[str]
+    trading_dates: List[str]
+    adjusted_start: Optional[str] = None
+    adjusted_end: Optional[str] = None
+    message: Optional[str] = None

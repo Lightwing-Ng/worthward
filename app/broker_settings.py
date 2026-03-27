@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
 
 from .config import BASE_DIR
 
@@ -18,7 +17,7 @@ BROKER_SETTINGS_PATH = SETTINGS_STORE_DIR / "brokers.json"
 SUPPORTED_BROKERS = ("longbridge", "ibkr")
 
 
-@dataclass(slots=True)
+@dataclass
 class BrokerSettings:
     selected_broker: str = "longbridge"
     longbridge_app_key: str = ""

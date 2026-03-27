@@ -11,4 +11,3 @@ from ..web_runtime import WebRuntime
 
 def register_portfolio_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/portfolio")(runtime.portfolio_page)
-

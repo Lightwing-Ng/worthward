@@ -15,4 +15,3 @@ def register_compare_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/api/symbol-search")(runtime.symbol_search)
     app.get("/api/date-constraints")(runtime.date_constraints_api)
     app.get("/api/market-store/presence")(runtime.market_store_presence_api)
-

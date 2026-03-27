@@ -38,7 +38,7 @@ OUTLOOK_PERSONAL_DOMAINS = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class SmtpSettings:
     host: str = OUTLOOK_SMTP_HOST
     port: int = OUTLOOK_SMTP_PORT
