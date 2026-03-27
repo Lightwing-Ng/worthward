@@ -2844,7 +2844,8 @@ div.style-token-modal-demo {
 .local-store-pagination {
 	position: relative;
 	isolation: isolate;
-	contain: layout paint;
+	contain: layout;
+	overflow: visible;
 	display: grid;
 	gap: var(--local-store-pagination-gap);
 	grid-template-columns: repeat(7, var(--local-store-pagination-slot-size));

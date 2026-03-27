@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.33.0
+Code version: v3.33.1
 """
 
 from __future__ import annotations
@@ -146,6 +146,49 @@ class WebRuntime:
     test_chart_1m_view: Any
 
 
+def extract_first_non_null_value(raw_value: object) -> object | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, pd.DataFrame):
+        if raw_value.empty:
+            return None
+        for column in raw_value.columns:
+            extracted = extract_first_non_null_value(raw_value[column])
+            if extracted is not None:
+                return extracted
+        return None
+    if isinstance(raw_value, pd.Series):
+        values = raw_value.dropna()
+        if values.empty:
+            return None
+        return extract_first_non_null_value(values.iloc[0])
+    if isinstance(raw_value, pd.Index):
+        values = raw_value.dropna()
+        if len(values) == 0:
+            return None
+        return extract_first_non_null_value(values[0])
+    if isinstance(raw_value, (list, tuple)):
+        for value in raw_value:
+            extracted = extract_first_non_null_value(value)
+            if extracted is not None:
+                return extracted
+        return None
+    if hasattr(raw_value, "ndim") and hasattr(raw_value, "tolist") and not pd.api.types.is_scalar(raw_value):
+        values = raw_value.tolist()
+        return extract_first_non_null_value(values)
+    return raw_value
+
+
+def format_store_range_date_value(raw_value: object) -> str:
+    candidate = extract_first_non_null_value(raw_value)
+    if candidate is None:
+        return ""
+    timestamp = pd.Timestamp(candidate)
+    if pd.isna(timestamp):
+        return ""
+    return timestamp.strftime("%Y/%m/%d")
+
+
 def build_web_runtime() -> WebRuntime:
     settings = get_settings()
     defaults = settings["defaults"]
@@ -254,22 +297,7 @@ def build_web_runtime() -> WebRuntime:
         return default
 
     def format_store_range_date(raw_value: object) -> str:
-        if raw_value is None:
-            return ""
-        if isinstance(raw_value, pd.DataFrame):
-            if raw_value.empty:
-                return ""
-            raw_value = raw_value.min().min()
-        elif isinstance(raw_value, (pd.Series, pd.Index, list, tuple)):
-            values = pd.Series(raw_value).dropna()
-            if values.empty:
-                return ""
-            raw_value = values.iloc[0]
-
-        timestamp = pd.Timestamp(raw_value)
-        if pd.isna(timestamp):
-            return ""
-        return timestamp.strftime("%Y/%m/%d")
+        return format_store_range_date_value(raw_value)
 
     def build_default_weights(count: int) -> list[int]:
         if count <= 0:

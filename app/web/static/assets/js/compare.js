@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -65,7 +65,22 @@
 	bootstrap.applyComparePendingState = () => {
 		const workspacePanel = document.getElementById("workspace_panel");
 		if (!workspacePanel) return;
-		delete workspacePanel.dataset.workspacePending;
+		const summaryRegion = document.getElementById("compare_summary_region");
+		const chartRegion = document.getElementById("compare_chart_region");
+		const chartMaskNode = chartRegion?.querySelector('[data-workspace-mask="chart-area"]');
+
+		if (summaryRegion) {
+			Array.from(summaryRegion.querySelectorAll(".performance-item")).forEach((item) => {
+				item.classList.add("is-pending-card");
+				item.querySelectorAll(".winner-badge").forEach((badge) => badge.remove());
+				const companyNode = item.querySelector(".report-company");
+				const returnNode = item.querySelector('[data-workspace-mask="compare-return"]');
+				if (companyNode) companyNode.classList.add("is-pending-value");
+				if (returnNode) returnNode.classList.add("is-pending-value");
+			});
+		}
+		if (chartMaskNode) chartMaskNode.classList.add("is-pending-value");
+		workspacePanel.dataset.workspacePending = "1";
 	};
 
 	bootstrap.hydrateCompareWorkspace = ({ doc, replaceDomRegion } = {}) => {
@@ -85,6 +100,7 @@
 		if (currentSummaryRegion && nextSummaryRegion) replaceDomRegion(currentSummaryRegion, nextSummaryRegion);
 		replaceDomRegion(currentChartRegion, nextChartRegion);
 		workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
+		workspacePanel.querySelectorAll(".is-pending-card").forEach((node) => node.classList.remove("is-pending-card"));
 		return true;
 	};
 
@@ -93,7 +109,10 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
+		// Treat dividend mode as a full chart refresh input.
+		// The compare chart recalculates every series when cash dividends are toggled,
+		// so reusing the same-axis transition path can leave the chart visually stale.
+		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "dividends"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
 			const next = (nextParams.get(key) || "").toString().trim();
