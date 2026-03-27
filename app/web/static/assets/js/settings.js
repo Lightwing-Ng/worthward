@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	let settingsContext = null;
@@ -30,40 +30,62 @@
 			} catch (_error) {
 			}
 		}
-		const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-		const selection = window.getSelection ? window.getSelection() : null;
-		const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
-		const textarea = document.createElement("textarea");
-		textarea.value = value;
-		textarea.style.position = "fixed";
-		textarea.style.top = "0";
-		textarea.style.left = "0";
-		textarea.style.width = "1px";
-		textarea.style.height = "1px";
-		textarea.style.padding = "0";
-		textarea.style.border = "0";
-		textarea.style.outline = "0";
-		textarea.style.boxShadow = "none";
-		textarea.style.background = "transparent";
-		textarea.style.opacity = "0";
-		textarea.style.pointerEvents = "none";
-		document.body.append(textarea);
-		textarea.focus({ preventScroll: true });
-		textarea.select();
-		textarea.setSelectionRange(0, textarea.value.length);
-		let didCopy = false;
-		try {
-			didCopy = document.execCommand("copy");
-		} catch (_error) {
-			didCopy = false;
-		}
-		textarea.remove();
-		if (selection) {
-			selection.removeAllRanges();
-			if (previousRange) selection.addRange(previousRange);
-		}
-		activeElement?.focus?.({ preventScroll: true });
-		return didCopy;
+
+		const legacyCopyViaExecCommand = () => {
+			const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			const selection = window.getSelection ? window.getSelection() : null;
+			const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+			const textarea = document.createElement("textarea");
+			textarea.value = value;
+			textarea.setAttribute("readonly", "");
+			textarea.style.position = "fixed";
+			textarea.style.top = "0";
+			textarea.style.left = "0";
+			textarea.style.width = "1px";
+			textarea.style.height = "1px";
+			textarea.style.padding = "0";
+			textarea.style.border = "0";
+			textarea.style.outline = "0";
+			textarea.style.boxShadow = "none";
+			textarea.style.background = "transparent";
+			textarea.style.opacity = "0";
+			textarea.style.pointerEvents = "none";
+			document.body.append(textarea);
+			textarea.focus();
+			textarea.select();
+			textarea.setSelectionRange(0, textarea.value.length);
+			let didCopy = false;
+			try {
+				didCopy = document.execCommand("copy");
+			} catch (_error) {
+				didCopy = false;
+			}
+			textarea.remove();
+			if (selection) {
+				selection.removeAllRanges();
+				if (previousRange) selection.addRange(previousRange);
+			}
+			activeElement?.focus?.({ preventScroll: true });
+			return didCopy;
+		};
+
+		const legacyCopyViaEvent = () => {
+			let didCopy = false;
+			const onCopy = (event) => {
+				event.preventDefault();
+				event.clipboardData?.setData("text/plain", value);
+				didCopy = true;
+			};
+			document.addEventListener("copy", onCopy, { capture: true, once: true });
+			try {
+				document.execCommand("copy");
+			} catch (_error) {
+				didCopy = false;
+			}
+			return didCopy;
+		};
+
+		return legacyCopyViaEvent() || legacyCopyViaExecCommand();
 	};
 
 	const attachBrokerSettingsHandlers = () => {
@@ -291,7 +313,9 @@
 				}, 1200);
 				button.dataset.copyResetTimer = String(timer);
 			};
-			button.addEventListener("click", async () => {
+			button.addEventListener("click", async (event) => {
+				event.preventDefault();
+				event.stopPropagation();
 				const value = button.dataset.styleTokenCopy || "";
 				try {
 					const copied = await writeTextToClipboard(value);

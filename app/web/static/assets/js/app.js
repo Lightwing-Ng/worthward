@@ -1,4 +1,4 @@
-/* Code version: v3.35.0 */
+/* Code version: v3.36.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -16,6 +16,7 @@
 	const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
+	const SIDEBAR_MEMORY_KEY = "antigravity:sidebar-open";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
 	const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
 	let hasInitialResult = isBacktestView
@@ -174,6 +175,37 @@
 	let isSidebarOpen = true;
 	let isSidebarAnimating = false;
 
+	const readSidebarMemory = () => {
+		try {
+			const storedValue = window.sessionStorage.getItem(SIDEBAR_MEMORY_KEY);
+			if (storedValue === "true") return true;
+			if (storedValue === "false") return false;
+		} catch (_error) {
+		}
+		return true;
+	};
+
+	const writeSidebarMemory = (value) => {
+		try {
+			window.sessionStorage.setItem(SIDEBAR_MEMORY_KEY, String(Boolean(value)));
+		} catch (_error) {
+		}
+	};
+
+	const applySidebarState = (nextIsOpen, shell = appShell, sidebar = appSidebar, toggle = sidebarToggle) => {
+		if (!(shell && sidebar && toggle)) return;
+		isSidebarOpen = Boolean(nextIsOpen);
+		document.documentElement.classList.toggle("sidebar-memory-collapsed", !isSidebarOpen);
+		toggle.setAttribute("aria-hidden", "false");
+		toggle.setAttribute("aria-expanded", String(isSidebarOpen));
+		shell.classList.toggle("is-sidebar-open", isSidebarOpen);
+		shell.classList.toggle("is-sidebar-collapsed", !isSidebarOpen);
+		sidebar.hidden = false;
+		sidebar.style.display = "";
+		sidebar.setAttribute("aria-hidden", String(!isSidebarOpen));
+		if ("inert" in sidebar) sidebar.inert = !isSidebarOpen;
+	};
+
 	const animateDock = () => {
 		scheduleDockPosition();
 		if (isSidebarAnimating) {
@@ -182,20 +214,10 @@
 	};
 
 	if (sidebarToggle && appSidebar && appShell) {
-		appShell.classList.add("is-sidebar-open");
-		appSidebar.setAttribute("aria-hidden", "false");
-		if ("inert" in appSidebar) appSidebar.inert = false;
+		applySidebarState(readSidebarMemory());
 		sidebarToggle.addEventListener("click", () => {
-			isSidebarOpen = !isSidebarOpen;
-			sidebarToggle.setAttribute("aria-hidden", "false");
-			sidebarToggle.setAttribute("aria-expanded", String(isSidebarOpen));
-			appShell.classList.toggle("is-sidebar-open", isSidebarOpen);
-			appShell.classList.toggle("is-sidebar-collapsed", !isSidebarOpen);
-			appSidebar.hidden = false;
-			appSidebar.style.display = "";
-			appSidebar.setAttribute("aria-hidden", String(!isSidebarOpen));
-			if ("inert" in appSidebar) appSidebar.inert = !isSidebarOpen;
-			
+			applySidebarState(!isSidebarOpen);
+			writeSidebarMemory(isSidebarOpen);
 			isSidebarAnimating = true;
 			animateDock();
 			setTimeout(() => { isSidebarAnimating = false; scheduleDockPosition(); }, 650);
@@ -684,6 +706,9 @@
 					const newDoc = parser.parseFromString(responseText, "text/html");
 					const newAppShell = newDoc.querySelector(".app-shell");
 					if (newAppShell) {
+						const nextSidebar = newAppShell.querySelector("#app_sidebar");
+						const nextToggle = newAppShell.querySelector("#sidebar_toggle");
+						applySidebarState(readSidebarMemory(), newAppShell, nextSidebar, nextToggle);
 						document.querySelector(".app-shell").replaceWith(newAppShell);
 						const targetSettingsSection = targetView === "settings"
 							? resolveSettingsSectionFromUrl(nextUrl)

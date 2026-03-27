@@ -36,6 +36,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
 </head>
 <body>
+<script>
+    try {
+        if (window.sessionStorage.getItem("antigravity:sidebar-open") === "false") {
+            document.documentElement.classList.add("sidebar-memory-collapsed");
+        }
+    } catch (_error) {
+    }
+</script>
 <main class="page">
     <div class="app-shell is-sidebar-open">
         <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="Toggle sidebar" aria-expanded="true">
