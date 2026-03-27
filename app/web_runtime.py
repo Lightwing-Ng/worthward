@@ -703,6 +703,14 @@ def build_web_runtime() -> WebRuntime:
                     ],
                 }
             )
+        supertrend_ai_row = next((row for row in rows if row.get("id") == "supertrend-ai"), None)
+        if supertrend_ai_row is not None:
+            rows.append(
+                {
+                    **supertrend_ai_row,
+                    "parameters": [dict(parameter) for parameter in supertrend_ai_row.get("parameters", [])],
+                }
+            )
         return rows
 
     def build_style_token_rows() -> list[dict[str, object]]:

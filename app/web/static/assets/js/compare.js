@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -109,10 +109,10 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		// Treat dividend mode as a full chart refresh input.
-		// The compare chart recalculates every series when cash dividends are toggled,
-		// so reusing the same-axis transition path can leave the chart visually stale.
-		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "dividends"];
+		// Cash dividend toggles keep the same time axis, so we can reuse
+		// the existing same-axis refresh transition instead of rebuilding
+		// the whole chart from scratch.
+		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
 			const next = (nextParams.get(key) || "").toString().trim();

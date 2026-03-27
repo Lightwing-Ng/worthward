@@ -337,9 +337,10 @@
 	align-items: center !important;
 	padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
 	border-radius: var(--workspace-modal-radius);
-	transform: translate3d(0, 0, 0);
+	overflow: visible;
+	transform: none;
 	transform-origin: top center;
-	will-change: transform, opacity, filter;
+	will-change: opacity;
 }
 .workspace > .notice-floating-banner[data-dismissible-notice] {
 	animation: noticeFloatingBannerDropIn 720ms both;
@@ -412,6 +413,14 @@
 	.workspace > .notice-floating-banner[data-dismissible-notice] {
 		animation-duration: 1ms;
 		animation-delay: 0ms;
+	}
+}
+@media (max-width: 767px) {
+	/* v1.1.1-L1: Avoid mobile compositor clipping on floating banner shadows. */
+	.notice-floating-banner {
+		transform: none;
+		filter: none;
+		will-change: opacity;
 	}
 }
 footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body); position: relative; z-index: var(--layer-surface-content); }
