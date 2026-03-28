@@ -1,4 +1,4 @@
-/* Code version: v3.22.2.1 */
+/* Code version: v3.22.2.2 */
 .settings-service-main {
 	min-width: 0;
 	display: grid;
@@ -145,6 +145,27 @@
 	justify-self: start;
 	width: auto;
 	margin: 0;
+}
+.settings-broker-test-feedback {
+	margin: 12px 0 0;
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: var(--font-table-body);
+	line-height: 1.4;
+	color: var(--muted);
+}
+.settings-broker-test-feedback.is-success {
+	color: #0f6b2f;
+}
+.settings-broker-test-feedback.is-error {
+	color: #991b1b;
+}
+.settings-broker-test-feedback-icon {
+	width: 16px;
+	height: 16px;
+	flex: 0 0 auto;
+	margin-top: 1px;
 }
 .style-token-shell {
 	position: relative;
@@ -456,8 +477,9 @@ div.style-token-modal-demo {
 	position: relative;
 	left: 0;
 	top: 0;
-	min-width: 220px;
-	max-width: min(280px, 100%);
+	width: fit-content;
+	min-width: min(var(--chart-tooltip-min-width), 100%);
+	max-width: min(var(--chart-tooltip-max-width), 100%);
 	opacity: 1;
 }
 .style-token-stepper-shell {

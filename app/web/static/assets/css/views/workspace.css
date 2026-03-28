@@ -331,7 +331,6 @@
 /* v1.1.2-L1: Let the floating banner copy use the same text width as the modal dialog. */
 .notice-floating-banner {
 	display: grid !important;
-	position: relative;
 	grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
 	column-gap: var(--workspace-modal-column-gap);
 	row-gap: 0;
@@ -347,7 +346,22 @@
 	transform-origin: top center;
 	will-change: opacity;
 }
-.workspace > .notice-floating-banner[data-dismissible-notice] {
+.notice-floating-banner-global {
+	position: fixed;
+	top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
+	left: 50%;
+	right: auto;
+	width: min(420px, calc(100vw - (var(--page-edge-pad) * 2)));
+	max-width: calc(100vw - (var(--page-edge-pad) * 2));
+	margin: 0;
+	transform: translateX(-50%);
+	z-index: calc(var(--layer-modal-dialog) + 10);
+	pointer-events: auto;
+}
+.notice-floating-banner-global + .notice-floating-banner-global {
+	top: calc(max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) + 88px);
+}
+.notice-floating-banner-global[data-dismissible-notice] {
 	animation: noticeFloatingBannerDropIn 720ms both;
 	animation-timing-function: var(--motion-overshoot);
 }
@@ -415,7 +429,7 @@
 	}
 }
 @media (prefers-reduced-motion: reduce) {
-	.workspace > .notice-floating-banner[data-dismissible-notice] {
+	.notice-floating-banner-global[data-dismissible-notice] {
 		animation-duration: 1ms;
 		animation-delay: 0ms;
 	}
@@ -423,9 +437,16 @@
 @media (max-width: 767px) {
 	/* v1.1.1-L1: Avoid mobile compositor clipping on floating banner shadows. */
 	.notice-floating-banner {
-		transform: none;
 		filter: none;
 		will-change: opacity;
+	}
+	.notice-floating-banner-global {
+		top: max(8px, env(safe-area-inset-top, 0px));
+		width: calc(100vw - 16px);
+		max-width: calc(100vw - 16px);
+	}
+	.notice-floating-banner-global + .notice-floating-banner-global {
+		top: calc(max(8px, env(safe-area-inset-top, 0px)) + 88px);
 	}
 }
 footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body); position: relative; z-index: var(--layer-surface-content); }
@@ -461,16 +482,41 @@ footer { margin-top: 10px; color: var(--muted); font-size: var(--font-table-body
 	min-height: 0;
 	width: 100%;
 }
-.chart-tooltip { position: absolute; pointer-events: none; transform: none; min-width: 164px; max-width: min(260px, calc(100% - 24px)); padding: 10px 12px; opacity: 0; transition: opacity 120ms var(--motion-standard); z-index: var(--layer-chart-tooltip); }
+.chart-tooltip {
+	position: absolute;
+	pointer-events: none;
+	transform: none;
+	min-width: var(--chart-tooltip-min-width);
+	max-width: min(var(--chart-tooltip-max-width), calc(100% - 24px));
+	padding: var(--chart-tooltip-padding-block) var(--chart-tooltip-padding-inline);
+	opacity: 0;
+	transition: opacity 120ms var(--motion-standard);
+	z-index: var(--layer-chart-tooltip);
+}
 .chart-tooltip.is-visible { opacity: 1; }
-.chart-tooltip-date { margin: 0 0 8px; font-size: var(--font-size-5); line-height: 1.2; color: var(--text); font-weight: var(--font-weight-regular); }
-.chart-tooltip-list { display: grid; gap: 6px; }
-.chart-tooltip-row { display: grid; grid-template-columns: 10px var(--logo-tooltip-size) minmax(86px, auto) minmax(72px, auto); align-items: center; column-gap: 8px; font-size: var(--font-table-body); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.chart-tooltip-date {
+	margin: 0 0 var(--chart-tooltip-date-margin-bottom);
+	font-size: var(--font-ui-lg);
+	line-height: 1.2;
+	color: var(--text);
+	font-weight: var(--font-weight-regular);
+	text-align: var(--chart-tooltip-date-align);
+}
+.chart-tooltip-list { display: grid; gap: var(--chart-tooltip-row-gap); }
+.chart-tooltip-row {
+	display: grid;
+	grid-template-columns: 10px var(--logo-tooltip-size) minmax(86px, auto) minmax(72px, auto);
+	align-items: center;
+	column-gap: var(--chart-tooltip-item-gap);
+	font-size: var(--font-table-body);
+	line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+}
 .chart-tooltip-dot { width: 8px; height: 8px; border-radius: var(--radius-soft); }
 .chart-tooltip-logo { width: var(--logo-tooltip-size); height: var(--logo-tooltip-size); border-radius: var(--radius-soft); object-fit: contain; background: rgba(255, 255, 255, 0.92); }
-.chart-tooltip-label { text-align: left; font-weight: var(--font-weight-bold); color: var(--text); }
+.chart-tooltip-label { text-align: var(--chart-tooltip-label-align); font-weight: var(--font-weight-bold); color: var(--text); }
 .chart-tooltip-label { white-space: nowrap; }
-.chart-tooltip-value { text-align: right; color: var(--text); font-weight: var(--font-weight-regular); }
+.chart-tooltip-value { text-align: var(--chart-tooltip-value-align); color: var(--text); font-weight: var(--font-weight-regular); }
 .sidebar-placeholder, .placeholder-copy { display: flex; align-items: center; justify-content: flex-start; min-height: 120px; padding: 10px 2px; color: var(--muted); font-size: var(--font-ui-lg); line-height: 1.45; }
 .placeholder-card { display: flex; flex-direction: column; }
 .chart-placeholder-copy { flex: 1 1 auto; min-height: 220px; }

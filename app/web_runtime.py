@@ -1,10 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.33.1
+Code version: v3.33.2
 """
 
 from __future__ import annotations
+from datetime import datetime
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -799,20 +800,19 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_class": "icon-store-maintain",
                 "sample_icon_shell_class": "settings-callout-card-primary",
                 "tokens": [
-                    px_token("--settings-action-package-radius", 10),
-                    px_token("--settings-action-package-pad-block", 14),
-                    px_token("--settings-action-package-pad-inline", 16),
                     px_token("--settings-action-package-column-gap", 12),
                     px_token("--settings-action-package-row-gap", 8),
                     px_token("--settings-action-package-copy-gap", 4),
                     px_token("--style-token-demo-width", 384),
-                    raw_token("--settings-action-package-background", "rgba(255, 255, 255, 0.58)"),
-                    raw_token("--settings-action-package-border", "1px solid rgba(15, 23, 42, 0.06)"),
                 ],
                 "related_styles": [
                     {
                         "name": "Settings action button",
                         "target_id": style_token_id("Settings action button"),
+                    },
+                    {
+                        "name": "Settings execution option",
+                        "target_id": style_token_id("Settings execution option"),
                     },
                 ],
             },
@@ -955,17 +955,13 @@ def build_web_runtime() -> WebRuntime:
                 "sample_button_class": "",
                 "sample_icon_class": "icon-modal-dialog-banner-backtest-execution",
                 "sample_icon_shell_class": "",
-                "tokens": [
-                    px_token("--workspace-modal-radius", 10),
-                    px_token("--workspace-modal-pad-block", 18),
-                    px_token("--workspace-modal-pad-inline", 18),
-                    px_token("--workspace-modal-close-offset", 10),
-                    px_token("--workspace-modal-icon-size", 36),
-                    px_token("--workspace-modal-column-gap", 12),
-                    px_token("--workspace-modal-row-gap", 4),
-                    px_token("--workspace-modal-title-margin-end", 32),
+                "tokens": [],
+                "related_styles": [
+                    {
+                        "name": "Modal dialog",
+                        "target_id": style_token_id("Modal dialog"),
+                    },
                 ],
-                "related_styles": [],
             },
             {
                 "id": style_token_id("Trade strategy stepper"),
@@ -1028,6 +1024,16 @@ def build_web_runtime() -> WebRuntime:
                     material_reference_token("--tooltip-border", "Frosted glass extracted"),
                     material_reference_token("--tooltip-shadow", "Frosted glass extracted"),
                     material_reference_token("--tooltip-blur", "Frosted glass extracted"),
+                    px_token("--chart-tooltip-min-width", 164, 1),
+                    px_token("--chart-tooltip-max-width", 260, 1),
+                    px_token("--chart-tooltip-padding-block", 10, 1),
+                    px_token("--chart-tooltip-padding-inline", 12, 1),
+                    px_token("--chart-tooltip-date-margin-bottom", 8, 1),
+                    raw_token("--chart-tooltip-date-align", "left"),
+                    px_token("--chart-tooltip-row-gap", 6, 1),
+                    px_token("--chart-tooltip-item-gap", 8, 1),
+                    raw_token("--chart-tooltip-label-align", "left"),
+                    raw_token("--chart-tooltip-value-align", "right"),
                 ],
                 "related_styles": [],
             },
@@ -1550,6 +1556,9 @@ def build_web_runtime() -> WebRuntime:
 
         error = request.args.get("error", "").strip() or None
         notice = request.args.get("notice", "").strip() or None
+        broker_test_status = request.args.get("broker_test_status", "").strip().lower() or None
+        broker_test_message = request.args.get("broker_test_message", "").strip() or None
+        broker_test_checked_at = request.args.get("broker_test_checked_at", "").strip() or None
         floating_banner_icon_class = "icon-modal-dialog-banner-default"
         if notice and "Successfully connected" in notice:
             floating_banner_icon_class = "icon-settings-broker"
@@ -2168,6 +2177,9 @@ def build_web_runtime() -> WebRuntime:
             material_token_rows=material_token_rows,
             backtest_execution_mode=backtest_execution_mode,
             broker_settings=broker_settings,
+            broker_test_status=broker_test_status,
+            broker_test_message=broker_test_message,
+            broker_test_checked_at=broker_test_checked_at,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_total_pages=local_store_total_pages,
@@ -2531,20 +2543,22 @@ def build_web_runtime() -> WebRuntime:
         action = request.form.get("action", "save")
         if action == "test":
             success, message = test_broker_connection(updated_settings)
-            notice = message if success else ""
-            error = "" if success else message
+            checked_at = datetime.now().astimezone()
+            checked_at_label = f"{checked_at.day} {checked_at.strftime('%b %Y %H:%M:%S %Z')}"
+            params = urlencode({
+                "broker_test_status": "success" if success else "error",
+                "broker_test_message": message,
+                "broker_test_checked_at": checked_at_label,
+            })
         else:
-            success = True
             notice = (
                 "Broker credentials were saved only on this device. "
                 "This project is open source, and the developer cannot retrieve your local secrets."
             )
-            error = ""
-
-        params = urlencode({
-            "notice": notice,
-            "error": error,
-        })
+            params = urlencode({
+                "notice": notice,
+                "error": "",
+            })
         return redirect(f"{build_settings_path('broker-access')}?{params}")
 
     def local_market_store_action():

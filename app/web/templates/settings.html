@@ -526,6 +526,14 @@
                         <div class="settings-action-package-copy settings-callout-text">
                             <p class="settings-service-name">Test connection</p>
                             <p class="settings-service-note">Try the current broker credentials against the selected service and report whether they work. This only verifies connectivity and does not place any order.</p>
+                            {% if broker_test_status and broker_test_message %}
+                            <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite">
+                                {% if broker_test_status == 'success' %}
+                                <img class="settings-broker-test-feedback-icon" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="" aria-hidden="true">
+                                {% endif %}
+                                <span>{{ broker_test_message }}{% if broker_test_checked_at %} Tested at {{ broker_test_checked_at }}.{% endif %}</span>
+                            </p>
+                            {% endif %}
                         </div>
                         <div class="settings-action-package-form">
                             <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">Test connection</button>

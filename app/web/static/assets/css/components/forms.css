@@ -935,6 +935,24 @@
 	min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
 	padding: 0 12px;
 }
+@media (max-width: 767px) {
+	.field:has(> .segmented-control--compact-mobile) {
+		display: flex;
+		justify-content: center;
+	}
+	.segmented-control--compact-mobile {
+		width: min(320px, 100%);
+		max-width: 320px;
+		margin: 0 auto;
+	}
+	.segmented-control--compact-mobile .segmented-control-option {
+		align-items: stretch;
+	}
+	.segmented-control--compact-mobile .segmented-control-option span {
+		min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
+		padding: 0 12px;
+	}
+}
 .range-panel[hidden] { display: none; }
 .range-mode-shell[data-active="period"] + #period_panel { display: grid; }
 .range-mode-shell[data-active="period"] ~ #exact_panel { display: none !important; }
