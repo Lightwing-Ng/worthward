@@ -567,12 +567,12 @@
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
                     {% if row.sample_kind == "glass-surface" %}
-                    <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; overflow: visible; padding: 28px; box-sizing: border-box;">
-                        <div style="position: absolute; inset: 0; z-index: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; user-select: none;">
-                            <p style="margin: 0; font-size: 1.45rem; line-height: 1.2; font-weight: 700; letter-spacing: 0.01em; transform: rotate(-8deg) translateY(-8px); background: linear-gradient(135deg, #0055cc 0%, #ff2f92 100%); background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; text-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);">{{ row.sample_title }}</p>
-                            <p style="margin: 0; max-width: 34ch; font-size: 0.98rem; line-height: 1.45; font-weight: 500; transform: rotate(-8deg) translateX(18px); background: linear-gradient(135deg, #0055cc 0%, #ff2f92 100%); background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; opacity: 0.82; text-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);">{{ row.sample_copy }}</p>
+                    <div class="style-token-demo-surface">
+                        <div class="style-token-demo-backdrop">
+                            <p class="style-token-demo-title">{{ row.sample_title }}</p>
+                            <p class="style-token-demo-copy">{{ row.sample_copy }}</p>
                         </div>
-                        <div class="report-card" style="position: relative; z-index: 1; width: 80%; min-height: 168px; border-radius: 10px; background: {{ row.sample_surface_background }}; backdrop-filter: {{ row.sample_surface_blur }}; -webkit-backdrop-filter: {{ row.sample_surface_blur }}; border: {{ row.sample_surface_border }}; box-shadow: {{ row.sample_surface_shadow }};">
+                        <div class="report-card style-token-demo-card" style="background: {{ row.sample_surface_background }}; backdrop-filter: {{ row.sample_surface_blur }}; -webkit-backdrop-filter: {{ row.sample_surface_blur }}; border: {{ row.sample_surface_border }}; box-shadow: {{ row.sample_surface_shadow }};">
                         </div>
                     </div>
                     {% endif %}

@@ -57,7 +57,7 @@
     border-radius: 50%;
     border: 0;
     background: var(--glass-surface-background-dense);
-    color: #0055cc;
+    color: var(--accent-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -103,8 +103,8 @@
 }
 
 .trade-detail-shell::before {
-    background: #0055cc;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 24px rgba(0, 85, 204, 0.16);
+    background: var(--accent-fill);
+    box-shadow: var(--mode-switch-thumb-shadow);
 }
 
 .trade-detail-panel {
@@ -425,7 +425,7 @@
     gap: 6px;
     width: fit-content;
     padding: 6px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     min-height: 0;
     pointer-events: auto;
     background: var(--glass-popover-background);
@@ -443,8 +443,8 @@
     bottom: 6px;
     left: 6px;
     width: 44px;
-    border-radius: 999px;
-    background: rgba(0, 85, 204, 0.10);
+    border-radius: var(--radius-pill);
+    background: var(--accent-surface-muted);
     transform: translateX(calc(var(--active-index, 0) * 50px)) scale(1.08);
     transition: transform 420ms var(--motion-emphasized);
     pointer-events: none;
@@ -479,7 +479,7 @@
     min-width: 44px;
     min-height: 44px;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 0;
     background: transparent;
     color: rgba(80, 90, 95, 0.82);
@@ -529,7 +529,7 @@
 
 .sidebar-dock-item.is-active {
     background: transparent;
-    color: #0055cc;
+    color: var(--accent-text);
     transform: scale(1.08);
 }
 
@@ -713,31 +713,31 @@
 }
 
 .icon-overlay-refresh {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
     mask: url("/static/images/tray.and.arrow.down.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/tray.and.arrow.down.fill.svg") center/contain no-repeat;
 }
 
 .icon-overlay-processing {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
     mask: url("/static/images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat;
 }
 
 .icon-overlay-network {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
     mask: url("/static/images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/clock.arrow.trianglehead.counterclockwise.rotate.90.svg") center/contain no-repeat;
 }
 
 .icon-overlay-local-cache {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
     mask: url("/static/images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/square.and.arrow.down.badge.clock.svg") center/contain no-repeat;
 }
 
 .icon-hourglass {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
     mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
 }

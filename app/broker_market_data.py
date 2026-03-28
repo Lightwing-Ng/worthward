@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-    Code version: v1.2.1
+    Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -383,3 +383,21 @@ def is_daily_store_complete(ticker: str) -> bool:
 
     # Check freshness against last trading day
     return _is_market_data_fresh(max_date)
+
+
+def is_daily_store_fresh(ticker: str) -> bool:
+    path = history_store_path_for(ticker)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        dataset = pd.read_parquet(path, columns=["Date"])
+    except Exception:
+        return False
+    if dataset.empty:
+        return False
+
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"]).dropna()
+    if date_values.empty:
+        return False
+
+    return _is_market_data_fresh(date_values.max())

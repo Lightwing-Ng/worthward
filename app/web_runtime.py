@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.33.2
+Code version: v3.34.0
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ from .config import (
 )
 from .date_constraints import build_date_constraint_payload
 from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, search_tickers
-from .market_data import fetch_history, refresh_history_store
+from .market_data import ensure_fresh_history_store, fetch_history, refresh_history_store
 from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from .settings import get_settings
 from .storage import (
@@ -765,7 +765,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--mode-switch-thumb-offset", 6, 0),
                     px_token("--mode-switch-label-pad-inline", 12, 0),
                     px_token("--mode-switch-label-min-height", 28, 1),
-                    raw_token("--mode-switch-thumb-background", "#0055cc"),
+                    raw_token("--mode-switch-thumb-background", "var(--accent-fill)"),
                 ],
                 "related_styles": [],
             },
@@ -784,7 +784,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-button-pad-block", 0, 0),
                     px_token("--settings-action-button-pad-inline", 18, 0),
                     px_token("--settings-action-button-min-height", 32, 1),
-                    raw_token("--settings-action-button-background", "#0055cc"),
+                    raw_token("--settings-action-button-background", "var(--accent-fill)"),
                     raw_token("--settings-action-button-color", "#ffffff"),
                 ],
                 "related_styles": [],
@@ -836,7 +836,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--settings-round-icon-button-shadow-hover", "var(--glass-chip-shadow-hover)"),
                     raw_token("--settings-round-icon-button-shadow-active", "var(--glass-chip-shadow-active)"),
                     raw_token("--settings-round-icon-button-color", "rgba(80, 90, 95, 0.82)"),
-                    raw_token("--settings-round-icon-button-color-hover", "#0055cc"),
+                    raw_token("--settings-round-icon-button-color-hover", "var(--accent-text)"),
                 ],
                 "related_styles": [],
             },
@@ -997,9 +997,9 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--local-store-pagination-slot-size", 30, 1),
                     px_token("--local-store-pagination-button-radius", 999, 0),
                     px_token("--local-store-pagination-indicator-radius", 999, 0),
-                    raw_token("--local-store-pagination-indicator-background", "#0055cc"),
-                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px rgba(0, 85, 204, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.18)"),
-                    raw_token("--local-store-pagination-button-border", "1px solid rgba(0, 85, 204, 0.28)"),
+                    raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
+                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.18)"),
+                    raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                 ],
                 "related_styles": [],
             },
@@ -1014,7 +1014,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
                 "sample_rows": [
-                    {"label": "Close", "value": "44.38", "color": "#0055cc"},
+                    {"label": "Close", "value": "44.38", "color": "var(--accent-fill)"},
                     {"label": "Net return", "value": "3.34%", "color": "#2fff9c"},
                     {"label": "Equity", "value": "10,333.71", "color": "#111827"},
                     {"label": "If all in", "value": "9,840.88", "color": "#8e8e93"},
@@ -1793,7 +1793,16 @@ def build_web_runtime() -> WebRuntime:
                 except Exception:
                     pass
             raise ValueError(f"No market data returned for {ticker}.")
-
+    
+        def ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
+            failed_tickers: list[str] = []
+            for ticker in tickers:
+                try:
+                    ensure_fresh_history_store(ticker)
+                except Exception:
+                    failed_tickers.append(ticker)
+            return failed_tickers
+    
         try:
             if current_view == "backtest":
                 # Check cache: skip re-computation if config unchanged
@@ -1849,7 +1858,11 @@ def build_web_runtime() -> WebRuntime:
                     if continue_process_tickers:
                         if len(set(validated_tickers)) != len(validated_tickers):
                             raise ValueError("Ticker symbols must be unique.")
-
+    
+                        freshness_refresh_failures: list[str] = []
+                        if current_view in {"tickers", "portfolio"}:
+                            freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
+    
                         # Try to fetch datasets, handle missing remote data by falling back to any available local data
                         datasets: list[pd.DataFrame] = []
                         failed_fetches: list[str] = []
@@ -1867,14 +1880,14 @@ def build_web_runtime() -> WebRuntime:
                                         completely_missing.append(ticker)
                                 else:
                                     raise
-
+    
                         # If any ticker is completely missing (no local + no remote), replace it with the first available local ticker from usage history
                         if completely_missing:
                             local_tickers = [t for t in list_local_market_tickers() if t not in completely_missing]
                             if not local_tickers:
                                 # If no local tickers available at all, use the default tickers to guarantee something renders
                                 local_tickers = [normalize_ticker_input(t) for t in DEFAULT_TICKERS if normalize_ticker_input(t) not in completely_missing]
-
+    
                             for missing_ticker in completely_missing:
                                 # Pick the first available local ticker that has data
                                 replacement = local_tickers[0] if len(local_tickers) > 0 else DEFAULT_TICKERS[0]
@@ -1897,14 +1910,14 @@ def build_web_runtime() -> WebRuntime:
                                     notice = f"{missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
                                 else:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
-
+    
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         date_constraints = build_date_constraint_payload(
                             *datasets,
                             requested_start=exact_start or None,
                             requested_end=exact_end or None,
                         )
-
+    
                         # Auto-switch to Exact mode if we're in Relative mode and any ticker couldn't fetch full recent data
                         auto_notice = None
                         if range_mode != "exact" and len(failed_fetches) > 0:
@@ -1932,7 +1945,18 @@ def build_web_runtime() -> WebRuntime:
                                 notice = auto_notice
                             else:
                                 notice += " " + auto_notice
-
+    
+                        if freshness_refresh_failures:
+                            failed_preview = ", ".join(freshness_refresh_failures)
+                            freshness_notice = (
+                                f"Could not refresh the latest trading-day cache for {failed_preview}. "
+                                "Using the newest local daily data currently available."
+                            )
+                            if notice is None:
+                                notice = freshness_notice
+                            else:
+                                notice += " " + freshness_notice
+    
                         if range_mode == "exact":
                             if not date_constraints.trading_dates:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
@@ -1960,7 +1984,7 @@ def build_web_runtime() -> WebRuntime:
                             exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
                             exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                             period_label = format_period_label(period)
-
+    
                         colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                         if current_view == "portfolio":
                             ensure_positive_portfolio_weights(requested_weights, len(validated_tickers))
@@ -2023,10 +2047,10 @@ def build_web_runtime() -> WebRuntime:
             error = str(exc) or None
             if should_use_modal_banner_message(error):
                 floating_banner_icon_class = modal_banner_icon_class(error)
-
+    
         remote_market_access = True
         remote_logo_access = False
-
+    
         if current_view != "settings" and not error and not notice:
             requires_remote_probe = any(
                 not history_store_path_for(ticker).exists()
@@ -2036,14 +2060,14 @@ def build_web_runtime() -> WebRuntime:
                 remote_market_access = has_remote_market_access()
                 if not remote_market_access:
                     notice = "Using bundled local market_store data because remote market access is unavailable."
-
+    
         top_tickers = []
         timing_selected_ticker = ""
         timing_metrics = []
         timing_summary = []
         timing_market = {}
         timing_error = ""
-
+    
         if current_view == "settings":
             if settings_section in {"general", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
@@ -2138,7 +2162,7 @@ def build_web_runtime() -> WebRuntime:
                     {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
                     {"label": "Sell", "value": str(summary.get("SELL", "0"))},
                 ]
-
+    
                 def format_metric_value(value: object) -> str:
                     if isinstance(value, bool):
                         return "True" if value else "False"
@@ -2150,7 +2174,7 @@ def build_web_runtime() -> WebRuntime:
                             return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
                         return f"{value:,.2f}"
                     return str(value)
-
+    
                 preferred_metric_keys = [
                     "close",
                     "open",
@@ -2207,7 +2231,7 @@ def build_web_runtime() -> WebRuntime:
                 timing_metrics = deduped_metric_rows
             except Exception as exc:
                 timing_error = str(exc)
-
+    
         if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
         else:
@@ -2218,7 +2242,7 @@ def build_web_runtime() -> WebRuntime:
                 portfolio_weights = build_default_weights(len([ticker for ticker in ticker_slots if ticker]))
             while len(portfolio_weights) < len(ticker_slots):
                 portfolio_weights.append(0)
-
+    
         template_name = {
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
@@ -2226,7 +2250,7 @@ def build_web_runtime() -> WebRuntime:
             "more": "more.html",
             "settings": "settings.html",
         }[current_view]
-
+    
         return render_template(
             template_name,
             error=error,

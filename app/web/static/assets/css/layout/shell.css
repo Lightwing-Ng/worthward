@@ -102,7 +102,7 @@ body.is-workspace-switching [data-workspace-mask="compare-return"].is-masked-dur
 body.is-workspace-switching [data-workspace-mask="portfolio-total-return"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="trade-metric"].is-masked-during-switch::after {
 	inset: -1px -3px;
-	border-radius: 10px;
+	border-radius: var(--radius-soft);
 }
 body.is-workspace-switching [data-workspace-mask="chart-area"].is-masked-during-switch::after,
 body.is-workspace-switching [data-workspace-mask="trade-price-chart"].is-masked-during-switch::after,
@@ -124,8 +124,8 @@ body.is-workspace-switching [data-workspace-mask="settings-status-icon"].is-mask
 	content: "";
 	position: absolute;
 	inset: -1px;
-	border-radius: 999px;
-	background-color: #0055cc;
+	border-radius: var(--radius-pill);
+	background-color: var(--accent-fill);
 	mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
 	-webkit-mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
 	pointer-events: none;

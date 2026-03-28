@@ -6,7 +6,6 @@ Code version: v1.3.0
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix

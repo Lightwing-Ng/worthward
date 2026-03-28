@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.6.0
+Code version: v3.7.0
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from .config import DEFAULT_INTERVAL
+from .broker_market_data import is_daily_store_fresh
 from .connectivity import has_remote_market_access
 from .storage import ensure_market_store_dir, history_store_path_for, intraday_history_store_path_for
 
@@ -164,3 +165,18 @@ def refresh_history_store(ticker: str) -> Path:
     normalized_dataset = normalize_history_frame(history, ticker)
     normalized_dataset.to_parquet(path, index=False)
     return path
+
+
+def ensure_fresh_history_store(ticker: str) -> bool:
+    """
+    Ensures the local daily cache includes the latest completed trading day.
+
+    Returns True when a refresh was performed, otherwise False.
+    """
+    ensure_market_store_dir()
+    if is_daily_store_fresh(ticker):
+        return False
+    if not has_remote_market_access():
+        return False
+    refresh_history_store(ticker)
+    return True

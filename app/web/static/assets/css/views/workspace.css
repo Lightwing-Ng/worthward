@@ -132,7 +132,7 @@
 }
 
 .icon-portfolio-donut-flow {
-    background: linear-gradient(90deg, #0055cc 0%, #ff2f92 100%);
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-secondary) 100%);
     mask: url("/static/images/arrow.right.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/arrow.right.svg") center/contain no-repeat;
 }
@@ -164,7 +164,7 @@
     min-height: 24px;
     height: 24px;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--glass-chip-background-strong);
     color: var(--muted);
     box-shadow: none;
@@ -282,7 +282,7 @@
     left: 0;
     width: 4px;
     background: var(--item-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
 }
 
 .report-grid h3, .report-grid p, .footer-meta dt, .footer-meta dd {
@@ -432,7 +432,7 @@
 .suggestion-item:hover, .suggestion-item.is-active {
     transform: none;
     box-shadow: none;
-    background: rgba(0, 85, 204, 0.08);
+    background: var(--accent-surface-soft);
 }
 
 .suggestion-symbol {
@@ -620,7 +620,7 @@
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 85, 204, 0.45) transparent;
+    scrollbar-color: var(--accent-scrollbar) transparent;
 }
 
 .timing-metrics-scroll::-webkit-scrollbar {
@@ -632,8 +632,8 @@
 }
 
 .timing-metrics-scroll::-webkit-scrollbar-thumb {
-    background: rgba(0, 85, 204, 0.45);
-    border-radius: 999px;
+    background: var(--accent-scrollbar);
+    border-radius: var(--radius-pill);
 }
 
 .timing-metrics-list {
@@ -668,7 +668,7 @@
 
 .timing-suggestions-panel {
     scrollbar-width: none;
-    scrollbar-color: rgba(0, 85, 204, 0.55) transparent;
+    scrollbar-color: var(--accent-scrollbar-strong) transparent;
 }
 
 .timing-suggestions-panel:hover {
@@ -689,12 +689,12 @@
 }
 
 .timing-suggestions-panel::-webkit-scrollbar-thumb {
-    background: rgba(0, 85, 204, 0.55);
-    border-radius: 999px;
+    background: var(--accent-scrollbar-strong);
+    border-radius: var(--radius-pill);
 }
 
 .timing-suggestions-panel:hover::-webkit-scrollbar-thumb {
-    background: rgba(0, 85, 204, 0.82);
+    background: var(--accent-scrollbar-hover);
 }
 
 .timing-suggestion-item {
@@ -710,7 +710,7 @@
 .timing-suggestion-item:hover,
 .timing-suggestion-item:focus-visible,
 .timing-suggestion-item.is-active {
-    background: rgba(0, 85, 204, 0.12);
+    background: var(--accent-surface-emphasis);
 }
 
 .timing-suggestion-copy {
@@ -811,7 +811,7 @@
 .ios-switch-slider {
     position: absolute;
     inset: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(160, 167, 178, 0.45);
     box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
     transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard);
@@ -916,7 +916,7 @@
 .notice-floating-banner-icon {
     grid-column: 1;
     grid-row: 1;
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
 }
 
 .notice-floating-banner-title {
@@ -945,7 +945,7 @@
     padding: 0;
     border-radius: 50%;
     background: transparent;
-    color: #0055cc;
+    color: var(--accent-text);
     box-shadow: none;
     display: inline-grid;
     place-items: center;
@@ -1186,8 +1186,8 @@ footer {
     right: 0;
     top: 2px;
     height: 48px;
-    border-radius: 999px;
-    background: rgba(0, 85, 204, 0.10);
+    border-radius: var(--radius-pill);
+    background: var(--accent-surface-muted);
     transform: translateY(calc(var(--settings-active-index, 0) * 56px)) scale(1.01);
     transition: transform 500ms var(--motion-bouncy);
     pointer-events: none;
@@ -1258,8 +1258,8 @@ footer {
 
 .settings-nav-item.is-active {
     background: transparent;
-    color: #0055cc;
-    border-radius: 999px;
+    color: var(--accent-text);
+    border-radius: var(--radius-pill);
     box-shadow: none;
 }
 
@@ -1337,16 +1337,16 @@ footer {
 }
 
 .settings-nav-item-style-tokens {
-    --settings-icon-tint: #0055cc;
-    --settings-icon-surface: rgba(0, 85, 204, 0.14);
+    --settings-icon-tint: var(--accent-text);
+    --settings-icon-surface: var(--accent-surface-icon);
 }
 
 .settings-nav-item.is-active .settings-nav-icon-shell {
-    background: rgba(0, 85, 204, 0.12);
+    background: var(--accent-surface-emphasis);
 }
 
 .settings-nav-item.is-active .icon {
-    background-color: #0055cc;
+    background-color: var(--accent-fill);
 }
 
 .settings-status-check {
