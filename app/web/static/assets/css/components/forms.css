@@ -530,6 +530,104 @@
 	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 8px;
 	align-items: end;
+	position: relative;
+}
+.trade-strategy-combobox {
+	min-width: 0;
+	width: 100%;
+}
+.trade-strategy-native-select {
+	position: absolute;
+	width: 0;
+	height: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+.trade-strategy-trigger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	text-align: left;
+	width: 100%;
+}
+.trade-strategy-trigger-label {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.trade-strategy-dropdown {
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 0;
+	right: 0;
+	padding: 10px;
+	border-radius: var(--radius-soft);
+	background: var(--glass-popover-background);
+	box-shadow: var(--glass-popover-shadow), 0 12px 24px rgba(15, 23, 42, 0.12);
+	backdrop-filter: var(--glass-popover-blur);
+	-webkit-backdrop-filter: var(--glass-popover-blur);
+	border: 1px solid rgba(255, 255, 255, 0.26);
+	z-index: var(--layer-inline-overlay);
+	max-height: min(320px, 48vh);
+	overflow-y: auto;
+}
+.trade-strategy-dropdown-group + .trade-strategy-dropdown-group {
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.trade-strategy-dropdown-label {
+	margin: 0 0 8px;
+	padding: 0;
+	font-size: var(--font-tooltip);
+	line-height: 1.2;
+	font-weight: var(--font-weight-bold);
+	color: var(--muted);
+}
+.trade-strategy-dropdown-option {
+	width: 100%;
+	padding: 9px 10px;
+	border: 0;
+	border-radius: var(--radius-soft);
+	background: transparent;
+	color: var(--text);
+	display: grid;
+	grid-template-columns: 16px minmax(0, 1fr);
+	column-gap: 8px;
+	align-items: center;
+	text-align: left;
+	font-size: var(--font-form-label);
+	line-height: 1.2;
+	font-weight: var(--font-weight-regular);
+}
+.trade-strategy-dropdown-option:hover,
+.trade-strategy-dropdown-option:focus-visible {
+	background: var(--control-liquid-background-hover);
+	outline: none;
+}
+.trade-strategy-dropdown-option.is-active {
+	background: var(--control-liquid-background-hover);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+.trade-strategy-dropdown-check {
+	width: 16px;
+	height: 16px;
+	background-color: #16a34a;
+	mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+	-webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+	opacity: 0;
+}
+.trade-strategy-dropdown-option.is-selected .trade-strategy-dropdown-check {
+	opacity: 1;
+}
+.trade-strategy-dropdown-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .trade-strategy-tune-button {
 	width: var(--trade-control-input-height);
@@ -563,7 +661,12 @@
 	transform: translateY(1px) scale(0.985);
 }
 .trade-strategy-tune-button.is-hidden {
-	display: none;
+	visibility: hidden;
+	pointer-events: none;
+}
+.trade-strategy-trigger[aria-expanded="true"] {
+	background: var(--control-liquid-background-hover);
+	box-shadow: var(--control-liquid-shadow-focus);
 }
 .trade-strategy-tune-button .icon {
 	width: 14px;

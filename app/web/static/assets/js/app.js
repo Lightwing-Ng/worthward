@@ -1,4 +1,4 @@
-/* Code version: v3.36.0 */
+/* Code version: v3.37.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -2422,6 +2422,9 @@
 
 	const tradeStrategyField = document.querySelector("[data-trade-strategy-field]");
 	const tradeStrategySelect = $("#trade_strategy");
+	const tradeStrategyTrigger = document.querySelector("[data-trade-strategy-trigger]");
+	const tradeStrategyTriggerLabel = document.querySelector("[data-trade-strategy-trigger-label]");
+	const tradeStrategyDropdown = document.querySelector("[data-trade-strategy-dropdown]");
 	const tradeStrategyTuneButton = document.querySelector("[data-trade-strategy-tune-button]");
 	const tradeStrategyPanel = document.querySelector("[data-trade-strategy-panel]");
 	let strategySwitchAnimationTimer = null;
@@ -2502,7 +2505,7 @@
 
 	const setTradeStrategyPanelOpen = (isOpen) => {
 		if (!(tradeStrategyPanel instanceof HTMLElement) || !(tradeStrategyTuneButton instanceof HTMLButtonElement)) return;
-		const shouldOpen = isOpen && !tradeStrategyTuneButton.hidden;
+		const shouldOpen = isOpen && !tradeStrategyTuneButton.classList.contains("is-hidden");
 		tradeStrategyPanel.hidden = !shouldOpen;
 		tradeStrategyTuneButton.classList.toggle("is-active", shouldOpen);
 		tradeStrategyTuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
@@ -2624,9 +2627,81 @@
 	const syncTradeStrategyTuningAvailability = () => {
 		if (!(tradeStrategyTuneButton instanceof HTMLButtonElement) || !(tradeStrategyPanel instanceof HTMLElement)) return;
 		const hasFields = Boolean(tradeStrategyPanel.querySelector("[data-strategy-param-key]"));
-		tradeStrategyTuneButton.hidden = !hasFields;
 		tradeStrategyTuneButton.classList.toggle("is-hidden", !hasFields);
+		tradeStrategyTuneButton.disabled = !hasFields;
+		tradeStrategyTuneButton.setAttribute("aria-hidden", hasFields ? "false" : "true");
+		tradeStrategyTuneButton.tabIndex = hasFields ? 0 : -1;
 		if (!hasFields) setTradeStrategyPanelOpen(false);
+	};
+
+	const setTradeStrategyDropdownOpen = (isOpen) => {
+		if (!(tradeStrategyDropdown instanceof HTMLElement) || !(tradeStrategyTrigger instanceof HTMLButtonElement)) return;
+		tradeStrategyDropdown.hidden = !isOpen;
+		tradeStrategyTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+		if (tradeStrategyField instanceof HTMLElement) {
+			tradeStrategyField.classList.toggle("is-open", isOpen || (!(tradeStrategyPanel instanceof HTMLElement) ? false : !tradeStrategyPanel.hidden));
+		}
+	};
+
+	const syncTradeStrategyTriggerLabel = () => {
+		if (!(tradeStrategySelect instanceof HTMLSelectElement) || !(tradeStrategyTriggerLabel instanceof HTMLElement)) return;
+		const selectedOption = Array.from(tradeStrategySelect.options).find((option) => option.value === tradeStrategySelect.value);
+		tradeStrategyTriggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+	};
+
+	const renderTradeStrategyDropdown = () => {
+		if (!(tradeStrategySelect instanceof HTMLSelectElement) || !(tradeStrategyDropdown instanceof HTMLElement)) return;
+		const currentSelection = String(tradeStrategySelect.value || "");
+		const groups = Array.from(tradeStrategySelect.querySelectorAll("optgroup"));
+		tradeStrategyDropdown.innerHTML = "";
+		groups.forEach((group) => {
+			const groupElement = document.createElement("section");
+			groupElement.className = "trade-strategy-dropdown-group";
+
+			const labelElement = document.createElement("p");
+			labelElement.className = "trade-strategy-dropdown-label";
+			labelElement.textContent = group.label || "";
+			groupElement.appendChild(labelElement);
+
+			Array.from(group.querySelectorAll("option")).forEach((option) => {
+				const optionButton = document.createElement("button");
+				optionButton.type = "button";
+				optionButton.className = "trade-strategy-dropdown-option";
+				optionButton.dataset.value = option.value;
+				optionButton.setAttribute("role", "option");
+				optionButton.setAttribute("aria-selected", option.value === currentSelection ? "true" : "false");
+				if (option.value === currentSelection) {
+					optionButton.classList.add("is-selected", "is-active");
+				}
+
+				const checkElement = document.createElement("span");
+				checkElement.className = "trade-strategy-dropdown-check";
+				checkElement.setAttribute("aria-hidden", "true");
+
+				const textElement = document.createElement("span");
+				textElement.className = "trade-strategy-dropdown-text";
+				textElement.textContent = option.textContent || option.value;
+
+				optionButton.appendChild(checkElement);
+				optionButton.appendChild(textElement);
+				optionButton.addEventListener("click", () => {
+					if (!(tradeStrategySelect instanceof HTMLSelectElement)) return;
+					if (tradeStrategySelect.value === option.value) {
+						setTradeStrategyDropdownOpen(false);
+						return;
+					}
+					tradeStrategySelect.value = option.value;
+					syncStrategyOptionSelection(tradeStrategySelect, option.value);
+					syncTradeStrategyTriggerLabel();
+					renderTradeStrategyDropdown();
+					setTradeStrategyDropdownOpen(false);
+					tradeStrategySelect.dispatchEvent(new Event("change", { bubbles: true }));
+				});
+				groupElement.appendChild(optionButton);
+			});
+
+			tradeStrategyDropdown.appendChild(groupElement);
+		});
 	};
 
 	const pulseStrategySwitch = () => {
@@ -2677,20 +2752,25 @@
 
 	if (tradeStrategyTuneButton instanceof HTMLButtonElement) {
 		tradeStrategyTuneButton.addEventListener("click", () => {
+			setTradeStrategyDropdownOpen(false);
 			setTradeStrategyPanelOpen(tradeStrategyPanel instanceof HTMLElement ? tradeStrategyPanel.hidden : false);
 		});
 	}
 
-	if (tradeStrategySelect instanceof HTMLSelectElement) {
-		const releaseStrategyPress = () => tradeStrategySelect.classList.remove("is-pressing");
-		tradeStrategySelect.addEventListener("pointerdown", () => {
-			tradeStrategySelect.classList.add("is-pressing");
+	if (tradeStrategyTrigger instanceof HTMLButtonElement) {
+		tradeStrategyTrigger.addEventListener("click", () => {
+			const shouldOpen = tradeStrategyDropdown instanceof HTMLElement ? tradeStrategyDropdown.hidden : false;
+			setTradeStrategyPanelOpen(false);
+			renderTradeStrategyDropdown();
+			setTradeStrategyDropdownOpen(shouldOpen);
 		});
-		tradeStrategySelect.addEventListener("pointerup", releaseStrategyPress);
-		tradeStrategySelect.addEventListener("pointercancel", releaseStrategyPress);
-		tradeStrategySelect.addEventListener("blur", releaseStrategyPress);
+	}
+
+	if (tradeStrategySelect instanceof HTMLSelectElement) {
 		tradeStrategySelect.addEventListener("change", async () => {
 			syncStrategyOptionSelection(tradeStrategySelect, tradeStrategySelect.value);
+			syncTradeStrategyTriggerLabel();
+			renderTradeStrategyDropdown();
 			pulseStrategySwitch();
 			await refreshTradeStrategyFields(tradeStrategySelect.value);
 			if (!form) return;
@@ -2700,6 +2780,11 @@
 
 	window.addEventListener("resize", positionTradeStrategyPanel);
 	document.addEventListener("scroll", positionTradeStrategyPanel, true);
+	document.addEventListener("click", (event) => {
+		if (!(tradeStrategyField instanceof HTMLElement)) return;
+		if (tradeStrategyField.contains(event.target)) return;
+		setTradeStrategyDropdownOpen(false);
+	});
 
 	if (form) {
 		form.noValidate = true;
@@ -2900,18 +2985,25 @@
 	const syncStrategyOptionSelection = (select, selectedValue) => {
 		if (!(select instanceof HTMLSelectElement)) return;
 		const normalizedValue = String(selectedValue || "");
+		const matchingOptions = Array.from(select.options).filter((option) => option.value === normalizedValue);
 		Array.from(select.options).forEach((option) => {
 			const isSelected = Boolean(normalizedValue) && option.value === normalizedValue;
 			option.defaultSelected = isSelected;
+			option.selected = false;
 			if (isSelected) {
 				option.setAttribute("selected", "selected");
 			} else {
 				option.removeAttribute("selected");
 			}
 		});
-		if (normalizedValue) {
-			select.value = normalizedValue;
-		}
+		if (!matchingOptions.length) return;
+		matchingOptions.forEach((option) => {
+			option.defaultSelected = true;
+			option.setAttribute("selected", "selected");
+		});
+		const allGroupMatch = matchingOptions.find((option) => option.parentElement?.dataset?.strategyGroup === "all");
+		(allGroupMatch || matchingOptions[0]).selected = true;
+		select.value = normalizedValue;
 	};
 
 	const refreshStrategyDropdownUI = () => {
@@ -2942,6 +3034,8 @@
 		// Restore selection because DOM change might reset it, then mirror
 		// the selected marker onto every duplicate option in Recent and All.
 		syncStrategyOptionSelection(select, currentSelection);
+		syncTradeStrategyTriggerLabel();
+		renderTradeStrategyDropdown();
 	};
 
 	window.addEventListener("resize", scheduleDockPosition);
@@ -2949,5 +3043,7 @@
 	window.addEventListener("pageshow", scheduleDockPosition);
 	
 	initializeWorkspaceEnhancements();
+	syncTradeStrategyTriggerLabel();
+	renderTradeStrategyDropdown();
 	refreshStrategyDropdownUI();
 })();

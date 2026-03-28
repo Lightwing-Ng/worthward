@@ -52,7 +52,7 @@
     <div class="field trade-strategy-field" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
-            <select id="trade_strategy" name="strategy" class="trade-strategy-select form-select">
+            <select id="trade_strategy" name="strategy" class="trade-strategy-native-select" hidden aria-hidden="true" tabindex="-1">
                 {% for group in strategy_option_groups %}
                 <optgroup label="{{ group.label }}" data-strategy-group="{{ group.key }}">
                     {% for strategy in group['items'] %}
@@ -61,16 +61,36 @@
                 </optgroup>
                 {% endfor %}
             </select>
+            <div class="trade-strategy-combobox" data-trade-strategy-combobox>
+                <button
+                    type="button"
+                    class="trade-strategy-select form-select trade-strategy-trigger"
+                    data-trade-strategy-trigger
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="trade_strategy_dropdown"
+                >
+                    <span class="trade-strategy-trigger-label" data-trade-strategy-trigger-label></span>
+                </button>
+            </div>
             <button
                 type="button"
                 class="trade-strategy-tune-button{% if not strategy_form_fields %} is-hidden{% endif %}"
                 data-trade-strategy-tune-button
                 aria-label="Tune strategy parameters"
                 aria-pressed="false"
-                {% if not strategy_form_fields %}hidden{% endif %}
+                {% if not strategy_form_fields %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
                 <span class="icon icon-strategy-tune" aria-hidden="true"></span>
             </button>
+            <div
+                id="trade_strategy_dropdown"
+                class="trade-strategy-dropdown"
+                data-trade-strategy-dropdown
+                role="listbox"
+                aria-label="{{ labels.backtest_strategy }}"
+                hidden
+            ></div>
         </div>
         <div class="trade-strategy-params-popover" data-trade-strategy-panel hidden>
             {% include "_trade_strategy_params_panel.html" %}
