@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.7.0
+Code version: v3.8.0
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from app.core.config import DEFAULT_INTERVAL
-from app.infrastructure.broker_market_data import is_daily_store_fresh
+from app.infrastructure.broker_market_data import is_daily_store_fresh, normalize_one_minute_store_frame
 from app.infrastructure.connectivity import has_remote_market_access
 from app.infrastructure.storage import ensure_market_store_dir, history_store_path_for, intraday_history_store_path_for
 
@@ -102,7 +102,13 @@ def fetch_history(
     ensure_market_store_dir()
     path = intraday_history_store_path_for(ticker) if interval == "1m" else history_store_path_for(ticker)
     if path.exists():
-        return select_price_series(pd.read_parquet(path), include_dividends)
+        dataset = pd.read_parquet(path)
+        if interval == "1m":
+            normalized_intraday = normalize_one_minute_store_frame(dataset)
+            if not normalized_intraday.equals(dataset):
+                normalized_intraday.to_parquet(path, index=False)
+            dataset = normalized_intraday
+        return select_price_series(dataset, include_dividends)
 
     if not has_remote_market_access():
         raise ValueError(

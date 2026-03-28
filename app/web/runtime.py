@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.35.0
+Code version: v3.36.0
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from app.infrastructure.broker_market_data import (
     has_recent_one_minute_store,
     is_one_minute_store_complete,
     is_daily_store_complete,
+    normalize_one_minute_store_frame,
     one_minute_lookback_start,
     refresh_longbridge_one_minute_store,
     test_broker_connection,
@@ -2930,7 +2931,7 @@ def build_web_runtime() -> WebRuntime:
             return f"No 1m data for {ticker} at {path}", 404
 
         try:
-            df = pd.read_parquet(path)
+            df = normalize_one_minute_store_frame(pd.read_parquet(path))
             # 1m Parquet storage is now standardized strictly to New York Time (NYT).
             df['DateNYT'] = pd.to_datetime(df['Date'])
 

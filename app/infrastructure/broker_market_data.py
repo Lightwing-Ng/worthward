@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-    Code version: v1.3.0
+    Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
 ONE_MINUTE_MIN_SPAN_DAYS = 150
 DAILY_MIN_SPAN_DAYS = 330
+HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 NEW_YORK_TIMEZONE = "America/New_York"
 UTC_TIMEZONE = "UTC"
 NEW_YORK_ZONE = ZoneInfo(NEW_YORK_TIMEZONE)
@@ -130,14 +131,84 @@ def _parse_longbridge_timestamp(raw_timestamp: object) -> pd.Timestamp:
         timestamp = raw_timestamp
     elif isinstance(raw_timestamp, datetime):
         timestamp = pd.Timestamp(raw_timestamp)
+    elif isinstance(raw_timestamp, (int, float)):
+        return pd.Timestamp(raw_timestamp, unit="s", tz=UTC_TIMEZONE)
     else:
-        timestamp = pd.Timestamp(raw_timestamp, unit="s", tz=UTC_TIMEZONE)
+        timestamp = pd.Timestamp(raw_timestamp)
 
     if timestamp.tzinfo is None:
-        timestamp = timestamp.tz_localize(UTC_TIMEZONE)
-    else:
-        timestamp = timestamp.tz_convert(UTC_TIMEZONE)
+        return timestamp.tz_localize(HONG_KONG_TIMEZONE)
     return timestamp
+
+
+def _is_regular_new_york_session(timestamp: pd.Timestamp) -> bool:
+    localized = timestamp.tz_convert(NEW_YORK_TIMEZONE)
+    if localized.weekday() >= 5:
+        return False
+    session_open = localized.replace(hour=9, minute=30, second=0, microsecond=0)
+    session_close = localized.replace(hour=16, minute=0, second=0, microsecond=0)
+    return session_open <= localized < session_close
+
+
+def _count_regular_session_rows(values: pd.Series) -> int:
+    timestamps = pd.to_datetime(values, errors="coerce").dropna()
+    if timestamps.empty:
+        return 0
+    count = 0
+    for timestamp in timestamps:
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize(NEW_YORK_TIMEZONE)
+        else:
+            timestamp = timestamp.tz_convert(NEW_YORK_TIMEZONE)
+        if _is_regular_new_york_session(timestamp):
+            count += 1
+    return count
+
+
+def _series_to_new_york_naive(values: pd.Series) -> pd.Series:
+    timestamps = pd.to_datetime(values, errors="coerce")
+    if getattr(timestamps.dt, "tz", None) is not None:
+        return timestamps.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
+    return timestamps
+
+
+def _series_hkt_wall_time_to_new_york_naive(values: pd.Series) -> pd.Series:
+    timestamps = pd.to_datetime(values, errors="coerce")
+    if getattr(timestamps.dt, "tz", None) is not None:
+        timestamps = timestamps.dt.tz_convert(HONG_KONG_TIMEZONE).dt.tz_localize(None)
+    return timestamps.dt.tz_localize(HONG_KONG_TIMEZONE).dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
+
+
+def normalize_one_minute_store_frame(dataset: pd.DataFrame) -> pd.DataFrame:
+    if dataset.empty or "Date" not in dataset.columns:
+        return dataset
+
+    normalized = dataset.copy()
+    raw_dates = pd.to_datetime(normalized["Date"], errors="coerce")
+    normalized = normalized.loc[raw_dates.notna()].copy()
+    if normalized.empty:
+        return normalized.reset_index(drop=True)
+
+    current_dates = raw_dates.loc[raw_dates.notna()]
+    current_score = _count_regular_session_rows(current_dates)
+
+    hkt_converted = _series_hkt_wall_time_to_new_york_naive(current_dates)
+    candidate_score = _count_regular_session_rows(hkt_converted)
+
+    if candidate_score > current_score:
+        normalized["Date"] = hkt_converted.to_numpy()
+    else:
+        normalized["Date"] = _series_to_new_york_naive(current_dates).to_numpy()
+
+    session_mask = normalized["Date"].apply(
+        lambda value: _is_regular_new_york_session(pd.Timestamp(value).tz_localize(NEW_YORK_TIMEZONE))
+    )
+    normalized = normalized.loc[session_mask].copy()
+    if normalized.empty:
+        return normalized.reset_index(drop=True)
+
+    normalized = normalized.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+    return normalized.reset_index(drop=True)
 
 
 def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
@@ -156,8 +227,11 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     for candle in candlesticks:
         raw_ts = getattr(candle, "timestamp")
 
-        # Parse the absolute timestamp first, then convert to New York wall time.
+        # Longbridge US 1m bars arrive in HKT wall time. We localize naive values
+        # to Hong Kong first, then convert to New York and keep only regular hours.
         ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        if not _is_regular_new_york_session(ts_nyt):
+            continue
 
         rows.append(
             {
@@ -273,7 +347,7 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
     existing_df: pd.DataFrame | None = None
     if path.exists():
         try:
-            existing_df = pd.read_parquet(path)
+            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
             if not existing_df.empty:
                 since = pd.to_datetime(existing_df["Date"].max()).to_pydatetime()
         except:
