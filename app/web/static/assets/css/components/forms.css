@@ -9,7 +9,6 @@
 	--strategy-param-scrollbar-idle-ms: 720;
 	--ticker-control-width: 80%;
 	--ticker-suggestions-radius: 10px;
-	--ticker-validation-gap: 8px;
 	--ticker-validation-arrow-size: 12px;
 	--ticker-validation-arrow-rise: calc(var(--ticker-validation-arrow-size) * 0.70710678);
 }

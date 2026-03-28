@@ -1,4 +1,4 @@
-/* Code version: v1.14.2 */
+/* Code version: v1.15.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -421,30 +421,74 @@
 			return { top, bottom };
 		};
 
+		const getDatasetPoint = (chart, index, datasetIndex = 0) => {
+			const point = chart?.getDatasetMeta?.(datasetIndex)?.data?.[index];
+			return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
+		};
+
+		const getRelativePointPosition = (canvas, stackRect, point) => {
+			if (!canvas || !point) return null;
+			const canvasRect = canvas.getBoundingClientRect();
+			return {
+				x: canvasRect.left - stackRect.left + point.x,
+				y: canvasRect.top - stackRect.top + point.y,
+			};
+		};
+
+		const resolveNearestHoverIndex = (chart, event) => {
+			const chartArea = chart?.chartArea;
+			if (!chartArea || !labels.length) return null;
+			const canvasRect = chart.canvas.getBoundingClientRect();
+			const relativeX = event.clientX - canvasRect.left;
+			if (!Number.isFinite(relativeX)) return null;
+			const points = chart.getDatasetMeta(0)?.data || [];
+			let nearestIndex = null;
+			let nearestDistance = Number.POSITIVE_INFINITY;
+			points.forEach((point, index) => {
+				if (!point || !Number.isFinite(point.x)) return;
+				const distance = Math.abs(point.x - relativeX);
+				if (distance < nearestDistance) {
+					nearestDistance = distance;
+					nearestIndex = index;
+				}
+			});
+			return nearestIndex;
+		};
+
 		const updateSharedTooltip = (index, sourceCanvas, sourceChart) => {
 			if (index === null) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				return;
 			}
-			const canvasRect = sourceCanvas.getBoundingClientRect();
 			const stackRect = tradeChartStack.getBoundingClientRect();
-			const sourcePoint = sourceChart?.getDatasetMeta(0)?.data?.[index];
+			const sourcePoint = getDatasetPoint(sourceChart, index, 0);
+			const pricePoint = getDatasetPoint(priceChart, index, 0);
+			const equityPoint = getDatasetPoint(equityChart, index, 0);
+			const canonicalLinePoint = pricePoint || equityPoint || sourcePoint;
+			const canonicalLineCanvas = pricePoint ? priceCanvas : (equityPoint ? equityCanvas : sourceCanvas);
 			if (!sourcePoint) {
 				hoverLine.classList.remove("is-visible");
 				tooltip.classList.remove("is-visible");
 				return;
 			}
-			const relativeX = canvasRect.left - stackRect.left + sourcePoint.x;
-			const relativeY = canvasRect.top - stackRect.top + sourcePoint.y;
+			const hoverLinePosition = getRelativePointPosition(canonicalLineCanvas, stackRect, canonicalLinePoint);
+			const tooltipAnchorPosition = getRelativePointPosition(sourceCanvas, stackRect, sourcePoint);
+			if (!hoverLinePosition || !tooltipAnchorPosition) {
+				hoverLine.classList.remove("is-visible");
+				tooltip.classList.remove("is-visible");
+				return;
+			}
 			const hoverLineFrame = updateHoverLineFrame();
 			if (hoverLineFrame) {
 				hoverLine.style.top = `${hoverLineFrame.top}px`;
 				hoverLine.style.height = `${Math.max(0, hoverLineFrame.bottom - hoverLineFrame.top)}px`;
 			}
-			hoverLine.style.left = `${relativeX}px`;
+			hoverLine.style.left = `${hoverLinePosition.x}px`;
 			hoverLine.classList.add("is-visible");
-				const closeValue = Number(close[index] || 0);
+			const relativeX = hoverLinePosition.x;
+			const relativeY = tooltipAnchorPosition.y;
+			const closeValue = Number(close[index] || 0);
 			const equityValue = Number(equity[index] || 0);
 			const allInValue = Number(allInEquity[index] || 0);
 			const netReturn = initialCapital > 0 ? ((equityValue / initialCapital) - 1) * 100 : 0;
@@ -497,12 +541,12 @@
 
 			canvas.addEventListener("mousemove", (event) => {
 				if (!chart || !chart.ctx) return;
-				const points = chart.getElementsAtEventForMode(event, "index", { intersect: false }, false);
-				if (!points.length) {
+				const nearestIndex = resolveNearestHoverIndex(chart, event);
+				if (nearestIndex === null) {
 					syncHoverState(null, canvas, chart);
 					return;
 				}
-				syncHoverState(points[0].index, canvas, chart);
+				syncHoverState(nearestIndex, canvas, chart);
 			}, { signal });
 
 			canvas.addEventListener("mouseleave", () => {
@@ -611,6 +655,7 @@
 				animation: refreshTransition ? false : undefined,
 				scales: {
 					...commonOptions.scales,
+					x: { ...commonOptions.scales.x, display: false },
 					y: { ...commonOptions.scales.y, ...equityYScale },
 				},
 			},

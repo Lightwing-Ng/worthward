@@ -14,7 +14,7 @@
         </div>
         <div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
             {% for item in performance_items %}
-            <section class="performance-item" style="--item-color: {{ item.color }}; --item-shadow: {{ item.shadow_color }};">
+            <section class="performance-item" style="--item-color: {{ item.color }};">
                 <div class="performance-accent"></div>
                 <div class="report-symbol-row">
                     <p class="report-symbol">{{ item.ticker }}</p>

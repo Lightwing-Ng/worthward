@@ -11,7 +11,6 @@
 	--accent-secondary: var(--theme-accent-secondary);
 	--shadow: var(--theme-shadow);
 	--glass-highlight: var(--theme-glass-highlight);
-	--radius-shell: 10px;
 	--radius-panel: 10px;
 	--radius-control: 999px;
 	--radius-soft: 10px;
@@ -112,9 +111,7 @@
 	--app-shell-gap: 14px;
 	--control-glass-background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 247, 252, 0.68) 100%);
 	--control-glass-background-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.90) 0%, rgba(244, 247, 252, 0.74) 100%);
-	--control-glass-border: 1px solid rgba(255, 255, 255, 0.56);
 	--control-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 10px 24px rgba(17, 24, 39, 0.08);
-	--control-glass-shadow-focus: inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 0 0 3px rgba(0, 85, 204, 0.12), 0 12px 26px rgba(17, 24, 39, 0.10);
 	--control-liquid-background: rgba(255, 255, 255, 0.0001);
 	--control-liquid-background-hover: rgba(255, 255, 255, 0.04);
 	--control-liquid-border: 1px solid transparent;

@@ -1968,7 +1968,6 @@
 		const rangeShell = $(".range-mode-shell");
 		if (rangeShell) {
 			rangeShell.dataset.active = rangeMode;
-			rangeShell.style.setProperty("--range-shift", rangeMode === "exact" ? "100%" : "0%");
 		}
 		const isPeriodMode = rangeMode === "period";
 		if (periodPanel) {
