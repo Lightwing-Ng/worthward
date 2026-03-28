@@ -27,7 +27,7 @@ from uuid import uuid4
 
 import pandas as pd
 
-from .config import MARKET_STORE_DIR
+from app.core.config import MARKET_STORE_DIR
 
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"

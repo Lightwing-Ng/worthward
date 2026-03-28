@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from .config import MARKET_STORE_DIR
+from app.core.config import MARKET_STORE_DIR
 
 BacktestExecutionMode = Literal["signal_close", "next_open"]
 BACKTEST_SETTINGS_PATH = MARKET_STORE_DIR / "backtest_settings.json"

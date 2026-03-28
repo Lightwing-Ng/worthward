@@ -10,7 +10,7 @@ import unittest
 
 import pandas as pd
 
-from app.comparisons import (
+from app.services.comparisons import (
     align_datasets_on_common_dates,
     build_series_payload,
     slice_dataset_for_period,

@@ -14,7 +14,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python 3.11+ uses tomllib.
     import tomli as tomllib
 
-from .config import BASE_DIR
+from app.core.config import BASE_DIR
 
 CONFIG_PATH = BASE_DIR / "config.toml"
 

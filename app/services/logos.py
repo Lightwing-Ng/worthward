@@ -18,9 +18,9 @@ from curl_cffi.requests.exceptions import RequestException
 import yfinance as yf
 from flask import url_for
 
-from .connectivity import has_remote_market_access
-from .schemas import QuoteProfile
-from .storage import (
+from app.infrastructure.connectivity import has_remote_market_access
+from app.models.schemas import QuoteProfile
+from app.infrastructure.storage import (
     PROFILE_SCOPE_LOCAL,
     PROFILE_SCOPE_SEARCH,
     ensure_market_store_dir,

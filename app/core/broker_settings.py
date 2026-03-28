@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 
-from .config import BASE_DIR
+from app.core.config import BASE_DIR
 
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 BROKER_SETTINGS_PATH = SETTINGS_STORE_DIR / "brokers.json"

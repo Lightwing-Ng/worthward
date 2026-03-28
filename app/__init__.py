@@ -6,7 +6,7 @@ Code version: v2.4.1
 
 from flask import Flask
 
-from .web import register_routes
+from app.web.routes_entry import register_routes
 
 
 def create_app() -> Flask:

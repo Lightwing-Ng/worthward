@@ -6,12 +6,12 @@ Code version: v4.0.0
 
 from flask import Flask
 
-from .web_routes.backtest import register_backtest_routes
-from .web_routes.compare import register_compare_routes
-from .web_routes.more import register_more_routes
-from .web_routes.portfolio import register_portfolio_routes
-from .web_routes.settings import register_settings_routes
-from .web_runtime import build_web_runtime
+from app.web.routes.backtest import register_backtest_routes
+from app.web.routes.compare import register_compare_routes
+from app.web.routes.more import register_more_routes
+from app.web.routes.portfolio import register_portfolio_routes
+from app.web.routes.settings import register_settings_routes
+from app.web.runtime import build_web_runtime
 
 
 def register_routes(app: Flask) -> None:

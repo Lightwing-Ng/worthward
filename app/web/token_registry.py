@@ -13,7 +13,6 @@ import re
 
 FOUNDATION_TOKENS_CSS_PATH = (
         Path(__file__).resolve().parent
-        / "web"
         / "static"
         / "assets"
         / "css"

@@ -10,11 +10,11 @@ import ast
 import unittest
 from pathlib import Path
 
-from app.web_token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
+from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web_runtime.py"
+WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
 
 
 def read_text(path: Path) -> str:
@@ -96,7 +96,7 @@ class WebTokenRegistryTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(registry), 100)
         self.assertIn("--mode-switch-radius", registry)
-        self.assertEqual(registry["--mode-switch-radius"].value, "999px")
+        self.assertEqual(registry["--mode-switch-radius"].value, "var(--radius-pill)")
         self.assertEqual(registry["--glass-surface-shadow"].value, "0 18px 40px rgba(17, 24, 39, 0.10)")
         self.assertEqual(registry["--font-size-8"].value, "36px")
         self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())

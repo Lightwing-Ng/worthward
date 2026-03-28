@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.34.0
+Code version: v3.34.1
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import hashlib
 import pandas as pd
 from flask import jsonify, redirect, render_template, request, send_from_directory, url_for, send_file
 
-from .backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
-from .broker_market_data import (
+from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
+from app.infrastructure.broker_market_data import (
     has_recent_one_minute_store,
     is_one_minute_store_complete,
     is_daily_store_complete,
@@ -27,15 +27,15 @@ from .broker_market_data import (
     refresh_longbridge_one_minute_store,
     test_broker_connection,
 )
-from .broker_settings import (
+from app.core.broker_settings import (
     BrokerSettings,
     has_longbridge_credentials,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
 )
-from .comparisons import build_series_payload, slice_dataset_for_period
-from .email_settings import (
+from app.services.comparisons import build_series_payload, slice_dataset_for_period
+from app.core.email_settings import (
     SmtpSettings,
     build_oauth_settings_message,
     finish_outlook_oauth_device_flow,
@@ -48,7 +48,7 @@ from .email_settings import (
 from strategies.backtest import run_single_ticker_backtest
 from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
-from .connectivity import (
+from app.infrastructure.connectivity import (
     fetch_tradingview_metrics,
     has_google_hk_access,
     has_remote_logo_access,
@@ -60,7 +60,7 @@ from .connectivity import (
     last_tradingview_ta_check_at,
     reset_connectivity_caches,
 )
-from .config import (
+from app.core.config import (
     CODE_VERSION,
     DEFAULT_INTERVAL,
     DEFAULT_PERIOD,
@@ -69,13 +69,14 @@ from .config import (
     SUPPORTED_PERIODS_1D,
     SUPPORTED_PERIODS_1M,
 )
-from .date_constraints import build_date_constraint_payload
-from .logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, search_tickers
-from .market_data import ensure_fresh_history_store, fetch_history, refresh_history_store
-from .presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
-from .settings import get_settings
-from .storage import (
+from app.services.date_constraints import build_date_constraint_payload
+from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, search_tickers
+from app.services.market_data import ensure_fresh_history_store, fetch_history, refresh_history_store
+from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
+from app.core.settings import get_settings
+from app.infrastructure.storage import (
     LOGOS_STORE_DIR,
+    TICKER_USAGE_STORE_PATH,
     clear_nonhistorical_market_cache,
     delete_ticker_data,
     has_logo_asset,
@@ -757,7 +758,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
                 "tokens": [
-                    px_token("--mode-switch-radius", 999, 0),
+                    raw_token("--mode-switch-radius", "var(--radius-pill)"),
                     px_token("--mode-switch-pad", 4, 0),
                     px_token("--mode-switch-gap", 4, 0),
                     px_token("--mode-switch-min-height", 36, 1),
@@ -780,7 +781,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
                 "tokens": [
-                    px_token("--settings-action-button-radius", 999, 0),
+                    raw_token("--settings-action-button-radius", "var(--radius-pill)"),
                     px_token("--settings-action-button-pad-block", 0, 0),
                     px_token("--settings-action-button-pad-inline", 18, 0),
                     px_token("--settings-action-button-min-height", 32, 1),
@@ -829,7 +830,7 @@ def build_web_runtime() -> WebRuntime:
                 "tokens": [
                     px_token("--settings-round-icon-button-size", 36, 1),
                     px_token("--settings-round-icon-button-icon-size", 18, 1),
-                    px_token("--settings-round-icon-button-radius", 999, 0),
+                    raw_token("--settings-round-icon-button-radius", "var(--radius-pill)"),
                     raw_token("--settings-round-icon-button-background", "var(--glass-chip-background-strong)"),
                     raw_token("--settings-round-icon-button-background-hover", "var(--glass-chip-background-hover)"),
                     raw_token("--settings-round-icon-button-shadow", "var(--glass-chip-shadow)"),
@@ -995,8 +996,8 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_shell_class": "",
                 "tokens": [
                     px_token("--local-store-pagination-slot-size", 30, 1),
-                    px_token("--local-store-pagination-button-radius", 999, 0),
-                    px_token("--local-store-pagination-indicator-radius", 999, 0),
+                    raw_token("--local-store-pagination-button-radius", "var(--radius-pill)"),
+                    raw_token("--local-store-pagination-indicator-radius", "var(--radius-pill)"),
                     raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
                     raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.18)"),
                     raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
@@ -2098,7 +2099,6 @@ def build_web_runtime() -> WebRuntime:
             timing_summary = []
             timing_error = ""
             timing_market = {}
-            from app.storage import TICKER_USAGE_STORE_PATH
             usage_path = TICKER_USAGE_STORE_PATH
             if usage_path.exists():
                 import json

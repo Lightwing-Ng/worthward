@@ -5,7 +5,7 @@ Code version: v2.0.0
 """
 
 from app import create_app
-from app.settings import get_settings
+from app.core.settings import get_settings
 
 app = create_app()
 settings = get_settings()

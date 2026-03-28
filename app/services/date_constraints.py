@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .schemas import DateConstraintPayload
+from app.models.schemas import DateConstraintPayload
 
 
 def align_requested_exact_dates(

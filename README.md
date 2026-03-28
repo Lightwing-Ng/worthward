@@ -16,23 +16,39 @@ A local-first Flask web app for comparing US stock tickers, building weighted po
 
 ## Runtime requirements
 
-- Python 3.11+
+- Python `3.13`
 - Dependencies from `requirements.txt`
 - `pyarrow` for parquet persistence
 - Longbridge credentials if you want broker-backed `1m` history
 
-Install dependencies in your existing environment:
+This repository uses the host machine's `Python 3.13` interpreter directly. The helper scripts pin the interpreter path so shell-level `Python 3.14` defaults do not affect the project.
+
+## Setup the project environment
+
+Install project dependencies into the host `Python 3.13` environment with:
 
 ```bash
-pip install -r requirements.txt
+./scripts/setup_python.sh
+```
+
+By default, the setup script uses:
+
+```text
+/Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+```
+
+If your `Python 3.13` lives elsewhere, override it explicitly:
+
+```bash
+ANTIGRAVITY_PYTHON=/absolute/path/to/python3.13 ./scripts/setup_python.sh
 ```
 
 ## Run locally
 
-Start the app with the Python interpreter that has the project dependencies installed:
+Start the app through the pinned host-interpreter wrapper:
 
 ```bash
-python3 main.py
+./scripts/run_app.sh
 ```
 
 Default server endpoint:
@@ -49,6 +65,7 @@ The host and port are configured in `config.toml`.
 main.py                  → Flask entry point
 config.toml              → Local configuration, defaults, and UI labels
 README.md                → Project documentation
+scripts/                 → Pinned host-Python setup, run, and test entrypoints
 app/                     → Main application package
 strategies/              → Strategy framework and implementations
 tests/                   → Focused regression tests
@@ -60,28 +77,16 @@ settings_store/          → Locally stored broker and SMTP settings
 
 ### `app/`
 
-- `web.py`
-  - Route registration, workspace rendering, settings actions, Local Market Store maintenance
-- `market_data.py`
-  - Daily history retrieval and local persistence
-- `broker_market_data.py`
-  - Broker-backed `1m` history retrieval, cache trimming, and completeness checks
-- `date_constraints.py`
-  - Trading-day alignment for exact date ranges
-- `comparisons.py`
-  - Shared-window comparison calculations
-- `logos.py`
-  - Profile lookup, logo retrieval, and search-result caching
-- `email_settings.py`
-  - Outlook SMTP OAuth settings, Microsoft device-flow authorization, and connection testing
-- `broker_settings.py`
-  - Broker credential persistence and normalization
-- `connectivity.py`
-  - External service reachability checks with short-lived in-memory caching
-- `storage.py`
-  - Local filesystem paths and cache persistence helpers
-- `presentation.py`
-  - Human-readable labels and date formatting helpers
+- `core/`
+  - Configuration, app settings, broker settings, SMTP settings, and backtest settings
+- `services/`
+  - Comparison logic, market-data freshness, presentation helpers, logos, and date constraints
+- `infrastructure/`
+  - Storage, connectivity checks, and broker-backed market data
+- `models/`
+  - Shared schemas and typed payload models
+- `web/`
+  - Route registration, runtime handlers, templates, static assets, and token registry
 
 ### `strategies/`
 
@@ -166,10 +171,16 @@ The Settings workspace currently includes:
 
 ## Running tests
 
-Run the focused test suite with:
+Run the full test suite through the pinned host interpreter:
 
 ```bash
-python3 -m pytest tests
+./scripts/test.sh
 ```
 
-If your environment uses a different interpreter path, substitute the matching Python executable.
+You can also pass any regular `pytest` arguments through the wrapper:
+
+```bash
+./scripts/test.sh tests/test_more_page.py -vv
+```
+
+If dependencies are not installed yet, run `./scripts/setup_python.sh` first.

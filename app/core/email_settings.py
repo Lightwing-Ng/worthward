@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from .config import BASE_DIR
+from app.core.config import BASE_DIR
 
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 SMTP_SETTINGS_PATH = SETTINGS_STORE_DIR / "smtp.json"
