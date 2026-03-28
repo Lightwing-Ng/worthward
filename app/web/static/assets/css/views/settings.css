@@ -1,3 +1,4 @@
+/* Code version: v3.22.2.1 */
 .settings-service-main {
 	min-width: 0;
 	display: grid;
@@ -162,6 +163,7 @@
 	column-gap: var(--style-token-column-gap);
 	align-items: start;
 	position: relative;
+	scroll-margin-top: 24px;
 }
 .style-token-card::after {
 	content: "";
@@ -175,6 +177,11 @@
 }
 .style-token-card.is-linked-highlight::after {
 	animation: style-token-linked-pulse 620ms var(--motion-overshoot) 1;
+}
+.style-token-card:target::after {
+	opacity: 1;
+	border-color: rgba(0, 85, 204, 0.18);
+	box-shadow: 0 0 0 3px rgba(0, 85, 204, 0.08);
 }
 .style-token-card + .style-token-card {
 	padding-top: 12px;
@@ -330,6 +337,15 @@
 .style-token-reference:focus-visible {
 	transform: none;
 	background: transparent;
+	color: #0044aa;
+}
+.style-token-value-link {
+	color: #0055cc;
+	text-decoration: none;
+	font-weight: var(--font-weight-semibold);
+}
+.style-token-value-link:hover,
+.style-token-value-link:focus-visible {
 	color: #0044aa;
 }
 .style-token-value {
@@ -1091,21 +1107,33 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-surface { height: 100%; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .settings-body { display: block; padding: 2px 2px 0; color: var(--text); font-size: var(--font-ui-lg); line-height: 1.45; min-width: 0; min-height: 0; overflow: visible; }
 .settings-stack-form { display: grid; gap: 12px; }
-.settings-form-shell { width: min(100%, calc(var(--settings-form-control-max-width) * 2 + 12px)); }
-.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 100%; }
+.settings-form-shell {
+	width: min(100%, var(--settings-form-shell-max-width));
+	max-width: var(--settings-form-shell-max-width);
+	min-width: 0;
+}
+.settings-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(min(100%, var(--settings-form-control-min-width)), 1fr));
+	gap: 12px;
+	max-width: 100%;
+}
 .settings-field-span-full { grid-column: 1 / -1; }
 .settings-form-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-action-package-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .settings-form-row,
 .settings-form-grid .field {
 	width: min(100%, var(--settings-form-control-max-width));
+	min-width: min(100%, var(--settings-form-control-min-width));
 }
 .settings-form-grid .field.settings-field-span-full {
 	width: 100%;
 	max-width: var(--settings-form-control-max-width);
+	min-width: 0;
 }
 .settings-form-control {
 	width: 100%;
+	min-width: 0;
 	max-width: var(--settings-form-control-max-width);
 	padding: var(--settings-text-input-pad-block) var(--settings-text-input-pad-inline);
 	border-radius: var(--radius-control);
@@ -1190,6 +1218,16 @@ div.style-token-modal-demo::-webkit-scrollbar,
 @media (max-width: 767px) {
 	.settings-strategy-params {
 		padding-left: 42px;
+	}
+	.settings-form-grid,
+	.settings-action-package-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.settings-form-row,
+	.settings-form-grid .field,
+	.settings-form-grid .field.settings-field-span-full {
+		width: 100%;
+		max-width: 100%;
 	}
 	.style-token-card {
 		grid-template-columns: minmax(0, 1fr);

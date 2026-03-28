@@ -1,4 +1,4 @@
-/* Code version: v3.22.1 */
+/* Code version: v3.22.2.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -59,6 +59,8 @@
 	--settings-round-icon-button-shadow-active: var(--glass-chip-shadow-active);
 	--settings-round-icon-button-color: rgba(80, 90, 95, 0.82);
 	--settings-round-icon-button-color-hover: #0055cc;
+	--settings-form-shell-max-width: 780px;
+	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: 384px;
 	--settings-text-input-pad-block: 5px;
 	--settings-text-input-pad-inline: 10px;

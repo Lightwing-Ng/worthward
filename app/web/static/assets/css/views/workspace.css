@@ -328,14 +328,19 @@
 .notice[hidden],
 .error[hidden] { display: none !important; }
 .notice-floating { position: absolute; top: 0; right: 0; width: min(420px, calc(100% - 12px)); margin: 0; padding: 12px 12px 12px 14px; background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); z-index: var(--layer-chart-tooltip); }
+/* v1.1.2-L1: Let the floating banner copy use the same text width as the modal dialog. */
 .notice-floating-banner {
 	display: grid !important;
 	position: relative;
-	grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr) auto;
+	grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
 	column-gap: var(--workspace-modal-column-gap);
 	row-gap: 0;
 	align-items: center !important;
-	padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
+	padding:
+		var(--workspace-modal-pad-block)
+		calc(var(--workspace-modal-pad-inline) + var(--workspace-modal-title-margin-end))
+		var(--workspace-modal-pad-block)
+		var(--workspace-modal-pad-inline);
 	border-radius: var(--workspace-modal-radius);
 	overflow: visible;
 	transform: none;

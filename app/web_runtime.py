@@ -101,7 +101,7 @@ LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"timing"}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
@@ -704,6 +704,9 @@ def build_web_runtime() -> WebRuntime:
         def style_token_id(name: str) -> str:
             return name.strip().lower().replace(" ", "-")
 
+        def material_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
         def px_token(name: str, value: int, min_value: int = 0) -> dict[str, object]:
             return {
                 "name": name,
@@ -730,6 +733,15 @@ def build_web_runtime() -> WebRuntime:
                 "name": name,
                 "value": text_value,
                 "editable": False,
+            }
+
+        def material_reference_token(name: str, material_name: str) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": material_name,
+                "editable": False,
+                "reference_label": material_name,
+                "reference_target_id": material_token_id(material_name),
             }
 
         rows = [
@@ -844,6 +856,27 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--workspace-metric-value-line-height", "1"),
                     raw_token("--workspace-metric-value-letter-spacing", "-0.04em"),
                     raw_token("--workspace-metric-value-font-weight", "var(--font-weight-regular)"),
+                ],
+                "related_styles": [],
+            },
+            {
+                "id": style_token_id("Ticker input control"),
+                "name": "Ticker input control",
+                "sample_kind": "ticker-input-control",
+                "sample_title": "Ticker 1",
+                "sample_copy": "",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "sample_placeholder": "",
+                "sample_value": "NVDA",
+                "tokens": [
+                    px_token("--sidebar-control-radius", 8, 0),
+                    px_token("--sidebar-control-height", 42, 0),
+                    raw_token("--sidebar-control-background", "var(--panel-strong)"),
+                    raw_token("--sidebar-control-border", "var(--hairline)"),
+                    px_token("--sidebar-input-row-gap", 10, 0),
                 ],
                 "related_styles": [],
             },
@@ -991,16 +1024,17 @@ def build_web_runtime() -> WebRuntime:
                     {"label": "vs all in", "value": "+492.83", "color": "#2fff9c"},
                 ],
                 "tokens": [
-                    raw_token("--tooltip-background", "rgba(255, 255, 255, 0.68)"),
-                    raw_token("--tooltip-border", "1px solid rgba(255, 255, 255, 0.42)"),
-                    raw_token("--tooltip-shadow", "0 18px 40px rgba(17, 24, 39, 0.10)"),
-                    raw_token("--tooltip-blur", "saturate(180%) blur(24px)"),
+                    material_reference_token("--tooltip-background", "Frosted glass extracted"),
+                    material_reference_token("--tooltip-border", "Frosted glass extracted"),
+                    material_reference_token("--tooltip-shadow", "Frosted glass extracted"),
+                    material_reference_token("--tooltip-blur", "Frosted glass extracted"),
                 ],
                 "related_styles": [],
             },
         ]
         token_order = {
             "Settings form input": 10,
+            "Ticker input control": 15,
             "Settings execution option": 20,
             "Segmented control": 30,
             "Workspace metric value": 35,
@@ -1014,6 +1048,71 @@ def build_web_runtime() -> WebRuntime:
             "Chart tooltip": 110,
         }
         rows.sort(key=lambda row: (token_order.get(str(row.get("name", "")), 999), str(row.get("name", ""))))
+        return rows
+
+    def build_material_token_rows() -> list[dict[str, object]]:
+        def material_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
+        def raw_token(name: str, value: str) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": str(value),
+                "editable": False,
+            }
+
+        def standard_material_tokens(
+                background: str,
+                border: str,
+                shadow: str,
+                blur: str,
+        ) -> list[dict[str, object]]:
+            return [
+                raw_token("--glass-surface-background", background),
+                raw_token("--glass-surface-border", border),
+                raw_token("--glass-surface-shadow", shadow),
+                raw_token("--glass-surface-blur", blur),
+            ]
+
+        sample_title = "The quick brown fox jumps over the lazy dog."
+        sample_copy = "Testing backdrop-filter and transparency performance over a complex gradient background."
+
+        rows = [
+            {
+                "id": material_token_id("Frosted glass"),
+                "name": "Frosted glass",
+                "sample_kind": "glass-surface",
+                "sample_title": sample_title,
+                "sample_copy": sample_copy,
+                "sample_surface_background": "var(--glass-surface-background)",
+                "sample_surface_border": "var(--glass-surface-border)",
+                "sample_surface_blur": "var(--glass-surface-blur)",
+                "sample_surface_shadow": "var(--glass-surface-shadow)",
+                "tokens": standard_material_tokens(
+                    "rgba(255, 255, 255, 0.48)",
+                    "1px solid rgba(255, 255, 255, 0.42)",
+                    "0 18px 40px rgba(17, 24, 39, 0.10)",
+                    "saturate(180%) blur(24px)",
+                ),
+            },
+            {
+                "id": material_token_id("Frosted glass extracted"),
+                "name": "Frosted glass extracted",
+                "sample_kind": "glass-surface",
+                "sample_title": sample_title,
+                "sample_copy": sample_copy,
+                "sample_surface_background": "linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%)",
+                "sample_surface_border": "1px solid rgba(255, 255, 255, 0.30)",
+                "sample_surface_blur": "saturate(160%) blur(18px)",
+                "sample_surface_shadow": "0 18px 40px rgba(10, 14, 25, 0.12)",
+                "tokens": standard_material_tokens(
+                    "linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%)",
+                    "1px solid rgba(255, 255, 255, 0.30)",
+                    "0 18px 40px rgba(10, 14, 25, 0.12)",
+                    "saturate(160%) blur(18px)",
+                ),
+            },
+        ]
         return rows
 
     def build_local_store_pagination_slots(
@@ -1525,6 +1624,7 @@ def build_web_runtime() -> WebRuntime:
         settings_service_rows: list[dict[str, str | bool]] = []
         strategy_settings_rows: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
+        material_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
         local_market_rows: list[dict[str, str]] = []
@@ -1556,6 +1656,8 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = "General"
             elif settings_section == "font-tokens":
                 settings_title = "Font tokens"
+            elif settings_section == "material-tokens":
+                settings_title = "Material tokens"
             elif settings_section == "strategies":
                 settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
@@ -1848,6 +1950,7 @@ def build_web_runtime() -> WebRuntime:
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
             style_token_rows = build_style_token_rows()
+            material_token_rows = build_material_token_rows()
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
@@ -2062,6 +2165,7 @@ def build_web_runtime() -> WebRuntime:
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
             style_token_rows=style_token_rows,
+            material_token_rows=material_token_rows,
             backtest_execution_mode=backtest_execution_mode,
             broker_settings=broker_settings,
             local_market_rows=local_market_rows,
@@ -2075,7 +2179,7 @@ def build_web_runtime() -> WebRuntime:
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
-                           ("about", "general", "font-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
+                           ("about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches", "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("timing",)},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
@@ -2132,7 +2236,7 @@ def build_web_runtime() -> WebRuntime:
             long_gain = float(summary.get("long_gain", 0) or 0)
             short_gain = float(summary.get("short_gain", 0) or 0)
             long_loss = float(summary.get("long_loss", 0) or 0)
-            max_drawdown = float(summary.get("max_drawdown_pct", 0) or 0)
+            beat_bh_pct = float(summary.get("beat_bh_pct", 0) or 0)
             win_rate_pct = summary.get("win_rate_pct")
             win_rate_display = "N/A" if win_rate_pct is None else f"{float(win_rate_pct):,.2f}%"
 
@@ -2148,11 +2252,11 @@ def build_web_runtime() -> WebRuntime:
                 f"- **Net return**: {summary.get('net_return_pct', 0):,.2f}%",
                 f"- **Total trades**: {summary.get('total_trades', 0)}",
                 f"- **Win rate**: {win_rate_display}",
+                f"- **Beat B&H**: {beat_bh_pct:,.2f}%",
                 f"- **Alpha vs B&H**: {'+' if benchmark_alpha >= 0 else '-'}${abs(benchmark_alpha):,.2f}",
                 f"- **Realized long P&L**: {'+' if long_gain >= 0 else '-'}${abs(long_gain):,.2f}",
                 f"- **Realized short P&L**: {'+' if short_gain >= 0 else '-'}${abs(short_gain):,.2f}",
                 f"- **Realized long loss**: {'-' if long_loss > 0 else '+'}${abs(long_loss):,.2f}",
-                f"- **Max drawdown**: -{abs(max_drawdown):,.2f}%",
                 "",
             ]
 

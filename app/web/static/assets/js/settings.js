@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	let settingsContext = null;
@@ -146,6 +146,13 @@
 		};
 		const stopResize = () => {
 			shell.classList.remove("is-resizing");
+			if (typeof handle.releasePointerCapture === "function" && activePointerId !== null) {
+				try {
+					handle.releasePointerCapture(activePointerId);
+				} catch (_error) {
+				}
+			}
+			activePointerId = null;
 			window.removeEventListener("pointermove", onPointerMove);
 			window.removeEventListener("pointerup", stopResize);
 			window.removeEventListener("pointercancel", stopResize);
@@ -153,8 +160,16 @@
 		const onPointerMove = (event) => {
 			syncWidth(event.clientX);
 		};
+		let activePointerId = null;
 		handle.addEventListener("pointerdown", (event) => {
 			event.preventDefault();
+			activePointerId = typeof event.pointerId === "number" ? event.pointerId : null;
+			if (typeof handle.setPointerCapture === "function" && activePointerId !== null) {
+				try {
+					handle.setPointerCapture(activePointerId);
+				} catch (_error) {
+				}
+			}
 			shell.classList.add("is-resizing");
 			syncWidth(event.clientX);
 			window.addEventListener("pointermove", onPointerMove);
@@ -193,6 +208,7 @@
 		scheduleGeometrySync();
 		setTimeout(scheduleGeometrySync, 150);
 		activeStyleTokenResizerCleanup = () => {
+			stopResize();
 			window.removeEventListener("scroll", scheduleGeometrySync);
 			scrollViewport?.removeEventListener?.("scroll", scheduleGeometrySync);
 			window.removeEventListener("resize", scheduleGeometrySync);
@@ -201,6 +217,7 @@
 				window.cancelAnimationFrame(geometryFrame);
 				geometryFrame = 0;
 			}
+			delete handle.dataset.bound;
 		};
 	};
 
@@ -327,10 +344,16 @@
 	const attachStyleTokenReferences = () => {
 		const shell = document.querySelector("[data-style-token-shell]");
 		if (!(shell instanceof HTMLElement)) return;
-		const pulseTargetCard = (targetId) => {
+		const pulseTargetCard = (targetId, options = {}) => {
 			if (!targetId) return;
 			const targetCard = shell.querySelector(`[data-style-token-card="${targetId}"]`);
 			if (!(targetCard instanceof HTMLElement)) return;
+			if (options.scrollIntoView) {
+				targetCard.scrollIntoView({
+					behavior: options.behavior || "smooth",
+					block: options.block || "center",
+				});
+			}
 			targetCard.classList.remove("is-linked-highlight");
 			void targetCard.offsetWidth;
 			targetCard.classList.add("is-linked-highlight");
@@ -352,6 +375,24 @@
 				event.preventDefault();
 				pulseTargetCard(targetId);
 			});
+		});
+	};
+
+	const revealStyleTokenHashTarget = (hash = window.location.hash) => {
+		const shell = document.querySelector("[data-style-token-shell]");
+		if (!(shell instanceof HTMLElement) || !hash || !hash.startsWith("#")) return;
+		const targetId = decodeURIComponent(hash.slice(1));
+		if (!targetId) return;
+		const targetCard = shell.querySelector(`[data-style-token-card="${CSS.escape(targetId)}"]`);
+		if (!(targetCard instanceof HTMLElement)) return;
+		window.requestAnimationFrame(() => {
+			targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+			targetCard.classList.remove("is-linked-highlight");
+			void targetCard.offsetWidth;
+			targetCard.classList.add("is-linked-highlight");
+			window.setTimeout(() => {
+				targetCard.classList.remove("is-linked-highlight");
+			}, 700);
 		});
 	};
 
@@ -506,17 +547,22 @@
 		applyReplacement();
 	};
 
-	const replaceSettingsWorkspaceRegion = (nextRegion) => {
+	const replaceSettingsWorkspaceRegion = async (nextRegion) => {
 		const currentRegion = document.getElementById("settings_workspace_region");
 		if (!(currentRegion instanceof HTMLElement) || !nextRegion) return;
 		const applyReplacement = () => {
 			currentRegion.replaceWith(nextRegion);
 		};
 		if (canTransitionDom()) {
-			document.startViewTransition(applyReplacement);
+			const transition = document.startViewTransition(applyReplacement);
+			try {
+				await transition.finished;
+			} catch (_error) {
+			}
 			return;
 		}
 		applyReplacement();
+		await Promise.resolve();
 	};
 
 	const buildLocalStorePendingRegion = () => {
@@ -884,13 +930,17 @@
 
 		document.addEventListener("click", async (event) => {
 			const state = getState();
-			const link = event.target.closest(".settings-nav-item");
+			const link = event.target.closest(".settings-nav-item, [data-settings-section-link]");
 			if (!(link instanceof HTMLAnchorElement) || state?.currentView !== "settings") return;
 			const nextUrl = link.href;
 			if (!nextUrl) return;
 			const parsed = new URL(nextUrl, window.location.origin);
-			const targetSection = parsed.pathname.split("/")[2] || "about";
-			if (targetSection === state.settingsSection && parsed.search === window.location.search) return;
+			const targetSection = link.dataset.settingsSectionLink || parsed.pathname.split("/")[2] || "about";
+			if (
+				targetSection === state.settingsSection
+				&& parsed.search === window.location.search
+				&& parsed.hash === window.location.hash
+			) return;
 			event.preventDefault();
 			setActiveSettingsNav(targetSection);
 			if (targetSection === "local-market-store") {
@@ -908,12 +958,15 @@
 				const parser = new DOMParser();
 					const nextDocument = parser.parseFromString(responseText, "text/html");
 					const nextRegion = nextDocument.querySelector("#settings_workspace_region");
-					if (!nextRegion) throw new Error("Settings workspace region missing.");
-					replaceSettingsWorkspaceRegion(nextRegion);
-					reinitializeSettingsWorkspaceRegion();
+				if (!nextRegion) throw new Error("Settings workspace region missing.");
+				await replaceSettingsWorkspaceRegion(nextRegion);
+				reinitializeSettingsWorkspaceRegion();
 					window.history.pushState({ settingsSection: targetSection }, "", nextUrl);
 					state.settingsSection = targetSection;
 					rememberCurrentViewUrl(nextUrl);
+				if (parsed.hash) {
+					revealStyleTokenHashTarget(parsed.hash);
+				}
 				document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
 					node.classList.remove("is-masked-during-switch");
 				});
@@ -950,8 +1003,9 @@
 				const nextDocument = parser.parseFromString(responseText, "text/html");
 				const nextRegion = nextDocument.querySelector("#settings_workspace_region");
 				if (nextRegion) {
-					replaceSettingsWorkspaceRegion(nextRegion);
+					await replaceSettingsWorkspaceRegion(nextRegion);
 					reinitializeSettingsWorkspaceRegion();
+					revealStyleTokenHashTarget(window.location.hash);
 				}
 				const manifest = getProgressiveManifest("settings", section);
 				if (typeof manifest.hydrate === "function") {
@@ -976,6 +1030,7 @@
 		attachStyleTokenCopyButtons();
 		attachStyleTokenModeSwitches();
 		attachStyleTokenDemoInteractions();
+		revealStyleTokenHashTarget();
 		attachLocalStorePagination();
 		attachSettingsSectionNavigation();
 	};

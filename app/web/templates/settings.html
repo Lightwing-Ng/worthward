@@ -14,6 +14,10 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
         <span class="settings-nav-label">Font tokens</span>
     </a>
+    <a href="{{ settings_urls['material-tokens'] }}" class="settings-nav-item settings-nav-item-material-tokens{% if settings_section == 'material-tokens' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-material-tokens"></span></span>
+        <span class="settings-nav-label">Material tokens</span>
+    </a>
     <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
         <span class="settings-nav-label">Style tokens</span>
@@ -145,7 +149,7 @@
                         <p class="font-preview-label">Form label</p>
                         <p class="font-preview-unit">14</p>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Include cash dividends</p>
+                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Reinvest cash dividends</p>
                 </div>
                 <div class="font-preview-row">
                     <div class="font-preview-meta">
@@ -552,12 +556,71 @@
                 <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear caches</button>
             </form>
         </section>
+        {% elif settings_section == "material-tokens" %}
+        <div class="style-token-shell" data-style-token-shell>
+            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
+            <div class="style-token-list">
+            {% for row in material_token_rows %}
+            <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
+                <div class="style-token-demo">
+                    {% if row.sample_kind == "glass-surface" %}
+                    <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; overflow: visible; padding: 28px; box-sizing: border-box;">
+                        <div style="position: absolute; inset: 0; z-index: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; user-select: none;">
+                            <p style="margin: 0; font-size: 1.45rem; line-height: 1.2; font-weight: 700; letter-spacing: 0.01em; transform: rotate(-8deg) translateY(-8px); background: linear-gradient(135deg, #0055cc 0%, #ff2f92 100%); background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; text-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);">{{ row.sample_title }}</p>
+                            <p style="margin: 0; max-width: 34ch; font-size: 0.98rem; line-height: 1.45; font-weight: 500; transform: rotate(-8deg) translateX(18px); background: linear-gradient(135deg, #0055cc 0%, #ff2f92 100%); background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; opacity: 0.82; text-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);">{{ row.sample_copy }}</p>
+                        </div>
+                        <div class="report-card" style="position: relative; z-index: 1; width: 80%; min-height: 168px; border-radius: 10px; background: {{ row.sample_surface_background }}; backdrop-filter: {{ row.sample_surface_blur }}; -webkit-backdrop-filter: {{ row.sample_surface_blur }}; border: {{ row.sample_surface_border }}; box-shadow: {{ row.sample_surface_shadow }};">
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="style-token-meta">
+                    <div class="style-token-title-row">
+                        <p class="style-token-title">{{ row.name }}</p>
+                        <button
+                            type="button"
+                            class="settings-round-icon-button style-token-copy-button"
+                            data-style-token-copy="{{ row.name }}"
+                            aria-label="Copy style name {{ row.name }}"
+                            title="Copy style name"
+                        >
+                            <span class="icon icon-style-token-copy" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <div class="style-token-table-wrap">
+                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value">
+                                        {% if token.reference_target_id %}
+                                        <a
+                                            href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                                            class="style-token-value-link"
+                                            data-settings-section-link="material-tokens"
+                                            data-style-token-material-link
+                                        >{{ token.reference_label }}</a>
+                                        {% else %}
+                                        {{ token.value }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+            </div>
+        </div>
         {% elif settings_section == "style-tokens" %}
         <div class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
-            <section class="style-token-card" data-style-token-card="{{ row.id }}">
+            <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
                     {% if row.sample_kind == "range-mode" %}
                     <div class="range-mode-shell" data-active="period">
@@ -591,6 +654,27 @@
                     <div class="style-token-settings-input-shell">
                         <label class="style-token-settings-input-label" for="style_token_settings_text_input">{{ row.sample_title }}</label>
                         <input id="style_token_settings_text_input" type="text" class="settings-form-control style-token-settings-input" value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" readonly>
+                    </div>
+                    {% elif row.sample_kind == "ticker-input-control" %}
+                    <div class="style-token-settings-input-shell" style="width: 100%; display: flex; justify-content: center; align-items: center; padding: 2rem 0;">
+                        <form class="controls sidebar-form ticker-controls ticker-form-controls" style="width: 100%; max-width: 320px;" onsubmit="return false;">
+                            <div class="field ticker-field" data-index="1" style="margin: 0;">
+                                <div class="ticker-input-row" style="padding: 0; background: transparent; box-shadow: none;">
+                                    <div class="ticker-input-main">
+                                        <label for="style_token_ticker_input" style="color: var(--text);">{{ row.sample_title }}</label>
+                                        <div class="ticker-input-control">
+                                            <span class="ticker-leading-slot" aria-hidden="true">
+                                                <span class="ticker-logo-placeholder"></span>
+                                                <img class="ticker-input-logo" src="/market-store/logos/{{ row.sample_value }}.png" alt="" onerror="this.style.display='none'; this.previousElementSibling.style.display='flex'">
+                                            </span>
+                                            <input id="style_token_ticker_input" class="settings-form-control style-token-settings-input" style="padding-left: 44px; padding-right: 32px; width: 100%; box-sizing: border-box;" name="ticker" data-ticker-input value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
+                                            <button type="button" class="ticker-clear is-visible" aria-label="Clear ticker" style="opacity: 1; pointer-events: auto;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="ticker-remove" aria-label="Remove ticker" style="opacity: 1; pointer-events: auto; margin-top: 24px; margin-left: 8px;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                     {% elif row.sample_kind == "settings-general-option" %}
                     <form class="settings-general-form style-token-settings-general-form" action="#" method="get">
@@ -702,7 +786,16 @@
                                             </div>
                                         </div>
                                         {% else %}
+                                        {% if token.reference_target_id %}
+                                        <a
+                                            href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                                            class="style-token-value-link"
+                                            data-settings-section-link="material-tokens"
+                                            data-style-token-material-link
+                                        >{{ token.reference_label }}</a>
+                                        {% else %}
                                         <span class="style-token-value-text">{{ token.value }}</span>
+                                        {% endif %}
                                         {% endif %}
                                     </td>
                                 </tr>

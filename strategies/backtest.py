@@ -321,7 +321,12 @@ def run_single_ticker_backtest(
         equity_points.append(cash + (shares * close_price))
 
     frame["Equity"] = equity_points
-    drawdown = (frame["Equity"] / frame["Equity"].cummax()) - 1.0
+    first_price = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
+    bh_shares_for_series = floor(initial_capital / first_price) if first_price > 0 else 0
+    bh_cash_for_series = initial_capital - (bh_shares_for_series * first_price)
+    bh_equity_series = (bh_shares_for_series * frame["Close"]) + bh_cash_for_series
+    beat_bh_mask = frame["Equity"] > bh_equity_series
+    beat_bh_pct = (beat_bh_mask.sum() / len(frame)) * 100.0 if len(frame) > 0 else 0.0
     total_trades = len([trade for trade in trades if not trade.get("_virtual_close")])
     final_close_price = float(frame["Close"].iloc[-1])
     final_trade_date = pd.Timestamp(frame["Date"].iloc[-1])
@@ -373,7 +378,7 @@ def run_single_ticker_backtest(
             "initial_capital": round(float(initial_capital), 2),
             "final_equity": round(final_equity, 2),
             "net_return_pct": round(total_return, 2),
-            "max_drawdown_pct": round(float(drawdown.min()) * 100.0, 2),
+            "beat_bh_pct": round(float(beat_bh_pct), 2),
             "total_trades": total_trades,
             "win_rate_pct": win_rate_pct,
             "benchmark_alpha": round(benchmark_alpha, 2),
