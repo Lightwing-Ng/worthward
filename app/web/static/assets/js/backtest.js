@@ -1,4 +1,4 @@
-/* Code version: v1.15.0 */
+/* Code version: v1.16.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -173,8 +173,49 @@
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
 		const allInReferenceColor = "#8e8e93";
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-		const buyMarkers = backtestResult.chart.buy_markers.map((flag, index) => (flag ? close[index] : null));
-		const sellMarkers = backtestResult.chart.sell_markers.map((flag, index) => (flag ? close[index] : null));
+		const svgMarkerViewBox = { width: 20.3027, height: 20.5176 };
+		const svgMarkerTip = {
+			up: { x: 9.9707, y: 0.00976562 },
+			down: { x: 9.9707, y: 20.5176 },
+		};
+		const svgMarkerPath = {
+			up: new Path2D("M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z"),
+			down: new Path2D("M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z"),
+		};
+		const formatTradeMarkerDateKey = (value, tradeInterval) => {
+			const parsed = new Date(value);
+			if (Number.isNaN(parsed.getTime())) return null;
+			const year = parsed.getFullYear();
+			const month = `${parsed.getMonth() + 1}`.padStart(2, "0");
+			const day = `${parsed.getDate()}`.padStart(2, "0");
+			if (tradeInterval !== "1m") return `${year}/${month}/${day}`;
+			const hours = `${parsed.getHours()}`.padStart(2, "0");
+			const minutes = `${parsed.getMinutes()}`.padStart(2, "0");
+			return `${year}/${month}/${day} ${hours}:${minutes}`;
+		};
+		const buildTradeMarkerPoints = (trades, dates, tradeInterval) => {
+			if (!Array.isArray(trades) || !trades.length || !Array.isArray(dates) || !dates.length) {
+				return { buy: [], sell: [] };
+			}
+			const indexByDate = new Map();
+			dates.forEach((value, index) => {
+				indexByDate.set(String(value), index);
+				const formatted = formatTradeMarkerDateKey(value, tradeInterval);
+				if (formatted) indexByDate.set(formatted, index);
+			});
+			return trades.reduce((accumulator, trade) => {
+				if (trade?._virtual_close) return accumulator;
+				const index = indexByDate.get(String(trade?.date || ""));
+				const price = Number(trade?.price);
+				if (!Number.isInteger(index) || !Number.isFinite(price)) return accumulator;
+				const side = String(trade?.side || "");
+				const marker = { index, price };
+				if (side === "Buy") accumulator.buy.push(marker);
+				if (side === "Sell") accumulator.sell.push(marker);
+				return accumulator;
+			}, { buy: [], sell: [] });
+		};
+		const tradeMarkerPoints = buildTradeMarkerPoints(backtestResult.trades, rawDates, interval);
 		const firstOpen = open.length > 0 ? open[0] : (close.length > 0 ? close[0] : 0);
 		const allInShares = firstOpen > 0 ? Math.floor(initialCapital / firstOpen) : 0;
 		const allInCash = initialCapital - (allInShares * firstOpen);
@@ -376,6 +417,36 @@
 					ctx.fillRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
 				});
 				ctx.restore();
+			},
+		};
+
+		const tradeMarkerPlugin = {
+			id: "tradeMarkerPlugin",
+			afterDatasetsDraw(chart) {
+				if (chart.canvas !== priceCanvas) return;
+				const yScale = chart.scales?.y;
+				const priceMeta = chart.getDatasetMeta(0);
+				if (!yScale || !priceMeta?.data?.length) return;
+
+				const drawMarker = (marker, direction, color) => {
+					const point = priceMeta.data[marker.index];
+					const y = yScale.getPixelForValue(marker.price);
+					if (!point || !Number.isFinite(point.x) || !Number.isFinite(y)) return;
+					const sizePx = 8;
+					const scale = sizePx / svgMarkerViewBox.width;
+					const tip = svgMarkerTip[direction];
+					const path = svgMarkerPath[direction];
+					chart.ctx.save();
+					chart.ctx.fillStyle = color;
+					chart.ctx.translate(point.x, y);
+					chart.ctx.scale(scale, scale);
+					chart.ctx.translate(-tip.x, -tip.y);
+					chart.ctx.fill(path);
+					chart.ctx.restore();
+				};
+
+				tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, "up", "#2fff9c"));
+				tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, "down", "#ff2f92"));
 			},
 		};
 
@@ -591,8 +662,6 @@
 							),
 						},
 					},
-					{ label: "Buy", data: buyMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 0, backgroundColor: "#2fff9c" },
-					{ label: "Sell", data: sellMarkers, type: "scatter", showLine: false, pointRadius: 5, pointHoverRadius: 5, pointStyle: "triangle", rotation: 180, backgroundColor: "#ff2f92" },
 				],
 			},
 			options: {
@@ -604,7 +673,7 @@
 					y: { ...commonOptions.scales.y, ...priceYScale },
 				},
 			},
-			plugins: [candlestickPlugin],
+			plugins: [candlestickPlugin, tradeMarkerPlugin],
 		});
 
 		equityChart = new Chart(equityCanvas, {

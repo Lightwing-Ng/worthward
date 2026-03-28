@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.34.1
+Code version: v3.35.0
 """
 
 from __future__ import annotations
@@ -301,6 +301,39 @@ def build_web_runtime() -> WebRuntime:
                 return values[-1] == "1"
         return default
 
+    def parse_range_request_args() -> tuple[str, str, str, str]:
+        range_mode = request.args.get(
+            "range",
+            request.args.get("range_mode", defaults.get("range_mode", "period")),
+        ).strip().lower()
+        period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
+        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
+        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        return range_mode, period, exact_start, exact_end
+
+    def build_exact_range_bounds(start_value: str, end_value: str) -> tuple[pd.Timestamp, pd.Timestamp]:
+        start_bound = pd.to_datetime(start_value).normalize()
+        end_bound = pd.to_datetime(end_value).replace(hour=23, minute=59, second=59)
+        return start_bound, end_bound
+
+    def slice_dataset_to_exact_range(
+            dataset: pd.DataFrame,
+            adjusted_start: str,
+            adjusted_end: str,
+    ) -> pd.DataFrame:
+        start_bound, end_bound = build_exact_range_bounds(adjusted_start, adjusted_end)
+        return dataset[(dataset["Date"] >= start_bound) & (dataset["Date"] <= end_bound)].copy()
+
+    def slice_datasets_to_exact_range(
+            datasets: list[pd.DataFrame],
+            adjusted_start: str,
+            adjusted_end: str,
+    ) -> list[pd.DataFrame]:
+        return [
+            slice_dataset_to_exact_range(dataset, adjusted_start, adjusted_end)
+            for dataset in datasets
+        ]
+
     def format_store_range_date(raw_value: object) -> str:
         return format_store_range_date_value(raw_value)
 
@@ -474,10 +507,7 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError("No ticker selected for backtest.")
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
         include_dividends = parse_bool_flag("dividends", "include_dividends")
-        range_mode = request.args.get("range", defaults.get("range_mode", "period")).strip().lower()
-        period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
-        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
-        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        range_mode, period, exact_start, exact_end = parse_range_request_args()
         supported_intervals = ["1d"]
         if has_recent_one_minute_store(trade_ticker):
             supported_intervals.append("1m")
@@ -500,11 +530,11 @@ def build_web_runtime() -> WebRuntime:
         if range_mode == "exact":
             if not date_constraints.trading_dates:
                 raise ValueError("The selected exact range does not contain trading dates.")
-            aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-            aligned_end = pd.to_datetime(date_constraints.adjusted_end).replace(hour=23, minute=59, second=59)
-            trade_dataset = trade_dataset[
-                (trade_dataset["Date"] >= aligned_start) & (trade_dataset["Date"] <= aligned_end)
-                ].copy()
+            trade_dataset = slice_dataset_to_exact_range(
+                trade_dataset,
+                date_constraints.adjusted_start,
+                date_constraints.adjusted_end,
+            )
             if trade_dataset.empty:
                 raise ValueError("The selected exact range does not contain trading dates.")
         else:
@@ -1622,13 +1652,7 @@ def build_web_runtime() -> WebRuntime:
         backtest_execution_mode = load_backtest_execution_mode()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
-        range_mode = request.args.get(
-            "range",
-            request.args.get("range_mode", defaults.get("range_mode", "period")),
-        ).strip().lower()
-        period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
-        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
-        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        range_mode, period, exact_start, exact_end = parse_range_request_args()
         include_dividends = parse_bool_flag("dividends", "include_dividends")
 
         if current_view == "tickers" and not requested_tickers:
@@ -1967,13 +1991,12 @@ def build_web_runtime() -> WebRuntime:
                         if range_mode == "exact":
                             if not date_constraints.trading_dates:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
-                            aligned_start = pd.to_datetime(date_constraints.adjusted_start)
-                            aligned_end = pd.to_datetime(date_constraints.adjusted_end)
                             aligned_datasets = align_datasets_on_common_dates(datasets)
-                            aligned_datasets = [
-                                dataset[(dataset["Date"] >= aligned_start) & (dataset["Date"] <= aligned_end)].copy()
-                                for dataset in aligned_datasets
-                            ]
+                            aligned_datasets = slice_datasets_to_exact_range(
+                                aligned_datasets,
+                                date_constraints.adjusted_start,
+                                date_constraints.adjusted_end,
+                            )
                             if any(dataset.empty for dataset in aligned_datasets):
                                 raise ValueError("The selected exact range does not contain shared trading dates.")
                             exact_start_value = date_constraints.adjusted_start or adjusted_start
