@@ -872,11 +872,12 @@ def build_web_runtime() -> WebRuntime:
                 "sample_placeholder": "",
                 "sample_value": "NVDA",
                 "tokens": [
-                    px_token("--sidebar-control-radius", 8, 0),
-                    px_token("--sidebar-control-height", 42, 0),
-                    raw_token("--sidebar-control-background", "var(--panel-strong)"),
-                    raw_token("--sidebar-control-border", "var(--hairline)"),
-                    px_token("--sidebar-input-row-gap", 10, 0),
+                    px_token("--trade-control-input-height", 30, 0),
+                    raw_token("--control-liquid-background", "rgba(255, 255, 255, 0.0001)"),
+                    raw_token("--control-liquid-background-hover", "rgba(255, 255, 255, 0.04)"),
+                    raw_token("--control-liquid-shadow", "none"),
+                    raw_token("--control-liquid-shadow-focus", "none"),
+                    raw_token("--ticker-input-glass-background", "transparent"),
                 ],
                 "related_styles": [],
             },
@@ -1054,6 +1055,95 @@ def build_web_runtime() -> WebRuntime:
             "Chart tooltip": 110,
         }
         rows.sort(key=lambda row: (token_order.get(str(row.get("name", "")), 999), str(row.get("name", ""))))
+        return rows
+
+    def build_font_token_rows() -> list[dict[str, object]]:
+        def font_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
+        def raw_token(name: str, value: str) -> dict[str, str]:
+            return {
+                "name": name,
+                "value": str(value),
+            }
+
+        rows = [
+            {
+                "id": font_token_id("Primitive scale"),
+                "name": "Primitive scale",
+                "description": "Base pixel sizes defined in the design system. These are the source tokens that semantic text roles inherit from.",
+                "samples": [
+                    {"token_name": "--font-size-1", "usage_label": "Compact status", "sample_text": "Available", "sample_value": "11px"},
+                    {"token_name": "--font-size-2", "usage_label": "Tooltip copy", "sample_text": "Logo services reachable", "sample_value": "12px"},
+                    {"token_name": "--font-size-3", "usage_label": "Table text", "sample_text": "Ticker  Full name  Available range", "sample_value": "13px"},
+                    {"token_name": "--font-size-4", "usage_label": "Form label", "sample_text": "Ticker  Period  Reinvest cash dividends", "sample_value": "14px"},
+                    {"token_name": "--font-size-5", "usage_label": "Control text", "sample_text": "smtp-mail.outlook.com", "sample_value": "15px"},
+                    {"token_name": "--font-size-6", "usage_label": "Section title", "sample_text": labels["hero_title"], "sample_value": "24px"},
+                    {"token_name": "--font-size-7", "usage_label": "Large metric", "sample_text": "+19.84%", "sample_value": "32px"},
+                    {"token_name": "--font-size-8", "usage_label": "XL metric", "sample_text": "67.01%", "sample_value": "36px"},
+                ],
+                "tokens": [
+                    raw_token("--font-size-1", "11px"),
+                    raw_token("--font-size-2", "12px"),
+                    raw_token("--font-size-3", "13px"),
+                    raw_token("--font-size-4", "14px"),
+                    raw_token("--font-size-5", "15px"),
+                    raw_token("--font-size-6", "24px"),
+                    raw_token("--font-size-7", "32px"),
+                    raw_token("--font-size-8", "36px"),
+                ],
+            },
+            {
+                "id": font_token_id("Semantic scale aliases"),
+                "name": "Semantic scale aliases",
+                "description": "Intermediate aliases map the primitive scale to UI, title, and metric contexts before component-level tokens consume them.",
+                "samples": [
+                    {"token_name": "--font-ui-xs", "usage_label": "Weekday labels", "sample_text": "Sun  Mon  Tue  Wed  Thu  Fri  Sat", "sample_value": "11px"},
+                    {"token_name": "--font-ui-sm", "usage_label": "Tooltip size", "sample_text": "Use smtp-mail.outlook.com:587 with STARTTLS.", "sample_value": "12px"},
+                    {"token_name": "--font-ui-md", "usage_label": "Standard label size", "sample_text": "Ticker  Period  Strategy", "sample_value": "14px"},
+                    {"token_name": "--font-ui-lg", "usage_label": "Standard control size", "sample_text": "QQQ  NVDA  AAPL", "sample_value": "15px"},
+                    {"token_name": "--font-title-md", "usage_label": "Workspace title", "sample_text": labels["portfolio_title"], "sample_value": "24px"},
+                    {"token_name": "--font-metric-md", "usage_label": "Metric medium", "sample_text": "$ 10,333.71", "sample_value": "24px"},
+                    {"token_name": "--font-metric-lg", "usage_label": "Metric large", "sample_text": "32.48%", "sample_value": "32px"},
+                    {"token_name": "--font-metric-xl", "usage_label": "Metric extra large", "sample_text": "67.01%", "sample_value": "36px"},
+                ],
+                "tokens": [
+                    raw_token("--font-ui-xs", "var(--font-size-1)"),
+                    raw_token("--font-ui-sm", "var(--font-size-2)"),
+                    raw_token("--font-ui-md", "var(--font-size-4)"),
+                    raw_token("--font-ui-lg", "var(--font-size-5)"),
+                    raw_token("--font-title-md", "var(--font-size-6)"),
+                    raw_token("--font-metric-md", "var(--font-size-6)"),
+                    raw_token("--font-metric-lg", "var(--font-size-7)"),
+                    raw_token("--font-metric-xl", "var(--font-size-8)"),
+                ],
+            },
+            {
+                "id": font_token_id("Component text roles"),
+                "name": "Component text roles",
+                "description": "These are the font tokens used directly by the current workspace screens and controls.",
+                "samples": [
+                    {"token_name": "--font-form-label", "usage_label": "Form label", "sample_text": f"{labels['backtest_ticker']}  {labels['period']}  {labels['backtest_strategy']}", "sample_value": "14px"},
+                    {"token_name": "--font-form-control", "usage_label": "Form control", "sample_text": "MACD crossover  |  Exact range  |  2024-01-02 to 2025-03-19", "sample_value": "15px"},
+                    {"token_name": "--font-tooltip", "usage_label": "Tooltip", "sample_text": "Run the network checks again and refresh the availability results shown below.", "sample_value": "12px"},
+                    {"token_name": "--font-table-body", "usage_label": "Table body", "sample_text": "2025-03-19  BUY  100 @ 187.42  |  Equity  12,845.90", "sample_value": "13px"},
+                    {"token_name": "--font-table-head", "usage_label": "Table head", "sample_text": "Ticker  Full name  Available range", "sample_value": "13px"},
+                    {"token_name": "--font-card-title", "usage_label": "Card title", "sample_text": labels["hero_title"], "sample_value": "24px"},
+                    {"token_name": "--font-card-subtitle", "usage_label": "Card subtitle", "sample_text": "AAPL  MSFT  NVDA  META  AVGO  AMD  ORCL  QQQ  SPY  TLT", "sample_value": "15px"},
+                    {"token_name": "--font-metric-value", "usage_label": "Metric value", "sample_text": "67.01%", "sample_value": "24px"},
+                ],
+                "tokens": [
+                    raw_token("--font-form-label", "var(--font-ui-md)"),
+                    raw_token("--font-form-control", "var(--font-ui-lg)"),
+                    raw_token("--font-tooltip", "var(--font-ui-sm)"),
+                    raw_token("--font-table-body", "var(--font-size-3)"),
+                    raw_token("--font-table-head", "var(--font-size-3)"),
+                    raw_token("--font-card-title", "var(--font-title-md)"),
+                    raw_token("--font-card-subtitle", "var(--font-ui-lg)"),
+                    raw_token("--font-metric-value", "var(--font-metric-md)"),
+                ],
+            },
+        ]
         return rows
 
     def build_material_token_rows() -> list[dict[str, object]]:
@@ -1634,6 +1724,7 @@ def build_web_runtime() -> WebRuntime:
         strategy_settings_rows: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
         material_token_rows: list[dict[str, object]] = []
+        font_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
         local_market_rows: list[dict[str, str]] = []
@@ -1958,6 +2049,7 @@ def build_web_runtime() -> WebRuntime:
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
+            font_token_rows = build_font_token_rows()
             style_token_rows = build_style_token_rows()
             material_token_rows = build_material_token_rows()
             if settings_section == "local-market-store":
@@ -2173,6 +2265,7 @@ def build_web_runtime() -> WebRuntime:
             settings_title=settings_title,
             settings_service_rows=settings_service_rows,
             strategy_settings_rows=strategy_settings_rows,
+            font_token_rows=font_token_rows,
             style_token_rows=style_token_rows,
             material_token_rows=material_token_rows,
             backtest_execution_mode=backtest_execution_mode,

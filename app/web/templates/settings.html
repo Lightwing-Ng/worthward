@@ -117,63 +117,58 @@
             </section>
         </div>
         {% elif settings_section == "font-tokens" %}
-        <section class="font-preview-card settings-general-panel settings-reading-guard">
-            <div class="font-preview-header">
-                <p class="font-preview-kicker">Type preview</p>
-                <p class="font-preview-copy">Sphinx of black quartz, judge my vow. 0123456789 !&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
-            </div>
-            <div class="font-preview-stack">
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Card title</p>
-                        <p class="font-preview-unit">24</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-title">Compare stocks · Compute your portfolio · Backtest</p>
+        <div class="font-token-stack">
+            {% for row in font_token_rows %}
+            <section id="{{ row.id }}" class="font-preview-card settings-general-panel settings-reading-guard font-token-panel">
+                <div class="font-preview-header">
+                    <p class="font-preview-kicker">{{ row.name }}</p>
+                    <p class="font-preview-copy">{{ row.description }}</p>
                 </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Card subtitle</p>
-                        <p class="font-preview-unit">15</p>
+                <div class="font-token-demo-stack">
+                    <div class="font-token-sample-list">
+                        {% for sample in row.samples %}
+                        <div class="font-token-sample-row">
+                            <div class="font-token-sample-meta">
+                                <p class="font-token-sample-usage">{{ sample.usage_label }}</p>
+                                <p class="font-token-sample-name">{{ sample.token_name }}</p>
+                            </div>
+                            <div class="font-token-sample-preview">
+                                <p class="font-token-sample-text" style="font-size: var({{ sample.token_name }});">{{ sample.sample_text }}</p>
+                                <p class="font-token-sample-value">{{ sample.sample_value }}</p>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    <p class="font-preview-sample font-preview-sample-subtitle">AAPL MSFT NVDA META AVGO AMD ORCL QQQ SPY TLT</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Metric value</p>
-                        <p class="font-preview-unit">32</p>
+                    <div class="font-token-table-wrap">
+                        <div class="style-token-title-row font-token-title-row">
+                            <p class="style-token-title">Token map</p>
+                        </div>
+                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value"><span class="style-token-value-text">{{ token.value }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-metric">$ 123,456.78 · +19.84% · P/E 27.5</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Form label</p>
-                        <p class="font-preview-unit">14</p>
+                    <div class="font-token-panel-actions">
+                        <button
+                            type="button"
+                            class="settings-round-icon-button style-token-copy-button is-static-visible"
+                            data-style-token-copy="{{ row.name }}"
+                            aria-label="Copy style name {{ row.name }}"
+                            title="Copy style name"
+                        >
+                            <span class="icon icon-style-token-copy" aria-hidden="true"></span>
+                        </button>
                     </div>
-                    <p class="font-preview-sample font-preview-sample-label">Ticker · Period · Strategy · Reinvest cash dividends</p>
                 </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Form control</p>
-                        <p class="font-preview-unit">15</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-control">MACD crossover | Exact range | 2024-01-02 -> 2025-03-19</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Table body</p>
-                        <p class="font-preview-unit">13</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-table">2025-03-19 BUY 100 @ 187.42 | P&amp;L +1,204.33 | Equity 12,845.90</p>
-                </div>
-                <div class="font-preview-row">
-                    <div class="font-preview-meta">
-                        <p class="font-preview-label">Tooltip</p>
-                        <p class="font-preview-unit">12</p>
-                    </div>
-                    <p class="font-preview-sample font-preview-sample-tooltip">ASCII check: [] {} () &lt;&gt; +=-*/% ^~ |\ \" ' ` ; : , . ? !</p>
-                </div>
-            </div>
-        </section>
+            </section>
+            {% endfor %}
+        </div>
         {% elif settings_section == "network" %}
         <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>

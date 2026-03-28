@@ -169,6 +169,7 @@
 }
 .style-token-shell {
 	position: relative;
+	--style-token-resizer-y: 50%;
 	--style-token-demo-width-current: var(--style-token-demo-width);
 	--style-token-demo-width-max: max(220px, calc(100% - var(--style-token-column-gap) - 280px));
 	--style-token-demo-width-effective: clamp(220px, var(--style-token-demo-width-current), var(--style-token-demo-width-max));
@@ -498,6 +499,91 @@ div.style-token-modal-demo {
 }
 .style-token-demo .trade-strategy-stepper {
 	overflow-y: hidden;
+}
+.font-token-stack {
+	display: grid;
+	gap: 12px;
+	margin-top: 12px;
+}
+.font-token-panel {
+	gap: 14px;
+}
+.font-token-demo-stack {
+	display: grid;
+	gap: 12px;
+}
+.font-token-title-row {
+	margin-bottom: 0;
+}
+.font-token-demo-copy,
+.font-token-sample-usage,
+.font-token-sample-name,
+.font-token-sample-text,
+.font-token-sample-value {
+	margin: 0;
+}
+.font-token-demo-copy {
+	font-size: var(--font-form-label);
+	line-height: 1.45;
+	color: var(--muted);
+}
+.font-token-sample-list {
+	display: grid;
+	gap: 8px;
+}
+.font-token-sample-row {
+	display: grid;
+	grid-template-columns: minmax(136px, 164px) minmax(0, 1fr);
+	gap: 12px;
+	align-items: start;
+	padding: 8px 0;
+	border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.font-token-sample-row:first-child {
+	padding-top: 0;
+	border-top: 0;
+}
+.font-token-sample-meta {
+	display: grid;
+	gap: 3px;
+}
+.font-token-sample-usage {
+	font-size: var(--font-tooltip);
+	line-height: 1.2;
+	font-weight: var(--font-weight-bold);
+	color: var(--text);
+}
+.font-token-sample-name,
+.font-token-sample-value {
+	font-size: var(--font-tooltip);
+	line-height: 1.3;
+	color: var(--muted);
+	font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.font-token-sample-preview {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+}
+.font-token-table-wrap {
+	padding-top: 4px;
+	border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.font-token-sample-text {
+	line-height: 1.25;
+	color: var(--text);
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.font-token-panel-actions {
+	display: flex;
+	justify-content: flex-end;
+}
+.style-token-copy-button.is-static-visible {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+	transform: translateY(0);
 }
 .style-token-meta::-webkit-scrollbar,
 .style-token-table-wrap::-webkit-scrollbar,
@@ -1259,6 +1345,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
 	}
 	.style-token-demo {
 		width: 100%;
+	}
+	.font-token-sample-row {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 6px;
 	}
 	.style-token-resizer {
 		display: none;
