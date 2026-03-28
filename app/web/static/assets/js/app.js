@@ -1,4 +1,4 @@
-/* Code version: v3.37.0 */
+/* Code version: v3.38.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -2015,6 +2015,7 @@
 			picker.popover.hidden = true;
 			picker.trigger.setAttribute("aria-expanded", "false");
 		});
+		syncDatePickerPeerHighlight();
 	};
 
 	const isInsideDatePicker = (picker, target) => (
@@ -2039,11 +2040,31 @@
 		picker.popover.style.left = `${Math.round(left)}px`;
 	};
 
+	const getDatePickerPeer = (picker) => {
+		if (!picker?.role) return null;
+		const peerRole = picker.role === "start" ? "end" : picker.role === "end" ? "start" : "";
+		if (!peerRole) return null;
+		return datePickerState.find((candidate) => candidate.role === peerRole) || null;
+	};
+
+	const syncDatePickerPeerHighlight = () => {
+		datePickerState.forEach((picker) => {
+			picker.wrapper.classList.remove("is-peer-highlight");
+		});
+		const activePicker = datePickerState.find((picker) => !picker.popover.hidden);
+		const peerPicker = activePicker ? getDatePickerPeer(activePicker) : null;
+		if (peerPicker) {
+			peerPicker.wrapper.classList.add("is-peer-highlight");
+		}
+	};
+
 	const syncDatePickerView = (picker) => {
 		picker.triggerValue.textContent = formatDisplayDate(picker.input.value);
 		const selectedDate = parseIsoDate(picker.input.value);
 		const minDate = parseIsoDate(picker.input.min);
 		const maxDate = parseIsoDate(picker.input.max);
+		const peerPicker = getDatePickerPeer(picker);
+		const peerDate = parseIsoDate(peerPicker?.input?.value || "");
 		const today = startOfMonthUtc(new Date());
 		const anchorDate = clampDateToBounds(selectedDate || minDate || maxDate || today, minDate, maxDate);
 		if (!picker.visibleMonth || picker.forceSyncMonth) {
@@ -2062,17 +2083,23 @@
 			const isCurrentMonth = cellDate.getUTCMonth() === picker.visibleMonth.getUTCMonth();
 			const isBeforeMin = minDate && cellDate < minDate;
 			const isAfterMax = maxDate && cellDate > maxDate;
+			const violatesPeerRange = (
+				(picker.role === "start" && peerDate && cellDate > peerDate)
+				|| (picker.role === "end" && peerDate && cellDate < peerDate)
+			);
 			const isTradingDay = !validTradingDateSet || validTradingDateSet.has(isoValue);
+			const isPeerBoundary = peerDate && isSameUtcDay(cellDate, peerDate);
 			const button = document.createElement("button");
 			button.type = "button";
 			button.className = "date-picker-day";
 			if (!isCurrentMonth) button.classList.add("is-muted");
-			if (isBeforeMin || isAfterMax || !isTradingDay) button.classList.add("is-disabled");
+			if (isBeforeMin || isAfterMax || !isTradingDay || violatesPeerRange) button.classList.add("is-disabled");
 			if (selectedDate && isSameUtcDay(cellDate, selectedDate)) button.classList.add("is-selected");
+			if (isPeerBoundary) button.classList.add("is-peer-boundary");
 			if (isSameUtcDay(cellDate, new Date())) button.classList.add("is-today");
 			button.textContent = String(cellDate.getUTCDate());
 			button.dataset.value = isoValue;
-			button.disabled = Boolean(isBeforeMin || isAfterMax || !isTradingDay);
+			button.disabled = Boolean(isBeforeMin || isAfterMax || !isTradingDay || violatesPeerRange);
 			button.addEventListener("click", () => {
 				picker.input.value = isoValue;
 				picker.forceSyncMonth = true;
@@ -2102,6 +2129,7 @@
 				popover,
 				monthLabel,
 				grid,
+				role: wrapper.dataset.dateRole || "",
 				visibleMonth: null,
 				forceSyncMonth: true,
 			};
@@ -2134,11 +2162,13 @@
 				syncDatePickerView(picker);
 				popover.hidden = false;
 				trigger.setAttribute("aria-expanded", "true");
+				syncDatePickerPeerHighlight();
 				positionDatePickerPopover(picker);
 			});
 			input.addEventListener("change", () => {
 				picker.forceSyncMonth = true;
 				syncDatePickerView(picker);
+				syncDatePickerPeerHighlight();
 			});
 		});
 		document.addEventListener("pointerdown", (event) => {
@@ -2154,6 +2184,7 @@
 
 	const refreshDatePickers = () => {
 		datePickerState.forEach((picker) => syncDatePickerView(picker));
+		syncDatePickerPeerHighlight();
 	};
 
 	const buildCleanWorkspaceUrl = () => {

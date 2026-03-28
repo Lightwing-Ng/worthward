@@ -73,7 +73,7 @@
 </div>
 <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
     <div class="date-picker-grid">
-        <div class="date-picker-field" data-date-picker>
+        <div class="date-picker-field" data-date-picker data-date-role="start">
             <label for="exact_start">{{ labels.start }}</label>
             <input id="exact_start" name="from" type="hidden" value="{{ exact_start }}">
             <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
@@ -95,7 +95,7 @@
                 <div class="date-picker-days" data-date-grid></div>
             </div>
         </div>
-        <div class="date-picker-field" data-date-picker>
+        <div class="date-picker-field" data-date-picker data-date-role="end">
             <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
             <input id="exact_end" name="to" type="hidden" value="{{ exact_end }}">
             <button type="button" class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
