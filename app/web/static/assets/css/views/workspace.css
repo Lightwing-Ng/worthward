@@ -621,6 +621,7 @@
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--accent-scrollbar) transparent;
+    scrollbar-gutter: stable;
 }
 
 .timing-metrics-scroll::-webkit-scrollbar {
@@ -895,12 +896,11 @@
     position: fixed;
     top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
     left: 50%;
-    right: auto;
+    transform: translate3d(-50%, 0, 0);
+    margin: 0;
     width: min(420px, calc(100vw - (var(--page-edge-pad) * 2)));
     max-width: calc(100vw - (var(--page-edge-pad) * 2));
-    margin: 0;
-    transform: translateX(-50%);
-    z-index: calc(var(--layer-modal-dialog) + 10);
+    z-index: 9999;
     pointer-events: auto;
 }
 
@@ -972,20 +972,20 @@
 @keyframes noticeFloatingBannerDropIn {
     0% {
         opacity: 0;
-        transform: translate3d(0, -28px, 0) scale(0.96);
+        transform: translate3d(-50%, -28px, 0) scale(0.96);
         filter: saturate(0.92) blur(5px);
     }
     38% {
         opacity: 1;
-        transform: translate3d(0, 8px, 0) scale(1.01);
+        transform: translate3d(-50%, 8px, 0) scale(1.01);
         filter: saturate(1) blur(0);
     }
     62% {
-        transform: translate3d(0, -3px, 0) scale(0.998);
+        transform: translate3d(-50%, -3px, 0) scale(0.998);
     }
     100% {
         opacity: 1;
-        transform: translate3d(0, 0, 0) scale(1);
+        transform: translate3d(-50%, 0, 0) scale(1);
         filter: saturate(1) blur(0);
     }
 }

@@ -1636,7 +1636,7 @@
 	};
 
 	const applyThemeModePreference = (mode) => {
-		const normalizedMode = mode === "light" || mode === "dark" ? mode : "system";
+		const normalizedMode = mode === "light" || mode === "dark" || mode === "system" ? mode : "system";
 		const previousMode = document.documentElement.dataset.themeMode;
 		
 		if (previousMode && previousMode !== normalizedMode) {

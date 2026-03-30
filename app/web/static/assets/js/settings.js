@@ -397,9 +397,7 @@
 	};
 
 	const attachStyleTokenCopyButtons = () => {
-		const shell = document.querySelector("[data-style-token-shell]");
-		if (!(shell instanceof HTMLElement)) return;
-		shell.querySelectorAll("[data-style-token-copy]").forEach((button) => {
+		document.querySelectorAll("[data-style-token-copy]").forEach((button) => {
 			if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
 			button.dataset.bound = "1";
 			const defaultLabel = button.getAttribute("aria-label") || "Copy style name";
@@ -907,8 +905,17 @@
 			if (localStorePaginationRequest) return;
 			localStorePaginationRequest = (async () => {
 				try {
-					await animateLocalStorePaginationTo(link);
-					await fetchLocalStorePage(targetUrl);
+					const pendingRegion = buildLocalStorePendingRegion();
+					const currentRegion = document.getElementById("local_store_region");
+					if (currentRegion && pendingRegion) {
+						const currentTableWrap = currentRegion.querySelector(".local-store-table-wrap");
+						const nextTableWrap = pendingRegion.querySelector(".local-store-table-wrap");
+						if (currentTableWrap && nextTableWrap) {
+							currentTableWrap.replaceWith(nextTableWrap);
+						}
+					}
+					const animationPromise = animateLocalStorePaginationTo(link);
+					await Promise.all([animationPromise, fetchLocalStorePage(targetUrl)]);
 				} catch (_error) {
 					window.location.assign(targetUrl);
 				} finally {
