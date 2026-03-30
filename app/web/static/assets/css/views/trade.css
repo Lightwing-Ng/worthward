@@ -228,7 +228,12 @@
     max-height: none;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
 }
+.trade-transactions-wrap::-webkit-scrollbar { width: 6px; }
+.trade-transactions-wrap::-webkit-scrollbar-track { background: transparent; }
+.trade-transactions-wrap::-webkit-scrollbar-thumb { background: var(--theme-muted-translucent, var(--muted)); border-radius: var(--radius-pill); }
 
 .trade-transactions-table {
     width: 100%;

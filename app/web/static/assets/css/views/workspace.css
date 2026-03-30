@@ -114,8 +114,8 @@
     height: var(--portfolio-donut-logo-size);
     border-radius: 50%;
     object-fit: cover;
-    background: var(--glass-surface-background-dense);
-    box-shadow: 0 10px 22px var(--theme-shadow-ambient), 0 1px 0 var(--theme-glass-highlight) inset, 0 0 0 1px var(--theme-glass-highlight);
+    background: transparent;
+    box-shadow: none;
     transform: translate(-50%, -50%);
 }
 
@@ -330,8 +330,8 @@
     height: var(--logo-card-size);
     border-radius: var(--radius-soft);
     object-fit: contain;
-    background: var(--glass-surface-background-dense);
-    box-shadow: 0 2px 8px var(--theme-shadow-ambient);
+    background: transparent;
+    box-shadow: none;
     flex: 0 0 auto;
 }
 
@@ -463,7 +463,7 @@
     border-radius: inherit;
     object-fit: cover;
     object-position: center;
-    background: var(--glass-surface-background-dense);
+    background: transparent;
 }
 
 .timing-shell {
@@ -1130,7 +1130,7 @@ footer {
     height: var(--logo-tooltip-size);
     border-radius: var(--radius-soft);
     object-fit: contain;
-    background: var(--glass-surface-background-dense);
+    background: transparent;
 }
 
 .chart-tooltip-label {
