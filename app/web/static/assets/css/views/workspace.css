@@ -251,7 +251,8 @@
     min-width: 0;
     padding: 8px 12px 6px 16px;
     border-radius: var(--radius-panel);
-    background: var(--glass-surface-background-strong);
+    background: transparent;
+    border: none;
     box-shadow: none;
     overflow: hidden;
     display: grid;
@@ -606,7 +607,6 @@
     gap: 2px;
     padding: 8px 0;
     border-radius: var(--radius-control);
-    background: var(--glass-surface-background-soft);
 }
 
 .timing-summary-value, .timing-metric-value {

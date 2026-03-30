@@ -45,6 +45,9 @@
     overflow: hidden;
     align-content: start;
     position: relative;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 .export-transactions-button {
@@ -61,6 +64,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    min-width: 28px;
+    min-height: 28px;
+    flex-shrink: 0;
     cursor: pointer;
     z-index: var(--layer-surface-content);
     transition: background 180ms var(--motion-standard), transform 180ms var(--motion-standard);
@@ -231,9 +237,19 @@
     scrollbar-width: thin;
     scrollbar-color: var(--muted) transparent;
 }
-.trade-transactions-wrap::-webkit-scrollbar { width: 6px; }
-.trade-transactions-wrap::-webkit-scrollbar-track { background: transparent; }
-.trade-transactions-wrap::-webkit-scrollbar-thumb { background: var(--theme-muted-translucent, var(--muted)); border-radius: var(--radius-pill); }
+
+.trade-transactions-wrap::-webkit-scrollbar {
+    width: 6px;
+}
+
+.trade-transactions-wrap::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.trade-transactions-wrap::-webkit-scrollbar-thumb {
+    background: var(--theme-muted-translucent, var(--muted));
+    border-radius: var(--radius-pill);
+}
 
 .trade-transactions-table {
     width: 100%;
@@ -246,8 +262,8 @@
     top: 0;
     z-index: var(--layer-surface-content);
     background: var(--glass-surface-background-dense);
-    backdrop-filter: saturate(180%) blur(18px);
-    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    backdrop-filter: var(--glass-surface-blur);
+    -webkit-backdrop-filter: var(--glass-surface-blur);
     text-align: center !important;
 }
 

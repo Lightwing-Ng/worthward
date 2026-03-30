@@ -1035,7 +1035,8 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-button-radius", "var(--radius-pill)"),
                     raw_token("--local-store-pagination-indicator-radius", "var(--radius-pill)"),
                     raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
-                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
+                    raw_token("--local-store-pagination-indicator-shadow",
+                              "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
                     raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                 ],
                 "related_styles": [],
@@ -2794,7 +2795,7 @@ def build_web_runtime() -> WebRuntime:
                 else:
                     from app.services.market_data import download_full_history, normalize_history_frame
                     from app.infrastructure.storage import intraday_history_store_path_for
-                    
+
                     history = download_full_history(ticker, interval="1m")
                     normalized_dataset = normalize_history_frame(history, ticker, interval="1m")
                     path = intraday_history_store_path_for(ticker, "1m")

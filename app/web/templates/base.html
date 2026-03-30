@@ -38,14 +38,14 @@
             --theme-tooltip-background: rgba(255, 255, 255, 0.68);
             --theme-glass-border: rgba(148, 163, 184, 0.22);
             --theme-shadow-ambient: rgba(17, 24, 39, 0.12);
-            --theme-error: #c81e1e;
-            --theme-error-strong: #991b1b;
-            --theme-error-translucent: rgba(200, 30, 30, 0.12);
-            --theme-warning: #f4c542;
-            --theme-warning-text: #6b5200;
-            --theme-warning-translucent: rgba(244, 197, 66, 0.12);
-            --theme-success: #0f6b2f;
-            --theme-success-strong: #16a34a;
+            --theme-error: {{ theme_light.error }};
+            --theme-error-strong: {{ theme_light.error_strong }};
+            --theme-error-translucent: {{ theme_light.error_translucent }};
+            --theme-warning: {{ theme_light.warning }};
+            --theme-warning-text: {{ theme_light.warning_text }};
+            --theme-warning-translucent: {{ theme_light.warning_translucent }};
+            --theme-success: {{ theme_light.success }};
+            --theme-success-strong: {{ theme_light.success_strong }};
             --theme-muted-translucent: rgba(107, 114, 128, 0.62);
             --logo-card-size: {{ logos.card_size }}px;
             --logo-tooltip-size: {{ logos.tooltip_size }}px;
@@ -53,6 +53,7 @@
 
         @media (prefers-color-scheme: dark) {
             :root:not([data-theme-override="light"]) {
+                color-scheme: dark;
                 --color-scheme: {{ theme_dark.color_scheme }};
                 --theme-background: {{ theme_dark.background }};
                 --theme-panel: {{ theme_dark.panel }};
@@ -76,10 +77,19 @@
                 --theme-glass-chip-background-strong: rgba(255, 255, 255, 0.08);
                 --theme-glass-chip-background-hover: rgba(255, 255, 255, 0.12);
                 --theme-tooltip-background: rgba(255, 255, 255, 0.12);
+                --theme-error: {{ theme_dark.error }};
+                --theme-error-strong: {{ theme_dark.error_strong }};
+                --theme-error-translucent: {{ theme_dark.error_translucent }};
+                --theme-warning: {{ theme_dark.warning }};
+                --theme-warning-text: {{ theme_dark.warning_text }};
+                --theme-warning-translucent: {{ theme_dark.warning_translucent }};
+                --theme-success: {{ theme_dark.success }};
+                --theme-success-strong: {{ theme_dark.success_strong }};
             }
         }
 
         :root[data-theme-override="dark"] {
+            color-scheme: dark;
             --color-scheme: {{ theme_dark.color_scheme }};
             --theme-background: {{ theme_dark.background }};
             --theme-panel: {{ theme_dark.panel }};
@@ -103,6 +113,14 @@
             --theme-glass-chip-background-strong: rgba(255, 255, 255, 0.08);
             --theme-glass-chip-background-hover: rgba(255, 255, 255, 0.12);
             --theme-tooltip-background: rgba(255, 255, 255, 0.12);
+            --theme-error: {{ theme_dark.error }};
+            --theme-error-strong: {{ theme_dark.error_strong }};
+            --theme-error-translucent: {{ theme_dark.error_translucent }};
+            --theme-warning: {{ theme_dark.warning }};
+            --theme-warning-text: {{ theme_dark.warning_text }};
+            --theme-warning-translucent: {{ theme_dark.warning_translucent }};
+            --theme-success: {{ theme_dark.success }};
+            --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">

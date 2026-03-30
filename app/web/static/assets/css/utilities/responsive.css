@@ -10,55 +10,74 @@
 	.settings-danger-form .settings-inline-button { width: fit-content; min-width: 0; }
 }
 @media (max-width: 767px) {
-	body { height: auto; overflow: auto; overflow-x: hidden; width: 100vw; }
-	.page { width: 100%; padding: 0 10px calc(80px + env(safe-area-inset-bottom, 0px)); min-height: auto; height: auto; display: block; overflow: visible; }
-	.app-shell { display: flex; flex-direction: column; width: 100%; overflow-x: hidden; gap: 0 !important; --sidebar-toggle-x: 0px !important; }
-	.sidebar { width: 100%; flex-basis: auto; padding: 16px; border-radius: var(--radius-panel); overflow: hidden; margin-top: 12px; margin-bottom: 0; transition: max-height 540ms var(--motion-inertial), padding 540ms var(--motion-inertial), margin 540ms var(--motion-inertial), opacity 400ms var(--motion-standard), border-width 540ms var(--motion-inertial); max-height: 2500px; opacity: 1; order: 0; }
-	.settings-surface { height: auto; min-height: auto; overflow: visible; }
-	.settings-body { min-height: auto; overflow: visible; }
-	.app-shell.is-sidebar-collapsed .sidebar { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; margin-left: 0; opacity: 0; border-width: 0; transform: none; pointer-events: none; }
-	html.sidebar-memory-collapsed .app-shell .sidebar { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; margin-left: 0; opacity: 0; border-width: 0; transform: none; pointer-events: none; }
+	body { overflow-x: hidden; width: 100vw; }
+	.page { width: 100%; padding: 0 10px calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + 56px + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
+	.app-shell { display: flex; flex-direction: column; width: 100%; overflow-x: hidden; gap: 0 !important; --sidebar-toggle-x: calc(var(--sidebar-width) - 52px) !important; }
+	.app-shell.is-sidebar-collapsed, html.sidebar-memory-collapsed .app-shell { --sidebar-toggle-x: 0px !important; }
+	.sidebar {
+		position: fixed;
+		top: 10px;
+		left: 10px;
+		width: var(--sidebar-width);
+		max-width: calc(100vw - 20px);
+		bottom: calc(10px + var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px) + 52px);
+		flex-basis: auto;
+		padding: 16px;
+		border-radius: var(--radius-panel);
+		margin: 0;
+		z-index: var(--layer-modal-overlay);
+		transform: translate3d(0, 0, 0);
+		opacity: 1;
+		transition: transform 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), visibility 560ms step-start;
+		visibility: visible;
+		box-shadow: 0 18px 44px var(--theme-shadow-ambient);
+		background: var(--glass-surface-background-strong);
+		backdrop-filter: var(--glass-surface-blur);
+		-webkit-backdrop-filter: var(--glass-surface-blur);
+		overflow-y: auto;
+		max-height: none;
+	}
+
+	.app-shell.is-sidebar-collapsed .sidebar,
+	html.sidebar-memory-collapsed .app-shell .sidebar {
+		transform: translate3d(-120%, 0, 0);
+		opacity: 0;
+		visibility: hidden;
+		margin: 0;
+		padding: 16px;
+		pointer-events: none;
+		transition: transform 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), visibility 560ms step-end;
+		max-height: none;
+		border-width: 0;
+	}
 	.sidebar-toggle {
 		display: inline-flex;
-		position: sticky;
-		top: 12px;
-		left: auto;
+		position: fixed;
+		top: 20px;
+		left: 20px;
 		right: auto;
 		bottom: auto;
-		order: 1;
-		margin: 16px auto 26px auto;
-		z-index: var(--layer-modal-overlay);
-		transition: transform 540ms var(--motion-inertial), margin 540ms var(--motion-inertial), background 160ms var(--motion-standard);
+		margin: 0;
+		z-index: calc(var(--layer-modal-overlay) + 1);
+		transition: transform 560ms var(--motion-emphasized), background 160ms var(--motion-standard);
 	}
-	.app-shell.is-sidebar-collapsed .sidebar-toggle {
-		margin-top: 12px;
-		margin-bottom: -48px;
-		transform: translate3d(calc(50vw - 30px), 0, 0);
-	}
+	.app-shell.is-sidebar-collapsed .sidebar-toggle,
 	html.sidebar-memory-collapsed .app-shell .sidebar-toggle {
-		margin-top: 12px;
-		margin-bottom: -48px;
-		transform: translate3d(calc(50vw - 30px), 0, 0);
+		margin: 0;
+		transform: translate3d(var(--sidebar-toggle-x), 0, 0);
 	}
-	.app-shell .icon-sidebar-left { background-color: currentColor; mask: url("/static/images/menubar.arrow.up.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.up.rectangle.svg") center/contain no-repeat; }
-	.app-shell.is-sidebar-collapsed .icon-sidebar-left { mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; }
-	html.sidebar-memory-collapsed .app-shell .icon-sidebar-left { mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/menubar.arrow.down.rectangle.svg") center/contain no-repeat; }
 	.chart-panel {
-		min-height: auto;
-		padding: 0 var(--page-edge-pad) var(--backtest-surface-bottom-pad);
-		display: block;
 		order: 2;
 		z-index: var(--layer-surface-content);
 	}
 	.performance-grid { grid-template-columns: 1fr !important; grid-template-rows: none; }
 	.performance-item { grid-template-rows: auto auto auto; grid-row: auto; }
 	.performance-accent { bottom: 18px; }
-	.chart-wrap { min-height: 320px; }
-	.chart-wrap canvas { height: 100% !important; }
+
 	.sidebar-dock {
 		position: fixed;
 		left: 50%;
-		bottom: calc(var(--sidebar-dock-mobile-bottom-gap) + env(safe-area-inset-bottom, 0px));
+		bottom: calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
 		transform: translateX(-50%);
 		margin: 0;
 		width: fit-content;

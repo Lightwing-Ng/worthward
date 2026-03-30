@@ -63,7 +63,7 @@
     font-size: var(--font-table-body);
     line-height: 1.3;
     font-weight: var(--font-weight-bold);
-    color: var(--theme-success);
+    color: var(--theme-accent-positive);
     overflow-wrap: anywhere;
     word-break: break-word;
 }
@@ -204,7 +204,7 @@
 }
 
 .settings-broker-test-feedback.is-success {
-    color: var(--theme-success);
+    color: var(--theme-accent-positive);
 }
 
 .settings-broker-test-feedback.is-error {
@@ -436,7 +436,7 @@
 }
 
 .style-token-copy-button.is-copied {
-    color: var(--theme-success);
+    color: var(--theme-accent-positive);
     opacity: 1;
     visibility: visible;
     pointer-events: auto;

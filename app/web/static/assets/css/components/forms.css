@@ -514,9 +514,11 @@
 
 .trade-controls .field-switch { padding-top: 0; }
 .trade-controls .field-switch .switch-row {
-	grid-row: 2;
-	padding: 0;
-	background: transparent;
+    grid-row: 2;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 .trade-controls .field-switch .switch-label { display: inline-flex; align-items: center; min-height: 100%; }
 .trade-strategy-field {

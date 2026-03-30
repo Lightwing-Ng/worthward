@@ -1637,6 +1637,13 @@
 
 	const applyThemeModePreference = (mode) => {
 		const normalizedMode = mode === "light" || mode === "dark" ? mode : "system";
+		const previousMode = document.documentElement.dataset.themeMode;
+		
+		if (previousMode && previousMode !== normalizedMode) {
+			document.documentElement.classList.add("is-theme-transitioning");
+			window.setTimeout(() => document.documentElement.classList.remove("is-theme-transitioning"), 400);
+		}
+
 		document.documentElement.dataset.themeMode = normalizedMode;
 		if (normalizedMode === "system") {
 			document.documentElement.removeAttribute("data-theme-override");
@@ -1647,6 +1654,14 @@
 			detail: { mode: normalizedMode },
 		}));
 	};
+
+	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+		if (document.documentElement.dataset.themeMode === "system") {
+			window.dispatchEvent(new CustomEvent("antigravity:theme-mode-change", {
+				detail: { mode: "system" },
+			}));
+		}
+	});
 
 	const initThemeModeControls = () => {
 		const currentMode = readThemeModePreference();
