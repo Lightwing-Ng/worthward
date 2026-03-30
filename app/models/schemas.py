@@ -1,7 +1,7 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v3.2.1
+Code version: v0.3.0
 """
 
 from dataclasses import dataclass

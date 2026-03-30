@@ -1,7 +1,7 @@
 """
 Tests for strategy form schema helpers.
 
-Code version: v1.0.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

@@ -579,7 +579,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             params: dict | None = None,
     ) -> StrategySignalResult:
         """
-        Code version: v1.3.0
+        Code version: v0.3.0
         Changes:
         - Replaced explicit loop in `_bars_held_from_signal` with vectorized implementation.
         - Streamlined boolean condition chaining to avoid redundant missing value allocations.

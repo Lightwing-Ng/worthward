@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v1.0.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -97,8 +97,10 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertGreaterEqual(len(registry), 100)
         self.assertIn("--mode-switch-radius", registry)
         self.assertEqual(registry["--mode-switch-radius"].value, "var(--radius-pill)")
-        self.assertEqual(registry["--glass-surface-shadow"].value, "0 18px 40px rgba(17, 24, 39, 0.10)")
+        self.assertEqual(registry["--glass-surface-shadow"].value, "0 18px 40px var(--theme-shadow-ambient)")
         self.assertEqual(registry["--font-size-8"].value, "36px")
+        self.assertEqual(registry["--tooltip-background"].value, "var(--theme-tooltip-background)")
+        self.assertEqual(registry["--glass-mask-shadow"].value, "0 12px 24px var(--theme-glass-border)")
         self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())
         self.assertGreater(registry["--mode-switch-radius"].line, 1)
 
@@ -115,6 +117,9 @@ class WebTokenRegistryTests(unittest.TestCase):
         }
 
         self.assertGreaterEqual(len(comparable_defaults), 50)
+        
+        
+        
 
         drift = {
             token_name: {
@@ -145,6 +150,11 @@ class WebTokenRegistryTests(unittest.TestCase):
             for token_name, runtime_value in runtime_defaults.items()
             if runtime_value != registry[token_name].value
         }
+
+        self.assertIn("--glass-surface-background", runtime_defaults)
+        self.assertIn("--glass-surface-border", runtime_defaults)
+        self.assertIn("--glass-surface-shadow", runtime_defaults)
+        self.assertIn("--glass-surface-blur", runtime_defaults)
 
         self.assertEqual(
             drift,

@@ -1,6 +1,36 @@
-/* Code version: v1.16.0 */
+/* Code version: v0.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
+
+	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
+
+	const readThemeTokens = () => {
+		const computed = getComputedStyle(document.body);
+		return {
+			text: readThemeToken(computed, "--theme-text"),
+			muted: readThemeToken(computed, "--theme-muted"),
+			accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
+			accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
+			accentPositive: readThemeToken(computed, "--theme-accent-positive"),
+		};
+	};
+
+	const bindColorSchemeRefresh = (callback) => {
+		if (backtestThemeState.mediaCleanup) {
+			backtestThemeState.mediaCleanup();
+			backtestThemeState.mediaCleanup = null;
+		}
+		const media = window.matchMedia("(prefers-color-scheme: dark)");
+		const handler = () => window.requestAnimationFrame(callback);
+		if (typeof media.addEventListener === "function") {
+			media.addEventListener("change", handler);
+			backtestThemeState.mediaCleanup = () => media.removeEventListener("change", handler);
+		} else if (typeof media.addListener === "function") {
+			media.addListener(handler);
+			backtestThemeState.mediaCleanup = () => media.removeListener(handler);
+		}
+	};
 
 	const consumeBacktestRefreshTransition = () => {
 		const transition = bootstrap.backtestRefreshTransition;
@@ -142,6 +172,7 @@
 		equityCanvas.dataset.tradeChartMounted = "1";
 
 		const { backtestResult, theme } = state;
+		const resolvedTheme = readThemeTokens();
 		const labels = backtestResult.chart.dates;
 		const rawDates = Array.isArray(backtestResult.chart.raw_dates) ? backtestResult.chart.raw_dates : [];
 		const close = backtestResult.chart.close;
@@ -171,7 +202,7 @@
 		const isCandlestick = interval === "1m" && tradingDaysCount <= 1 && open.length > 0 && high.length > 0 && low.length > 0;
 		
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
-		const allInReferenceColor = "#8e8e93";
+		const allInReferenceColor = resolvedTheme.muted;
 		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		const svgMarkerViewBox = { width: 20.3027, height: 20.5176 };
 		const svgMarkerTip = {
@@ -221,7 +252,7 @@
 		const allInCash = initialCapital - (allInShares * firstOpen);
 		const allInEquity = close.map((value) => Number((allInCash + (allInShares * value)).toFixed(4)));
 
-		const axisLineColor = "rgba(160, 167, 178, 0.85)";
+		const axisLineColor = resolvedTheme.muted;
 		const fixedYAxisWidth = 52;
 		const tradeChartStack = priceCanvas.closest(".trade-chart-stack");
 		if (!tradeChartStack) return;
@@ -352,7 +383,7 @@
 				const baselineY = chartArea.bottom;
 				const lineHeight = 10;
 				ctx.save();
-				ctx.fillStyle = theme.muted;
+				ctx.fillStyle = resolvedTheme.muted;
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
@@ -399,7 +430,7 @@
 					const lowY = yScale.getPixelForValue(l);
 					const closeY = yScale.getPixelForValue(c);
 					
-					const color = "#0055cc";
+					const color = resolvedTheme.accentPrimary;
 					ctx.strokeStyle = color;
 					ctx.fillStyle = color;
 
@@ -445,8 +476,8 @@
 					chart.ctx.restore();
 				};
 
-				tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, "up", "#2fff9c"));
-				tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, "down", "#ff2f92"));
+				tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, "up", resolvedTheme.accentPositive));
+				tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, "down", resolvedTheme.accentSecondary));
 			},
 		};
 
@@ -576,7 +607,7 @@
 			const dots = tooltip.querySelectorAll(".chart-tooltip-dot");
 			if (dots[0]) dots[0].style.backgroundColor = theme.accent_primary;
 			if (dots[1]) dots[1].style.backgroundColor = equityValue >= initialCapital ? theme.accent_positive : theme.accent_secondary;
-			if (dots[2]) dots[2].style.backgroundColor = "#111827";
+			if (dots[2]) dots[2].style.backgroundColor = resolvedTheme.text;
 			if (dots[3]) dots[3].style.backgroundColor = allInReferenceColor;
 			if (dots[4]) dots[4].style.backgroundColor = versusAllIn >= 0 ? theme.accent_positive : theme.accent_secondary;
 			const tooltipWidth = tooltip.offsetWidth || 220;
@@ -826,6 +857,26 @@
 
 		attachHover(priceCanvas, priceChart);
 		attachHover(equityCanvas, equityChart);
+		bindColorSchemeRefresh(() => {
+			const nextTheme = readThemeTokens();
+			const nextAllInReferenceColor = nextTheme.muted;
+			priceChart.options.scales.y.ticks.color = nextTheme.muted;
+			equityChart.options.scales.y.ticks.color = nextTheme.muted;
+			priceChart.data.datasets[0].borderColor = isCandlestick ? "transparent" : nextTheme.accentPrimary;
+			priceChart.data.datasets[0].segment.borderColor = (context) => (
+				isSessionGap(context.p0DataIndex, context.p1DataIndex)
+					? "rgba(0, 0, 0, 0)"
+					: nextTheme.accentPrimary
+			);
+			equityChart.data.datasets[1].borderColor = nextAllInReferenceColor;
+			equityChart.data.datasets[1].segment.borderColor = (context) => (
+				isSessionGap(context.p0DataIndex, context.p1DataIndex)
+					? "rgba(0, 0, 0, 0)"
+					: nextAllInReferenceColor
+			);
+			priceChart.update();
+			equityChart.update();
+		});
 		initTransactionsPagination();
 		if (refreshTransition) {
 			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, allInEquity, chartYPaddingPx);

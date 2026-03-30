@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v3.0.3
+Code version: v0.3.0
 """
 
 from __future__ import annotations

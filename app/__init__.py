@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v2.4.1
+Code version: v0.3.0
 """
 
 from flask import Flask

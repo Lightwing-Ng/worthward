@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v0.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -16,10 +16,18 @@
 		if (startDonut.dataset.portfolioMounted === "1") return;
 		startDonut.dataset.portfolioMounted = "1";
 
+		const readThemeToken = (tokenName) => getComputedStyle(document.body).getPropertyValue(tokenName).trim();
+		const fallbackDonutFill = "var(--theme-glass-border)";
+
 		const buildGradientColors = (count) => {
-			if (count <= 1) return [state.theme?.accent_primary || "#0055cc"];
+			const accentPrimary = readThemeToken("--theme-accent-primary");
+			const accentSecondary = readThemeToken("--theme-accent-secondary");
+			if (!accentPrimary || !accentSecondary) return [];
+			if (count <= 1) return [accentPrimary];
 			const hexToRgb = (value) => {
-				const raw = value.replace("#", "");
+				const normalized = value.trim();
+				if (!/^#[0-9a-f]{6}$/i.test(normalized)) return null;
+				const raw = normalized.slice(1);
 				return [
 					Number.parseInt(raw.slice(0, 2), 16),
 					Number.parseInt(raw.slice(2, 4), 16),
@@ -27,8 +35,9 @@
 				];
 			};
 			const rgbToHex = ([r, g, b]) => `#${[r, g, b].map((item) => item.toString(16).padStart(2, "0")).join("")}`;
-			const start = hexToRgb(state.theme?.accent_primary || "#0055cc");
-			const end = hexToRgb(state.theme?.accent_secondary || "#ff2f92");
+			const start = hexToRgb(accentPrimary);
+			const end = hexToRgb(accentSecondary);
+			if (!start || !end) return [accentPrimary];
 			return Array.from({ length: count }, (_item, index) => {
 				const ratio = index / (count - 1);
 				return rgbToHex(start.map((channel, channelIndex) => Math.round(channel + ((end[channelIndex] - channel) * ratio))));
@@ -96,12 +105,17 @@
 
 		const renderDonut = ({ donut, orbit, logoLayer, entries }) => {
 			if (!entries.length) {
-				donut.style.setProperty("--portfolio-donut-fill", "rgba(148, 163, 184, 0.16)");
+				donut.style.setProperty("--portfolio-donut-fill", fallbackDonutFill);
 				logoLayer.innerHTML = "";
 				return;
 			}
 
 			const colors = buildGradientColors(entries.length);
+			if (!colors.length) {
+				donut.style.setProperty("--portfolio-donut-fill", fallbackDonutFill);
+				logoLayer.innerHTML = "";
+				return;
+			}
 			const gapDegrees = 1.2;
 			const donutSize = donut.clientWidth || 120;
 			const logoSize = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-size")) || 20;
@@ -170,6 +184,29 @@
 			renderPortfolioPreview(event.detail?.entries || []);
 		};
 		window.addEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
+
+		if (window.__antigravityPortfolioThemeMedia && window.__antigravityPortfolioThemeHandler) {
+			const { media, handler } = window.__antigravityPortfolioThemeMedia;
+			if (typeof media.removeEventListener === "function") {
+				media.removeEventListener("change", handler);
+			} else if (typeof media.removeListener === "function") {
+				media.removeListener(handler);
+			}
+		}
+		const portfolioThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+		const handlePortfolioThemeChange = () => {
+			window.requestAnimationFrame(() => {
+				const activeAccent = readThemeToken("--theme-accent-primary");
+				if (!activeAccent) return;
+				renderPortfolioPreview();
+			});
+		};
+		if (typeof portfolioThemeMedia.addEventListener === "function") {
+			portfolioThemeMedia.addEventListener("change", handlePortfolioThemeChange);
+		} else if (typeof portfolioThemeMedia.addListener === "function") {
+			portfolioThemeMedia.addListener(handlePortfolioThemeChange);
+		}
+		window.__antigravityPortfolioThemeMedia = { media: portfolioThemeMedia, handler: handlePortfolioThemeChange };
 
 		renderPortfolioPreview();
 	};

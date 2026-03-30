@@ -1,7 +1,7 @@
 """
 Buy-and-hold baseline strategy.
 
-Code version: v1.0.2
+Code version: v0.3.0
 """
 
 from __future__ import annotations

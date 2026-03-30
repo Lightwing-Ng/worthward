@@ -168,7 +168,9 @@
     overflow: visible;
     padding: 6px 8px 8px;
     border-radius: var(--radius-panel);
-    background: var(--glass-surface-background-dense);
+    background: transparent;
+    border: none;
+    box-shadow: none;
     display: grid;
     grid-template-rows: minmax(24px, auto) minmax(0, 1fr);
     row-gap: 4px;
@@ -238,7 +240,7 @@
     position: sticky;
     top: 0;
     z-index: var(--layer-surface-content);
-    background: rgba(255, 255, 255, 0.94);
+    background: var(--glass-surface-background-dense);
     backdrop-filter: saturate(180%) blur(18px);
     -webkit-backdrop-filter: saturate(180%) blur(18px);
     text-align: center !important;
@@ -347,7 +349,7 @@
     top: 0;
     bottom: 0;
     width: 1px;
-    background: rgba(160, 167, 178, 0.85);
+    background: color-mix(in srgb, var(--theme-muted) 72%, transparent);
     transform: translateX(-0.5px);
     pointer-events: none;
     opacity: 0;
@@ -482,7 +484,7 @@
     border-radius: var(--radius-pill);
     border: 0;
     background: transparent;
-    color: rgba(80, 90, 95, 0.82);
+    color: var(--theme-muted);
     box-shadow: none;
     display: inline-flex;
     align-items: center;
@@ -524,7 +526,7 @@
 .sidebar-dock-item:hover, .sidebar-dock-item:focus-visible {
     transform: scale(1.05);
     box-shadow: none;
-    background: rgba(255, 255, 255, 0.52);
+    background: var(--glass-surface-background-soft);
 }
 
 .sidebar-dock-item.is-active {
@@ -634,14 +636,14 @@
 }
 
 .icon-store-has-1m {
-    background-color: #2fff9c;
+    background-color: var(--theme-accent-positive);
     mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
 }
 
 .settings-callout-card-warning {
-    background: rgba(255, 249, 196, 0.48);
-    border: 1px solid rgba(251, 192, 45, 0.12);
+    background: var(--theme-warning-translucent);
+    border: 1px solid var(--theme-warning-translucent);
 }
 
 .icon-modal-dialog-banner-default {
@@ -665,7 +667,7 @@
     z-index: var(--layer-modal-overlay);
     display: grid;
     place-items: center;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--glass-surface-background-soft);
 }
 
 .workspace-modal-overlay[hidden] {

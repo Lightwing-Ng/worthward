@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v1.8.4
+Code version: v0.3.0
 """
 
 from __future__ import annotations

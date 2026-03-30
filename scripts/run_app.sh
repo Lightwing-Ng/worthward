@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.1.0
+# Code version: v0.3.0
 
 set -euo pipefail
 

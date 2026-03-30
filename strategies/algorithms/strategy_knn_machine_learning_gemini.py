@@ -5,7 +5,7 @@ Refactored to strictly adhere to the antigravity trading system's
 LLM Strategy Developer Prompt guidelines. Reverts to the core
 unfiltered majority-vote logic to preserve high-frequency alpha.
 
-Code version: v2.0.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

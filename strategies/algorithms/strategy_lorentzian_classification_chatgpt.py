@@ -584,7 +584,7 @@ class LorentzianClassificationStrategy(BaseStrategy):
             params: dict | None = None,
     ) -> StrategySignalResult:
         """
-        Code version: v1.2.0
+        Code version: v0.3.0
         Changes:
         - Use forward labels for a true 4-bar-ahead classification target.
         - Exclude non-matured samples from the k-NN history window.

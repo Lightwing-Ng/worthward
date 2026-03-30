@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v0.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 

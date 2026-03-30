@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v4.1.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

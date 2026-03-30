@@ -1,6 +1,36 @@
-/* Code version: v3.5.0 */
+/* Code version: v0.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
+
+	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
+
+	const readThemeTokens = () => {
+		const computed = getComputedStyle(document.body);
+		return {
+			text: readThemeToken(computed, "--theme-text"),
+			muted: readThemeToken(computed, "--theme-muted"),
+			accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
+			accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
+			accentPositive: readThemeToken(computed, "--theme-accent-positive"),
+		};
+	};
+
+	const bindColorSchemeRefresh = (callback) => {
+		if (chartThemeState.mediaCleanup) {
+			chartThemeState.mediaCleanup();
+			chartThemeState.mediaCleanup = null;
+		}
+		const media = window.matchMedia("(prefers-color-scheme: dark)");
+		const handler = () => window.requestAnimationFrame(callback);
+		if (typeof media.addEventListener === "function") {
+			media.addEventListener("change", handler);
+			chartThemeState.mediaCleanup = () => media.removeEventListener("change", handler);
+		} else if (typeof media.addListener === "function") {
+			media.addListener(handler);
+			chartThemeState.mediaCleanup = () => media.removeListener(handler);
+		}
+	};
 	const consumeChartWorkspaceRefreshTransition = (viewName) => {
 		const transition = bootstrap.chartWorkspaceRefreshTransition;
 		if (!transition || transition.view !== viewName || !transition.labels?.length) return null;
@@ -79,6 +109,7 @@
 		if (existingChart) existingChart.destroy();
 
 		const { chart: chartState, theme, chartConfig } = state;
+		const resolvedTheme = readThemeTokens();
 		const { series, profiles } = chartState;
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
@@ -161,7 +192,7 @@
 				const baselineY = chartArea.bottom;
 				const lineHeight = 10;
 				ctx.save();
-				ctx.fillStyle = theme.muted;
+				ctx.fillStyle = resolvedTheme.muted;
 				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
@@ -379,9 +410,9 @@
 							item.normalized_returns,
 						)
 						: item.normalized_returns,
-					borderColor: item.color || theme.accent_primary,
-					pointHoverBackgroundColor: item.color || theme.accent_primary,
-					shadowColor: hexToRgba(item.color || theme.accent_primary, 0.4),
+					borderColor: item.color || resolvedTheme.accentPrimary || theme.accent_primary,
+					pointHoverBackgroundColor: item.color || resolvedTheme.accentPrimary || theme.accent_primary,
+					shadowColor: hexToRgba(item.color || resolvedTheme.accentPrimary || theme.accent_primary, 0.4),
 					glow: item.glow !== false,
 					shadowBlur: item.glow === false ? 0 : chartConfig.shadow_blur,
 				})),
@@ -422,7 +453,7 @@
 						grid: { display: false, drawBorder: false },
 						border: { display: false },
 						ticks: {
-							color: theme.muted,
+							color: resolvedTheme.muted,
 							padding: 10,
 							font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 },
 							callback(value, index, ticks) {
@@ -433,6 +464,18 @@
 					},
 				},
 			},
+		});
+		bindColorSchemeRefresh(() => {
+			const nextTheme = readThemeTokens();
+			chart.options.scales.y.ticks.color = nextTheme.muted;
+			chart.data.datasets.forEach((dataset, index) => {
+				const seriesItem = series[index] || {};
+				const strokeColor = seriesItem.color || nextTheme.accentPrimary || theme.accent_primary;
+				dataset.borderColor = strokeColor;
+				dataset.pointHoverBackgroundColor = strokeColor;
+				dataset.shadowColor = hexToRgba(strokeColor, 0.4);
+			});
+			chart.update();
 		});
 		if (refreshTransition) {
 			window.requestAnimationFrame(() => {

@@ -1,7 +1,7 @@
 """
 Shared application configuration.
 
-Code version: v2.0.1
+Code version: v0.3.0
 """
 
 from pathlib import Path

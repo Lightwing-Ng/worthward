@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v1.1.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

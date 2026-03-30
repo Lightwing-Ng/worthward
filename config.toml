@@ -124,7 +124,16 @@ updated_on = "Updated on:"
 winner_alt = "Winner"
 
 [ui.theme]
-color_scheme = "light"
+color_scheme = "light dark"
+radius_shell = "10px"
+radius_panel = "10px"
+radius_control = "10px"
+trade_capital_slider_radius = "10px"
+timing_list_panel_radius = "10px"
+timing_list_item_inline_pad = "10px"
+shadow = "0 24px 80px rgba(17, 24, 39, 0.10)"
+
+[ui.theme.light]
 background = "#ffffff"
 panel = "rgba(255, 255, 255, 0.68)"
 panel_strong = "rgba(255, 255, 255, 0.82)"
@@ -133,14 +142,18 @@ muted = "#505a5f"
 accent_primary = "#0055cc"
 accent_secondary = "#ff2f92"
 accent_positive = "#2fff9c"
-shadow = "0 24px 80px rgba(17, 24, 39, 0.10)"
 glass_highlight = "rgba(255, 255, 255, 0.55)"
-radius_shell = "10px"
-radius_panel = "10px"
-radius_control = "10px"
-trade_capital_slider_radius = "10px"
-timing_list_panel_radius = "10px"
-timing_list_item_inline_pad = "10px"
+
+[ui.theme.dark]
+background = "#0b0c0c"
+panel = "rgba(255, 255, 255, 0.04)"
+panel_strong = "rgba(255, 255, 255, 0.08)"
+text = "#f3f4f6"
+muted = "#94a3b8"
+accent_primary = "#60a5fa"
+accent_secondary = "#f472b6"
+accent_positive = "#34d399"
+glass_highlight = "rgba(255, 255, 255, 0.08)"
 
 [ui.chart]
 zero_line_color = "rgba(160, 167, 178, 0.85)"

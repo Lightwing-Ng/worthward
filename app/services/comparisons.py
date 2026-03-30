@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v3.3.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

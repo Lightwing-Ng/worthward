@@ -1,7 +1,7 @@
 """
 SuperTrend AI strategy with factor clustering.
 
-Code version: v1.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

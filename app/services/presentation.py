@@ -1,7 +1,7 @@
 """
 Formatting helpers for display labels.
 
-Code version: v3.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

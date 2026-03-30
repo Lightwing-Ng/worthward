@@ -95,6 +95,35 @@
         <div class="settings-general-stack">
             <section class="settings-card settings-general-card settings-general-panel">
                 <div class="settings-general-header">
+                    <p class="settings-general-kicker">Appearance</p>
+                    <p class="settings-general-copy">Choose whether the interface follows your system appearance or stays locked to Light or Dark mode.</p>
+                </div>
+                <form class="settings-general-form" data-theme-mode-form>
+                    <label class="settings-general-option">
+                        <input type="radio" name="theme_mode" value="system" checked data-theme-mode-option>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">System</span>
+                            <span class="settings-general-option-desc">Follow your operating system appearance automatically, including live switching when the system changes.</span>
+                        </span>
+                    </label>
+                    <label class="settings-general-option">
+                        <input type="radio" name="theme_mode" value="light" data-theme-mode-option>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">Light</span>
+                            <span class="settings-general-option-desc">Force the interface to stay in the bright palette, regardless of the system setting.</span>
+                        </span>
+                    </label>
+                    <label class="settings-general-option">
+                        <input type="radio" name="theme_mode" value="dark" data-theme-mode-option>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">Dark</span>
+                            <span class="settings-general-option-desc">Force the interface to stay in the dark palette for lower glare and better night-time use.</span>
+                        </span>
+                    </label>
+                </form>
+            </section>
+            <section class="settings-card settings-general-card settings-general-panel">
+                <div class="settings-general-header">
                     <p class="settings-general-kicker">Backtest execution model</p>
                     <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
                 </div>

@@ -1,6 +1,6 @@
 # CSS Architecture
 
-Code version: v3.23.0
+Code version: v0.3.0
 
 This directory now uses a manifest-style entry file in `app.css`.
 Keep the manifest query-string version in sync with the code version when you change module contents.

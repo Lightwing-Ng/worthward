@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v3.8.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def drop_duplicate_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.loc[:, ~frame.columns.duplicated()].copy()
 
 
-def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
+def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = "1d") -> pd.DataFrame:
     if history.empty:
         raise ValueError(f"No market data returned for {ticker}.")
     if isinstance(history.columns, pd.MultiIndex):
@@ -46,7 +46,16 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
     all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
     dataset = drop_duplicate_columns(history[all_to_keep].copy())
-    dataset["Date"] = pd.to_datetime(dataset["Date"], utc=True).dt.tz_convert(None)
+    if interval == "1m":
+        try:
+            from app.infrastructure.broker_market_data import NEW_YORK_TIMEZONE
+        except ImportError:
+            import pytz
+            NEW_YORK_TIMEZONE = pytz.timezone("America/New_York")
+        dates = pd.to_datetime(dataset["Date"], utc=True)
+        dataset["Date"] = dates.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
+    else:
+        dataset["Date"] = pd.to_datetime(dataset["Date"], utc=True).dt.tz_convert(None)
     for col in (ohlc_columns + ["Close"]):
         if col in dataset.columns:
             dataset[col] = pd.to_numeric(dataset[col], errors="coerce")
@@ -67,19 +76,67 @@ def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.Da
     return result
 
 
+def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
+    from datetime import datetime, timedelta, timezone
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=29)
+
+    dfs = []
+    current_end = end_date
+    while current_end > start_date:
+        current_start = max(current_end - timedelta(days=7), start_date)
+        try:
+            df = yf.download(
+                tickers=ticker, 
+                start=current_start, 
+                end=current_end, 
+                interval="1m", 
+                auto_adjust=False, 
+                progress=False, 
+                multi_level_index=False,
+                threads=False,
+                timeout=12,
+            )
+            if not df.empty:
+                dfs.append(df)
+        except Exception:
+            pass
+        current_end = current_start
+
+    if not dfs:
+        raise ValueError(f"Unable to download 1m market data for {ticker}.")
+
+    combined = pd.concat(dfs)
+    if not combined.empty:
+        # Keep 'last' duplicate to handle boundary overlaps safely
+        combined = combined[~combined.index.duplicated(keep="last")]
+        combined = combined.sort_index()
+    return combined
+
 def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
+    if interval == "1m":
+        last_error: Exception | None = None
+        for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
+            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt] if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS) else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
+            if delay > 0:
+                sleep(delay)
+            try:
+                return _download_yfinance_1m_rolling(ticker)
+            except Exception as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise ValueError(f"Unable to download market data for {ticker}.")
+
     last_error: Exception | None = None
     for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
-        if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS):
-            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt]
-        else:
-            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
+        delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt] if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS) else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
         if delay > 0:
             sleep(delay)
         try:
             return yf.download(
                 tickers=ticker,
-                period="7d" if interval == "1m" else "max",
+                period="max",
                 interval=interval,
                 auto_adjust=False,
                 progress=False,
@@ -117,7 +174,7 @@ def fetch_history(
         )
 
     history = download_full_history(ticker, interval=interval)
-    normalized_dataset = normalize_history_frame(history, ticker)
+    normalized_dataset = normalize_history_frame(history, ticker, interval=interval)
     normalized_dataset.to_parquet(path, index=False)
     return select_price_series(normalized_dataset, include_dividends)
 

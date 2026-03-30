@@ -6,7 +6,7 @@ This port keeps the indicator pair selection and kNN vote logic,
 while mapping bearish or clear states to exits for the app's
 current long-only backtest engine.
 
-Code version: v1.0.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

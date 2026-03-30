@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v1.4.3
+Code version: v0.3.0
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """
 Tests for exact-range date alignment.
 
-Code version: v2.1.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

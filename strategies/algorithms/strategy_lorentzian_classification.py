@@ -6,7 +6,7 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v1.1.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations

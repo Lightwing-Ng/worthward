@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v2.0.0
+Code version: v0.3.0
 """
 
 from app import create_app

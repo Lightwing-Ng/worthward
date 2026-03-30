@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v3.36.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -199,7 +199,10 @@ def build_web_runtime() -> WebRuntime:
     settings = get_settings()
     defaults = settings["defaults"]
     labels = settings["ui"]["labels"]
-    theme = settings["ui"]["theme"]
+    theme_settings = settings["ui"]["theme"]
+    theme_light = theme_settings["light"]
+    theme_dark = theme_settings["dark"]
+    theme = theme_light
     chart_config = settings["ui"]["chart"]
     logos = settings["ui"]["logos"]
     app_meta = settings["app"]
@@ -819,7 +822,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-button-pad-inline", 18, 0),
                     px_token("--settings-action-button-min-height", 32, 1),
                     raw_token("--settings-action-button-background", "var(--accent-fill)"),
-                    raw_token("--settings-action-button-color", "#ffffff"),
+                    raw_token("--settings-action-button-color", "var(--color-white-adaptive)"),
                 ],
                 "related_styles": [],
             },
@@ -869,7 +872,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--settings-round-icon-button-shadow", "var(--glass-chip-shadow)"),
                     raw_token("--settings-round-icon-button-shadow-hover", "var(--glass-chip-shadow-hover)"),
                     raw_token("--settings-round-icon-button-shadow-active", "var(--glass-chip-shadow-active)"),
-                    raw_token("--settings-round-icon-button-color", "rgba(80, 90, 95, 0.82)"),
+                    raw_token("--settings-round-icon-button-color", "color-mix(in srgb, var(--theme-text) 70%, transparent)"),
                     raw_token("--settings-round-icon-button-color-hover", "var(--accent-text)"),
                 ],
                 "related_styles": [],
@@ -907,8 +910,8 @@ def build_web_runtime() -> WebRuntime:
                 "sample_value": "NVDA",
                 "tokens": [
                     px_token("--trade-control-input-height", 30, 0),
-                    raw_token("--control-liquid-background", "rgba(255, 255, 255, 0.0001)"),
-                    raw_token("--control-liquid-background-hover", "rgba(255, 255, 255, 0.04)"),
+                    raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
+                    raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--glass-surface-background-soft) 72%, transparent)"),
                     raw_token("--control-liquid-shadow", "none"),
                     raw_token("--control-liquid-shadow-focus", "none"),
                     raw_token("--ticker-input-glass-background", "transparent"),
@@ -953,8 +956,8 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-general-option-radius", 10, 0),
                     px_token("--settings-general-option-pad-block", 14, 0),
                     px_token("--settings-general-option-pad-inline", 16, 0),
-                    raw_token("--settings-general-option-background", "rgba(255, 255, 255, 0.58)"),
-                    raw_token("--settings-general-option-border", "1px solid rgba(15, 23, 42, 0.06)"),
+                    raw_token("--settings-general-option-background", "var(--glass-surface-background-strong)"),
+                    raw_token("--settings-general-option-border", "1px solid color-mix(in srgb, var(--theme-text) 8%, transparent)"),
                 ],
                 "related_styles": [],
             },
@@ -1032,7 +1035,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-button-radius", "var(--radius-pill)"),
                     raw_token("--local-store-pagination-indicator-radius", "var(--radius-pill)"),
                     raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
-                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 rgba(255, 255, 255, 0.18)"),
+                    raw_token("--local-store-pagination-indicator-shadow", "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
                     raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                 ],
                 "related_styles": [],
@@ -1223,9 +1226,9 @@ def build_web_runtime() -> WebRuntime:
                 "sample_surface_blur": "var(--glass-surface-blur)",
                 "sample_surface_shadow": "var(--glass-surface-shadow)",
                 "tokens": standard_material_tokens(
-                    "rgba(255, 255, 255, 0.48)",
-                    "1px solid rgba(255, 255, 255, 0.42)",
-                    "0 18px 40px rgba(17, 24, 39, 0.10)",
+                    "var(--theme-glass-surface-background)",
+                    "1px solid color-mix(in srgb, var(--color-white-adaptive) 26%, transparent)",
+                    "0 18px 40px var(--theme-shadow-ambient)",
                     "saturate(180%) blur(24px)",
                 ),
             },
@@ -2344,6 +2347,8 @@ def build_web_runtime() -> WebRuntime:
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
+            theme_light=theme_light,
+            theme_dark=theme_dark,
             chart_config=chart_config,
             logos=logos,
             defaults=defaults,
@@ -2783,12 +2788,18 @@ def build_web_runtime() -> WebRuntime:
                 return redirect_local_store(notice=notice)
             elif action == "refresh-1m":
                 broker_settings = load_broker_settings()
-                if broker_settings.selected_broker != "longbridge":
-                    raise ValueError("1-minute history fetch is currently available only through Longbridge.")
-                if not has_longbridge_credentials(broker_settings):
-                    raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
-                refresh_longbridge_one_minute_store(ticker, broker_settings)
-                notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache."
+                if broker_settings.selected_broker == "longbridge" and has_longbridge_credentials(broker_settings):
+                    refresh_longbridge_one_minute_store(ticker, broker_settings)
+                    notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache (via Longbridge)."
+                else:
+                    from app.services.market_data import download_full_history, normalize_history_frame
+                    from app.infrastructure.storage import intraday_history_store_path_for
+                    
+                    history = download_full_history(ticker, interval="1m")
+                    normalized_dataset = normalize_history_frame(history, ticker, interval="1m")
+                    path = intraday_history_store_path_for(ticker, "1m")
+                    normalized_dataset.to_parquet(path, index=False)
+                    notice = f"Saved the latest month of 1-minute market data for {ticker} to local cache (yfinance fallback)."
                 return redirect_local_store(notice=notice)
             elif action == "delete":
                 delete_ticker_data(ticker)

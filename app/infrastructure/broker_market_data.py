@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-    Code version: v1.4.0
+    Code version: v0.3.0
 """
 
 from __future__ import annotations

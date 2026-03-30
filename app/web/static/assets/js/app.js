@@ -1,10 +1,11 @@
-/* Code version: v3.38.0 */
+/* Code version: v0.3.0 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
 	const { defaults, labels, endpoints, constraints, theme } = state;
+	const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
 	const isPortfolioView = state.currentView === "portfolio";
 	const isBacktestView = state.currentView === "backtest";
 	const MIN_TICKERS = constraints?.minTickers || 2;
@@ -1618,6 +1619,54 @@
 		dockFrame = window.requestAnimationFrame(positionSidebarDock);
 	};
 
+	const readThemeModePreference = () => {
+		try {
+			const stored = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+			return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+		} catch (_error) {
+			return "system";
+		}
+	};
+
+	const writeThemeModePreference = (mode) => {
+		try {
+			window.localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+		} catch (_error) {
+		}
+	};
+
+	const applyThemeModePreference = (mode) => {
+		const normalizedMode = mode === "light" || mode === "dark" ? mode : "system";
+		document.documentElement.dataset.themeMode = normalizedMode;
+		if (normalizedMode === "system") {
+			document.documentElement.removeAttribute("data-theme-override");
+		} else {
+			document.documentElement.setAttribute("data-theme-override", normalizedMode);
+		}
+		window.dispatchEvent(new CustomEvent("antigravity:theme-mode-change", {
+			detail: { mode: normalizedMode },
+		}));
+	};
+
+	const initThemeModeControls = () => {
+		const currentMode = readThemeModePreference();
+		applyThemeModePreference(currentMode);
+		const formElement = document.querySelector("[data-theme-mode-form]");
+		if (!(formElement instanceof HTMLFormElement)) return;
+		const options = Array.from(formElement.querySelectorAll("[data-theme-mode-option]"));
+		options.forEach((option) => {
+			if (!(option instanceof HTMLInputElement)) return;
+			option.checked = option.value === currentMode;
+			if (option.dataset.boundThemeMode === "1") return;
+			option.dataset.boundThemeMode = "1";
+			option.addEventListener("change", () => {
+				if (!option.checked) return;
+				writeThemeModePreference(option.value);
+				applyThemeModePreference(option.value);
+			});
+		});
+	};
+
 	const showWorkspaceModal = (options = {}) => {
 		if (!workspaceModalOverlay) return;
 		if (workspaceModalOverlayTitle && options.title) workspaceModalOverlayTitle.textContent = options.title;
@@ -2310,6 +2359,7 @@
 	getTickerInputs().forEach((input) => setupAutocomplete(input));
 	initializeDatePickers();
 	initializeWorkspaceEnhancements();
+	initThemeModeControls();
 	rememberCurrentViewUrl();
 	attachDockMemory();
 	attachRemoveHandlers();
