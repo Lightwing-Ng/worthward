@@ -89,7 +89,7 @@
 	--settings-form-control-max-width: 384px;
 	--settings-text-input-pad-block: 5px;
 	--settings-text-input-pad-inline: 10px;
-	--settings-text-input-background: transparent;
+	--settings-text-input-background: var(--panel-strong);
 	--settings-text-input-border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
 	--settings-text-input-color: var(--text);
 	--settings-text-input-font-size: var(--font-form-control);
@@ -142,7 +142,7 @@
 	--control-glass-background-hover: color-mix(in srgb, var(--theme-muted) 8%, transparent);
 	--control-glass-shadow: none;
 	--control-glass-blur: none;
-	--control-liquid-background: transparent;
+	--control-liquid-background: color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent);
 	--control-liquid-background-hover: color-mix(in srgb, var(--theme-muted) 8%, transparent);
 	--control-liquid-border: 1px solid transparent;
 	--control-liquid-shadow: none;
