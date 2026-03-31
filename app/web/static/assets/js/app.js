@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -173,6 +173,8 @@
 	const appShell = $(".app-shell");
 	const sidebarToggle = $("#sidebar_toggle");
 	const appSidebar = $("#app_sidebar");
+	const sidebarBackdrop = $("#sidebar_backdrop");
+	const mobileSidebarMedia = window.matchMedia("(max-width: 767px)");
 	let isSidebarOpen = true;
 	let isSidebarAnimating = false;
 
@@ -193,7 +195,7 @@
 		}
 	};
 
-	const applySidebarState = (nextIsOpen, shell = appShell, sidebar = appSidebar, toggle = sidebarToggle) => {
+	const applySidebarState = (nextIsOpen, shell = appShell, sidebar = appSidebar, toggle = sidebarToggle, backdrop = sidebarBackdrop) => {
 		if (!(shell && sidebar && toggle)) return;
 		isSidebarOpen = Boolean(nextIsOpen);
 		document.documentElement.classList.toggle("sidebar-memory-collapsed", !isSidebarOpen);
@@ -205,6 +207,13 @@
 		sidebar.style.display = "";
 		sidebar.setAttribute("aria-hidden", String(!isSidebarOpen));
 		if ("inert" in sidebar) sidebar.inert = !isSidebarOpen;
+		if (backdrop) {
+			const shouldShowBackdrop = mobileSidebarMedia.matches && isSidebarOpen;
+			backdrop.hidden = !shouldShowBackdrop;
+			backdrop.setAttribute("aria-hidden", String(!shouldShowBackdrop));
+			if ("inert" in backdrop) backdrop.inert = !shouldShowBackdrop;
+			backdrop.tabIndex = shouldShowBackdrop ? 0 : -1;
+		}
 	};
 
 	const animateDock = () => {
@@ -223,6 +232,23 @@
 			animateDock();
 			setTimeout(() => { isSidebarAnimating = false; scheduleDockPosition(); }, 650);
 		});
+	}
+
+	if (sidebarBackdrop) {
+		sidebarBackdrop.addEventListener("click", () => {
+			if (!mobileSidebarMedia.matches || !isSidebarOpen) return;
+			applySidebarState(false);
+			writeSidebarMemory(false);
+			isSidebarAnimating = true;
+			animateDock();
+			setTimeout(() => { isSidebarAnimating = false; scheduleDockPosition(); }, 650);
+		});
+	}
+
+	if (typeof mobileSidebarMedia.addEventListener === "function") {
+		mobileSidebarMedia.addEventListener("change", () => applySidebarState(isSidebarOpen));
+	} else if (typeof mobileSidebarMedia.addListener === "function") {
+		mobileSidebarMedia.addListener(() => applySidebarState(isSidebarOpen));
 	}
 
 	const getTickerFields = () => $$(".ticker-field");
