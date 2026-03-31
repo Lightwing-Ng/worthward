@@ -452,7 +452,12 @@
 	min-height: var(--trade-control-input-height);
 	max-height: var(--trade-control-input-height);
 }
-.ticker-form-controls #add_ticker { display: flex; }
+.ticker-form-controls #add_ticker {
+	display: flex;
+	align-self: center;
+	justify-self: center;
+	margin: 0;
+}
 .ticker-controls .ticker-input-control input {
 	height: var(--trade-control-input-height);
 	min-height: var(--trade-control-input-height);
@@ -1267,9 +1272,11 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 	height: 22px;
 }
 #ticker_add_wrapper {
-	display: flex;
-	justify-content: center;
-	align-items: center;
+	height: var(--trade-control-height);
+	min-height: var(--trade-control-height);
+	max-height: var(--trade-control-height);
+	display: grid;
+	place-items: center;
 }
 .sidebar-secondary-button {
 	background: var(--settings-round-icon-button-background);
