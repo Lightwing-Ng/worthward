@@ -20,15 +20,35 @@
             </div>
         </div>
     </div>
-    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact") }}
-    <div class="field backtest-interval-field">
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact", true) }}
+    <div class="field backtest-interval-field backtest-shared-select-field">
         <label for="backtest_interval">{{ labels.backtest_interval }}</label>
-        <div class="backtest-interval-row">
-            <select id="backtest_interval" name="interval" class="backtest-interval-select form-select">
+        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field data-shared-select-kind="interval">
+            <select id="backtest_interval" name="interval" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
                 {% for item in supported_intervals %}
                 <option value="{{ item }}" {% if item == requested_interval %}selected{% endif %}>{{ item }}</option>
                 {% endfor %}
             </select>
+            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                <button
+                    type="button"
+                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                    data-shared-select-trigger
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="backtest_interval_dropdown"
+                >
+                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                </button>
+            </div>
+            <div
+                id="backtest_interval_dropdown"
+                class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                data-shared-select-dropdown
+                role="listbox"
+                aria-label="{{ labels.backtest_interval }}"
+                hidden
+            ></div>
         </div>
     </div>
     <div class="field trade-capital-field">

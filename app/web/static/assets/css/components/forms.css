@@ -105,7 +105,6 @@
 .ticker-input-logo[hidden] { display: none; }
 .ticker-input-control input,
 .trade-strategy-select,
-.backtest-interval-select,
 .form-select,
 .trade-capital-input,
 .date-picker-trigger,
@@ -130,8 +129,6 @@
 .ticker-input-control input:focus,
 .trade-strategy-select:hover,
 .trade-strategy-select:focus,
-.backtest-interval-select:hover,
-.backtest-interval-select:focus,
 .form-select:hover,
 .form-select:focus,
 .trade-capital-input:hover,
@@ -155,8 +152,6 @@
 .ticker-input-control input:focus,
 .trade-strategy-select:hover,
 .trade-strategy-select:focus,
-.backtest-interval-select:hover,
-.backtest-interval-select:focus,
 .form-select:hover,
 .form-select:focus,
 .trade-capital-input:hover,
@@ -173,7 +168,6 @@
 	transform: none;
 }
 .trade-strategy-select,
-.backtest-interval-select,
 .trade-capital-input,
 .date-picker-trigger,
 .trade-strategy-param-select,
@@ -182,7 +176,7 @@
 	color: var(--text);
 }
 .trade-strategy-select,
-.backtest-interval-select {
+.backtest-shared-select-trigger {
 	padding-right: 10px;
 	font-size: var(--font-form-control);
 	line-height: 1;
@@ -195,9 +189,9 @@
 	cursor: default;
 }
 .trade-strategy-select option,
-.backtest-interval-select option { color: var(--theme-text); }
+.backtest-shared-select-native option { color: var(--theme-text); }
 .trade-strategy-select,
-.backtest-interval-select {
+.backtest-shared-select-trigger {
 	transform: translateZ(0);
 	will-change: transform, box-shadow, background;
 }
@@ -217,8 +211,8 @@
 .form-select::-ms-expand { display: none; }
 .trade-strategy-select:active,
 .trade-strategy-select.is-pressing,
-.backtest-interval-select:active,
-.backtest-interval-select.is-pressing {
+.backtest-shared-select-trigger:active,
+.backtest-shared-select-trigger.is-pressing {
 	transform: translateY(0.5px) scale(0.992);
 	box-shadow: none;
 }
@@ -245,7 +239,7 @@
 }
 .trade-controls .ticker-input-control input,
 .trade-controls .trade-strategy-select,
-.trade-controls .backtest-interval-select,
+.trade-controls .backtest-shared-select-trigger,
 .trade-controls .trade-capital-input,
 .trade-controls .date-picker-trigger,
 .trade-controls .field-switch .switch-row {
@@ -259,7 +253,7 @@
 .trade-controls #period_panel,
 .trade-controls .field-checkbox.field-switch,
 .trade-controls .field:has(.trade-strategy-select),
-.trade-controls .field:has(.backtest-interval-select),
+.trade-controls .field:has(.backtest-shared-select-trigger),
 .trade-controls .date-picker-field {
 	height: var(--trade-control-height) !important;
 	min-height: var(--trade-control-height) !important;
@@ -269,6 +263,14 @@
 	row-gap: 0;
 	align-items: stretch;
 	overflow: visible; /* keep suggestion/tooltips aligned like compare fixed tickers */
+}
+.trade-controls .field:has(> .range-mode-shell.segmented-control--compact) {
+	height: var(--trade-control-height) !important;
+	min-height: var(--trade-control-height) !important;
+	max-height: var(--trade-control-height);
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 .trade-controls .ticker-input-row {
 	grid-row: 1 / span 2;
@@ -301,7 +303,7 @@
 .trade-controls .trade-capital-field > label,
 .trade-controls .field.range-panel > label,
 .trade-controls .field:has(.trade-strategy-select) > label,
-.trade-controls .field:has(.backtest-interval-select) > label,
+.trade-controls .field:has(.backtest-shared-select-trigger) > label,
 .trade-controls .trade-strategy-field > label,
 .trade-controls .date-picker-field > label {
 	margin: 0;
@@ -315,18 +317,18 @@
 .trade-controls .date-picker-trigger,
 .trade-controls .trade-strategy-row,
 .trade-controls .trade-strategy-select,
-.trade-controls .backtest-interval-row,
-.trade-controls .backtest-interval-select {
+.trade-controls .backtest-shared-select-row,
+.trade-controls .backtest-shared-select-trigger {
 	width: 100%;
 }
-.trade-controls .field.range-panel > select {
+.trade-controls .field.range-panel > select:not(.backtest-shared-select-native) {
 	outline: none;
 	border: 0;
 	-webkit-appearance: none;
 	appearance: none;
 }
-.trade-controls .field.range-panel > select:focus,
-.trade-controls .field.range-panel > select:focus-visible {
+.trade-controls .field.range-panel > select:not(.backtest-shared-select-native):focus,
+.trade-controls .field.range-panel > select:not(.backtest-shared-select-native):focus-visible {
 	outline: none;
 	box-shadow: none;
 }
@@ -346,12 +348,12 @@
 	align-self: start;
 }
 .trade-controls .trade-capital-row,
-.trade-controls .field.range-panel > select,
+.trade-controls .field.range-panel > select:not(.backtest-shared-select-native),
 .trade-controls .date-picker-field > button,
 .trade-controls .field:has(.trade-strategy-select) > select,
-.trade-controls .field:has(.backtest-interval-select) > select,
+.trade-controls .field:has(.backtest-shared-select-trigger) > select,
 .trade-controls .trade-strategy-row,
-.trade-controls .backtest-interval-row {
+.trade-controls .backtest-shared-select-row {
 	grid-row: 2;
 }
 .trade-controls .trade-capital-field {
@@ -366,7 +368,9 @@
 .trade-controls .field.range-panel,
 .trade-controls .ticker-field,
 .trade-controls .trade-strategy-row,
-.trade-controls .trade-strategy-select {
+.trade-controls .trade-strategy-select,
+.trade-controls .backtest-shared-select-row,
+.trade-controls .backtest-shared-select-trigger {
 	min-width: 0;
 }
 .trade-controls .ticker-leading-slot {
@@ -631,6 +635,44 @@
 	overflow-y: auto;
 	scrollbar-width: thin;
 	scrollbar-color: var(--theme-muted-translucent) transparent;
+}
+.backtest-shared-select-field {
+	overflow: visible;
+}
+.backtest-shared-select-field.is-open,
+.field.range-panel:has(.backtest-shared-select-trigger[aria-expanded="true"]) {
+	z-index: var(--layer-inline-overlay-host);
+}
+.backtest-shared-select-dropdown {
+	position: absolute;
+	color: var(--text);
+	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
+	border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
+	box-shadow: 0 24px 48px var(--theme-shadow-ambient), 0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
+	backdrop-filter: saturate(180%) blur(28px);
+	-webkit-backdrop-filter: saturate(180%) blur(28px);
+	isolation: isolate;
+	z-index: var(--layer-global-popover);
+}
+.backtest-shared-select-dropdown::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 14%, transparent) 0%, transparent 100%);
+	pointer-events: none;
+}
+.backtest-shared-select-dropdown > * {
+	position: relative;
+	z-index: 1;
+}
+.backtest-shared-select-dropdown .trade-strategy-dropdown-option {
+	color: var(--text);
+}
+.backtest-shared-select-dropdown .trade-strategy-dropdown-option:hover,
+.backtest-shared-select-dropdown .trade-strategy-dropdown-option:focus-visible,
+.backtest-shared-select-dropdown .trade-strategy-dropdown-option.is-active {
+	background: color-mix(in srgb, var(--control-liquid-background-hover) 82%, var(--accent-surface-soft));
 }
 .trade-strategy-dropdown::-webkit-scrollbar { width: 8px; }
 .trade-strategy-dropdown::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
@@ -1122,6 +1164,15 @@
 .range-mode-shell[data-active="exact"] + #period_panel { display: none !important; }
 .range-mode-shell[data-active="exact"] ~ #exact_panel { display: block; }
 .chart-tooltip, .field-tooltip { background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); border-radius: var(--radius-soft); }
+.field-tooltip,
+.field-tooltip-validation {
+	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
+	border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
+	box-shadow: 0 24px 48px var(--theme-shadow-ambient), 0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
+	backdrop-filter: saturate(180%) blur(28px);
+	-webkit-backdrop-filter: saturate(180%) blur(28px);
+	isolation: isolate;
+}
 .liquid-glass-surface {
 	position: relative;
 	background: var(--liquid-glass-background);
@@ -1150,11 +1201,6 @@
 	line-height: 1.35;
 	width: max-content;
 	max-width: min(320px, 100%);
-	background: var(--glass-popover-background);
-	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
-	backdrop-filter: var(--glass-popover-blur);
-	-webkit-backdrop-filter: var(--glass-popover-blur);
-	border: 1px solid var(--theme-glass-highlight);
 	border-radius: var(--radius-soft);
 	overflow: visible;
 	isolation: isolate;
@@ -1172,13 +1218,11 @@
 	left: 18px;
 	width: var(--ticker-validation-arrow-size);
 	height: var(--ticker-validation-arrow-size);
-	border-top: 1px solid var(--theme-glass-highlight);
-	border-left: 1px solid var(--theme-glass-highlight);
-	background: var(--glass-surface-background-strong);
+	border-top: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
+	border-left: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
+	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
 	transform: rotate(45deg);
-	backdrop-filter: var(--glass-popover-blur);
-	-webkit-backdrop-filter: var(--glass-popover-blur);
-	box-shadow: -3px -3px 8px var(--theme-glass-border);
+	box-shadow: -3px -3px 8px color-mix(in srgb, var(--theme-shadow-ambient) 52%, transparent);
 }
 .field-tooltip-validation-icon {
 	width: 14px;

@@ -1,4 +1,4 @@
-/* Code version: v0.3.2 */
+/* Code version: v0.3.3 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -1879,6 +1879,122 @@
 		year: "numeric",
 		timeZone: "UTC",
 	});
+	const sharedSelectFields = Array.from(document.querySelectorAll("[data-shared-select-field]"));
+
+	const getSharedSelectParts = (field) => {
+		if (!(field instanceof HTMLElement)) return null;
+		const select = field.querySelector("select");
+		const trigger = field.querySelector("[data-shared-select-trigger]");
+		const triggerLabel = field.querySelector("[data-shared-select-trigger-label]");
+		const dropdown = field.querySelector("[data-shared-select-dropdown]");
+		if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
+			return null;
+		}
+		return { field, select, trigger, triggerLabel, dropdown };
+	};
+
+	const syncNativeSelectSelection = (select, selectedValue) => {
+		if (!(select instanceof HTMLSelectElement)) return;
+		const normalizedValue = String(selectedValue || "");
+		Array.from(select.options).forEach((option) => {
+			const isSelected = Boolean(normalizedValue) && option.value === normalizedValue;
+			option.defaultSelected = isSelected;
+			option.selected = isSelected;
+			if (isSelected) {
+				option.setAttribute("selected", "selected");
+			} else {
+				option.removeAttribute("selected");
+			}
+		});
+		select.value = normalizedValue;
+	};
+
+	const setSharedSelectDropdownOpen = (field, isOpen) => {
+		const parts = getSharedSelectParts(field);
+		if (!parts) return;
+		parts.dropdown.hidden = !isOpen;
+		parts.trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+		parts.field.classList.toggle("is-open", isOpen);
+	};
+
+	const closeSharedSelectDropdowns = (exceptField = null) => {
+		sharedSelectFields.forEach((field) => {
+			if (exceptField && field === exceptField) return;
+			setSharedSelectDropdownOpen(field, false);
+		});
+	};
+
+	const syncSharedSelectTriggerLabel = (field) => {
+		const parts = getSharedSelectParts(field);
+		if (!parts) return;
+		const selectedOption = Array.from(parts.select.options).find((option) => option.value === parts.select.value);
+		parts.triggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+	};
+
+	const renderSharedSelectDropdown = (field) => {
+		const parts = getSharedSelectParts(field);
+		if (!parts) return;
+		const currentSelection = String(parts.select.value || "");
+		parts.dropdown.innerHTML = "";
+		Array.from(parts.select.options).forEach((option) => {
+			const optionButton = document.createElement("button");
+			optionButton.type = "button";
+			optionButton.className = "trade-strategy-dropdown-option";
+			optionButton.dataset.value = option.value;
+			optionButton.setAttribute("role", "option");
+			optionButton.setAttribute("aria-selected", option.value === currentSelection ? "true" : "false");
+			if (option.value === currentSelection) {
+				optionButton.classList.add("is-selected", "is-active");
+			}
+
+			const checkElement = document.createElement("span");
+			checkElement.className = "trade-strategy-dropdown-check";
+			checkElement.setAttribute("aria-hidden", "true");
+
+			const textElement = document.createElement("span");
+			textElement.className = "trade-strategy-dropdown-text";
+			textElement.textContent = option.textContent || option.value;
+
+			optionButton.appendChild(checkElement);
+			optionButton.appendChild(textElement);
+			optionButton.addEventListener("click", () => {
+				if (parts.select.value === option.value) {
+					setSharedSelectDropdownOpen(field, false);
+					return;
+				}
+				syncNativeSelectSelection(parts.select, option.value);
+				syncSharedSelectTriggerLabel(field);
+				renderSharedSelectDropdown(field);
+				setSharedSelectDropdownOpen(field, false);
+				parts.select.dispatchEvent(new Event("change", { bubbles: true }));
+			});
+			parts.dropdown.appendChild(optionButton);
+		});
+	};
+
+	const refreshSharedSelectField = (field) => {
+		syncSharedSelectTriggerLabel(field);
+		renderSharedSelectDropdown(field);
+	};
+
+	const initializeSharedSelectField = (field) => {
+		const parts = getSharedSelectParts(field);
+		if (!parts || parts.field.dataset.sharedSelectBound === "1") return;
+		parts.field.dataset.sharedSelectBound = "1";
+		refreshSharedSelectField(field);
+		parts.trigger.addEventListener("click", () => {
+			const shouldOpen = parts.dropdown.hidden;
+			closeSharedSelectDropdowns(field);
+			setTradeStrategyDropdownOpen(false);
+			setTradeStrategyPanelOpen(false);
+			renderSharedSelectDropdown(field);
+			setSharedSelectDropdownOpen(field, shouldOpen);
+		});
+		parts.select.addEventListener("change", () => {
+			syncNativeSelectSelection(parts.select, parts.select.value);
+			refreshSharedSelectField(field);
+		});
+	};
 	const monthDateFormatter = new Intl.DateTimeFormat("en-GB", {
 		month: "long",
 		year: "numeric",
@@ -2066,6 +2182,10 @@
 			periodPanel.hidden = !isPeriodMode;
 			periodPanel.setAttribute("aria-hidden", String(!isPeriodMode));
 			periodPanel.style.display = isPeriodMode ? "" : "none";
+		}
+		if (!isPeriodMode) {
+			closeSharedSelectDropdowns(periodPanel?.querySelector("[data-shared-select-field]"));
+			setSharedSelectDropdownOpen(periodPanel?.querySelector("[data-shared-select-field]"), false);
 		}
 		if (exactPanel) {
 			exactPanel.hidden = isPeriodMode;
@@ -2348,6 +2468,7 @@
 					if (opt === currentInterval) el.selected = true;
 					intervalSelect.appendChild(el);
 				});
+				refreshSharedSelectField(intervalSelect.closest("[data-shared-select-field]"));
 
 				const nextInterval = intervalSelect.value;
 				if (currentInterval === "1m" && !has1m) {
@@ -2435,7 +2556,10 @@
 				}
 			} else if (nextRangeMode === "period") {
 				const matchedPeriod = chooseRelativePeriodForExactRange();
-				if (matchedPeriod && periodSelect) periodSelect.value = matchedPeriod;
+				if (matchedPeriod && periodSelect) {
+					periodSelect.value = matchedPeriod;
+					refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+				}
 			}
 		}
 		updateRangePanels();
@@ -2461,6 +2585,7 @@
 		});
 	}
 	$("#period")?.addEventListener("change", () => {
+		refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
 		if (!isBacktestView) requestWorkspaceChartTransition("period");
 		scheduleAutoSubmit();
 	});
@@ -2499,6 +2624,7 @@
 			if (!allowed.includes(periodSelect.value)) {
 				periodSelect.value = interval === "1m" ? "1d" : "1y";
 			}
+			refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
 		}
 		// Force full reload for interval change to refresh sidebar period options
 		scheduleAutoSubmit(20);
@@ -2873,6 +2999,7 @@
 	seedTickerValidationState();
 	initStrategyParamControls(tradeStrategyField || document);
 	syncTradeStrategyTuningAvailability();
+	sharedSelectFields.forEach((field) => initializeSharedSelectField(field));
 
 	if (tradeStrategyTuneButton instanceof HTMLButtonElement) {
 		tradeStrategyTuneButton.addEventListener("click", () => {
@@ -2884,6 +3011,7 @@
 	if (tradeStrategyTrigger instanceof HTMLButtonElement) {
 		tradeStrategyTrigger.addEventListener("click", () => {
 			const shouldOpen = tradeStrategyDropdown instanceof HTMLElement ? tradeStrategyDropdown.hidden : false;
+			closeSharedSelectDropdowns();
 			setTradeStrategyPanelOpen(false);
 			renderTradeStrategyDropdown();
 			setTradeStrategyDropdownOpen(shouldOpen);
@@ -2905,9 +3033,14 @@
 	window.addEventListener("resize", positionTradeStrategyPanel);
 	document.addEventListener("scroll", positionTradeStrategyPanel, true);
 	document.addEventListener("click", (event) => {
-		if (!(tradeStrategyField instanceof HTMLElement)) return;
-		if (tradeStrategyField.contains(event.target)) return;
-		setTradeStrategyDropdownOpen(false);
+		const clickedInsideStrategyField = tradeStrategyField instanceof HTMLElement && tradeStrategyField.contains(event.target);
+		const clickedInsideSharedField = sharedSelectFields.some((field) => field.contains(event.target));
+		if (!clickedInsideStrategyField) {
+			setTradeStrategyDropdownOpen(false);
+		}
+		if (!clickedInsideSharedField) {
+			closeSharedSelectDropdowns();
+		}
 	});
 
 	if (form) {

@@ -50,7 +50,7 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='') -%}
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', custom_period_dropdown=false) -%}
 <div class="field">
     {{ render_segmented_control(
         "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
@@ -65,11 +65,41 @@
 </div>
 <div class="field range-panel" id="period_panel">
     <label for="period">{{ labels.period }}</label>
+    {% if custom_period_dropdown %}
+    <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field data-shared-select-kind="period">
+        <select id="period" name="period" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+            {% for item in periods %}
+            <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
+            {% endfor %}
+        </select>
+        <div class="trade-strategy-combobox backtest-shared-select-combobox">
+            <button
+                type="button"
+                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                data-shared-select-trigger
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="period_dropdown"
+            >
+                <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+            </button>
+        </div>
+        <div
+            id="period_dropdown"
+            class="trade-strategy-dropdown backtest-shared-select-dropdown"
+            data-shared-select-dropdown
+            role="listbox"
+            aria-label="{{ labels.period }}"
+            hidden
+        ></div>
+    </div>
+    {% else %}
     <select id="period" name="period" class="form-select">
         {% for item in periods %}
         <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
         {% endfor %}
     </select>
+    {% endif %}
 </div>
 <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
     <div class="date-picker-grid">

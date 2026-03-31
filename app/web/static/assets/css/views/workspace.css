@@ -395,20 +395,15 @@
     top: calc(100% + 4px);
     left: 0;
     right: 0;
-    z-index: var(--layer-inline-overlay);
+    z-index: var(--layer-global-popover);
     border-radius: var(--ticker-suggestions-radius, 10px);
-    background:
-        linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 24%, transparent) 0%, color-mix(in srgb, var(--glass-surface-background-dense) 94%, transparent) 100%),
-        radial-gradient(circle at top left, color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent) 0%, transparent 46%),
-        var(--glass-surface-background-dense);
-    border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 18%, transparent);
+    background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
+    border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
     box-shadow:
-        inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent),
-        inset 0 -1px 0 color-mix(in srgb, var(--theme-glass-highlight) 30%, transparent),
-        0 18px 40px color-mix(in srgb, var(--theme-shadow-ambient) 92%, transparent),
-        0 6px 18px color-mix(in srgb, var(--theme-glass-border) 72%, transparent);
-    backdrop-filter: saturate(190%) blur(26px);
-    -webkit-backdrop-filter: saturate(190%) blur(26px);
+        0 24px 48px var(--theme-shadow-ambient),
+        0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
+    backdrop-filter: saturate(180%) blur(28px);
+    -webkit-backdrop-filter: saturate(180%) blur(28px);
     overflow: hidden;
     isolation: isolate;
     display: none;
@@ -418,9 +413,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background:
-        linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-highlight) 70%, transparent) 0%, transparent 28%),
-        linear-gradient(135deg, color-mix(in srgb, var(--color-white-adaptive) 10%, transparent) 0%, transparent 52%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 14%, transparent) 0%, transparent 100%);
     pointer-events: none;
 }
 
@@ -441,9 +434,7 @@
     text-transform: none;
     color: var(--theme-muted);
     font-weight: var(--font-weight-bold);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-highlight) 78%, transparent) 0%, color-mix(in srgb, var(--glass-surface-background-strong) 92%, transparent) 100%);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: color-mix(in srgb, var(--theme-text) 4%, transparent);
 }
 
 .suggestion-item {
@@ -467,9 +458,8 @@
 
 .suggestion-item:hover, .suggestion-item.is-active {
     transform: none;
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 68%, transparent);
-    background:
-        linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 12%, transparent) 0%, color-mix(in srgb, var(--accent-surface-soft) 100%, transparent) 100%);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 40%, transparent);
+    background: color-mix(in srgb, var(--control-liquid-background-hover) 82%, var(--accent-surface-soft));
 }
 
 .suggestion-symbol {
