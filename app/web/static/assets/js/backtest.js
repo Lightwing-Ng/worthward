@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -171,7 +171,7 @@
 		priceCanvas.dataset.tradeChartMounted = "1";
 		equityCanvas.dataset.tradeChartMounted = "1";
 
-		const { backtestResult, theme } = state;
+		const { backtestResult } = state;
 		const resolvedTheme = readThemeTokens();
 		const labels = backtestResult.chart.dates;
 		const rawDates = Array.isArray(backtestResult.chart.raw_dates) ? backtestResult.chart.raw_dates : [];
@@ -501,7 +501,7 @@
 						scale.width = fixedYAxisWidth;
 					},
 					ticks: {
-						color: theme.muted,
+						color: resolvedTheme.muted,
 						display: true,
 						padding: 8,
 						callback(value, index, ticks) {
@@ -603,13 +603,13 @@
 			tooltip.querySelector('[data-role="all-in"]').textContent = formatMoney(allInValue);
 			const vsAllInValue = tooltip.querySelector('[data-role="vs-all-in"]');
 			vsAllInValue.textContent = `${versusAllIn >= 0 ? "+" : "-"}${formatMoney(Math.abs(versusAllIn))}`;
-			vsAllInValue.style.color = versusAllIn >= 0 ? theme.accent_positive : theme.accent_secondary;
+			vsAllInValue.style.color = versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
 			const dots = tooltip.querySelectorAll(".chart-tooltip-dot");
-			if (dots[0]) dots[0].style.backgroundColor = theme.accent_primary;
-			if (dots[1]) dots[1].style.backgroundColor = equityValue >= initialCapital ? theme.accent_positive : theme.accent_secondary;
+			if (dots[0]) dots[0].style.backgroundColor = resolvedTheme.accentPrimary;
+			if (dots[1]) dots[1].style.backgroundColor = equityValue >= initialCapital ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
 			if (dots[2]) dots[2].style.backgroundColor = resolvedTheme.text;
 			if (dots[3]) dots[3].style.backgroundColor = allInReferenceColor;
-			if (dots[4]) dots[4].style.backgroundColor = versusAllIn >= 0 ? theme.accent_positive : theme.accent_secondary;
+			if (dots[4]) dots[4].style.backgroundColor = versusAllIn >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
 			const tooltipWidth = tooltip.offsetWidth || 220;
 			const rightSpace = stackRect.width - relativeX;
 			const left = rightSpace >= tooltipWidth + 20 ? relativeX + 14 : Math.max(12, relativeX - tooltipWidth - 14);
@@ -679,7 +679,7 @@
 					{
 						label: "Close",
 						data: priceSeriesStart,
-						borderColor: isCandlestick ? "transparent" : theme.accent_primary,
+						borderColor: isCandlestick ? "transparent" : resolvedTheme.accentPrimary,
 						borderWidth: isCandlestick ? 0 : 2.5,
 						pointRadius: 0,
 						tension: 0,
@@ -689,7 +689,7 @@
 							borderColor: (context) => (
 								isSessionGap(context.p0DataIndex, context.p1DataIndex)
 									? "rgba(0, 0, 0, 0)"
-									: theme.accent_primary
+									: resolvedTheme.accentPrimary
 							),
 						},
 					},
@@ -716,6 +716,7 @@
 					{
 						label: "Equity",
 						data: equitySeriesStart,
+						borderColor: resolvedTheme.accentPositive,
 						borderWidth: 2.5,
 						pointRadius: 0,
 						tension: 0,
@@ -727,7 +728,7 @@
 									return "rgba(0, 0, 0, 0)";
 								}
 								const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialCapital);
-								return target >= initialCapital ? theme.accent_positive : theme.accent_secondary;
+								return target >= initialCapital ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
 							},
 						},
 					},
