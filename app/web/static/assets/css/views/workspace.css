@@ -1,4 +1,5 @@
-/* v1.1.0-p2: Keep the shared workspace shell from clipping child card shadows. */
+/* Code version: v1.1.1-p1 */
+/* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
 }
@@ -396,12 +397,31 @@
     right: 0;
     z-index: var(--layer-inline-overlay);
     border-radius: var(--ticker-suggestions-radius, 10px);
-    background: var(--glass-surface-background-dense);
-    box-shadow: 0 14px 30px var(--theme-shadow-ambient);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 24%, transparent) 0%, color-mix(in srgb, var(--glass-surface-background-dense) 94%, transparent) 100%),
+        radial-gradient(circle at top left, color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent) 0%, transparent 46%),
+        var(--glass-surface-background-dense);
+    border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 18%, transparent);
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent),
+        inset 0 -1px 0 color-mix(in srgb, var(--theme-glass-highlight) 30%, transparent),
+        0 18px 40px color-mix(in srgb, var(--theme-shadow-ambient) 92%, transparent),
+        0 6px 18px color-mix(in srgb, var(--theme-glass-border) 72%, transparent);
+    backdrop-filter: saturate(190%) blur(26px);
+    -webkit-backdrop-filter: saturate(190%) blur(26px);
     overflow: hidden;
+    isolation: isolate;
     display: none;
+}
+
+.suggestions::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-highlight) 70%, transparent) 0%, transparent 28%),
+        linear-gradient(135deg, color-mix(in srgb, var(--color-white-adaptive) 10%, transparent) 0%, transparent 52%);
+    pointer-events: none;
 }
 
 .suggestions.is-open {
@@ -413,6 +433,7 @@
 }
 
 .suggestion-group-label {
+    position: relative;
     padding: 10px 10px 6px;
     font-size: var(--font-ui-xs);
     line-height: 1.1;
@@ -420,29 +441,35 @@
     text-transform: none;
     color: var(--theme-muted);
     font-weight: var(--font-weight-bold);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-highlight) 82%, transparent) 0%, color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent) 100%);
-    backdrop-filter: saturate(180%) blur(18px);
-    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-highlight) 78%, transparent) 0%, color-mix(in srgb, var(--glass-surface-background-strong) 92%, transparent) 100%);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .suggestion-item {
+    position: relative;
     width: 100%;
     border: 0;
     border-radius: 0;
-    background: transparent;
+    background: color-mix(in srgb, var(--color-white-adaptive) 1.5%, transparent);
     color: var(--text);
     text-align: left;
     padding: 8px 10px;
     box-shadow: none;
     min-height: 0;
     transform: none;
-    transition: background 140ms ease, color 140ms ease;
+    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.suggestion-item + .suggestion-item {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-border) 55%, transparent);
 }
 
 .suggestion-item:hover, .suggestion-item.is-active {
     transform: none;
-    box-shadow: none;
-    background: var(--accent-surface-soft);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 68%, transparent);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 12%, transparent) 0%, color-mix(in srgb, var(--accent-surface-soft) 100%, transparent) 100%);
 }
 
 .suggestion-symbol {
