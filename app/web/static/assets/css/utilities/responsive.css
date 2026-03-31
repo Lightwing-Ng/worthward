@@ -1,4 +1,4 @@
-/* Code version: v3.23.1-p2 */
+/* Code version: v3.24.0-p1 */
 @media (max-width: 980px) {
 	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 	.portfolio-summary { align-items: flex-start; }
@@ -11,9 +11,15 @@
 	.settings-danger-form .settings-inline-button { width: fit-content; min-width: 0; }
 }
 @media (max-width: 767px) {
-	body { overflow-x: hidden; width: 100vw; }
+	body { overflow-x: hidden; overflow-y: auto; width: 100vw; }
 	/* Preserve the workspace panel's top rounded edge on narrow screens. */
-	.page { width: 100%; padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + 56px + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
+	.page {
+		width: 100%;
+		min-height: 100dvh;
+		padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + 56px + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px));
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
 	.app-shell {
 		display: flex;
 		flex-direction: column;
@@ -76,6 +82,28 @@
 	html.sidebar-memory-collapsed .app-shell .sidebar-toggle {
 		margin: 0;
 		transform: translate3d(var(--sidebar-toggle-x), 0, 0);
+	}
+	.chart-surface,
+	.backtest-surface,
+	.chart-region-wrap {
+		flex: 0 0 auto;
+	}
+	.chart-wrap {
+		flex: 0 0 auto;
+		height: auto;
+		max-height: none;
+		aspect-ratio: 16 / 9;
+	}
+	.trade-chart-stack {
+		height: auto;
+		flex: 0 0 auto;
+		grid-template-rows: none;
+		gap: 8px;
+		overflow: visible;
+	}
+	.trade-chart-panel {
+		height: auto;
+		aspect-ratio: 16 / 9;
 	}
 	.chart-panel {
 		order: 2;
