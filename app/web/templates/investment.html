@@ -35,12 +35,34 @@
         <div class="ticker-input-row">
             <div class="ticker-input-main">
                 <label for="txn_type">Event Type</label>
-                <select id="txn_type" class="form-select">
-                    <option value="deposit">Deposit</option>
-                    <option value="withdrawal">Withdrawal</option>
-                    <option value="trade">Trade</option>
-                    <option value="exchange">Currency Exchange</option>
-                </select>
+                <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="event-type">
+                    <select id="txn_type" name="txn_type" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                        <option value="deposit" selected>Deposit</option>
+                        <option value="withdrawal">Withdrawal</option>
+                        <option value="trade">Trade</option>
+                        <option value="exchange">Currency Exchange</option>
+                    </select>
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button
+                            type="button"
+                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                            data-shared-select-trigger
+                            aria-haspopup="listbox"
+                            aria-expanded="false"
+                            aria-controls="txn_type_dropdown"
+                        >
+                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                        </button>
+                    </div>
+                    <div
+                        id="txn_type_dropdown"
+                        class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                        data-shared-select-dropdown
+                        role="listbox"
+                        aria-label="Event Type"
+                        hidden
+                    ></div>
+                </div>
             </div>
         </div>
         <button type="submit" class="secondary-button" style="margin-top: 10px;">Record Transaction</button>
