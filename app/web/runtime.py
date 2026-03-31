@@ -916,7 +916,7 @@ def build_web_runtime() -> WebRuntime:
                 "tokens": [
                     px_token("--trade-control-input-height", 30, 0),
                     raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
-                    raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--glass-surface-background-soft) 72%, transparent)"),
+                    raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),
                     raw_token("--control-liquid-shadow", "none"),
                     raw_token("--control-liquid-shadow-focus", "none"),
                     raw_token("--ticker-input-glass-background", "transparent"),
