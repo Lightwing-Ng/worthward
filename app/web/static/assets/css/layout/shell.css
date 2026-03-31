@@ -37,8 +37,8 @@
 }
 .sidebar-toggle {
 	position: absolute;
-	top: 10px;
-	left: 10px;
+	top: var(--sidebar-toggle-top);
+	left: var(--sidebar-toggle-left);
 	z-index: var(--layer-fixed-dock);
 	transform: translate3d(var(--sidebar-toggle-x), 0, 0);
 }

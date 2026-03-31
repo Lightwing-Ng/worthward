@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -37,6 +37,11 @@
 	--radius-pill: 999px;
 	--page-edge-pad: 10px;
 	--sidebar-width: 312px;
+	--sidebar-toggle-top: var(--page-edge-pad);
+	--sidebar-toggle-left: var(--page-edge-pad);
+	--sidebar-toggle-center-offset: calc(var(--sidebar-toggle-top) + (var(--settings-round-icon-button-size) / 2));
+	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--page-edge-pad));
+	--workspace-title-safe-top: 60px;
 	--sidebar-bottom-pad: 96px;
 	--sidebar-dock-bottom-gap: 14px;
 	--sidebar-dock-mobile-bottom-gap: 4px;

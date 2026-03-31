@@ -1,4 +1,4 @@
-/* v1.1.0-p1: Keep the shared workspace shell from clipping child card shadows. */
+/* v1.1.0-p2: Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
 }
@@ -19,6 +19,15 @@
     background: var(--glass-surface-background-strong);
     backdrop-filter: var(--glass-surface-blur);
     -webkit-backdrop-filter: var(--glass-surface-blur);
+}
+
+.workspace > .workspace-header:first-child .report-card,
+.workspace > .chart-surface:first-child {
+    padding-top: max(10px, var(--workspace-title-safe-top));
+}
+
+.workspace > .workspace-header-plain:first-child {
+    padding-top: var(--workspace-title-safe-top);
 }
 
 .portfolio-summary {

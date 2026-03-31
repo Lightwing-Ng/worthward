@@ -107,7 +107,10 @@ LEGACY_VIEW_ALIASES = {
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                                "style-tokens"}
-SUPPORTED_MORE_SECTIONS = {"timing"}
+SUPPORTED_MORE_SECTIONS = {"timing", "investment"}
+LEGACY_MORE_SECTION_ALIASES = {
+    "invest": "investment",
+}
 LOCAL_STORE_PAGE_SIZE = 10
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
@@ -150,7 +153,7 @@ class WebRuntime:
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
     test_chart_1m_view: Any
-    invest_page: Any
+    investment_page: Any
 
 
 def extract_first_non_null_value(raw_value: object) -> object | None:
@@ -457,6 +460,7 @@ def build_web_runtime() -> WebRuntime:
 
     def normalize_more_section(section_name: str | None) -> str:
         candidate = (section_name or "timing").strip().lower()
+        candidate = LEGACY_MORE_SECTION_ALIASES.get(candidate, candidate)
         return candidate if candidate in SUPPORTED_MORE_SECTIONS else "timing"
 
     def build_more_path(section_name: str) -> str:
@@ -1810,6 +1814,9 @@ def build_web_runtime() -> WebRuntime:
         elif current_view == "more":
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
+            if more_section == "investment":
+                page_title = "My Investment"
+                settings_title = "My Investment"
 
         supported_periods = (
             SUPPORTED_PERIODS_1M if requested_interval == "1m" and "1m" in supported_intervals else SUPPORTED_PERIODS_1D
@@ -2282,7 +2289,7 @@ def build_web_runtime() -> WebRuntime:
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
             "backtest": "backtest.html",
-            "more": "more.html",
+            "more": "investment.html" if more_section == "investment" else "more.html",
             "settings": "settings.html",
         }[current_view]
 
@@ -2345,7 +2352,7 @@ def build_web_runtime() -> WebRuntime:
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("timing",)},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("timing", "investment")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -2986,8 +2993,10 @@ def build_web_runtime() -> WebRuntime:
         except Exception as e:
             return f"Error loading chart: {str(e)}", 500
 
-    def invest_page():
-        return render_template("invest.html")
+    def investment_page():
+        query_string = request.query_string.decode().strip()
+        target_path = build_more_path("investment")
+        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     return WebRuntime(
         root=root,
@@ -3013,5 +3022,5 @@ def build_web_runtime() -> WebRuntime:
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,
         test_chart_1m_view=test_chart_1m_view,
-        invest_page=invest_page,
+        investment_page=investment_page,
     )
