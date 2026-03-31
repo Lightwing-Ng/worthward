@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 
+{% extends "base.html" %}
+
 {% block sidebar_content %}
 <nav class="settings-nav" aria-label="More sections">
     <a href="{{ more_urls.timing }}" class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
         <span class="settings-nav-label">{{ labels.more_timing }}</span>
+    </a>
+    <a href="/invest" class="settings-nav-item{% if current_view == 'more' and more_section == 'invest' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell"><span class="icon icon-settings-strategies" aria-hidden="true"></span></span>
+        <span class="settings-nav-label">My Invest</span>
     </a>
 </nav>
 {% endblock %}

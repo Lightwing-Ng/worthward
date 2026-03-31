@@ -1,3 +1,4 @@
+/* Code version: v3.23.1-p1 */
 @media (max-width: 980px) {
 	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 	.portfolio-summary { align-items: flex-start; }
@@ -11,7 +12,8 @@
 }
 @media (max-width: 767px) {
 	body { overflow-x: hidden; width: 100vw; }
-	.page { width: 100%; padding: 0 10px calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + 56px + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
+	/* Preserve the workspace panel's top rounded edge on narrow screens. */
+	.page { width: 100%; padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px calc(var(--page-edge-pad) + var(--sidebar-dock-bottom-gap) + 56px + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px)); overflow: hidden; }
 	.app-shell { display: flex; flex-direction: column; width: 100%; overflow-x: hidden; gap: 0 !important; --sidebar-toggle-x: calc(var(--sidebar-width) - 52px) !important; }
 	.app-shell.is-sidebar-collapsed, html.sidebar-memory-collapsed .app-shell { --sidebar-toggle-x: 0px !important; }
 	.sidebar {

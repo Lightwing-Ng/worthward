@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block sidebar_content %}
+<nav class="settings-nav" aria-label="More sections">
+    <a href="{{ more_urls.timing }}" class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
+        <span class="settings-nav-label">{{ labels.more_timing }}</span>
+    </a>
+    <a href="/invest" class="settings-nav-item is-active">
+        <span class="settings-nav-icon-shell" style="--settings-icon-surface: color-mix(in srgb, var(--theme-accent-secondary) 14%, transparent);"><span class="icon icon-settings-strategies" aria-hidden="true" style="--settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);"></span></span>
+        <span class="settings-nav-label">My Invest</span>
+    </a>
+</nav>
+{% endblock %}
+
+{% block workspace_content %}
+<div class="workspace-header">
+    <h1 class="report-heading">My Invest</h1>
+    <p class="settings-summary">Brokerage Tracker Dashboard</p>
+</div>
+
+<!-- 1. Dashboard -->
+<section class="chart-surface" style="margin-bottom: 20px;">
+    <div class="chart-heading-row"><p class="chart-heading">Dashboard</p></div>
+    <div class="trade-metrics-grid" id="invest_dashboard">
+        <div class="trade-metric-card"><span class="trade-metric-label">Total Portfolio</span><span class="trade-metric-value">$124,567.89</span></div>
+        <div class="trade-metric-card"><span class="trade-metric-label">Net Profit</span><span class="trade-metric-value" style="color: var(--color-green-adaptive);">+$12,345.67</span></div>
+    </div>
+</section>
+
+<!-- 2. Transaction Form -->
+<section class="chart-surface" style="margin-bottom: 20px;">
+    <div class="chart-heading-row"><p class="chart-heading">New Transaction</p></div>
+    <form class="controls" id="invest_form">
+        <div class="ticker-input-row">
+            <div class="ticker-input-main">
+                <label for="txn_type">Event Type</label>
+                <select id="txn_type" class="form-select">
+                    <option value="deposit">Deposit</option>
+                    <option value="withdrawal">Withdrawal</option>
+                    <option value="trade">Trade</option>
+                    <option value="exchange">Currency Exchange</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="secondary-button" style="margin-top: 10px;">Record Transaction</button>
+    </form>
+</section>
+
+<!-- 3. History Table -->
+<section class="chart-surface">
+    <div class="chart-heading-row"><p class="chart-heading">Transaction History</p></div>
+    <div class="trade-transactions-wrap">
+        <table class="settings-table trade-transactions-table">
+            <thead>
+                <tr><th>Date</th><th>Type</th><th>Asset</th><th>Amount</th><th>Fee</th></tr>
+            </thead>
+            <tbody id="invest_history">
+                <tr><td>31 Mar 2026</td><td>Deposit</td><td>USD</td><td>$10,000.00</td><td>$0.00</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

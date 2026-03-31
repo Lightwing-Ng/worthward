@@ -1,7 +1,26 @@
 {% extends "base.html" %}
 
 {% block sidebar_content %}
-<nav class="settings-nav" aria-label="Settings sections">
+{% set nav_sections = [
+    'about',
+    'general',
+    'font-tokens',
+    'material-tokens',
+    'style-tokens',
+    'network',
+    'broker-access',
+    'email-smtp',
+    'local-market-store',
+    'strategies',
+    'clear-caches'
+] %}
+{% set ns = namespace(active_index=0) %}
+{% for section in nav_sections %}
+    {% if settings_section == section %}
+        {% set ns.active_index = loop.index0 %}
+    {% endif %}
+{% endfor %}
+<nav class="settings-nav" aria-label="Settings sections" style="--settings-active-index: {{ ns.active_index }};">
     <a href="{{ settings_urls.about }}" class="settings-nav-item settings-nav-item-about{% if settings_section == 'about' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-about"></span></span>
         <span class="settings-nav-label">{{ labels.about }}</span>

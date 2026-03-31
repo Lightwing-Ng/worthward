@@ -150,6 +150,7 @@ class WebRuntime:
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
     test_chart_1m_view: Any
+    invest_page: Any
 
 
 def extract_first_non_null_value(raw_value: object) -> object | None:
@@ -2985,6 +2986,9 @@ def build_web_runtime() -> WebRuntime:
         except Exception as e:
             return f"Error loading chart: {str(e)}", 500
 
+    def invest_page():
+        return render_template("invest.html")
+
     return WebRuntime(
         root=root,
         compare_page=compare_page,
@@ -3009,4 +3013,5 @@ def build_web_runtime() -> WebRuntime:
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,
         test_chart_1m_view=test_chart_1m_view,
+        invest_page=invest_page,
     )
