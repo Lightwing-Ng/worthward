@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.3.2 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -1707,6 +1707,8 @@
 			});
 		});
 	};
+
+	bootstrap.initThemeModeControls = initThemeModeControls;
 
 	const showWorkspaceModal = (options = {}) => {
 		if (!workspaceModalOverlay) return;

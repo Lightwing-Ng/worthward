@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -1051,6 +1051,7 @@
     bootstrap.hydrateSettingsLocalStoreRanges = hydrateLocalStoreRanges;
     bootstrap.initSettingsWorkspace = (context = {}) => {
         settingsContext = context;
+        bootstrap.initThemeModeControls?.();
         attachBrokerSettingsHandlers();
         attachNetworkRefreshButton();
         attachStyleTokenResizer();
