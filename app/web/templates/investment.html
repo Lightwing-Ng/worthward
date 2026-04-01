@@ -30,7 +30,7 @@
 
     <section class="chart-surface" style="margin-bottom: 20px;">
         <div class="chart-heading-row"><p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">
-            Total Equity Curve</p></div>
+            Equity curve</p></div>
         <div class="trade-chart-stack" style="height: 35vh; --trade-chart-y-padding-px: 8;">
             <canvas id="investment_equity_chart" style="width: 100%; height: 100%;"></canvas>
         </div>
@@ -39,7 +39,7 @@
     </section>
 
     <!-- 2. History Table (contains popup form inside) -->
-    <section class="chart-surface" style="position: relative;">
+    <section class="chart-surface" style="position: relative; padding-bottom: 20px;">
         <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
             <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
             <button type="button" class="settings-round-icon-button" id="toggle_form_button"
@@ -58,10 +58,37 @@
         z-index: 10;
         background: var(--panel-strong);
         border-radius: 10px;
-        padding: 15px;">
+        padding: 15px;
+        margin-top: 15px;
             <form class="controls" id="investment_form">
                 <div class="ticker-input-row"
                      style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px;">
+                    <div class="ticker-input-main">
+                        <label for="txn_broker">Broker</label>
+                        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
+                            <select id="txn_broker" name="txn_broker"
+                                    class="trade-strategy-native-select backtest-shared-select-native" hidden
+                                    aria-hidden="true" tabindex="-1">
+                                <option value="ibkr" selected>IBKR</option>
+                                <option value="longbridge">Longbridge</option>
+                                <option value="longbridge-hk">Longbridge HK</option>
+                                <option value="futu">Futu</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false"
+                                        aria-controls="txn_broker_dropdown">
+                                    <span class="trade-strategy-trigger-label"
+                                          data-shared-select-trigger-label>IBKR</span>
+                                </button>
+                            </div>
+                            <div id="txn_broker_dropdown"
+                                 class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                 data-shared-select-dropdown role="listbox" hidden></div>
+                        </div>
+                    </div>
                     <div class="ticker-input-main">
                         <label for="txn_date">Date</label>
                         <div class="date-picker-field" data-date-picker data-date-role="txn">
@@ -85,31 +112,6 @@
                                 </div>
                                 <div class="date-picker-days" data-date-grid></div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="ticker-input-main">
-                        <label for="txn_broker">Broker</label>
-                        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
-                            <select id="txn_broker" name="txn_broker"
-                                    class="trade-strategy-native-select backtest-shared-select-native" hidden
-                                    aria-hidden="true" tabindex="-1">
-                                <option value="ibkr" selected>IBKR</option>
-                                <option value="longbridge">Longbridge</option>
-                                <option value="futu">Futu</option>
-                                <option value="other">Other</option>
-                            </select>
-                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
-                                <button type="button"
-                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
-                                        data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false"
-                                        aria-controls="txn_broker_dropdown">
-                                    <span class="trade-strategy-trigger-label"
-                                          data-shared-select-trigger-label>IBKR</span>
-                                </button>
-                            </div>
-                            <div id="txn_broker_dropdown"
-                                 class="trade-strategy-dropdown backtest-shared-select-dropdown"
-                                 data-shared-select-dropdown role="listbox" hidden></div>
                         </div>
                     </div>
                     <div class="ticker-input-main">
@@ -213,21 +215,8 @@
                                class="form-input" style="width: 100%;">
                     </div>
                 </div>
-                <div class="settings-action-package">
-                    <div class="settings-action-package-icon-shell">
-                        <span class="icon"
-                              style="-webkit-mask-image: url(/static/images/plus.circle.fill.svg); mask-image: url(/static/images/plus.circle.fill.svg);"></span>
-                    </div>
-                    <div class="settings-action-package-copy">
-                        <p class="settings-title">Add new transaction</p>
-                        <p class="settings-summary">This transaction will be saved to the local `investment.json` file
-                            and will not be uploaded to any remote server.</p>
-                    </div>
-                    <div class="settings-action-package-button-shell">
-                        <button type="submit" class="settings-inline-button settings-inline-button-primary">Add this
-                            transaction
-                        </button>
-                    </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button type="submit" class="settings-inline-button settings-inline-button-primary">Add this transaction</button>
                 </div>
             </form>
         </section>
@@ -237,17 +226,17 @@
             <table class="settings-table trade-transactions-table" id="transactionTable"
                    style="table-layout: fixed; width: 100%;">
                 <thead>
-                <tr>
-                    <th style="text-align: center; width: 5%; min-width: 20px;">No.</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px;">Time</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px;">Type</th>
-                    <th style="text-align: left; width: 15%; min-width: 48px;">Description</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px;">Currency</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px;">Amount</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px;">Commission</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px;">Market value</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px;">Cash</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px;">Equity</th>
+                <tr style="background: var(--panel-strong); background-opacity: 1;">
+                    <th style="text-align: center; width: 5%; min-width: 20px; background: var(--panel-strong);">No.</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Time</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Type</th>
+                    <th style="text-align: left; width: 15%; min-width: 48px; background: var(--panel-strong);">Description</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Currency</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Amount</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Commission</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Market value</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Cash</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Equity</th>
                 </tr>
                 </thead>
                 <tbody id="investment_history" style="vertical-align: top;">

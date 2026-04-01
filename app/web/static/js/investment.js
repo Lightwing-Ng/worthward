@@ -155,11 +155,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize shared selectors after DOM is ready
-    setTimeout(initSharedSelectors, 50);
+    // Initialize shared selectors after DOM is ready - increase delay to ensure full DOM parsed
+    setTimeout(initSharedSelectors, 150);
 
     // Toggle form visibility
-    if (toggleBtn && formContainer) {
+    const parentSection = formContainer.closest('.chart-surface');
+    if (toggleBtn && formContainer && parentSection) {
         toggleBtn.addEventListener('click', () => {
             const isVisible = formContainer.style.display === 'block';
             if (isVisible) {
@@ -167,13 +168,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 formContainer.style.transform = 'scale(0.98)';
                 setTimeout(() => formContainer.style.display = 'none', 400);
                 historyTable.style.transform = 'translateY(0)';
+                parentSection.style.paddingBottom = '20px';
             } else {
                 formContainer.style.display = 'block';
                 setTimeout(() => {
                     formContainer.style.opacity = '1';
                     formContainer.style.transform = 'scale(1)';
                 }, 50);
-                historyTable.style.transform = 'translateY(240px)';
+                historyTable.style.transform = 'translateY(360px)';
+                parentSection.style.paddingBottom = '380px';
             }
         });
     }
