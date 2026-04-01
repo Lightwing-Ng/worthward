@@ -39,10 +39,16 @@
         </div>
     </section>
 
-    <!-- 2. Transaction Form -->
-    <section class="chart-surface" style="margin-bottom: 20px;">
-        <div class="chart-heading-row"><p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">
-            New transaction</p></div>
+    <!-- 2. History Table (contains popup form inside) -->
+    <section class="chart-surface" style="position: relative;">
+        <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
+            <button type="button" class="settings-round-icon-button" id="toggle_form_button"
+                    aria-label="Add transaction">
+                <span class="icon"
+                      style="-webkit-mask-image: url(/static/images/plus.svg); mask-image: url(/static/images/plus.svg);"></span>
+            </button>
+        </div>
         <section id="transaction_form_container" style="
         position: absolute;
         top: 60px; left: 10px; right: 10px;
@@ -226,31 +232,6 @@
                     </div>
                 </div>
             </form>
-        </section>
-    </section>
-
-    <!-- 3. History Table -->
-    <section class="chart-surface">
-        <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
-            <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
-            <button type="button" class="settings-round-icon-button" id="toggle_form_button"
-                    aria-label="Add transaction">
-                <span class="icon"
-                      style="-webkit-mask-image: url(/static/images/plus.svg); mask-image: url(/static/images/plus.svg);"></span>
-            </button>
-        </div>
-        <section id="transaction_form_container" style="
-        position: absolute;
-        top: 60px; left: 10px; right: 10px;
-        display: none;
-        opacity: 0;
-        transform: scale(0.98);
-        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        z-index: 10;
-        background: var(--panel-strong);
-        border-radius: 10px;
-        padding: 15px;
-    ">
         </section>
 
         <div class="trade-transactions-wrap" id="history_table_wrap"
