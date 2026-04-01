@@ -6,9 +6,12 @@ Code version: v0.3.0
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import json
+from pathlib import Path
+import threading
+from uuid import uuid4
 
 try:
     import fcntl
@@ -19,16 +22,12 @@ try:
     import msvcrt
 except ImportError:
     msvcrt = None
-from pathlib import Path
-import shutil
-import threading
-from typing import Any
-from uuid import uuid4
 
 import pandas as pd
 
-from app.core.config import MARKET_STORE_DIR
+from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
 
+INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
 PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"

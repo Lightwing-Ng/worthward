@@ -1,0 +1,942 @@
+/**
+ * Investment transaction tracker frontend.
+ *
+ * Code version: v1.3.0
+ * - Fixed: Total Equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
+ * - Updated: Transaction history description format to TICKER@quantity for buy/sell operations
+ */
+
+// Helper to draw a multi-series line chart directly on a container
+window.drawMultipleLineChart = function(container, data, options) {
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    container.appendChild(canvas);
+
+    const theme = window.ANTIGRAVITY_APP.theme;
+    const resolvedTheme = (() => {
+        const computed = getComputedStyle(document.body);
+        return {
+            text: computed.getPropertyValue("--theme-text").trim(),
+            muted: computed.getPropertyValue("--theme-muted").trim(),
+            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim(),
+            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
+        };
+    })();
+
+    const hexToRgba = (hex, alpha) => {
+        const raw = hex.replace("#", "");
+        const r = parseInt(raw.substring(0, 2), 16);
+        const g = parseInt(raw.substring(2, 4), 16);
+        const b = parseInt(raw.substring(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
+    const datasets = data.series.map((series, idx) => {
+        const color = series.color || (idx === 0 ? resolvedTheme.accentPrimary : resolvedTheme.accentSecondary);
+        return {
+            label: series.name,
+            data: series.values,
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: false,
+            tension: 0.2,
+        };
+    });
+
+    const allValues = data.series.flatMap(s => s.values);
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+    const padding = (maxValue - minValue) * 0.1 || 1;
+
+    const chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: datasets,
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { top: 8, right: 8, bottom: 22, left: 4 } },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: true, position: 'top', labels: { color: resolvedTheme.muted, boxWidth: 12, usePointStyle: true } },
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        label: (context) => {
+                            const value = context.parsed.y;
+                            return `${context.dataset.label}: ${options.tooltipFormatter ? options.tooltipFormatter(value) : value}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: resolvedTheme.muted, maxRotation: 0 },
+                },
+                y: {
+                    min: minValue - padding,
+                    max: maxValue + padding,
+                    grid: { display: false },
+                    ticks: {
+                        color: resolvedTheme.muted,
+                        callback: (value) => options.yAxisFormatter ? options.yAxisFormatter(value) : value,
+                    },
+                },
+            },
+        },
+    });
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    const toggleBtn = document.getElementById('toggle_form_button');
+    const formContainer = document.getElementById('transaction_form_container');
+    const historyTable = document.getElementById('history_table_wrap');
+    const investmentForm = document.getElementById('investment_form');
+
+    // Copy shared-select initialization from base.html
+    function initSharedSelectors() {
+        document.querySelectorAll('[data-shared-select-field]').forEach(container => {
+            const select = container.querySelector('select');
+            const trigger = container.querySelector('[data-shared-select-trigger]');
+            const dropdown = container.querySelector('[data-shared-select-dropdown]');
+            const label = container.querySelector('[data-shared-select-trigger-label]');
+            if (!select || !trigger || !dropdown) return;
+
+            const options = Array.from(select.options).map(opt => ({
+                value: opt.value,
+                text: opt.text,
+                selected: opt.selected,
+            }));
+
+            let currentValue = options.find(opt => opt.selected)?.value || options[0]?.value;
+            label.textContent = options.find(opt => opt.value === currentValue)?.text || '';
+
+            function renderDropdown() {
+                dropdown.innerHTML = options.map(opt => `
+                    <button type="button" class="trade-strategy-dropdown-item ${opt.value === currentValue ? 'is-selected' : ''}" data-value="${opt.value}">
+                        ${opt.text}
+                    </button>
+                `).join('');
+            }
+
+            renderDropdown();
+
+            trigger.addEventListener('click', () => {
+                const isHidden = dropdown.hidden;
+                dropdown.hidden = !isHidden;
+                trigger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+            });
+
+            dropdown.addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const value = btn.dataset.value;
+                currentValue = value;
+                select.value = value;
+                label.textContent = options.find(opt => opt.value === value)?.text || '';
+                dropdown.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+                // Recalculate net amount when type changes
+                calculateNetAmount();
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!container.contains(e.target)) {
+                    dropdown.hidden = true;
+                    trigger.setAttribute('aria-expanded', 'false');
+                }
+            });
+        });
+    }
+
+    // Initialize shared selectors after DOM is ready
+    setTimeout(initSharedSelectors, 50);
+
+    // Toggle form visibility
+    if (toggleBtn && formContainer) {
+        toggleBtn.addEventListener('click', () => {
+            const isVisible = formContainer.style.display === 'block';
+            if (isVisible) {
+                formContainer.style.opacity = '0';
+                formContainer.style.transform = 'scale(0.98)';
+                setTimeout(() => formContainer.style.display = 'none', 400);
+                historyTable.style.transform = 'translateY(0)';
+            } else {
+                formContainer.style.display = 'block';
+                setTimeout(() => {
+                    formContainer.style.opacity = '1';
+                    formContainer.style.transform = 'scale(1)';
+                }, 50);
+                historyTable.style.transform = 'translateY(240px)';
+            }
+        });
+    }
+
+    // Auto-calculate net amount based on type, quantity, price, commission
+    function calculateNetAmount() {
+        const typeEl = document.getElementById('txn_type');
+        const quantityEl = document.getElementById('txn_quantity');
+        const priceEl = document.getElementById('txn_price');
+        const commissionEl = document.getElementById('txn_commission');
+        const amountEl = document.getElementById('txn_amount');
+
+        if (!typeEl || !quantityEl || !priceEl || !commissionEl || !amountEl) return;
+
+        const selectedType = typeEl.value;
+        const quantity = parseFloat(quantityEl.value || 0);
+        const price = parseFloat(priceEl.value || 0);
+        const commission = parseFloat(commissionEl.value || 0);
+
+        if (!isNaN(quantity) && !isNaN(price) && quantity > 0 && price > 0) {
+            let gross = quantity * price;
+            let net = gross + commission; // Buy: you spend more due to commission
+            if (selectedType === 'sell') {
+                net = gross - commission; // Sell: you receive less due to commission
+            }
+            amountEl.value = net.toFixed(2);
+        }
+    }
+
+    // Attach auto-calculate to input events
+    ['txn_quantity', 'txn_price', 'txn_commission', 'txn_type'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', calculateNetAmount);
+            el.addEventListener('change', calculateNetAmount);
+        }
+    });
+
+    // Format date from picker to YYYY-MM-DD
+    function getFormattedDate() {
+        const dateInput = document.getElementById('txn_date');
+        const timeInput = document.getElementById('txn_time');
+        if (!dateInput || !dateInput.value) return new Date().toISOString().slice(0, 10);
+
+        // If date picker populated with D MMM YYYY format, parse it
+        const value = dateInput.value.trim();
+        const match = value.match(/^(\d{1,2}) (\w{3}) (\d{4})$/);
+        if (match) {
+            const [_, day, mon, year] = match;
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const monthIndex = months.findIndex(m => m.toLowerCase() === mon.toLowerCase());
+            const dateObj = new Date(parseInt(year), monthIndex, parseInt(day));
+            return dateObj.toISOString().slice(0, 10);
+        }
+
+        // Try direct parsing
+        const parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+            return parsed.toISOString().slice(0, 10);
+        }
+
+        return new Date().toISOString().slice(0, 10);
+    }
+
+    // Handle form submission
+    if (investmentForm) {
+        investmentForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            let amount = parseFloat(document.getElementById('txn_amount')?.value || 0);
+            const quantity = parseFloat(document.getElementById('txn_quantity')?.value || 0);
+            const price = parseFloat(document.getElementById('txn_price')?.value || 0);
+            const commission = parseFloat(document.getElementById('txn_commission')?.value || 0);
+            const type = document.getElementById('txn_type')?.value || 'deposit';
+
+            // Auto-calculate amount if quantity and price are provided but amount is empty
+            if ((type === 'buy' || type === 'sell' || type === 'dividend_reinvestment') && quantity && price && !amount) {
+                amount = quantity * price;
+                // For buy: you pay price * quantity + commission → amount is positive but cash decreases later
+                // For sell: you get price * quantity - commission → handled by sign in cash flow calculation
+            }
+
+            const txn = {
+                date: getFormattedDate(),
+                broker: document.getElementById('txn_broker')?.value || 'ibkr',
+                type: type,
+                currency: document.getElementById('txn_currency')?.value || 'USD',
+                ticker: (document.getElementById('txn_ticker')?.value || '').trim().toUpperCase(),
+                quantity: quantity,
+                price: price,
+                amount: amount,
+                commission: commission,
+                description: document.getElementById('txn_description')?.value || '',
+            };
+
+            // Calculate gross_amount for accounting reference
+            if (txn.quantity && txn.price) {
+                txn.gross_amount = txn.quantity * txn.price;
+            }
+
+            // Clean up optional fields
+            // Never delete amount - even 0 is a valid value for certain transaction types
+            if (!txn.ticker) delete txn.ticker;
+            if (!txn.quantity || isNaN(txn.quantity)) delete txn.quantity;
+            if (!txn.price || isNaN(txn.price)) delete txn.price;
+            if (!txn.commission || isNaN(txn.commission) || txn.commission === 0) delete txn.commission;
+            if (!txn.description) delete txn.description;
+
+            fetch('/api/investment/transactions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(txn),
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // Reload page to refresh table and chart
+                    window.location.reload();
+                } else {
+                    alert(`Error adding transaction: ${result.error || 'Unknown error'}`);
+                }
+            })
+            .catch(err => {
+                alert(`Network error: ${err.message}`);
+            });
+        });
+    }
+
+    // Load and render transactions
+    fetch('/api/investment/transactions')
+        .then(response => response.json())
+        .then(async data => {
+            await renderTransactionTable(data.transactions || []);
+        })
+        .catch(err => {
+            console.error('Failed to load transactions:', err);
+        });
+
+    async function renderTransactionTable(transactions) {
+        const tbody = document.getElementById('investment_history');
+        if (!tbody) return;
+
+        if (!transactions.length) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--muted);">No transactions yet. Click + above to add your first transaction.</td></tr>`;
+            return;
+        }
+
+        // 1. Sort by date ascending to calculate running cash and holdings
+        let runningCash = 0;
+        const holdings = {}; // {ticker: quantity}
+        const tickers = new Set();
+
+        const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
+            let amount = (txn.amount ?? txn.cash) || 0;
+
+            // Auto-calculate amount if missing but we have quantity and price
+            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
+                amount = txn.quantity * txn.price;
+            }
+
+            // Update holdings based on transaction type
+            if (txn.ticker && txn.quantity) {
+                if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
+                if (['buy', 'dividend_reinvestment'].includes(txn.type)) {
+                    holdings[txn.ticker] += txn.quantity;
+                    tickers.add(txn.ticker);
+                } else if (['sell'].includes(txn.type)) {
+                    holdings[txn.ticker] -= txn.quantity;
+                    if (holdings[txn.ticker] <= 0) {
+                        delete holdings[txn.ticker];
+                        tickers.delete(txn.ticker);
+                    }
+                }
+            }
+
+            // Calculate cash impact based on transaction type
+            const commission = txn.commission || 0;
+
+            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
+                // Cash in
+                if (txn.type === 'sell' && amount && commission) {
+                    runningCash += (amount - commission);
+                } else {
+                    runningCash += amount;
+                }
+            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
+                // Cash out
+                if (txn.type === 'buy' && amount && commission) {
+                    runningCash -= (amount + commission);
+                } else {
+                    // Use amount directly - if already negative, adding it will decrease cash
+                    // This handles tax withholding where user enters a negative amount directly
+                    runningCash -= amount >= 0 ? Math.abs(amount) : -amount;
+                }
+            } else if (['forex_trade', 'adjustment', 'payment_in_lieu'].includes(txn.type)) {
+                // Adjustment can be any direction - use the amount sign directly
+                runningCash += amount;
+            }
+
+            // For buy/sell we already accounted for commission above
+            // Only subtract commission for other types
+            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
+                runningCash -= Math.abs(commission);
+            }
+
+            return { ...txn, running_cash: runningCash, holdings: { ...holdings } };
+        });
+
+        // 2. Load {TICKER}.parquet files and get close prices for all transaction dates
+        const tickerClosePrices = {}; // {ticker: {dateString: closePrice}}
+        await Promise.all(Array.from(tickers).map(async ticker => {
+            try {
+                const response = await fetch(`/api/investment/parquet?ticker=${ticker}`);
+                const data = await response.json();
+                if (data.success && data.prices) {
+                    // Create a map: date string (YYYY-MM-DD) -> close price
+                    tickerClosePrices[ticker] = {};
+                    data.prices.forEach(item => {
+                        tickerClosePrices[ticker][item.date] = item.close;
+                    });
+                }
+            } catch (err) {
+                console.warn(`Failed to load parquet data for ${ticker}:`, err);
+            }
+        }));
+
+        // Get latest price from parquet (last available close) for final valuation
+        const latestPrices = {};
+        Object.entries(tickerClosePrices).forEach(([ticker, dateMap]) => {
+            const dates = Object.keys(dateMap).sort();
+            if (dates.length > 0) {
+                latestPrices[ticker] = dateMap[dates[dates.length - 1]];
+            }
+        });
+
+        // 3. For each transaction, get the closest available close price on or before the transaction date
+        //    and calculate total equity = cash + sum(holdings * historical close price)
+        processed.forEach((txn) => {
+            let marketValue = 0;
+            Object.entries(txn.holdings).forEach(([ticker, quantity]) => {
+                let closePrice = 0;
+                if (tickerClosePrices[ticker]) {
+                    // Find the latest date in parquet that is <= transaction date
+                    const txnDate = txn.date; // YYYY-MM-DD
+                    const availableDates = Object.keys(tickerClosePrices[ticker]).filter(d => d <= txnDate).sort();
+                    if (availableDates.length > 0) {
+                        const closestDate = availableDates[availableDates.length - 1];
+                        closePrice = tickerClosePrices[ticker][closestDate];
+                    }
+                }
+                // Fallback: if no historical data, use txn.price if available, otherwise 0
+                if (closePrice === 0 && txn.ticker === ticker && txn.price) {
+                    closePrice = txn.price;
+                }
+                marketValue += quantity * closePrice;
+            });
+            txn.market_value = marketValue;
+            txn.total_equity = txn.running_cash + marketValue;
+        });
+
+        // 4. Render reverse chronological (newest first)
+        tbody.innerHTML = processed.reverse().map((txn, index) => {
+            // Format description: for transactions with ticker & quantity, use TICKER@quantity format
+            let description;
+            if (txn.ticker && txn.quantity) {
+                description = `${txn.ticker}@${txn.quantity}`;
+            } else if (txn.type === 'deposit' || txn.type === 'withdrawal') {
+                description = '';
+            } else {
+                description = txn.description || '--';
+            }
+
+            // Format time: if time is exactly 20:00:00 (EOD), hide it to show only date
+            let formattedTime = txn.date ? txn.date.replace(/-/g, '/') : '';
+            if (formattedTime.includes(' ') && formattedTime.endsWith('20:00:00')) {
+                formattedTime = formattedTime.split(' ')[0];
+            }
+
+            return `
+            <tr>
+                <td style="text-align: center;">${transactions.length - index}</td>
+                <td style="text-align: right;">${formattedTime}</td>
+                <td style="text-align: center;">${formatEventType(txn.type)}</td>
+                <td style="text-align: left;">${description}</td>
+                <td style="text-align: center;">${txn.currency || 'USD'}</td>
+                <td style="text-align: right;">${formatAmount(txn.amount ?? txn.cash)}</td>
+                <td style="text-align: right;">${formatAmount(txn.commission || 0)}</td>
+                <td style="text-align: right;">${formatAmount(txn.market_value)}</td>
+                <td style="text-align: right;">${formatAmount(txn.running_cash)}</td>
+                <td style="text-align: right;"><strong>${formatAmount(txn.total_equity)}</strong></td>
+            </tr>
+            `;
+        }).join('');
+
+        // 5. Update dashboard with latest total equity
+        updateDashboardWithEquity(processed, latestPrices);
+    }
+
+    function updateDashboardWithEquity(processed, latestPrices) {
+        const last = processed[processed.length - 1];
+        if (!last) return;
+
+        const dashboard = document.getElementById('investment_dashboard');
+        if (!dashboard) return;
+
+        // Get all original transactions from the processed array (processed is sorted ascending, contains all transactions)
+        const originalTransactions = processed.map(p => ({date: p.date, type: p.type, amount: p.amount}));
+        const totalDeposits = getTotalDeposits(originalTransactions);
+        const netProfit = last.total_equity - totalDeposits;
+        const isPositive = netProfit >= 0;
+
+        let holdingsHtml = '';
+        if (last.holdings && Object.keys(last.holdings).length > 0) {
+            let totalMarketValue = 0;
+            const holdingsRows = Object.entries(last.holdings).map(([ticker, quantity]) => {
+                const price = latestPrices[ticker] || 0;
+                const value = quantity * price;
+                totalMarketValue += value;
+                return `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>${ticker} × ${quantity.toLocaleString()}</span><span>${formatAmount(value)}</span></div>`;
+            }).join('');
+            holdingsHtml = `
+                <div class="trade-metric-card" style="grid-column: 1 / -1;">
+                    <span class="trade-metric-label">Current Holdings (Market Value)</span>
+                    <div style="margin-top: 4px;">${holdingsRows}</div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 6px; border-top: 1px solid var(--theme-glass-border); padding-top: 6px;">
+                        <span><strong>Total</strong></span>
+                        <span><strong>${formatAmount(totalMarketValue)}</strong></span>
+                    </div>
+                </div>
+            `;
+        }
+
+        dashboard.innerHTML = `
+            <div class="trade-metric-card">
+                <span class="trade-metric-label">Current Cash</span>
+                <span class="trade-metric-value">${formatAmount(last.running_cash)}</span>
+            </div>
+            <div class="trade-metric-card">
+                <span class="trade-metric-label">Total Equity</span>
+                <span class="trade-metric-value">${formatAmount(last.total_equity)}</span>
+            </div>
+            <div class="trade-metric-card">
+                <span class="trade-metric-label">Net Profit/Loss</span>
+                <span class="trade-metric-value" style="color: ${isPositive ? 'var(--accent-positive)' : 'var(--error)'};">
+                    ${isPositive ? '+' : ''}${formatAmount(Math.abs(netProfit))}
+                </span>
+            </div>
+            ${holdingsHtml}
+            <div class="trade-metric-card">
+                <span class="trade-metric-label">Total Transactions</span>
+                <span class="trade-metric-value">${transactions.length}</span>
+            </div>
+        `;
+
+        // Re-render equity chart with total equity instead of just cash
+        // We have tickerClosePrices available from earlier processing
+        const allTickerClosePrices = {};
+        processed.forEach(txn => {
+            Object.keys(txn.holdings).forEach(ticker => {
+                if (tickerClosePrices[ticker]) {
+                    allTickerClosePrices[ticker] = tickerClosePrices[ticker];
+                }
+            });
+        });
+        renderEquityChartWithEquity(transactions, allTickerClosePrices, latestPrices);
+    }
+
+    // Reuse the same chart styling from the backtest page
+    function renderEquityChartWithEquity(transactions, tickerClosePrices, latestPrices) {
+        if (!transactions.length || !window.Chart) {
+            console.warn('Chart.js not available');
+            return;
+        }
+
+        const container = document.getElementById('investment_equity_chart');
+        if (!container) {
+            console.warn('Chart container not found');
+            return;
+        }
+
+        // Clear any existing chart
+        container.innerHTML = `<canvas id="investmentEquityChart"></canvas>`;
+        const canvas = document.getElementById('investmentEquityChart');
+        const existingChart = window.Chart.getChart?.(canvas);
+        if (existingChart) existingChart.destroy();
+
+        // Calculate running cash and holdings step by step
+        let runningCash = 0;
+        let holdings = {};
+        const points = [];
+        const rawDates = [];
+
+        // Sort transactions ascending by date
+        const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        sortedTransactions.forEach(txn => {
+            let amount = txn.amount || 0;
+
+            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
+                amount = txn.quantity * txn.price;
+            }
+
+            // Update holdings
+            if (txn.ticker && txn.quantity) {
+                if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
+                if (['buy', 'dividend_reinvestment'].includes(txn.type)) {
+                    holdings[txn.ticker] += txn.quantity;
+                } else if (['sell'].includes(txn.type)) {
+                    holdings[txn.ticker] -= txn.quantity;
+                    if (holdings[txn.ticker] <= 0) delete holdings[txn.ticker];
+                }
+            }
+
+            // Update cash
+            const commission = txn.commission || 0;
+            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
+                if (txn.type === 'sell' && amount && commission) {
+                    runningCash += (amount - commission);
+                } else {
+                    runningCash += amount;
+                }
+            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
+                if (txn.type === 'buy' && amount && commission) {
+                    runningCash -= (amount + commission);
+                } else {
+                    runningCash -= Math.abs(amount);
+                }
+            } else {
+                runningCash += amount;
+            }
+            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
+                runningCash -= Math.abs(commission);
+            }
+
+            // Calculate total equity for this point using historical close prices
+            let marketValue = 0;
+            Object.entries(holdings).forEach(([ticker, quantity]) => {
+                let closePrice = 0;
+                if (tickerClosePrices[ticker]) {
+                    // Find the latest date in parquet that is <= transaction date
+                    const txnDate = txn.date; // YYYY-MM-DD
+                    const availableDates = Object.keys(tickerClosePrices[ticker]).filter(d => d <= txnDate).sort();
+                    if (availableDates.length > 0) {
+                        const closestDate = availableDates[availableDates.length - 1];
+                        closePrice = tickerClosePrices[ticker][closestDate];
+                    }
+                }
+                // Fallback: if no historical data, use txn.price if available, otherwise 0
+                if (closePrice === 0 && txn.ticker === ticker && txn.price) {
+                    closePrice = txn.price;
+                }
+                marketValue += quantity * closePrice;
+            });
+            const totalEquity = runningCash + marketValue;
+
+            points.push(totalEquity);
+            rawDates.push(txn.date);
+        });
+
+        // Read theme tokens
+        const resolvedTheme = (() => {
+            const computed = getComputedStyle(document.body);
+            return {
+                text: computed.getPropertyValue("--theme-text").trim(),
+                muted: computed.getPropertyValue("--theme-muted").trim(),
+                accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim(),
+                accentPositive: computed.getPropertyValue("--theme-accent-positive").trim(),
+                accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
+            };
+        })();
+
+        const initialDeposits = getTotalDeposits(sortedTransactions);
+        const labels = rawDates;
+        const equity = points;
+        const fixedYAxisWidth = 52;
+        const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+
+        const parseRawDate = (value) => {
+            if (typeof value !== "string") return null;
+            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!match) return null;
+            return {
+                year: Number(match[1]),
+                monthIndex: Number(match[2]) - 1,
+                day: Number(match[3]),
+            };
+        };
+
+        const padTwo = (num) => num < 10 ? `0${num}` : `${num}`;
+        const formatChartDateLines = (dateParts) => [
+            `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`,
+            `${dateParts.year}`
+        ];
+
+        const buildTickIndexSet = (count, plotWidth) => {
+            if (count <= 0) return new Set();
+            if (count === 1) return new Set([0]);
+            const maxTickCount = plotWidth >= 768 ? 4 : 3;
+            if (maxTickCount === 3 || count < 4) {
+                return new Set([0, Math.round((count - 1) / 2), count - 1]);
+            }
+            return new Set([
+                0,
+                Math.round((count - 1) / 3),
+                Math.round(((count - 1) * 2) / 3),
+                count - 1,
+            ]);
+        };
+
+        const collectFiniteValues = (datasets) => {
+            if (!Array.isArray(datasets)) return [];
+            return datasets.flatMap((dataset) => (Array.isArray(dataset) ? dataset : []))
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value));
+        };
+
+        const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
+            const values = collectFiniteValues(datasets);
+            if (!values.length) return {};
+            const rawMin = Math.min(...values);
+            const rawMax = Math.max(...values);
+            if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) return {};
+            if (rawMin === rawMax) {
+                const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
+                return {
+                    min: rawMin - fallbackPadding,
+                    max: rawMax + fallbackPadding,
+                    rawMin,
+                    rawMax,
+                };
+            }
+            const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
+            const safePaddingPx = Math.max(0, paddingPx);
+            const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+            const dataRange = rawMax - rawMin;
+            const dataPadding = dataRange * (safePaddingPx / usableHeight);
+            return {
+                min: rawMin - dataPadding,
+                max: rawMax + dataPadding,
+                rawMin,
+                rawMax,
+            };
+        };
+
+        const referenceLinePlugin = {
+            id: "investmentReferenceLine",
+            beforeDatasetsDraw(chart) {
+                if (!Number.isFinite(initialDeposits) || initialDeposits <= 0) return;
+                const { ctx, chartArea, scales } = chart;
+                const yScale = scales?.y;
+                if (!chartArea || !yScale) return;
+                const y = yScale.getPixelForValue(initialDeposits);
+                if (!Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
+                ctx.save();
+                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.left + 8, y);
+                ctx.lineTo(chartArea.right - 8, y);
+                ctx.stroke();
+                ctx.restore();
+            },
+        };
+
+        const xAxisLabelPlugin = {
+            id: "investmentXAxisLabelPlugin",
+            afterDraw(chart) {
+                const { ctx, chartArea, scales } = chart;
+                const xScale = scales?.x;
+                if (!chartArea || !xScale || !labels.length) return;
+                const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+                const baselineY = chartArea.bottom;
+                const lineHeight = 10;
+                ctx.save();
+                ctx.fillStyle = resolvedTheme.muted;
+                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.textBaseline = "top";
+                tickIndexes.forEach((index, tickIndex) => {
+                    const parsedDate = parseRawDate(rawDates[index]);
+                    if (!parsedDate) return;
+                    const [firstLine, secondLine] = formatChartDateLines(parsedDate);
+                    const x = xScale.getPixelForValue(index);
+                    if (!Number.isFinite(x)) return;
+                    if (tickIndex === 0) ctx.textAlign = "left";
+                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
+                    else ctx.textAlign = "center";
+                    ctx.fillText(firstLine, x, baselineY);
+                    ctx.fillText(secondLine, x, baselineY + lineHeight);
+                });
+                ctx.restore();
+            },
+        };
+
+        const chartYPaddingPx = 5;
+        const equityYScale = buildPixelPaddedYScale(canvas, [equity], chartYPaddingPx);
+        const axisLineColor = resolvedTheme.muted;
+
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { bottom: 32 } },
+            interaction: { mode: "index", intersect: false },
+            plugins: { legend: { display: true, position: 'top', labels: { color: resolvedTheme.muted, boxWidth: 12, usePointStyle: true } }, tooltip: { enabled: true } },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    border: { display: false },
+                    ticks: { display: false },
+                },
+                y: {
+                    bounds: "ticks",
+                    grid: { display: false, drawTicks: false },
+                    border: { display: false },
+                    afterFit: (scale) => {
+                        scale.width = fixedYAxisWidth;
+                    },
+                    ticks: {
+                        color: resolvedTheme.muted,
+                        display: true,
+                        padding: 8,
+                        callback(value, index, ticks) {
+                            if (index === 0 || index === ticks.length - 1) return "";
+                            return typeof this.getLabelForValue === "function" ? this.getLabelForValue(value) : String(value);
+                        },
+                    },
+                },
+            },
+        };
+
+        // Dynamic line color based on whether equity is above initial deposit
+        const getEquityColor = (context) => {
+            const value = context.p1.parsed.y;
+            return value >= initialDeposits ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
+        };
+
+        new Chart(canvas, {
+            type: "line",
+            data: {
+                labels,
+                rawLabels: rawDates,
+                datasets: [
+                    {
+                        label: "Total Equity",
+                        data: equity,
+                        borderColor: resolvedTheme.accentPrimary,
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        tension: 0,
+                        borderJoinStyle: "round",
+                        borderCapStyle: "round",
+                        segment: {
+                            borderColor: (context) => {
+                                const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialDeposits);
+                                return target >= initialDeposits ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
+                            },
+                        },
+                    },
+                ],
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    x: { ...commonOptions.scales.x, display: false },
+                    y: { ...commonOptions.scales.y, ...equityYScale },
+                },
+            },
+            plugins: [referenceLinePlugin, xAxisLabelPlugin],
+        });
+    }
+
+    function formatEventType(type) {
+        if (!type) return '';
+        return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    }
+
+    function formatAmount(value) {
+        if (value === undefined || value === null || isNaN(value)) return '--';
+        return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function renderEquityChart(transactions) {
+        if (!transactions.length) return;
+
+        // Prepare data for cumulative cash chart
+        let runningCash = 0;
+        const points = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
+            let amount = txn.amount || 0;
+
+            // Auto-calculate amount if missing
+            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
+                amount = txn.quantity * txn.price;
+            }
+
+            const commission = txn.commission || 0;
+
+            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
+                if (txn.type === 'sell' && amount && commission) {
+                    runningCash += (amount - commission);
+                } else {
+                    runningCash += amount;
+                }
+            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
+                if (txn.type === 'buy' && amount && commission) {
+                    runningCash -= (amount + commission);
+                } else {
+                    runningCash -= Math.abs(amount);
+                }
+            } else {
+                runningCash += amount;
+            }
+
+            // Commission already accounted for buy/sell
+            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
+                runningCash -= Math.abs(commission);
+            }
+
+            return {
+                date: new Date(txn.date),
+                cash: runningCash,
+            };
+        });
+
+        // Use the same chart drawing infrastructure as the rest of the app
+        const container = document.getElementById('investment_equity_chart');
+        if (!container || typeof drawLineChart !== 'function') {
+            console.warn('Chart drawing not available');
+            return;
+        }
+
+        const colors = getComputedStyle(document.documentElement);
+        const accentColor = colors.getPropertyValue('--accent-fill').trim() || '#0055cc';
+
+        const chartData = {
+            labels: points.map(p => p.date.toLocaleDateString()),
+            series: [{
+                name: 'Cash Balance',
+                values: points.map(p => p.cash),
+                color: accentColor,
+            }],
+        };
+
+        // Clear any existing content
+        container.innerHTML = '';
+
+        // Draw the chart using the global chart helper from base.html
+        try {
+            window.drawLineChart(container, chartData, {
+                yAxisFormatter: (value) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                tooltipFormatter: (value) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            });
+        } catch (err) {
+            console.error('Failed to draw chart', err);
+        }
+
+        // Update dashboard summary
+        updateDashboard(points[points.length - 1]?.cash || 0);
+    }
+
+    function getTotalDeposits(transactions) {
+        return transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + (t.amount || 0), 0);
+    }
+});

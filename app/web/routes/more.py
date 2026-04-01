@@ -15,3 +15,7 @@ def register_more_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/invest")(runtime.investment_page)
     app.get("/investment")(runtime.investment_page)
     app.get("/test/chart/1m/<ticker>/<date_str>")(runtime.test_chart_1m_view)
+    app.get("/api/investment/transactions")(runtime.investment_get_transactions)
+    app.post("/api/investment/transactions")(runtime.investment_add_transaction)
+    app.get("/api/investment/latest-price")(runtime.investment_get_latest_price)
+    app.get("/api/investment/parquet")(runtime.investment_get_parquet)

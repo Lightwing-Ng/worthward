@@ -77,6 +77,7 @@ from app.services.market_data import ensure_fresh_history_store, fetch_history, 
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
 from app.infrastructure.storage import (
+    INVESTMENT_STORE_PATH,
     LOGOS_STORE_DIR,
     TICKER_USAGE_STORE_PATH,
     clear_nonhistorical_market_cache,
@@ -154,6 +155,10 @@ class WebRuntime:
     market_store_presence_api: Any
     test_chart_1m_view: Any
     investment_page: Any
+    investment_get_transactions: Any
+    investment_add_transaction: Any
+    investment_get_latest_price: Any
+    investment_get_parquet: Any
 
 
 def extract_first_non_null_value(raw_value: object) -> object | None:
@@ -2998,6 +3003,108 @@ def build_web_runtime() -> WebRuntime:
         target_path = build_more_path("investment")
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
+    def investment_get_transactions():
+        """Get all saved investment transactions from local storage."""
+        if not INVESTMENT_STORE_PATH.exists():
+            return jsonify({"transactions": [], "success": True})
+        try:
+            with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify(data)
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    def investment_add_transactions():
+        """Add a new transaction to the local storage."""
+        try:
+            txn_data = request.get_json()
+            if not INVESTMENT_STORE_PATH.exists():
+                # Create initial structure if file doesn't exist
+                data = {"transactions": []}
+                INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            txn_data["created_at"] = now_str
+            txn_data["updated_at"] = now_str
+            if "transactions" not in data:
+                data["transactions"] = []
+            data["transactions"].append(txn_data)
+            # Sort transactions by date descending (newest first)
+            data["transactions"].sort(key=lambda t: t.get("date", ""), reverse=True)
+            with open(INVESTMENT_STORE_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return jsonify({"success": True, "transactions": data["transactions"]})
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    def investment_get_latest_price():
+        """Get the latest closing price for a ticker from local market store."""
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"success": False, "error": "No ticker provided"}), 400
+
+        try:
+            path = history_store_path_for(ticker)
+            if not path.exists():
+                return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
+
+            df = pd.read_parquet(path)
+            if df.empty or "Close" not in df.columns:
+                return jsonify({"success": False, "error": f"No price data for {ticker}"}), 404
+
+            # Get the latest close price (last row)
+            latest_row = df.sort_values("Date").iloc[-1]
+            latest_close = float(latest_row["Close"])
+            latest_date = str(latest_row["Date"].date()) if hasattr(latest_row["Date"], "date") else str(latest_row["Date"])
+
+            return jsonify({
+                "success": True,
+                "ticker": ticker,
+                "latest_close": latest_close,
+                "latest_date": latest_date
+            })
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    def investment_get_parquet():
+        """Get all date -> close price mappings from the parquet file for a ticker."""
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"success": False, "error": "No ticker provided"}), 400
+
+        try:
+            path = history_store_path_for(ticker)
+            if not path.exists():
+                return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
+
+            df = pd.read_parquet(path)
+            if df.empty or "Close" not in df.columns or "Date" not in df.columns:
+                return jsonify({"success": False, "error": f"No price/date data for {ticker}"}), 404
+
+            # Sort by date and extract (date string, close price) pairs
+            df_sorted = df.sort_values("Date")
+            prices = []
+            for _, row in df_sorted.iterrows():
+                date_val = row["Date"]
+                if isinstance(date_val, pd.Timestamp):
+                    date_str = date_val.strftime("%Y-%m-%d")
+                else:
+                    # If already string, ensure YYYY-MM-DD format
+                    date_str = str(pd.to_datetime(date_val).date())
+                close_val = float(row["Close"])
+                prices.append({"date": date_str, "close": close_val})
+
+            return jsonify({
+                "success": True,
+                "ticker": ticker,
+                "prices": prices,
+                "count": len(prices)
+            })
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 500
+
     return WebRuntime(
         root=root,
         compare_page=compare_page,
@@ -3023,4 +3130,8 @@ def build_web_runtime() -> WebRuntime:
         market_store_presence_api=market_store_presence_api,
         test_chart_1m_view=test_chart_1m_view,
         investment_page=investment_page,
+        investment_get_transactions=investment_get_transactions,
+        investment_add_transaction=investment_add_transactions,
+        investment_get_latest_price=investment_get_latest_price,
+        investment_get_parquet=investment_get_parquet,
     )

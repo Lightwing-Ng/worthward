@@ -1,86 +1,284 @@
 {% extends "base.html" %}
+{% from "_macros.html" import render_chart_surface with context %}
 
 {% block sidebar_content %}
-<nav class="settings-nav" aria-label="More sections">
-    <a href="{{ more_urls.timing }}" class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
-        <span class="settings-nav-label">{{ labels.more_timing }}</span>
-    </a>
-    <a href="{{ more_urls.investment }}" class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
-        <span class="settings-nav-icon-shell" style="--settings-icon-surface: color-mix(in srgb, var(--theme-accent-secondary) 14%, transparent);"><span class="icon icon-settings-strategies" aria-hidden="true" style="--settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);"></span></span>
-        <span class="settings-nav-label">My Investment</span>
-    </a>
-</nav>
+    <nav class="settings-nav" aria-label="More sections">
+        <a href="{{ more_urls.timing }}"
+           class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
+            <span class="settings-nav-label">{{ labels.more_timing }}</span>
+        </a>
+        <a href="{{ more_urls.investment }}"
+           class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell"
+                  style="--settings-icon-surface: color-mix(in srgb, var(--theme-accent-secondary) 14%, transparent);"><span
+                    class="icon icon-settings-strategies" aria-hidden="true"
+                    style="--settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);"></span></span>
+            <span class="settings-nav-label">My Investment</span>
+        </a>
+    </nav>
 {% endblock %}
 
 {% block workspace_content %}
-<div class="workspace-header workspace-header-plain">
-    <h1 class="report-heading">My Investment</h1>
-    <p class="settings-summary">Brokerage Tracker Dashboard</p>
-</div>
-
-<!-- 1. Dashboard -->
-<section class="chart-surface" style="margin-bottom: 20px;">
-    <div class="chart-heading-row"><p class="chart-heading">Dashboard</p></div>
-    <div class="trade-metrics-grid" id="investment_dashboard">
-        <div class="trade-metric-card"><span class="trade-metric-label">Total Portfolio</span><span class="trade-metric-value">$124,567.89</span></div>
-        <div class="trade-metric-card"><span class="trade-metric-label">Net Profit</span><span class="trade-metric-value" style="color: var(--color-green-adaptive);">+$12,345.67</span></div>
+    <div class="workspace-header">
+        <article class="report-card trade-performance-card" style="min-height: 0;">
+            <div class="report-heading-row">
+                <p class="report-heading">My Investment</p>
+            </div>
+        </article>
     </div>
-</section>
 
-<!-- 2. Transaction Form -->
-<section class="chart-surface" style="margin-bottom: 20px;">
-    <div class="chart-heading-row"><p class="chart-heading">New Transaction</p></div>
-    <form class="controls" id="investment_form">
-        <div class="ticker-input-row">
-            <div class="ticker-input-main">
-                <label for="txn_type">Event Type</label>
-                <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="event-type">
-                    <select id="txn_type" name="txn_type" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
-                        <option value="deposit" selected>Deposit</option>
-                        <option value="withdrawal">Withdrawal</option>
-                        <option value="trade">Trade</option>
-                        <option value="exchange">Currency Exchange</option>
-                    </select>
-                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
-                        <button
-                            type="button"
-                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
-                            data-shared-select-trigger
-                            aria-haspopup="listbox"
-                            aria-expanded="false"
-                            aria-controls="txn_type_dropdown"
-                        >
-                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+    <!-- 1. Equity Curve -->
+    <section class="chart-surface" style="margin-bottom: 20px;">
+        <div class="chart-heading-row"><p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">
+            Total Equity Curve</p></div>
+        <div class="trade-chart-stack" style="height: 35vh; --trade-chart-y-padding-px: 8;">
+            <canvas id="investment_equity_chart" style="width: 100%; height: 100%;"></canvas>
+        </div>
+        <div class="trade-metrics-grid" id="investment_dashboard" style="margin-top: 12px;">
+        </div>
+    </section>
+
+    <!-- 2. Transaction Form -->
+    <section class="chart-surface" style="margin-bottom: 20px;">
+        <div class="chart-heading-row"><p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">
+            New transaction</p></div>
+        <section id="transaction_form_container" style="
+        position: absolute;
+        top: 60px; left: 10px; right: 10px;
+        display: none;
+        opacity: 0;
+        transform: scale(0.98);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 10;
+        background: var(--panel-strong);
+        border-radius: 10px;
+        padding: 15px;
+    ">
+            <form class="controls" id="investment_form">
+                <div class="ticker-input-row"
+                     style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px;">
+                    <div class="ticker-input-main">
+                        <label for="txn_date">Date</label>
+                        <div class="date-picker-field" data-date-picker data-date-role="txn">
+                            <input type="text" id="txn_date" name="txn_date" placeholder="9 Dec 2026"
+                                   class="form-input date-picker-trigger" data-date-trigger>
+                            <input type="time" id="txn_time" name="txn_time" class="form-input" style="width: 100px;">
+                            <div class="date-picker-popover" data-date-popover hidden>
+                                <div class="date-picker-toolbar">
+                                    <button type="button" class="date-picker-nav" data-date-nav="-1"
+                                            aria-label="Previous month">
+                                        <span class="icon icon-page-prev" aria-hidden="true"></span>
+                                    </button>
+                                    <p class="date-picker-month" data-date-month></p>
+                                    <button type="button" class="date-picker-nav" data-date-nav="1"
+                                            aria-label="Next month">
+                                        <span class="icon icon-page-next" aria-hidden="true"></span>
+                                    </button>
+                                </div>
+                                <div class="date-picker-weekdays" aria-hidden="true">
+                                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                                </div>
+                                <div class="date-picker-days" data-date-grid></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_broker">Broker</label>
+                        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
+                            <select id="txn_broker" name="txn_broker"
+                                    class="trade-strategy-native-select backtest-shared-select-native" hidden
+                                    aria-hidden="true" tabindex="-1">
+                                <option value="ibkr" selected>IBKR</option>
+                                <option value="longbridge">Longbridge</option>
+                                <option value="futu">Futu</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false"
+                                        aria-controls="txn_broker_dropdown">
+                                    <span class="trade-strategy-trigger-label"
+                                          data-shared-select-trigger-label>IBKR</span>
+                                </button>
+                            </div>
+                            <div id="txn_broker_dropdown"
+                                 class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                 data-shared-select-dropdown role="listbox" hidden></div>
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_type">Event type</label>
+                        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
+                            <select id="txn_type" name="txn_type"
+                                    class="trade-strategy-native-select backtest-shared-select-native" hidden
+                                    aria-hidden="true" tabindex="-1">
+                                <option value="deposit">Deposit</option>
+                                <option value="withdrawal">Withdrawal</option>
+                                <option value="buy">Buy</option>
+                                <option value="sell">Sell</option>
+                                <option value="dividend">Dividend</option>
+                                <option value="dividend_reinvestment">Dividend Reinvestment</option>
+                                <option value="forex_trade">Forex trade</option>
+                                <option value="tax_withholding">Tax withholding</option>
+                                <option value="credit_interest">Credit interest</option>
+                                <option value="debit_interest">Debit interest</option>
+                                <option value="payment_in_lieu">Payment in lieu</option>
+                                <option value="adjustment">Adjustment</option>
+                            </select>
+                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false"
+                                        aria-controls="txn_type_dropdown">
+                                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label>Select event</span>
+                                </button>
+                            </div>
+                            <div id="txn_type_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                 data-shared-select-dropdown role="listbox" hidden></div>
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_currency">Currency</label>
+                        <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
+                            <select id="txn_currency" name="txn_currency"
+                                    class="trade-strategy-native-select backtest-shared-select-native" hidden
+                                    aria-hidden="true" tabindex="-1">
+                                <option value="USD" selected>USD</option>
+                                <option value="HKD">HKD</option>
+                                <option value="CNY">CNY</option>
+                                <option value="CNH">CNH</option>
+                                <option value="EUR">EUR</option>
+                            </select>
+                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                                        data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false"
+                                        aria-controls="txn_currency_dropdown">
+                                    <span class="trade-strategy-trigger-label"
+                                          data-shared-select-trigger-label>USD</span>
+                                </button>
+                            </div>
+                            <div id="txn_currency_dropdown"
+                                 class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                                 data-shared-select-dropdown role="listbox" hidden></div>
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_commission">Commission</label>
+                        <div class="trade-capital-row">
+                            <input id="txn_commission" name="commission" class="trade-capital-input" type="text"
+                                   value="0.00" inputmode="decimal" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="ticker-input-row"
+                     style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
+                    <div class="ticker-input-main">
+                        <label for="txn_ticker">Ticker</label>
+                        <input type="text" id="txn_ticker" name="txn_ticker" placeholder="NVDA" class="form-input"
+                               style="width: 100%; text-transform: uppercase;">
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_quantity">Quantity</label>
+                        <div class="trade-capital-row">
+                            <input id="txn_quantity" name="quantity" class="trade-capital-input" type="text" value=""
+                                   inputmode="decimal" autocomplete="off" placeholder="10">
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_price">Price</label>
+                        <div class="trade-capital-row">
+                            <input id="txn_price" name="price" class="trade-capital-input" type="text" value=""
+                                   inputmode="decimal" autocomplete="off" placeholder="123.45">
+                        </div>
+                    </div>
+                    <div class="ticker-input-main">
+                        <label for="txn_amount">Net Amount</label>
+                        <div class="trade-capital-row">
+                            <input id="txn_amount" name="amount" class="trade-capital-input" type="text" value="0.00"
+                                   inputmode="decimal" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="ticker-input-row" style="margin-top: 10px;">
+                    <div class="ticker-input-main">
+                        <label for="txn_description">Notes</label>
+                        <input type="text" id="txn_description" name="txn_description" placeholder="Optional notes"
+                               class="form-input" style="width: 100%;">
+                    </div>
+                </div>
+                <div class="settings-action-package">
+                    <div class="settings-action-package-icon-shell">
+                        <span class="icon"
+                              style="-webkit-mask-image: url(/static/images/plus.circle.fill.svg); mask-image: url(/static/images/plus.circle.fill.svg);"></span>
+                    </div>
+                    <div class="settings-action-package-copy">
+                        <p class="settings-title">Add new transaction</p>
+                        <p class="settings-summary">This transaction will be saved to the local `investment.json` file
+                            and will not be uploaded to any remote server.</p>
+                    </div>
+                    <div class="settings-action-package-button-shell">
+                        <button type="submit" class="settings-inline-button settings-inline-button-primary">Add this
+                            transaction
                         </button>
                     </div>
-                    <div
-                        id="txn_type_dropdown"
-                        class="trade-strategy-dropdown backtest-shared-select-dropdown"
-                        data-shared-select-dropdown
-                        role="listbox"
-                        aria-label="Event Type"
-                        hidden
-                    ></div>
                 </div>
-            </div>
-        </div>
-        <button type="submit" class="secondary-button" style="margin-top: 10px;">Record Transaction</button>
-    </form>
-</section>
+            </form>
+        </section>
+    </section>
 
-<!-- 3. History Table -->
-<section class="chart-surface">
-    <div class="chart-heading-row"><p class="chart-heading">Transaction History</p></div>
-    <div class="trade-transactions-wrap">
-        <table class="settings-table trade-transactions-table">
-            <thead>
-                <tr><th>Date</th><th>Type</th><th>Asset</th><th>Amount</th><th>Fee</th></tr>
-            </thead>
-            <tbody id="investment_history">
-                <tr><td>31 Mar 2026</td><td>Deposit</td><td>USD</td><td>$10,000.00</td><td>$0.00</td></tr>
-            </tbody>
-        </table>
-    </div>
-</section>
+    <!-- 3. History Table -->
+    <section class="chart-surface">
+        <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
+            <button type="button" class="settings-round-icon-button" id="toggle_form_button"
+                    aria-label="Add transaction">
+                <span class="icon"
+                      style="-webkit-mask-image: url(/static/images/plus.svg); mask-image: url(/static/images/plus.svg);"></span>
+            </button>
+        </div>
+        <section id="transaction_form_container" style="
+        position: absolute;
+        top: 60px; left: 10px; right: 10px;
+        display: none;
+        opacity: 0;
+        transform: scale(0.98);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 10;
+        background: var(--panel-strong);
+        border-radius: 10px;
+        padding: 15px;
+    ">
+        </section>
+
+        <div class="trade-transactions-wrap" id="history_table_wrap"
+             style="transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);">
+            <table class="settings-table trade-transactions-table" id="transactionTable"
+                   style="table-layout: fixed; width: 100%;">
+                <thead>
+                <tr>
+                    <th style="text-align: center; width: 5%; min-width: 20px;">No.</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px;">Time</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px;">Type</th>
+                    <th style="text-align: left; width: 15%; min-width: 48px;">Description</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px;">Currency</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px;">Amount</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px;">Commission</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px;">Market value</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px;">Cash</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px;">Equity</th>
+                </tr>
+                </thead>
+                <tbody id="investment_history" style="vertical-align: top;">
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
+    <script src="{{ url_for('static', filename='js/investment.js') }}"></script>
 {% endblock %}

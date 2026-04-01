@@ -10,6 +10,7 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MARKET_STORE_DIR = BASE_DIR / "market_store"
+SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 DEFAULT_TICKERS = ("QQQ", "JEPQ")
 DEFAULT_PERIOD = "1y"
 DEFAULT_INTERVAL = "1d"
