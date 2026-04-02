@@ -220,9 +220,12 @@
 }
 
 .investment-holdings-ticker-logo-placeholder {
+    display: block;
     width: 32px;
     height: 20px;
     flex: 0 0 auto;
+    border-radius: 6px;
+    background: transparent;
 }
 
 .investment-holdings-ticker-copy {
@@ -305,6 +308,24 @@
 .investment-holdings-table td:nth-child(n + 3):nth-child(-n + 8) {
     text-align: right;
     vertical-align: top;
+}
+
+.investment-holdings-summary-row td {
+    position: sticky;
+    top: var(--investment-holdings-sticky-offset, 0px);
+    z-index: calc(var(--layer-surface-content) - 1);
+    background: var(--glass-surface-background-strong);
+    backdrop-filter: var(--glass-surface-blur);
+    -webkit-backdrop-filter: var(--glass-surface-blur);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 55%, transparent);
+}
+
+.investment-holdings-summary-copy {
+    display: block;
+    text-align: left;
+    color: var(--theme-muted);
+    font-variant-numeric: tabular-nums;
+    padding: 6px 8px;
 }
 
 .investment-holdings-value-positive {

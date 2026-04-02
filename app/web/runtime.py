@@ -3104,6 +3104,9 @@ def build_web_runtime() -> WebRuntime:
                     profile_record = load_profile_record(raw_ticker) or {}
                     company_name = str(profile_record.get("company_name") or raw_ticker).strip() or raw_ticker
                     logo_url = ""
+                    if has_logo_asset(raw_ticker):
+                        logo_path = logo_store_path_for(raw_ticker)
+                        logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
                     if company_name == raw_ticker:
                         inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
                         if inferred_money_market_name:

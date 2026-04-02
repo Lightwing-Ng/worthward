@@ -5,6 +5,8 @@
  * - Updated: Investment segmented control now shows "Charts"
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
+ * - Updated: Investment equity hover guide now matches the compare chart vertical hover line behavior
+ * - Updated: Investment equity series color is fixed to #0055cc to match the tooltip legend
  * - Reworked: Holdings view now renders as a scrollable data table with per-ticker cost basis and P&L metrics
  * - Improved: Holdings and Metrics data now consistently use the Workspace metric value token
  * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
@@ -727,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderHoldingsTable(summaries, tickerProfiles) {
+    function renderHoldingsTable(summaries, tickerProfiles, totalEquity, totalCash) {
         if (!summaries.length) {
             return `
                 <div class="investment-holdings-table-shell">
@@ -735,6 +737,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }
+
+        const openSummaries = summaries.filter((summary) => summary.hasOpenPosition);
+        const openCount = openSummaries.length;
+        const closedCount = summaries.length - openCount;
+        const totalRealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const totalWeight = totalEquity > 0 ? Math.max(0, (1 - ((Number(totalCash) || 0) / totalEquity)) * 100) : 0;
+        const totalRealizedClass = totalRealizedPnl >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
+        const totalUnrealizedClass = totalUnrealizedPnl >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
 
         const rowsHtml = summaries.map((summary, index) => {
             const profile = tickerProfiles?.[summary.ticker] || {};
@@ -744,7 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastPriceDisplay = summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice);
             const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
             const unrealizedDisplay = summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl);
-            const weightDisplay = formatHoldingsPercent(summary.positionWeight);
+            const weightDisplay = summary.hasOpenPosition ? formatHoldingsPercent(summary.positionWeight) : '-';
             const realizedClass = summary.realizedPnl >= 0
                 ? ' investment-holdings-value-positive'
                 : ' investment-holdings-value-negative';
@@ -776,6 +791,21 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
 
+        const summaryRowHtml = `
+            <tr class="investment-holdings-summary-row">
+                <td class="investment-holdings-cell investment-holdings-cell-center"></td>
+                <td class="investment-holdings-cell investment-holdings-cell-ticker">
+                    <span class="investment-holdings-summary-copy">${summaries.length} instruments, ${openCount} open, ${closedCount} closed</span>
+                </td>
+                <td class="investment-holdings-cell investment-holdings-cell-money"></td>
+                <td class="investment-holdings-cell investment-holdings-cell-money"></td>
+                <td class="investment-holdings-cell investment-holdings-cell-money"></td>
+                <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">${formatHoldingsMoney(totalRealizedPnl)}</td>
+                <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">${formatHoldingsMoney(totalUnrealizedPnl)}</td>
+                <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPercent(totalWeight)}</td>
+            </tr>
+        `;
+
         return `
             <div class="investment-holdings-table-shell">
                 <table class="settings-table trade-transactions-table investment-holdings-table" aria-hidden="true">
@@ -794,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </table>
                 <div class="trade-transactions-wrap investment-holdings-table-scroll">
                     <table class="settings-table trade-transactions-table investment-holdings-table">
-                        <tbody>${rowsHtml}</tbody>
+                        <tbody>${summaryRowHtml}${rowsHtml}</tbody>
                     </table>
                 </div>
             </div>
@@ -990,8 +1020,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const latestSnapshot = processed[processed.length - 1];
+
         // 4. Render reverse chronological (newest first)
-        tbody.innerHTML = processed.reverse().map((txn, index) => {
+        tbody.innerHTML = [...processed].reverse().map((txn, index) => {
             // Format description: for transactions with ticker & quantity, use TICKER@quantity format
             let description;
             // Get quantity: check top-level first, then quantity_abs, then normalized.display_quantity (IBKR imported format)
@@ -1066,11 +1098,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         // 5. Update dashboard with latest total equity
-        updateDashboardWithEquity(processed, latestPrices, tickerClosePrices, transactions);
+        updateDashboardWithEquity(processed, latestSnapshot, latestPrices, tickerClosePrices, transactions);
     }
 
-    function updateDashboardWithEquity(processed, latestPrices, tickerClosePrices, rawTransactions) {
-        const last = processed[processed.length - 1];
+    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, tickerClosePrices, rawTransactions) {
+        const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
 
         const holdingsPanel = document.getElementById('investment_holdings_panel');
@@ -1089,7 +1121,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, last.total_equity);
-        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles);
+        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, last.total_equity, last.running_cash);
+        syncHoldingsStickyOffset(holdingsPanel);
 
         metricsPanel.innerHTML = `
             <div class="trade-metric-card">
@@ -1115,6 +1148,15 @@ document.addEventListener('DOMContentLoaded', () => {
             animateInvestmentSurfaceHeight();
         }
         renderEquityChartWithEquity(processed, tickerClosePrices);
+    }
+
+    function syncHoldingsStickyOffset(holdingsPanel) {
+        if (!holdingsPanel) return;
+        const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
+        const headerTable = tableShell?.querySelector('.investment-holdings-table[aria-hidden="true"]');
+        if (!tableShell || !headerTable) return;
+        const headerHeight = Math.ceil(headerTable.getBoundingClientRect().height);
+        tableShell.style.setProperty('--investment-holdings-sticky-offset', `${headerHeight}px`);
     }
 
     // Reuse the same chart styling from the backtest page
@@ -1157,6 +1199,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
             };
         })();
+        const equitySeriesColor = "#0055cc";
 
         const initialDeposits = getTotalDeposits(sortedTransactions);
         const labels = [...rawDates];
@@ -1259,6 +1302,24 @@ document.addEventListener('DOMContentLoaded', () => {
             },
         };
 
+        const hoverGuidePlugin = {
+            id: "investmentHoverGuidePlugin",
+            afterDatasetsDraw(chartInstance) {
+                const { ctx, chartArea, tooltip } = chartInstance;
+                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
+                const x = tooltip.caretX;
+                if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
+                ctx.save();
+                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, chartArea.top);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                ctx.restore();
+            },
+        };
+
         const xAxisLabelPlugin = {
             id: "investmentXAxisLabelPlugin",
             afterDraw(chart) {
@@ -1324,7 +1385,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tooltipRows.push({
                     label: "Equity",
                     value: pointRecord.total_equity,
-                    color: resolvedTheme.accentPrimary,
+                    color: equitySeriesColor,
                 });
                 tooltipRows.push({
                     label: "Market value",
@@ -1334,13 +1395,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 tooltipRows.push({
                     label: "Cash",
                     value: pointRecord.running_cash,
-                    color: resolvedTheme.muted,
+                    color: resolvedTheme.accentPositive,
                 });
             } else {
                 tooltipRows.push({
                     label: "Equity",
                     value: tooltip.dataPoints?.[0]?.parsed?.y ?? null,
-                    color: resolvedTheme.accentPrimary,
+                    color: equitySeriesColor,
                 });
             }
 
@@ -1421,18 +1482,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     {
                         label: "Equity",
                         data: equity,
-                        borderColor: resolvedTheme.accentPrimary,
+                        borderColor: equitySeriesColor,
                         borderWidth: 2.5,
                         pointRadius: 0,
                         tension: 0,
                         borderJoinStyle: "round",
                         borderCapStyle: "round",
-                        segment: {
-                            borderColor: (context) => {
-                                const target = Number(context.p1?.parsed?.y ?? context.p0?.parsed?.y ?? initialDeposits);
-                                return target >= initialDeposits ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
-                            },
-                        },
                     },
                 ],
             },
@@ -1444,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: { ...commonOptions.scales.y, ...equityYScale },
                 },
             },
-            plugins: [referenceLinePlugin, xAxisLabelPlugin],
+            plugins: [referenceLinePlugin, hoverGuidePlugin, xAxisLabelPlugin],
         });
     }
 
