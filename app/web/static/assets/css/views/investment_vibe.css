@@ -1,0 +1,224 @@
+/* Investment Vibe Styles
+   Enhanced aesthetics for the My Investment page.
+   Focus: Premium layout, Glassmorphism, and Dynamic interactions.
+*/
+
+:root {
+    --vibe-accent-gradient: linear-gradient(135deg, var(--theme-accent-primary) 0%, var(--theme-accent-secondary) 100%);
+    --vibe-card-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    --vibe-glass-shine: linear-gradient(110deg, transparent 40%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.1) 55%, transparent 60%);
+    --vibe-positive-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    --vibe-negative-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* 1. Global Container vibe */
+.investment-view-surface {
+    background: var(--theme-panel);
+    border-radius: 24px;
+    padding: 32px;
+    border: 1px solid var(--theme-glass-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 2. Segmented Control Vibe */
+.segmented-control--compact {
+    background: var(--theme-glass-surface-background-strong) !important;
+    padding: 4px !important;
+    border-radius: 12px !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.segmented-control-option-label {
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    transition: color 0.3s ease !important;
+}
+
+.segmented-control-active-indicator {
+    background: var(--theme-panel-strong) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--theme-glass-highlight) !important;
+}
+
+/* 3. Panel Transitions */
+[data-investment-view-panel] {
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-investment-view-panel][hidden] {
+    display: none;
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+/* 4. Dashboard & Metrics Card Vibe */
+.trade-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+}
+
+.trade-metric-card {
+    background: var(--theme-glass-surface-background-strong);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--theme-glass-border);
+    border-radius: 20px;
+    padding: 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.trade-metric-card:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--vibe-card-shadow);
+    border-color: var(--theme-glass-highlight);
+}
+
+.trade-metric-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--theme-muted);
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: block;
+}
+
+.trade-metric-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--theme-text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+/* 5. Holdings specific Vibe */
+#investment_holdings_panel .trade-metric-card {
+    background: var(--theme-glass-surface-background-dense);
+}
+
+.holding-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    margin: 8px 0;
+    background: var(--theme-glass-surface-background-soft);
+    border-radius: 12px;
+    border: 1px solid var(--theme-glass-border);
+    transition: all 0.2s ease;
+}
+
+.holding-row:hover {
+    background: var(--theme-glass-surface-background-strong);
+    border-color: var(--theme-accent-primary);
+}
+
+.holding-ticker {
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.holding-qty {
+    color: var(--theme-muted);
+    font-size: 0.85rem;
+    margin-left: 8px;
+}
+
+.holding-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 6. Transaction Form Vibe */
+#transaction_form_container {
+    background: var(--theme-panel-strong) !important;
+    border: 1px solid var(--theme-glass-highlight) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3) !important;
+}
+
+#investment_form label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--theme-muted);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.form-input, .trade-capital-input {
+    background: var(--theme-glass-surface-background-soft) !important;
+    border: 1px solid var(--theme-glass-border) !important;
+    border-radius: 10px !important;
+    padding: 10px 12px !important;
+    color: var(--theme-text) !important;
+    transition: all 0.2s ease !important;
+}
+
+.form-input:focus, .trade-capital-input:focus {
+    border-color: var(--theme-accent-primary) !important;
+    background: var(--theme-glass-surface-background-strong) !important;
+}
+
+/* 7. Enhanced Table Header */
+.trade-transactions-table thead th {
+    background: var(--theme-panel-strong) !important;
+    border-bottom: 2px solid var(--theme-glass-border) !important;
+    color: var(--theme-muted) !important;
+    font-weight: 700 !important;
+    padding: 16px 12px !important;
+}
+
+.trade-transactions-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+#history_table_wrap {
+    height: auto;
+    max-height: min(56vh, 560px);
+    overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.investment-chart-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+}
+
+@media (max-width: 767px) {
+    #history_table_wrap {
+        max-height: min(48vh, 420px);
+    }
+
+    .investment-chart-stack {
+        aspect-ratio: auto;
+        grid-template-rows: minmax(0, 1fr);
+        gap: 0;
+    }
+}
+
+/* Button Refinement */
+.settings-inline-button-primary {
+    background: var(--vibe-accent-gradient) !important;
+    border: none !important;
+    padding: 12px 24px !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    color: white !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 12px rgba(var(--theme-accent-primary-rgb, 0,0,0), 0.3) !important;
+}
+
+.settings-inline-button-primary:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 20px rgba(var(--theme-accent-primary-rgb, 0,0,0), 0.4) !important;
+}

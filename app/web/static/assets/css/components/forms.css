@@ -1113,6 +1113,7 @@
 .range-mode-shell:hover { background: var(--control-glass-background-hover); }
 .segmented-control::before,
 .range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translateX(0); transition: transform 540ms var(--motion-overshoot), box-shadow 220ms var(--motion-standard); will-change: transform; z-index: var(--layer-decorative-backdrop); }
+.segmented-control[data-option-count]::before { width: calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)); transform: translateX(calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))); }
 .segmented-control::after,
 .range-mode-shell::after { display: none; }
 .segmented-control[data-active="exact"]::before,

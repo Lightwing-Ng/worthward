@@ -1,8 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.11.0
+ * Code version: v1.13.0
+ * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
+ * - Fixed: Equity curve only renders inside the Chart view instead of bleeding into other tabs
+ * - Fixed: Dashboard rendering no longer crashes on undefined transactions or parquet scope references
  * - Fixed: Total Equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
+ * - Improved: Investment equity curve now reuses the shared chart tooltip tokens and layout
+ * - Fixed: Equity curve seeds a zero-value point on the prior day when the first transaction starts above or below zero
+ * - Adjusted: Investment chart panel better fills the available card height in Chart view
  * - Updated: Transaction history description format to TICKER@quantity for buy/sell operations
  * - Fixed: Cash calculation logic for payment_in_lieu and foreign tax withholding transactions
  * - Improved: Adjusted transaction table column widths for better readability
@@ -39,25 +45,43 @@ window.drawMultipleLineChart = function(container, data, options) {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     };
 
+    const allValues = data.series.flatMap(s => s.values);
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+    const padding = (maxValue - minValue) * 0.1 || 1;
+
+    // Create Gradient for the stroke
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+    gradient.addColorStop(0, resolvedTheme.accentPrimary);
+    gradient.addColorStop(1, resolvedTheme.accentSecondary);
+
     const datasets = data.series.map((series, idx) => {
-        const color = series.color || (idx === 0 ? resolvedTheme.accentPrimary : resolvedTheme.accentSecondary);
+        const color = series.color || (idx === 0 ? gradient : resolvedTheme.accentSecondary);
         return {
             label: series.name,
             data: series.values,
             borderColor: color,
             backgroundColor: color,
-            borderWidth: 2,
+            borderWidth: 3,
             pointRadius: 0,
-            pointHoverRadius: 4,
-            fill: false,
-            tension: 0.2,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#ffffff',
+            pointBorderColor: resolvedTheme.accentPrimary,
+            pointBorderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            backgroundColor: (context) => {
+                const chart = context.chart;
+                const {ctx, chartArea} = chart;
+                if (!chartArea) return null;
+                const fillGradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                fillGradient.addColorStop(0, hexToRgba(idx === 0 ? resolvedTheme.accentPrimary : resolvedTheme.accentSecondary, 0.15));
+                fillGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                return fillGradient;
+            },
         };
     });
-
-    const allValues = data.series.flatMap(s => s.values);
-    const minValue = Math.min(...allValues);
-    const maxValue = Math.max(...allValues);
-    const padding = (maxValue - minValue) * 0.1 || 1;
 
     const chart = new Chart(canvas, {
         type: 'line',
@@ -71,13 +95,33 @@ window.drawMultipleLineChart = function(container, data, options) {
             layout: { padding: { top: 8, right: 8, bottom: 22, left: 4 } },
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: { display: true, position: 'top', labels: { color: resolvedTheme.muted, boxWidth: 12, usePointStyle: true } },
+                legend: { 
+                    display: true, 
+                    position: 'top', 
+                    align: 'end',
+                    labels: { 
+                        color: resolvedTheme.muted, 
+                        boxWidth: 10, 
+                        usePointStyle: true,
+                        font: { family: "'Inter', sans-serif", size: 11, weight: '500' }
+                    } 
+                },
                 tooltip: {
                     enabled: true,
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    titleColor: '#1e293b',
+                    bodyColor: '#1e293b',
+                    borderColor: 'rgba(0, 0, 0, 0.05)',
+                    borderWidth: 1,
+                    padding: 12,
+                    cornerRadius: 12,
+                    displayColors: true,
+                    boxPadding: 6,
+                    usePointStyle: true,
                     callbacks: {
                         label: (context) => {
                             const value = context.parsed.y;
-                            return `${context.dataset.label}: ${options.tooltipFormatter ? options.tooltipFormatter(value) : value}`;
+                            return ` ${context.dataset.label}: ${options.tooltipFormatter ? options.tooltipFormatter(value) : value}`;
                         },
                     },
                 },
@@ -85,14 +129,23 @@ window.drawMultipleLineChart = function(container, data, options) {
             scales: {
                 x: {
                     grid: { display: false },
-                    ticks: { color: resolvedTheme.muted, maxRotation: 0 },
+                    ticks: { 
+                        color: resolvedTheme.muted, 
+                        maxRotation: 0,
+                        font: { size: 10 }
+                    },
                 },
                 y: {
                     min: minValue - padding,
                     max: maxValue + padding,
-                    grid: { display: false },
+                    grid: { 
+                        display: true,
+                        color: 'rgba(148, 163, 184, 0.05)',
+                        drawBorder: false
+                    },
                     ticks: {
                         color: resolvedTheme.muted,
+                        font: { size: 10 },
                         callback: (value) => options.yAxisFormatter ? options.yAxisFormatter(value) : value,
                     },
                 },
@@ -106,6 +159,85 @@ document.addEventListener('DOMContentLoaded', () => {
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
     const investmentForm = document.getElementById('investment_form');
+    const segmentedControl = document.getElementById('investment_view_segmented');
+    const investmentViewSurface = document.getElementById('investment_view_surface');
+    const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
+    let activeInvestmentView = 'chart';
+    let investmentSurfaceCleanupTimer = null;
+
+    function lockInvestmentSurfaceHeight() {
+        if (!investmentViewSurface) return;
+        const currentHeight = investmentViewSurface.getBoundingClientRect().height;
+        investmentViewSurface.style.height = `${currentHeight}px`;
+        investmentViewSurface.style.overflow = 'clip';
+    }
+
+    function cleanupInvestmentSurfaceHeight() {
+        if (!investmentViewSurface) return;
+        investmentViewSurface.style.height = '';
+        investmentViewSurface.style.overflow = '';
+        if (investmentSurfaceCleanupTimer) {
+            window.clearTimeout(investmentSurfaceCleanupTimer);
+            investmentSurfaceCleanupTimer = null;
+        }
+    }
+
+    function animateInvestmentSurfaceHeight() {
+        if (!investmentViewSurface || !investmentViewSurfaceBody) return;
+        if (!investmentViewSurface.style.height) {
+            lockInvestmentSurfaceHeight();
+        }
+        void investmentViewSurface.offsetHeight;
+        const targetHeight = investmentViewSurface.scrollHeight;
+        investmentViewSurface.style.height = `${targetHeight}px`;
+        if (investmentSurfaceCleanupTimer) {
+            window.clearTimeout(investmentSurfaceCleanupTimer);
+        }
+        investmentSurfaceCleanupTimer = window.setTimeout(() => {
+            cleanupInvestmentSurfaceHeight();
+        }, 460);
+    }
+
+    function setInvestmentView(nextView) {
+        if (!nextView || nextView === activeInvestmentView) {
+            return;
+        }
+
+        lockInvestmentSurfaceHeight();
+
+        if (segmentedControl) {
+            const viewOrder = ['chart', 'holdings', 'metrics'];
+            const activeIndex = Math.max(viewOrder.indexOf(nextView), 0);
+            segmentedControl.dataset.active = nextView;
+            segmentedControl.style.setProperty('--segmented-option-count', String(viewOrder.length));
+            segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
+        }
+        if (investmentViewSurface) {
+            investmentViewSurface.dataset.activeView = nextView;
+        }
+        investmentPanels.forEach((panel) => {
+            panel.hidden = panel.dataset.investmentViewPanel !== nextView;
+        });
+        activeInvestmentView = nextView;
+        animateInvestmentSurfaceHeight();
+    }
+
+    function initInvestmentViewTabs() {
+        if (!segmentedControl) return;
+        const radios = segmentedControl.querySelectorAll('input[type="radio"]');
+        radios.forEach((radio) => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    setInvestmentView(radio.value);
+                }
+            });
+        });
+        const checkedRadio = segmentedControl.querySelector('input[type="radio"]:checked');
+        activeInvestmentView = '';
+        setInvestmentView(checkedRadio?.value || 'chart');
+        cleanupInvestmentSurfaceHeight();
+    }
 
     // Copy shared-select initialization from base.html
     function initSharedSelectors() {
@@ -168,6 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize shared selectors after DOM is ready - multiple passes to ensure all get bound
+    initInvestmentViewTabs();
     setTimeout(initSharedSelectors, 50);
     setTimeout(initSharedSelectors, 150);
     setTimeout(initSharedSelectors, 300);
@@ -605,15 +738,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         // 5. Update dashboard with latest total equity
-        updateDashboardWithEquity(processed, latestPrices);
+        updateDashboardWithEquity(processed, latestPrices, tickerClosePrices);
     }
 
-    function updateDashboardWithEquity(processed, latestPrices) {
+    function updateDashboardWithEquity(processed, latestPrices, tickerClosePrices) {
         const last = processed[processed.length - 1];
         if (!last) return;
 
-        const dashboard = document.getElementById('investment_dashboard');
-        if (!dashboard) return;
+        const holdingsPanel = document.getElementById('investment_holdings_panel');
+        const metricsPanel = document.getElementById('investment_metrics_panel');
+        if (!holdingsPanel || !metricsPanel) return;
+        const shouldAnimateVisibleMetricsPanel = activeInvestmentView === 'holdings' || activeInvestmentView === 'metrics';
+        if (shouldAnimateVisibleMetricsPanel) {
+            lockInvestmentSurfaceHeight();
+        }
 
         // Get all original transactions from the processed array (processed is sorted ascending, contains all transactions)
         const originalTransactions = processed.map(p => ({date: p.date, type: p.type, amount: p.amount}));
@@ -621,7 +759,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const netProfit = last.total_equity - totalDeposits;
         const isPositive = netProfit >= 0;
 
-        let holdingsHtml = '';
+        let holdingsHtml = `
+            <div class="trade-metric-card" style="grid-column: 1 / -1;">
+                <span class="trade-metric-label">Current Holdings</span>
+                <span class="trade-metric-value">No open positions</span>
+            </div>
+        `;
         if (last.holdings && Object.keys(last.holdings).length > 0) {
             let totalMarketValue = 0;
             const holdingsRows = Object.entries(last.holdings).map(([ticker, quantity]) => {
@@ -642,7 +785,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        dashboard.innerHTML = `
+        holdingsPanel.innerHTML = holdingsHtml;
+
+        metricsPanel.innerHTML = `
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Current Cash</span>
                 <span class="trade-metric-value">${formatAmount(last.running_cash)}</span>
@@ -657,28 +802,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${isPositive ? '+' : ''}${formatAmount(Math.abs(netProfit))}
                 </span>
             </div>
-            ${holdingsHtml}
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Total Transactions</span>
-                <span class="trade-metric-value">${transactions.length}</span>
+                <span class="trade-metric-value">${processed.length}</span>
             </div>
         `;
-
-        // Re-render equity chart with total equity instead of just cash
-        // We have tickerClosePrices available from earlier processing
-        const allTickerClosePrices = {};
-        processed.forEach(txn => {
-            Object.keys(txn.holdings).forEach(ticker => {
-                if (tickerClosePrices[ticker]) {
-                    allTickerClosePrices[ticker] = tickerClosePrices[ticker];
-                }
-            });
-        });
-        renderEquityChartWithEquity(transactions, allTickerClosePrices, latestPrices);
+        if (shouldAnimateVisibleMetricsPanel) {
+            animateInvestmentSurfaceHeight();
+        }
+        renderEquityChartWithEquity(processed, tickerClosePrices);
     }
 
     // Reuse the same chart styling from the backtest page
-    function renderEquityChartWithEquity(transactions, tickerClosePrices, latestPrices) {
+    function renderEquityChartWithEquity(transactions, tickerClosePrices) {
         if (!transactions.length || !window.Chart) {
             console.warn('Chart.js not available');
             return;
@@ -696,114 +832,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
 
-        // Calculate running cash and holdings step by step
-        // Read starting_cash from top-level JSON if available
-        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
-            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
-            : 0;
-        let holdings = {};
         const points = [];
         const rawDates = [];
 
-        // Sort transactions ascending by date
         const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
         sortedTransactions.forEach(txn => {
-            // ========== COMPLETELY COMPATIBLE FIELD READING ==========
-            // 1. Quantity: for holdings
-            let qty = null;
-            if (txn.quantity !== undefined && txn.quantity !== null) qty = Number(txn.quantity);
-            else if (txn.quantity_abs !== undefined && txn.quantity_abs !== null) qty = Number(txn.quantity_abs);
-            else if (txn.normalized?.position_quantity !== undefined && txn.normalized?.position_quantity !== null) qty = Number(txn.normalized.position_quantity);
-
-            // 2. Net amount: for cash calculation
-            let amount = 0;
-            if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) amount = Number(txn.normalized.net_amount);
-            else if (txn.amount !== undefined && txn.amount !== null) amount = Number(txn.amount);
-            else if (txn.cash !== undefined && txn.cash !== null) amount = Number(txn.cash);
-
-            // 3. Price: for auto-calculating amount
-            let price = null;
-            if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) price = Number(txn.normalized.unit_price);
-            else if (txn.price !== undefined && txn.price !== null) price = Number(txn.price);
-
-            // Auto-calculate amount if missing but we have quantity and price
-            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && (txn.type === 'buy' || txn.type === 'sell')) {
-                amount = qty * price;
-            }
-
-            // Update holdings
-            // Normalize type: convert space-separated to snake_case for backward compatibility
-            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
-            if (txn.ticker && qty !== null && !isNaN(qty)) {
-                if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
-                if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
-                    holdings[txn.ticker] += qty;
-                } else if (['sell'].includes(normalizedType)) {
-                    holdings[txn.ticker] -= qty;
-                    if (holdings[txn.ticker] <= 0) delete holdings[txn.ticker];
-                }
-            }
-
-            // Update cash - get commission correctly for IBKR imported
-            let commission = 0;
-            if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
-            else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
-
-            // For IBKR imported format (txn.normalized exists), net_amount already includes commission
-            // and is already correctly signed: -ve = cash out, +ve = cash in. Just add directly.
-            if (txn.normalized !== undefined) {
-                runningCash += amount;
-            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
-                runningCash += amount;
-            } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend' || 
-                normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
-                // Cash in: these transactions add cash to your account
-                // For manually added transactions where commission is separate
-                if (normalizedType === 'sell' && amount && commission) {
-                    runningCash += (amount - commission);
-                } else {
-                    runningCash += amount;
-                }
-            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment' || 
-                       normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
-                // Cash out: for manually added transactions
-                if (amount !== 0) {
-                    runningCash += amount;
-                }
-            }
-
-            // For buy/sell we already accounted for commission above
-            // Only subtract commission for other types
-            // For IBKR imported format (normalized), commission is already included in net_amount
-            // Only subtract commission for manually added transactions where commission is separate
-            const isImported = txn.normalized !== undefined;
-            if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
-                runningCash -= Math.abs(commission);
-            }
-
-            // Calculate total equity for this point using historical close prices
-            let marketValue = 0;
-            Object.entries(holdings).forEach(([ticker, quantity]) => {
-                let closePrice = 0;
-                if (tickerClosePrices[ticker]) {
-                    // Find the latest date in parquet that is <= transaction date
-                    const txnDate = txn.date; // YYYY-MM-DD
-                    const availableDates = Object.keys(tickerClosePrices[ticker]).filter(d => d <= txnDate).sort();
-                    if (availableDates.length > 0) {
-                        const closestDate = availableDates[availableDates.length - 1];
-                        closePrice = tickerClosePrices[ticker][closestDate];
-                    }
-                }
-                // Fallback: if no historical data, use txn.price if available, otherwise 0
-                if (closePrice === 0 && txn.ticker === ticker && txn.price) {
-                    closePrice = txn.price;
-                }
-                marketValue += quantity * closePrice;
-            });
-            const totalEquity = runningCash + marketValue;
-
-            points.push(totalEquity);
+            points.push(txn.total_equity);
             rawDates.push(txn.date);
         });
 
@@ -820,8 +855,8 @@ document.addEventListener('DOMContentLoaded', () => {
         })();
 
         const initialDeposits = getTotalDeposits(sortedTransactions);
-        const labels = rawDates;
-        const equity = points;
+        const labels = [...rawDates];
+        const equity = [...points];
         const fixedYAxisWidth = 52;
         const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -829,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const parseRawDate = (value) => {
             if (typeof value !== "string") return null;
-            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (!match) return null;
             return {
                 year: Number(match[1]),
@@ -838,7 +873,23 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         };
 
-        const padTwo = (num) => num < 10 ? `0${num}` : `${num}`;
+        const formatRawDate = (date) => {
+            const year = date.getFullYear();
+            const month = `${date.getMonth() + 1}`.padStart(2, "0");
+            const day = `${date.getDate()}`.padStart(2, "0");
+            return `${year}-${month}-${day}`;
+        };
+
+        if (equity.length && Number(equity[0]) !== 0 && rawDates[0]) {
+            const firstDate = new Date(rawDates[0]);
+            if (!Number.isNaN(firstDate.getTime())) {
+                firstDate.setDate(firstDate.getDate() - 1);
+                labels.unshift(formatRawDate(firstDate));
+                rawDates.unshift(formatRawDate(firstDate));
+                equity.unshift(0);
+            }
+        }
+
         const formatChartDateLines = (dateParts) => [
             `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`,
             `${dateParts.year}`
@@ -947,13 +998,74 @@ document.addEventListener('DOMContentLoaded', () => {
         const chartYPaddingPx = 5;
         const equityYScale = buildPixelPaddedYScale(canvas, [equity], chartYPaddingPx);
         const axisLineColor = resolvedTheme.muted;
+        const getOrCreateTooltip = (chart) => {
+            const parent = chart.canvas.parentNode;
+            let tooltip = parent.querySelector(".chart-tooltip");
+            if (tooltip) return tooltip;
+            tooltip = document.createElement("div");
+            tooltip.className = "chart-tooltip";
+            tooltip.innerHTML = '<p class="chart-tooltip-date"></p><div class="chart-tooltip-list"></div>';
+            parent.appendChild(tooltip);
+            return tooltip;
+        };
+
+        const formatTooltipDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+
+        const externalTooltipHandler = ({ chart, tooltip }) => {
+            const tooltipEl = getOrCreateTooltip(chart);
+            if (tooltip.opacity === 0) {
+                tooltipEl.classList.remove("is-visible");
+                return;
+            }
+
+            const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
+            const listEl = tooltipEl.querySelector(".chart-tooltip-list");
+            const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
+            const parsedDate = parseRawDate(rawDates[pointIndex]);
+            dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
+
+            listEl.innerHTML = tooltip.dataPoints.map((point) => `
+                <div class="chart-tooltip-row">
+                    <span class="chart-tooltip-dot" style="background:${point.dataset.borderColor}"></span>
+                    <span></span>
+                    <span class="chart-tooltip-label">Equity</span>
+                    <span class="chart-tooltip-value">${formatMoney(point.parsed.y)}</span>
+                </div>
+            `).join("");
+
+            const parentRect = chart.canvas.parentNode.getBoundingClientRect();
+            const tooltipRect = tooltipEl.getBoundingClientRect();
+            const padding = 12;
+            const gap = 14;
+            const anchorX = chart.canvas.offsetLeft + tooltip.caretX;
+            const anchorY = chart.canvas.offsetTop + tooltip.caretY;
+            const roomRight = parentRect.width - anchorX - padding;
+            const roomLeft = anchorX - padding;
+            const preferRight = roomRight >= tooltipRect.width + gap || roomRight >= roomLeft;
+            let left = preferRight ? anchorX + gap : anchorX - tooltipRect.width - gap;
+            if (left < padding) left = padding;
+            if (left + tooltipRect.width > parentRect.width - padding) {
+                left = parentRect.width - tooltipRect.width - padding;
+            }
+            let top = anchorY - (tooltipRect.height / 2);
+            if (top < padding) top = padding;
+            if (top + tooltipRect.height > parentRect.height - padding) {
+                top = parentRect.height - tooltipRect.height - padding;
+            }
+            tooltipEl.style.left = `${left}px`;
+            tooltipEl.style.top = `${top}px`;
+            tooltipEl.classList.add("is-visible");
+        };
 
         const commonOptions = {
             responsive: true,
             maintainAspectRatio: false,
-            layout: { padding: { bottom: 32 } },
+            layout: { padding: { bottom: 24 } },
             interaction: { mode: "index", intersect: false },
-            plugins: { legend: { display: true, position: 'top', labels: { color: resolvedTheme.muted, boxWidth: 12, usePointStyle: true } }, tooltip: { enabled: true } },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false, external: externalTooltipHandler },
+            },
             scales: {
                 x: {
                     grid: { display: false },
@@ -980,12 +1092,6 @@ document.addEventListener('DOMContentLoaded', () => {
             },
         };
 
-        // Dynamic line color based on whether equity is above initial deposit
-        const getEquityColor = (context) => {
-            const value = context.p1.parsed.y;
-            return value >= initialDeposits ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary;
-        };
-
         new Chart(canvas, {
             type: "line",
             data: {
@@ -993,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rawLabels: rawDates,
                 datasets: [
                     {
-                        label: "Total Equity",
+                        label: "Equity",
                         data: equity,
                         borderColor: resolvedTheme.accentPrimary,
                         borderWidth: 2.5,
