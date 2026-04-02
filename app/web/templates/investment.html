@@ -10,10 +10,8 @@
         </a>
         <a href="{{ more_urls.investment }}"
            class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
-            <span class="settings-nav-icon-shell"
-                  style="--settings-icon-surface: color-mix(in srgb, var(--theme-accent-secondary) 14%, transparent);"><span
-                    class="icon icon-settings-strategies" aria-hidden="true"
-                    style="--settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);"></span></span>
+            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
+                    class="icon icon-settings-strategies investment-nav-icon" aria-hidden="true"></span></span>
             <span class="settings-nav-label">My investment</span>
         </a>
     </nav>
@@ -21,7 +19,7 @@
 
 {% block workspace_content %}
     <div class="workspace-header">
-        <article class="report-card trade-performance-card" style="min-height: 0;">
+        <article class="report-card trade-performance-card investment-report-card">
             <div class="report-heading-row">
                 <p class="report-heading">My investment</p>
             </div>
@@ -30,35 +28,35 @@
 
     <div class="investment-surface-stack">
         <section class="chart-surface investment-view-surface" id="investment_view_surface" data-active-view="chart">
-            <div style="display: flex; justify-content: center; margin-bottom: 14px;">
+            <div class="investment-view-segmented-wrap">
                 {{ render_segmented_control(
-                    "segmented-control--compact",
+                    "segmented-control--compact investment-view-segmented",
                     "investment_view_tab",
                     "chart",
                     [
-                        {"id": "investment_view_chart", "value": "chart", "label": "Chart"},
+                        {"id": "investment_view_chart", "value": "chart", "label": "Charts"},
                         {"id": "investment_view_holdings", "value": "holdings", "label": "Holdings"},
                         {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
                     ],
-                    'id="investment_view_segmented" data-active="chart" data-option-count="3" style="--segmented-active-index: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(420px, 100%); max-width: 420px;"'
+                    'id="investment_view_segmented" data-active="chart" data-option-count="3"'
                 ) }}
             </div>
             <div class="investment-view-surface-body" id="investment_view_surface_body">
                 <div id="investment_chart_panel" data-investment-view-panel="chart">
-                    <div class="chart-heading-row"><p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">
+                    <div class="chart-heading-row"><p class="chart-heading investment-section-heading">
                         Equity curve</p></div>
-                    <div class="trade-chart-stack investment-chart-stack" style="--trade-chart-y-padding-px: 8;">
-                        <div id="investment_equity_chart" style="width: 100%; height: 100%;"></div>
+                    <div class="trade-chart-stack investment-chart-stack">
+                        <div id="investment_equity_chart" class="investment-equity-chart"></div>
                     </div>
                 </div>
-                <div class="trade-metrics-grid" id="investment_holdings_panel" data-investment-view-panel="holdings" hidden style="margin-top: 12px;"></div>
-                <div class="trade-metrics-grid" id="investment_metrics_panel" data-investment-view-panel="metrics" hidden style="margin-top: 12px;"></div>
+                <div class="trade-metrics-grid investment-view-panel-grid" id="investment_holdings_panel" data-investment-view-panel="holdings" hidden></div>
+                <div class="trade-metrics-grid investment-view-panel-grid" id="investment_metrics_panel" data-investment-view-panel="metrics" hidden></div>
             </div>
         </section>
 
         <section class="chart-surface investment-history-surface" id="investment_history_surface">
-        <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
-            <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
+        <div class="chart-heading-row investment-history-heading-row">
+            <p class="chart-heading investment-section-heading">Transaction history</p>
             <button type="button" class="settings-round-icon-button" id="toggle_form_button"
                     aria-label="Add transaction">
                 <span class="icon investment-toggle-form-icon" id="toggle_form_icon"></span>
@@ -180,19 +178,19 @@
                     </div>
                 </div>
                 <div class="ticker-input-row investment-form-grid investment-form-grid-secondary">
-                    <div class="ticker-input-main" id="txn_ticker_row" style="display: none;">
+                    <div class="ticker-input-main investment-form-conditional-row" id="txn_ticker_row">
                         <label for="txn_ticker">Ticker</label>
                         <input type="text" id="txn_ticker" name="txn_ticker" placeholder="NVDA"
-                               class="settings-form-control investment-form-control" style="text-transform: uppercase;">
+                               class="settings-form-control investment-form-control investment-form-control-ticker">
                     </div>
-                    <div class="ticker-input-main" id="txn_quantity_row" style="display: none;">
+                    <div class="ticker-input-main investment-form-conditional-row" id="txn_quantity_row">
                         <label for="txn_quantity">Quantity</label>
                         <div class="trade-capital-row">
                             <input id="txn_quantity" name="quantity" class="trade-capital-input" type="text" value=""
                                    inputmode="decimal" autocomplete="off" placeholder="10">
                         </div>
                     </div>
-                    <div class="ticker-input-main" id="txn_price_row" style="display: none;">
+                    <div class="ticker-input-main investment-form-conditional-row" id="txn_price_row">
                         <label for="txn_price">Price</label>
                         <div class="trade-capital-row">
                             <input id="txn_price" name="price" class="trade-capital-input" type="text" value=""
@@ -207,7 +205,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="ticker-input-row" style="margin-top: 10px;">
+                <div class="ticker-input-row investment-form-description-row">
                     <div class="ticker-input-main">
                         <label for="txn_description">Description</label>
                         <input type="text" id="txn_description" name="txn_description" placeholder="Optional"
@@ -239,7 +237,7 @@
             </table>
             <div class="trade-transactions-wrap investment-history-table-scroll">
                 <table class="settings-table trade-transactions-table investment-history-table" id="transactionTable">
-                    <tbody id="investment_history" style="vertical-align: top;">
+                    <tbody id="investment_history" class="investment-history-table-body">
                     </tbody>
                 </table>
             </div>

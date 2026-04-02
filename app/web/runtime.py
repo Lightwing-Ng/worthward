@@ -3032,10 +3032,33 @@ def build_web_runtime() -> WebRuntime:
     def investment_get_transactions():
         """Get all saved investment transactions from local storage."""
         if not INVESTMENT_STORE_PATH.exists():
-            return jsonify({"transactions": [], "success": True})
+            return jsonify({"transactions": [], "ticker_profiles": {}, "success": True})
         try:
             with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            ticker_profiles: dict[str, dict[str, str]] = {}
+            for txn in data.get("transactions", []):
+                raw_ticker = str(txn.get("ticker") or "").strip().upper()
+                if not raw_ticker:
+                    continue
+                normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
+                if normalized_type in {"forex_trade", "forex_trade_component", "fx_translation_pnl"}:
+                    continue
+                if raw_ticker in ticker_profiles:
+                    continue
+                profile_snapshot = load_local_profile_snapshot(raw_ticker)
+                if profile_snapshot is not None:
+                    company_name, logo_url = profile_snapshot
+                else:
+                    profile_record = load_profile_record(raw_ticker) or {}
+                    company_name = str(profile_record.get("company_name") or raw_ticker).strip() or raw_ticker
+                    logo_url = ""
+                ticker_profiles[raw_ticker] = {
+                    "ticker": raw_ticker,
+                    "company_name": company_name,
+                    "logo_url": logo_url,
+                }
+            data["ticker_profiles"] = ticker_profiles
             return jsonify(data)
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500

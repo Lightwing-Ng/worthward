@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.14.0
+ * Code version: v1.17.0
+ * - Updated: Investment segmented control now shows "Charts"
+ * - Reworked: Holdings view now renders as a scrollable data table with per-ticker cost basis and P&L metrics
+ * - Improved: Holdings and Metrics data now consistently use the Workspace metric value token
  * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
  * - Fixed: Equity curve only renders inside the Chart view instead of bleeding into other tabs
  * - Fixed: Dashboard rendering no longer crashes on undefined transactions or parquet scope references
@@ -20,6 +23,7 @@
  * - Improved: Show '-' instead of 0.00 in Commission column for transaction types that don't normally have commission (foreign tax withholding, dividend, adjustment, debit interest, payment in lieu, dividend reinvestment, forex trade, deposit, withdrawal, credit interest)
  * - Fixed: Investment history table now keeps the scrollbar below the rounded header and stays bottom-aligned with the sidebar
  * - Fixed: Add transaction form now reuses the standard controls and action button styling
+ * - Improved: Add transaction form offset now follows the measured form height instead of hard-coded pixels
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -167,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     let activeInvestmentView = 'chart';
     let investmentSurfaceCleanupTimer = null;
+    let investmentFormHideTimer = null;
 
     function lockInvestmentSurfaceHeight() {
         if (!investmentViewSurface) return;
@@ -309,6 +314,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update conditional fields after everything is initialized
     setTimeout(updateConditionalFields, 350);
 
+    function getInvestmentFormOffset() {
+        if (!formContainer) return 0;
+        const marginTop = Number.parseFloat(window.getComputedStyle(formContainer).marginTop || '0') || 0;
+        return Math.ceil(formContainer.getBoundingClientRect().height + marginTop);
+    }
+
+    function syncInvestmentFormLayout() {
+        if (!formContainer || !historyTable || !parentSection) return;
+        const isVisible = formContainer.style.display === 'block';
+        if (!isVisible) {
+            historyTable.style.transform = 'translateY(0)';
+            parentSection.style.paddingBottom = '20px';
+            return;
+        }
+
+        const offset = getInvestmentFormOffset();
+        historyTable.style.transform = `translateY(${offset}px)`;
+        parentSection.style.paddingBottom = `${20 + offset}px`;
+    }
+
     // Toggle form visibility
     const parentSection = formContainer.closest('.chart-surface');
     const toggleIcon = document.getElementById('toggle_form_icon');
@@ -316,25 +341,45 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleBtn.addEventListener('click', () => {
             const isVisible = formContainer.style.display === 'block';
             if (isVisible) {
+                if (investmentFormHideTimer) {
+                    window.clearTimeout(investmentFormHideTimer);
+                    investmentFormHideTimer = null;
+                }
                 formContainer.style.opacity = '0';
                 formContainer.style.transform = 'scale(0.98)';
-                setTimeout(() => formContainer.style.display = 'none', 400);
-                historyTable.style.transform = 'translateY(0)';
-                parentSection.style.paddingBottom = '20px';
+                investmentFormHideTimer = window.setTimeout(() => {
+                    formContainer.style.display = 'none';
+                    syncInvestmentFormLayout();
+                    investmentFormHideTimer = null;
+                }, 400);
                 toggleIcon.classList.remove('is-minus');
                 toggleBtn.setAttribute('aria-label', 'Add transaction');
             } else {
+                if (investmentFormHideTimer) {
+                    window.clearTimeout(investmentFormHideTimer);
+                    investmentFormHideTimer = null;
+                }
                 formContainer.style.display = 'block';
+                syncInvestmentFormLayout();
                 setTimeout(() => {
                     formContainer.style.opacity = '1';
                     formContainer.style.transform = 'scale(1)';
                 }, 50);
-                historyTable.style.transform = 'translateY(360px)';
-                parentSection.style.paddingBottom = '380px';
                 toggleIcon.classList.add('is-minus');
                 toggleBtn.setAttribute('aria-label', 'Hide add transaction form');
             }
         });
+
+        const handleInvestmentLayoutChange = () => {
+            syncInvestmentFormLayout();
+        };
+
+        window.addEventListener('resize', handleInvestmentLayoutChange);
+
+        if (window.ResizeObserver) {
+            const investmentFormResizeObserver = new ResizeObserver(handleInvestmentLayoutChange);
+            investmentFormResizeObserver.observe(formContainer);
+        }
     }
 
     // Show/hide conditional fields based on event type
@@ -504,6 +549,231 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to load transactions:', err);
         });
 
+    function getNormalizedTransactionType(txn) {
+        return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
+    }
+
+    function getTransactionQuantity(txn) {
+        const quantity = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.position_quantity;
+        return quantity === undefined || quantity === null ? null : Number(quantity);
+    }
+
+    function getTransactionAmount(txn) {
+        if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) {
+            return Number(txn.normalized.net_amount);
+        }
+        if (txn.amount !== undefined && txn.amount !== null) {
+            return Number(txn.amount);
+        }
+        if (txn.cash !== undefined && txn.cash !== null) {
+            return Number(txn.cash);
+        }
+        return 0;
+    }
+
+    function getTransactionPrice(txn) {
+        if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) {
+            return Number(txn.normalized.unit_price);
+        }
+        if (txn.price !== undefined && txn.price !== null) {
+            return Number(txn.price);
+        }
+        return null;
+    }
+
+    function formatHoldingsMoney(value, {dashWhenZero = false} = {}) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '-';
+        if (dashWhenZero && Math.abs(value) < 1e-9) return '-';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(value);
+    }
+
+    function formatHoldingsPercent(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) return '-';
+        return `${new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(value)}%`;
+    }
+
+    function formatHoldingsUsd(value, {dashWhenNull = false} = {}) {
+        if (value === null || value === undefined || Number.isNaN(value)) {
+            return dashWhenNull ? '-' : '$0.00';
+        }
+        const sign = value < 0 ? '-' : '';
+        return `${sign}$${formatHoldingsMoney(Math.abs(value))}`;
+    }
+
+    function formatHoldingsPosition(quantity) {
+        if (quantity === null || quantity === undefined || Number.isNaN(quantity) || Math.abs(quantity) < 1e-9) {
+            return '-';
+        }
+        const hasFraction = Math.abs(quantity - Math.round(quantity)) > 1e-9;
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: hasFraction ? 2 : 0,
+            maximumFractionDigits: hasFraction ? 4 : 0,
+        }).format(quantity);
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function shouldTrackHoldingTicker(txn) {
+        const ticker = String(txn?.ticker || '').trim();
+        if (!ticker) return false;
+        const normalizedType = getNormalizedTransactionType(txn);
+        return !['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType);
+    }
+
+    function buildTickerSummaries(transactions, latestPrices, totalEquity) {
+        const tickerMap = new Map();
+        const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        orderedTransactions.forEach((txn) => {
+            if (!shouldTrackHoldingTicker(txn)) return;
+            const ticker = String(txn.ticker).trim().toUpperCase();
+            const normalizedType = getNormalizedTransactionType(txn);
+            const quantity = getTransactionQuantity(txn);
+            const amount = getTransactionAmount(txn);
+
+            if (!tickerMap.has(ticker)) {
+                tickerMap.set(ticker, {
+                    ticker,
+                    shares: 0,
+                    totalCost: 0,
+                    realizedPnl: 0,
+                });
+            }
+
+            const summary = tickerMap.get(ticker);
+
+            if (['buy', 'dividend_reinvestment'].includes(normalizedType) && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
+                summary.totalCost += Math.abs(amount);
+                return;
+            }
+
+            if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
+                const averagePrice = summary.shares > 0 ? summary.totalCost / summary.shares : 0;
+                summary.realizedPnl += amount - (averagePrice * quantity);
+                summary.totalCost -= averagePrice * quantity;
+                summary.shares -= quantity;
+                if (Math.abs(summary.shares) < 1e-9) {
+                    summary.shares = 0;
+                    summary.totalCost = 0;
+                }
+                return;
+            }
+
+            if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
+                summary.realizedPnl += amount;
+            }
+        });
+
+        return Array.from(tickerMap.values()).map((summary) => {
+            const hasOpenPosition = summary.shares > 0;
+            const averagePrice = hasOpenPosition ? (summary.totalCost / summary.shares) : null;
+            const lastPrice = latestPrices[summary.ticker] ?? null;
+            const marketValue = hasOpenPosition && lastPrice !== null ? summary.shares * lastPrice : 0;
+            const unrealizedPnl = hasOpenPosition && lastPrice !== null && averagePrice !== null
+                ? (lastPrice - averagePrice) * summary.shares
+                : null;
+            const positionWeight = totalEquity > 0 && marketValue > 0 ? (marketValue / totalEquity) * 100 : 0;
+
+            return {
+                ...summary,
+                averagePrice,
+                lastPrice,
+                marketValue,
+                unrealizedPnl,
+                positionWeight,
+                hasOpenPosition,
+            };
+        }).sort((left, right) => {
+            if (left.hasOpenPosition !== right.hasOpenPosition) {
+                return left.hasOpenPosition ? -1 : 1;
+            }
+            if (left.hasOpenPosition && right.hasOpenPosition) {
+                return right.marketValue - left.marketValue;
+            }
+            return left.ticker.localeCompare(right.ticker);
+        });
+    }
+
+    function renderHoldingsTable(summaries, tickerProfiles) {
+        if (!summaries.length) {
+            return `
+                <div class="investment-holdings-table-shell">
+                    <div class="investment-holdings-empty">No holdings or ticker-linked transactions yet.</div>
+                </div>
+            `;
+        }
+
+        const rowsHtml = summaries.map((summary, index) => {
+            const profile = tickerProfiles?.[summary.ticker] || {};
+            const companyName = String(profile.company_name || summary.ticker);
+            const logoUrl = String(profile.logo_url || '').trim();
+            const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
+            const lastPriceDisplay = summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice);
+            const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
+            const unrealizedDisplay = summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl);
+            const weightDisplay = formatHoldingsPercent(summary.positionWeight);
+
+            return `
+                <tr>
+                    <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-ticker">
+                        <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
+                            ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async">` : `<span class="investment-holdings-ticker-logo-placeholder" aria-hidden="true"></span>`}
+                            <span class="timing-suggestion-copy investment-holdings-ticker-copy">
+                                <span class="suggestion-symbol timing-suggestion-symbol investment-holdings-ticker-symbol">${escapeHtml(summary.ticker)}</span>
+                                <span class="suggestion-name timing-suggestion-name investment-holdings-ticker-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                            </span>
+                        </a>
+                    </td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${lastPriceDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${realizedDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${unrealizedDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">${weightDisplay}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="investment-holdings-table-shell">
+                <table class="settings-table trade-transactions-table investment-holdings-table" aria-hidden="true">
+                    <thead>
+                        <tr>
+                            <th>No.</th>
+                            <th>Ticker</th>
+                            <th>Average price</th>
+                            <th>Last</th>
+                            <th>Position</th>
+                            <th>Realiszed P&amp;L</th>
+                            <th>Unrealized P&amp;L</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                </table>
+                <div class="trade-transactions-wrap investment-holdings-table-scroll">
+                    <table class="settings-table trade-transactions-table investment-holdings-table">
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
     async function renderTransactionTable(transactions) {
         const tbody = document.getElementById('investment_history');
         if (!tbody) return;
@@ -524,21 +794,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
-            let qty = null;
-            if (txn.quantity !== undefined && txn.quantity !== null) qty = Number(txn.quantity);
-            else if (txn.quantity_abs !== undefined && txn.quantity_abs !== null) qty = Number(txn.quantity_abs);
-            else if (txn.normalized?.position_quantity !== undefined && txn.normalized?.position_quantity !== null) qty = Number(txn.normalized.position_quantity);
+            let qty = getTransactionQuantity(txn);
 
             // 2. Net amount: for cash calculation
-            let amount = 0;
-            if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) amount = Number(txn.normalized.net_amount);
-            else if (txn.amount !== undefined && txn.amount !== null) amount = Number(txn.amount);
-            else if (txn.cash !== undefined && txn.cash !== null) amount = Number(txn.cash);
+            let amount = getTransactionAmount(txn);
 
             // 3. Price: for auto-calculating amount and market value
-            let price = null;
-            if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) price = Number(txn.normalized.unit_price);
-            else if (txn.price !== undefined && txn.price !== null) price = Number(txn.price);
+            let price = getTransactionPrice(txn);
 
             // 4. Commission: for cash impact
             let commission = 0;
@@ -552,19 +814,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update holdings based on transaction type
             // Normalize type first
-            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
+            const normalizedType = getNormalizedTransactionType(txn);
             if (txn.ticker && qty !== null && !isNaN(qty)) {
                 if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
                 if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
                     holdings[txn.ticker] += qty;
-                    tickers.add(txn.ticker);
                 } else if (['sell'].includes(normalizedType)) {
                     holdings[txn.ticker] -= qty;
                     if (holdings[txn.ticker] <= 0) {
                         delete holdings[txn.ticker];
-                        tickers.delete(txn.ticker);
                     }
                 }
+            }
+
+            if (shouldTrackHoldingTicker(txn)) {
+                tickers.add(String(txn.ticker).trim().toUpperCase());
             }
 
             // Calculate cash impact based on transaction type
@@ -734,10 +998,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         // 5. Update dashboard with latest total equity
-        updateDashboardWithEquity(processed, latestPrices, tickerClosePrices);
+        updateDashboardWithEquity(processed, latestPrices, tickerClosePrices, transactions);
     }
 
-    function updateDashboardWithEquity(processed, latestPrices, tickerClosePrices) {
+    function updateDashboardWithEquity(processed, latestPrices, tickerClosePrices, rawTransactions) {
         const last = processed[processed.length - 1];
         if (!last) return;
 
@@ -755,52 +1019,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const netProfit = last.total_equity - totalDeposits;
         const isPositive = netProfit >= 0;
 
-        let holdingsHtml = `
-            <div class="trade-metric-card" style="grid-column: 1 / -1;">
-                <span class="trade-metric-label">Current Holdings</span>
-                <span class="trade-metric-value">No open positions</span>
-            </div>
-        `;
-        if (last.holdings && Object.keys(last.holdings).length > 0) {
-            let totalMarketValue = 0;
-            const holdingsRows = Object.entries(last.holdings).map(([ticker, quantity]) => {
-                const price = latestPrices[ticker] || 0;
-                const value = quantity * price;
-                totalMarketValue += value;
-                return `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>${ticker} × ${quantity.toLocaleString()}</span><span>${formatAmount(value)}</span></div>`;
-            }).join('');
-            holdingsHtml = `
-                <div class="trade-metric-card" style="grid-column: 1 / -1;">
-                    <span class="trade-metric-label">Current Holdings (Market Value)</span>
-                    <div style="margin-top: 4px;">${holdingsRows}</div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 6px; border-top: 1px solid var(--theme-glass-border); padding-top: 6px;">
-                        <span><strong>Total</strong></span>
-                        <span><strong>${formatAmount(totalMarketValue)}</strong></span>
-                    </div>
-                </div>
-            `;
-        }
-
-        holdingsPanel.innerHTML = holdingsHtml;
+        const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
+        const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, last.total_equity);
+        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles);
 
         metricsPanel.innerHTML = `
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Current Cash</span>
-                <span class="trade-metric-value">${formatAmount(last.running_cash)}</span>
+                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(last.running_cash)}</span>
             </div>
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Total Equity</span>
-                <span class="trade-metric-value">${formatAmount(last.total_equity)}</span>
+                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(last.total_equity)}</span>
             </div>
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Net Profit/Loss</span>
-                <span class="trade-metric-value" style="color: ${isPositive ? 'var(--accent-positive)' : 'var(--error)'};">
+                <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: ${isPositive ? 'var(--accent-positive)' : 'var(--error)'};">
                     ${isPositive ? '+' : ''}${formatAmount(Math.abs(netProfit))}
                 </span>
             </div>
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Total Transactions</span>
-                <span class="trade-metric-value">${processed.length}</span>
+                <span class="trade-metric-value" data-workspace-mask="trade-metric">${processed.length}</span>
             </div>
         `;
         if (shouldAnimateVisibleMetricsPanel) {

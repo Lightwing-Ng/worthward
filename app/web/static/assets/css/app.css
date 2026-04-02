@@ -1,9 +1,9 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.3.4 */
 @import url("./foundation/tokens.css?v=3.24.0");
 @import url("./layout/shell.css?v=3.23.1");
 @import url("./components/forms.css?v=3.23.0");
 @import url("./views/workspace.css?v=3.23.1");
 @import url("./views/settings.css?v=3.23.0");
 @import url("./views/trade.css?v=3.23.0");
-@import url("./views/investment_vibe.css");
+@import url("./views/investment.css?v=1.0.0");
 @import url("./utilities/responsive.css?v=3.24.1");
