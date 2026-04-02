@@ -831,7 +831,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-button-pad-block", 0, 0),
                     px_token("--settings-action-button-pad-inline", 18, 0),
                     px_token("--settings-action-button-min-height", 32, 1),
-                    raw_token("--settings-action-button-background", "var(--accent-fill)"),
+                    raw_token("--settings-action-button-background", "#0055cc"),
                     raw_token("--settings-action-button-color", "var(--color-white-adaptive)"),
                 ],
                 "related_styles": [],

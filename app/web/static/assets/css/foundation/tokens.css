@@ -72,7 +72,7 @@
 	--settings-action-button-pad-block: 0px;
 	--settings-action-button-pad-inline: 18px;
 	--settings-action-button-min-height: 32px;
-	--settings-action-button-background: var(--accent-fill);
+	--settings-action-button-background: #0055cc;
 	--settings-action-button-color: var(--color-white-adaptive);
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;

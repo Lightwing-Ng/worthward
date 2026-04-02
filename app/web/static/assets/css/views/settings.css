@@ -1798,11 +1798,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     background: var(--settings-action-button-background);
     color: var(--settings-action-button-color);
     box-shadow: none;
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .settings-inline-button-primary:hover,
 .settings-inline-button-primary:focus-visible {
-    background: var(--accent-fill-hover);
+    background: color-mix(in srgb, var(--settings-action-button-background) 88%, white);
     box-shadow: none;
 }
 

@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.13.0
+ * Code version: v1.14.0
  * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
  * - Fixed: Equity curve only renders inside the Chart view instead of bleeding into other tabs
  * - Fixed: Dashboard rendering no longer crashes on undefined transactions or parquet scope references
@@ -13,11 +13,13 @@
  * - Fixed: Cash calculation logic for payment_in_lieu and foreign tax withholding transactions
  * - Improved: Adjusted transaction table column widths for better readability
  * - Renamed: "Tax withholding" → "Foreign tax withholding" (value: tax_withholding → foreign_tax_withholding) for consistent naming
- * - Improved: Toggle button switches between plus/minus icon based on form visibility
+ * - Improved: Toggle button now switches plus/minus icons via reusable CSS classes
  * - Fixed: Transaction table header uses opaque background (var(--panel-strong)) instead of semi-transparent glass for better text readability
  * - Adjusted: Finalized transaction table column widths and min-widths per layout requirements
  * - Fixed: Added backward compatibility - normalize space-separated type names to snake_case for existing imported transactions (e.g., "foreign tax withholding" → foreign_tax_withholding)
  * - Improved: Show '-' instead of 0.00 in Commission column for transaction types that don't normally have commission (foreign tax withholding, dividend, adjustment, debit interest, payment in lieu, dividend reinvestment, forex trade, deposit, withdrawal, credit interest)
+ * - Fixed: Investment history table now keeps the scrollbar below the rounded header and stays bottom-aligned with the sidebar
+ * - Fixed: Add transaction form now reuses the standard controls and action button styling
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -319,10 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => formContainer.style.display = 'none', 400);
                 historyTable.style.transform = 'translateY(0)';
                 parentSection.style.paddingBottom = '20px';
-                // Switch to plus icon when form is closed
-                toggleIcon.style.webkitMaskImage = 'url(/static/images/plus.svg)';
-                toggleIcon.style.WebkitMaskImage = 'url(/static/images/plus.svg)';
-                toggleIcon.style.maskImage = 'url(/static/images/plus.svg)';
+                toggleIcon.classList.remove('is-minus');
                 toggleBtn.setAttribute('aria-label', 'Add transaction');
             } else {
                 formContainer.style.display = 'block';
@@ -332,10 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 50);
                 historyTable.style.transform = 'translateY(360px)';
                 parentSection.style.paddingBottom = '380px';
-                // Switch to minus icon when form is open
-                toggleIcon.style.webkitMaskImage = 'url(/static/images/minus.svg)';
-                toggleIcon.style.WebkitMaskImage = 'url(/static/images/minus.svg)';
-                toggleIcon.style.maskImage = 'url(/static/images/minus.svg)';
+                toggleIcon.classList.add('is-minus');
                 toggleBtn.setAttribute('aria-label', 'Hide add transaction form');
             }
         });
