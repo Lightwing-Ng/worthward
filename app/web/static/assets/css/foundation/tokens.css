@@ -151,6 +151,11 @@
 	--control-liquid-shadow: none;
 	--control-liquid-shadow-focus: none;
 	--control-liquid-blur: none;
+	--scrollable-data-table-header-padding: 4px 1px;
+	--scrollable-data-table-cell-padding: 2px 1px;
+	--scrollable-data-table-summary-line-height: 0.75;
+	--scrollable-data-table-summary-padding: 6px 8px;
+	--investment-holdings-cell-padding: 4px 6px;
 	--color-white-adaptive: var(--theme-color-white-adaptive);
 	--glass-surface-background-soft: var(--theme-glass-surface-background-soft);
 	--glass-surface-background: var(--theme-glass-surface-background);

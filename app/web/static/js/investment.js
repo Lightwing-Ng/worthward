@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.18.0
+ * Code version: v1.19.3
  * - Updated: Investment segmented control now shows "Charts"
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
@@ -28,6 +28,10 @@
  * - Fixed: Investment history table now keeps the scrollbar below the rounded header and stays bottom-aligned with the sidebar
  * - Fixed: Add transaction form now reuses the standard controls and action button styling
  * - Improved: Add transaction form offset now follows the measured form height instead of hard-coded pixels
+ * - Fixed: Grant transactions now add shares without affecting cash, while history still shows their economic amount
+ * - Fixed: Holdings average price now uses out-of-pocket cost, so grant lots dilute cost per share instead of adding cost basis
+ * - Fixed: Grant descriptions now use the standard TICKER @ PRICE x QTY transaction format
+ * - Updated: Holdings summary row now colors only the cumulative P&L value, keeping the label text neutral
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -575,6 +579,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return 0;
     }
 
+    function getTransactionEconomicAmount(txn) {
+        const amount = getTransactionAmount(txn);
+        if (Math.abs(amount) > 1e-9) return amount;
+
+        const normalizedType = getNormalizedTransactionType(txn);
+        const quantity = getTransactionQuantity(txn);
+        const price = getTransactionPrice(txn);
+        if (quantity === null || price === null || Number.isNaN(quantity) || Number.isNaN(price)) {
+            return amount;
+        }
+
+        if (['buy', 'sell', 'grant'].includes(normalizedType)) {
+            return quantity * price;
+        }
+
+        return amount;
+    }
+
     function getTransactionPrice(txn) {
         if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) {
             return Number(txn.normalized.unit_price);
@@ -674,6 +696,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
+                return;
+            }
+
             // Dividend reinvestment adds shares that were funded by a separate
             // dividend cash flow, so we should not count the reinvested amount
             // as fresh cost basis again in realized P&L reporting.
@@ -743,11 +770,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const closedCount = summaries.length - openCount;
         const totalRealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
         const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const totalWeight = totalEquity > 0 ? Math.max(0, (1 - ((Number(totalCash) || 0) / totalEquity)) * 100) : 0;
         const totalRealizedClass = totalRealizedPnl >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
         const totalUnrealizedClass = totalUnrealizedPnl >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
+        const cumulativePnlClass = cumulativePnl >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
 
@@ -795,6 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <tr class="investment-holdings-summary-row">
                 <td class="investment-holdings-cell investment-holdings-cell-center"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-ticker">
+                    <span class="investment-holdings-summary-copy">Cumulative P&amp;L: <span class="${cumulativePnlClass.trim()}">${cumulativePnl >= 0 ? '+' : '-'}${formatHoldingsMoney(Math.abs(cumulativePnl))}</span></span>
                     <span class="investment-holdings-summary-copy">${summaries.length} instruments, ${openCount} open, ${closedCount} closed</span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
@@ -867,7 +899,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
 
             // Auto-calculate amount if missing but we have quantity and price
-            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && (txn.type === 'buy' || txn.type === 'sell')) {
+            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && ['buy', 'sell'].includes(txn.type)) {
                 amount = qty * price;
             }
 
@@ -878,7 +910,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
                 const normalizedTicker = String(txn.ticker).trim().toUpperCase();
                 const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
-                if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
+                if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
                     if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
                         const previousQuantity = holdings[txn.ticker];
                         const previousAnchor = moneyMarketAnchors[txn.ticker] ?? price;
@@ -942,6 +974,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 ...txn,
                 running_cash: runningCash,
+                display_amount: getTransactionEconomicAmount(txn),
                 holdings: { ...holdings },
                 money_market_anchors: { ...moneyMarketAnchors },
             };
@@ -1036,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Remove trailing .0 if integer for cleaner display
                 const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty)) : qty;
                 // For buy/sell, format as "TICKER @ PRICE × QTY"
-                if (price && ['buy', 'sell'].includes(normalizedTypeDesc)) {
+                if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
                     // Format price to 2 decimal places
                     const cleanPrice = Number(price).toFixed(2);
                     description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
@@ -1070,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'forex_trade_component',
                 'fx_translation_pnl',
                 'deposit',
+                'grant',
                 'withdrawal'
             ];
             let commissionDisplay;
@@ -1088,7 +1122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td style="text-align: center; padding: 2px 1px;">${formatEventType(txn.type)}</td>
                 <td style="text-align: left; padding: 2px 1px;">${description}</td>
                 <td style="text-align: center; padding: 2px 1px;">${txn.currency || 'USD'}</td>
-                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.normalized?.net_amount ?? txn.amount ?? txn.cash)}</td>
+                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.display_amount)}</td>
                 <td style="text-align: right; padding: 2px 1px;">${commissionDisplay}</td>
                 <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.market_value)}</td>
                 <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.running_cash)}</td>

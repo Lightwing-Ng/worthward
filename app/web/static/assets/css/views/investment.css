@@ -159,7 +159,7 @@
     background: var(--panel-strong);
     color: var(--scrollable-data-table-header-color);
     font-weight: 700;
-    padding: 2px 1px;
+    padding: var(--scrollable-data-table-header-padding);
     text-align: center;
     vertical-align: top;
     box-shadow: none;
@@ -207,7 +207,7 @@
 }
 
 .investment-holdings-cell {
-    padding: 2px 1px;
+    padding: var(--investment-holdings-cell-padding);
     font-variant-numeric: tabular-nums;
     vertical-align: top;
 }
@@ -344,7 +344,8 @@
     text-align: left;
     color: var(--theme-muted);
     font-variant-numeric: tabular-nums;
-    padding: 6px 8px;
+    line-height: var(--scrollable-data-table-summary-line-height);
+    padding: var(--scrollable-data-table-summary-padding);
 }
 
 .investment-holdings-value-positive {
@@ -493,7 +494,7 @@
 }
 
 .investment-history-table td {
-    padding: 2px 1px;
+    padding: var(--scrollable-data-table-cell-padding);
 }
 
 .investment-history-table-body {
