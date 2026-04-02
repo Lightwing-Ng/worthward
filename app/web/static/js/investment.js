@@ -655,9 +655,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const summary = tickerMap.get(ticker);
 
-            if (['buy', 'dividend_reinvestment'].includes(normalizedType) && quantity !== null && !Number.isNaN(quantity)) {
+            if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
                 summary.shares += quantity;
                 summary.totalCost += Math.abs(amount);
+                return;
+            }
+
+            // Dividend reinvestment adds shares that were funded by a separate
+            // dividend cash flow, so we should not count the reinvested amount
+            // as fresh cost basis again in realized P&L reporting.
+            if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
                 return;
             }
 
@@ -726,6 +734,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
             const unrealizedDisplay = summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl);
             const weightDisplay = formatHoldingsPercent(summary.positionWeight);
+            const realizedClass = summary.realizedPnl >= 0
+                ? ' investment-holdings-value-positive'
+                : ' investment-holdings-value-negative';
+            const unrealizedClass = summary.unrealizedPnl === null
+                ? ''
+                : (summary.unrealizedPnl >= 0
+                    ? ' investment-holdings-value-positive'
+                    : ' investment-holdings-value-negative');
 
             return `
                 <tr>
@@ -742,8 +758,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${lastPriceDisplay}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money">${realizedDisplay}</td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money">${unrealizedDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">${realizedDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">${unrealizedDisplay}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${weightDisplay}</td>
                 </tr>
             `;

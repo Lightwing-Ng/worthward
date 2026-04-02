@@ -26,7 +26,9 @@
 
 .investment-view-surface {
     flex: 0 0 auto;
-    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    padding: var(--investment-view-surface-padding);
     height: 40vh;
     max-height: 40vh;
     min-height: 0;
@@ -34,9 +36,34 @@
 }
 
 .investment-view-segmented-wrap {
+    flex: 0 0 auto;
     display: flex;
     justify-content: center;
     margin-bottom: 14px;
+}
+
+.investment-view-surface-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.investment-view-surface-body > [data-investment-view-panel] {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+#investment_chart_panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#investment_chart_panel .trade-chart-stack {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .investment-view-segmented {
@@ -65,11 +92,21 @@
 .investment-view-panel-grid {
     margin-top: 12px;
     min-height: 0;
-    height: calc(100% - 46px);
+    height: auto;
+}
+
+#investment_holdings_panel {
+    display: block;
+    overflow: hidden;
+    padding: 0;
+}
+
+#investment_metrics_panel {
+    overflow: auto;
 }
 
 .investment-holdings-table-shell {
-    grid-column: 1 / -1;
+    flex: 1 1 auto;
     width: 100%;
     min-height: 0;
     height: 100%;
@@ -97,7 +134,7 @@
 
 .investment-holdings-table {
     width: 100%;
-    min-width: 100%;
+    min-width: 376px;
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
@@ -122,7 +159,7 @@
     background: var(--panel-strong);
     color: var(--theme-muted);
     font-weight: 700;
-    padding: 8px 10px;
+    padding: 2px 1px;
     text-align: center;
     vertical-align: top;
     box-shadow: none;
@@ -151,7 +188,7 @@
 }
 
 .investment-holdings-cell {
-    padding: 8px 10px;
+    padding: 2px 1px;
     font-variant-numeric: tabular-nums;
     vertical-align: top;
 }
@@ -162,6 +199,7 @@
 
 .investment-holdings-cell-money {
     text-align: right;
+    vertical-align: top;
 }
 
 .investment-holdings-cell-ticker {
@@ -171,8 +209,10 @@
 .investment-holdings-ticker-link {
     min-height: 44px;
     align-items: flex-start;
-    padding: 8px 12px;
+    padding: 6px 8px;
     width: 100%;
+    background: transparent;
+    border-radius: 0;
 }
 
 .investment-holdings-ticker-logo {
@@ -207,11 +247,79 @@
     color: var(--theme-muted);
 }
 
+.investment-holdings-ticker-link:hover,
+.investment-holdings-ticker-link:focus-visible,
+.investment-holdings-ticker-link.is-active {
+    background: transparent;
+}
+
+.investment-holdings-table th:nth-child(1),
+.investment-holdings-table td:nth-child(1) {
+    width: 8%;
+    min-width: 32px;
+    text-align: center;
+}
+
+.investment-holdings-table th:nth-child(2),
+.investment-holdings-table td:nth-child(2) {
+    width: 32%;
+    min-width: 128px;
+}
+
+.investment-holdings-table th:nth-child(3),
+.investment-holdings-table td:nth-child(3) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table th:nth-child(4),
+.investment-holdings-table td:nth-child(4) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table th:nth-child(5),
+.investment-holdings-table td:nth-child(5) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table th:nth-child(6),
+.investment-holdings-table td:nth-child(6) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table th:nth-child(7),
+.investment-holdings-table td:nth-child(7) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table th:nth-child(8),
+.investment-holdings-table td:nth-child(8) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.investment-holdings-table td:nth-child(n + 3):nth-child(-n + 8) {
+    text-align: right;
+    vertical-align: top;
+}
+
+.investment-holdings-value-positive {
+    color: var(--theme-accent-positive);
+}
+
+.investment-holdings-value-negative {
+    color: #ff2f92;
+}
+
 .investment-history-surface {
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: 20px;
+    padding: var(--investment-history-surface-padding);
     overflow: hidden;
 }
 
