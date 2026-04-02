@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.19.3
+ * Code version: v1.20.0
  * - Updated: Investment segmented control now shows "Charts"
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
@@ -32,6 +32,8 @@
  * - Fixed: Holdings average price now uses out-of-pocket cost, so grant lots dilute cost per share instead of adding cost basis
  * - Fixed: Grant descriptions now use the standard TICKER @ PRICE x QTY transaction format
  * - Updated: Holdings summary row now colors only the cumulative P&L value, keeping the label text neutral
+ * - Reworked: The investment import form now accepts the two IBKR CSV exports instead of manual transaction entry
+ * - Added: Import feedback now spells out that the server discards raw CSV files after in-memory processing
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -173,6 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
     const investmentForm = document.getElementById('investment_form');
+    const importFeedback = document.getElementById('investment_import_feedback');
+    const transactionsCsvInput = document.getElementById('transactions_csv');
+    const positionsCsvInput = document.getElementById('positions_csv');
+    const transactionsCsvStatus = document.getElementById('transactions_csv_status');
+    const positionsCsvStatus = document.getElementById('positions_csv_status');
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
@@ -254,6 +261,58 @@ document.addEventListener('DOMContentLoaded', () => {
         cleanupInvestmentSurfaceHeight();
     }
 
+    function setImportFeedback(message, isError = false) {
+        if (!importFeedback) return;
+        importFeedback.hidden = false;
+        importFeedback.textContent = message;
+        importFeedback.classList.toggle('investment-import-feedback-error', Boolean(isError));
+        importFeedback.classList.toggle('investment-import-feedback-success', !isError);
+    }
+
+    function clearImportFeedback() {
+        if (!importFeedback) return;
+        importFeedback.hidden = true;
+        importFeedback.textContent = '';
+        importFeedback.classList.remove('investment-import-feedback-error', 'investment-import-feedback-success');
+    }
+
+    function isLikelyCsvFile(file) {
+        return Boolean(file && /\.csv$/i.test(file.name || ''));
+    }
+
+    function isLikelyTransactionHistoryFile(file) {
+        if (!isLikelyCsvFile(file)) return false;
+        const upperName = String(file.name || '').toUpperCase();
+        return upperName.includes('TRANSACTIONS');
+    }
+
+    function isLikelyPositionsFile(file) {
+        if (!isLikelyCsvFile(file)) return false;
+        const upperName = String(file.name || '').toUpperCase();
+        return !upperName.includes('TRANSACTIONS');
+    }
+
+    function setImportStatusIcon(icon, visible) {
+        if (!icon) return;
+        icon.classList.toggle('is-visible', Boolean(visible));
+    }
+
+    function syncImportValidationState() {
+        const transactionFile = transactionsCsvInput?.files?.[0];
+        const positionsFile = positionsCsvInput?.files?.[0];
+        const transactionReady = isLikelyTransactionHistoryFile(transactionFile);
+        const positionsReady = isLikelyPositionsFile(positionsFile);
+        const importReady = transactionReady && positionsReady;
+
+        setImportStatusIcon(transactionsCsvStatus, transactionReady);
+        setImportStatusIcon(positionsCsvStatus, positionsReady);
+
+        const submitButton = investmentForm?.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = !importReady;
+        }
+    }
+
     // Copy shared-select initialization from base.html
     function initSharedSelectors() {
         document.querySelectorAll('[data-shared-select-field]').forEach(container => {
@@ -321,6 +380,15 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initSharedSelectors, 300);
     // Update conditional fields after everything is initialized
     setTimeout(updateConditionalFields, 350);
+    syncImportValidationState();
+    [transactionsCsvInput, positionsCsvInput].forEach((input) => {
+        if (input) {
+            input.addEventListener('change', () => {
+                clearImportFeedback();
+                syncImportValidationState();
+            });
+        }
+    });
 
     function getInvestmentFormOffset() {
         if (!formContainer) return 0;
@@ -330,16 +398,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncInvestmentFormLayout() {
         if (!formContainer || !historyTable || !parentSection) return;
-        const isVisible = formContainer.style.display === 'block';
-        if (!isVisible) {
-            historyTable.style.transform = 'translateY(0)';
-            parentSection.style.paddingBottom = '20px';
-            return;
-        }
-
-        const offset = getInvestmentFormOffset();
-        historyTable.style.transform = `translateY(${offset}px)`;
-        parentSection.style.paddingBottom = `${20 + offset}px`;
+        historyTable.style.transform = 'translateY(0)';
+        parentSection.style.paddingBottom = '20px';
     }
 
     // Toggle form visibility
@@ -361,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     investmentFormHideTimer = null;
                 }, 400);
                 toggleIcon.classList.remove('is-minus');
-                toggleBtn.setAttribute('aria-label', 'Add transaction');
+                toggleBtn.setAttribute('aria-label', 'Import IBKR CSV files');
             } else {
                 if (investmentFormHideTimer) {
                     window.clearTimeout(investmentFormHideTimer);
@@ -374,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     formContainer.style.transform = 'scale(1)';
                 }, 50);
                 toggleIcon.classList.add('is-minus');
-                toggleBtn.setAttribute('aria-label', 'Hide add transaction form');
+                toggleBtn.setAttribute('aria-label', 'Hide IBKR CSV import form');
             }
         });
 
@@ -485,62 +545,48 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentForm) {
         investmentForm.addEventListener('submit', (e) => {
             e.preventDefault();
-
-            let amount = parseFloat(document.getElementById('txn_amount')?.value || 0);
-            const quantity = parseFloat(document.getElementById('txn_quantity')?.value || 0);
-            const price = parseFloat(document.getElementById('txn_price')?.value || 0);
-            const commission = parseFloat(document.getElementById('txn_commission')?.value || 0);
-            const type = document.getElementById('txn_type')?.value || 'deposit';
-
-            // Auto-calculate amount if quantity and price are provided but amount is empty
-            if ((type === 'buy' || type === 'sell' || type === 'dividend_reinvestment') && quantity && price && !amount) {
-                amount = quantity * price;
-                // For buy: you pay price * quantity + commission → amount is positive but cash decreases later
-                // For sell: you get price * quantity - commission → handled by sign in cash flow calculation
+            clearImportFeedback();
+            const transactionsCsv = document.getElementById('transactions_csv');
+            const positionsCsv = document.getElementById('positions_csv');
+            const transactionsFile = transactionsCsv?.files?.[0];
+            const positionsFile = positionsCsv?.files?.[0];
+            if (!transactionsFile || !positionsFile) {
+                setImportFeedback('Please choose both IBKR CSV files before importing.', true);
+                return;
+            }
+            if (!isLikelyTransactionHistoryFile(transactionsFile) || !isLikelyPositionsFile(positionsFile)) {
+                setImportFeedback('Please make sure the first file is your Transaction History CSV and the second file is your Realized Summary CSV.', true);
+                return;
             }
 
-            const txn = {
-                date: getFormattedDate(),
-                broker: document.getElementById('txn_broker')?.value || 'ibkr',
-                type: type,
-                currency: document.getElementById('txn_currency')?.value || 'USD',
-                ticker: (document.getElementById('txn_ticker')?.value || '').trim().toUpperCase(),
-                quantity: quantity,
-                price: price,
-                amount: amount,
-                commission: commission,
-                description: document.getElementById('txn_description')?.value || '',
-            };
+            const formData = new FormData();
+            formData.append('transactions_csv', transactionsFile);
+            formData.append('positions_csv', positionsFile);
 
-            // Calculate gross_amount for accounting reference
-            if (txn.quantity && txn.price) {
-                txn.gross_amount = txn.quantity * txn.price;
+            const submitButton = investmentForm.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
             }
-
-            // Clean up optional fields
-            // Never delete amount - even 0 is a valid value for certain transaction types
-            if (!txn.ticker) delete txn.ticker;
-            if (!txn.quantity || isNaN(txn.quantity)) delete txn.quantity;
-            if (!txn.price || isNaN(txn.price)) delete txn.price;
-            if (!txn.commission || isNaN(txn.commission) || txn.commission === 0) delete txn.commission;
-            if (!txn.description) delete txn.description;
-
             fetch('/api/investment/transactions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(txn),
+                body: formData,
             })
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    // Reload page to refresh table and chart
+                    setImportFeedback(result.message || 'Import complete.');
                     window.location.reload();
                 } else {
-                    alert(`Error adding transaction: ${result.error || 'Unknown error'}`);
+                    setImportFeedback(result.error || 'Import failed.', true);
                 }
             })
             .catch(err => {
-                alert(`Network error: ${err.message}`);
+                setImportFeedback(`Network error: ${err.message}`, true);
+            })
+            .finally(() => {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                }
             });
         });
     }
@@ -577,6 +623,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return Number(txn.cash);
         }
         return 0;
+    }
+
+    function getInvestmentStartingCash() {
+        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash;
+        if (rawValue === undefined || rawValue === null || rawValue === '') {
+            return 0;
+        }
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : 0;
     }
 
     function getTransactionEconomicAmount(txn) {
@@ -868,15 +923,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tbody) return;
 
         if (!transactions.length) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--muted);">No transactions yet. Click + above to add your first transaction.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--muted);">No transactions yet. Click + above to import your IBKR CSV files.</td></tr>`;
             return;
         }
 
         // 1. Sort by date ascending to calculate running cash and holdings
         // Read starting_cash from top-level JSON if available, otherwise default to 0
-        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
-            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
-            : 0;
+        let runningCash = getInvestmentStartingCash();
         const holdings = {}; // {ticker: quantity}
         const tickers = new Set();
         const moneyMarketTickers = getMoneyMarketTickerSet();
@@ -1558,9 +1611,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Prepare data for cumulative cash chart
         // Read starting_cash from top-level JSON if available
-        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
-            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
-            : 0;
+        let runningCash = getInvestmentStartingCash();
         const points = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
             // Read amount from normalized.net_amount if available (IBKR imported format), otherwise fall back to top-level
             let amount = (txn.normalized?.net_amount ?? txn.amount ?? txn.cash) || 0;

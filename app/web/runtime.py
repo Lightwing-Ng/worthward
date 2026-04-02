@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -71,6 +71,7 @@ from app.core.config import (
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import build_date_constraint_payload
+from app.services.investment_import import build_investment_payload_from_ibkr_csvs
 from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
     search_tickers
 from app.services.market_data import ensure_fresh_history_store, fetch_history, refresh_history_store
@@ -3128,29 +3129,54 @@ def build_web_runtime() -> WebRuntime:
             return jsonify({"success": False, "error": str(exc)}), 500
 
     def investment_add_transactions():
-        """Add a new transaction to the local storage."""
+        """Import IBKR CSV files and rebuild the local investment store."""
+        transactions_file = None
+        positions_file = None
         try:
-            txn_data = request.get_json()
-            if not INVESTMENT_STORE_PATH.exists():
-                # Create initial structure if file doesn't exist
-                data = {"transactions": []}
-                INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            txn_data["created_at"] = now_str
-            txn_data["updated_at"] = now_str
-            if "transactions" not in data:
-                data["transactions"] = []
-            data["transactions"].append(txn_data)
-            # Sort transactions by date descending (newest first)
-            data["transactions"].sort(key=lambda t: t.get("date", ""), reverse=True)
+            transactions_file = request.files.get("transactions_csv")
+            positions_file = request.files.get("positions_csv")
+            if transactions_file is None or positions_file is None:
+                return jsonify({
+                    "success": False,
+                    "error": "Please upload both the Transaction History CSV and the Realized Summary CSV.",
+                }), 400
+
+            transactions_payload = transactions_file.read()
+            positions_payload = positions_file.read()
+            if not transactions_payload or not positions_payload:
+                return jsonify({
+                    "success": False,
+                    "error": "Both CSV files must be non-empty.",
+                }), 400
+
+            investment_payload = build_investment_payload_from_ibkr_csvs(
+                transaction_csv_bytes=transactions_payload,
+                positions_csv_bytes=positions_payload,
+            )
+
+            INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(INVESTMENT_STORE_PATH, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            return jsonify({"success": True, "transactions": data["transactions"]})
+                json.dump(investment_payload, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+
+            return jsonify({
+                "success": True,
+                "message": (
+                    "Import complete. The server does not store your original CSV files. "
+                    "They were processed in memory and discarded after the import finished."
+                ),
+                "summary": investment_payload.get("summary", {}),
+                "transactions": investment_payload.get("transactions", []),
+            })
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
+        finally:
+            if transactions_file is not None:
+                transactions_file.close()
+            if positions_file is not None:
+                positions_file.close()
 
     def investment_get_latest_price():
         """Get the latest closing price for a ticker from local market store."""

@@ -415,16 +415,13 @@
 }
 
 #transaction_form_container {
-    position: absolute;
-    top: 60px;
-    left: 10px;
-    right: 10px;
+    position: relative;
     display: none;
     opacity: 0;
     transform: scale(0.98);
     transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 10;
-    margin-top: 15px;
+    margin-top: 12px;
     padding: 15px;
     background: var(--panel-strong);
     border: 1px solid var(--theme-glass-highlight);
@@ -434,6 +431,187 @@
 
 .investment-form {
     gap: 10px;
+}
+
+.investment-import-form {
+    gap: 16px;
+}
+
+.investment-import-stack {
+    display: grid;
+    gap: 10px;
+    width: min(100%, var(--settings-action-package-max-width));
+    max-width: var(--settings-action-package-max-width);
+}
+
+.investment-import-title {
+    margin: 0;
+    color: var(--text);
+    font-size: var(--font-ui-md);
+    font-weight: var(--font-weight-semibold);
+}
+
+.investment-import-field-group {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.investment-import-field {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--glass-surface-background-soft);
+    border: 1px solid var(--glass-surface-border);
+}
+
+.investment-import-field .trade-strategy-param-label {
+    display: flex;
+    align-items: center;
+    min-height: 24px;
+    max-height: 50px;
+    overflow: visible;
+}
+
+.investment-import-label-trigger {
+    position: relative;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    width: auto;
+    max-width: none;
+    min-height: 24px;
+    max-height: 50px;
+    overflow: visible;
+}
+
+.investment-import-label-trigger > span:not(.field-tooltip) {
+    flex: 0 0 auto;
+}
+
+.investment-import-help-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
+    opacity: 0.7;
+}
+
+.investment-import-status-icon {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    opacity: 0;
+    background-color: var(--theme-accent-positive);
+    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+}
+
+.investment-import-status-icon.is-visible {
+    opacity: 1;
+}
+
+.investment-import-help {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    width: min(420px, calc(100vw - 48px));
+    max-width: min(420px, calc(100vw - 48px));
+    padding: 14px 16px;
+    color: var(--text);
+    background: var(--liquid-glass-background);
+    box-shadow: var(--liquid-glass-shadow);
+    backdrop-filter: var(--liquid-glass-blur);
+    -webkit-backdrop-filter: var(--liquid-glass-blur);
+    border: var(--liquid-glass-border);
+    white-space: normal;
+    z-index: var(--layer-global-popover);
+}
+
+.investment-import-help-title {
+    display: block;
+    margin-bottom: 10px;
+    color: var(--text);
+    font-size: var(--font-ui-lg);
+    line-height: 1.2;
+    font-weight: var(--font-weight-regular);
+}
+
+.investment-import-help-step {
+    display: block;
+    padding-left: 1.6em;
+    text-indent: -1.6em;
+    line-height: 1.55;
+    color: var(--text);
+    font-weight: var(--font-weight-regular);
+}
+
+.investment-import-help-step + .investment-import-help-step {
+    margin-top: 6px;
+}
+
+.investment-import-file-input {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--theme-glass-border) 72%, transparent);
+    background: color-mix(in srgb, var(--glass-surface-background-strong) 88%, transparent);
+    color: var(--text);
+}
+
+.investment-import-file-input::file-selector-button {
+    margin-right: 12px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--glass-chip-background-strong);
+    color: var(--accent-text);
+    cursor: pointer;
+    font: inherit;
+}
+
+.investment-import-file-input:hover::file-selector-button,
+.investment-import-file-input:focus-visible::file-selector-button {
+    background: var(--glass-chip-background-hover);
+}
+
+.investment-import-feedback {
+    margin-top: 0;
+    line-height: 1.5;
+}
+
+.investment-import-feedback-success {
+    color: var(--theme-accent-positive);
+}
+
+.investment-import-feedback-error {
+    color: var(--theme-error-strong);
+}
+
+.investment-import-action-package {
+    width: min(100%, var(--settings-action-package-max-width));
+    max-width: var(--settings-action-package-max-width);
+}
+
+.investment-import-action-icon {
+    background-color: var(--settings-action-button-background);
+    mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
+}
+
+.investment-import-action-package .settings-inline-button-primary:disabled {
+    background: color-mix(in srgb, var(--theme-muted) 28%, transparent);
+    color: color-mix(in srgb, var(--settings-action-button-color) 72%, transparent);
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 .investment-form-grid {
@@ -559,9 +737,18 @@
         grid-template-columns: 1fr;
     }
 
+    .investment-import-field-group {
+        grid-template-columns: 1fr;
+    }
+
+    .investment-import-stack,
+    .investment-import-action-package {
+        width: 100%;
+        max-width: none;
+    }
+
     #transaction_form_container {
-        left: 0;
-        right: 0;
+        margin-top: 10px;
     }
 
     .investment-history-table-scroll {
