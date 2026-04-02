@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
