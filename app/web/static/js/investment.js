@@ -807,8 +807,8 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         return `
-            <div class="investment-holdings-table-shell">
-                <table class="settings-table trade-transactions-table investment-holdings-table" aria-hidden="true">
+            <div class="scrollable-data-table-shell investment-holdings-table-shell">
+                <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table" aria-hidden="true">
                     <thead>
                         <tr>
                             <th>No.</th>
@@ -822,8 +822,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tr>
                     </thead>
                 </table>
-                <div class="trade-transactions-wrap investment-holdings-table-scroll">
-                    <table class="settings-table trade-transactions-table investment-holdings-table">
+                <div class="trade-transactions-wrap scrollable-data-table-scroll investment-holdings-table-scroll">
+                    <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table">
                         <tbody>${summaryRowHtml}${rowsHtml}</tbody>
                     </table>
                 </div>

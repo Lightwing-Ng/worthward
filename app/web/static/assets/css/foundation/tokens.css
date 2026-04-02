@@ -96,6 +96,7 @@
 	--settings-reading-guard-single-column-width: 768px;
 	--settings-general-panel-background: color-mix(in srgb, var(--glass-surface-background) 92%, transparent);
 	--settings-general-panel-border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
+	--scrollable-data-table-header-color: color-mix(in srgb, var(--theme-text) 92%, var(--color-white-adaptive) 8%);
 	--style-token-demo-width: 384px;
 	--style-token-column-gap: 24px;
 	--style-token-resizer-width: 32px;
