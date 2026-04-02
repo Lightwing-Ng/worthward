@@ -42,8 +42,8 @@
         <div class="chart-heading-row" style="display: flex; justify-content: space-between; align-items: center;">
             <p class="chart-heading" style="font-size: calc(var(--text-size-small) * 0.9);">Transaction history</p>
             <button type="button" class="settings-round-icon-button" id="toggle_form_button"
-                    aria-label="Add transaction">
-                <span class="icon"
+                    aria-label="Toggle add transaction form">
+                <span class="icon" id="toggle_form_icon"
                       style="-webkit-mask-image: url(/static/images/plus.svg); mask-image: url(/static/images/plus.svg);"></span>
             </button>
         </div>
@@ -59,9 +59,10 @@
         border-radius: 10px;
         padding: 15px;
         margin-top: 15px;
+        ">
             <form class="controls" id="investment_form">
                 <div class="ticker-input-row"
-                     style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px;">
+                     style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px; align-items: start;">
                     <div class="ticker-input-main">
                         <label for="txn_broker">Broker</label>
                         <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field>
@@ -69,7 +70,6 @@
                                     class="trade-strategy-native-select backtest-shared-select-native" hidden
                                     aria-hidden="true" tabindex="-1">
                                 <option value="ibkr" selected>IBKR</option>
-                                <option value="longbridge">Longbridge</option>
                                 <option value="longbridge-hk">Longbridge HK</option>
                                 <option value="futu">Futu</option>
                                 <option value="other">Other</option>
@@ -89,11 +89,10 @@
                         </div>
                     </div>
                     <div class="ticker-input-main">
-                        <label for="txn_date">Time</label>
+                        <label for="txn_date">Date</label>
                         <div class="date-picker-field" data-date-picker data-date-role="txn">
                             <input type="text" id="txn_date" name="txn_date" placeholder="9 Dec 2026"
                                    class="form-input date-picker-trigger" data-date-trigger>
-                            <input type="time" id="txn_time" name="txn_time" class="form-input" style="width: 100px;">
                             <div class="date-picker-popover" data-date-popover hidden>
                                 <div class="date-picker-toolbar">
                                     <button type="button" class="date-picker-nav" data-date-nav="-1"
@@ -126,7 +125,7 @@
                                 <option value="dividend">Dividend</option>
                                 <option value="dividend_reinvestment">Dividend Reinvestment</option>
                                 <option value="forex_trade">Forex trade</option>
-                                <option value="tax_withholding">Tax withholding</option>
+                                <option value="foreign_tax_withholding">Foreign tax withholding</option>
                                 <option value="credit_interest">Credit interest</option>
                                 <option value="debit_interest">Debit interest</option>
                                 <option value="payment_in_lieu">Payment in lieu</option>
@@ -152,9 +151,7 @@
                                     aria-hidden="true" tabindex="-1">
                                 <option value="USD" selected>USD</option>
                                 <option value="HKD">HKD</option>
-                                <option value="CNY">CNY</option>
                                 <option value="CNH">CNH</option>
-                                <option value="EUR">EUR</option>
                             </select>
                             <div class="trade-strategy-combobox backtest-shared-select-combobox">
                                 <button type="button"
@@ -180,19 +177,19 @@
                 </div>
                 <div class="ticker-input-row"
                      style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
-                    <div class="ticker-input-main">
+                    <div class="ticker-input-main" id="txn_ticker_row" style="display: none;">
                         <label for="txn_ticker">Ticker</label>
                         <input type="text" id="txn_ticker" name="txn_ticker" placeholder="NVDA" class="form-input"
                                style="width: 100%; text-transform: uppercase;">
                     </div>
-                    <div class="ticker-input-main">
+                    <div class="ticker-input-main" id="txn_quantity_row" style="display: none;">
                         <label for="txn_quantity">Quantity</label>
                         <div class="trade-capital-row">
                             <input id="txn_quantity" name="quantity" class="trade-capital-input" type="text" value=""
                                    inputmode="decimal" autocomplete="off" placeholder="10">
                         </div>
                     </div>
-                    <div class="ticker-input-main">
+                    <div class="ticker-input-main" id="txn_price_row" style="display: none;">
                         <label for="txn_price">Price</label>
                         <div class="trade-capital-row">
                             <input id="txn_price" name="price" class="trade-capital-input" type="text" value=""
@@ -209,8 +206,8 @@
                 </div>
                 <div class="ticker-input-row" style="margin-top: 10px;">
                     <div class="ticker-input-main">
-                        <label for="txn_description">Notes</label>
-                        <input type="text" id="txn_description" name="txn_description" placeholder="Optional notes"
+                        <label for="txn_description">Description</label>
+                        <input type="text" id="txn_description" name="txn_description" placeholder="Optional"
                                class="form-input" style="width: 100%;">
                     </div>
                 </div>
@@ -223,19 +220,19 @@
         <div class="trade-transactions-wrap" id="history_table_wrap"
              style="transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);">
             <table class="settings-table trade-transactions-table" id="transactionTable"
-                   style="table-layout: fixed; width: 100%;">
+                   style="table-layout: fixed; width: 100%; border-collapse: separate; border-spacing: 0;">
                 <thead>
-                <tr style="background: var(--panel-strong); background-opacity: 1;">
-                    <th style="text-align: center; width: 5%; min-width: 20px; background: var(--panel-strong);">No.</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Time</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Type</th>
-                    <th style="text-align: left; width: 15%; min-width: 48px; background: var(--panel-strong);">Description</th>
-                    <th style="text-align: center; width: 10%; min-width: 36px; background: var(--panel-strong);">Currency</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Amount</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Commission</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Market value</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Cash</th>
-                    <th style="text-align: right; width: 10%; min-width: 36px; background: var(--panel-strong);">Equity</th>
+                <tr>
+                    <th style="text-align: center; width: 8%; min-width: 32px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">No.</th>
+                    <th style="text-align: center; width: 10%; min-width: 48px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Time</th>
+                    <th style="text-align: center; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Type</th>
+                    <th style="text-align: left; width: 14%; min-width: 64px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Description</th>
+                    <th style="text-align: center; width: 8%; min-width: 32px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Currency</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Amount</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Commission</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Market value</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Cash</th>
+                    <th style="text-align: right; width: 10%; min-width: 36px; padding: 2px 1px; background: var(--panel-strong); border: 1px solid var(--glass-surface-border);">Equity</th>
                 </tr>
                 </thead>
                 <tbody id="investment_history" style="vertical-align: top;">

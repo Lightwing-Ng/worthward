@@ -1,9 +1,17 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.3.0
+ * Code version: v1.11.0
  * - Fixed: Total Equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
  * - Updated: Transaction history description format to TICKER@quantity for buy/sell operations
+ * - Fixed: Cash calculation logic for payment_in_lieu and foreign tax withholding transactions
+ * - Improved: Adjusted transaction table column widths for better readability
+ * - Renamed: "Tax withholding" → "Foreign tax withholding" (value: tax_withholding → foreign_tax_withholding) for consistent naming
+ * - Improved: Toggle button switches between plus/minus icon based on form visibility
+ * - Fixed: Transaction table header uses opaque background (var(--panel-strong)) instead of semi-transparent glass for better text readability
+ * - Adjusted: Finalized transaction table column widths and min-widths per layout requirements
+ * - Fixed: Added backward compatibility - normalize space-separated type names to snake_case for existing imported transactions (e.g., "foreign tax withholding" → foreign_tax_withholding)
+ * - Improved: Show '-' instead of 0.00 in Commission column for transaction types that don't normally have commission (foreign tax withholding, dividend, adjustment, debit interest, payment in lieu, dividend reinvestment, forex trade, deposit, withdrawal, credit interest)
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -102,11 +110,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Copy shared-select initialization from base.html
     function initSharedSelectors() {
         document.querySelectorAll('[data-shared-select-field]').forEach(container => {
+            if (container.dataset.sharedSelectBound === "1") return;
             const select = container.querySelector('select');
             const trigger = container.querySelector('[data-shared-select-trigger]');
             const dropdown = container.querySelector('[data-shared-select-dropdown]');
             const label = container.querySelector('[data-shared-select-trigger-label]');
             if (!select || !trigger || !dropdown) return;
+            container.dataset.sharedSelectBound = "1";
 
             const options = Array.from(select.options).map(opt => ({
                 value: opt.value,
@@ -142,6 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 label.textContent = options.find(opt => opt.value === value)?.text || '';
                 dropdown.hidden = true;
                 trigger.setAttribute('aria-expanded', 'false');
+                // Update visibility of ticker/quantity/price/commission fields based on type
+                updateConditionalFields();
                 // Recalculate net amount when type changes
                 calculateNetAmount();
             });
@@ -155,12 +167,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize shared selectors after DOM is ready - increase delay to ensure full DOM parsed
+    // Initialize shared selectors after DOM is ready - multiple passes to ensure all get bound
+    setTimeout(initSharedSelectors, 50);
     setTimeout(initSharedSelectors, 150);
+    setTimeout(initSharedSelectors, 300);
+    // Update conditional fields after everything is initialized
+    setTimeout(updateConditionalFields, 350);
 
     // Toggle form visibility
     const parentSection = formContainer.closest('.chart-surface');
-    if (toggleBtn && formContainer && parentSection) {
+    const toggleIcon = document.getElementById('toggle_form_icon');
+    if (toggleBtn && formContainer && parentSection && toggleIcon) {
         toggleBtn.addEventListener('click', () => {
             const isVisible = formContainer.style.display === 'block';
             if (isVisible) {
@@ -169,6 +186,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => formContainer.style.display = 'none', 400);
                 historyTable.style.transform = 'translateY(0)';
                 parentSection.style.paddingBottom = '20px';
+                // Switch to plus icon when form is closed
+                toggleIcon.style.webkitMaskImage = 'url(/static/images/plus.svg)';
+                toggleIcon.style.maskImage = 'url(/static/images/plus.svg)';
+                toggleBtn.setAttribute('aria-label', 'Add transaction');
             } else {
                 formContainer.style.display = 'block';
                 setTimeout(() => {
@@ -177,8 +198,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 50);
                 historyTable.style.transform = 'translateY(360px)';
                 parentSection.style.paddingBottom = '380px';
+                // Switch to minus icon when form is open
+                toggleIcon.style.webkitMaskImage = 'url(/static/images/minus.svg)';
+                toggleIcon.style.maskImage = 'url(/static/images/minus.svg)';
+                toggleBtn.setAttribute('aria-label', 'Hide add transaction form');
             }
         });
+    }
+
+    // Show/hide conditional fields based on event type
+    function updateConditionalFields() {
+        const typeSelect = document.getElementById('txn_type');
+        if (!typeSelect) return;
+        const type = typeSelect.value;
+        // Rules:
+        // - Always show: Broker, Date, Event type, Currency, Net Amount, Notes
+        // - Ticker/Quantity: only buy/sell (dividend/foreign_tax_withholding already have amount, no need quantity/price)
+        // - Price: only buy/sell
+        // - Commission: only buy/sell/dividend_reinvestment
+        const needTicker = ['buy', 'sell'].includes(type);
+        const needQuantity = ['buy', 'sell'].includes(type);
+        const needPrice = ['buy', 'sell'].includes(type);
+        const needCommission = ['buy', 'sell', 'dividend_reinvestment'].includes(type);
+        const tickerRow = document.getElementById('txn_ticker_row');
+        const quantityRow = document.getElementById('txn_quantity_row');
+        const priceRow = document.getElementById('txn_price_row');
+        const commissionRow = document.getElementById('txn_commission_row');
+        if (tickerRow) tickerRow.style.display = needTicker ? 'block' : 'none';
+        if (quantityRow) quantityRow.style.display = needQuantity ? 'block' : 'none';
+        if (priceRow) priceRow.style.display = needPrice ? 'block' : 'none';
+        if (commissionRow) commissionRow.style.display = needCommission ? 'block' : 'none';
     }
 
     // Auto-calculate net amount based on type, quantity, price, commission
@@ -215,30 +264,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Format date from picker to YYYY-MM-DD
+    // Format date from picker to YYYY-MM-DD 20:00:00 (EOD)
     function getFormattedDate() {
         const dateInput = document.getElementById('txn_date');
-        const timeInput = document.getElementById('txn_time');
-        if (!dateInput || !dateInput.value) return new Date().toISOString().slice(0, 10);
+        if (!dateInput || !dateInput.value) {
+            const today = new Date();
+            return `${today.toISOString().slice(0, 10)} 20:00:00`;
+        }
 
         // If date picker populated with D MMM YYYY format, parse it
         const value = dateInput.value.trim();
+        let dateStr;
         const match = value.match(/^(\d{1,2}) (\w{3}) (\d{4})$/);
         if (match) {
             const [_, day, mon, year] = match;
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const monthIndex = months.findIndex(m => m.toLowerCase() === mon.toLowerCase());
             const dateObj = new Date(parseInt(year), monthIndex, parseInt(day));
-            return dateObj.toISOString().slice(0, 10);
+            dateStr = dateObj.toISOString().slice(0, 10);
+        } else {
+            // Try direct parsing
+            const parsed = new Date(value);
+            if (!isNaN(parsed.getTime())) {
+                dateStr = parsed.toISOString().slice(0, 10);
+            } else {
+                const today = new Date();
+                dateStr = today.toISOString().slice(0, 10);
+            }
         }
 
-        // Try direct parsing
-        const parsed = new Date(value);
-        if (!isNaN(parsed.getTime())) {
-            return parsed.toISOString().slice(0, 10);
-        }
-
-        return new Date().toISOString().slice(0, 10);
+        // Always default to 20:00:00 for end-of-day transactions
+        return `${dateStr} 20:00:00`;
     }
 
     // Handle form submission
@@ -309,6 +365,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fetch('/api/investment/transactions')
         .then(response => response.json())
         .then(async data => {
+            // Save top-level data to global for starting_cash
+            window.ANTIGRAVITY_INVESTMENT_DATA = data;
             await renderTransactionTable(data.transactions || []);
         })
         .catch(err => {
@@ -325,26 +383,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 1. Sort by date ascending to calculate running cash and holdings
-        let runningCash = 0;
+        // Read starting_cash from top-level JSON if available, otherwise default to 0
+        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
+            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
+            : 0;
         const holdings = {}; // {ticker: quantity}
         const tickers = new Set();
 
         const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
-            let amount = (txn.amount ?? txn.cash) || 0;
+            // ========== COMPLETELY COMPATIBLE FIELD READING ==========
+            // 1. Quantity: for holdings and description
+            let qty = null;
+            if (txn.quantity !== undefined && txn.quantity !== null) qty = Number(txn.quantity);
+            else if (txn.quantity_abs !== undefined && txn.quantity_abs !== null) qty = Number(txn.quantity_abs);
+            else if (txn.normalized?.position_quantity !== undefined && txn.normalized?.position_quantity !== null) qty = Number(txn.normalized.position_quantity);
+
+            // 2. Net amount: for cash calculation
+            let amount = 0;
+            if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) amount = Number(txn.normalized.net_amount);
+            else if (txn.amount !== undefined && txn.amount !== null) amount = Number(txn.amount);
+            else if (txn.cash !== undefined && txn.cash !== null) amount = Number(txn.cash);
+
+            // 3. Price: for auto-calculating amount and market value
+            let price = null;
+            if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) price = Number(txn.normalized.unit_price);
+            else if (txn.price !== undefined && txn.price !== null) price = Number(txn.price);
+
+            // 4. Commission: for cash impact
+            let commission = 0;
+            if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
+            else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
 
             // Auto-calculate amount if missing but we have quantity and price
-            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
-                amount = txn.quantity * txn.price;
+            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && (txn.type === 'buy' || txn.type === 'sell')) {
+                amount = qty * price;
             }
 
             // Update holdings based on transaction type
-            if (txn.ticker && txn.quantity) {
+            // Normalize type first
+            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
+            if (txn.ticker && qty !== null && !isNaN(qty)) {
                 if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
-                if (['buy', 'dividend_reinvestment'].includes(txn.type)) {
-                    holdings[txn.ticker] += txn.quantity;
+                if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
+                    holdings[txn.ticker] += qty;
                     tickers.add(txn.ticker);
-                } else if (['sell'].includes(txn.type)) {
-                    holdings[txn.ticker] -= txn.quantity;
+                } else if (['sell'].includes(normalizedType)) {
+                    holdings[txn.ticker] -= qty;
                     if (holdings[txn.ticker] <= 0) {
                         delete holdings[txn.ticker];
                         tickers.delete(txn.ticker);
@@ -353,32 +437,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Calculate cash impact based on transaction type
-            const commission = txn.commission || 0;
 
-            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
-                // Cash in
-                if (txn.type === 'sell' && amount && commission) {
+            // For IBKR imported format (txn.normalized exists), net_amount already includes commission
+            // and is already correctly signed: -ve = cash out, +ve = cash in. Just add directly.
+            if (txn.normalized !== undefined) {
+                runningCash += amount;
+            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
+                // Adjustment can be any direction - use the amount sign directly
+                runningCash += amount;
+            } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend' || 
+                normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
+                // Cash in: these transactions add cash to your account
+                // For manually added transactions where commission is separate
+                if (normalizedType === 'sell' && amount && commission) {
                     runningCash += (amount - commission);
                 } else {
                     runningCash += amount;
                 }
-            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
-                // Cash out
-                if (txn.type === 'buy' && amount && commission) {
-                    runningCash -= (amount + commission);
-                } else {
-                    // Use amount directly - if already negative, adding it will decrease cash
-                    // This handles tax withholding where user enters a negative amount directly
-                    runningCash -= amount >= 0 ? Math.abs(amount) : -amount;
+            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment' || 
+                       normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
+                // Cash out: these transactions remove cash from your account
+                // For manually added transactions
+                if (amount !== 0) {
+                    runningCash += amount;
                 }
-            } else if (['forex_trade', 'adjustment', 'payment_in_lieu'].includes(txn.type)) {
-                // Adjustment can be any direction - use the amount sign directly
-                runningCash += amount;
             }
 
             // For buy/sell we already accounted for commission above
             // Only subtract commission for other types
-            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
+            // For IBKR imported format (normalized), commission is already included in net_amount
+            // Only subtract commission for manually added transactions where commission is separate
+            const isImported = txn.normalized !== undefined;
+            if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
                 runningCash -= Math.abs(commission);
             }
 
@@ -441,8 +531,24 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = processed.reverse().map((txn, index) => {
             // Format description: for transactions with ticker & quantity, use TICKER@quantity format
             let description;
-            if (txn.ticker && txn.quantity) {
-                description = `${txn.ticker}@${txn.quantity}`;
+            // Get quantity: check top-level first, then quantity_abs, then normalized.display_quantity (IBKR imported format)
+            let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
+            // Get price: check normalized.unit_price first then top-level
+            const price = txn.normalized?.unit_price ?? txn.price;
+            // Normalize type for checking buy/sell (already normalized in processing, but keep for safety)
+            const normalizedTypeDesc = txn.type.replace(/\s+/g, '_').toLowerCase();
+            if (txn.ticker && qty) {
+                // Remove trailing .0 if integer for cleaner display
+                const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty)) : qty;
+                // For buy/sell, format as "TICKER @ PRICE × QTY"
+                if (price && ['buy', 'sell'].includes(normalizedTypeDesc)) {
+                    // Format price to 2 decimal places
+                    const cleanPrice = Number(price).toFixed(2);
+                    description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
+                } else {
+                    // For other types (dividend reinvestment, etc.), keep original TICKER@QTY format
+                    description = `${txn.ticker}@${cleanQty}`;
+                }
             } else if (txn.type === 'deposit' || txn.type === 'withdrawal') {
                 description = '';
             } else {
@@ -455,18 +561,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 formattedTime = formattedTime.split(' ')[0];
             }
 
+            // Show '-' instead of 0.00 for commission on types that don't normally have commission
+            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
+            const noCommissionTypes = [
+                'foreign_tax_withholding',
+                'dividend',
+                'adjustment',
+                'debit_interest',
+                'credit_interest',
+                'payment_in_lieu',
+                'dividend_reinvestment',
+                'forex_trade',
+                'forex_trade_component',
+                'deposit',
+                'withdrawal'
+            ];
+            let commissionDisplay;
+            // Get commission from normalized.commission if available (IBKR imported format), otherwise top-level
+            const commission = txn.normalized?.commission ?? txn.commission ?? 0;
+            if ((!commission || commission === 0) && noCommissionTypes.includes(normalizedType)) {
+                commissionDisplay = '-';
+            } else {
+                commissionDisplay = formatAmount(Math.abs(commission));
+            }
+
             return `
             <tr>
-                <td style="text-align: center;">${transactions.length - index}</td>
-                <td style="text-align: right;">${formattedTime}</td>
-                <td style="text-align: center;">${formatEventType(txn.type)}</td>
-                <td style="text-align: left;">${description}</td>
-                <td style="text-align: center;">${txn.currency || 'USD'}</td>
-                <td style="text-align: right;">${formatAmount(txn.amount ?? txn.cash)}</td>
-                <td style="text-align: right;">${formatAmount(txn.commission || 0)}</td>
-                <td style="text-align: right;">${formatAmount(txn.market_value)}</td>
-                <td style="text-align: right;">${formatAmount(txn.running_cash)}</td>
-                <td style="text-align: right;"><strong>${formatAmount(txn.total_equity)}</strong></td>
+                <td style="text-align: center; padding: 2px 1px;">${transactions.length - index}</td>
+                <td style="text-align: right; padding: 2px 1px;">${formattedTime}</td>
+                <td style="text-align: center; padding: 2px 1px;">${formatEventType(txn.type)}</td>
+                <td style="text-align: left; padding: 2px 1px;">${description}</td>
+                <td style="text-align: center; padding: 2px 1px;">${txn.currency || 'USD'}</td>
+                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.normalized?.net_amount ?? txn.amount ?? txn.cash)}</td>
+                <td style="text-align: right; padding: 2px 1px;">${commissionDisplay}</td>
+                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.market_value)}</td>
+                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.running_cash)}</td>
+                <td style="text-align: right; padding: 2px 1px;"><strong>${formatAmount(txn.total_equity)}</strong></td>
             </tr>
             `;
         }).join('');
@@ -564,7 +694,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existingChart) existingChart.destroy();
 
         // Calculate running cash and holdings step by step
-        let runningCash = 0;
+        // Read starting_cash from top-level JSON if available
+        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
+            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
+            : 0;
         let holdings = {};
         const points = [];
         const rawDates = [];
@@ -573,41 +706,76 @@ document.addEventListener('DOMContentLoaded', () => {
         const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
         sortedTransactions.forEach(txn => {
-            let amount = txn.amount || 0;
+            // ========== COMPLETELY COMPATIBLE FIELD READING ==========
+            // 1. Quantity: for holdings
+            let qty = null;
+            if (txn.quantity !== undefined && txn.quantity !== null) qty = Number(txn.quantity);
+            else if (txn.quantity_abs !== undefined && txn.quantity_abs !== null) qty = Number(txn.quantity_abs);
+            else if (txn.normalized?.position_quantity !== undefined && txn.normalized?.position_quantity !== null) qty = Number(txn.normalized.position_quantity);
 
-            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
-                amount = txn.quantity * txn.price;
+            // 2. Net amount: for cash calculation
+            let amount = 0;
+            if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) amount = Number(txn.normalized.net_amount);
+            else if (txn.amount !== undefined && txn.amount !== null) amount = Number(txn.amount);
+            else if (txn.cash !== undefined && txn.cash !== null) amount = Number(txn.cash);
+
+            // 3. Price: for auto-calculating amount
+            let price = null;
+            if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) price = Number(txn.normalized.unit_price);
+            else if (txn.price !== undefined && txn.price !== null) price = Number(txn.price);
+
+            // Auto-calculate amount if missing but we have quantity and price
+            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && (txn.type === 'buy' || txn.type === 'sell')) {
+                amount = qty * price;
             }
 
             // Update holdings
-            if (txn.ticker && txn.quantity) {
+            // Normalize type: convert space-separated to snake_case for backward compatibility
+            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
+            if (txn.ticker && qty !== null && !isNaN(qty)) {
                 if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
-                if (['buy', 'dividend_reinvestment'].includes(txn.type)) {
-                    holdings[txn.ticker] += txn.quantity;
-                } else if (['sell'].includes(txn.type)) {
-                    holdings[txn.ticker] -= txn.quantity;
+                if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
+                    holdings[txn.ticker] += qty;
+                } else if (['sell'].includes(normalizedType)) {
+                    holdings[txn.ticker] -= qty;
                     if (holdings[txn.ticker] <= 0) delete holdings[txn.ticker];
                 }
             }
 
-            // Update cash
-            const commission = txn.commission || 0;
-            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
-                if (txn.type === 'sell' && amount && commission) {
+            // Update cash - get commission correctly for IBKR imported
+            let commission = 0;
+            if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
+            else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
+
+            // For IBKR imported format (txn.normalized exists), net_amount already includes commission
+            // and is already correctly signed: -ve = cash out, +ve = cash in. Just add directly.
+            if (txn.normalized !== undefined) {
+                runningCash += amount;
+            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
+                runningCash += amount;
+            } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend' || 
+                normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
+                // Cash in: these transactions add cash to your account
+                // For manually added transactions where commission is separate
+                if (normalizedType === 'sell' && amount && commission) {
                     runningCash += (amount - commission);
                 } else {
                     runningCash += amount;
                 }
-            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
-                if (txn.type === 'buy' && amount && commission) {
-                    runningCash -= (amount + commission);
-                } else {
-                    runningCash -= Math.abs(amount);
+            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment' || 
+                       normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
+                // Cash out: for manually added transactions
+                if (amount !== 0) {
+                    runningCash += amount;
                 }
-            } else {
-                runningCash += amount;
             }
-            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
+
+            // For buy/sell we already accounted for commission above
+            // Only subtract commission for other types
+            // For IBKR imported format (normalized), commission is already included in net_amount
+            // Only subtract commission for manually added transactions where commission is separate
+            const isImported = txn.normalized !== undefined;
+            if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
                 runningCash -= Math.abs(commission);
             }
 
@@ -865,9 +1033,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!transactions.length) return;
 
         // Prepare data for cumulative cash chart
-        let runningCash = 0;
+        // Read starting_cash from top-level JSON if available
+        let runningCash = ('starting_cash' in window.ANTIGRAVITY_INVESTMENT_DATA) 
+            ? window.ANTIGRAVITY_INVESTMENT_DATA.starting_cash 
+            : 0;
         const points = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
-            let amount = txn.amount || 0;
+            // Read amount from normalized.net_amount if available (IBKR imported format), otherwise fall back to top-level
+            let amount = (txn.normalized?.net_amount ?? txn.amount ?? txn.cash) || 0;
 
             // Auto-calculate amount if missing
             if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
