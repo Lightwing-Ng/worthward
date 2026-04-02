@@ -20,6 +20,7 @@ Backtest workspace captured on 28 Mar 2026, showing build `v2.11.11` with the in
 - Cache daily history, company profiles, logos, and search results locally
 - Cache broker-backed `1m` history locally for the latest 6 months of trading days
 - Review TradingView-based timing signals from the `More` workspace
+- Review manually imported investment transactions from the `More → My investment` workspace
 - Manage connectivity checks, broker access, Outlook SMTP, Local Market Store maintenance, strategy metadata, and design tokens from the `Settings` workspace
 
 ## Runtime requirements
@@ -145,6 +146,20 @@ screenshots/             → README and release screenshots
 - Company profiles and logo assets are cached locally
 - Search-result caches and ticker-usage records are also stored locally
 
+### Investment ledger and valuation
+
+- Investment transactions are read from `settings_store/investment.json`
+- The `More → My investment` workspace renders a holdings table, an equity curve, metrics, and a transaction history table from that ledger
+- The investment equity curve starts from the first real transaction row in the ledger and does not prepend any synthetic zero-value point
+- Holdings reuse locally cached ticker profiles and logos when available
+- Configured money market funds can fall back to the transaction `description` field for their display name when no local profile is available
+- Realized P&L uses the investment ledger cash-flow model, with dividend reinvestment shares added without double-counting the reinvested cash as fresh cost basis
+- Unrealized P&L uses the latest locally available close price for regular securities
+- The equity-curve hover tooltip reports `Equity`, `Market value`, and `Cash` from the same processed transaction snapshots that feed the transaction-history table
+- Money market funds are intentionally simplified through configuration:
+  buy-to-sell valuation is anchored to the effective buy price, and the sell date uses the sell price
+- This money market rule is opt-in through `config.toml` under `investment.money_market_funds`, so regular equities and ETFs such as `MSFT`, `TQQQ`, `BOXX`, and `JEPQ` continue to use the standard historical-close workflow unchanged
+
 ## Settings workspace
 
 The current `Settings` navigation includes:
@@ -188,6 +203,23 @@ The current `Settings` navigation includes:
 - Bulk maintenance refreshes cached daily datasets plus protected metadata assets
 - Bulk maintenance does not fetch `1m` history for every ticker
 - Deleting a ticker removes its locally cached market and metadata records
+
+## Investment configuration notes
+
+`config.toml` also contains investment-specific overrides for cases where local market data is intentionally simplified.
+
+Current supported rule family:
+
+- `investment.money_market_funds`
+  Use this for cash-like funds whose holdings view should not depend on daily mark-to-market closes
+  - `tickers`
+    The ticker allowlist for the special rule
+  - `name_from_description`
+    When enabled, use a matching transaction description as the holdings display name if no local profile exists
+  - `description_keywords`
+    Extra guardrails for matching only the intended instrument descriptions
+
+For the current workspace, ticker `005276756` is configured this way so the holdings table shows its proper fund name and avoids misleading equity-curve drawdowns caused by incomplete money market pricing data.
 
 ## Timezone and `1m` integrity
 

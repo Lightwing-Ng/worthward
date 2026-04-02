@@ -1,8 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.17.0
+ * Code version: v1.18.0
  * - Updated: Investment segmented control now shows "Charts"
+ * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
+ * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
  * - Reworked: Holdings view now renders as a scrollable data table with per-ticker cost basis and P&L metrics
  * - Improved: Holdings and Metrics data now consistently use the Workspace metric value token
  * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
@@ -633,6 +635,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return !['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType);
     }
 
+    function getMoneyMarketTickerSet() {
+        const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
+        return new Set(
+            configuredTickers
+                .map((ticker) => String(ticker || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+    }
+
     function buildTickerSummaries(transactions, latestPrices, totalEquity) {
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -806,6 +817,8 @@ document.addEventListener('DOMContentLoaded', () => {
             : 0;
         const holdings = {}; // {ticker: quantity}
         const tickers = new Set();
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        const moneyMarketAnchors = {}; // {ticker: weightedAveragePrice}
 
         const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
@@ -833,12 +846,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (txn.ticker && qty !== null && !isNaN(qty)) {
                 if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
+                const normalizedTicker = String(txn.ticker).trim().toUpperCase();
+                const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
                 if (['buy', 'dividend_reinvestment'].includes(normalizedType)) {
+                    if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
+                        const previousQuantity = holdings[txn.ticker];
+                        const previousAnchor = moneyMarketAnchors[txn.ticker] ?? price;
+                        const nextQuantity = previousQuantity + qty;
+                        moneyMarketAnchors[txn.ticker] = nextQuantity > 0
+                            ? (((previousQuantity * previousAnchor) + (qty * price)) / nextQuantity)
+                            : price;
+                    }
                     holdings[txn.ticker] += qty;
                 } else if (['sell'].includes(normalizedType)) {
                     holdings[txn.ticker] -= qty;
+                    if (isMoneyMarketTicker && holdings[txn.ticker] > 0 && price !== null && !Number.isNaN(price)) {
+                        moneyMarketAnchors[txn.ticker] = moneyMarketAnchors[txn.ticker] ?? price;
+                    }
                     if (holdings[txn.ticker] <= 0) {
                         delete holdings[txn.ticker];
+                        delete moneyMarketAnchors[txn.ticker];
                     }
                 }
             }
@@ -882,8 +909,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
                 runningCash -= Math.abs(commission);
             }
-
-            return { ...txn, running_cash: runningCash, holdings: { ...holdings } };
+            return {
+                ...txn,
+                running_cash: runningCash,
+                holdings: { ...holdings },
+                money_market_anchors: { ...moneyMarketAnchors },
+            };
         });
 
         // 2. Load {TICKER}.parquet files and get close prices for all transaction dates
@@ -919,6 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let marketValue = 0;
             Object.entries(txn.holdings).forEach(([ticker, quantity]) => {
                 let closePrice = 0;
+                const normalizedTicker = String(ticker).trim().toUpperCase();
+                const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
                 if (tickerClosePrices[ticker]) {
                     // Find the latest date in parquet that is <= transaction date
                     const txnDate = txn.date; // YYYY-MM-DD
@@ -928,6 +961,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         closePrice = tickerClosePrices[ticker][closestDate];
                     }
                 }
+                if (isMoneyMarketTicker) {
+                    const sameDaySellPrice = normalizedTicker === String(txn.ticker || '').trim().toUpperCase()
+                        && getNormalizedTransactionType(txn) === 'sell'
+                        ? getTransactionPrice(txn)
+                        : null;
+                    const anchoredPrice = txn.money_market_anchors?.[ticker] ?? txn.money_market_anchors?.[normalizedTicker];
+                    closePrice = sameDaySellPrice ?? anchoredPrice ?? closePrice;
+                }
                 // Fallback: if no historical data, use txn.price if available, otherwise 0
                 if (closePrice === 0 && txn.ticker === ticker && txn.price) {
                     closePrice = txn.price;
@@ -936,6 +977,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             txn.market_value = marketValue;
             txn.total_equity = txn.running_cash + marketValue;
+        });
+
+        Object.keys(latestPrices).forEach((ticker) => {
+            if (moneyMarketTickers.has(String(ticker).trim().toUpperCase())) {
+                const lastProcessedWithAnchor = [...processed].reverse().find((txn) => (
+                    txn.money_market_anchors?.[ticker] !== undefined
+                ));
+                if (lastProcessedWithAnchor) {
+                    latestPrices[ticker] = lastProcessedWithAnchor.money_market_anchors[ticker];
+                }
+            }
         });
 
         // 4. Render reverse chronological (newest first)
@@ -1132,16 +1184,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${year}-${month}-${day}`;
         };
 
-        if (equity.length && Number(equity[0]) !== 0 && rawDates[0]) {
-            const firstDate = new Date(rawDates[0]);
-            if (!Number.isNaN(firstDate.getTime())) {
-                firstDate.setDate(firstDate.getDate() - 1);
-                labels.unshift(formatRawDate(firstDate));
-                rawDates.unshift(formatRawDate(firstDate));
-                equity.unshift(0);
-            }
-        }
-
         const formatChartDateLines = (dateParts) => [
             `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`,
             `${dateParts.year}`
@@ -1274,14 +1316,40 @@ document.addEventListener('DOMContentLoaded', () => {
             const listEl = tooltipEl.querySelector(".chart-tooltip-list");
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
             const parsedDate = parseRawDate(rawDates[pointIndex]);
+            const pointRecord = sortedTransactions[pointIndex];
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
 
-            listEl.innerHTML = tooltip.dataPoints.map((point) => `
+            const tooltipRows = [];
+            if (pointRecord) {
+                tooltipRows.push({
+                    label: "Equity",
+                    value: pointRecord.total_equity,
+                    color: resolvedTheme.accentPrimary,
+                });
+                tooltipRows.push({
+                    label: "Market value",
+                    value: pointRecord.market_value,
+                    color: resolvedTheme.accentSecondary,
+                });
+                tooltipRows.push({
+                    label: "Cash",
+                    value: pointRecord.running_cash,
+                    color: resolvedTheme.muted,
+                });
+            } else {
+                tooltipRows.push({
+                    label: "Equity",
+                    value: tooltip.dataPoints?.[0]?.parsed?.y ?? null,
+                    color: resolvedTheme.accentPrimary,
+                });
+            }
+
+            listEl.innerHTML = tooltipRows.map((row) => `
                 <div class="chart-tooltip-row">
-                    <span class="chart-tooltip-dot" style="background:${point.dataset.borderColor}"></span>
+                    <span class="chart-tooltip-dot" style="background:${row.color}"></span>
                     <span></span>
-                    <span class="chart-tooltip-label">Equity</span>
-                    <span class="chart-tooltip-value">${formatMoney(point.parsed.y)}</span>
+                    <span class="chart-tooltip-label">${row.label}</span>
+                    <span class="chart-tooltip-value">${formatMoney(row.value)}</span>
                 </div>
             `).join("");
 

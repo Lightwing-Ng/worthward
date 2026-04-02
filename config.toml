@@ -193,3 +193,8 @@ tooltip_size = 16
 [integrations.tradingview_ta]
 default_screener = "america"
 default_exchange = "NASDAQ"
+
+[investment.money_market_funds]
+tickers = ["005276756"]
+name_from_description = true
+description_keywords = ["MONEY MARKET", "SHORT-TERM MONEY MARKET"]

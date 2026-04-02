@@ -215,6 +215,23 @@ def build_web_runtime() -> WebRuntime:
     chart_config = settings["ui"]["chart"]
     logos = settings["ui"]["logos"]
     app_meta = settings["app"]
+    investment_settings = settings.get("investment", {}) if isinstance(settings.get("investment"), dict) else {}
+    money_market_settings = (
+        investment_settings.get("money_market_funds", {})
+        if isinstance(investment_settings.get("money_market_funds"), dict)
+        else {}
+    )
+    configured_money_market_tickers = {
+        str(value).strip().upper()
+        for value in money_market_settings.get("tickers", [])
+        if str(value).strip()
+    }
+    money_market_name_from_description = bool(money_market_settings.get("name_from_description", False))
+    money_market_description_keywords = [
+        str(value).strip().upper()
+        for value in money_market_settings.get("description_keywords", [])
+        if str(value).strip()
+    ]
 
     # Backtest result cache: skip redundant computation when config doesn't change
     _cached_backtest: dict[str, tuple] = {}
@@ -3032,12 +3049,46 @@ def build_web_runtime() -> WebRuntime:
     def investment_get_transactions():
         """Get all saved investment transactions from local storage."""
         if not INVESTMENT_STORE_PATH.exists():
-            return jsonify({"transactions": [], "ticker_profiles": {}, "success": True})
+            return jsonify({
+                "transactions": [],
+                "ticker_profiles": {},
+                "money_market_tickers": sorted(configured_money_market_tickers),
+                "success": True,
+            })
         try:
             with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            def resolve_money_market_company_name(
+                    ticker: str,
+                    transactions: list[dict[str, object]],
+            ) -> str | None:
+                if ticker not in configured_money_market_tickers or not money_market_name_from_description:
+                    return None
+
+                preferred_transaction_types = {"buy", "sell"}
+                fallback_candidate = None
+                for txn in transactions:
+                    if str(txn.get("ticker") or "").strip().upper() != ticker:
+                        continue
+                    description = " ".join(str(txn.get("description") or "").split()).strip()
+                    if not description:
+                        continue
+                    description_upper = description.upper()
+                    if money_market_description_keywords and not any(
+                            keyword in description_upper for keyword in money_market_description_keywords
+                    ):
+                        continue
+                    normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
+                    if normalized_type in preferred_transaction_types:
+                        return description
+                    if fallback_candidate is None:
+                        fallback_candidate = description
+                return fallback_candidate
+
             ticker_profiles: dict[str, dict[str, str]] = {}
-            for txn in data.get("transactions", []):
+            transactions = data.get("transactions", [])
+            for txn in transactions:
                 raw_ticker = str(txn.get("ticker") or "").strip().upper()
                 if not raw_ticker:
                     continue
@@ -3053,12 +3104,17 @@ def build_web_runtime() -> WebRuntime:
                     profile_record = load_profile_record(raw_ticker) or {}
                     company_name = str(profile_record.get("company_name") or raw_ticker).strip() or raw_ticker
                     logo_url = ""
+                    if company_name == raw_ticker:
+                        inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
+                        if inferred_money_market_name:
+                            company_name = inferred_money_market_name
                 ticker_profiles[raw_ticker] = {
                     "ticker": raw_ticker,
                     "company_name": company_name,
                     "logo_url": logo_url,
                 }
             data["ticker_profiles"] = ticker_profiles
+            data["money_market_tickers"] = sorted(configured_money_market_tickers)
             return jsonify(data)
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
