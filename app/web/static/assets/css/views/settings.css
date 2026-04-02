@@ -627,10 +627,40 @@ div.style-token-modal-demo {
 
 .style-token-metric-card-demo {
     width: min(100%, 280px);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.style-token-metric-card-demo .trade-metric-label {
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .style-token-metric-value-demo {
     color: var(--text);
+}
+
+.style-token-table-demo-shell {
+    width: 100%;
+    padding: 8px 0;
+}
+
+.style-token-table-demo {
+    width: min(100%, 520px);
+    max-width: 100%;
+}
+
+.style-token-table-demo-scroll {
+    max-height: 156px;
+}
+
+.style-token-table-demo .investment-history-table th,
+.style-token-table-demo .investment-history-table td {
+    width: auto !important;
+    min-width: 0 !important;
 }
 
 .style-token-demo .style-token-chart-tooltip-demo.chart-tooltip {

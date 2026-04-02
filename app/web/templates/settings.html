@@ -781,6 +781,33 @@
                             <span class="trade-metric-value style-token-metric-value-demo">{{ row.sample_value }}</span>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "data-table" %}
+                    <div class="style-token-table-demo-shell">
+                        <div class="investment-history-table-shell style-token-table-demo">
+                            <table class="settings-table trade-transactions-table investment-history-table" aria-hidden="true">
+                                <thead>
+                                <tr>
+                                    {% for column in row.sample_table_columns %}
+                                    <th>{{ column }}</th>
+                                    {% endfor %}
+                                </tr>
+                                </thead>
+                            </table>
+                            <div class="trade-transactions-wrap investment-history-table-scroll style-token-table-demo-scroll">
+                                <table class="settings-table trade-transactions-table investment-history-table">
+                                    <tbody>
+                                    {% for sample_row in row.sample_table_rows %}
+                                    <tr>
+                                        {% for cell in sample_row %}
+                                        <td>{{ cell }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                     {% elif row.sample_kind == "trade-strategy-stepper" %}
                     <div class="style-token-stepper-shell">
                         <div class="style-token-stepper-preview">
