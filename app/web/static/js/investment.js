@@ -188,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 parentSection.style.paddingBottom = '20px';
                 // Switch to plus icon when form is closed
                 toggleIcon.style.webkitMaskImage = 'url(/static/images/plus.svg)';
+                toggleIcon.style.WebkitMaskImage = 'url(/static/images/plus.svg)';
                 toggleIcon.style.maskImage = 'url(/static/images/plus.svg)';
                 toggleBtn.setAttribute('aria-label', 'Add transaction');
             } else {
@@ -200,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 parentSection.style.paddingBottom = '380px';
                 // Switch to minus icon when form is open
                 toggleIcon.style.webkitMaskImage = 'url(/static/images/minus.svg)';
+                toggleIcon.style.WebkitMaskImage = 'url(/static/images/minus.svg)';
                 toggleIcon.style.maskImage = 'url(/static/images/minus.svg)';
                 toggleBtn.setAttribute('aria-label', 'Hide add transaction form');
             }
@@ -573,6 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'dividend_reinvestment',
                 'forex_trade',
                 'forex_trade_component',
+                'fx_translation_pnl',
                 'deposit',
                 'withdrawal'
             ];
@@ -1021,7 +1024,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatEventType(type) {
         if (!type) return '';
-        return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        return type.split('_').map(word => {
+            // Special case capitalization for IBKR transaction types
+            const lower = word.toLowerCase();
+            if (lower === 'fx') return 'FX';
+            if (lower === 'pnl') return 'P&L';
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        }).join(' ');
     }
 
     function formatAmount(value) {
