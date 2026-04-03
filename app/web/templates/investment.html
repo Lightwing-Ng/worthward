@@ -3,16 +3,16 @@
 
 {% block sidebar_content %}
     <nav class="settings-nav" aria-label="More sections">
+        <a href="{{ more_urls.investment }}"
+           class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
+                    class="icon icon-more-investment investment-nav-icon" aria-hidden="true"></span></span>
+            <span class="settings-nav-label">Investment</span>
+        </a>
         <a href="{{ more_urls.timing }}"
            class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
             <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
             <span class="settings-nav-label">{{ labels.more_timing }}</span>
-        </a>
-        <a href="{{ more_urls.investment }}"
-           class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
-            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
-                    class="icon icon-settings-strategies investment-nav-icon" aria-hidden="true"></span></span>
-            <span class="settings-nav-label">My investment</span>
         </a>
     </nav>
 {% endblock %}
@@ -24,7 +24,7 @@
                 <span class="icon" style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
             </button>
             <div class="report-heading-row">
-                <p class="report-heading">My investment</p>
+                <p class="report-heading">Investment</p>
             </div>
         </article>
     </div>

@@ -597,6 +597,11 @@
     -webkit-mask: url("/static/images/circle.badge.plus.svg") center/contain no-repeat;
 }
 
+.icon-more-investment {
+    mask: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg") center/contain no-repeat;
+}
+
 .icon-settings-about {
     mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;

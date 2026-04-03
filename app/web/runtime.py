@@ -1877,8 +1877,8 @@ def build_web_runtime() -> WebRuntime:
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
             if more_section == "investment":
-                page_title = "My investment"
-                settings_title = "My investment"
+                page_title = "Investment"
+                settings_title = "Investment"
 
         supported_periods = (
             SUPPORTED_PERIODS_1M if requested_interval == "1m" and "1m" in supported_intervals else SUPPORTED_PERIODS_1D
