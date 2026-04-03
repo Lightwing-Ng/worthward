@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.23.1
+ * Code version: v1.23.7
  * - Fixed: Holdings now keep a stable logo slot, so missing or failed ticker logos no longer break row alignment
  * - Fixed: Investment transaction payload now retries profile-based logo resolution when a local logo asset is missing
  * - Updated: Import feedback now appears as a top floating modal-banner notice with iOS-style drop-in motion
@@ -1318,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const moneyMarketAnchors = {}; // {ticker: weightedAveragePrice}
 
-        const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
+        const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
             let qty = getTransactionQuantity(txn);
@@ -1411,6 +1411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return {
                 ...txn,
+                ledger_no: processedIndex + 1,
                 running_cash: runningCash,
                 display_amount: getTransactionEconomicAmount(txn),
                 holdings: { ...holdings },
@@ -1530,8 +1531,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             return `
-            <tr>
-                <td style="text-align: center; padding: 2px 1px;">${transactions.length - index}</td>
+            <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}">
+                <td style="text-align: center; padding: 2px 1px;">${txn.ledger_no}</td>
                 <td style="text-align: right; padding: 2px 1px;">${formattedTime}</td>
                 <td style="text-align: center; padding: 2px 1px;">${formatEventType(txn.type)}</td>
                 <td style="text-align: left; padding: 2px 1px;">${description}</td>
@@ -1562,11 +1563,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lockInvestmentSurfaceHeight();
         }
 
-        // Get all original transactions from the processed array (processed is sorted ascending, contains all transactions)
-        const originalTransactions = processed.map(p => ({date: p.date, type: p.type, amount: p.amount}));
-        const totalDeposits = getTotalDeposits(originalTransactions);
-        const netProfit = TOTAL_EQUITY - totalDeposits;
-        const isPositive = netProfit >= 0;
+        const fundingMetrics = getUsdFundingMetrics(rawTransactions);
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
@@ -1575,24 +1572,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         metricsPanel.innerHTML = `
             <div class="trade-metric-card">
-                <span class="trade-metric-label">Current Cash</span>
-                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(last.running_cash)}</span>
+                <span class="trade-metric-label">Direct deposits</span>
+                ${renderMetricValueWithTooltip({
+                    key: 'direct-deposits',
+                    value: formatAmount(fundingMetrics.directUsdDeposits),
+                    summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
+                    rows: fundingMetrics.directDepositRows,
+                })}
             </div>
             <div class="trade-metric-card">
-                <span class="trade-metric-label">Total Equity</span>
-                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(TOTAL_EQUITY)}</span>
+                <span class="trade-metric-label">Net USD converted</span>
+                ${renderMetricValueWithTooltip({
+                    key: 'net-usd-converted',
+                    value: formatAmount(fundingMetrics.netUsdConverted),
+                    summary: 'USD received from FX conversion after subtracting conversion commissions.',
+                    rows: fundingMetrics.netUsdConvertedRows,
+                })}
             </div>
             <div class="trade-metric-card">
-                <span class="trade-metric-label">Net Profit/Loss</span>
-                <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: ${isPositive ? 'var(--accent-positive)' : 'var(--error)'};">
-                    ${isPositive ? '+' : ''}${formatAmount(Math.abs(netProfit))}
-                </span>
+                <span class="trade-metric-label">FX funding loss</span>
+                ${renderMetricValueWithTooltip({
+                    key: 'fx-funding-loss',
+                    value: formatAmount(fundingMetrics.fxFundingLoss),
+                    summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
+                    rows: fundingMetrics.fxFundingLossRows,
+                })}
             </div>
             <div class="trade-metric-card">
-                <span class="trade-metric-label">Total Transactions</span>
-                <span class="trade-metric-value" data-workspace-mask="trade-metric">${processed.length}</span>
+                <span class="trade-metric-label">Final investable USD</span>
+                ${renderMetricValueWithTooltip({
+                    key: 'final-investable-usd',
+                    value: formatAmount(fundingMetrics.finalInvestableUsd),
+                    summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
+                    rows: fundingMetrics.finalInvestableUsdRows,
+                })}
             </div>
         `;
+        bindInvestmentMetricTooltipInteractions(metricsPanel);
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
         }
@@ -1650,7 +1666,6 @@ document.addEventListener('DOMContentLoaded', () => {
         })();
         const equitySeriesColor = "#0055cc";
 
-        const initialDeposits = getTotalDeposits(sortedTransactions);
         const labels = [...rawDates];
         const equity = [...points];
         const fixedYAxisWidth = 52;
@@ -1729,26 +1744,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 rawMin,
                 rawMax,
             };
-        };
-
-        const referenceLinePlugin = {
-            id: "investmentReferenceLine",
-            beforeDatasetsDraw(chart) {
-                if (!Number.isFinite(initialDeposits) || initialDeposits <= 0) return;
-                const { ctx, chartArea, scales } = chart;
-                const yScale = scales?.y;
-                if (!chartArea || !yScale) return;
-                const y = yScale.getPixelForValue(initialDeposits);
-                if (!Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
-                ctx.save();
-                ctx.strokeStyle = resolvedTheme.muted;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(chartArea.left + 8, y);
-                ctx.lineTo(chartArea.right - 8, y);
-                ctx.stroke();
-                ctx.restore();
-            },
         };
 
         const hoverGuidePlugin = {
@@ -1948,7 +1943,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: { ...commonOptions.scales.y, ...equityYScale },
                 },
             },
-            plugins: [referenceLinePlugin, hoverGuidePlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
         });
     }
 
@@ -2049,6 +2044,260 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getTotalDeposits(transactions) {
-        return transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + (t.amount || 0), 0);
+        return transactions
+            .filter(t => getNormalizedTransactionType(t) === 'deposit')
+            .reduce((sum, t) => sum + getTransactionAmount(t), 0);
+    }
+
+    function renderMetricValueWithTooltip(metric) {
+        const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
+            ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
+                .sort((left, right) => {
+                    const leftDate = new Date(left?.date || 0).getTime();
+                    const rightDate = new Date(right?.date || 0).getTime();
+                    if (leftDate !== rightDate) return leftDate - rightDate;
+                    const leftRow = Number(left?.source?.row_number ?? 0);
+                    const rightRow = Number(right?.source?.row_number ?? 0);
+                    return leftRow - rightRow;
+                })
+                .map((txn, index) => ({
+                    ledgerNo: index + 1,
+                    date: String(txn?.date || ''),
+                }))
+            : [];
+        const ledgerDateMap = new Map(sortedLedgerEntries.map((entry) => [entry.ledgerNo, entry.date]));
+        const formatTooltipLedgerDate = (rawDate) => {
+            const match = String(rawDate || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!match) return '';
+            const day = Number(match[3]);
+            const monthIndex = Number(match[2]) - 1;
+            const year = Number(match[1]);
+            return `${day} ${monthAbbreviations[monthIndex] || ''} ${year}`.trim();
+        };
+        const rows = Array.isArray(metric?.rows) ? [...metric.rows].sort((left, right) => right - left) : [];
+        const visibleRows = rows.slice(0, 4);
+        const extraCount = Math.max(0, rows.length - visibleRows.length);
+        const rowListHtml = visibleRows.length
+            ? `
+                <ul class="investment-metric-tooltip-list">
+                    ${visibleRows.map((rowNo) => `
+                        <li>
+                            <span class="investment-metric-tooltip-list-line">
+                                <span class="investment-metric-tooltip-row-no">${rowNo}</span>
+                                <span class="investment-metric-tooltip-row-date">${formatTooltipLedgerDate(ledgerDateMap.get(rowNo))}</span>
+                            </span>
+                        </li>
+                    `).join('')}
+                </ul>
+                ${extraCount > 0 ? `<p class="investment-metric-tooltip-note">+ ${extraCount} earlier row${extraCount === 1 ? '' : 's'}</p>` : ''}
+            `
+            : `<p class="investment-metric-tooltip-note">No contributing rows were detected.</p>`;
+        const latestRow = rows.length ? rows[0] : '';
+
+        return `
+            <span class="investment-metric-tooltip-trigger" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}">
+                <span class="trade-metric-value" data-workspace-mask="trade-metric">${metric?.value || '--'}</span>
+                <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
+                    <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
+                    ${rowListHtml}
+                </span>
+            </span>
+        `;
+    }
+
+    function bindInvestmentMetricTooltipInteractions(metricsPanel) {
+        if (!metricsPanel) return;
+        metricsPanel.querySelectorAll('.investment-metric-tooltip-trigger').forEach((trigger) => {
+            if (trigger.dataset.tooltipBound === '1') return;
+            trigger.dataset.tooltipBound = '1';
+            const jumpToContributionRow = () => {
+                const targetRowNo = Number(trigger.dataset.metricTargetRow);
+                if (!Number.isFinite(targetRowNo) || targetRowNo <= 0) return;
+                const row = document.getElementById(`investment_history_row_${targetRowNo}`);
+                if (!row) return;
+                const scrollContainer = row.closest('.investment-history-table-scroll');
+                row.classList.remove('is-metric-hover-target');
+                void row.offsetWidth;
+                row.classList.add('is-metric-hover-target');
+                if (scrollContainer) {
+                    const rowOffset = row.offsetTop - scrollContainer.offsetTop;
+                    const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (row.clientHeight / 2);
+                    scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+                } else {
+                    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }
+            };
+            trigger.addEventListener('mouseenter', jumpToContributionRow);
+            trigger.addEventListener('focus', jumpToContributionRow);
+        });
+    }
+
+    function getNetUsdConverted(transactions) {
+        return getUsdFundingMetrics(transactions).netUsdConverted;
+    }
+
+    function getUsdFundingMetrics(transactions) {
+        if (!Array.isArray(transactions)) {
+            return {
+                totalDeposits: 0,
+                directUsdDeposits: 0,
+                netUsdConverted: 0,
+                fxFundingLoss: 0,
+                finalInvestableUsd: 0,
+                directDepositRows: [],
+                netUsdConvertedRows: [],
+                fxFundingLossRows: [],
+                finalInvestableUsdRows: [],
+            };
+        }
+
+        const sortedTransactions = transactions
+            .map((txn, index) => ({ txn, index }))
+            .sort((left, right) => {
+                const leftDate = new Date(left.txn?.date || 0).getTime();
+                const rightDate = new Date(right.txn?.date || 0).getTime();
+                if (leftDate !== rightDate) return leftDate - rightDate;
+                const leftRow = Number(left.txn?.source?.row_number ?? left.index);
+                const rightRow = Number(right.txn?.source?.row_number ?? right.index);
+                return leftRow - rightRow;
+            })
+            .map(({ txn, index }, sortedIndex) => ({
+                txn,
+                index,
+                ledgerNo: sortedIndex + 1,
+            }));
+
+        const currentDepositStreak = [];
+        const allDepositRows = [];
+        let totalDeposits = 0;
+        let pairedDepositFunding = 0;
+        let netUsdConverted = 0;
+        let pairedNetUsdConverted = 0;
+        const pairedDepositRowSet = new Set();
+        const netUsdConvertedRowSet = new Set();
+        const pairedNetUsdConvertedRowSet = new Set();
+
+        const getFundingTolerance = (targetAmount) => Math.max(0.01, targetAmount * 0.001);
+        const chooseClosestDepositSubset = (entries, targetAmount) => {
+            const itemCount = entries.length;
+            if (!itemCount) return null;
+
+            let bestMask = 0;
+            let bestTotal = 0;
+            let bestDiff = Number.POSITIVE_INFINITY;
+            const subsetCount = 1 << itemCount;
+
+            for (let mask = 1; mask < subsetCount; mask += 1) {
+                let subsetTotal = 0;
+                for (let bit = 0; bit < itemCount; bit += 1) {
+                    if (mask & (1 << bit)) subsetTotal += entries[bit].amount;
+                }
+                const diff = Math.abs(subsetTotal - targetAmount);
+                if (diff < bestDiff - 1e-9 || (Math.abs(diff - bestDiff) <= 1e-9 && subsetTotal < bestTotal)) {
+                    bestMask = mask;
+                    bestTotal = subsetTotal;
+                    bestDiff = diff;
+                }
+            }
+
+            return {
+                mask: bestMask,
+                total: bestTotal,
+                diff: bestDiff,
+            };
+        };
+
+        sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+
+            if (normalizedType === 'deposit') {
+                const depositAmount = getTransactionAmount(txn);
+                if (Number.isFinite(depositAmount) && depositAmount > 0) {
+                    totalDeposits += depositAmount;
+                    const depositEntry = { amount: depositAmount, ledgerNo };
+                    allDepositRows.push(depositEntry);
+                    currentDepositStreak.push(depositEntry);
+                }
+                return;
+            }
+
+            if (normalizedType !== 'forex_trade_component') {
+                currentDepositStreak.length = 0;
+                return;
+            }
+
+            const forexPair = String(txn?.ticker || '').trim().toUpperCase();
+            if (!forexPair.startsWith('USD.')) {
+                currentDepositStreak.length = 0;
+                return;
+            }
+
+            const quantity = getTransactionQuantity(txn);
+            const commissionDisplay = Number(txn?.normalized?.commission_display ?? txn?.commission_abs ?? 0);
+            const safeQuantity = Number.isFinite(quantity) ? quantity : 0;
+            const safeCommission = Number.isFinite(commissionDisplay) ? commissionDisplay : 0;
+            const netConvertedAmount = safeQuantity - safeCommission;
+
+            if (netConvertedAmount > 0) {
+                netUsdConverted += netConvertedAmount;
+                netUsdConvertedRowSet.add(ledgerNo);
+            }
+
+            const grossFundingTarget = safeQuantity + safeCommission;
+            if (!(grossFundingTarget > 0) || currentDepositStreak.length === 0) return;
+
+            const tolerance = getFundingTolerance(grossFundingTarget);
+            const bestSubset = chooseClosestDepositSubset(currentDepositStreak, grossFundingTarget);
+            if (!bestSubset || bestSubset.total <= 0 || bestSubset.diff > tolerance) {
+                currentDepositStreak.length = 0;
+                return;
+            }
+
+            const remainingDeposits = [];
+            currentDepositStreak.forEach((entry, index) => {
+                if (!(bestSubset.mask & (1 << index))) {
+                    remainingDeposits.push(entry);
+                } else {
+                    pairedDepositRowSet.add(entry.ledgerNo);
+                }
+            });
+            currentDepositStreak.length = 0;
+            remainingDeposits.forEach((entry) => currentDepositStreak.push(entry));
+
+            pairedDepositFunding += bestSubset.total;
+            if (netConvertedAmount > 0) {
+                pairedNetUsdConverted += netConvertedAmount;
+                pairedNetUsdConvertedRowSet.add(ledgerNo);
+            }
+        });
+
+        const directUsdDeposits = totalDeposits - pairedDepositFunding;
+        const fxFundingLoss = Math.max(0, pairedDepositFunding - pairedNetUsdConverted);
+        const finalInvestableUsd = directUsdDeposits + netUsdConverted;
+        const directDepositRows = allDepositRows
+            .map((entry) => entry.ledgerNo)
+            .filter((ledgerNo) => !pairedDepositRowSet.has(ledgerNo));
+        const netUsdConvertedRows = Array.from(netUsdConvertedRowSet);
+        const fxFundingLossRows = Array.from(new Set([
+            ...Array.from(pairedDepositRowSet),
+            ...Array.from(pairedNetUsdConvertedRowSet),
+        ]));
+        const finalInvestableUsdRows = Array.from(new Set([
+            ...directDepositRows,
+            ...netUsdConvertedRows,
+        ]));
+
+        return {
+            totalDeposits,
+            directUsdDeposits,
+            netUsdConverted,
+            fxFundingLoss,
+            finalInvestableUsd,
+            directDepositRows,
+            netUsdConvertedRows,
+            fxFundingLossRows,
+            finalInvestableUsdRows,
+        };
     }
 });

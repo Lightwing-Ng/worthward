@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.4
+Code version: v0.3.5
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urlencode
 import hashlib
 import pandas as pd
-from flask import jsonify, redirect, render_template, request, send_from_directory, url_for, send_file
+from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from app.infrastructure.broker_market_data import (
@@ -115,6 +115,7 @@ LEGACY_MORE_SECTION_ALIASES = {
     "invest": "investment",
 }
 LOCAL_STORE_PAGE_SIZE = 10
+SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
     "recent": "Recent",
@@ -265,6 +266,57 @@ def build_web_runtime() -> WebRuntime:
         ]
         key_string = json.dumps(params, sort_keys=True)
         return hashlib.sha256(key_string.encode("utf-8")).hexdigest()[:16]
+
+    def _read_settings_feedback() -> dict[str, str]:
+        raw_feedback = request.cookies.get(SETTINGS_FEEDBACK_COOKIE, "").strip()
+        if not raw_feedback:
+            return {}
+        try:
+            payload = json.loads(raw_feedback)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            key: str(value).strip()
+            for key, value in payload.items()
+            if key in {"notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"}
+            and str(value).strip()
+        }
+
+    def _redirect_with_settings_feedback(
+        section_name: str,
+        *,
+        notice: str = "",
+        error: str = "",
+        broker_test_status: str = "",
+        broker_test_message: str = "",
+        broker_test_checked_at: str = "",
+    ):
+        response = make_response(redirect(build_settings_path(section_name), code=303))
+        payload = {
+            key: value.strip()
+            for key, value in {
+                "notice": notice,
+                "error": error,
+                "broker_test_status": broker_test_status,
+                "broker_test_message": broker_test_message,
+                "broker_test_checked_at": broker_test_checked_at,
+            }.items()
+            if value and value.strip()
+        }
+        if payload:
+            response.set_cookie(
+                SETTINGS_FEEDBACK_COOKIE,
+                json.dumps(payload, separators=(",", ":")),
+                max_age=60,
+                httponly=True,
+                samesite="Lax",
+                path="/settings",
+            )
+        else:
+            response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
+        return response
 
     def validate_ticker_or_raise(raw_ticker: str) -> str:
         normalized_ticker = normalize_ticker_input(raw_ticker)
@@ -929,6 +981,13 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--workspace-metric-value-line-height", "1"),
                     raw_token("--workspace-metric-value-letter-spacing", "-0.04em"),
                     raw_token("--workspace-metric-value-font-weight", "var(--font-weight-regular)"),
+                    px_token("--workspace-metric-card-min-height", 58, 1),
+                    raw_token("--workspace-metric-card-padding", "6px 8px 8px"),
+                    px_token("--workspace-metric-card-row-gap", 4, 1),
+                    raw_token("--workspace-metric-card-radius", "var(--radius-panel)"),
+                    px_token("--workspace-metric-card-label-min-height", 24, 1),
+                    raw_token("--workspace-metric-card-align-self", "start"),
+                    raw_token("--workspace-metrics-grid-auto-rows-wide", "minmax(var(--workspace-metric-card-min-height), max-content)"),
                 ],
                 "related_styles": [],
             },
@@ -1747,11 +1806,32 @@ def build_web_runtime() -> WebRuntime:
             requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
             include_dividends = bool(defaults.get("backtest_include_dividends", True))
 
-        error = request.args.get("error", "").strip() or None
-        notice = request.args.get("notice", "").strip() or None
-        broker_test_status = request.args.get("broker_test_status", "").strip().lower() or None
-        broker_test_message = request.args.get("broker_test_message", "").strip() or None
-        broker_test_checked_at = request.args.get("broker_test_checked_at", "").strip() or None
+        settings_feedback = _read_settings_feedback() if current_view == "settings" else {}
+        error = (
+            settings_feedback.get("error")
+            if current_view == "settings"
+            else (request.args.get("error", "").strip() or None)
+        )
+        notice = (
+            settings_feedback.get("notice")
+            if current_view == "settings"
+            else (request.args.get("notice", "").strip() or None)
+        )
+        broker_test_status = (
+            settings_feedback.get("broker_test_status", "").lower() or None
+            if current_view == "settings"
+            else (request.args.get("broker_test_status", "").strip().lower() or None)
+        )
+        broker_test_message = (
+            settings_feedback.get("broker_test_message")
+            if current_view == "settings"
+            else (request.args.get("broker_test_message", "").strip() or None)
+        )
+        broker_test_checked_at = (
+            settings_feedback.get("broker_test_checked_at")
+            if current_view == "settings"
+            else (request.args.get("broker_test_checked_at", "").strip() or None)
+        )
         floating_banner_icon_class = "icon-modal-dialog-banner-default"
         if notice and "Successfully connected" in notice:
             floating_banner_icon_class = "icon-settings-broker"
@@ -2346,7 +2426,7 @@ def build_web_runtime() -> WebRuntime:
             "settings": "settings.html",
         }[current_view]
 
-        return render_template(
+        response = make_response(render_template(
             template_name,
             error=error,
             notice=notice,
@@ -2434,7 +2514,10 @@ def build_web_runtime() -> WebRuntime:
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
             },
-        )
+        ))
+        if current_view == "settings":
+            response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
+        return response
 
     def export_transactions_api():
         try:
@@ -2681,10 +2764,11 @@ def build_web_runtime() -> WebRuntime:
         return render_workspace_page("settings", section_name)
 
     def general_settings_action():
+        current_mode = load_backtest_execution_mode()
         selected_mode = save_backtest_execution_mode(request.form.get("backtest_execution_mode", "next_open"))
         selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
-        params = urlencode({"notice": f"Backtest execution model updated: {selected_label}."})
-        return redirect(f"{build_settings_path('general')}?{params}")
+        notice = f"Backtest execution model updated: {selected_label}." if selected_mode != current_mode else ""
+        return _redirect_with_settings_feedback("general", notice=notice)
 
     def email_smtp_action():
         action = request.form.get("action", "save").strip().lower()
@@ -2737,11 +2821,11 @@ def build_web_runtime() -> WebRuntime:
             save_smtp_settings(updated_settings)
         else:
             success, message = True, f"SMTP settings saved. {build_oauth_settings_message(updated_settings)}"
-        params = urlencode({
-            "notice": message if success else "",
-            "error": "" if success else message,
-        })
-        return redirect(f"{build_settings_path('email-smtp')}?{params}" if params else build_settings_path("email-smtp"))
+        return _redirect_with_settings_feedback(
+            "email-smtp",
+            notice=message if success else "",
+            error="" if success else message,
+        )
 
     def broker_access_action():
         current_settings = load_broker_settings()
@@ -2760,21 +2844,18 @@ def build_web_runtime() -> WebRuntime:
             success, message = test_broker_connection(updated_settings)
             checked_at = datetime.now().astimezone()
             checked_at_label = f"{checked_at.day} {checked_at.strftime('%b %Y %H:%M:%S %Z')}"
-            params = urlencode({
-                "broker_test_status": "success" if success else "error",
-                "broker_test_message": message,
-                "broker_test_checked_at": checked_at_label,
-            })
+            return _redirect_with_settings_feedback(
+                "broker-access",
+                broker_test_status="success" if success else "error",
+                broker_test_message=message,
+                broker_test_checked_at=checked_at_label,
+            )
         else:
             notice = (
                 "Broker credentials were saved only on this device. "
                 "This project is open source, and the developer cannot retrieve your local secrets."
             )
-            params = urlencode({
-                "notice": notice,
-                "error": "",
-            })
-        return redirect(f"{build_settings_path('broker-access')}?{params}")
+            return _redirect_with_settings_feedback("broker-access", notice=notice)
 
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
@@ -2785,9 +2866,6 @@ def build_web_runtime() -> WebRuntime:
         def build_local_store_redirect(**extra_params: str) -> str:
             params = {"page": page, **extra_params}
             return f"{base_path}?{urlencode(params)}"
-
-        def redirect_local_store(**extra_params: str):
-            return redirect(build_local_store_redirect(**extra_params), code=303)
 
         redirect_url = build_local_store_redirect()
 
@@ -2801,14 +2879,15 @@ def build_web_runtime() -> WebRuntime:
                 history_failed_tickers = list(maintenance["history_failed_tickers"])
                 if history_failed_tickers and history_refreshed_count == 0:
                     failed_preview = ", ".join(history_failed_tickers[:3])
-                    return redirect_local_store(
-                        error=f"Unable to refresh historical market data for {failed_preview}."
+                    return _redirect_with_settings_feedback(
+                        "local-market-store",
+                        error=f"Unable to refresh historical market data for {failed_preview}.",
                     )
 
                 notice_parts: list[str] = []
                 if total_count == 0:
                     notice = "Local Market Store is already up to date."
-                    return redirect_local_store(notice=notice)
+                    return _redirect_with_settings_feedback("local-market-store", notice=notice)
 
                 if history_refreshed_count > 0:
                     notice_parts.append(
@@ -2834,7 +2913,7 @@ def build_web_runtime() -> WebRuntime:
                         f"{': ' + preview if preview else '.'}"
                     )
                 notice = " ".join(part.rstrip(".") + "." for part in notice_parts if part)
-                return redirect_local_store(notice=notice)
+                return _redirect_with_settings_feedback("local-market-store", notice=notice)
             if not ticker:
                 return redirect(redirect_url, code=303)
             if action == "refresh":
@@ -2847,7 +2926,7 @@ def build_web_runtime() -> WebRuntime:
                     except Exception:
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
-                return redirect_local_store(notice=notice)
+                return _redirect_with_settings_feedback("local-market-store", notice=notice)
             elif action == "refresh-1m":
                 broker_settings = load_broker_settings()
                 if broker_settings.selected_broker == "longbridge" and has_longbridge_credentials(broker_settings):
@@ -2862,14 +2941,14 @@ def build_web_runtime() -> WebRuntime:
                     path = intraday_history_store_path_for(ticker, "1m")
                     normalized_dataset.to_parquet(path, index=False)
                     notice = f"Saved the latest month of 1-minute market data for {ticker} to local cache (yfinance fallback)."
-                return redirect_local_store(notice=notice)
+                return _redirect_with_settings_feedback("local-market-store", notice=notice)
             elif action == "delete":
                 delete_ticker_data(ticker)
                 notice = f"Removed all cached data for {ticker} from local storage."
-                return redirect_local_store(notice=notice)
+                return _redirect_with_settings_feedback("local-market-store", notice=notice)
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or f"Unable to update local cache for {ticker}."
-            return redirect_local_store(error=message)
+            return _redirect_with_settings_feedback("local-market-store", error=message)
 
         return redirect(redirect_url, code=303)
 
@@ -2899,10 +2978,10 @@ def build_web_runtime() -> WebRuntime:
                     f"{'y' if cache_summary['protected_search_queries'] == 1 else 'ies'}, "
                     "and left ticker usage records untouched."
                 )
-            return redirect(f"{build_settings_path(section_name)}?{urlencode({'notice': notice})}")
+            return _redirect_with_settings_feedback(section_name, notice=notice)
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or "Unable to clear cached settings data."
-            return redirect(f"{build_settings_path(section_name)}?{urlencode({'error': message})}")
+            return _redirect_with_settings_feedback(section_name, error=message)
 
     def market_store_logo(filename: str):
         candidate = LOGOS_STORE_DIR / filename

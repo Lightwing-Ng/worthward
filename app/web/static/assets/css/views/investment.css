@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.3.4 */
 
 .investment-surface-stack {
     flex: 1 1 auto;
@@ -48,6 +48,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+#investment_view_surface[data-active-view="metrics"] .investment-view-surface-body {
+    overflow: visible;
 }
 
 .investment-view-surface-body > [data-investment-view-panel] {
@@ -102,7 +106,43 @@
 }
 
 #investment_metrics_panel {
-    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
+    gap: 8px;
+    align-content: start;
+    align-items: start;
+    justify-items: stretch;
+    padding: 2px 2px 14px;
+    overflow: visible;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+#investment_metrics_panel::-webkit-scrollbar {
+    display: none;
+}
+
+#investment_metrics_panel .trade-metric-card {
+    width: 100%;
+}
+
+@media (min-width: 1200px) {
+    #investment_metrics_panel {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+    #investment_metrics_panel {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px) {
+    #investment_metrics_panel {
+        grid-template-columns: 1fr;
+    }
 }
 
 .scrollable-data-table-shell,
@@ -741,6 +781,14 @@
     vertical-align: top;
 }
 
+.investment-history-table tr.is-metric-hover-target {
+    animation: investment-history-row-pulse 1.4s ease;
+}
+
+.investment-history-table tr.is-metric-hover-target td {
+    background: color-mix(in srgb, var(--theme-accent-primary) 8%, transparent);
+}
+
 .investment-history-table th:nth-child(1),
 .investment-history-table td:nth-child(1) { width: 8%; min-width: 32px; text-align: center; }
 .investment-history-table th:nth-child(2),
@@ -777,6 +825,94 @@
     height: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+}
+
+.investment-metric-tooltip-trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-self: start;
+    min-width: 0;
+    outline: none;
+}
+
+.investment-metric-tooltip-trigger:focus-visible {
+    border-radius: var(--radius-panel);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent-primary) 28%, transparent);
+}
+
+.investment-metric-tooltip-trigger .trade-metric-value {
+    cursor: default;
+}
+
+.investment-metric-tooltip {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    z-index: var(--layer-global-popover);
+    display: grid;
+    gap: 6px;
+    min-width: 220px;
+    max-width: min(320px, calc(100vw - 32px));
+    margin-top: 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-panel);
+    color: var(--text);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 160ms var(--motion-standard), transform 160ms var(--motion-standard);
+}
+
+.investment-metric-tooltip-trigger:hover .investment-metric-tooltip,
+.investment-metric-tooltip-trigger:focus-visible .investment-metric-tooltip,
+.investment-metric-tooltip-trigger:focus-within .investment-metric-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.investment-metric-tooltip-copy,
+.investment-metric-tooltip-note {
+    display: block;
+}
+
+.investment-metric-tooltip-copy,
+.investment-metric-tooltip-note,
+.investment-metric-tooltip-list {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--font-tooltip);
+    line-height: 1.35;
+}
+
+.investment-metric-tooltip-list {
+    padding-left: 18px;
+}
+
+.investment-metric-tooltip-list li + li {
+    margin-top: 2px;
+}
+
+.investment-metric-tooltip-list-line {
+    display: inline-grid;
+    grid-template-columns: 3ch max-content;
+    column-gap: 10px;
+    align-items: baseline;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.investment-metric-tooltip-row-no {
+    text-align: right;
+}
+
+@keyframes investment-history-row-pulse {
+    0% {
+        background: color-mix(in srgb, var(--theme-accent-primary) 16%, transparent);
+    }
+    100% {
+        background: transparent;
+    }
 }
 
 @media (max-width: 1080px) {

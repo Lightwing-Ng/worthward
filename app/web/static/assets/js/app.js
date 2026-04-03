@@ -1,4 +1,4 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.3.4 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -17,6 +17,7 @@
 	const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 	const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
 	const VIEW_MEMORY_KEY = "antigravity:view-memory";
+	const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
 	const SIDEBAR_MEMORY_KEY = "antigravity:sidebar-open";
 	const TRADE_DETAIL_MEMORY_KEY = "antigravity:trade-detail-tab";
 	const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
@@ -665,10 +666,23 @@
 		}
 	};
 
+	const sanitizeRememberedUrl = (url) => {
+		try {
+			const parsed = new URL(url, window.location.origin);
+			TRANSIENT_VIEW_QUERY_KEYS.forEach((key) => {
+				parsed.searchParams.delete(key);
+			});
+			const normalizedSearch = parsed.searchParams.toString();
+			return `${parsed.pathname}${normalizedSearch ? `?${normalizedSearch}` : ""}${parsed.hash || ""}`;
+		} catch (_error) {
+			return url;
+		}
+	};
+
 	const rememberCurrentViewUrl = (url = window.location.pathname + window.location.search) => {
 		if (!state.currentView) return;
 		const memory = readViewMemory();
-		memory[state.currentView] = url;
+		memory[state.currentView] = sanitizeRememberedUrl(url);
 		writeViewMemory(memory);
 	};
 

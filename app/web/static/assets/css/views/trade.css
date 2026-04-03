@@ -171,17 +171,18 @@
 
 .trade-metric-card {
     min-width: 0;
-    min-height: 0;
+    min-height: var(--workspace-metric-card-min-height);
     overflow: visible;
-    padding: 6px 8px 8px;
-    border-radius: var(--radius-panel);
+    padding: var(--workspace-metric-card-padding);
+    border-radius: var(--workspace-metric-card-radius);
     background: transparent;
     border: none;
     box-shadow: none;
     display: grid;
-    grid-template-rows: minmax(24px, auto) minmax(0, 1fr);
-    row-gap: 4px;
-    align-items: stretch;
+    grid-template-rows: minmax(var(--workspace-metric-card-label-min-height), auto) minmax(0, auto);
+    row-gap: var(--workspace-metric-card-row-gap);
+    align-items: start;
+    align-self: var(--workspace-metric-card-align-self);
 }
 
 .trade-metric-label {
@@ -223,9 +224,9 @@
 
     .trade-metrics-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        grid-auto-rows: 1fr;
-        align-content: stretch;
-        overflow-y: hidden;
+        grid-auto-rows: var(--workspace-metrics-grid-auto-rows-wide);
+        align-content: start;
+        overflow-y: auto;
     }
 }
 
@@ -593,8 +594,8 @@
 }
 
 .icon-more-timing {
-    mask: url("/static/images/circle.badge.plus.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/circle.badge.plus.svg") center/contain no-repeat;
+    mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
 }
 
 .icon-more-investment {
