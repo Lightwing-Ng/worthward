@@ -74,7 +74,8 @@ from app.services.date_constraints import build_date_constraint_payload
 from app.services.investment_import import build_investment_payload_from_ibkr_csvs
 from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
     search_tickers
-from app.services.market_data import ensure_fresh_history_store, fetch_history, refresh_history_store
+from app.services.market_data import fetch_history, refresh_history_store
+from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
 from app.infrastructure.storage import (
@@ -1892,15 +1893,6 @@ def build_web_runtime() -> WebRuntime:
                     pass
             raise ValueError(f"No market data returned for {ticker}.")
 
-        def ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
-            failed_tickers: list[str] = []
-            for ticker in tickers:
-                try:
-                    ensure_fresh_history_store(ticker)
-                except Exception:
-                    failed_tickers.append(ticker)
-            return failed_tickers
-
         try:
             if current_view == "backtest":
                 # Check cache: skip re-computation if config unchanged
@@ -2876,22 +2868,30 @@ def build_web_runtime() -> WebRuntime:
 
     def settings_cache_action():
         section_name = normalize_settings_section(request.form.get("section", "clear-caches"))
+        action = str(request.form.get("action", "market-data")).strip().lower() or "market-data"
         try:
-            cache_summary = clear_nonhistorical_market_cache()
-            reset_connectivity_caches()
-            notice = (
-                f"Cleared {cache_summary['removed_search_queries']:,} search result cache entr"
-                f"{'y' if cache_summary['removed_search_queries'] == 1 else 'ies'}, "
-                f"{cache_summary['removed_profiles']:,} non-local profile entr"
-                f"{'y' if cache_summary['removed_profiles'] == 1 else 'ies'}, "
-                f"{cache_summary['removed_logos']:,} non-local logo image"
-                f"{'' if cache_summary['removed_logos'] == 1 else 's'}. "
-                f"Protected {cache_summary['protected_tickers']:,} Local Market Store ticker entr"
-                f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, "
-                f"kept {cache_summary['protected_search_queries']:,} matching search cache entr"
-                f"{'y' if cache_summary['protected_search_queries'] == 1 else 'ies'}, "
-                "and left ticker usage records untouched."
-            )
+            if action == "investment-transactions":
+                if INVESTMENT_STORE_PATH.exists():
+                    INVESTMENT_STORE_PATH.unlink()
+                    notice = "Cleared the local broker transaction record stored in settings_store/investment.json."
+                else:
+                    notice = "No local broker transaction record was found in settings_store/investment.json."
+            else:
+                cache_summary = clear_nonhistorical_market_cache()
+                reset_connectivity_caches()
+                notice = (
+                    f"Cleared {cache_summary['removed_search_queries']:,} market search cache entr"
+                    f"{'y' if cache_summary['removed_search_queries'] == 1 else 'ies'}, "
+                    f"{cache_summary['removed_profiles']:,} non-local market profile entr"
+                    f"{'y' if cache_summary['removed_profiles'] == 1 else 'ies'}, "
+                    f"{cache_summary['removed_logos']:,} non-local market logo image"
+                    f"{'' if cache_summary['removed_logos'] == 1 else 's'}. "
+                    f"Protected {cache_summary['protected_tickers']:,} Local Market Store ticker entr"
+                    f"{'y' if cache_summary['protected_tickers'] == 1 else 'ies'}, "
+                    f"kept {cache_summary['protected_search_queries']:,} matching market search cache entr"
+                    f"{'y' if cache_summary['protected_search_queries'] == 1 else 'ies'}, "
+                    "and left ticker usage records untouched."
+                )
             return redirect(f"{build_settings_path(section_name)}?{urlencode({'notice': notice})}")
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or "Unable to clear cached settings data."
@@ -3065,6 +3065,10 @@ def build_web_runtime() -> WebRuntime:
             with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            freshness_refresh_failures = ensure_latest_daily_caches(
+                extract_open_investment_tickers(data)
+            )
+
             def resolve_money_market_company_name(
                     ticker: str,
                     transactions: list[dict[str, object]],
@@ -3124,6 +3128,7 @@ def build_web_runtime() -> WebRuntime:
                 }
             data["ticker_profiles"] = ticker_profiles
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
+            data["freshness_refresh_failures"] = freshness_refresh_failures
             return jsonify(data)
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
@@ -3154,6 +3159,10 @@ def build_web_runtime() -> WebRuntime:
                 positions_csv_bytes=positions_payload,
             )
 
+            freshness_refresh_failures = ensure_latest_daily_caches(
+                extract_all_investment_tickers(investment_payload)
+            )
+
             INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(INVESTMENT_STORE_PATH, "w", encoding="utf-8") as f:
                 json.dump(investment_payload, f, indent=2, ensure_ascii=False)
@@ -3166,7 +3175,9 @@ def build_web_runtime() -> WebRuntime:
                     "They were processed in memory and discarded after the import finished."
                 ),
                 "summary": investment_payload.get("summary", {}),
+                "freshness_refresh_failures": freshness_refresh_failures,
                 "transactions": investment_payload.get("transactions", []),
+                "investment": investment_payload,
             })
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
@@ -3216,7 +3227,10 @@ def build_web_runtime() -> WebRuntime:
         try:
             path = history_store_path_for(ticker)
             if not path.exists():
-                return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
+                fetch_history(ticker, include_dividends=False)
+                path = history_store_path_for(ticker)
+            else:
+                ensure_latest_daily_caches([ticker])
 
             df = pd.read_parquet(path)
             if df.empty or "Close" not in df.columns or "Date" not in df.columns:

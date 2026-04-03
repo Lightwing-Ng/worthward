@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.20.0
+ * Code version: v1.21.4
  * - Updated: Investment segmented control now shows "Charts"
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
@@ -34,6 +34,8 @@
  * - Updated: Holdings summary row now colors only the cumulative P&L value, keeping the label text neutral
  * - Reworked: The investment import form now accepts the two IBKR CSV exports instead of manual transaction entry
  * - Added: Import feedback now spells out that the server discards raw CSV files after in-memory processing
+ * - Improved: Empty transaction history now shows a compact guided import state with inline plus icon and width protection
+ * - Updated: Import feedback now uses the standard modal dialog banner message token instead of the legacy modal dialog block
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -176,10 +178,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyTable = document.getElementById('history_table_wrap');
     const investmentForm = document.getElementById('investment_form');
     const importFeedback = document.getElementById('investment_import_feedback');
+    const importFeedbackMessage = document.getElementById('investment_import_feedback_message');
+    const importFeedbackIcon = document.getElementById('investment_import_feedback_icon');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
+    const importSubmitButton = document.getElementById('investment_import_submit_button');
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
@@ -187,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeInvestmentView = 'chart';
     let investmentSurfaceCleanupTimer = null;
     let investmentFormHideTimer = null;
+    let investmentImportInFlight = false;
 
     function lockInvestmentSurfaceHeight() {
         if (!investmentViewSurface) return;
@@ -263,17 +269,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setImportFeedback(message, isError = false) {
         if (!importFeedback) return;
-        importFeedback.hidden = false;
-        importFeedback.textContent = message;
-        importFeedback.classList.toggle('investment-import-feedback-error', Boolean(isError));
-        importFeedback.classList.toggle('investment-import-feedback-success', !isError);
+        importFeedback.removeAttribute('hidden');
+        if (importFeedbackMessage) {
+            importFeedbackMessage.textContent = isError
+                ? `Import failed: ${message}`
+                : `Import complete: ${message}`;
+        } else {
+            importFeedback.textContent = message;
+        }
+        if (importFeedbackIcon) {
+            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-error', Boolean(isError));
+            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-success', !isError);
+            importFeedbackIcon.classList.toggle('icon-modal-dialog-banner-default', Boolean(isError));
+        }
     }
 
     function clearImportFeedback() {
         if (!importFeedback) return;
-        importFeedback.hidden = true;
-        importFeedback.textContent = '';
-        importFeedback.classList.remove('investment-import-feedback-error', 'investment-import-feedback-success');
+        importFeedback.setAttribute('hidden', '');
+        if (importFeedbackMessage) {
+            importFeedbackMessage.textContent = '';
+        } else {
+            importFeedback.textContent = '';
+        }
+        if (importFeedbackIcon) {
+            importFeedbackIcon.classList.remove('investment-import-feedback-banner-icon-error');
+            importFeedbackIcon.classList.remove('investment-import-feedback-banner-icon-success');
+            importFeedbackIcon.classList.add('icon-modal-dialog-banner-default');
+        }
     }
 
     function isLikelyCsvFile(file) {
@@ -309,8 +332,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         if (submitButton) {
-            submitButton.disabled = !importReady;
+            submitButton.disabled = !importReady || investmentImportInFlight;
         }
+    }
+
+    function openInvestmentImportForm() {
+        if (!toggleBtn || !formContainer || !toggleIcon) return;
+        if (investmentFormHideTimer) {
+            window.clearTimeout(investmentFormHideTimer);
+            investmentFormHideTimer = null;
+        }
+        clearImportFeedback();
+        formContainer.style.display = 'block';
+        syncInvestmentFormLayout();
+        setTimeout(() => {
+            formContainer.style.opacity = '1';
+            formContainer.style.transform = 'scale(1)';
+        }, 50);
+        toggleIcon.classList.add('is-minus');
+        toggleBtn.setAttribute('aria-label', 'Hide IBKR CSV import form');
+    }
+
+    function closeInvestmentImportForm() {
+        if (!toggleBtn || !formContainer || !toggleIcon) return;
+        if (investmentFormHideTimer) {
+            window.clearTimeout(investmentFormHideTimer);
+            investmentFormHideTimer = null;
+        }
+        clearImportFeedback();
+        formContainer.style.opacity = '0';
+        formContainer.style.transform = 'scale(0.98)';
+        investmentFormHideTimer = window.setTimeout(() => {
+            formContainer.style.display = 'none';
+            syncInvestmentFormLayout();
+            investmentFormHideTimer = null;
+        }, 400);
+        toggleIcon.classList.remove('is-minus');
+        toggleBtn.setAttribute('aria-label', 'Import IBKR CSV files');
+    }
+
+    async function fetchInvestmentData() {
+        const response = await fetch('/api/investment/transactions', { credentials: 'same-origin' });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.error || `Failed to load investment data: ${response.status}`);
+        }
+        window.ANTIGRAVITY_INVESTMENT_DATA = data;
+        await renderTransactionTable(data.transactions || []);
+        return data;
     }
 
     // Copy shared-select initialization from base.html
@@ -409,32 +478,9 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleBtn.addEventListener('click', () => {
             const isVisible = formContainer.style.display === 'block';
             if (isVisible) {
-                if (investmentFormHideTimer) {
-                    window.clearTimeout(investmentFormHideTimer);
-                    investmentFormHideTimer = null;
-                }
-                formContainer.style.opacity = '0';
-                formContainer.style.transform = 'scale(0.98)';
-                investmentFormHideTimer = window.setTimeout(() => {
-                    formContainer.style.display = 'none';
-                    syncInvestmentFormLayout();
-                    investmentFormHideTimer = null;
-                }, 400);
-                toggleIcon.classList.remove('is-minus');
-                toggleBtn.setAttribute('aria-label', 'Import IBKR CSV files');
+                closeInvestmentImportForm();
             } else {
-                if (investmentFormHideTimer) {
-                    window.clearTimeout(investmentFormHideTimer);
-                    investmentFormHideTimer = null;
-                }
-                formContainer.style.display = 'block';
-                syncInvestmentFormLayout();
-                setTimeout(() => {
-                    formContainer.style.opacity = '1';
-                    formContainer.style.transform = 'scale(1)';
-                }, 50);
-                toggleIcon.classList.add('is-minus');
-                toggleBtn.setAttribute('aria-label', 'Hide IBKR CSV import form');
+                openInvestmentImportForm();
             }
         });
 
@@ -564,18 +610,25 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('positions_csv', positionsFile);
 
             const submitButton = investmentForm.querySelector('button[type="submit"]');
+            investmentImportInFlight = true;
+            syncImportValidationState();
             if (submitButton) {
-                submitButton.disabled = true;
+                submitButton.classList.add('is-pending');
+                submitButton.textContent = 'Importing...';
             }
             fetch('/api/investment/transactions', {
                 method: 'POST',
                 body: formData,
             })
             .then(response => response.json())
-            .then(result => {
+            .then(async result => {
                 if (result.success) {
-                    setImportFeedback(result.message || 'Import complete.');
-                    window.location.reload();
+                    const freshnessNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
+                        ? ` Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.join(', ')}.`
+                        : '';
+                    setImportFeedback(`${result.message || 'Import complete.'}${freshnessNotice}`);
+                    await fetchInvestmentData();
+                    closeInvestmentImportForm();
                 } else {
                     setImportFeedback(result.error || 'Import failed.', true);
                 }
@@ -584,21 +637,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 setImportFeedback(`Network error: ${err.message}`, true);
             })
             .finally(() => {
+                investmentImportInFlight = false;
+                syncImportValidationState();
                 if (submitButton) {
-                    submitButton.disabled = false;
+                    submitButton.classList.remove('is-pending');
+                    submitButton.textContent = 'Import now';
                 }
             });
         });
     }
 
     // Load and render transactions
-    fetch('/api/investment/transactions')
-        .then(response => response.json())
-        .then(async data => {
-            // Save top-level data to global for starting_cash
-            window.ANTIGRAVITY_INVESTMENT_DATA = data;
-            await renderTransactionTable(data.transactions || []);
-        })
+    fetchInvestmentData()
         .catch(err => {
             console.error('Failed to load transactions:', err);
         });
@@ -714,6 +764,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return !['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType);
     }
 
+    // Code version: v0.2.0.1
+    function isFlatPosition(value) {
+        return !Number.isFinite(value) || Math.abs(value) < 1e-9;
+    }
+
+    function createPositionState(ticker) {
+        return {
+            ticker,
+            shares: 0,
+            totalCost: 0,
+            realizedPnl: 0,
+        };
+    }
+
+    function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
+        const quantity = quantityOverride ?? getTransactionQuantity(txn);
+        if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
+            const amount = getTransactionAmount(txn);
+            if (Number.isFinite(amount) && Math.abs(amount) > 1e-9) {
+                return Math.abs(amount) / quantity;
+            }
+        }
+        const price = getTransactionPrice(txn);
+        return Number.isFinite(price) ? price : 0;
+    }
+
+    function resetPositionState(state) {
+        state.shares = 0;
+        state.totalCost = 0;
+    }
+
+    function openPositionLots(state, side, quantity, unitPrice) {
+        if (!Number.isFinite(quantity) || quantity <= 0) return;
+        const signedQuantity = side === 'short' ? -quantity : quantity;
+        state.shares += signedQuantity;
+        state.totalCost += unitPrice * quantity;
+    }
+
+    function closePositionLots(state, quantity, unitPrice) {
+        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return;
+
+        const averagePrice = state.totalCost / Math.abs(state.shares);
+        const isLongPosition = state.shares > 0;
+
+        if (isLongPosition) {
+            state.realizedPnl += (unitPrice - averagePrice) * quantity;
+            state.shares -= quantity;
+        } else {
+            state.realizedPnl += (averagePrice - unitPrice) * quantity;
+            state.shares += quantity;
+        }
+
+        state.totalCost -= averagePrice * quantity;
+
+        if (isFlatPosition(state.shares) || isFlatPosition(state.totalCost)) {
+            resetPositionState(state);
+        }
+    }
+
+    function applyDirectionalTrade(state, side, quantity, unitPrice) {
+        if (!Number.isFinite(quantity) || quantity <= 0) return;
+
+        if (isFlatPosition(state.shares)) {
+            openPositionLots(state, side, quantity, unitPrice);
+            return;
+        }
+
+        const currentSide = state.shares > 0 ? 'long' : 'short';
+        if (currentSide === side) {
+            openPositionLots(state, side, quantity, unitPrice);
+            return;
+        }
+
+        const closingQuantity = Math.min(Math.abs(state.shares), quantity);
+        closePositionLots(state, closingQuantity, unitPrice);
+
+        const openingQuantity = quantity - closingQuantity;
+        if (openingQuantity > 1e-9) {
+            resetPositionState(state);
+            openPositionLots(state, side, openingQuantity, unitPrice);
+        }
+    }
+
     function getMoneyMarketTickerSet() {
         const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
         return new Set(
@@ -723,7 +856,15 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
-    function buildTickerSummaries(transactions, latestPrices, totalEquity) {
+    function getLatestTransactionHistoryEquity(processedTransactions) {
+        const latestRecord = Array.isArray(processedTransactions) && processedTransactions.length
+            ? processedTransactions[processedTransactions.length - 1]
+            : null;
+        const totalEquity = Number(latestRecord?.total_equity);
+        return Number.isFinite(totalEquity) ? totalEquity : 0;
+    }
+
+    function buildTickerSummaries(transactions, latestPrices, TOTAL_EQUITY) {
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -735,19 +876,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const amount = getTransactionAmount(txn);
 
             if (!tickerMap.has(ticker)) {
-                tickerMap.set(ticker, {
-                    ticker,
-                    shares: 0,
-                    totalCost: 0,
-                    realizedPnl: 0,
-                });
+                tickerMap.set(ticker, createPositionState(ticker));
             }
 
             const summary = tickerMap.get(ticker);
 
             if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                summary.totalCost += Math.abs(amount);
+                applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
                 return;
             }
 
@@ -765,14 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                const averagePrice = summary.shares > 0 ? summary.totalCost / summary.shares : 0;
-                summary.realizedPnl += amount - (averagePrice * quantity);
-                summary.totalCost -= averagePrice * quantity;
-                summary.shares -= quantity;
-                if (Math.abs(summary.shares) < 1e-9) {
-                    summary.shares = 0;
-                    summary.totalCost = 0;
-                }
+                applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
                 return;
             }
 
@@ -782,14 +910,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         return Array.from(tickerMap.values()).map((summary) => {
-            const hasOpenPosition = summary.shares > 0;
-            const averagePrice = hasOpenPosition ? (summary.totalCost / summary.shares) : null;
+            const hasOpenPosition = !isFlatPosition(summary.shares);
+            const averagePrice = hasOpenPosition ? (summary.totalCost / Math.abs(summary.shares)) : null;
             const lastPrice = latestPrices[summary.ticker] ?? null;
             const marketValue = hasOpenPosition && lastPrice !== null ? summary.shares * lastPrice : 0;
             const unrealizedPnl = hasOpenPosition && lastPrice !== null && averagePrice !== null
-                ? (lastPrice - averagePrice) * summary.shares
+                ? (summary.shares > 0
+                    ? (lastPrice - averagePrice) * summary.shares
+                    : (averagePrice - lastPrice) * Math.abs(summary.shares))
                 : null;
-            const positionWeight = totalEquity > 0 && marketValue > 0 ? (marketValue / totalEquity) * 100 : 0;
+            const positionWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9 && hasOpenPosition
+                ? (marketValue / TOTAL_EQUITY) * 100
+                : 0;
 
             return {
                 ...summary,
@@ -805,13 +937,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return left.hasOpenPosition ? -1 : 1;
             }
             if (left.hasOpenPosition && right.hasOpenPosition) {
-                return right.marketValue - left.marketValue;
+                return Math.abs(right.marketValue) - Math.abs(left.marketValue);
             }
             return left.ticker.localeCompare(right.ticker);
         });
     }
 
-    function renderHoldingsTable(summaries, tickerProfiles, totalEquity, totalCash) {
+    function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY, totalCash) {
         if (!summaries.length) {
             return `
                 <div class="investment-holdings-table-shell">
@@ -826,7 +958,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalRealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
         const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
-        const totalWeight = totalEquity > 0 ? Math.max(0, (1 - ((Number(totalCash) || 0) / totalEquity)) * 100) : 0;
+        const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        const totalWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9
+            ? (totalNetMarketValue / TOTAL_EQUITY) * 100
+            : 0;
         const totalRealizedClass = totalRealizedPnl >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
@@ -923,7 +1058,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tbody) return;
 
         if (!transactions.length) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--muted);">No transactions yet. Click + above to import your IBKR CSV files.</td></tr>`;
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="investment-history-empty-cell">
+                        <div class="investment-history-empty-state" role="status" aria-live="polite">
+                            <p class="investment-history-empty-title"><strong>Import your IBKR files to begin.</strong></p>
+                            <p class="investment-history-empty-step">➊ Click <span class="investment-inline-plus-icon" aria-hidden="true"></span> above to open the import panel.</p>
+                            <p class="investment-history-empty-step">➋ Upload your Transaction History CSV and Realized Summary CSV.</p>
+                            <p class="investment-history-empty-step">➌ Click Import now to rebuild this ledger and load the latest view.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
             return;
         }
 
@@ -979,8 +1125,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         moneyMarketAnchors[txn.ticker] = moneyMarketAnchors[txn.ticker] ?? price;
                     }
                     if (holdings[txn.ticker] <= 0) {
-                        delete holdings[txn.ticker];
                         delete moneyMarketAnchors[txn.ticker];
+                    }
+                    if (Math.abs(holdings[txn.ticker]) < 1e-9) {
+                        delete holdings[txn.ticker];
                     }
                 }
             }
@@ -1191,6 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, tickerClosePrices, rawTransactions) {
         const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
+        const TOTAL_EQUITY = getLatestTransactionHistoryEquity(processed);
 
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
@@ -1203,12 +1352,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get all original transactions from the processed array (processed is sorted ascending, contains all transactions)
         const originalTransactions = processed.map(p => ({date: p.date, type: p.type, amount: p.amount}));
         const totalDeposits = getTotalDeposits(originalTransactions);
-        const netProfit = last.total_equity - totalDeposits;
+        const netProfit = TOTAL_EQUITY - totalDeposits;
         const isPositive = netProfit >= 0;
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
-        const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, last.total_equity);
-        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, last.total_equity, last.running_cash);
+        const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
+        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY, last.running_cash);
         syncHoldingsStickyOffset(holdingsPanel);
 
         metricsPanel.innerHTML = `
@@ -1218,7 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Total Equity</span>
-                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(last.total_equity)}</span>
+                <span class="trade-metric-value" data-workspace-mask="trade-metric">${formatAmount(TOTAL_EQUITY)}</span>
             </div>
             <div class="trade-metric-card">
                 <span class="trade-metric-label">Net Profit/Loss</span>

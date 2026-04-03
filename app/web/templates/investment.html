@@ -108,7 +108,22 @@
                     </div>
                     </div>
                 </div>
-                <div id="investment_import_feedback" class="field-tooltip investment-import-feedback" hidden></div>
+                <div id="investment_import_feedback"
+                     class="notice notice-floating notice-floating-banner investment-import-feedback-banner"
+                     data-dismissible-notice
+                     role="status"
+                     aria-live="polite"
+                     aria-atomic="true"
+                     hidden>
+                    <button type="button" class="dismiss-button notice-close" aria-label="Dismiss import feedback">
+                        <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+                    </button>
+                    <span id="investment_import_feedback_icon"
+                          class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
+                          aria-hidden="true"></span>
+                    <span class="workspace-modal-title notice-floating-banner-title"
+                          id="investment_import_feedback_message"></span>
+                </div>
                 <section class="settings-action-package investment-import-action-package">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell" aria-hidden="true">
                         <span class="icon investment-import-action-icon"></span>
@@ -118,7 +133,7 @@
                         <p class="settings-service-note">Your original CSV files are processed in memory only, used to rebuild <code>settings_store/investment.json</code>, and discarded immediately after import.</p>
                     </div>
                     <div class="settings-action-package-form investment-form-actions">
-                        <button type="submit" class="settings-inline-button settings-inline-button-primary">Import now</button>
+                        <button type="submit" class="settings-inline-button settings-inline-button-primary" id="investment_import_submit_button">Import now</button>
                     </div>
                 </section>
             </form>

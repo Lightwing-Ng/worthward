@@ -596,17 +596,32 @@
             </form>
         </section>
         {% elif settings_section == "clear-caches" %}
-        <section class="settings-action-package settings-danger-option">
-            <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
-            <div class="settings-action-package-copy settings-callout-text settings-danger-text">
-                <p class="settings-service-name">Clear caches</p>
-                <p class="settings-service-note">This removes non-local search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
-            </div>
-            <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
-                <input type="hidden" name="section" value="clear-caches">
-                <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear caches</button>
-            </form>
-        </section>
+        <div class="settings-clear-caches-stack">
+            <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">Clear market data caches</p>
+                    <p class="settings-service-note">This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
+                </div>
+                <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
+                    <input type="hidden" name="section" value="clear-caches">
+                    <input type="hidden" name="action" value="market-data">
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear market data caches</button>
+                </form>
+            </section>
+            <section class="settings-action-package settings-danger-option">
+                <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
+                <div class="settings-action-package-copy settings-callout-text settings-danger-text">
+                    <p class="settings-service-name">Clear local broker transaction record</p>
+                    <p class="settings-service-note">This deletes <code>settings_store/investment.json</code> on this device, which removes the imported local broker transaction history shown in My investment.</p>
+                </div>
+                <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
+                    <input type="hidden" name="section" value="clear-caches">
+                    <input type="hidden" name="action" value="investment-transactions">
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear local broker transaction record</button>
+                </form>
+            </section>
+        </div>
         {% elif settings_section == "material-tokens" %}
         <div class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>

@@ -3213,10 +3213,16 @@
 					copy: "We are checking every cached ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
 					iconClass: "icon-overlay-local-cache",
 				});
+			} else if (actionInput?.value === "investment-transactions") {
+				showWorkspaceModal({
+					title: "Clearing local broker transaction record",
+					copy: "We are removing the imported local broker transaction history stored on this device. Please keep this page open while this finishes.",
+					iconClass: "icon-settings-clear-cache",
+				});
 			} else if (sectionInput?.value === "clear-caches") {
 				showWorkspaceModal({
-					title: "Clearing local caches",
-					copy: "We are removing privacy-sensitive usage records and non-local caches. Please keep this page open while this finishes.",
+					title: "Clearing local market data caches",
+					copy: "We are removing non-local market caches while keeping Local Market Store protected entries and ticker usage records. Please keep this page open while this finishes.",
 					iconClass: "icon-settings-clear-cache",
 				});
 			}

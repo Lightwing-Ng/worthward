@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1754,6 +1754,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+}
+
+.settings-clear-caches-stack {
+    display: grid;
+    gap: 10px;
+    width: min(100%, var(--settings-action-package-max-width));
+    max-width: 100%;
 }
 
 .settings-form-row,
