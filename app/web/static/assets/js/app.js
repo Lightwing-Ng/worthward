@@ -390,7 +390,7 @@
 								<span class="segmented-control-option"><span>${labels.backtest_transactions_tab}</span></span>
 							</div>
 							<div class="trade-detail-panel">
-								<div class="trade-metrics-grid">
+								<div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">
 									${tradeMetricLabels.map((label) => `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`).join("")}
 								</div>
 							</div>

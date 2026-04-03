@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.3.5 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -136,43 +136,7 @@
 }
 
 #investment_metrics_panel {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
-    gap: 8px;
-    align-content: start;
-    align-items: start;
-    justify-items: stretch;
-    padding: 2px 2px 14px;
     overflow: visible;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-#investment_metrics_panel::-webkit-scrollbar {
-    display: none;
-}
-
-#investment_metrics_panel .trade-metric-card {
-    width: 100%;
-}
-
-@media (min-width: 1200px) {
-    #investment_metrics_panel {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-}
-
-@media (min-width: 768px) and (max-width: 1199px) {
-    #investment_metrics_panel {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 767px) {
-    #investment_metrics_panel {
-        grid-template-columns: 1fr;
-    }
 }
 
 .scrollable-data-table-shell,
@@ -466,7 +430,7 @@
     height: auto;
     display: flex;
     flex-direction: column;
-    padding: 10px 10px calc(var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
+    padding: 10px 12px calc(var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
 }
 

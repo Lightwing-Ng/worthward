@@ -141,7 +141,7 @@
                 'data-trade-detail-shell data-active="metrics"'
             ) }}
             <div class="trade-detail-panel" data-trade-detail-panel="metrics">
-                <div class="trade-metrics-grid">
+                <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">
                     <div class="trade-metric-card"><span class="trade-metric-label">Initial capital</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(backtest_result.summary.initial_capital) }}</span></div>
                     <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span class="trade-metric-value" data-workspace-mask="trade-metric">${{ "{:,.2f}".format(backtest_result.summary.final_equity) }}</span></div>
                     <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.net_return_pct) }}%</span></div>

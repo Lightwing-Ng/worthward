@@ -146,7 +146,7 @@
 	--workspace-metrics-grid-auto-rows-wide: minmax(var(--workspace-metric-card-min-height), max-content);
 	--trade-chart-y-padding-px: 2px;
 	--investment-view-surface-padding: 32px 10px 10px 10px;
-	--investment-history-surface-padding: 10px 10px 10px 10px;
+	--investment-history-surface-padding: 10px 12px 20px 12px;
 	--app-shell-gap: 14px;
 	--control-glass-background: transparent;
 	--control-glass-background-hover: color-mix(in srgb, var(--theme-muted) 8%, transparent);

@@ -145,32 +145,64 @@
     align-content: flex-start;
     overflow-y: auto;
     overflow-x: hidden;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-.trade-metrics-grid:hover {
     scrollbar-width: thin;
     scrollbar-color: var(--muted) transparent;
+    scrollbar-gutter: stable;
+    -ms-overflow-style: auto;
 }
 
 .trade-metrics-grid::-webkit-scrollbar {
-    display: none;
     width: 4px;
 }
 
-.trade-metrics-grid:hover::-webkit-scrollbar {
-    display: block;
+.trade-metrics-grid::-webkit-scrollbar-track {
+    background: transparent;
 }
 
-.trade-metrics-grid:hover::-webkit-scrollbar-thumb {
+.trade-metrics-grid::-webkit-scrollbar-thumb {
     background: var(--muted);
     border-radius: 4px;
+}
+
+.trade-view-panel-grid {
+    margin-top: 12px;
+    min-height: 0;
+    height: auto;
+}
+
+.trade-metrics-panel-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
+    align-items: start;
+    justify-items: stretch;
+    padding-bottom: 14px;
+}
+
+.trade-metrics-panel-grid .trade-metric-card {
+    width: 100%;
 }
 
 @media (min-width: 768px) {
     .trade-metrics-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+    .trade-metrics-panel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1200px) {
+    .trade-metrics-panel-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px) {
+    .trade-metrics-panel-grid {
+        grid-template-columns: 1fr;
     }
 }
 
