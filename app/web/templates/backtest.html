@@ -150,25 +150,25 @@
                     <div class="trade-metric-card" title="Percentage of days/bars where strategy equity exceeded buy-and-hold value"><span class="trade-metric-label">Beat B&H</span><span class="trade-metric-value" data-workspace-mask="trade-metric">{{ "%.2f"|format(backtest_result.summary.beat_bh_pct) }}%</span></div>
                     <div class="trade-metric-card">
                         <span class="trade-metric-label">Alpha vs B&H</span>
-                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.benchmark_alpha >= 0 else '#ff2f92' }};">
+                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.benchmark_alpha >= 0 else 'var(--theme-accent-secondary)' }};">
                             {{ "+" if backtest_result.summary.benchmark_alpha >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.benchmark_alpha|abs) }}
                         </span>
                     </div>
                     <div class="trade-metric-card">
                         <span class="trade-metric-label">Realized long P&L</span>
-                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.long_gain >= 0 else '#ff2f92' }};">
+                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.long_gain >= 0 else 'var(--theme-accent-secondary)' }};">
                             {{ "+" if backtest_result.summary.long_gain >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.long_gain|abs) }}
                         </span>
                     </div>
                     <div class="trade-metric-card">
                         <span class="trade-metric-label">Realized short P&L</span>
-                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#2fff9c' if backtest_result.summary.short_gain >= 0 else '#ff2f92' }};">
+                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ 'var(--theme-accent-positive)' if backtest_result.summary.short_gain >= 0 else 'var(--theme-accent-secondary)' }};">
                             {{ "+" if backtest_result.summary.short_gain >= 0 else "-" }}${{ "{:,.2f}".format(backtest_result.summary.short_gain|abs) }}
                         </span>
                     </div>
                     <div class="trade-metric-card">
                         <span class="trade-metric-label">Realized long loss</span>
-                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ '#ff2f92' if backtest_result.summary.long_loss > 0 else '#2fff9c' }};">
+                        <span class="trade-metric-value" data-workspace-mask="trade-metric" style="color: {{ 'var(--theme-accent-secondary)' if backtest_result.summary.long_loss > 0 else 'var(--theme-accent-positive)' }};">
                             {{ "-" if backtest_result.summary.long_loss > 0 else "+" }}${{ "{:,.2f}".format(backtest_result.summary.long_loss|abs) }}
                         </span>
                     </div>

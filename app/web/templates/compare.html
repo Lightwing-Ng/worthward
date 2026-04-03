@@ -23,7 +23,7 @@
                 <p class="report-value">
                     <span data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ "%.2f"|format(item.ending_return) }}%</span>
                     {% if item.is_winner %}
-                    <img class="winner-badge" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="{{ labels.winner_alt }}">
+                    <span class="winner-badge" role="img" aria-label="{{ labels.winner_alt }}"></span>
                     {% endif %}
                 </p>
             </section>

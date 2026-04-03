@@ -572,7 +572,7 @@
                             {% if broker_test_status and broker_test_message %}
                             <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite">
                                 {% if broker_test_status == 'success' %}
-                                <img class="settings-broker-test-feedback-icon" src="{{ url_for('static', filename='images/checkmark.circle.fill.green.svg') }}" alt="" aria-hidden="true">
+                                <span class="settings-broker-test-feedback-icon" aria-hidden="true"></span>
                                 {% endif %}
                                 <span>{{ broker_test_message }}{% if broker_test_checked_at %} Tested at {{ broker_test_checked_at }}.{% endif %}</span>
                             </p>

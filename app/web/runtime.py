@@ -1178,10 +1178,10 @@ def build_web_runtime() -> WebRuntime:
                 "sample_icon_shell_class": "",
                 "sample_rows": [
                     {"label": "Close", "value": "44.38", "color": "var(--accent-fill)"},
-                    {"label": "Net return", "value": "3.34%", "color": "#2fff9c"},
-                    {"label": "Equity", "value": "10,333.71", "color": "#111827"},
-                    {"label": "If all in", "value": "9,840.88", "color": "#8e8e93"},
-                    {"label": "vs all in", "value": "+492.83", "color": "#2fff9c"},
+                    {"label": "Net return", "value": "3.34%", "color": "var(--theme-accent-positive)"},
+                    {"label": "Equity", "value": "10,333.71", "color": "var(--theme-text)"},
+                    {"label": "If all in", "value": "9,840.88", "color": "var(--theme-muted)"},
+                    {"label": "vs all in", "value": "+492.83", "color": "var(--theme-accent-positive)"},
                 ],
                 "tokens": [
                     material_reference_token("--tooltip-background", "Frosted glass extracted"),

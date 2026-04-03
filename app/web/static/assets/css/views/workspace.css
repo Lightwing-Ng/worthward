@@ -388,6 +388,9 @@
     height: 16px;
     display: inline-block;
     flex: 0 0 16px;
+    background-color: var(--theme-accent-positive);
+    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
 }
 
 .suggestions {

@@ -216,6 +216,10 @@
     height: 16px;
     flex: 0 0 auto;
     margin-top: 1px;
+    display: inline-block;
+    background-color: var(--theme-accent-positive);
+    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
 }
 
 .style-token-shell {
