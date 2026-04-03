@@ -40,14 +40,16 @@
             <div class="report-heading-row">
                 <p class="report-heading">Investment</p>
             </div>
-
             <div class="investment-surface-stack">
-                <article class="chart-surface investment-view-surface" id="investment_view_surface" data-active-view="chart">
-                    <button type="button" class="export-transactions-button" id="export_transactions_button" aria-label="Export Transactions" title="Export Transactions" hidden>
-                        <span class="icon" style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
-                    </button>
-                    <div class="investment-view-segmented-wrap">
-                        {{ render_segmented_control(
+                <button type="button" class="export-transactions-button" id="export_transactions_button"
+                        aria-label="Export Transactions" title="Export Transactions" hidden>
+                        <span class="icon"
+                              style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);">
+
+                        </span>
+                </button>
+                <div class="investment-view-segmented-wrap">
+                    {{ render_segmented_control(
                             "segmented-control--compact investment-view-segmented",
                             "investment_view_tab",
                             "chart",
@@ -58,19 +60,22 @@
                             ],
                             'id="investment_view_segmented" data-active="chart" data-option-count="3"'
                         ) }}
-                    </div>
-                    <div class="investment-view-surface-body" id="investment_view_surface_body">
-                        <div id="investment_chart_panel" data-investment-view-panel="chart">
-                            <div class="chart-heading-row"><p class="chart-heading investment-section-heading">
-                                Equity curve</p></div>
-                            <div class="trade-chart-stack investment-chart-stack">
-                                <div id="investment_equity_chart" class="investment-equity-chart"></div>
-                            </div>
+                </div>
+                <div class="investment-view-surface-body" id="investment_view_surface_body">
+                    <div id="investment_chart_panel" data-investment-view-panel="chart">
+                        <div class="chart-heading-row"><p class="chart-heading investment-section-heading">
+                            Equity curve</p></div>
+                        <div class="trade-chart-stack investment-chart-stack">
+                            <div id="investment_equity_chart" class="investment-equity-chart"></div>
                         </div>
-                        <div class="trade-metrics-grid investment-view-panel-grid" id="investment_holdings_panel" data-investment-view-panel="holdings" hidden></div>
-                        <div class="trade-metrics-grid investment-view-panel-grid" id="investment_metrics_panel" data-investment-view-panel="metrics" hidden></div>
                     </div>
-                </article>
+                    <div class="trade-metrics-grid investment-view-panel-grid" id="investment_holdings_panel"
+                         data-investment-view-panel="holdings" hidden></div>
+                    <div class="trade-metrics-grid investment-view-panel-grid" id="investment_metrics_panel"
+                         data-investment-view-panel="metrics" hidden></div>
+                </div>
+
+
             </div>
         </article>
 
@@ -83,17 +88,21 @@
                 </button>
             </div>
             <section id="transaction_form_container" class="investment-form-container">
-                <form class="controls trade-controls investment-form investment-import-form" id="investment_form" enctype="multipart/form-data">
+                <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
+                      enctype="multipart/form-data">
                     <div class="investment-import-stack">
                         <p class="investment-import-title">Import IBKR CSV files.</p>
                         <div class="investment-import-field-group">
-                        <div class="investment-import-field" data-import-field="transactions">
-                            <label class="trade-strategy-param-label" for="transactions_csv">
-                                <span class="trade-strategy-param-label-trigger investment-import-label-trigger" tabindex="0">
+                            <div class="investment-import-field" data-import-field="transactions">
+                                <label class="trade-strategy-param-label" for="transactions_csv">
+                                <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                      tabindex="0">
                                     <span class="investment-import-help-icon" aria-hidden="true"></span>
                                     <span>Transaction History CSV</span>
-                                    <span class="investment-import-status-icon" id="transactions_csv_status" aria-hidden="true"></span>
-                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help" role="tooltip">
+                                    <span class="investment-import-status-icon" id="transactions_csv_status"
+                                          aria-hidden="true"></span>
+                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                          role="tooltip">
                                         <span class="investment-import-help-title">How to download this file in IBKR</span>
                                         <span class="investment-import-help-step">🄌 Sign in to IBKR Client Portal.</span>
                                         <span class="investment-import-help-step">➊ Open Performance &amp; Reports > Transaction History.</span>
@@ -103,16 +112,20 @@
                                         <span class="investment-import-help-step">➎ Upload that CSV here.</span>
                                     </span>
                                 </span>
-                            </label>
-                            <input id="transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv" class="settings-form-control investment-import-file-input" required>
-                        </div>
-                        <div class="investment-import-field" data-import-field="positions">
-                            <label class="trade-strategy-param-label" for="positions_csv">
-                                <span class="trade-strategy-param-label-trigger investment-import-label-trigger" tabindex="0">
+                                </label>
+                                <input id="transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv"
+                                       class="settings-form-control investment-import-file-input" required>
+                            </div>
+                            <div class="investment-import-field" data-import-field="positions">
+                                <label class="trade-strategy-param-label" for="positions_csv">
+                                <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                      tabindex="0">
                                     <span class="investment-import-help-icon" aria-hidden="true"></span>
                                     <span>Realized Summary CSV</span>
-                                    <span class="investment-import-status-icon" id="positions_csv_status" aria-hidden="true"></span>
-                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help" role="tooltip">
+                                    <span class="investment-import-status-icon" id="positions_csv_status"
+                                          aria-hidden="true"></span>
+                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                          role="tooltip">
                                         <span class="investment-import-help-title">How to download this file in IBKR</span>
                                         <span class="investment-import-help-step">🄌 Sign in to IBKR Client Portal.</span>
                                         <span class="investment-import-help-step">➊ Open Performance &amp; Reports > Statements.</span>
@@ -123,9 +136,10 @@
                                         <span class="investment-import-help-step">➏ Upload that CSV here.</span>
                                     </span>
                                 </span>
-                            </label>
-                            <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv" class="settings-form-control investment-import-file-input" required>
-                        </div>
+                                </label>
+                                <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
+                                       class="settings-form-control investment-import-file-input" required>
+                            </div>
                         </div>
                     </div>
                     <section class="settings-action-package investment-import-action-package">
@@ -134,17 +148,22 @@
                         </span>
                         <div class="settings-action-package-copy">
                             <p class="settings-service-name">Import investment data</p>
-                            <p class="settings-service-note">Your original CSV files are processed in memory only, used to rebuild <code>settings_store/investment.json</code>, and discarded immediately after import.</p>
+                            <p class="settings-service-note">Your original CSV files are processed in memory only, used
+                                to rebuild <code>settings_store/investment.json</code>, and discarded immediately after
+                                import.</p>
                         </div>
                         <div class="settings-action-package-form">
-                            <button type="submit" class="settings-inline-button settings-inline-button-primary" id="investment_import_submit_button">Import now</button>
+                            <button type="submit" class="settings-inline-button settings-inline-button-primary"
+                                    id="investment_import_submit_button">Import now
+                            </button>
                         </div>
                     </section>
                 </form>
             </section>
 
             <div class="scrollable-data-table-shell investment-history-table-shell" id="history_table_wrap">
-                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table" aria-hidden="true">
+                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table"
+                       aria-hidden="true">
                     <thead>
                     <tr>
                         <th>No.</th>
@@ -161,7 +180,8 @@
                     </thead>
                 </table>
                 <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll">
-                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table" id="transactionTable">
+                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table"
+                           id="transactionTable">
                         <tbody id="investment_history" class="investment-history-table-body">
                         </tbody>
                     </table>
