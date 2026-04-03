@@ -372,10 +372,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return tableLines.join('\n');
     }
 
+    function formatInvestmentExportDate(rawDate) {
+        const match = String(rawDate || '').match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+        if (!match) return String(rawDate || '').trim();
+        const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const year = Number(match[1]);
+        const monthIndex = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        return `${day} ${monthAbbreviations[monthIndex] || ''} ${year}`.trim();
+    }
+
     function buildExportDateRange(transactions) {
         const rawDates = Array.isArray(transactions)
             ? transactions
-                .map((txn) => String(txn?.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.slice(1).join('') || '')
+                .map((txn) => String(txn?.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.slice(1).join('-') || '')
                 .filter(Boolean)
             : [];
         if (!rawDates.length) {
@@ -383,11 +393,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const year = `${today.getFullYear()}`;
             const month = `${today.getMonth() + 1}`.padStart(2, '0');
             const day = `${today.getDate()}`.padStart(2, '0');
-            const fallback = `${year}${month}${day}`;
+            const fallback = `${year}-${month}-${day}`;
             return { start: fallback, end: fallback };
         }
         const sortedDates = [...rawDates].sort();
         return { start: sortedDates[0], end: sortedDates[sortedDates.length - 1] };
+    }
+
+    function buildInvestmentMetricsMarkdown(transactions) {
+        const fundingMetrics = getUsdFundingMetrics(Array.isArray(transactions) ? transactions : []);
+        const metrics = [
+            ['Direct deposits', fundingMetrics.directUsdDeposits],
+            ['Net USD converted', fundingMetrics.netUsdConverted],
+            ['FX funding loss', fundingMetrics.fxFundingLoss],
+            ['Final investable USD', fundingMetrics.finalInvestableUsd],
+        ];
+        return metrics
+            .map(([label, value]) => `**${label}:** ${formatAmount(value)}`)
+            .join('\n');
     }
 
     function guessInvestmentExportDescription(transactions, holdingsTableMarkdown) {
@@ -462,14 +485,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const transactions = window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [];
         const dateRange = buildExportDateRange(transactions);
         const title = guessInvestmentExportDescription(transactions, holdingsMarkdown);
+        const metricsMarkdown = buildInvestmentMetricsMarkdown(transactions);
+        const formattedRange = `${formatInvestmentExportDate(dateRange.start)} - ${formatInvestmentExportDate(dateRange.end)}`;
         const markdown = [
             `# ${title}`,
             '',
-            `Export range: ${dateRange.start} - ${dateRange.end}`,
+            `**Range:** ${formattedRange}`,
             '',
             '## Holdings',
             '',
             holdingsMarkdown,
+            '',
+            '## Metrics',
+            '',
+            metricsMarkdown,
             '',
             '## Transaction history',
             '',

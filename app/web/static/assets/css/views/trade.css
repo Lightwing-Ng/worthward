@@ -54,36 +54,41 @@
     position: absolute;
     top: 10px;
     right: 10px;
-    width: 28px;
-    height: 28px;
+    width: var(--settings-round-icon-button-size);
+    height: var(--settings-round-icon-button-size);
     padding: 0;
-    border-radius: 50%;
+    border-radius: var(--settings-round-icon-button-radius);
     border: 0;
-    background: var(--glass-surface-background-dense);
-    color: var(--accent-text);
+    background: var(--settings-round-icon-button-background);
+    box-shadow: var(--settings-round-icon-button-shadow);
+    backdrop-filter: var(--glass-chip-blur);
+    -webkit-backdrop-filter: var(--glass-chip-blur);
+    color: var(--settings-round-icon-button-color);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 28px;
-    min-height: 28px;
+    min-width: var(--settings-round-icon-button-size);
+    min-height: var(--settings-round-icon-button-size);
     flex-shrink: 0;
     cursor: pointer;
     z-index: var(--layer-surface-content);
-    transition: background 180ms var(--motion-standard), transform 180ms var(--motion-standard);
+    transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard), transform 460ms var(--motion-press);
 }
 
-.export-transactions-button:hover {
-    background: var(--glass-chip-background-hover);
-    transform: translateY(-1px);
+.export-transactions-button:hover,
+.export-transactions-button:focus-visible {
+    background: var(--settings-round-icon-button-background-hover);
+    color: var(--settings-round-icon-button-color-hover);
+    box-shadow: var(--settings-round-icon-button-shadow-hover);
 }
 
 .export-transactions-button:active {
-    transform: translateY(0);
+    box-shadow: var(--settings-round-icon-button-shadow-active);
 }
 
 .export-transactions-button .icon {
-    width: 16px;
-    height: 16px;
+    width: var(--settings-round-icon-button-icon-size);
+    height: var(--settings-round-icon-button-icon-size);
     background-color: currentColor;
     mask-repeat: no-repeat;
     -webkit-mask-repeat: no-repeat;

@@ -168,7 +168,7 @@
 	--glass-surface-background: var(--theme-glass-surface-background);
 	--glass-surface-background-strong: var(--theme-glass-surface-background-strong);
 	--glass-surface-background-dense: var(--theme-glass-surface-background-dense);
-	--glass-surface-border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 26%, transparent);
+	--glass-surface-border: 0px solid transparent;
 	--glass-surface-shadow: 0 18px 40px var(--theme-shadow-ambient);
 	--glass-surface-blur: saturate(180%) blur(24px);
 	--glass-chip-background: var(--theme-glass-chip-background);
