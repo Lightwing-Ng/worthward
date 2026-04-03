@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.infrastructure.storage import (
     load_profile_record,
     load_search_cache_items,
     logo_store_path_for,
+    normalize_ticker,
     store_search_cache_items,
     top_used_tickers,
     upsert_profile_record,
@@ -68,7 +69,7 @@ def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None
 
 
 def normalize_ticker_input(raw_ticker: str) -> str:
-    return raw_ticker.strip().upper()
+    return normalize_ticker(raw_ticker)
 
 
 def has_valid_ticker_format(ticker: str) -> bool:
@@ -236,9 +237,35 @@ def extract_domain(website: str | None) -> str | None:
     return domain or None
 
 
+def build_logo_provider_ticker_candidates(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker_input(ticker)
+    if not normalized_ticker:
+        return []
+
+    candidates: list[str] = []
+
+    def add_candidate(value: str) -> None:
+        candidate = str(value or "").strip().upper()
+        if not candidate or candidate in candidates:
+            return
+        candidates.append(candidate)
+
+    add_candidate(normalized_ticker)
+    compacted = re.sub(r"\s+", " ", normalized_ticker)
+    add_candidate(compacted.replace("-", "."))
+    add_candidate(compacted.replace("-", " "))
+    add_candidate(compacted.replace(" ", "-"))
+    add_candidate(compacted.replace(" ", "."))
+    add_candidate(compacted.replace("/", "-"))
+    add_candidate(compacted.replace("/", "."))
+    add_candidate(compacted.replace("/", " "))
+    return candidates
+
+
 def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | None:
     providers = [
-        f"https://eodhd.com/img/logos/US/{ticker.upper()}.png",
+        f"https://eodhd.com/img/logos/US/{provider_ticker}.png"
+        for provider_ticker in build_logo_provider_ticker_candidates(ticker)
     ]
     if domain:
         providers.extend([

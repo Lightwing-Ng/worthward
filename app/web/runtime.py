@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.3
+Code version: v0.3.4
 """
 
 from __future__ import annotations
@@ -3126,6 +3126,10 @@ def build_web_runtime() -> WebRuntime:
                     if has_logo_asset(raw_ticker):
                         logo_path = logo_store_path_for(raw_ticker)
                         logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+                    else:
+                        profile = fetch_quote_profile(raw_ticker, force_refresh=False)
+                        company_name = str(profile.company_name or company_name).strip() or raw_ticker
+                        logo_url = str(profile.logo_url or "").strip()
                     if company_name == raw_ticker:
                         inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
                         if inferred_money_market_name:

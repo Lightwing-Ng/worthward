@@ -18,6 +18,23 @@
 {% endblock %}
 
 {% block workspace_content %}
+    <div id="investment_import_feedback"
+         class="notice notice-floating notice-floating-banner notice-floating-banner-global investment-import-feedback-banner"
+         data-dismissible-notice
+         role="status"
+         aria-live="polite"
+         aria-atomic="true"
+         hidden>
+        <button type="button" class="dismiss-button notice-close" aria-label="Dismiss import feedback">
+            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+        </button>
+        <span id="investment_import_feedback_icon"
+              class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
+              aria-hidden="true"></span>
+        <span class="workspace-modal-title notice-floating-banner-title"
+              id="investment_import_feedback_message"></span>
+    </div>
+
     <div class="workspace-header">
         <article class="report-card trade-performance-card investment-report-card">
             <button type="button" class="export-transactions-button" id="export_transactions_button" aria-label="Export Transactions" title="Export Transactions" hidden>
@@ -110,22 +127,6 @@
                         <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv" class="settings-form-control investment-import-file-input" required>
                     </div>
                     </div>
-                </div>
-                <div id="investment_import_feedback"
-                     class="notice notice-floating notice-floating-banner investment-import-feedback-banner"
-                     data-dismissible-notice
-                     role="status"
-                     aria-live="polite"
-                     aria-atomic="true"
-                     hidden>
-                    <button type="button" class="dismiss-button notice-close" aria-label="Dismiss import feedback">
-                        <span class="icon icon-dismiss-control" aria-hidden="true"></span>
-                    </button>
-                    <span id="investment_import_feedback_icon"
-                          class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
-                          aria-hidden="true"></span>
-                    <span class="workspace-modal-title notice-floating-banner-title"
-                          id="investment_import_feedback_message"></span>
                 </div>
                 <section class="settings-action-package investment-import-action-package">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell" aria-hidden="true">

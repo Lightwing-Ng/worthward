@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.22.0
+ * Code version: v1.23.1
+ * - Fixed: Holdings now keep a stable logo slot, so missing or failed ticker logos no longer break row alignment
+ * - Fixed: Investment transaction payload now retries profile-based logo resolution when a local logo asset is missing
+ * - Updated: Import feedback now appears as a top floating modal-banner notice with iOS-style drop-in motion
+ * - Fixed: Import feedback copy no longer repeats the success prefix returned by the backend
  * - Updated: Investment segmented control now shows "Charts"
  * - Added: Export the Holdings and Transaction history tables as a Markdown download from the page header
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
@@ -37,6 +41,10 @@
  * - Added: Import feedback now spells out that the server discards raw CSV files after in-memory processing
  * - Improved: Empty transaction history now shows a compact guided import state with inline plus icon and width protection
  * - Updated: Import feedback now uses the standard modal dialog banner message token instead of the legacy modal dialog block
+ * - Fixed: IBKR deposit rows no longer invent a USD currency when the CSV does not prove one
+ * - Fixed: Forex Trade Component rows now render a precise English description and show the destination currency
+ * - Refined: Deposit rows now describe the amount as a USD-equivalent credit when the source CSV only proves the base value
+ * - Refined: Forex Trade Component rows now use compact trade-style wording and always display the acquired currency
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -271,11 +279,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setImportFeedback(message, isError = false) {
         if (!importFeedback) return;
+        importFeedback.hidden = true;
+        importFeedback.style.animation = 'none';
+        void importFeedback.offsetWidth;
+        importFeedback.style.animation = '';
         importFeedback.removeAttribute('hidden');
         if (importFeedbackMessage) {
-            importFeedbackMessage.textContent = isError
-                ? `Import failed: ${message}`
-                : `Import complete: ${message}`;
+            importFeedbackMessage.textContent = String(message || '').trim() || (isError ? 'Import failed.' : 'Import complete.');
         } else {
             importFeedback.textContent = message;
         }
@@ -522,7 +532,6 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clearTimeout(investmentFormHideTimer);
             investmentFormHideTimer = null;
         }
-        clearImportFeedback();
         formContainer.style.opacity = '0';
         formContainer.style.transform = 'scale(0.98)';
         investmentFormHideTimer = window.setTimeout(() => {
@@ -876,6 +885,64 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    function formatTransactionCurrency(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'forex_trade_component') {
+            const forexPair = String(txn?.ticker || '').trim();
+            const [baseCurrency] = forexPair.split('.');
+            return baseCurrency || '';
+        }
+
+        const explicitCurrency = String(txn?.currency || '').trim();
+        if (explicitCurrency) return explicitCurrency;
+
+        return '';
+    }
+
+    function formatForexTradeComponentDescription(txn) {
+        const forexPair = String(txn?.ticker || '').trim();
+        const [baseCurrency, quoteCurrency] = forexPair.split('.');
+        const quantity = getTransactionQuantity(txn);
+        const rate = getTransactionPrice(txn);
+
+        if (!baseCurrency || !quoteCurrency || !Number.isFinite(quantity) || !Number.isFinite(rate)) {
+            return txn.description || '--';
+        }
+
+        const quantityText = Number.isInteger(quantity) ? `${quantity}` : String(txn.quantity_raw ?? txn.quantity_abs ?? txn.normalized?.display_quantity ?? quantity);
+        const rateText = String(txn.price_raw ?? txn.normalized?.unit_price ?? rate);
+        return `Bought ${quantityText} ${baseCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
+    }
+
+    function formatTransactionDescription(txn) {
+        let description;
+        let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
+        const price = txn.normalized?.unit_price ?? txn.price;
+        const normalizedTypeDesc = getNormalizedTransactionType(txn);
+
+        if (normalizedTypeDesc === 'forex_trade_component') {
+            return formatForexTradeComponentDescription(txn);
+        }
+
+        if (txn.ticker && qty) {
+            const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty, 10)) : qty;
+            if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
+                const cleanPrice = Number(price).toFixed(2);
+                description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
+            } else {
+                description = `${txn.ticker}@${cleanQty}`;
+            }
+        } else if (normalizedTypeDesc === 'deposit') {
+            description = 'USD equivalent deposit';
+        } else if (normalizedTypeDesc === 'withdrawal') {
+            description = '';
+        } else {
+            description = txn.description || '--';
+        }
+
+        return description;
+    }
+
     function formatHoldingsMoney(value, {dashWhenZero = false} = {}) {
         if (value === null || value === undefined || Number.isNaN(value)) return '-';
         if (dashWhenZero && Math.abs(value) < 1e-9) return '-';
@@ -1159,7 +1226,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
                         <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
-                            ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async">` : `<span class="investment-holdings-ticker-logo-placeholder" aria-hidden="true"></span>`}
+                            <span class="suggestion-logo-slot investment-holdings-ticker-logo-slot" aria-hidden="true">
+                                <span class="suggestion-logo-placeholder investment-holdings-ticker-logo-placeholder"></span>
+                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async" onerror="this.remove()">` : ``}
+                            </span>
                             <span class="timing-suggestion-copy investment-holdings-ticker-copy">
                                 <span class="suggestion-symbol timing-suggestion-symbol investment-holdings-ticker-symbol">${escapeHtml(summary.ticker)}</span>
                                 <span class="suggestion-name timing-suggestion-name investment-holdings-ticker-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
@@ -1425,31 +1495,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Render reverse chronological (newest first)
         tbody.innerHTML = [...processed].reverse().map((txn, index) => {
-            // Format description: for transactions with ticker & quantity, use TICKER@quantity format
-            let description;
-            // Get quantity: check top-level first, then quantity_abs, then normalized.display_quantity (IBKR imported format)
-            let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
-            // Get price: check normalized.unit_price first then top-level
-            const price = txn.normalized?.unit_price ?? txn.price;
-            // Normalize type for checking buy/sell (already normalized in processing, but keep for safety)
-            const normalizedTypeDesc = txn.type.replace(/\s+/g, '_').toLowerCase();
-            if (txn.ticker && qty) {
-                // Remove trailing .0 if integer for cleaner display
-                const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty)) : qty;
-                // For buy/sell, format as "TICKER @ PRICE × QTY"
-                if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
-                    // Format price to 2 decimal places
-                    const cleanPrice = Number(price).toFixed(2);
-                    description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
-                } else {
-                    // For other types (dividend reinvestment, etc.), keep original TICKER@QTY format
-                    description = `${txn.ticker}@${cleanQty}`;
-                }
-            } else if (txn.type === 'deposit' || txn.type === 'withdrawal') {
-                description = '';
-            } else {
-                description = txn.description || '--';
-            }
+            const description = formatTransactionDescription(txn);
 
             // Format time: if time is exactly 20:00:00 (EOD), hide it to show only date
             let formattedTime = txn.date ? txn.date.replace(/-/g, '/') : '';
@@ -1489,7 +1535,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td style="text-align: right; padding: 2px 1px;">${formattedTime}</td>
                 <td style="text-align: center; padding: 2px 1px;">${formatEventType(txn.type)}</td>
                 <td style="text-align: left; padding: 2px 1px;">${description}</td>
-                <td style="text-align: center; padding: 2px 1px;">${txn.currency || 'USD'}</td>
+                <td style="text-align: center; padding: 2px 1px;">${formatTransactionCurrency(txn)}</td>
                 <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.display_amount)}</td>
                 <td style="text-align: right; padding: 2px 1px;">${commissionDisplay}</td>
                 <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.market_value)}</td>

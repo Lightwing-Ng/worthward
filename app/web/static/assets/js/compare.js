@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -65,22 +65,9 @@
 	bootstrap.applyComparePendingState = () => {
 		const workspacePanel = document.getElementById("workspace_panel");
 		if (!workspacePanel) return;
-		const summaryRegion = document.getElementById("compare_summary_region");
-		const chartRegion = document.getElementById("compare_chart_region");
-		const chartMaskNode = chartRegion?.querySelector('[data-workspace-mask="chart-area"]');
-
-		if (summaryRegion) {
-			Array.from(summaryRegion.querySelectorAll(".performance-item")).forEach((item) => {
-				item.classList.add("is-pending-card");
-				item.querySelectorAll(".winner-badge").forEach((badge) => badge.remove());
-				const companyNode = item.querySelector(".report-company");
-				const returnNode = item.querySelector('[data-workspace-mask="compare-return"]');
-				if (companyNode) companyNode.classList.add("is-pending-value");
-				if (returnNode) returnNode.classList.add("is-pending-value");
-			});
-		}
-		if (chartMaskNode) chartMaskNode.classList.add("is-pending-value");
-		workspacePanel.dataset.workspacePending = "1";
+		workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
+		workspacePanel.querySelectorAll(".is-pending-card").forEach((node) => node.classList.remove("is-pending-card"));
+		delete workspacePanel.dataset.workspacePending;
 	};
 
 	bootstrap.hydrateCompareWorkspace = ({ doc, replaceDomRegion } = {}) => {

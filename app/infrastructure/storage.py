@@ -7,6 +7,7 @@ Code version: v0.3.0
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ except ImportError:
 import pandas as pd
 
 from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
+from app.core.settings import get_settings
 
 INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
@@ -70,10 +72,47 @@ def _ensure_market_store_directories() -> None:
             SEARCH_STORE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
+    _migrate_legacy_store_filenames()
+
+
+def _canonicalize_ticker_token(value: str) -> str:
+    normalized = re.sub(r"\s+", "-", str(value or "").strip().upper())
+    normalized = re.sub(r"-{2,}", "-", normalized)
+    return normalized
+
+
+def _migrate_store_filenames(directory: Path, pattern: str) -> None:
+    for path in directory.glob(pattern):
+        if not path.is_file():
+            continue
+        normalized_name = re.sub(r"\s+", "-", path.name)
+        if normalized_name == path.name:
+            continue
+        target = path.with_name(normalized_name)
+        if target.exists():
+            path.unlink()
+            continue
+        path.rename(target)
+
+
+def _migrate_legacy_store_filenames() -> None:
+    global _MIGRATION_COMPLETED, _MIGRATION_RUNNING
+    if _MIGRATION_COMPLETED:
+        return
+    with _MIGRATION_LOCK:
+        if _MIGRATION_COMPLETED or _MIGRATION_RUNNING:
+            return
+        _MIGRATION_RUNNING = True
+        try:
+            _migrate_store_filenames(HISTORICAL_STORE_DIR, "*.parquet")
+            _migrate_store_filenames(LOGOS_STORE_DIR, "*.png")
+            _MIGRATION_COMPLETED = True
+        finally:
+            _MIGRATION_RUNNING = False
 
 
 def normalize_ticker(ticker: str) -> str:
-    return ticker.upper().replace("/", "_")
+    return _canonicalize_ticker_token(ticker).replace("/", "_")
 
 
 def history_store_path_for(ticker: str) -> Path:
@@ -101,7 +140,7 @@ def search_store_path_for(query: str) -> Path:
 
 
 def ticker_from_store_path(path: Path) -> str:
-    return path.stem.replace("_", "/").upper()
+    return normalize_ticker(path.stem.replace("_", "/"))
 
 
 def _empty_frame(columns: list[str]) -> pd.DataFrame:
@@ -244,7 +283,7 @@ def _load_profiles_table() -> pd.DataFrame:
 def _save_profiles_table(table: pd.DataFrame) -> None:
     normalized = table.copy()
     if not normalized.empty:
-        normalized["ticker"] = normalized["ticker"].astype(str).str.upper()
+        normalized["ticker"] = normalized["ticker"].map(normalize_ticker)
         normalized["storage_scope"] = normalized["storage_scope"].map(_normalize_profile_scope)
         normalized["tradingview_screener"] = normalized["tradingview_screener"].map(_normalize_tradingview_screener)
         normalized["tradingview_exchange"] = normalized["tradingview_exchange"].map(_normalize_tradingview_exchange)
@@ -349,8 +388,8 @@ def _load_search_cache_table() -> pd.DataFrame:
 def _save_search_cache_table(table: pd.DataFrame) -> None:
     normalized = table.copy()
     if not normalized.empty:
-        normalized["query"] = normalized["query"].astype(str).str.upper()
-        normalized["symbol"] = normalized["symbol"].astype(str).str.upper()
+        normalized["query"] = normalized["query"].map(normalize_ticker)
+        normalized["symbol"] = normalized["symbol"].map(normalize_ticker)
         normalized = normalized.sort_values(["query", "symbol", "updated_at"], ascending=[True, True, False])
         normalized = normalized.drop_duplicates(subset=["query", "symbol"], keep="first")
     _write_parquet_table(SEARCH_CACHE_PARQUET_PATH, normalized, _SEARCH_CACHE_COLUMNS)
@@ -538,6 +577,17 @@ def top_used_strategies(limit: int = 3) -> list[str]:
 def clear_nonhistorical_market_cache() -> dict[str, int]:
     ensure_market_store_dir()
     protected_tickers = {normalize_ticker(ticker) for ticker in list_historical_tickers()}
+    investment_settings = get_settings().get("investment", {})
+    money_market_settings = (
+        investment_settings.get("money_market_funds", {})
+        if isinstance(investment_settings, dict) and isinstance(investment_settings.get("money_market_funds"), dict)
+        else {}
+    )
+    protected_tickers.update(
+        normalize_ticker(str(ticker))
+        for ticker in money_market_settings.get("tickers", [])
+        if str(ticker).strip()
+    )
     with _parquet_table_lock(PROFILES_PARQUET_PATH), _parquet_table_lock(SEARCH_CACHE_PARQUET_PATH):
         search_cache_table = _load_search_cache_table()
         kept_queries: set[str] = set()

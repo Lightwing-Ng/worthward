@@ -234,17 +234,19 @@
     border-radius: 0;
 }
 
-.investment-holdings-ticker-logo {
+.investment-holdings-ticker-logo-slot {
     margin-top: 2px;
 }
 
+.investment-holdings-ticker-logo {
+    width: 100%;
+    max-width: none;
+    object-position: center;
+}
+
 .investment-holdings-ticker-logo-placeholder {
-    display: block;
-    width: 32px;
-    height: 20px;
-    flex: 0 0 auto;
-    border-radius: 6px;
     background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-text) 10%, transparent);
 }
 
 .investment-holdings-ticker-copy {
@@ -626,13 +628,10 @@
 }
 
 .investment-import-feedback-banner {
-    position: relative;
-    top: auto;
-    right: auto;
-    width: min(100%, var(--settings-action-package-max-width));
-    max-width: var(--settings-action-package-max-width);
-    margin-top: 0;
+    width: min(460px, calc(100vw - (var(--page-edge-pad) * 2)));
+    max-width: calc(100vw - (var(--page-edge-pad) * 2));
     line-height: 1.5;
+    z-index: 10000;
 }
 
 .investment-import-feedback-banner[hidden] {

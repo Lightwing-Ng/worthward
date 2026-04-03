@@ -839,12 +839,16 @@
 			const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(value)}&limit=5`);
 			if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
 			const payload = await response.json();
-			const isKnown = payload.some((item) => String(item.symbol || "").toUpperCase() === value);
+			const isKnown = Boolean(payload.find((item) => String(item.symbol || "").toUpperCase() === value));
 			if (input.dataset.validationTicker === value) {
 				input.dataset.unknown = isKnown ? "" : "1";
-				rememberValidatedTicker(input, value, isKnown);
-				setTickerValidationPending(input, false);
-				validateTickerInput(input);
+				if (isKnown) {
+					applyExactTickerMatch(input, payload, value);
+				} else {
+					rememberValidatedTicker(input, value, false);
+					setTickerValidationPending(input, false);
+					validateTickerInput(input);
+				}
 			}
 			return isKnown;
 		} catch (_error) {
@@ -908,6 +912,18 @@
 			input.dataset.symbol = "";
 			input.dataset.companyName = "";
 		}
+	};
+
+	const applyExactTickerMatch = (input, items, ticker) => {
+		if (!input || !Array.isArray(items) || !ticker) return null;
+		const exactItem = items.find((item) => String(item?.symbol || "").toUpperCase() === ticker) || null;
+		if (!exactItem) return null;
+		input.dataset.unknown = "";
+		rememberValidatedTicker(input, ticker, true);
+		setTickerValidationPending(input, false);
+		syncTickerInputDecoration(input, exactItem);
+		validateTickerInput(input);
+		return exactItem;
 	};
 
 	const hidePortfolioWeightTooltips = () => {
@@ -1471,13 +1487,10 @@
 				closePanel();
 				return;
 			}
-			if (!input.value.trim()) {
-				setUnknown(false);
-				return;
-			}
 			setUnknown(false);
 			const groups = [
 				{ key: "recent", title: "Recent" },
+				{ key: "local", title: "Local" },
 				{ key: "remote", title: "Matches" },
 			].filter((group) => items.some((item) => item.source === group.key));
 			panel.innerHTML = groups.map((group) => {
@@ -1544,7 +1557,7 @@
 					closePanel();
 					return;
 				}
-				const exactMatch = payload.some((item) => String(item.symbol || "").toUpperCase() === query);
+				const exactMatch = Boolean(applyExactTickerMatch(input, payload, query));
 				if (query) tickerValidationCache.set(query, exactMatch);
 				input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
 				validateTickerInput(input);
