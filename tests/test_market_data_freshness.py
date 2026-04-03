@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
-from app.services.market_data import ensure_fresh_history_store
+from app.services.market_data import download_full_history, ensure_fresh_history_store
 from app.models.schemas import QuoteProfile
 
 
@@ -32,6 +32,24 @@ def _fake_quote_profile(ticker: str, force_refresh: bool, namespace: str = "prim
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def test_download_full_history_canonicalizes_share_class_symbol_for_yfinance(self) -> None:
+        fake_history = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-04-01"]),
+                "Open": [478.98],
+                "High": [481.10],
+                "Low": [477.25],
+                "Close": [478.50],
+                "Adj Close": [478.50],
+            }
+        ).set_index("Date")
+
+        with patch("app.services.market_data.yf.download", return_value=fake_history) as download_mock:
+            result = download_full_history("BRK B")
+
+        self.assertFalse(result.empty)
+        self.assertEqual(download_mock.call_args.kwargs["tickers"], "BRK-B")
+
     def test_ensure_fresh_history_store_refreshes_stale_daily_cache(self) -> None:
         with (
             patch("app.services.market_data.is_daily_store_fresh", return_value=False),
@@ -43,15 +61,26 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertTrue(refreshed)
         refresh_mock.assert_called_once_with("QQQ")
 
-    def test_compare_page_checks_each_selected_ticker_for_fresh_daily_cache(self) -> None:
-        refresh_checks: list[str] = []
+    def test_ensure_fresh_history_store_normalizes_share_class_symbol(self) -> None:
+        with (
+            patch("app.services.market_data.is_daily_store_fresh", return_value=False),
+            patch("app.services.market_data.has_remote_market_access", return_value=True),
+            patch("app.services.market_data.refresh_history_store") as refresh_mock,
+        ):
+            refreshed = ensure_fresh_history_store("BRK B")
 
-        def fake_ensure_fresh_history_store(ticker: str) -> bool:
-            refresh_checks.append(ticker)
-            return False
+        self.assertTrue(refreshed)
+        refresh_mock.assert_called_once_with("BRK-B")
+
+    def test_compare_page_checks_each_selected_ticker_for_fresh_daily_cache(self) -> None:
+        refresh_requests: list[list[str]] = []
+
+        def fake_ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
+            refresh_requests.append(list(tickers))
+            return []
 
         with (
-            patch("app.web.runtime.ensure_fresh_history_store", side_effect=fake_ensure_fresh_history_store),
+            patch("app.web.runtime.ensure_latest_daily_caches", side_effect=fake_ensure_latest_daily_caches),
             patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d': _fake_dataset_for(ticker)),
             patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
             patch("app.web.runtime.record_ticker_usage"),
@@ -60,17 +89,17 @@ class MarketDataFreshnessTests(unittest.TestCase):
             response = client.get("/compare?ticker=QQQ&ticker=AAPL&period=3y&dividends=1")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(refresh_checks, ["QQQ", "AAPL"])
+        self.assertEqual(refresh_requests, [["QQQ", "AAPL"]])
 
     def test_portfolio_page_uses_the_same_freshness_checks(self) -> None:
-        refresh_checks: list[str] = []
+        refresh_requests: list[list[str]] = []
 
-        def fake_ensure_fresh_history_store(ticker: str) -> bool:
-            refresh_checks.append(ticker)
-            return False
+        def fake_ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
+            refresh_requests.append(list(tickers))
+            return []
 
         with (
-            patch("app.web.runtime.ensure_fresh_history_store", side_effect=fake_ensure_fresh_history_store),
+            patch("app.web.runtime.ensure_latest_daily_caches", side_effect=fake_ensure_latest_daily_caches),
             patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d': _fake_dataset_for(ticker)),
             patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
             patch("app.web.runtime.record_ticker_usage"),
@@ -79,7 +108,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             response = client.get("/portfolio?ticker=QQQ&ticker=AAPL&weight=60&weight=40&period=3y&dividends=1")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(refresh_checks, ["QQQ", "AAPL"])
+        self.assertEqual(refresh_requests, [["QQQ", "AAPL"]])
 
 
 if __name__ == "__main__":

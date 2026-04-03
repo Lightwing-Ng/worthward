@@ -1,13 +1,14 @@
 """
 Reusable market freshness helpers.
 
-Code version: v0.2.0
+Code version: v0.2.1
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.infrastructure.storage import normalize_ticker
 from app.services.market_data import ensure_fresh_history_store
 
 _NON_MARKET_TICKER_TYPES = {"forex_trade", "forex_trade_component", "fx_translation_pnl"}
@@ -39,14 +40,14 @@ def extract_open_investment_tickers(investment_payload: dict[str, Any]) -> list[
     position_snapshot = investment_payload.get("position_snapshot")
     if isinstance(position_snapshot, dict) and position_snapshot:
         return sorted(
-            ticker.strip().upper()
+            normalize_ticker(ticker)
             for ticker, snapshot in position_snapshot.items()
             if ticker and str((snapshot or {}).get("quantity") or "0").strip() not in {"", "0", "0.0"}
         )
 
     holdings: dict[str, float] = {}
     for txn in investment_payload.get("transactions", []):
-        ticker = str(txn.get("ticker") or "").strip().upper()
+        ticker = normalize_ticker(str(txn.get("ticker") or ""))
         if not ticker:
             continue
         normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
@@ -83,13 +84,13 @@ def extract_all_investment_tickers(investment_payload: dict[str, Any]) -> list[s
     position_snapshot = investment_payload.get("position_snapshot")
     if isinstance(position_snapshot, dict):
         collected.update(
-            ticker.strip().upper()
+            normalize_ticker(ticker)
             for ticker in position_snapshot
             if str(ticker or "").strip()
         )
 
     for txn in investment_payload.get("transactions", []):
-        ticker = str(txn.get("ticker") or "").strip().upper()
+        ticker = normalize_ticker(str(txn.get("ticker") or ""))
         if not ticker:
             continue
         normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()

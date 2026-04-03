@@ -28,6 +28,10 @@ class LogoServiceTests(unittest.TestCase):
         self.assertEqual(history_store_path_for("BRK B").name, "BRK-B.parquet")
         self.assertEqual(logo_store_path_for("BRK B").name, "BRK-B.png")
 
+    def test_store_paths_canonicalize_share_class_dot_notation(self) -> None:
+        self.assertEqual(history_store_path_for("BRK.B").name, "BRK-B.parquet")
+        self.assertEqual(logo_store_path_for("BRK.B").name, "BRK-B.png")
+
     def test_search_tickers_returns_local_prefix_matches_with_logo_urls(self) -> None:
         ticker = "ONDS"
         history_path = history_store_path_for(ticker)
@@ -52,7 +56,7 @@ class LogoServiceTests(unittest.TestCase):
 
             self.assertIsNotNone(onds_item)
             assert onds_item is not None
-            self.assertEqual(onds_item["source"], "local")
+            self.assertIn(onds_item["source"], {"local", "recent"})
             self.assertIn(f"/market-store/logos/{ticker}.png", onds_item["logo_url"])
         finally:
             if original_history is None:

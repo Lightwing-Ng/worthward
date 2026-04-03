@@ -1,4 +1,4 @@
-/* Code version: v1.3.5 */
+/* Code version: v1.4.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -58,11 +58,6 @@
     max-height: none;
     min-height: 0;
     overflow: hidden;
-}
-
-.investment-export-transactions-button {
-    top: 10px;
-    right: 10px;
 }
 
 .investment-view-segmented-wrap {
@@ -420,7 +415,7 @@
 }
 
 .investment-holdings-value-negative {
-    color: #ff2f92;
+    color: var(--theme-accent-secondary);
 }
 
 .investment-history-surface {
@@ -477,7 +472,7 @@
     height: 1em;
     vertical-align: -0.12em;
     margin: 0 0.12em;
-    background-color: #0055cc;
+    background-color: var(--theme-accent-primary);
     mask: url("/static/images/plus.circle.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/plus.circle.svg") center/contain no-repeat;
 }
@@ -688,7 +683,7 @@
     padding: 0;
     border: 0;
     border-radius: 0;
-    background-color: #0055cc;
+    background-color: var(--theme-accent-primary);
     color: transparent;
     font-size: 0;
     line-height: 0;
@@ -703,7 +698,7 @@
 
 .investment-import-file-input:hover::file-selector-button,
 .investment-import-file-input:focus-visible::file-selector-button {
-    background-color: #0055cc;
+    background-color: var(--theme-accent-primary);
 }
 
 .investment-import-feedback-banner {
@@ -739,7 +734,7 @@
 }
 
 .investment-import-action-icon {
-    background-color: #0055cc;
+    background-color: var(--theme-accent-primary);
     mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
 }
@@ -809,6 +804,26 @@
 
 .investment-history-table td {
     padding: var(--scrollable-data-table-cell-padding);
+}
+
+.investment-history-cell {
+    padding: var(--scrollable-data-table-cell-padding);
+}
+
+.investment-history-cell-center {
+    text-align: center;
+}
+
+.investment-history-cell-left {
+    text-align: left;
+}
+
+.investment-history-cell-right {
+    text-align: right;
+}
+
+.investment-history-cell-emphasis {
+    font-variant-numeric: tabular-nums;
 }
 
 .investment-history-table-body {

@@ -1,7 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.23.7
+ * Code version: v1.24.0
+ * - Fixed: Investment template, CSS, and JS now share the same chart-surface container contract again via investment_view_surface
+ * - Improved: Transaction history rows now render through reusable cell classes instead of per-cell inline styles
+ * - Improved: Holdings logos now use delegated fallback handling instead of inline onerror handlers
+ * - Improved: Funding metric cards now render from a shared definition list instead of repeated hard-coded markup
+ * - Fixed: Transaction processing no longer mutates the original API payload order while building the ledger view
+ * - Fixed: Holdings header spelling now uses "Realized P&L"
+ * - Reduced: Investment page accent colors now resolve through theme tokens instead of repeated hard-coded hex values
  * - Fixed: Holdings now keep a stable logo slot, so missing or failed ticker logos no longer break row alignment
  * - Fixed: Investment transaction payload now retries profile-based logo resolution when a local logo asset is missing
  * - Updated: Import feedback now appears as a top floating modal-banner notice with iOS-style drop-in motion
@@ -199,6 +206,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
+    const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'metrics'];
+    const NO_COMMISSION_TRANSACTION_TYPES = new Set([
+        'foreign_tax_withholding',
+        'dividend',
+        'adjustment',
+        'debit_interest',
+        'credit_interest',
+        'payment_in_lieu',
+        'dividend_reinvestment',
+        'forex_trade',
+        'forex_trade_component',
+        'fx_translation_pnl',
+        'deposit',
+        'grant',
+        'withdrawal',
+    ]);
+    const FUNDING_METRIC_DEFINITIONS = [
+        {
+            key: 'direct-deposits',
+            label: 'Direct deposits',
+            summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
+            valueKey: 'directUsdDeposits',
+            rowsKey: 'directDepositRows',
+        },
+        {
+            key: 'net-usd-converted',
+            label: 'Net USD converted',
+            summary: 'USD received from FX conversion after subtracting conversion commissions.',
+            valueKey: 'netUsdConverted',
+            rowsKey: 'netUsdConvertedRows',
+        },
+        {
+            key: 'fx-funding-loss',
+            label: 'FX funding loss',
+            summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
+            valueKey: 'fxFundingLoss',
+            rowsKey: 'fxFundingLossRows',
+        },
+        {
+            key: 'final-investable-usd',
+            label: 'Final investable USD',
+            summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
+            valueKey: 'finalInvestableUsd',
+            rowsKey: 'finalInvestableUsdRows',
+        },
+    ];
     let activeInvestmentView = 'chart';
     let investmentSurfaceCleanupTimer = null;
     let investmentFormHideTimer = null;
@@ -245,10 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
         lockInvestmentSurfaceHeight();
 
         if (segmentedControl) {
-            const viewOrder = ['chart', 'holdings', 'metrics'];
-            const activeIndex = Math.max(viewOrder.indexOf(nextView), 0);
+            const activeIndex = Math.max(INVESTMENT_VIEW_ORDER.indexOf(nextView), 0);
             segmentedControl.dataset.active = nextView;
-            segmentedControl.style.setProperty('--segmented-option-count', String(viewOrder.length));
+            segmentedControl.style.setProperty('--segmented-option-count', String(INVESTMENT_VIEW_ORDER.length));
             segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
         }
         if (investmentViewSurface) {
@@ -520,6 +572,48 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!exportPayload) return;
             downloadMarkdownFile(exportPayload.filename, exportPayload.markdown);
         });
+    }
+
+    function bindHoldingsLogoFallbacks(container) {
+        if (!container) return;
+        container.querySelectorAll('[data-investment-logo-image]').forEach((logo) => {
+            if (logo.dataset.logoFallbackBound === '1') return;
+            logo.dataset.logoFallbackBound = '1';
+            logo.addEventListener('error', () => {
+                logo.remove();
+            }, { once: true });
+        });
+    }
+
+    function renderFundingMetricCards(fundingMetrics) {
+        return FUNDING_METRIC_DEFINITIONS.map((definition) => `
+            <div class="trade-metric-card">
+                <span class="trade-metric-label">${definition.label}</span>
+                ${renderMetricValueWithTooltip({
+                    key: definition.key,
+                    value: formatAmount(fundingMetrics?.[definition.valueKey]),
+                    summary: definition.summary,
+                    rows: fundingMetrics?.[definition.rowsKey],
+                })}
+            </div>
+        `).join('');
+    }
+
+    function resetInvestmentDashboard() {
+        const holdingsPanel = document.getElementById('investment_holdings_panel');
+        const metricsPanel = document.getElementById('investment_metrics_panel');
+        const chartContainer = document.getElementById('investment_equity_chart');
+
+        if (holdingsPanel) {
+            holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
+        }
+        if (metricsPanel) {
+            metricsPanel.innerHTML = renderFundingMetricCards(getUsdFundingMetrics([]));
+            bindInvestmentMetricTooltipInteractions(metricsPanel);
+        }
+        if (chartContainer) {
+            chartContainer.innerHTML = '';
+        }
     }
 
     function syncImportValidationState() {
@@ -1203,7 +1297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY, totalCash) {
+    function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY) {
         if (!summaries.length) {
             return `
                 <div class="investment-holdings-table-shell">
@@ -1257,7 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
                             <span class="suggestion-logo-slot investment-holdings-ticker-logo-slot" aria-hidden="true">
                                 <span class="suggestion-logo-placeholder investment-holdings-ticker-logo-placeholder"></span>
-                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async" onerror="this.remove()">` : ``}
+                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
                             </span>
                             <span class="timing-suggestion-copy investment-holdings-ticker-copy">
                                 <span class="suggestion-symbol timing-suggestion-symbol investment-holdings-ticker-symbol">${escapeHtml(summary.ticker)}</span>
@@ -1301,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <th>Average price</th>
                             <th>Last</th>
                             <th>Position</th>
-                            <th>Realiszed P&amp;L</th>
+                            <th>Realized P&amp;L</th>
                             <th>Unrealized P&amp;L</th>
                             <th>%</th>
                         </tr>
@@ -1322,6 +1416,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!transactions.length) {
             setInvestmentExportButtonVisibility(false);
+            resetInvestmentDashboard();
             tbody.innerHTML = `
                 <tr>
                     <td colspan="10" class="investment-history-empty-cell">
@@ -1347,7 +1442,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const moneyMarketAnchors = {}; // {ticker: weightedAveragePrice}
 
-        const processed = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map((txn, processedIndex) => {
+        const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
             let qty = getTransactionQuantity(txn);
@@ -1534,26 +1630,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Show '-' instead of 0.00 for commission on types that don't normally have commission
-            const normalizedType = txn.type.replace(/\s+/g, '_').toLowerCase();
-            const noCommissionTypes = [
-                'foreign_tax_withholding',
-                'dividend',
-                'adjustment',
-                'debit_interest',
-                'credit_interest',
-                'payment_in_lieu',
-                'dividend_reinvestment',
-                'forex_trade',
-                'forex_trade_component',
-                'fx_translation_pnl',
-                'deposit',
-                'grant',
-                'withdrawal'
-            ];
+            const normalizedType = getNormalizedTransactionType(txn);
             let commissionDisplay;
             // Get commission from normalized.commission if available (IBKR imported format), otherwise top-level
             const commission = txn.normalized?.commission ?? txn.commission ?? 0;
-            if ((!commission || commission === 0) && noCommissionTypes.includes(normalizedType)) {
+            if ((!commission || commission === 0) && NO_COMMISSION_TRANSACTION_TYPES.has(normalizedType)) {
                 commissionDisplay = '-';
             } else {
                 commissionDisplay = formatAmount(Math.abs(commission));
@@ -1561,25 +1642,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
             return `
             <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}">
-                <td style="text-align: center; padding: 2px 1px;">${txn.ledger_no}</td>
-                <td style="text-align: right; padding: 2px 1px;">${formattedTime}</td>
-                <td style="text-align: center; padding: 2px 1px;">${formatEventType(txn.type)}</td>
-                <td style="text-align: left; padding: 2px 1px;">${description}</td>
-                <td style="text-align: center; padding: 2px 1px;">${formatTransactionCurrency(txn)}</td>
-                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.display_amount)}</td>
-                <td style="text-align: right; padding: 2px 1px;">${commissionDisplay}</td>
-                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.market_value)}</td>
-                <td style="text-align: right; padding: 2px 1px;">${formatAmount(txn.running_cash)}</td>
-                <td style="text-align: right; padding: 2px 1px;"><strong>${formatAmount(txn.total_equity)}</strong></td>
+                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formattedTime}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
+                <td class="investment-history-cell investment-history-cell-left">${description}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${commissionDisplay}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.market_value)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.running_cash)}</td>
+                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(txn.total_equity)}</strong></td>
             </tr>
             `;
         }).join('');
 
         // 5. Update dashboard with latest total equity
-        updateDashboardWithEquity(processed, latestSnapshot, latestPrices, tickerClosePrices, transactions);
+        updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions);
     }
 
-    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, tickerClosePrices, rawTransactions) {
+    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions) {
         const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
         const TOTAL_EQUITY = getLatestTransactionHistoryEquity(processed);
@@ -1596,52 +1677,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
-        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY, last.running_cash);
+        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
+        bindHoldingsLogoFallbacks(holdingsPanel);
         syncHoldingsStickyOffset(holdingsPanel);
 
-        metricsPanel.innerHTML = `
-            <div class="trade-metric-card">
-                <span class="trade-metric-label">Direct deposits</span>
-                ${renderMetricValueWithTooltip({
-                    key: 'direct-deposits',
-                    value: formatAmount(fundingMetrics.directUsdDeposits),
-                    summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
-                    rows: fundingMetrics.directDepositRows,
-                })}
-            </div>
-            <div class="trade-metric-card">
-                <span class="trade-metric-label">Net USD converted</span>
-                ${renderMetricValueWithTooltip({
-                    key: 'net-usd-converted',
-                    value: formatAmount(fundingMetrics.netUsdConverted),
-                    summary: 'USD received from FX conversion after subtracting conversion commissions.',
-                    rows: fundingMetrics.netUsdConvertedRows,
-                })}
-            </div>
-            <div class="trade-metric-card">
-                <span class="trade-metric-label">FX funding loss</span>
-                ${renderMetricValueWithTooltip({
-                    key: 'fx-funding-loss',
-                    value: formatAmount(fundingMetrics.fxFundingLoss),
-                    summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
-                    rows: fundingMetrics.fxFundingLossRows,
-                })}
-            </div>
-            <div class="trade-metric-card">
-                <span class="trade-metric-label">Final investable USD</span>
-                ${renderMetricValueWithTooltip({
-                    key: 'final-investable-usd',
-                    value: formatAmount(fundingMetrics.finalInvestableUsd),
-                    summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
-                    rows: fundingMetrics.finalInvestableUsdRows,
-                })}
-            </div>
-        `;
+        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
         }
-        renderEquityChartWithEquity(processed, tickerClosePrices);
+        renderEquityChartWithEquity(processed);
     }
 
     function syncHoldingsStickyOffset(holdingsPanel) {
@@ -1654,7 +1699,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Reuse the same chart styling from the backtest page
-    function renderEquityChartWithEquity(transactions, tickerClosePrices) {
+    function renderEquityChartWithEquity(transactions) {
         if (!transactions.length || !window.Chart) {
             console.warn('Chart.js not available');
             return;
@@ -1693,7 +1738,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
             };
         })();
-        const equitySeriesColor = "#0055cc";
+        const equitySeriesColor = resolvedTheme.accentPrimary || "#0055cc";
 
         const labels = [...rawDates];
         const equity = [...points];
@@ -2044,7 +2089,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const colors = getComputedStyle(document.documentElement);
-        const accentColor = colors.getPropertyValue('--accent-fill').trim() || '#0055cc';
+        const accentColor = colors.getPropertyValue('--accent-fill').trim()
+            || colors.getPropertyValue('--theme-accent-primary').trim()
+            || '#0055cc';
 
         const chartData = {
             labels: points.map(p => p.date.toLocaleDateString()),

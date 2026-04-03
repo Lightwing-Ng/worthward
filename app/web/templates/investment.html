@@ -1,5 +1,6 @@
+{# Code version: v1.0.1 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_chart_surface, render_segmented_control with context %}
+{% from "_macros.html" import render_segmented_control with context %}
 
 {% block sidebar_content %}
     <nav class="settings-nav" aria-label="More sections">
@@ -40,7 +41,7 @@
             <div class="report-heading-row">
                 <p class="report-heading">Investment</p>
             </div>
-            <div class="investment-surface-stack">
+            <div class="investment-surface-stack investment-view-surface" id="investment_view_surface" data-active-view="chart">
                 <button type="button" class="export-transactions-button" id="export_transactions_button"
                         aria-label="Export Transactions" title="Export Transactions" hidden>
                         <span class="icon"
@@ -50,16 +51,16 @@
                 </button>
                 <div class="investment-view-segmented-wrap">
                     {{ render_segmented_control(
-                            "segmented-control--compact investment-view-segmented",
-                            "investment_view_tab",
-                            "chart",
-                            [
-                                {"id": "investment_view_chart", "value": "chart", "label": "Charts"},
-                                {"id": "investment_view_holdings", "value": "holdings", "label": "Holdings"},
-                                {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
-                            ],
-                            'id="investment_view_segmented" data-active="chart" data-option-count="3"'
-                        ) }}
+                                "segmented-control--compact investment-view-segmented",
+                                "investment_view_tab",
+                                "chart",
+                                [
+                                    {"id": "investment_view_chart", "value": "chart", "label": "Charts"},
+                                    {"id": "investment_view_holdings", "value": "holdings", "label": "Holdings"},
+                                    {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
+                                ],
+                                'id="investment_view_segmented" data-active="chart" data-option-count="3"'
+                            ) }}
                 </div>
                 <div class="investment-view-surface-body" id="investment_view_surface_body">
                     <div id="investment_chart_panel" data-investment-view-panel="chart">
@@ -71,7 +72,8 @@
                     </div>
                     <div class="trade-metrics-grid investment-view-panel-grid" id="investment_holdings_panel"
                          data-investment-view-panel="holdings" hidden></div>
-                    <div class="trade-metrics-grid investment-view-panel-grid trade-metrics-panel-grid" id="investment_metrics_panel"
+                    <div class="trade-metrics-grid investment-view-panel-grid trade-metrics-panel-grid"
+                         id="investment_metrics_panel"
                          data-investment-view-panel="metrics" hidden></div>
                 </div>
 

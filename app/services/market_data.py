@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -15,7 +15,12 @@ import yfinance as yf
 from app.core.config import DEFAULT_INTERVAL
 from app.infrastructure.broker_market_data import is_daily_store_fresh, normalize_one_minute_store_frame
 from app.infrastructure.connectivity import has_remote_market_access
-from app.infrastructure.storage import ensure_market_store_dir, history_store_path_for, intraday_history_store_path_for
+from app.infrastructure.storage import (
+    ensure_market_store_dir,
+    history_store_path_for,
+    intraday_history_store_path_for,
+    normalize_ticker,
+)
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
@@ -77,6 +82,7 @@ def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.Da
 
 
 def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
+    normalized_ticker = normalize_ticker(ticker)
     from datetime import datetime, timedelta, timezone
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=29)
@@ -87,7 +93,7 @@ def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
         current_start = max(current_end - timedelta(days=7), start_date)
         try:
             df = yf.download(
-                tickers=ticker, 
+                tickers=normalized_ticker,
                 start=current_start, 
                 end=current_end, 
                 interval="1m", 
@@ -104,7 +110,7 @@ def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
         current_end = current_start
 
     if not dfs:
-        raise ValueError(f"Unable to download 1m market data for {ticker}.")
+        raise ValueError(f"Unable to download 1m market data for {normalized_ticker}.")
 
     combined = pd.concat(dfs)
     if not combined.empty:
@@ -114,6 +120,7 @@ def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
     return combined
 
 def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
+    normalized_ticker = normalize_ticker(ticker)
     if interval == "1m":
         last_error: Exception | None = None
         for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
@@ -121,7 +128,7 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
             if delay > 0:
                 sleep(delay)
             try:
-                return _download_yfinance_1m_rolling(ticker)
+                return _download_yfinance_1m_rolling(normalized_ticker)
             except Exception as exc:
                 last_error = exc
         if last_error is not None:
@@ -135,7 +142,7 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
             sleep(delay)
         try:
             return yf.download(
-                tickers=ticker,
+                tickers=normalized_ticker,
                 period="max",
                 interval=interval,
                 auto_adjust=False,
@@ -148,7 +155,7 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
             last_error = exc
     if last_error is not None:
         raise last_error
-    raise ValueError(f"Unable to download market data for {ticker}.")
+    raise ValueError(f"Unable to download market data for {normalized_ticker}.")
 
 
 def fetch_history(
@@ -156,8 +163,13 @@ def fetch_history(
         include_dividends: bool,
         interval: str = "1d",
 ) -> pd.DataFrame:
+    normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
-    path = intraday_history_store_path_for(ticker) if interval == "1m" else history_store_path_for(ticker)
+    path = (
+        intraday_history_store_path_for(normalized_ticker)
+        if interval == "1m"
+        else history_store_path_for(normalized_ticker)
+    )
     if path.exists():
         dataset = pd.read_parquet(path)
         if interval == "1m":
@@ -169,22 +181,23 @@ def fetch_history(
 
     if not has_remote_market_access():
         raise ValueError(
-            f"Local market data for {ticker} is unavailable and remote access is blocked. "
+            f"Local market data for {normalized_ticker} is unavailable and remote access is blocked. "
             "Sync the latest market_store/ directory from a connected machine first."
         )
 
-    history = download_full_history(ticker, interval=interval)
-    normalized_dataset = normalize_history_frame(history, ticker, interval=interval)
+    history = download_full_history(normalized_ticker, interval=interval)
+    normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=interval)
     normalized_dataset.to_parquet(path, index=False)
     return select_price_series(normalized_dataset, include_dividends)
 
 
 def refresh_history_store(ticker: str) -> Path:
+    normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
     if not has_remote_market_access():
         raise ValueError("Remote market access is unavailable.")
 
-    path = history_store_path_for(ticker)
+    path = history_store_path_for(normalized_ticker)
 
     start_date = None
     existing_df = None
@@ -202,7 +215,7 @@ def refresh_history_store(ticker: str) -> Path:
         # Incremental download logic
         try:
             new_history = yf.download(
-                tickers=ticker,
+                tickers=normalized_ticker,
                 start=start_date,
                 interval="1d",
                 auto_adjust=False,
@@ -212,7 +225,7 @@ def refresh_history_store(ticker: str) -> Path:
                 timeout=12,
             )
             if not new_history.empty:
-                new_df = normalize_history_frame(new_history, ticker)
+                new_df = normalize_history_frame(new_history, normalized_ticker)
                 if existing_df is not None:
                     # Merge and drop duplicates, keeping newer data for the overlap
                     combined = pd.concat([existing_df, new_df])
@@ -224,8 +237,8 @@ def refresh_history_store(ticker: str) -> Path:
             pass
 
     # Fallback / Initial download
-    history = download_full_history(ticker)
-    normalized_dataset = normalize_history_frame(history, ticker)
+    history = download_full_history(normalized_ticker)
+    normalized_dataset = normalize_history_frame(history, normalized_ticker)
     normalized_dataset.to_parquet(path, index=False)
     return path
 
@@ -236,10 +249,11 @@ def ensure_fresh_history_store(ticker: str) -> bool:
 
     Returns True when a refresh was performed, otherwise False.
     """
+    normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
-    if is_daily_store_fresh(ticker):
+    if is_daily_store_fresh(normalized_ticker):
         return False
     if not has_remote_market_access():
         return False
-    refresh_history_store(ticker)
+    refresh_history_store(normalized_ticker)
     return True

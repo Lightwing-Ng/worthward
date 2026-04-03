@@ -71,7 +71,10 @@ from app.core.config import (
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import build_date_constraint_payload
-from app.services.investment_import import build_investment_payload_from_ibkr_csvs
+from app.services.investment_import import (
+    build_investment_payload_from_ibkr_csvs,
+    normalize_investment_payload_tickers,
+)
 from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
     search_tickers
 from app.services.market_data import fetch_history, refresh_history_store
@@ -3150,6 +3153,7 @@ def build_web_runtime() -> WebRuntime:
         try:
             with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            data = normalize_investment_payload_tickers(data)
 
             freshness_refresh_failures = ensure_latest_daily_caches(
                 exclude_configured_money_market_tickers(

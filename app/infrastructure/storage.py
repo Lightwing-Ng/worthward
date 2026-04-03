@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ _PROFILE_COLUMNS = [
     "updated_at",
 ]
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
+_SHARE_CLASS_TICKER_PATTERN = re.compile(r"^([A-Z0-9]{1,4})[.\-\s]+([ABC])$")
 
 _MIGRATION_COMPLETED = False
 _MIGRATION_RUNNING = False
@@ -76,7 +77,11 @@ def _ensure_market_store_directories() -> None:
 
 
 def _canonicalize_ticker_token(value: str) -> str:
-    normalized = re.sub(r"\s+", "-", str(value or "").strip().upper())
+    raw_value = str(value or "").strip().upper()
+    share_class_match = _SHARE_CLASS_TICKER_PATTERN.fullmatch(raw_value)
+    if share_class_match is not None:
+        return f"{share_class_match.group(1)}-{share_class_match.group(2)}"
+    normalized = re.sub(r"\s+", "-", raw_value)
     normalized = re.sub(r"-{2,}", "-", normalized)
     return normalized
 
