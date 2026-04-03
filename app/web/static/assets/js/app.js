@@ -327,6 +327,7 @@
 	};
 
 	const attachExportButtonHandler = () => {
+		if (state.currentView !== "backtest") return;
 		const button = document.getElementById("export_transactions_button");
 		if (!button || button.dataset.bound === "1") return;
 		button.dataset.bound = "1";

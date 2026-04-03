@@ -1,8 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.21.4
+ * Code version: v1.22.0
  * - Updated: Investment segmented control now shows "Charts"
+ * - Added: Export the Holdings and Transaction history tables as a Markdown download from the page header
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
  * - Updated: Investment equity hover guide now matches the compare chart vertical hover line behavior
@@ -188,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     let activeInvestmentView = 'chart';
     let investmentSurfaceCleanupTimer = null;
@@ -320,6 +322,167 @@ document.addEventListener('DOMContentLoaded', () => {
         icon.classList.toggle('is-visible', Boolean(visible));
     }
 
+    function setInvestmentExportButtonVisibility(isVisible) {
+        if (!exportTransactionsButton) return;
+        exportTransactionsButton.hidden = !isVisible;
+    }
+
+    function escapeMarkdownTableCell(value) {
+        return String(value ?? '')
+            .replace(/\|/g, '\\|')
+            .replace(/\r?\n/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function extractMarkdownTable(tableElement) {
+        if (!tableElement) return '';
+        const rows = Array.from(tableElement.querySelectorAll('tr'));
+        if (!rows.length) return '';
+
+        const matrix = rows
+            .map((row) => Array.from(row.children).map((cell) => escapeMarkdownTableCell(cell.textContent)))
+            .filter((row) => row.some((cell) => cell.length > 0));
+        if (!matrix.length) return '';
+
+        const header = matrix[0];
+        const body = matrix.slice(1);
+        const alignment = header.map(() => '---');
+        const tableLines = [
+            `| ${header.join(' | ')} |`,
+            `| ${alignment.join(' | ')} |`,
+            ...body.map((row) => {
+                const paddedRow = [...row];
+                while (paddedRow.length < header.length) {
+                    paddedRow.push('');
+                }
+                return `| ${paddedRow.join(' | ')} |`;
+            }),
+        ];
+        return tableLines.join('\n');
+    }
+
+    function buildExportDateRange(transactions) {
+        const rawDates = Array.isArray(transactions)
+            ? transactions
+                .map((txn) => String(txn?.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.slice(1).join('') || '')
+                .filter(Boolean)
+            : [];
+        if (!rawDates.length) {
+            const today = new Date();
+            const year = `${today.getFullYear()}`;
+            const month = `${today.getMonth() + 1}`.padStart(2, '0');
+            const day = `${today.getDate()}`.padStart(2, '0');
+            const fallback = `${year}${month}${day}`;
+            return { start: fallback, end: fallback };
+        }
+        const sortedDates = [...rawDates].sort();
+        return { start: sortedDates[0], end: sortedDates[sortedDates.length - 1] };
+    }
+
+    function guessInvestmentExportDescription(transactions, holdingsTableMarkdown) {
+        const tickerSet = new Set(
+            (Array.isArray(transactions) ? transactions : [])
+                .map((txn) => String(txn?.ticker || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+        if (tickerSet.size === 1) {
+            const [ticker] = Array.from(tickerSet);
+            return `${ticker} Investment Holdings and Transaction History`;
+        }
+        if (holdingsTableMarkdown.includes('Money market')) {
+            return 'Investment Holdings and Cash Transaction History';
+        }
+        return 'Investment Holdings and Transaction History';
+    }
+
+    function downloadMarkdownFile(filename, content) {
+        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => {
+            window.URL.revokeObjectURL(objectUrl);
+        }, 0);
+    }
+
+    function buildInvestmentMarkdownExport() {
+        const holdingsHeaderTable = document.querySelector('#investment_holdings_panel .investment-holdings-table[aria-hidden="true"]');
+        const holdingsBodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
+        const historyHeaderTable = document.querySelector('#history_table_wrap table[aria-hidden="true"]');
+        const historyBodyTable = document.querySelector('#history_table_wrap .investment-history-table-scroll table');
+        if (!holdingsHeaderTable || !holdingsBodyTable || !historyHeaderTable || !historyBodyTable) {
+            return null;
+        }
+
+        const holdingsHeaderRow = holdingsHeaderTable.querySelector('tr');
+        const holdingsBodyRows = Array.from(holdingsBodyTable.querySelectorAll('tbody tr'));
+        const holdingsTable = document.createElement('table');
+        if (holdingsHeaderRow) {
+            const thead = document.createElement('thead');
+            thead.appendChild(holdingsHeaderRow.cloneNode(true));
+            holdingsTable.appendChild(thead);
+        }
+        const holdingsTbody = document.createElement('tbody');
+        holdingsBodyRows.forEach((row) => holdingsTbody.appendChild(row.cloneNode(true)));
+        holdingsTable.appendChild(holdingsTbody);
+
+        const historyHeaderRow = historyHeaderTable.querySelector('tr');
+        const historyBodyRows = Array.from(historyBodyTable.querySelectorAll('tbody tr'));
+        const historyTable = document.createElement('table');
+        if (historyHeaderRow) {
+            const thead = document.createElement('thead');
+            thead.appendChild(historyHeaderRow.cloneNode(true));
+            historyTable.appendChild(thead);
+        }
+        const historyTbody = document.createElement('tbody');
+        historyBodyRows.forEach((row) => historyTbody.appendChild(row.cloneNode(true)));
+        historyTable.appendChild(historyTbody);
+
+        const holdingsMarkdown = extractMarkdownTable(holdingsTable);
+        const historyMarkdown = extractMarkdownTable(historyTable);
+        if (!holdingsMarkdown || !historyMarkdown) {
+            return null;
+        }
+
+        const transactions = window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [];
+        const dateRange = buildExportDateRange(transactions);
+        const title = guessInvestmentExportDescription(transactions, holdingsMarkdown);
+        const markdown = [
+            `# ${title}`,
+            '',
+            `Export range: ${dateRange.start} - ${dateRange.end}`,
+            '',
+            '## Holdings',
+            '',
+            holdingsMarkdown,
+            '',
+            '## Transaction history',
+            '',
+            historyMarkdown,
+            '',
+        ].join('\n');
+
+        return {
+            filename: `${title} ${dateRange.start} - ${dateRange.end}.md`,
+            markdown,
+        };
+    }
+
+    function bindInvestmentExportButton() {
+        if (!exportTransactionsButton || exportTransactionsButton.dataset.bound === '1') return;
+        exportTransactionsButton.dataset.bound = '1';
+        exportTransactionsButton.addEventListener('click', () => {
+            const exportPayload = buildInvestmentMarkdownExport();
+            if (!exportPayload) return;
+            downloadMarkdownFile(exportPayload.filename, exportPayload.markdown);
+        });
+    }
+
     function syncImportValidationState() {
         const transactionFile = transactionsCsvInput?.files?.[0];
         const positionsFile = positionsCsvInput?.files?.[0];
@@ -444,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize shared selectors after DOM is ready - multiple passes to ensure all get bound
     initInvestmentViewTabs();
+    bindInvestmentExportButton();
     setTimeout(initSharedSelectors, 50);
     setTimeout(initSharedSelectors, 150);
     setTimeout(initSharedSelectors, 300);
@@ -1058,6 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tbody) return;
 
         if (!transactions.length) {
+            setInvestmentExportButtonVisibility(false);
             tbody.innerHTML = `
                 <tr>
                     <td colspan="10" class="investment-history-empty-cell">
@@ -1072,6 +1237,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             return;
         }
+
+        setInvestmentExportButtonVisibility(true);
 
         // 1. Sort by date ascending to calculate running cash and holdings
         // Read starting_cash from top-level JSON if available, otherwise default to 0

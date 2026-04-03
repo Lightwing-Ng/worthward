@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -234,6 +234,13 @@ def build_web_runtime() -> WebRuntime:
         for value in money_market_settings.get("description_keywords", [])
         if str(value).strip()
     ]
+
+    def exclude_configured_money_market_tickers(tickers: list[str]) -> list[str]:
+        return [
+            ticker
+            for ticker in tickers
+            if str(ticker).strip().upper() not in configured_money_market_tickers
+        ]
 
     # Backtest result cache: skip redundant computation when config doesn't change
     _cached_backtest: dict[str, tuple] = {}
@@ -3066,7 +3073,9 @@ def build_web_runtime() -> WebRuntime:
                 data = json.load(f)
 
             freshness_refresh_failures = ensure_latest_daily_caches(
-                extract_open_investment_tickers(data)
+                exclude_configured_money_market_tickers(
+                    extract_open_investment_tickers(data)
+                )
             )
 
             def resolve_money_market_company_name(
@@ -3160,7 +3169,9 @@ def build_web_runtime() -> WebRuntime:
             )
 
             freshness_refresh_failures = ensure_latest_daily_caches(
-                extract_all_investment_tickers(investment_payload)
+                exclude_configured_money_market_tickers(
+                    extract_all_investment_tickers(investment_payload)
+                )
             )
 
             INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -3227,10 +3238,13 @@ def build_web_runtime() -> WebRuntime:
         try:
             path = history_store_path_for(ticker)
             if not path.exists():
+                if ticker in configured_money_market_tickers:
+                    return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
                 fetch_history(ticker, include_dividends=False)
                 path = history_store_path_for(ticker)
             else:
-                ensure_latest_daily_caches([ticker])
+                if ticker not in configured_money_market_tickers:
+                    ensure_latest_daily_caches([ticker])
 
             df = pd.read_parquet(path)
             if df.empty or "Close" not in df.columns or "Date" not in df.columns:
