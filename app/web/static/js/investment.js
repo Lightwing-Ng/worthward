@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.26.1
+ * Code version: v1.27.0
+ * - Changed: Investment Charts now render one equity point per market day, filling no-trade trading days from parquet closes and collapsing same-day multi-trade activity into a single daily close snapshot
+ * - Changed: Non-trading days with investment ledger activity now render on the curve using the previous available market close, while hover only anchors to history rows on dates that actually have ledger activity
  * - Fixed: Investment equity canvas now respects responsive container width at medium breakpoints instead of overflowing around 900 px layouts
  * - Fixed: Investment equity tooltip now uses viewport-safe positioning so frosted glass popovers no longer clip against ancestor overflow or screen edges
  * - Added: Charts hover now anchors and highlights all same-day Transaction history rows via the shared metric-style history locator
@@ -1355,6 +1357,137 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isFinite(totalEquity) ? totalEquity : 0;
     }
 
+    function normalizeLedgerDate(value) {
+        const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : '';
+    }
+
+    function buildTickerPriceIndex(tickerClosePrices) {
+        const priceIndex = {};
+        Object.entries(tickerClosePrices || {}).forEach(([ticker, dateMap]) => {
+            const dates = Object.keys(dateMap || {}).sort();
+            priceIndex[ticker] = {
+                dates,
+                closes: { ...(dateMap || {}) },
+            };
+        });
+        return priceIndex;
+    }
+
+    function getIndexedClosePriceOnOrBefore(priceEntry, targetDate) {
+        if (!priceEntry || !targetDate) return null;
+        const dates = Array.isArray(priceEntry.dates) ? priceEntry.dates : [];
+        for (let index = dates.length - 1; index >= 0; index -= 1) {
+            if (dates[index] <= targetDate) {
+                return Number(priceEntry.closes?.[dates[index]]);
+            }
+        }
+        return null;
+    }
+
+    function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
+        if (!snapshot || !valuationDate) return 0;
+        let marketValue = 0;
+
+        Object.entries(snapshot.holdings || {}).forEach(([ticker, quantity]) => {
+            const numericQuantity = Number(quantity);
+            if (!Number.isFinite(numericQuantity) || Math.abs(numericQuantity) < 1e-9) return;
+
+            let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[ticker], valuationDate);
+            const normalizedTicker = String(ticker).trim().toUpperCase();
+            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+
+            if (isMoneyMarketTicker) {
+                const anchoredPrice = snapshot.money_market_anchors?.[ticker] ?? snapshot.money_market_anchors?.[normalizedTicker];
+                closePrice = anchoredPrice ?? closePrice;
+            }
+
+            if ((!Number.isFinite(closePrice) || closePrice === 0) && String(snapshot.ticker || '').trim().toUpperCase() === normalizedTicker) {
+                const fallbackPrice = Number(snapshot.price);
+                if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
+                    closePrice = fallbackPrice;
+                }
+            }
+
+            const safeClosePrice = Number.isFinite(closePrice) ? closePrice : 0;
+            marketValue += numericQuantity * safeClosePrice;
+        });
+
+        return marketValue;
+    }
+
+    function buildDailyEquityChartPoints(processedTransactions, tickerClosePrices, moneyMarketTickers) {
+        if (!Array.isArray(processedTransactions) || !processedTransactions.length) {
+            return [];
+        }
+
+        const firstLedgerDate = normalizeLedgerDate(processedTransactions[0]?.date);
+        if (!firstLedgerDate) return [];
+
+        const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const tradingDateSet = new Set();
+        Object.values(tickerPriceIndex).forEach((entry) => {
+            (entry?.dates || []).forEach((date) => {
+                if (date >= firstLedgerDate) {
+                    tradingDateSet.add(date);
+                }
+            });
+        });
+
+        const ledgerDateMap = new Map();
+        processedTransactions.forEach((txn) => {
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (!ledgerDate) return;
+            if (!ledgerDateMap.has(ledgerDate)) {
+                ledgerDateMap.set(ledgerDate, {
+                    snapshot: txn,
+                    ledgerNos: [],
+                });
+            }
+            const entry = ledgerDateMap.get(ledgerDate);
+            entry.snapshot = txn;
+            entry.ledgerNos.push(Number(txn.ledger_no || 0));
+        });
+
+        const candidateDates = Array.from(new Set([
+            ...Array.from(tradingDateSet),
+            ...Array.from(ledgerDateMap.keys()),
+        ])).sort();
+
+        const points = [];
+        let processedCursor = 0;
+        let activeSnapshot = null;
+
+        candidateDates.forEach((date) => {
+            while (processedCursor < processedTransactions.length) {
+                const nextSnapshot = processedTransactions[processedCursor];
+                const nextLedgerDate = normalizeLedgerDate(nextSnapshot?.date);
+                if (!nextLedgerDate || nextLedgerDate > date) break;
+                activeSnapshot = nextSnapshot;
+                processedCursor += 1;
+            }
+
+            if (!activeSnapshot) return;
+
+            const marketValue = calculateSnapshotMarketValue(activeSnapshot, date, tickerPriceIndex, moneyMarketTickers);
+            const ledgerEntry = ledgerDateMap.get(date);
+            const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
+                ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
+                : [];
+
+            points.push({
+                date,
+                running_cash: Number(activeSnapshot.running_cash) || 0,
+                market_value: marketValue,
+                total_equity: (Number(activeSnapshot.running_cash) || 0) + marketValue,
+                anchor_ledger_date: anchorLedgerNos.length ? date : '',
+                anchor_ledger_nos: anchorLedgerNos,
+            });
+        });
+
+        return points;
+    }
+
     function buildTickerSummaries(transactions, latestPrices, TOTAL_EQUITY) {
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1780,6 +1913,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const latestSnapshot = processed[processed.length - 1];
+        const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
 
         // 4. Render reverse chronological (newest first)
         tbody.innerHTML = [...processed].reverse().map((txn, index) => {
@@ -1819,10 +1953,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         // 5. Update dashboard with latest total equity
-        updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions);
+        updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints);
     }
 
-    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions) {
+    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions, chartPoints = []) {
         const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
         const TOTAL_EQUITY = getLatestTransactionHistoryEquity(processed);
@@ -1849,7 +1983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
         }
-        renderEquityChartWithEquity(processed);
+        renderEquityChartWithEquity(chartPoints);
     }
 
     function syncHoldingsStickyOffset(holdingsPanel) {
@@ -1862,8 +1996,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Reuse the same chart styling from the backtest page
-    function renderEquityChartWithEquity(transactions) {
-        if (!transactions.length || !window.Chart) {
+    function renderEquityChartWithEquity(chartPoints) {
+        if (!chartPoints.length || !window.Chart) {
             console.warn('Chart.js not available');
             return;
         }
@@ -1880,15 +2014,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
 
-        const points = [];
-        const rawDates = [];
-
-        const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        sortedTransactions.forEach(txn => {
-            points.push(txn.total_equity);
-            rawDates.push(txn.date);
-        });
+        const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        const rawDates = sortedChartPoints.map((point) => point.date);
+        const equity = sortedChartPoints.map((point) => point.total_equity);
 
         // Read theme tokens
         const resolvedTheme = (() => {
@@ -1904,7 +2032,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const equitySeriesColor = resolvedTheme.accentPrimary || "#0055cc";
 
         const labels = [...rawDates];
-        const equity = [...points];
         const fixedYAxisWidth = 52;
         const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         let activeChartHoverDate = "";
@@ -2061,13 +2188,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const listEl = tooltipEl.querySelector(".chart-tooltip-list");
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
             const parsedDate = parseRawDate(rawDates[pointIndex]);
-            const pointRecord = sortedTransactions[pointIndex];
+            const pointRecord = sortedChartPoints[pointIndex];
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
-            const hoveredLedgerDate = String(pointRecord?.date || "").slice(0, 10);
+            const hoveredLedgerDate = String(pointRecord?.anchor_ledger_date || "").slice(0, 10);
 
             if (hoveredLedgerDate && hoveredLedgerDate !== activeChartHoverDate) {
-                const matchingRows = getHistoryRowsForLedgerDate(hoveredLedgerDate);
-                const ledgerNos = matchingRows.map((row) => Number(row.dataset.investmentHistoryRow || 0));
+                const ledgerNos = Array.isArray(pointRecord?.anchor_ledger_nos)
+                    ? pointRecord.anchor_ledger_nos
+                    : getHistoryRowsForLedgerDate(hoveredLedgerDate).map((row) => Number(row.dataset.investmentHistoryRow || 0));
                 activateInvestmentHistoryRows(ledgerNos, { behavior: "smooth" });
                 activeChartHoverDate = hoveredLedgerDate;
             }
