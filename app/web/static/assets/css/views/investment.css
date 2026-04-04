@@ -126,8 +126,9 @@
 
 #investment_holdings_panel {
     display: block;
+    padding: 0 !important;
+    scrollbar-gutter: auto !important;
     overflow: hidden;
-    padding: 0;
 }
 
 #investment_metrics_panel {

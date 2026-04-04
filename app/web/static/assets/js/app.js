@@ -2077,6 +2077,21 @@
 		"5y": 60,
 		"10y": 120,
 	};
+	const PERIOD_LABELS = {
+		"1d": "1 day",
+		"3d": "3 days",
+		"1w": "1 week",
+		"2w": "2 weeks",
+		"1mo": "1 month",
+		"3mo": "3 months",
+		"6mo": "6 months",
+		"1y": "1 year",
+		"2y": "2 years",
+		"3y": "3 years",
+		"5y": "5 years",
+		"10y": "10 years",
+		"max": "Max",
+	};
 
 	const shiftMonthsUtc = (date, months) => {
 		const year = date.getUTCFullYear();
@@ -2466,6 +2481,36 @@
 		return queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
 	};
 
+	const buildPeriodOptionDefs = (periodValues) => (
+		Array.from(periodValues || []).map((value) => ({
+			value,
+			label: PERIOD_LABELS[value] || value,
+		}))
+	);
+
+	const replacePeriodOptions = (periodValues, preferredFallback = null) => {
+		const periodSelect = document.getElementById("period");
+		if (!periodSelect) return;
+		const currentPeriod = periodSelect.value;
+		const nextOptions = buildPeriodOptionDefs(periodValues);
+		if (!nextOptions.length) return;
+		periodSelect.innerHTML = "";
+		nextOptions.forEach((option) => {
+			const el = document.createElement("option");
+			el.value = option.value;
+			el.textContent = option.label;
+			if (option.value === currentPeriod) el.selected = true;
+			periodSelect.appendChild(el);
+		});
+		const allowed = nextOptions.map((option) => option.value);
+		if (!allowed.includes(periodSelect.value)) {
+			periodSelect.value = preferredFallback && allowed.includes(preferredFallback)
+				? preferredFallback
+				: allowed[allowed.length - 1];
+		}
+		refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+	};
+
 	const syncBacktestIntervals = async () => {
 		if (!isBacktestView) return;
 		const tickerInput = getTickerInputs()[0];
@@ -2479,6 +2524,10 @@
 			if (!response.ok) return;
 			const payload = await response.json();
 			const has1m = payload.has1m && payload.has1m[ticker];
+			const tickerPeriodOptions = payload.periodOptions?.[ticker] || {};
+			if (tickerPeriodOptions && Object.keys(tickerPeriodOptions).length) {
+				state.backtestPeriodOptions = tickerPeriodOptions;
+			}
 			
 			const intervalSelect = document.getElementById("backtest_interval");
 			if (intervalSelect) {
@@ -2501,9 +2550,18 @@
 				const nextInterval = intervalSelect.value;
 				if (currentInterval === "1m" && !has1m) {
 					intervalSelect.value = "1d";
+					replacePeriodOptions(
+						tickerPeriodOptions["1d"] || state.backtestPeriodOptions?.["1d"] || ["1d"],
+						"1d",
+					);
 					intervalSelect.dispatchEvent(new Event("change"));
 				} else if (currentInterval !== nextInterval) {
 					intervalSelect.dispatchEvent(new Event("change"));
+				} else {
+					replacePeriodOptions(
+						tickerPeriodOptions[nextInterval] || state.backtestPeriodOptions?.[nextInterval] || ["1d"],
+						nextInterval === "1m" ? "1d" : "max",
+					);
 				}
 			}
 		} catch (_error) {
@@ -2619,41 +2677,8 @@
 	});
 	$("#backtest_interval")?.addEventListener("change", (event) => {
 		const interval = event.target.value;
-		const periodSelect = document.getElementById("period");
-		if (periodSelect) {
-			const currentPeriod = periodSelect.value;
-			const options1d = [
-				{ value: "6mo", label: "6 months" },
-				{ value: "1y", label: "1 year" },
-				{ value: "2y", label: "2 years" },
-				{ value: "3y", label: "3 years" },
-				{ value: "5y", label: "5 years" },
-				{ value: "10y", label: "10 years" },
-				{ value: "max", label: "Max" }
-			];
-			const options1m = [
-				{ value: "1d", label: "1 day" },
-				{ value: "3d", label: "3 days" },
-				{ value: "1w", label: "1 week" },
-				{ value: "2w", label: "2 weeks" },
-				{ value: "1mo", label: "1 month" }
-			];
-			
-			const newOptions = interval === "1m" ? options1m : options1d;
-			periodSelect.innerHTML = "";
-			newOptions.forEach(opt => {
-				const el = document.createElement("option");
-				el.value = opt.value;
-				el.textContent = opt.label;
-				if (opt.value === currentPeriod) el.selected = true;
-				periodSelect.appendChild(el);
-			});
-			const allowed = newOptions.map(opt => opt.value);
-			if (!allowed.includes(periodSelect.value)) {
-				periodSelect.value = interval === "1m" ? "1d" : "1y";
-			}
-			refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
-		}
+		const nextPeriods = state.backtestPeriodOptions?.[interval] || (interval === "1m" ? ["1d"] : ["1d"]);
+		replacePeriodOptions(nextPeriods, interval === "1m" ? "1d" : "max");
 		// Force full reload for interval change to refresh sidebar period options
 		scheduleAutoSubmit(20);
 	});

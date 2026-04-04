@@ -39,6 +39,18 @@ def _fake_backtest_dataset() -> pd.DataFrame:
     )
 
 
+def _fake_single_day_intraday_dataset() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Date": pd.to_datetime(["2026-04-02 09:30", "2026-04-02 15:59"]),
+            "Close": [25.0, 25.5],
+            "Open": [24.9, 25.1],
+            "High": [25.2, 25.6],
+            "Low": [24.8, 25.0],
+        }
+    )
+
+
 def _fake_quote_profile(ticker: str, force_refresh: bool, namespace: str = "primary") -> QuoteProfile:
     del force_refresh, namespace
     return QuoteProfile(
@@ -76,6 +88,34 @@ def _fake_backtest_result() -> dict[str, object]:
     }
 
 
+def _fake_intraday_backtest_result() -> dict[str, object]:
+    return {
+        "summary": {
+            "initial_capital": 10000.0,
+            "final_equity": 10020.0,
+            "net_return_pct": 0.2,
+            "total_trades": 1,
+            "win_rate_pct": 100.0,
+            "beat_bh_pct": 0.2,
+            "benchmark_alpha": 2.0,
+            "long_gain": 20.0,
+            "short_gain": 0.0,
+            "long_loss": 0.0,
+        },
+        "chart": {
+            "dates": ["2026-04-02 09:30", "2026-04-02 15:59"],
+            "raw_dates": ["2026-04-02 09:30", "2026-04-02 15:59"],
+            "close": [25.0, 25.5],
+            "open": [24.9, 25.1],
+            "high": [25.2, 25.6],
+            "low": [24.8, 25.0],
+            "equity": [10000.0, 10020.0],
+        },
+        "trades": [],
+        "interval": "1m",
+    }
+
+
 class BacktestPageTests(unittest.TestCase):
     def test_backtest_page_uses_default_ticker_when_query_is_missing(self) -> None:
         with (
@@ -109,6 +149,29 @@ class BacktestPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('value="TQQQ"', html)
         self.assertIn("/api/market-store/logos/TQQQ.png", html)
+
+    def test_backtest_page_limits_intraday_period_options_to_available_history(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d") -> pd.DataFrame:
+            del ticker, include_dividends
+            return _fake_single_day_intraday_dataset() if interval == "1m" else _fake_backtest_dataset().tail(1)
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
+            patch("app.web.runtime.instantiate_strategy", return_value=_FakeStrategy()),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=_fake_intraday_backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+            patch("app.web.runtime.has_recent_one_minute_store", return_value=True),
+        ):
+            client = create_app().test_client()
+            response = client.get("/backtest?ticker=DRAM&strategy=buy-and-hold&period=1w&interval=1m&capital=10000")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="1d" selected>', html)
+        self.assertNotIn('<option value="1w"', html)
+        self.assertIn('"backtestPeriodOptions"', html)
+        self.assertIn('"1m": ["1d"]', html)
 
 
 if __name__ == "__main__":

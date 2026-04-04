@@ -67,7 +67,6 @@ from app.core.config import (
     DEFAULT_PERIOD,
     DEFAULT_TICKERS,
     PERIOD_OFFSETS,
-    SUPPORTED_PERIODS_1D,
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import build_date_constraint_payload
@@ -130,6 +129,11 @@ VIEW_PATHS = {
     "backtest": "/backtest",
     "more": "/more/timing",
     "settings": "/settings/about",
+}
+ADAPTIVE_PERIODS_1D = ("1d", "3d", "1w", "2w", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max")
+TRADING_DAY_REQUIREMENTS = {
+    "1d": 1,
+    "3d": 3,
 }
 
 
@@ -598,6 +602,8 @@ def build_web_runtime() -> WebRuntime:
     def _run_backtest_from_request():
         backtest_execution_mode = load_backtest_execution_mode()
         requested_tickers = parse_requested_tickers()
+        if not requested_tickers:
+            requested_tickers = [normalize_ticker_input(str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0])))]
         if not requested_tickers:
             raise ValueError("No ticker selected for backtest.")
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
@@ -1758,38 +1764,104 @@ def build_web_runtime() -> WebRuntime:
             for index in range(len(datasets))
         ]
 
-    def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
-        if requested_period == "max":
-            return "max", None
-        common_start = max(dataset["Date"].min() for dataset in datasets)
-        common_end = min(dataset["Date"].max() for dataset in datasets)
-        requested_start = (common_end - PERIOD_OFFSETS[requested_period]).normalize()
-        if requested_start >= common_start:
+    def extract_shared_dates(datasets: list[pd.DataFrame]) -> pd.Series:
+        if not datasets:
+            return pd.Series(dtype="datetime64[ns]")
+        merged = datasets[0][["Date"]].drop_duplicates().sort_values("Date")
+        for dataset in datasets[1:]:
+            merged = pd.merge(
+                merged,
+                dataset[["Date"]].drop_duplicates(),
+                on="Date",
+                how="inner",
+            ).sort_values("Date")
+            if merged.empty:
+                return pd.Series(dtype="datetime64[ns]")
+        return merged["Date"].reset_index(drop=True)
+
+    def build_supported_periods_from_dates(date_values: pd.Series, interval: str = "1d") -> list[str]:
+        timestamps = pd.to_datetime(date_values, errors="coerce").dropna().sort_values().drop_duplicates()
+        if timestamps.empty:
+            return ["1d"] if interval == "1m" else ["1d"]
+
+        start = timestamps.iloc[0]
+        end = timestamps.iloc[-1]
+        trading_day_count = len(pd.Index(timestamps.dt.normalize()).unique())
+        candidate_periods = SUPPORTED_PERIODS_1M if interval == "1m" else ADAPTIVE_PERIODS_1D
+        supported: list[str] = []
+
+        for candidate in candidate_periods:
+            if candidate == "max":
+                continue
+            if candidate in TRADING_DAY_REQUIREMENTS:
+                if trading_day_count >= TRADING_DAY_REQUIREMENTS[candidate]:
+                    supported.append(candidate)
+                continue
+            if candidate in PERIOD_OFFSETS:
+                candidate_start = (end - PERIOD_OFFSETS[candidate]).normalize()
+                if candidate_start >= start.normalize():
+                    supported.append(candidate)
+
+        if not supported:
+            supported.append("1d")
+        if len(supported) >= 2:
+            supported.append("max")
+        return supported
+
+    def resolve_requested_period_from_supported(
+            requested_period: str,
+            supported_periods: list[str],
+            earliest_available: pd.Timestamp | None = None,
+    ) -> tuple[str, str | None]:
+        if requested_period in supported_periods:
             return requested_period, None
 
-        fallback_period = "max"
-        for candidate in SUPPORTED_PERIODS_1D:
-            if candidate == "max":
-                break
-            candidate_start = (common_end - PERIOD_OFFSETS[candidate]).normalize()
-            if candidate_start >= common_start:
-                fallback_period = candidate
-
-        available_days = (common_end - common_start).days
-        if available_days <= 0:
-            raise ValueError("The selected tickers do not have overlapping trading history.")
+        fallback_period = supported_periods[-1] if supported_periods else "1d"
+        if fallback_period == "max" and len(supported_periods) >= 2:
+            fallback_label = format_period_label(fallback_period)
+        else:
+            fallback_label = format_period_label(fallback_period)
 
         notice = (
-            f"Requested period {requested_period} exceeds the shared trading history. "
-            f"Automatically switched to {fallback_period} based on the latest common start date "
-            f"({format_display_date(common_start)})."
+            f"Requested period {requested_period} exceeds the available trading history. "
+            f"Automatically switched to {fallback_label}."
         )
+        if earliest_available is not None:
+            notice = (
+                f"{notice[:-1]} Earliest available data starts on "
+                f"{format_display_date(earliest_available)}."
+            )
         return fallback_period, notice
+
+    def build_supported_periods_for_history_store(ticker: str, interval: str = "1d") -> list[str]:
+        path = intraday_history_store_path_for(ticker, interval) if interval == "1m" else history_store_path_for(ticker)
+        if not path.exists() or path.stat().st_size == 0:
+            return ["1d"] if interval == "1m" else ["1d"]
+        try:
+            dataset = pd.read_parquet(path, columns=["Date"])
+        except Exception:
+            return ["1d"] if interval == "1m" else ["1d"]
+        if dataset.empty:
+            return ["1d"] if interval == "1m" else ["1d"]
+        return build_supported_periods_from_dates(dataset["Date"], interval=interval)
+
+    def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
+        shared_dates = extract_shared_dates(datasets)
+        if shared_dates.empty:
+            raise ValueError("The selected tickers do not have overlapping trading history.")
+        supported_periods = build_supported_periods_from_dates(shared_dates, interval="1d")
+        return resolve_requested_period_from_supported(
+            requested_period,
+            supported_periods,
+            earliest_available=shared_dates.min(),
+        )
 
     def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "timing"):
         backtest_execution_mode = load_backtest_execution_mode()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
+        if current_view == "backtest" and not requested_tickers:
+            requested_tickers = [normalize_ticker_input(str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0])))]
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         include_dividends = parse_bool_flag("dividends", "include_dividends")
 
@@ -1924,6 +1996,10 @@ def build_web_runtime() -> WebRuntime:
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
         more_cards: list[dict[str, str]] = []
+        backtest_periods_by_interval: dict[str, list[str]] = {
+            "1d": list(ADAPTIVE_PERIODS_1D),
+            "1m": list(SUPPORTED_PERIODS_1M),
+        }
 
         settings_section = normalize_settings_section(settings_section)
         more_section = normalize_more_section(more_section)
@@ -1968,11 +2044,11 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = "Investment"
 
         supported_periods = (
-            SUPPORTED_PERIODS_1M if requested_interval == "1m" and "1m" in supported_intervals else SUPPORTED_PERIODS_1D
+            list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals else list(ADAPTIVE_PERIODS_1D)
         )
 
         if period not in supported_periods:
-            period = DEFAULT_PERIOD
+            period = supported_periods[0] if supported_periods else DEFAULT_PERIOD
 
         def handle_fetch_history_failure(ticker: str, include_dividends: bool) -> pd.DataFrame:
             """
@@ -2009,6 +2085,25 @@ def build_web_runtime() -> WebRuntime:
                 record_strategy_usage(selected_strategy_id)
                 ticker_slots = [trade_ticker]
                 profiles = [fetch_quote_profile(trade_ticker, False)]
+                backtest_periods_by_interval = {
+                    "1d": build_supported_periods_for_history_store(trade_ticker, "1d"),
+                    "1m": build_supported_periods_for_history_store(trade_ticker, "1m"),
+                }
+                if not trade_dataset.empty:
+                    backtest_periods_by_interval[requested_interval] = build_supported_periods_from_dates(
+                        trade_dataset["Date"],
+                        interval=requested_interval,
+                    )
+                supported_periods = backtest_periods_by_interval.get(requested_interval, list(ADAPTIVE_PERIODS_1D))
+                period, period_notice = resolve_requested_period_from_supported(
+                    period,
+                    supported_periods,
+                    earliest_available=trade_dataset["Date"].min() if not trade_dataset.empty else None,
+                )
+                if period_notice and notice is None:
+                    notice = period_notice
+                elif period_notice:
+                    notice += " " + period_notice
                 exact_start_value = trade_dataset["Date"].min().strftime("%Y-%m-%d")
                 exact_end_value = trade_dataset["Date"].max().strftime("%Y-%m-%d")
                 if range_mode == "exact":
@@ -2096,6 +2191,10 @@ def build_web_runtime() -> WebRuntime:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
+                        supported_periods = build_supported_periods_from_dates(
+                            extract_shared_dates(datasets),
+                            interval="1d",
+                        )
                         date_constraints = build_date_constraint_payload(
                             *datasets,
                             requested_start=exact_start or None,
@@ -2509,6 +2608,7 @@ def build_web_runtime() -> WebRuntime:
             selected_strategy_params=selected_strategy_params,
             backtest_initial_capital=backtest_initial_capital,
             backtest_result=backtest_result,
+            backtest_periods_by_interval=backtest_periods_by_interval,
             supported_intervals=supported_intervals,
             requested_interval=requested_interval,
             current_view_name=current_view,
@@ -3083,12 +3183,20 @@ def build_web_runtime() -> WebRuntime:
             ticker: has_recent_one_minute_store(ticker)
             for ticker in unique_tickers
         }
+        period_options_mapping = {
+            ticker: {
+                "1d": build_supported_periods_for_history_store(ticker, "1d"),
+                "1m": build_supported_periods_for_history_store(ticker, "1m"),
+            }
+            for ticker in unique_tickers
+        }
         return jsonify(
             {
                 "tickers": unique_tickers,
                 "missingHistory": missing_history,
                 "hasMissingHistory": bool(missing_history),
                 "has1m": has_1m_mapping,
+                "periodOptions": period_options_mapping,
             }
         )
 
