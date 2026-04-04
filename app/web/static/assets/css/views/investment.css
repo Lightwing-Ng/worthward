@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -56,6 +56,7 @@
     padding: var(--investment-view-surface-padding);
     height: auto;
     max-height: none;
+    min-width: 0;
     min-height: 0;
     overflow: hidden;
 }
@@ -69,6 +70,7 @@
 
 .investment-view-surface-body {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -81,18 +83,26 @@
 
 .investment-view-surface-body > [data-investment-view-panel] {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
 }
 
 #investment_chart_panel {
+    width: 100%;
+    max-width: 100%;
     min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
 
 #investment_chart_panel .trade-chart-stack {
+    width: 100%;
+    max-width: 100%;
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
+    overflow: visible;
 }
 
 .investment-view-segmented {
@@ -125,7 +135,11 @@
 
 .investment-equity-chart {
     width: 100%;
+    max-width: 100%;
     height: 100%;
+    min-width: 0;
+    position: relative;
+    overflow: visible;
 }
 
 .investment-chart-stack {
@@ -133,6 +147,16 @@
     display: grid;
     grid-template-rows: minmax(0, 1fr);
     gap: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible;
+}
+
+.investment-equity-chart canvas {
+    display: block;
+    width: 100% !important;
+    max-width: 100%;
 }
 
 .investment-view-panel-grid {
@@ -814,6 +838,10 @@
 
 .investment-history-table tr.is-metric-hover-target {
     animation: investment-history-row-pulse 1.4s ease;
+}
+
+.investment-history-table tr.is-metric-hover-active td {
+    background: color-mix(in srgb, var(--theme-accent-primary) 10%, transparent);
 }
 
 .investment-history-table tr.is-metric-hover-target td {

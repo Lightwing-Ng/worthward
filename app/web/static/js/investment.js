@@ -1,7 +1,12 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.25.0
+ * Code version: v1.26.1
+ * - Fixed: Investment equity canvas now respects responsive container width at medium breakpoints instead of overflowing around 900 px layouts
+ * - Fixed: Investment equity tooltip now uses viewport-safe positioning so frosted glass popovers no longer clip against ancestor overflow or screen edges
+ * - Added: Charts hover now anchors and highlights all same-day Transaction history rows via the shared metric-style history locator
+ * - Added: Holdings row hover now anchors and highlights the latest matching Transaction history row for that ticker via the shared metric-style history locator
+ * - Improved: Metric, chart, and holdings interactions now share the same history-row highlight lifecycle and clear hover state on exit
  * - Fixed: Investment template, CSS, and JS now share the same chart-surface container contract again via investment_view_surface
  * - Improved: Transaction history rows now render through reusable cell classes instead of per-cell inline styles
  * - Improved: Holdings logos now use delegated fallback handling instead of inline onerror handlers
@@ -258,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentFormHideTimer = null;
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
+    let activeInvestmentHistoryRowIds = [];
 
     function clearInvestmentSegmentedMeasureRaf() {
         if (!investmentSegmentedMeasureRaf) return;
@@ -653,6 +659,66 @@ document.addEventListener('DOMContentLoaded', () => {
                 logo.remove();
             }, { once: true });
         });
+    }
+
+    function getInvestmentHistoryScrollContainer() {
+        return document.querySelector('.investment-history-table-scroll');
+    }
+
+    function getInvestmentHistoryRowsByLedgerNos(ledgerNos) {
+        return Array.from(new Set((Array.isArray(ledgerNos) ? ledgerNos : [])
+            .map((ledgerNo) => Number(ledgerNo))
+            .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)))
+            .map((ledgerNo) => document.getElementById(`investment_history_row_${ledgerNo}`))
+            .filter(Boolean);
+    }
+
+    function clearInvestmentHistoryHighlights() {
+        activeInvestmentHistoryRowIds.forEach((rowId) => {
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            row.classList.remove('is-metric-hover-active');
+            row.classList.remove('is-metric-hover-target');
+        });
+        activeInvestmentHistoryRowIds = [];
+    }
+
+    function scrollInvestmentHistoryRowIntoView(row, behavior = 'smooth') {
+        if (!row) return;
+        const scrollContainer = getInvestmentHistoryScrollContainer();
+        if (scrollContainer) {
+            const rowOffset = row.offsetTop - scrollContainer.offsetTop;
+            const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (row.clientHeight / 2);
+            scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
+            return;
+        }
+        row.scrollIntoView({ block: 'center', behavior });
+    }
+
+    function activateInvestmentHistoryRows(ledgerNos, { behavior = 'smooth' } = {}) {
+        const rows = getInvestmentHistoryRowsByLedgerNos(ledgerNos);
+        if (!rows.length) return;
+        clearInvestmentHistoryHighlights();
+        rows.forEach((row) => {
+            row.classList.remove('is-metric-hover-target');
+            void row.offsetWidth;
+            row.classList.add('is-metric-hover-target');
+            row.classList.add('is-metric-hover-active');
+        });
+        activeInvestmentHistoryRowIds = rows.map((row) => row.id);
+        scrollInvestmentHistoryRowIntoView(rows[0], behavior);
+    }
+
+    function getLatestHistoryRowForTicker(ticker) {
+        const normalizedTicker = String(ticker || '').trim().toUpperCase();
+        if (!normalizedTicker) return null;
+        return document.querySelector(`tr[data-investment-history-ticker="${CSS.escape(normalizedTicker)}"]`);
+    }
+
+    function getHistoryRowsForLedgerDate(rawDate) {
+        const normalizedDate = String(rawDate || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+        if (!normalizedDate) return [];
+        return Array.from(document.querySelectorAll(`tr[data-investment-history-date="${CSS.escape(normalizedDate)}"]`));
     }
 
     function renderFundingMetricCards(fundingMetrics) {
@@ -1416,7 +1482,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : ' investment-holdings-value-negative');
 
             return `
-                <tr>
+                <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
                         <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
@@ -1480,9 +1546,35 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    function bindHoldingsHistoryInteractions(holdingsPanel) {
+        if (!holdingsPanel) return;
+        holdingsPanel.querySelectorAll('tr[data-investment-holdings-ticker]').forEach((row) => {
+            if (row.dataset.historyHoverBound === '1') return;
+            row.dataset.historyHoverBound = '1';
+            const activateRelatedHistoryRow = () => {
+                const ticker = row.dataset.investmentHoldingsTicker || '';
+                const historyRow = getLatestHistoryRowForTicker(ticker);
+                const ledgerNo = Number(historyRow?.dataset.investmentHistoryRow || 0);
+                if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
+                activateInvestmentHistoryRows([ledgerNo]);
+            };
+            const clearRelatedHistoryRow = () => {
+                clearInvestmentHistoryHighlights();
+            };
+            row.addEventListener('mouseenter', activateRelatedHistoryRow);
+            row.addEventListener('mouseleave', clearRelatedHistoryRow);
+            row.addEventListener('focusin', activateRelatedHistoryRow);
+            row.addEventListener('focusout', (event) => {
+                if (row.contains(event.relatedTarget)) return;
+                clearRelatedHistoryRow();
+            });
+        });
+    }
+
     async function renderTransactionTable(transactions) {
         const tbody = document.getElementById('investment_history');
         if (!tbody) return;
+        clearInvestmentHistoryHighlights();
 
         if (!transactions.length) {
             setInvestmentExportButtonVisibility(false);
@@ -1711,7 +1803,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             return `
-            <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}">
+            <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
                 <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formattedTime}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
@@ -1749,6 +1841,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
         bindHoldingsLogoFallbacks(holdingsPanel);
+        bindHoldingsHistoryInteractions(holdingsPanel);
         syncHoldingsStickyOffset(holdingsPanel);
 
         metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics);
@@ -1814,6 +1907,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const equity = [...points];
         const fixedYAxisWidth = 52;
         const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        let activeChartHoverDate = "";
 
         const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
@@ -1940,15 +2034,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const chartYPaddingPx = 5;
         const equityYScale = buildPixelPaddedYScale(canvas, [equity], chartYPaddingPx);
-        const axisLineColor = resolvedTheme.muted;
         const getOrCreateTooltip = (chart) => {
-            const parent = chart.canvas.parentNode;
-            let tooltip = parent.querySelector(".chart-tooltip");
+            let tooltip = document.querySelector('[data-investment-chart-tooltip="1"]');
             if (tooltip) return tooltip;
             tooltip = document.createElement("div");
             tooltip.className = "chart-tooltip";
+            tooltip.dataset.investmentChartTooltip = "1";
+            tooltip.style.position = "fixed";
             tooltip.innerHTML = '<p class="chart-tooltip-date"></p><div class="chart-tooltip-list"></div>';
-            parent.appendChild(tooltip);
+            document.body.appendChild(tooltip);
             return tooltip;
         };
 
@@ -1958,6 +2052,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const tooltipEl = getOrCreateTooltip(chart);
             if (tooltip.opacity === 0) {
                 tooltipEl.classList.remove("is-visible");
+                activeChartHoverDate = "";
+                clearInvestmentHistoryHighlights();
                 return;
             }
 
@@ -1967,6 +2063,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const parsedDate = parseRawDate(rawDates[pointIndex]);
             const pointRecord = sortedTransactions[pointIndex];
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
+            const hoveredLedgerDate = String(pointRecord?.date || "").slice(0, 10);
+
+            if (hoveredLedgerDate && hoveredLedgerDate !== activeChartHoverDate) {
+                const matchingRows = getHistoryRowsForLedgerDate(hoveredLedgerDate);
+                const ledgerNos = matchingRows.map((row) => Number(row.dataset.investmentHistoryRow || 0));
+                activateInvestmentHistoryRows(ledgerNos, { behavior: "smooth" });
+                activeChartHoverDate = hoveredLedgerDate;
+            }
 
             const tooltipRows = [];
             if (pointRecord) {
@@ -2002,24 +2106,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `).join("");
 
-            const parentRect = chart.canvas.parentNode.getBoundingClientRect();
+            const canvasRect = chart.canvas.getBoundingClientRect();
             const tooltipRect = tooltipEl.getBoundingClientRect();
             const padding = 12;
             const gap = 14;
-            const anchorX = chart.canvas.offsetLeft + tooltip.caretX;
-            const anchorY = chart.canvas.offsetTop + tooltip.caretY;
-            const roomRight = parentRect.width - anchorX - padding;
+            const viewportWidth = document.documentElement.clientWidth || window.innerWidth || 0;
+            const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
+            const anchorX = canvasRect.left + tooltip.caretX;
+            const anchorY = canvasRect.top + tooltip.caretY;
+            const roomRight = viewportWidth - anchorX - padding;
             const roomLeft = anchorX - padding;
             const preferRight = roomRight >= tooltipRect.width + gap || roomRight >= roomLeft;
             let left = preferRight ? anchorX + gap : anchorX - tooltipRect.width - gap;
             if (left < padding) left = padding;
-            if (left + tooltipRect.width > parentRect.width - padding) {
-                left = parentRect.width - tooltipRect.width - padding;
+            if (left + tooltipRect.width > viewportWidth - padding) {
+                left = viewportWidth - tooltipRect.width - padding;
             }
             let top = anchorY - (tooltipRect.height / 2);
             if (top < padding) top = padding;
-            if (top + tooltipRect.height > parentRect.height - padding) {
-                top = parentRect.height - tooltipRect.height - padding;
+            if (top + tooltipRect.height > viewportHeight - padding) {
+                top = viewportHeight - tooltipRect.height - padding;
             }
             tooltipEl.style.left = `${left}px`;
             tooltipEl.style.top = `${top}px`;
@@ -2260,22 +2366,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const jumpToContributionRow = () => {
                 const targetRowNo = Number(trigger.dataset.metricTargetRow);
                 if (!Number.isFinite(targetRowNo) || targetRowNo <= 0) return;
-                const row = document.getElementById(`investment_history_row_${targetRowNo}`);
-                if (!row) return;
-                const scrollContainer = row.closest('.investment-history-table-scroll');
-                row.classList.remove('is-metric-hover-target');
-                void row.offsetWidth;
-                row.classList.add('is-metric-hover-target');
-                if (scrollContainer) {
-                    const rowOffset = row.offsetTop - scrollContainer.offsetTop;
-                    const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (row.clientHeight / 2);
-                    scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
-                } else {
-                    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                }
+                activateInvestmentHistoryRows([targetRowNo]);
+            };
+            const clearContributionRow = () => {
+                clearInvestmentHistoryHighlights();
             };
             trigger.addEventListener('mouseenter', jumpToContributionRow);
             trigger.addEventListener('focus', jumpToContributionRow);
+            trigger.addEventListener('mouseleave', clearContributionRow);
+            trigger.addEventListener('blur', clearContributionRow);
         });
     }
 
