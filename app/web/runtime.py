@@ -130,7 +130,7 @@ VIEW_PATHS = {
     "more": "/more/timing",
     "settings": "/settings/about",
 }
-ADAPTIVE_PERIODS_1D = ("1d", "3d", "1w", "2w", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "max")
+ADAPTIVE_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "10y", "max")
 TRADING_DAY_REQUIREMENTS = {
     "1d": 1,
     "3d": 3,
@@ -1802,10 +1802,16 @@ def build_web_runtime() -> WebRuntime:
                 if candidate_start >= start.normalize():
                     supported.append(candidate)
 
+        if interval == "1m":
+            if not supported:
+                supported.append("1d")
+            if len(supported) >= 2:
+                supported.append("max")
+            return supported
+
         if not supported:
-            supported.append("1d")
-        if len(supported) >= 2:
-            supported.append("max")
+            return ["max"]
+        supported.append("max")
         return supported
 
     def resolve_requested_period_from_supported(
@@ -1836,13 +1842,13 @@ def build_web_runtime() -> WebRuntime:
     def build_supported_periods_for_history_store(ticker: str, interval: str = "1d") -> list[str]:
         path = intraday_history_store_path_for(ticker, interval) if interval == "1m" else history_store_path_for(ticker)
         if not path.exists() or path.stat().st_size == 0:
-            return ["1d"] if interval == "1m" else ["1d"]
+            return ["1d"] if interval == "1m" else ["max"]
         try:
             dataset = pd.read_parquet(path, columns=["Date"])
         except Exception:
-            return ["1d"] if interval == "1m" else ["1d"]
+            return ["1d"] if interval == "1m" else ["max"]
         if dataset.empty:
-            return ["1d"] if interval == "1m" else ["1d"]
+            return ["1d"] if interval == "1m" else ["max"]
         return build_supported_periods_from_dates(dataset["Date"], interval=interval)
 
     def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
