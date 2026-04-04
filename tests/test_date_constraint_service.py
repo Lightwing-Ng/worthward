@@ -1,7 +1,7 @@
 """
 Tests for exact-range date alignment.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -13,10 +13,16 @@ import pandas as pd
 from app.services.date_constraints import (
     align_requested_exact_dates,
     build_date_constraint_payload,
+    latest_completed_nyse_trading_day,
 )
 
 
 class DateConstraintServiceTests(unittest.TestCase):
+    def test_latest_completed_nyse_trading_day_skips_good_friday(self) -> None:
+        latest = latest_completed_nyse_trading_day("2026-04-04 20:00:00+08:00")
+
+        self.assertEqual(latest.strftime("%Y-%m-%d"), "2026-04-02")
+
     def test_align_requested_exact_dates_snaps_to_shared_trading_days(self) -> None:
         available_dates = pd.Series(pd.to_datetime(["2026-01-02", "2026-01-05", "2026-01-07"]))
 

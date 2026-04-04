@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from app.infrastructure.broker_market_data import _is_market_data_fresh
 from app.infrastructure.storage import history_store_path_for
 from app.services.market_data import download_full_history, ensure_fresh_history_store, refresh_history_store
 from app.models.schemas import QuoteProfile
@@ -37,6 +38,14 @@ def _fake_quote_profile(ticker: str, force_refresh: bool, namespace: str = "prim
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def test_market_data_freshness_accepts_last_preholiday_trading_day(self) -> None:
+        is_fresh = _is_market_data_fresh(
+            pd.Timestamp("2026-04-02 16:00:00"),
+            now=pd.Timestamp("2026-04-04 20:00:00+08:00"),
+        )
+
+        self.assertTrue(is_fresh)
+
     def test_refresh_history_store_skips_write_when_remote_has_no_newer_trading_day(self) -> None:
         path = history_store_path_for("QQQ")
         original_exists = path.exists()

@@ -1,7 +1,7 @@
 """
 Broker-backed intraday market data services.
 
-    Code version: v0.3.0
+    Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import pandas as pd
 
 from app.core.broker_settings import BrokerSettings, has_longbridge_credentials
 from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
+from app.services.date_constraints import latest_completed_nyse_trading_day
 
 ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
@@ -391,18 +392,10 @@ def _is_market_data_fresh(max_date: datetime, now: datetime | pd.Timestamp | Non
     Checks if market data is fresh up to the most recent completed New York trading day.
     """
     max_date_nyt = _normalize_to_new_york_naive(max_date)
-    current_source = pd.Timestamp.now(tz=timezone.utc) if now is None else now
-    current_ny = _coerce_to_new_york(current_source)
-    now_ny = current_ny.tz_localize(None)
-
-    target_date = now_ny.date()
-    if now_ny.hour < 16:
-        target_date -= timedelta(days=1)
-
-    while target_date.weekday() >= 5:  # Sat=5, Sun=6
-        target_date -= timedelta(days=1)
-
-    return max_date_nyt.date() >= target_date
+    target_date = latest_completed_nyse_trading_day(
+        pd.Timestamp.now(tz=timezone.utc) if now is None else now
+    )
+    return max_date_nyt.date() >= target_date.date()
 
 
 def is_one_minute_store_complete(ticker: str) -> bool:
