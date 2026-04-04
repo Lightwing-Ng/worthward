@@ -272,7 +272,7 @@
     height: 100%;
     max-height: none;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--muted) transparent;
 }
@@ -290,19 +290,18 @@
     border-radius: var(--radius-pill);
 }
 
+.trade-transactions-shell {
+    height: 100%;
+    min-height: 0;
+}
+
 .trade-transactions-table {
     width: 100%;
-    min-width: 100%;
+    min-width: 760px;
     table-layout: fixed;
 }
 
-.trade-transactions-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: var(--layer-surface-content);
-    background: var(--glass-surface-background-dense);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
+.trade-transactions-shell .trade-transactions-table thead th {
     text-align: center !important;
 }
 
@@ -318,6 +317,7 @@
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
+    padding: var(--scrollable-data-table-cell-padding);
 }
 
 .trade-transactions-index {

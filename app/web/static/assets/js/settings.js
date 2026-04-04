@@ -556,8 +556,11 @@
         await Promise.resolve();
     };
 
-    const buildLocalStorePendingRegion = () => {
+    const buildLocalStorePendingRegion = (pageNumber) => {
         const labels = getLabels();
+        const page = Math.max(Number.parseInt(String(pageNumber || new URLSearchParams(window.location.search).get("page") || "1"), 10) || 1, 1);
+        const pageSize = 10;
+        const startIndex = (page - 1) * pageSize;
         const article = document.createElement("article");
         article.className = "chart-surface settings-surface";
         article.id = "settings_workspace_region";
@@ -580,9 +583,10 @@
 						<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_button || "Maintain all data"}</span>
 					</section>
 					<p class="settings-summary">${labels.local_store_summary || ""}</p>
-					<div class="settings-table-wrap local-store-table-wrap">
-						<table class="settings-table local-store-table">
+					<div class="scrollable-data-table-shell local-store-table-shell">
+						<table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
 							<colgroup>
+								<col class="local-store-col-index">
 								<col class="local-store-col-symbol">
 								<col class="local-store-col-name">
 								<col class="local-store-col-range">
@@ -592,6 +596,7 @@
 							</colgroup>
 							<thead>
 								<tr>
+									<th class="local-store-col-index">No.</th>
 									<th>${labels.local_store_symbol || "Ticker"}</th>
 									<th>${labels.local_store_name || "Name"}</th>
 									<th>${labels.local_store_range || "Range"}</th>
@@ -600,9 +605,22 @@
 									<th>${labels.local_store_delete || ""}</th>
 								</tr>
 							</thead>
-							<tbody>
+						</table>
+						<div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
+							<table class="settings-table local-store-table scrollable-data-table">
+								<colgroup>
+									<col class="local-store-col-index">
+									<col class="local-store-col-symbol">
+									<col class="local-store-col-name">
+									<col class="local-store-col-range">
+									<col class="local-store-col-update">
+									<col class="local-store-col-1m">
+									<col class="local-store-col-delete">
+								</colgroup>
+								<tbody>
 								${Array.from({length: 6}, (_, index) => `
 									<tr data-local-store-ticker="pending-${index + 1}">
+										<td class="local-store-index-cell is-pending-value" data-workspace-mask="metric-value">${startIndex + index + 1}</td>
 										<td>
 											<span class="settings-symbol-cell">
 												<span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
@@ -622,8 +640,9 @@
 										<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
 									</tr>
 								`).join("")}
-							</tbody>
-						</table>
+								</tbody>
+							</table>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -928,7 +947,8 @@
             if (localStorePaginationRequest) return;
             localStorePaginationRequest = (async () => {
                 try {
-                    const pendingRegion = buildLocalStorePendingRegion();
+                    const targetPage = new URL(targetUrl, window.location.origin).searchParams.get("page") || "1";
+                    const pendingRegion = buildLocalStorePendingRegion(targetPage);
                     const currentRegion = document.getElementById("local_store_region");
                     if (currentRegion && pendingRegion) {
                         const currentTableWrap = currentRegion.querySelector(".local-store-table-wrap");
@@ -974,7 +994,8 @@
             event.preventDefault();
             setActiveSettingsNav(targetSection);
             if (targetSection === "local-market-store") {
-                replaceSettingsWorkspaceRegion(buildLocalStorePendingRegion());
+                const targetPage = parsed.searchParams.get("page") || "1";
+                replaceSettingsWorkspaceRegion(buildLocalStorePendingRegion(targetPage));
             }
             try {
                 const responseText = await fetch(nextUrl, {

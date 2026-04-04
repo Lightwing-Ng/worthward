@@ -175,8 +175,8 @@
                 </div>
             </div>
             <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
-                <div class="trade-transactions-wrap">
-                    <table id="tradeTransactionsTable" class="settings-table trade-transactions-table">
+                <div class="scrollable-data-table-shell trade-transactions-shell">
+                    <table class="settings-table trade-transactions-table scrollable-data-table" aria-hidden="true">
                         <thead>
                             <tr>
                                 <th>No.</th>
@@ -189,10 +189,14 @@
                                 <th class="trade-transactions-number">Equity</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <!-- Transactions will be rendered by JS with pagination -->
-                        </tbody>
                     </table>
+                    <div class="trade-transactions-wrap scrollable-data-table-scroll">
+                        <table id="tradeTransactionsTable" class="settings-table trade-transactions-table scrollable-data-table">
+                            <tbody>
+                            <!-- Transactions will be rendered by JS with pagination -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 <nav class="settings-pagination local-store-pagination trade-transactions-pagination" id="tradeTransactionsPagination" aria-label="Transaction pages" hidden>
                     <!-- Pagination buttons will be injected by JS -->

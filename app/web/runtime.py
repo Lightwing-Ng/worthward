@@ -2587,6 +2587,7 @@ def build_web_runtime() -> WebRuntime:
             broker_test_checked_at=broker_test_checked_at,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
+            local_store_page_size=LOCAL_STORE_PAGE_SIZE,
             local_store_total_pages=local_store_total_pages,
             local_store_prev_slot=local_store_prev_slot,
             local_store_page_slots=local_store_page_slots,

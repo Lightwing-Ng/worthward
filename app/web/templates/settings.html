@@ -406,9 +406,10 @@
                 </form>
             </section>
             <p class="settings-summary">{{ labels.local_store_summary }}</p>
-            <div class="settings-table-wrap local-store-table-wrap">
-                <table class="settings-table local-store-table">
+            <div class="scrollable-data-table-shell local-store-table-shell">
+                <table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
                     <colgroup>
+                        <col class="local-store-col-index">
                         <col class="local-store-col-symbol">
                         <col class="local-store-col-name">
                         <col class="local-store-col-range">
@@ -418,6 +419,7 @@
                     </colgroup>
                     <thead>
                         <tr>
+                            <th class="local-store-col-index">No.</th>
                             <th>{{ labels.local_store_symbol }}</th>
                             <th>{{ labels.local_store_name }}</th>
                             <th>{{ labels.local_store_range }}</th>
@@ -426,79 +428,93 @@
                             <th class="local-store-col-delete">{{ labels.local_store_delete }}</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% if local_market_rows %}
-                        {% for row in local_market_rows %}
-                        <tr data-local-store-ticker="{{ row.ticker }}">
-                            <td>
-                                <span class="settings-symbol-cell">
-                                    {% if row.logo_url %}
-                                    <img class="settings-table-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
-                                    {% else %}
-                                    <span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
-                                    {% endif %}
-                                    <span>{{ row.ticker }}</span>
-                                </span>
-                            </td>
-                            <td data-local-store-company>{{ row.company_name }}</td>
-                            <td class="local-store-range-cell">
-                                <span class="local-store-range-value">
-                                    <span class="local-store-range-token{% if not row.range_start %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="start">{{ row.range_start }}</span>
-                                    <span class="local-store-range-separator"> - </span>
-                                    <span class="local-store-range-token{% if not row.range_end %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="end">{{ row.range_end }}</span>
-                                </span>
-                            </td>
-                            <td>
-                                {% if row.daily_store_status == "fresh" %}
-                                <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
-                                {% elif row.daily_store_status == "short_history" %}
-                                <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
-                                {% else %}
-                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
-                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
-                                    <input type="hidden" name="action" value="refresh">
-                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1d history">
-                                        <span class="icon icon-store-refresh" aria-hidden="true"></span>
-                                    </button>
-                                </form>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if row.intraday_store_status == "fresh" %}
-                                <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
-                                {% elif row.intraday_store_status == "short_history" %}
-                                <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
-                                {% else %}
-                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
-                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
-                                    <input type="hidden" name="action" value="refresh-1m">
-                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                    <button type="submit" class="settings-action-button" aria-label="Fetch 1m history for the latest 6 months of trading days">
-                                        <span class="icon icon-store-fetch-1m" aria-hidden="true"></span>
-                                    </button>
-                                </form>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
-                                    <input type="hidden" name="ticker" value="{{ row.ticker }}">
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                    <button type="submit" class="settings-action-button is-danger" aria-label="{{ labels.local_store_delete }}">
-                                        <span class="icon icon-store-delete" aria-hidden="true"></span>
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% else %}
-                        <tr>
-                            <td colspan="6">{{ labels.local_store_empty }}</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
                 </table>
+                <div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
+                    <table class="settings-table local-store-table scrollable-data-table">
+                        <colgroup>
+                            <col class="local-store-col-index">
+                            <col class="local-store-col-symbol">
+                            <col class="local-store-col-name">
+                            <col class="local-store-col-range">
+                            <col class="local-store-col-update">
+                            <col class="local-store-col-1m">
+                            <col class="local-store-col-delete">
+                        </colgroup>
+                        <tbody>
+                            {% if local_market_rows %}
+                            {% for row in local_market_rows %}
+                            <tr data-local-store-ticker="{{ row.ticker }}">
+                                <td class="local-store-index-cell">{{ ((local_store_current_page - 1) * local_store_page_size) + loop.index }}</td>
+                                <td>
+                                    <span class="settings-symbol-cell">
+                                        {% if row.logo_url %}
+                                        <img class="settings-table-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
+                                        {% else %}
+                                        <span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
+                                        {% endif %}
+                                        <span>{{ row.ticker }}</span>
+                                    </span>
+                                </td>
+                                <td data-local-store-company>{{ row.company_name }}</td>
+                                <td class="local-store-range-cell">
+                                    <span class="local-store-range-value">
+                                        <span class="local-store-range-token{% if not row.range_start %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="start">{{ row.range_start }}</span>
+                                        <span class="local-store-range-separator"> - </span>
+                                        <span class="local-store-range-token{% if not row.range_end %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="end">{{ row.range_end }}</span>
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if row.daily_store_status == "fresh" %}
+                                    <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                    {% elif row.daily_store_status == "short_history" %}
+                                    <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
+                                    {% else %}
+                                    <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                        <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                        <input type="hidden" name="action" value="refresh">
+                                        <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                        <button type="submit" class="settings-action-button" aria-label="Fetch 1d history">
+                                            <span class="icon icon-store-refresh" aria-hidden="true"></span>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if row.intraday_store_status == "fresh" %}
+                                    <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                    {% elif row.intraday_store_status == "short_history" %}
+                                    <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
+                                    {% else %}
+                                    <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                        <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                        <input type="hidden" name="action" value="refresh-1m">
+                                        <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                        <button type="submit" class="settings-action-button" aria-label="Fetch 1m history for the latest 6 months of trading days">
+                                            <span class="icon icon-store-fetch-1m" aria-hidden="true"></span>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
+                                        <input type="hidden" name="ticker" value="{{ row.ticker }}">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="page" value="{{ local_store_current_page }}">
+                                        <button type="submit" class="settings-action-button is-danger" aria-label="{{ labels.local_store_delete }}">
+                                            <span class="icon icon-store-delete" aria-hidden="true"></span>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% else %}
+                            <tr>
+                                <td colspan="7">{{ labels.local_store_empty }}</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {% if local_store_total_pages > 1 %}
             <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
