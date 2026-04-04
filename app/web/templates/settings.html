@@ -272,30 +272,39 @@
                 </summary>
                 {% if row.parameters %}
                 <div class="settings-strategy-params-shell">
-	                    <div class="settings-strategy-params-table-wrap">
-	                        <table class="settings-table settings-strategy-params-table" aria-label="{{ row.name }} parameters">
-	                            <colgroup>
-	                                <col class="settings-strategy-params-col-label">
-	                                <col class="settings-strategy-params-col-value">
-	                                <col class="settings-strategy-params-col-meaning">
-	                            </colgroup>
-	                            <thead>
-	                                <tr>
-	                                    <th>Value name</th>
+                    <div class="scrollable-data-table-shell settings-strategy-params-table-shell">
+                        <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-hidden="true">
+                            <colgroup>
+                                <col class="settings-strategy-params-col-label">
+                                <col class="settings-strategy-params-col-value">
+                                <col class="settings-strategy-params-col-meaning">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Value name</th>
                                     <th>Default</th>
                                     <th>Meaning</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                {% for parameter in row.parameters %}
-                                <tr>
-                                    <td class="settings-strategy-param-label">{{ parameter.label }}</td>
-                                    <td class="settings-strategy-param-value">{{ parameter.default_display }}</td>
-                                    <td class="settings-strategy-param-meaning">{{ parameter.meaning }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
                         </table>
+                        <div class="settings-strategy-params-table-wrap scrollable-data-table-scroll">
+                            <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-label="{{ row.name }} parameters">
+                                <colgroup>
+                                    <col class="settings-strategy-params-col-label">
+                                    <col class="settings-strategy-params-col-value">
+                                    <col class="settings-strategy-params-col-meaning">
+                                </colgroup>
+                                <tbody>
+                                    {% for parameter in row.parameters %}
+                                    <tr>
+                                        <td class="settings-strategy-param-label">{{ parameter.label }}</td>
+                                        <td class="settings-strategy-param-value">{{ parameter.default_display }}</td>
+                                        <td class="settings-strategy-param-meaning">{{ parameter.meaning }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 {% endif %}
@@ -410,8 +419,7 @@
                 <table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
                     <colgroup>
                         <col class="local-store-col-index">
-                        <col class="local-store-col-symbol">
-                        <col class="local-store-col-name">
+                        <col class="local-store-col-ticker">
                         <col class="local-store-col-range">
                         <col class="local-store-col-update">
                         <col class="local-store-col-1m">
@@ -420,8 +428,7 @@
                     <thead>
                         <tr>
                             <th class="local-store-col-index">No.</th>
-                            <th>{{ labels.local_store_symbol }}</th>
-                            <th>{{ labels.local_store_name }}</th>
+                            <th>Ticker</th>
                             <th>{{ labels.local_store_range }}</th>
                             <th class="local-store-col-update">1d</th>
                             <th class="local-store-col-1m">{{ labels.local_store_intraday }}</th>
@@ -433,8 +440,7 @@
                     <table class="settings-table local-store-table scrollable-data-table">
                         <colgroup>
                             <col class="local-store-col-index">
-                            <col class="local-store-col-symbol">
-                            <col class="local-store-col-name">
+                            <col class="local-store-col-ticker">
                             <col class="local-store-col-range">
                             <col class="local-store-col-update">
                             <col class="local-store-col-1m">
@@ -445,17 +451,19 @@
                             {% for row in local_market_rows %}
                             <tr data-local-store-ticker="{{ row.ticker }}">
                                 <td class="local-store-index-cell">{{ ((local_store_current_page - 1) * local_store_page_size) + loop.index }}</td>
-                                <td>
-                                    <span class="settings-symbol-cell">
+                                <td class="local-store-ticker-cell">
+                                    <div class="ticker-identity-item">
+                                        <div class="ticker-identity-row">
                                         {% if row.logo_url %}
-                                        <img class="settings-table-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
-                                        {% else %}
-                                        <span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
+                                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
                                         {% endif %}
-                                        <span>{{ row.ticker }}</span>
-                                    </span>
+                                            <span class="ticker-identity-copy">
+                                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                                                <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                                            </span>
+                                        </div>
+                                    </div>
                                 </td>
-                                <td data-local-store-company>{{ row.company_name }}</td>
                                 <td class="local-store-range-cell">
                                     <span class="local-store-range-value">
                                         <span class="local-store-range-token{% if not row.range_start %} is-pending-value{% endif %}" data-workspace-mask="local-store-date" data-local-store-range="start">{{ row.range_start }}</span>
@@ -509,7 +517,7 @@
                             {% endfor %}
                             {% else %}
                             <tr>
-                                <td colspan="7">{{ labels.local_store_empty }}</td>
+                                <td colspan="6">{{ labels.local_store_empty }}</td>
                             </tr>
                             {% endif %}
                         </tbody>
@@ -761,6 +769,16 @@
                                 </div>
                             </div>
                         </form>
+                    </div>
+                    {% elif row.sample_kind == "ticker-identity-row" %}
+                    <div class="ticker-identity-item is-active style-token-ticker-identity-demo" aria-hidden="true">
+                        <div class="ticker-identity-row">
+                            <img src="/market-store/logos/{{ row.sample_value }}.png" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">{{ row.sample_value }}</span>
+                                <span class="suggestion-name ticker-identity-name" title="{{ row.sample_title }}">{{ row.sample_title }}</span>
+                            </span>
+                        </div>
                     </div>
                     {% elif row.sample_kind == "settings-general-option" %}
                     <form class="settings-general-form style-token-settings-general-form" action="#" method="get">

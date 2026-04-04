@@ -148,7 +148,16 @@ class LogoServiceTests(unittest.TestCase):
                     "website": None,
                 }
 
-                profile = fetch_quote_profile("DRAM", force_refresh=True)
+                logo_path = logo_store_path_for("DRAM")
+                original_logo = logo_path.read_bytes() if logo_path.exists() else None
+                try:
+                    profile = fetch_quote_profile("DRAM", force_refresh=True)
+                finally:
+                    if original_logo is None:
+                        if logo_path.exists():
+                            logo_path.unlink()
+                    else:
+                        logo_path.write_bytes(original_logo)
 
         self.assertEqual(profile.company_name, "Roundhill Memory ETF")
         self.assertEqual(profile.website, "https://www.roundhillinvestments.com")

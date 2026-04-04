@@ -281,7 +281,7 @@ def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | N
                 if content_type not in {"image/png", "image/x-icon", "image/vnd.microsoft.icon"}:
                     continue
                 return response.read()
-        except (HTTPError, URLError, TimeoutError, ValueError):
+        except (HTTPError, URLError, TimeoutError, ValueError, Exception):
             continue
     return None
 
@@ -298,7 +298,7 @@ def refresh_logo_store(
     if path.exists() and not force_refresh:
         return
 
-    if not has_remote_market_access():
+    if not has_remote_market_access() and not has_remote_logo_access():
         return
 
     domain = extract_domain(website)

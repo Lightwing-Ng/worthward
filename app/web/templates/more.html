@@ -64,14 +64,16 @@
                 <div class="suggestions timing-suggestions-panel" id="timing_suggestions_panel" style="display: block; position: relative; top: auto; border-radius: var(--theme-timing-list-panel-radius); width: var(--sidebar-width); margin-left: auto; box-sizing: border-box; height: 70vh; overflow-y: auto;">
                     {% for ticker in top_tickers %}
                     <div class="suggestion-group">
-                        <a href="{{ ticker.url }}" class="suggestion-item timing-suggestion-item{% if ticker.ticker == timing_selected_ticker %} is-active{% endif %}" data-ticker="{{ ticker.ticker }}">
-                            {% if ticker.logo_url %}
-                            <img src="{{ ticker.logo_url }}" alt="" class="timing-suggestion-logo" loading="lazy" decoding="async">
-                            {% endif %}
-                            <span class="timing-suggestion-copy">
-                                <span class="suggestion-symbol timing-suggestion-symbol">{{ ticker.ticker }}</span>
-                                <span class="suggestion-name timing-suggestion-name" title="{{ ticker.company_name }}">{{ ticker.company_name }}</span>
-                            </span>
+                        <a href="{{ ticker.url }}" class="suggestion-item timing-suggestion-item ticker-identity-item{% if ticker.ticker == timing_selected_ticker %} is-active{% endif %}" data-ticker="{{ ticker.ticker }}">
+                            <div class="ticker-identity-row">
+                                {% if ticker.logo_url %}
+                                <img src="{{ ticker.logo_url }}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                                {% endif %}
+                                <span class="ticker-identity-copy">
+                                    <span class="suggestion-symbol ticker-identity-symbol">{{ ticker.ticker }}</span>
+                                    <span class="suggestion-name ticker-identity-name" title="{{ ticker.company_name }}">{{ ticker.company_name }}</span>
+                                </span>
+                            </div>
                         </a>
                     </div>
                     {% endfor %}

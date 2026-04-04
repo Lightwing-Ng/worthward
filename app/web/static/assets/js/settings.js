@@ -587,8 +587,7 @@
 						<table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
 							<colgroup>
 								<col class="local-store-col-index">
-								<col class="local-store-col-symbol">
-								<col class="local-store-col-name">
+								<col class="local-store-col-ticker">
 								<col class="local-store-col-range">
 								<col class="local-store-col-update">
 								<col class="local-store-col-1m">
@@ -597,8 +596,7 @@
 							<thead>
 								<tr>
 									<th class="local-store-col-index">No.</th>
-									<th>${labels.local_store_symbol || "Ticker"}</th>
-									<th>${labels.local_store_name || "Name"}</th>
+									<th>Ticker</th>
 									<th>${labels.local_store_range || "Range"}</th>
 									<th>1d</th>
 									<th>${labels.local_store_intraday || "1m"}</th>
@@ -610,8 +608,7 @@
 							<table class="settings-table local-store-table scrollable-data-table">
 								<colgroup>
 									<col class="local-store-col-index">
-									<col class="local-store-col-symbol">
-									<col class="local-store-col-name">
+									<col class="local-store-col-ticker">
 									<col class="local-store-col-range">
 									<col class="local-store-col-update">
 									<col class="local-store-col-1m">
@@ -621,13 +618,16 @@
 								${Array.from({length: 6}, (_, index) => `
 									<tr data-local-store-ticker="pending-${index + 1}">
 										<td class="local-store-index-cell is-pending-value" data-workspace-mask="metric-value">${startIndex + index + 1}</td>
-										<td>
-											<span class="settings-symbol-cell">
-												<span class="settings-table-logo settings-table-logo-placeholder" aria-hidden="true"></span>
-												<span class="is-pending-value" data-workspace-mask="company-name">TICK</span>
-											</span>
+										<td class="local-store-ticker-cell">
+											<div class="ticker-identity-item">
+												<div class="ticker-identity-row">
+													<span class="ticker-identity-copy">
+														<span class="suggestion-symbol ticker-identity-symbol is-pending-value" data-workspace-mask="company-name">TICK</span>
+														<span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name">Loading</span>
+													</span>
+												</div>
+											</div>
 										</td>
-										<td data-local-store-company class="is-pending-value" data-workspace-mask="company-name">Loading</td>
 										<td class="local-store-range-cell">
 											<span class="local-store-range-value">
 												<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">0000/00/00</span>
@@ -694,10 +694,6 @@
                 if (!(row instanceof HTMLElement)) return;
                 const startNode = row.querySelector('[data-local-store-range="start"]');
                 const endNode = row.querySelector('[data-local-store-range="end"]');
-                const companyNode = row.querySelector("[data-local-store-company]");
-                if (companyNode instanceof HTMLElement && !companyNode.textContent.trim() && item.company_name) {
-                    companyNode.textContent = item.company_name;
-                }
                 if (startNode instanceof HTMLElement) {
                     startNode.textContent = item.range_start || "";
                     startNode.classList.toggle("is-pending-value", !item.range_start);

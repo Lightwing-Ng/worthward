@@ -728,12 +728,6 @@
 }
 
 .timing-suggestion-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-left: var(--theme-timing-list-item-inline-pad);
-    padding-right: var(--theme-timing-list-item-inline-pad);
-    text-align: left;
     text-decoration: none;
 }
 
@@ -743,6 +737,43 @@
     background: var(--accent-surface-emphasis);
 }
 
+.ticker-identity-item {
+    display: block;
+    width: 100%;
+    padding: var(--ticker-identity-pad-block) var(--ticker-identity-pad-inline);
+    border: 0;
+    border-radius: var(--ticker-identity-radius);
+    background: var(--ticker-identity-background);
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
+    box-shadow: none;
+    min-height: 0;
+    transform: none;
+    box-sizing: border-box;
+}
+
+.ticker-identity-item:hover,
+.ticker-identity-item:focus-visible,
+.ticker-identity-item.is-active,
+.suggestion-item.ticker-identity-item:hover,
+.suggestion-item.ticker-identity-item:focus-visible,
+.suggestion-item.ticker-identity-item.is-active {
+    background: var(--ticker-identity-background-hover);
+    box-shadow: none;
+    transform: none;
+}
+
+.ticker-identity-row {
+    display: flex;
+    align-items: center;
+    gap: var(--ticker-identity-gap);
+    min-height: var(--ticker-identity-min-height);
+    min-width: 0;
+    text-align: left;
+}
+
+.ticker-identity-copy,
 .timing-suggestion-copy {
     display: block;
     min-width: 0;
@@ -751,27 +782,30 @@
     font-weight: var(--font-weight-regular);
 }
 
+.ticker-identity-symbol,
 .timing-suggestion-symbol {
-    font-size: var(--font-tooltip);
+    font-size: var(--ticker-identity-symbol-font-size);
 }
 
+.ticker-identity-name,
 .timing-suggestion-name {
     display: block;
-    margin-top: 2px;
-    font-size: var(--font-ui-xs);
-    line-height: 1.2;
+    margin-top: var(--ticker-identity-name-margin-top);
+    font-size: var(--ticker-identity-name-font-size);
+    line-height: var(--ticker-identity-name-line-height);
     font-weight: var(--font-weight-regular);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: clip;
-    mask-image: linear-gradient(90deg, #000 0%, #000 78%, transparent 100%);
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 78%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 var(--ticker-identity-name-fade-stop), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 var(--ticker-identity-name-fade-stop), transparent 100%);
 }
 
+.ticker-identity-logo,
 .timing-suggestion-logo {
     width: auto;
-    height: 20px;
-    max-width: 32px;
+    height: var(--ticker-identity-logo-height);
+    max-width: var(--ticker-identity-logo-max-width);
     object-fit: contain;
     object-position: left center;
     flex: 0 0 auto;

@@ -1,4 +1,4 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.3.6 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -101,6 +101,20 @@
 	--style-token-column-gap: 24px;
 	--style-token-resizer-width: 32px;
 	--style-token-divider-gap: 24px;
+	--ticker-identity-pad-block: 4px;
+	--ticker-identity-pad-inline: 6px;
+	--ticker-identity-gap: 10px;
+	--ticker-identity-min-height: 28px;
+	--ticker-identity-logo-height: 20px;
+	--ticker-identity-logo-max-width: 32px;
+	--ticker-identity-symbol-font-size: var(--font-tooltip);
+	--ticker-identity-name-margin-top: 2px;
+	--ticker-identity-name-font-size: var(--font-ui-xs);
+	--ticker-identity-name-line-height: 1.2;
+	--ticker-identity-name-fade-stop: 78%;
+	--ticker-identity-background: transparent;
+	--ticker-identity-background-hover: transparent;
+	--ticker-identity-radius: 0px;
 	--local-store-pagination-slot-size: 30px;
 	--local-store-pagination-gap: 10px;
 	--local-store-pagination-button-radius: var(--radius-pill);

@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.24.0
+ * Code version: v1.25.0
  * - Fixed: Investment template, CSS, and JS now share the same chart-surface container contract again via investment_view_surface
  * - Improved: Transaction history rows now render through reusable cell classes instead of per-cell inline styles
  * - Improved: Holdings logos now use delegated fallback handling instead of inline onerror handlers
@@ -52,6 +52,7 @@
  * - Fixed: Forex Trade Component rows now render a precise English description and show the destination currency
  * - Refined: Deposit rows now describe the amount as a USD-equivalent credit when the source CSV only proves the base value
  * - Refined: Forex Trade Component rows now use compact trade-style wording and always display the acquired currency
+ * - Fixed: Investment view segmented pill now stays hidden until the active label is measured, preventing the loading-time stretched Charts highlight
  */
 
 // Helper to draw a multi-series line chart directly on a container
@@ -256,6 +257,52 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentSurfaceCleanupTimer = null;
     let investmentFormHideTimer = null;
     let investmentImportInFlight = false;
+    let investmentSegmentedMeasureRaf = 0;
+
+    function clearInvestmentSegmentedMeasureRaf() {
+        if (!investmentSegmentedMeasureRaf) return;
+        window.cancelAnimationFrame(investmentSegmentedMeasureRaf);
+        investmentSegmentedMeasureRaf = 0;
+    }
+
+    function updateInvestmentSegmentedPill() {
+        if (!segmentedControl) return;
+        const activeLabel = segmentedControl.querySelector('input[type="radio"]:checked + span');
+        if (!activeLabel) {
+            segmentedControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        const controlRect = segmentedControl.getBoundingClientRect();
+        const labelRect = activeLabel.getBoundingClientRect();
+        const horizontalInset = 12;
+        const measuredWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
+        const measuredLeft = Math.round((labelRect.left - controlRect.left) - horizontalInset);
+
+        if (controlRect.width <= 0 || measuredWidth <= 0) {
+            segmentedControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        const maxLeft = Math.max(0, Math.round(controlRect.width - measuredWidth));
+        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
+
+        segmentedControl.style.setProperty('--investment-segmented-pill-left', `${clampedLeft}px`);
+        segmentedControl.style.setProperty('--investment-segmented-pill-width', `${measuredWidth}px`);
+        segmentedControl.classList.add('is-pill-ready');
+    }
+
+    function scheduleInvestmentSegmentedPillUpdate() {
+        if (!segmentedControl) return;
+        segmentedControl.classList.remove('is-pill-ready');
+        clearInvestmentSegmentedMeasureRaf();
+        investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
+            investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
+                investmentSegmentedMeasureRaf = 0;
+                updateInvestmentSegmentedPill();
+            });
+        });
+    }
 
     function lockInvestmentSurfaceHeight() {
         if (!investmentViewSurface) return;
@@ -302,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
             segmentedControl.dataset.active = nextView;
             segmentedControl.style.setProperty('--segmented-option-count', String(INVESTMENT_VIEW_ORDER.length));
             segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
+            scheduleInvestmentSegmentedPillUpdate();
         }
         if (investmentViewSurface) {
             investmentViewSurface.dataset.activeView = nextView;
@@ -326,7 +374,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkedRadio = segmentedControl.querySelector('input[type="radio"]:checked');
         activeInvestmentView = '';
         setInvestmentView(checkedRadio?.value || 'chart');
+        scheduleInvestmentSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
+
+        if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
+            document.fonts.ready.then(() => {
+                scheduleInvestmentSegmentedPillUpdate();
+            }).catch(() => {});
+        }
+
+        window.addEventListener('resize', scheduleInvestmentSegmentedPillUpdate);
+
+        if (window.ResizeObserver) {
+            const segmentedResizeObserver = new ResizeObserver(() => {
+                scheduleInvestmentSegmentedPillUpdate();
+            });
+            segmentedResizeObserver.observe(segmentedControl);
+            radios.forEach((radio) => {
+                const optionLabel = radio.nextElementSibling;
+                if (optionLabel instanceof HTMLElement) {
+                    segmentedResizeObserver.observe(optionLabel);
+                }
+            });
+        }
     }
 
     function setImportFeedback(message, isError = false) {
@@ -674,6 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         window.ANTIGRAVITY_INVESTMENT_DATA = data;
         await renderTransactionTable(data.transactions || []);
+        scheduleInvestmentSegmentedPillUpdate();
         return data;
     }
 
@@ -1348,15 +1419,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr>
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
-                            <span class="suggestion-logo-slot investment-holdings-ticker-logo-slot" aria-hidden="true">
-                                <span class="suggestion-logo-placeholder investment-holdings-ticker-logo-placeholder"></span>
-                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="timing-suggestion-logo investment-holdings-ticker-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
-                            </span>
-                            <span class="timing-suggestion-copy investment-holdings-ticker-copy">
-                                <span class="suggestion-symbol timing-suggestion-symbol investment-holdings-ticker-symbol">${escapeHtml(summary.ticker)}</span>
-                                <span class="suggestion-name timing-suggestion-name investment-holdings-ticker-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
-                            </span>
+                        <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
+                            <div class="ticker-identity-row">
+                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                                <span class="ticker-identity-copy">
+                                    <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(summary.ticker)}</span>
+                                    <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                                </span>
+                            </div>
                         </a>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>

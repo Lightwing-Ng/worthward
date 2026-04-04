@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.3.3 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -639,6 +639,10 @@ div.style-token-modal-demo {
     min-width: 0 !important;
 }
 
+.style-token-ticker-identity-demo {
+    width: min(100%, 320px);
+}
+
 .style-token-demo .style-token-chart-tooltip-demo.chart-tooltip {
     position: relative;
     left: 0;
@@ -1045,25 +1049,31 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding-bottom: 14px;
 }
 
-.settings-strategy-params-table-wrap {
+.settings-strategy-params-table-shell {
     --settings-strategy-params-offset-left: clamp(16px, 4vw, var(--settings-strategy-params-indent));
     --settings-strategy-params-offset-right: 16px;
     min-height: 0;
     min-width: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
     width: calc(100% - var(--settings-strategy-params-offset-left) - var(--settings-strategy-params-offset-right));
     max-width: calc(100% - var(--settings-strategy-params-offset-left) - var(--settings-strategy-params-offset-right));
     margin: 0 var(--settings-strategy-params-offset-right) 0 var(--settings-strategy-params-offset-left);
-    border-radius: var(--radius-soft);
-    background: var(--glass-surface-background-soft);
     box-sizing: border-box;
+}
+
+.settings-strategy-params-table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    width: 100%;
+    max-width: 100%;
 }
 
 .settings-strategy-params-table {
     width: 100%;
     max-width: 100%;
-    min-width: 100px;
+    min-width: 420px;
     box-sizing: border-box;
     table-layout: fixed;
 }
@@ -1098,13 +1108,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     word-break: break-word;
 }
 
-.settings-strategy-params-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: var(--layer-raised-control);
-    background: var(--glass-surface-background-strong);
-    backdrop-filter: var(--glass-popover-blur);
-    -webkit-backdrop-filter: var(--glass-popover-blur);
+.settings-strategy-scroll-table thead th {
+    text-align: left !important;
 }
 
 .settings-strategy-param-label {
@@ -1206,17 +1211,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-table.settings-strategy-params-table {
-    min-width: 100px;
-}
-
-.settings-strategy-params-table-wrap {
-    overflow-x: hidden;
+    min-width: 420px;
 }
 
 .settings-strategy-params-table {
     width: 100%;
     max-width: 100%;
-    min-width: 100px;
+    min-width: 420px;
     table-layout: fixed;
 }
 
@@ -1230,6 +1231,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     text-align: right;
 }
 
+.settings-strategy-scroll-table tbody td {
+    padding: var(--scrollable-data-table-cell-padding);
+}
+
 .settings-table th {
     color: var(--muted);
     font-weight: var(--font-weight-bold);
@@ -1237,27 +1242,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .settings-table tbody tr + tr td {
     border-top: 1px solid var(--theme-glass-border);
-}
-
-.settings-table-logo {
-    width: 20px;
-    height: 20px;
-    border-radius: 6px;
-    object-fit: contain;
-    background: var(--glass-surface-background-dense);
-    display: block;
-}
-
-.settings-table-logo-placeholder {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px var(--theme-glass-border);
-}
-
-.settings-symbol-cell {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: var(--font-weight-bold);
 }
 
 .settings-action-form {
@@ -1373,13 +1357,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     text-align: center;
 }
 
-.local-store-col-symbol {
-    width: 13%;
-    min-width: 0;
-}
-
-.local-store-col-name {
-    width: 27%;
+.local-store-col-ticker {
+    width: 40%;
     min-width: 0;
 }
 
@@ -1417,15 +1396,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
     font-variant-numeric: tabular-nums;
 }
 
-.local-store-table .settings-symbol-cell {
-    gap: 6px;
+.local-store-ticker-cell {
     min-width: 0;
-    flex-wrap: wrap;
-}
-
-.local-store-table .settings-table-logo {
-    width: 18px;
-    height: 18px;
 }
 
 .local-store-table .settings-action-button {
