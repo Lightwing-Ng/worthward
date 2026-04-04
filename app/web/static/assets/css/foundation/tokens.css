@@ -74,6 +74,9 @@
 	--settings-action-button-min-height: 32px;
 	--settings-action-button-background: #0055cc;
 	--settings-action-button-color: var(--color-white-adaptive);
+	--settings-action-button-background-disabled: color-mix(in srgb, var(--theme-muted) 28%, transparent);
+	--settings-action-button-color-disabled: color-mix(in srgb, var(--settings-action-button-color) 72%, transparent);
+	--settings-action-button-background-pending: color-mix(in srgb, var(--settings-action-button-background) 76%, white 24%);
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;
 	--settings-round-icon-button-radius: var(--radius-pill);

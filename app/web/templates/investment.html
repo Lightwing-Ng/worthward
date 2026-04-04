@@ -38,17 +38,20 @@
 
     <div class="workspace-header investment-workspace-header">
         <article class="report-card trade-performance-card investment-report-card">
+
+            <button type="button" class="export-transactions-button" id="export_transactions_button"
+                    aria-label="Export Transactions" title="Export Transactions" hidden>
+                        <span class="icon"
+                              style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);">
+                        </span>
+            </button>
+
             <div class="report-heading-row">
                 <p class="report-heading">Investment</p>
             </div>
-            <div class="investment-surface-stack investment-view-surface" id="investment_view_surface" data-active-view="chart">
-                <button type="button" class="export-transactions-button" id="export_transactions_button"
-                        aria-label="Export Transactions" title="Export Transactions" hidden>
-                        <span class="icon"
-                              style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);">
+            <div class="investment-surface-stack investment-view-surface" id="investment_view_surface"
+                 data-active-view="chart">
 
-                        </span>
-                </button>
                 <div class="investment-view-segmented-wrap">
                     {{ render_segmented_control(
                                 "segmented-control--compact investment-view-segmented",
@@ -76,8 +79,6 @@
                          id="investment_metrics_panel"
                          data-investment-view-panel="metrics" hidden></div>
                 </div>
-
-
             </div>
         </article>
 
@@ -156,7 +157,10 @@
                         </div>
                         <div class="settings-action-package-form">
                             <button type="submit" class="settings-inline-button settings-inline-button-primary"
-                                    id="investment_import_submit_button">Import now
+                                    id="investment_import_submit_button"
+                                    data-default-label="Import now"
+                                    data-pending-label="Importing"
+                                    disabled>Import now
                             </button>
                         </div>
                     </section>

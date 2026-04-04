@@ -1,4 +1,4 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.4.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1823,9 +1823,34 @@ div.style-token-modal-demo::-webkit-scrollbar,
     letter-spacing: normal;
 }
 
+.settings-inline-button-primary:disabled {
+    background: var(--settings-action-button-background-disabled);
+    color: var(--settings-action-button-color-disabled);
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.settings-inline-button-primary.is-pending {
+    background: var(--settings-action-button-background-pending);
+    color: var(--settings-action-button-color);
+    cursor: progress;
+}
+
 .settings-inline-button-primary:hover,
 .settings-inline-button-primary:focus-visible {
     background: color-mix(in srgb, var(--settings-action-button-background) 88%, white);
+    box-shadow: none;
+}
+
+.settings-inline-button-primary:disabled:hover,
+.settings-inline-button-primary:disabled:focus-visible {
+    background: var(--settings-action-button-background-disabled);
+    box-shadow: none;
+}
+
+.settings-inline-button-primary.is-pending:hover,
+.settings-inline-button-primary.is-pending:focus-visible {
+    background: var(--settings-action-button-background-pending);
     box-shadow: none;
 }
 

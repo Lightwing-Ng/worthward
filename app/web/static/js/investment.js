@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.27.0
+ * Code version: v1.28.0
+ * - Added: Settings action button import flow now exposes explicit disabled and in-progress states, including present-participle copy while the task is running
  * - Changed: Investment Charts now render one equity point per market day, filling no-trade trading days from parquet closes and collapsing same-day multi-trade activity into a single daily close snapshot
  * - Changed: Non-trading days with investment ledger activity now render on the curve using the previous available market close, while hover only anchors to history rows on dates that actually have ledger activity
  * - Fixed: Investment equity canvas now respects responsive container width at medium breakpoints instead of overflowing around 900 px layouts
@@ -266,6 +267,33 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
+
+    function getActionButtonLabels(button) {
+        return {
+            defaultLabel: String(button?.dataset?.defaultLabel || button?.textContent || '').trim() || 'Continue',
+            pendingLabel: String(button?.dataset?.pendingLabel || '').trim() || 'Working',
+        };
+    }
+
+    function renderPendingActionLabel(pendingLabel) {
+        return /ing$/i.test(pendingLabel) ? `${pendingLabel}...` : pendingLabel;
+    }
+
+    function syncActionButtonState(button, { disabled = false, pending = false } = {}) {
+        if (!button) return;
+        const labels = getActionButtonLabels(button);
+        const isDisabled = Boolean(disabled || pending);
+        button.disabled = isDisabled;
+        button.classList.toggle('is-pending', Boolean(pending));
+        button.setAttribute('aria-disabled', String(isDisabled));
+        if (pending) {
+            button.setAttribute('aria-busy', 'true');
+            button.textContent = renderPendingActionLabel(labels.pendingLabel);
+            return;
+        }
+        button.removeAttribute('aria-busy');
+        button.textContent = labels.defaultLabel;
+    }
 
     function clearInvestmentSegmentedMeasureRaf() {
         if (!investmentSegmentedMeasureRaf) return;
@@ -765,9 +793,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(positionsCsvStatus, positionsReady);
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
-        if (submitButton) {
-            submitButton.disabled = !importReady || investmentImportInFlight;
-        }
+        syncActionButtonState(submitButton, {
+            disabled: !importReady,
+            pending: investmentImportInFlight,
+        });
     }
 
     function openInvestmentImportForm() {
@@ -1047,10 +1076,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const submitButton = investmentForm.querySelector('button[type="submit"]');
             investmentImportInFlight = true;
             syncImportValidationState();
-            if (submitButton) {
-                submitButton.classList.add('is-pending');
-                submitButton.textContent = 'Importing...';
-            }
             fetch('/api/investment/transactions', {
                 method: 'POST',
                 body: formData,
@@ -1074,10 +1099,6 @@ document.addEventListener('DOMContentLoaded', () => {
             .finally(() => {
                 investmentImportInFlight = false;
                 syncImportValidationState();
-                if (submitButton) {
-                    submitButton.classList.remove('is-pending');
-                    submitButton.textContent = 'Import now';
-                }
             });
         });
     }
@@ -1195,7 +1216,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 description = `${txn.ticker}@${cleanQty}`;
             }
         } else if (normalizedTypeDesc === 'deposit') {
-            description = 'USD equivalent deposit';
+            description = '* Equivalent';
         } else if (normalizedTypeDesc === 'withdrawal') {
             description = '';
         } else {
