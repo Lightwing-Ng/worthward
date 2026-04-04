@@ -1,18 +1,23 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.3.0
+Code version: v0.3.2
 """
 
 from __future__ import annotations
 
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
 
 from app import create_app
-from app.services.market_data import download_full_history, ensure_fresh_history_store
+from app.infrastructure.storage import history_store_path_for
+from app.services.market_data import download_full_history, ensure_fresh_history_store, refresh_history_store
 from app.models.schemas import QuoteProfile
 
 
@@ -32,6 +37,93 @@ def _fake_quote_profile(ticker: str, force_refresh: bool, namespace: str = "prim
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def test_refresh_history_store_skips_write_when_remote_has_no_newer_trading_day(self) -> None:
+        path = history_store_path_for("QQQ")
+        original_exists = path.exists()
+        original_bytes = path.read_bytes() if original_exists else None
+
+        existing_dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-04-01", "2026-04-02"]),
+                "Open": [490.0, 495.0],
+                "High": [491.0, 496.0],
+                "Low": [489.0, 494.0],
+                "Close": [490.5, 495.5],
+                "Adj Close": [490.5, 495.5],
+            }
+        )
+        overlapping_remote = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-04-01", "2026-04-02"]),
+                "Open": [490.1, 495.1],
+                "High": [491.1, 496.1],
+                "Low": [489.1, 494.1],
+                "Close": [490.6, 495.6],
+                "Adj Close": [490.6, 495.6],
+            }
+        ).set_index("Date")
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            existing_dataset.to_parquet(path, index=False)
+            before_bytes = path.read_bytes()
+
+            with patch("app.services.market_data.has_remote_market_access", return_value=True), \
+                    patch("app.services.market_data._download_daily_history_with_yfinance", return_value=overlapping_remote):
+                refreshed_path = refresh_history_store("QQQ")
+
+            self.assertEqual(refreshed_path, path)
+            self.assertEqual(path.read_bytes(), before_bytes)
+            stored = pd.read_parquet(path).sort_values("Date").reset_index(drop=True)
+            pd.testing.assert_frame_equal(stored, existing_dataset)
+        finally:
+            if original_exists and original_bytes is not None:
+                path.write_bytes(original_bytes)
+            elif path.exists():
+                path.unlink()
+
+    def test_download_full_history_serializes_concurrent_yfinance_requests(self) -> None:
+        fake_history = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-04-01"]),
+                "Open": [100.0],
+                "High": [101.0],
+                "Low": [99.0],
+                "Close": [100.5],
+                "Adj Close": [100.5],
+            }
+        ).set_index("Date")
+
+        state_lock = threading.Lock()
+        active_calls = 0
+        max_active_calls = 0
+        requested_tickers: list[str] = []
+
+        def fake_download(*, tickers: str, **kwargs) -> pd.DataFrame:
+            del kwargs
+            nonlocal active_calls, max_active_calls
+            with state_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+                requested_tickers.append(tickers)
+            time.sleep(0.05)
+            with state_lock:
+                active_calls -= 1
+            return fake_history.copy()
+
+        with patch("app.services.market_data.yf.download", side_effect=fake_download):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(download_full_history, "QQQ"),
+                    executor.submit(download_full_history, "AAPL"),
+                ]
+                for future in futures:
+                    result = future.result()
+                    self.assertFalse(result.empty)
+
+        self.assertEqual(max_active_calls, 1)
+        self.assertCountEqual(requested_tickers, ["QQQ", "AAPL"])
+
     def test_download_full_history_canonicalizes_share_class_symbol_for_yfinance(self) -> None:
         fake_history = pd.DataFrame(
             {

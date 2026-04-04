@@ -145,9 +145,7 @@
 	--workspace-metric-card-align-self: start;
 	--workspace-metrics-grid-auto-rows-wide: minmax(var(--workspace-metric-card-min-height), max-content);
 	--trade-chart-y-padding-px: 2px;
-
 	--investment-view-surface-padding: 0;
-
 	--investment-history-surface-padding: 10px 12px 20px 12px;
 	--app-shell-gap: 14px;
 	--control-glass-background: transparent;

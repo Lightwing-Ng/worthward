@@ -1,13 +1,14 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.1
+Code version: v0.3.3
 """
 
 from __future__ import annotations
 
 from time import sleep
 from pathlib import Path
+from threading import Lock
 
 import pandas as pd
 import yfinance as yf
@@ -24,12 +25,46 @@ from app.infrastructure.storage import (
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
+YFINANCE_DOWNLOAD_LOCK = Lock()
+
+
+def _download_daily_history_with_yfinance(
+        ticker: str,
+        *,
+        start: str | None = None,
+        period: str | None = None,
+        interval: str = "1d",
+) -> pd.DataFrame:
+    """
+    Serialize yfinance downloads because yfinance 1.2.0 mutates module-level
+    shared state during each request and is not safe under concurrent calls.
+    """
+    with YFINANCE_DOWNLOAD_LOCK:
+        return yf.download(
+            tickers=ticker,
+            start=start,
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            multi_level_index=False,
+            threads=False,
+            timeout=12,
+        )
 
 
 def drop_duplicate_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if not frame.columns.has_duplicates:
         return frame
     return frame.loc[:, ~frame.columns.duplicated()].copy()
+
+
+def _normalize_store_frame_for_compare(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized = drop_duplicate_columns(frame.copy())
+    if "Date" in normalized.columns:
+        normalized["Date"] = pd.to_datetime(normalized["Date"], errors="coerce")
+    normalized = normalized.sort_values("Date").reset_index(drop=True)
+    return normalized
 
 
 def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = "1d") -> pd.DataFrame:
@@ -92,17 +127,18 @@ def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
     while current_end > start_date:
         current_start = max(current_end - timedelta(days=7), start_date)
         try:
-            df = yf.download(
-                tickers=normalized_ticker,
-                start=current_start, 
-                end=current_end, 
-                interval="1m", 
-                auto_adjust=False, 
-                progress=False, 
-                multi_level_index=False,
-                threads=False,
-                timeout=12,
-            )
+            with YFINANCE_DOWNLOAD_LOCK:
+                df = yf.download(
+                    tickers=normalized_ticker,
+                    start=current_start,
+                    end=current_end,
+                    interval="1m",
+                    auto_adjust=False,
+                    progress=False,
+                    multi_level_index=False,
+                    threads=False,
+                    timeout=12,
+                )
             if not df.empty:
                 dfs.append(df)
         except Exception:
@@ -141,15 +177,10 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
         if delay > 0:
             sleep(delay)
         try:
-            return yf.download(
-                tickers=normalized_ticker,
+            return _download_daily_history_with_yfinance(
+                normalized_ticker,
                 period="max",
                 interval=interval,
-                auto_adjust=False,
-                progress=False,
-                multi_level_index=False,
-                threads=False,
-                timeout=12,
             )
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -214,23 +245,25 @@ def refresh_history_store(ticker: str) -> Path:
     if start_date:
         # Incremental download logic
         try:
-            new_history = yf.download(
-                tickers=normalized_ticker,
+            new_history = _download_daily_history_with_yfinance(
+                normalized_ticker,
                 start=start_date,
                 interval="1d",
-                auto_adjust=False,
-                progress=False,
-                multi_level_index=False,
-                threads=False,
-                timeout=12,
             )
             if not new_history.empty:
                 new_df = normalize_history_frame(new_history, normalized_ticker)
                 if existing_df is not None:
+                    existing_normalized = _normalize_store_frame_for_compare(existing_df)
+                    existing_max_date = pd.to_datetime(existing_normalized["Date"].max(), errors="coerce")
+                    new_max_date = pd.to_datetime(new_df["Date"].max(), errors="coerce")
+                    if pd.notna(existing_max_date) and pd.notna(new_max_date) and new_max_date <= existing_max_date:
+                        return path
+
                     # Merge and drop duplicates, keeping newer data for the overlap
-                    combined = pd.concat([existing_df, new_df])
+                    combined = pd.concat([existing_normalized, new_df])
                     combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
-                    combined.to_parquet(path, index=False)
+                    if not combined.reset_index(drop=True).equals(existing_normalized):
+                        combined.to_parquet(path, index=False)
                     return path
         except:
             # Fallback to full download if incremental fails
