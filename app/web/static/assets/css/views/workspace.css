@@ -1269,7 +1269,7 @@ footer {
     gap: 12px;
     padding: 10px 12px;
     min-height: 48px;
-    border-radius: var(--radius-panel);
+    border-radius: var(--radius-pill);
     background: transparent;
     color: var(--text);
     text-decoration: none;
@@ -1282,7 +1282,7 @@ footer {
 }
 
 .settings-nav-item:hover, .settings-nav-item:focus-visible {
-    background: var(--glass-chip-background);
+    background: var(--theme-muted-translucent);
 }
 
 .settings-nav-item.is-active {
