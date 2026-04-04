@@ -1044,6 +1044,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_value": "NVDA",
                 "tokens": [
                     px_token("--trade-control-input-height", 30, 0),
+                    px_token("--ticker-input-control-radius", 999, 0),
                     raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
                     raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),
                     raw_token("--control-liquid-shadow", "none"),

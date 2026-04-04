@@ -13,7 +13,12 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
-from app.infrastructure.storage import clear_nonhistorical_market_cache, history_store_path_for, logo_store_path_for
+from app.infrastructure.storage import (
+    clear_nonhistorical_market_cache,
+    history_store_path_for,
+    intraday_history_store_path_for,
+    logo_store_path_for,
+)
 from app.services.logos import (
     build_logo_provider_ticker_candidates,
     fetch_quote_profile,
@@ -69,6 +74,55 @@ class LogoServiceTests(unittest.TestCase):
                     history_path.unlink()
             else:
                 history_path.write_bytes(original_history)
+            if original_logo is None:
+                if logo_path.exists():
+                    logo_path.unlink()
+            else:
+                logo_path.write_bytes(original_logo)
+
+    def test_search_tickers_excludes_intraday_store_suffix_from_local_suggestions(self) -> None:
+        ticker = "MU"
+        history_path = history_store_path_for(ticker)
+        intraday_path = intraday_history_store_path_for(ticker, "1m")
+        logo_path = logo_store_path_for(ticker)
+        original_history = history_path.read_bytes() if history_path.exists() else None
+        original_intraday = intraday_path.read_bytes() if intraday_path.exists() else None
+        original_logo = logo_path.read_bytes() if logo_path.exists() else None
+
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(
+                {
+                    "Date": pd.to_datetime(["2026-04-01"]),
+                    "Close": [101.23],
+                }
+            ).to_parquet(history_path, index=False)
+            pd.DataFrame(
+                {
+                    "Date": pd.to_datetime(["2026-04-01 09:30"]),
+                    "Close": [101.25],
+                }
+            ).to_parquet(intraday_path, index=False)
+            logo_path.parent.mkdir(parents=True, exist_ok=True)
+            logo_path.write_bytes(b"fake-logo")
+
+            with create_app().test_request_context():
+                results = search_tickers("M", limit=10)
+
+            symbols = [item["symbol"] for item in results]
+            self.assertIn("MU", symbols)
+            self.assertNotIn("MU_1M", symbols)
+        finally:
+            if original_history is None:
+                if history_path.exists():
+                    history_path.unlink()
+            else:
+                history_path.write_bytes(original_history)
+            if original_intraday is None:
+                if intraday_path.exists():
+                    intraday_path.unlink()
+            else:
+                intraday_path.write_bytes(original_intraday)
             if original_logo is None:
                 if logo_path.exists():
                     logo_path.unlink()

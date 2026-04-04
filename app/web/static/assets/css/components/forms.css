@@ -121,9 +121,10 @@
 }
 .ticker-input-control { 
 	--ticker-input-glass-background: transparent;
+	--ticker-input-control-radius: var(--radius-pill);
 	position: relative;
 }
-.ticker-input-control input { width: 100%; display: block; padding-left: 44px; padding-right: var(--trade-control-input-height); font-size: var(--font-form-label); line-height: 1; min-height: 29px; font-variant-numeric: tabular-nums; background: var(--ticker-input-glass-background); box-shadow: none; border-radius: 0; }
+.ticker-input-control input { width: 100%; display: block; padding-left: 44px; padding-right: var(--trade-control-input-height); font-size: var(--font-form-label); line-height: 1; min-height: 29px; font-variant-numeric: tabular-nums; background: var(--ticker-input-glass-background); box-shadow: none; border-radius: var(--ticker-input-control-radius); }
 .ticker-input-control input::placeholder { font-size: var(--font-tooltip); color: color-mix(in srgb, var(--theme-text) 68%, transparent); }
 .ticker-input-control input:hover,
 .ticker-input-control input:focus,

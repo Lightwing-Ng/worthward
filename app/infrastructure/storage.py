@@ -52,6 +52,7 @@ _PROFILE_COLUMNS = [
 ]
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
 _SHARE_CLASS_TICKER_PATTERN = re.compile(r"^([A-Z0-9]{1,4})[.\-\s]+([ABC])$")
+_INTRADAY_STORE_SUFFIX_PATTERN = re.compile(r"_[0-9]+[a-z]+$")
 
 _MIGRATION_COMPLETED = False
 _MIGRATION_RUNNING = False
@@ -471,7 +472,9 @@ def list_historical_tickers() -> list[str]:
     return sorted(
         ticker_from_store_path(path)
         for path in HISTORICAL_STORE_DIR.glob("*.parquet")
-        if path.is_file() and path.stat().st_size > 0
+        if path.is_file()
+           and path.stat().st_size > 0
+           and _INTRADAY_STORE_SUFFIX_PATTERN.search(path.stem) is None
     )
 
 
