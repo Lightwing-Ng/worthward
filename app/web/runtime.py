@@ -20,9 +20,9 @@ from flask import jsonify, make_response, redirect, render_template, request, se
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from app.infrastructure.broker_market_data import (
+    classify_daily_store_status,
+    classify_one_minute_store_status,
     has_recent_one_minute_store,
-    is_one_minute_store_complete,
-    is_daily_store_complete,
     normalize_one_minute_store_frame,
     one_minute_lookback_start,
     refresh_longbridge_one_minute_store,
@@ -1443,8 +1443,8 @@ def build_web_runtime() -> WebRuntime:
             tickers: list[str],
             *,
             include_ranges: bool,
-    ) -> list[dict[str, str]]:
-        rows: list[dict[str, str]] = []
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
         for ticker in tickers:
             history_path = history_store_path_for(ticker)
             if not history_path.exists() or history_path.stat().st_size == 0:
@@ -1467,6 +1467,8 @@ def build_web_runtime() -> WebRuntime:
                     range_end = format_store_range_date(date_values.max())
                 except Exception:
                     pass
+            daily_store_status = classify_daily_store_status(ticker)
+            intraday_store_status = classify_one_minute_store_status(ticker)
             rows.append(
                 {
                     "ticker": ticker,
@@ -1475,8 +1477,10 @@ def build_web_runtime() -> WebRuntime:
                     "range_start": range_start,
                     "range_end": range_end,
                     "range": f"{range_start} - {range_end}" if range_start and range_end else "",
-                    "has_1m": is_one_minute_store_complete(ticker),
-                    "has_1d": is_daily_store_complete(ticker),
+                    "has_1m": intraday_store_status == "fresh",
+                    "has_1d": daily_store_status == "fresh",
+                    "daily_store_status": daily_store_status,
+                    "intraday_store_status": intraday_store_status,
                 }
             )
         return rows
@@ -1913,7 +1917,7 @@ def build_web_runtime() -> WebRuntime:
         font_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
-        local_market_rows: list[dict[str, str]] = []
+        local_market_rows: list[dict[str, Any]] = []
         local_store_total_pages = 1
         local_store_current_page = 1
         local_store_prev_slot = {"page": None}

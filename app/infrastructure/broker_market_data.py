@@ -425,6 +425,24 @@ def is_one_minute_store_complete(ticker: str) -> bool:
     return _is_market_data_fresh(max_date)
 
 
+def is_one_minute_store_fresh(ticker: str) -> bool:
+    path = intraday_history_store_path_for(ticker, "1m")
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        dataset = pd.read_parquet(path, columns=["Date"])
+    except Exception:
+        return False
+    if dataset.empty:
+        return False
+
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"]).dropna()
+    if date_values.empty:
+        return False
+
+    return _is_market_data_fresh(date_values.max())
+
+
 def is_daily_store_complete(ticker: str) -> bool:
     path = history_store_path_for(ticker)
     if not path.exists() or path.stat().st_size == 0:
@@ -468,3 +486,19 @@ def is_daily_store_fresh(ticker: str) -> bool:
         return False
 
     return _is_market_data_fresh(date_values.max())
+
+
+def classify_one_minute_store_status(ticker: str) -> str:
+    if is_one_minute_store_complete(ticker):
+        return "fresh"
+    if is_one_minute_store_fresh(ticker):
+        return "short_history"
+    return "missing"
+
+
+def classify_daily_store_status(ticker: str) -> str:
+    if is_daily_store_complete(ticker):
+        return "fresh"
+    if is_daily_store_fresh(ticker):
+        return "short_history"
+    return "missing"

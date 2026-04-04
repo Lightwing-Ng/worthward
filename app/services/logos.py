@@ -52,6 +52,7 @@ ISSUER_WEBSITE_HINTS = {
     "JPMORGAN": "https://www.jpmorganchase.com",
     "JP MORGAN": "https://www.jpmorganchase.com",
     "ISHARES": "https://www.ishares.com",
+    "ROUNDHILL": "https://www.roundhillinvestments.com",
     "VANGUARD": "https://investor.vanguard.com",
     "SCHWAB": "https://www.schwabassetmanagement.com",
     "SPDR": "https://www.ssga.com",

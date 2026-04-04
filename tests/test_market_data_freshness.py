@@ -16,7 +16,11 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
-from app.infrastructure.broker_market_data import _is_market_data_fresh
+from app.infrastructure.broker_market_data import (
+    _is_market_data_fresh,
+    classify_daily_store_status,
+    classify_one_minute_store_status,
+)
 from app.infrastructure.storage import history_store_path_for
 from app.services.market_data import download_full_history, ensure_fresh_history_store, refresh_history_store
 from app.models.schemas import QuoteProfile
@@ -45,6 +49,24 @@ class MarketDataFreshnessTests(unittest.TestCase):
         )
 
         self.assertTrue(is_fresh)
+
+    def test_classify_daily_store_status_marks_fresh_but_short_history_as_short_history(self) -> None:
+        with (
+            patch("app.infrastructure.broker_market_data.is_daily_store_complete", return_value=False),
+            patch("app.infrastructure.broker_market_data.is_daily_store_fresh", return_value=True),
+        ):
+            status = classify_daily_store_status("DRAM")
+
+        self.assertEqual(status, "short_history")
+
+    def test_classify_one_minute_store_status_marks_fresh_but_short_history_as_short_history(self) -> None:
+        with (
+            patch("app.infrastructure.broker_market_data.is_one_minute_store_complete", return_value=False),
+            patch("app.infrastructure.broker_market_data.is_one_minute_store_fresh", return_value=True),
+        ):
+            status = classify_one_minute_store_status("DRAM")
+
+        self.assertEqual(status, "short_history")
 
     def test_refresh_history_store_skips_write_when_remote_has_no_newer_trading_day(self) -> None:
         path = history_store_path_for("QQQ")

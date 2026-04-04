@@ -1199,6 +1199,21 @@ div.style-token-modal-demo::-webkit-scrollbar,
     opacity: 1;
 }
 
+.local-store-status-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--theme-accent-positive);
+    background: transparent;
+    color: var(--theme-accent-positive);
+    font-size: var(--font-caption);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+}
+
 .settings-table-wrap {
     max-width: 100%;
     overflow-x: hidden;

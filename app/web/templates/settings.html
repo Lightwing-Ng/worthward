@@ -449,8 +449,10 @@
                                 </span>
                             </td>
                             <td>
-                                {% if row.has_1d %}
+                                {% if row.daily_store_status == "fresh" %}
                                 <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                {% elif row.daily_store_status == "short_history" %}
+                                <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
                                 {% else %}
                                 <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
@@ -463,8 +465,10 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if row.has_1m %}
+                                {% if row.intraday_store_status == "fresh" %}
                                 <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true" style="margin: 0 auto;"></span>
+                                {% elif row.intraday_store_status == "short_history" %}
+                                <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
                                 {% else %}
                                 <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                     <input type="hidden" name="ticker" value="{{ row.ticker }}">
