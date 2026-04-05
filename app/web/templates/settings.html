@@ -181,7 +181,10 @@
                                 <p class="font-token-sample-name">{{ sample.token_name }}</p>
                             </div>
                             <div class="font-token-sample-preview">
-                                <p class="font-token-sample-text" style="font-size: var({{ sample.token_name }});">{{ sample.sample_text }}</p>
+                                <p
+                                    class="font-token-sample-text"
+                                    data-inline-font-size-token="{{ sample.token_name }}"
+                                >{{ sample.sample_text }}</p>
                                 <p class="font-token-sample-value">{{ sample.sample_value }}</p>
                             </div>
                         </div>
@@ -660,7 +663,14 @@
                             <p class="style-token-demo-title">{{ row.sample_title }}</p>
                             <p class="style-token-demo-copy">{{ row.sample_copy }}</p>
                         </div>
-                        <div class="report-card style-token-demo-card" style="background: {{ row.sample_surface_background }}; backdrop-filter: {{ row.sample_surface_blur }}; -webkit-backdrop-filter: {{ row.sample_surface_blur }}; border: {{ row.sample_surface_border }}; box-shadow: {{ row.sample_surface_shadow }};">
+                        <div
+                            class="report-card style-token-demo-card"
+                            data-inline-background="{{ row.sample_surface_background }}"
+                            data-inline-backdrop-filter="{{ row.sample_surface_blur }}"
+                            data-inline-webkit-backdrop-filter="{{ row.sample_surface_blur }}"
+                            data-inline-border="{{ row.sample_surface_border }}"
+                            data-inline-box-shadow="{{ row.sample_surface_shadow }}"
+                        >
                         </div>
                     </div>
                     {% endif %}
@@ -806,7 +816,7 @@
                             <div class="chart-tooltip-list">
                                 {% for item in row.sample_rows %}
                                 <div class="chart-tooltip-row">
-                                    <span class="chart-tooltip-dot" style="background: {{ item.color }}"></span>
+                                    <span class="chart-tooltip-dot" data-inline-background="{{ item.color }}"></span>
                                     <span></span>
                                     <span class="chart-tooltip-label">{{ item.label }}</span>
                                     <span class="chart-tooltip-value">{{ item.value }}</span>

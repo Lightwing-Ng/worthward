@@ -103,6 +103,46 @@
         });
     };
 
+    const applyTemplateInlineStyles = () => {
+        document.querySelectorAll("[data-inline-font-size-token]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const token = (element.dataset.inlineFontSizeToken || "").trim();
+            if (!token) return;
+            const value = token.startsWith("var(") ? token : `var(${token})`;
+            element.style.fontSize = value;
+        });
+
+        document.querySelectorAll("[data-inline-background]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = (element.dataset.inlineBackground || "").trim();
+            if (value) element.style.background = value;
+        });
+
+        document.querySelectorAll("[data-inline-backdrop-filter]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = (element.dataset.inlineBackdropFilter || "").trim();
+            if (value) element.style.backdropFilter = value;
+        });
+
+        document.querySelectorAll("[data-inline-webkit-backdrop-filter]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = (element.dataset.inlineWebkitBackdropFilter || "").trim();
+            if (value) element.style.setProperty("-webkit-backdrop-filter", value);
+        });
+
+        document.querySelectorAll("[data-inline-border]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = (element.dataset.inlineBorder || "").trim();
+            if (value) element.style.border = value;
+        });
+
+        document.querySelectorAll("[data-inline-box-shadow]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = (element.dataset.inlineBoxShadow || "").trim();
+            if (value) element.style.boxShadow = value;
+        });
+    };
+
     const attachStyleTokenResizer = () => {
         const shell = document.querySelector("[data-style-token-shell]");
         const handle = shell?.querySelector("[data-style-token-resizer]");
@@ -665,7 +705,7 @@
             }
             currentIndex++;
         });
-        
+
         const nav = document.querySelector(".settings-nav");
         if (nav instanceof HTMLElement) {
             nav.style.setProperty("--settings-active-index", String(activeIndex));
@@ -889,7 +929,7 @@
             resolve();
             return;
         }
-        
+
         const targetPage = new URL(targetUrl, window.location.origin).searchParams.get("page") || "1";
         const buttons = Array.from(pagination.querySelectorAll(".local-store-page-button"));
         const target = buttons.find((button) => {
@@ -910,11 +950,11 @@
             return;
         }
         pagination.classList.add("is-animated", "is-animating");
-        
+
         // Optimistically update classes so the text color and background toggle immediately
         current.classList.remove("is-active");
         target.classList.add("is-active");
-        
+
         current.dataset.paginationCurrent = "0";
         target.dataset.paginationCurrent = "1";
         positionLocalStorePaginationIndicator(pagination, current, {immediate: true});
@@ -1069,6 +1109,7 @@
     bootstrap.initSettingsWorkspace = (context = {}) => {
         settingsContext = context;
         bootstrap.initThemeModeControls?.();
+        applyTemplateInlineStyles();
         attachBrokerSettingsHandlers();
         attachNetworkRefreshButton();
         attachStyleTokenResizer();
