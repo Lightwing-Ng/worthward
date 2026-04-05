@@ -12,6 +12,25 @@
 }
 @media (max-width: 767px) {
 	body { overflow-x: hidden; overflow-y: auto; width: 100%; }
+	.portfolio-donut-block {
+		flex-wrap: nowrap;
+		justify-content: center;
+		padding: 10px 0 8px;
+		overflow-x: hidden;
+	}
+	.portfolio-donut-orbit {
+		--portfolio-donut-size: 96px;
+		--portfolio-donut-ring-width: 9px;
+		--portfolio-donut-logo-size: 18px;
+		--portfolio-donut-logo-gap: 6px;
+		flex: 0 1 auto;
+	}
+	.portfolio-donut-arrow {
+		width: 26px;
+		height: 26px;
+		padding: 0 6px;
+		flex: 0 0 38px;
+	}
 	/* Preserve the workspace panel's top rounded edge on narrow screens. */
 	.page {
 		width: 100%;
@@ -155,5 +174,19 @@
 	.sidebar-dock-item:active {
 		transform: scale(0.9);
 		transition-duration: 80ms;
+	}
+}
+@media (max-width: 430px) {
+	.portfolio-donut-block {
+		flex-direction: column;
+		align-items: center;
+		padding: 8px 0;
+	}
+	.portfolio-donut-orbit {
+		min-width: 144px;
+		min-height: 144px;
+	}
+	.portfolio-donut-arrow {
+		transform: rotate(90deg);
 	}
 }
