@@ -81,10 +81,13 @@
     --portfolio-donut-ring-width: var(--portfolio-donut-orbit-ring-width);
     --portfolio-donut-logo-size: var(--portfolio-donut-orbit-logo-size);
     --portfolio-donut-logo-gap: var(--portfolio-donut-orbit-logo-gap);
-    --portfolio-donut-frame-padding: var(--portfolio-donut-orbit-frame-padding);
+    --portfolio-donut-satellite-radius: calc((var(--portfolio-donut-logo-size) * 1.41421356237) / 2);
+    --portfolio-donut-satellite-center-radius: calc((var(--portfolio-donut-size) / 2) + var(--portfolio-donut-satellite-radius));
+    --portfolio-donut-outer-tangent-radius: calc(var(--portfolio-donut-satellite-center-radius) + var(--portfolio-donut-satellite-radius));
+    --portfolio-donut-frame-padding: calc(var(--portfolio-donut-outer-tangent-radius) - (var(--portfolio-donut-size) / 2));
     position: relative;
-    width: var(--portfolio-donut-orbit-boundary-size);
-    height: var(--portfolio-donut-orbit-boundary-size);
+    width: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
+    height: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
     flex: 0 0 auto;
 }
 
