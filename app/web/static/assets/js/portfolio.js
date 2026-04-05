@@ -59,6 +59,22 @@
 				};
 			})
 			.filter(Boolean);
+		const getPortfolioEntriesFromUrl = () => {
+			const search = new URLSearchParams(window.location.search);
+			const tickers = search.getAll("ticker");
+			const weights = search.getAll("weight");
+			return tickers
+				.map((ticker, index) => {
+					const normalizedTicker = String(ticker || "").trim().toUpperCase();
+					if (!normalizedTicker) return null;
+					return {
+						index,
+						ticker: normalizedTicker,
+						weight: Number.parseInt(weights[index] || "0", 10) || 0,
+					};
+				})
+				.filter(Boolean);
+		};
 
 		const angleToPoint = (degrees, center, radius) => {
 			const radians = ((degrees - 90) * Math.PI) / 180;
@@ -135,16 +151,36 @@
 			}));
 		};
 
+		let lastResolvedEntries = [];
+		const resolvePreviewEntries = (entries) => {
+			if (Array.isArray(entries) && entries.length) {
+				lastResolvedEntries = entries;
+				return entries;
+			}
+			const domEntries = getPortfolioEntriesFromDom();
+			if (domEntries.length) {
+				lastResolvedEntries = domEntries;
+				return domEntries;
+			}
+			const urlEntries = getPortfolioEntriesFromUrl();
+			if (urlEntries.length) {
+				lastResolvedEntries = urlEntries;
+				return urlEntries;
+			}
+			return Array.isArray(entries) ? entries : lastResolvedEntries;
+		};
+
 		const renderPortfolioPreview = (entries = getPortfolioEntriesFromDom()) => {
-			renderDonut({ donut: startDonut, orbit: startOrbit, logoLayer: startLogoLayer, entries });
-			renderDonut({ donut: endDonut, orbit: endOrbit, logoLayer: endLogoLayer, entries: buildEndingEntries(entries) });
+			const resolvedEntries = resolvePreviewEntries(entries);
+			renderDonut({ donut: startDonut, orbit: startOrbit, logoLayer: startLogoLayer, entries: resolvedEntries });
+			renderDonut({ donut: endDonut, orbit: endOrbit, logoLayer: endLogoLayer, entries: buildEndingEntries(resolvedEntries) });
 		};
 
 		if (window.__antigravityPortfolioPreviewHandler) {
 			window.removeEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
 		}
 		window.__antigravityPortfolioPreviewHandler = (event) => {
-			renderPortfolioPreview(event.detail?.entries || []);
+			renderPortfolioPreview(resolvePreviewEntries(event.detail?.entries));
 		};
 		window.addEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
 
@@ -170,6 +206,42 @@
 			portfolioThemeMedia.addListener(handlePortfolioThemeChange);
 		}
 		window.__antigravityPortfolioThemeMedia = { media: portfolioThemeMedia, handler: handlePortfolioThemeChange };
+
+		if (window.__antigravityPortfolioGeometrySync) {
+			const { observer, resizeHandler, cancelFrame } = window.__antigravityPortfolioGeometrySync;
+			observer?.disconnect?.();
+			window.removeEventListener("resize", resizeHandler);
+			cancelFrame?.();
+		}
+		let geometryFrame = 0;
+		const scheduleGeometryRender = () => {
+			if (geometryFrame) window.cancelAnimationFrame(geometryFrame);
+			geometryFrame = window.requestAnimationFrame(() => {
+				geometryFrame = 0;
+				renderPortfolioPreview();
+			});
+		};
+		const handleGeometryResize = () => {
+			scheduleGeometryRender();
+		};
+		const geometryObserver = typeof window.ResizeObserver === "function"
+			? new ResizeObserver(() => {
+				scheduleGeometryRender();
+			})
+			: null;
+		[startDonut, startOrbit, endDonut, endOrbit].forEach((element) => {
+			geometryObserver?.observe(element);
+		});
+		window.addEventListener("resize", handleGeometryResize, { passive: true });
+		window.__antigravityPortfolioGeometrySync = {
+			observer: geometryObserver,
+			resizeHandler: handleGeometryResize,
+			cancelFrame: () => {
+				if (!geometryFrame) return;
+				window.cancelAnimationFrame(geometryFrame);
+				geometryFrame = 0;
+			},
+		};
 
 		renderPortfolioPreview();
 	};
