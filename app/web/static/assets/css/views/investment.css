@@ -431,7 +431,7 @@
     height: auto;
     display: flex;
     flex-direction: column;
-    padding: 10px 12px calc(10px + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px));
+    padding: 10px 12px 10px;
     overflow: hidden;
 }
 
@@ -1034,6 +1034,7 @@
 
     .investment-history-surface {
         flex: 0 0 auto;
+        padding-bottom: calc(10px + var(--workspace-mobile-dock-clearance) + env(safe-area-inset-bottom, 0px));
     }
 
     .investment-form-grid-primary,
@@ -1061,12 +1062,5 @@
 
     .investment-chart-stack {
         aspect-ratio: auto;
-    }
-}
-
-@media (min-width: 768px) {
-    .investment-history-surface {
-        flex: 1 1 auto;
-        padding-bottom: calc(10px + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px));
     }
 }

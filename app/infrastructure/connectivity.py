@@ -6,6 +6,7 @@ Code version: v0.3.0
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import json
 from time import monotonic, time
 from urllib.error import HTTPError, URLError
@@ -217,7 +218,13 @@ def has_tradingview_ta_available() -> bool:
         return False
 
 
-def fetch_tradingview_metrics(symbol: str, *, screener: str = "america", exchange: str = "NASDAQ") -> dict[str, object]:
+def fetch_tradingview_metrics(
+        symbol: str,
+        *,
+        screener: str = "america",
+        exchange: str = "NASDAQ",
+        timeout_seconds: float = 3.0,
+) -> dict[str, object]:
     """Fetch a broad set of TradingView TA metrics for a ticker."""
     from tradingview_ta import Interval, TA_Handler
 
@@ -227,7 +234,20 @@ def fetch_tradingview_metrics(symbol: str, *, screener: str = "america", exchang
         exchange=exchange,
         interval=Interval.INTERVAL_1_DAY,
     )
-    analysis = handler.get_analysis()
+    if timeout_seconds <= 0:
+        analysis = handler.get_analysis()
+    else:
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(handler.get_analysis)
+        try:
+            analysis = future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(
+                f"TradingView metrics request timed out after {timeout_seconds:.1f} seconds."
+            ) from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
     return {
         "symbol": symbol,
         "screener": screener,

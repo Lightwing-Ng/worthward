@@ -43,7 +43,9 @@
 	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--page-edge-pad));
 	--workspace-title-safe-top: 60px;
 	--sidebar-bottom-pad: 96px;
+	--sidebar-dock-hit-size: 56px;
 	--sidebar-dock-bottom-gap: 14px;
+	--workspace-mobile-dock-clearance: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
 	--sidebar-dock-mobile-bottom-gap: 4px;
 	--sidebar-dock-mobile-shadow: 0 -10px 24px var(--theme-glass-border), 0 0 0 1px color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 	--backtest-surface-bottom-pad: 10px;

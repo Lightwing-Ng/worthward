@@ -120,7 +120,7 @@
 {% endblock %}
 
 {% block workspace_content %}
-<div class="workspace-header">
+<section class="workspace-header">
     <article class="report-card trade-performance-card">
         <button type="button" class="export-transactions-button" id="export_transactions_button" aria-label="Export Transactions" title="Export Transactions" hidden>
             <span class="icon" style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
@@ -207,7 +207,7 @@
         <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
         {% endif %}
     </article>
-</div>
+</section>
 <article class="chart-surface backtest-surface">
     <div class="chart-heading-row">
         <p class="chart-heading">{{ labels.backtest_chart }}</p>

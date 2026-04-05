@@ -73,11 +73,11 @@
 {% endblock %}
 
 {% block workspace_content %}
-<article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
+<section class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
     <div class="chart-heading-row">
         <p class="chart-heading">{{ settings_title }}</p>
     </div>
-    <div class="settings-body">
+    <section class="settings-body">
         {% if settings_section == "about" %}
         <section class="about-section">
             <h2 class="about-heading">What this service does</h2>
@@ -111,7 +111,7 @@
             </ol>
         </section>
         {% elif settings_section == "general" %}
-        <div class="settings-general-stack">
+        <section class="settings-general-stack">
             <section class="settings-card settings-general-card settings-general-panel">
                 <div class="settings-general-header">
                     <p class="settings-general-kicker">Appearance</p>
@@ -163,9 +163,9 @@
                     </label>
                 </form>
             </section>
-        </div>
+        </section>
         {% elif settings_section == "font-tokens" %}
-        <div class="font-token-stack">
+        <section class="font-token-stack">
             {% for row in font_token_rows %}
             <section id="{{ row.id }}" class="font-preview-card settings-general-panel settings-reading-guard font-token-panel">
                 <div class="font-preview-header">
@@ -210,7 +210,7 @@
                 </div>
             </section>
             {% endfor %}
-        </div>
+        </section>
         {% elif settings_section == "network" %}
         <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
@@ -255,7 +255,7 @@
         </section>
         {% elif settings_section == "strategies" %}
         <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
-        <div class="settings-service-list settings-strategy-list settings-reading-guard">
+        <section class="settings-service-list settings-strategy-list settings-reading-guard">
             {% for row in strategy_settings_rows %}
             <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
@@ -304,7 +304,7 @@
                 {% endif %}
             </details>
             {% endfor %}
-        </div>
+        </section>
         {% elif settings_section == "email-smtp" %}
         <section class="settings-action-package settings-callout-card-warning">
             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
@@ -395,7 +395,7 @@
             </div>
         </form>
         {% elif settings_section == "local-market-store" %}
-        <div class="local-store-layout" id="local_store_region" data-local-store-region>
+        <section class="local-store-layout" id="local_store_region" data-local-store-region>
             <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
                 <div class="settings-action-package-copy settings-callout-text">
@@ -549,7 +549,7 @@
                 {% endif %}
             </nav>
             {% endif %}
-        </div>
+        </section>
         {% elif settings_section == "broker-access" %}
         <section class="settings-action-package settings-callout-card-warning">
             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
@@ -624,7 +624,7 @@
             </form>
         </section>
         {% elif settings_section == "clear-caches" %}
-        <div class="settings-clear-caches-stack">
+        <section class="settings-clear-caches-stack">
             <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
@@ -649,9 +649,9 @@
                     <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear local broker transaction record</button>
                 </form>
             </section>
-        </div>
+        </section>
         {% elif settings_section == "material-tokens" %}
-        <div class="style-token-shell" data-style-token-shell>
+        <section class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in material_token_rows %}
@@ -706,9 +706,9 @@
             </section>
             {% endfor %}
             </div>
-        </div>
+        </section>
         {% elif settings_section == "style-tokens" %}
-        <div class="style-token-shell" data-style-token-shell>
+        <section class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
@@ -948,8 +948,8 @@
             </section>
             {% endfor %}
             </div>
-        </div>
+        </section>
         {% endif %}
-    </div>
-</article>
+    </section>
+</section>
 {% endblock %}

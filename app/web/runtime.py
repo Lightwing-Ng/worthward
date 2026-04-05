@@ -2443,138 +2443,139 @@ def build_web_runtime() -> WebRuntime:
             timing_summary = []
             timing_error = ""
             timing_market = {}
-            usage_path = TICKER_USAGE_STORE_PATH
-            if usage_path.exists():
-                import json
-                with usage_path.open("r", encoding="utf-8") as f:
-                    usage_data = json.load(f)
-                sorted_tickers = sorted(
-                    usage_data.items(),
-                    key=lambda item: item[1].get("count", 0),
-                    reverse=True,
-                )
-                for ticker, item in sorted_tickers:
-                    count = item.get("count", 0)
-                    if count <= 0:
-                        continue
-                    profile_snapshot = load_local_profile_snapshot(ticker)
-                    company_name = profile_snapshot[0] if profile_snapshot else ticker
-                    logo_url = profile_snapshot[1] if profile_snapshot else ""
-                    top_tickers.append(
-                        {
-                            "ticker": ticker,
-                            "count": count,
-                            "company_name": company_name,
-                            "logo_url": logo_url,
-                            "url": build_more_timing_url(ticker),
-                        }
+            if more_section == "timing":
+                usage_path = TICKER_USAGE_STORE_PATH
+                if usage_path.exists():
+                    import json
+                    with usage_path.open("r", encoding="utf-8") as f:
+                        usage_data = json.load(f)
+                    sorted_tickers = sorted(
+                        usage_data.items(),
+                        key=lambda item: item[1].get("count", 0),
+                        reverse=True,
                     )
-                    if len(top_tickers) >= 50:
-                        break
-            timing_selected_ticker = normalize_ticker_input(request.args.get("ticker", "MU")) or "MU"
-            if top_tickers and timing_selected_ticker not in {item["ticker"] for item in top_tickers}:
-                timing_selected_ticker = top_tickers[0]["ticker"]
-            try:
-                tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
-                default_screener = str(tradingview_settings.get("default_screener", "america"))
-                default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
-                profile_record = load_profile_record(timing_selected_ticker) or {}
-                selected_screener = str(
-                    profile_record.get("tradingview_screener")
-                    or default_screener
-                )
-                selected_exchange = str(
-                    profile_record.get("tradingview_exchange")
-                    or default_exchange
-                )
-                analysis = fetch_tradingview_metrics(
-                    timing_selected_ticker,
-                    screener=selected_screener,
-                    exchange=selected_exchange,
-                )
-                summary = analysis.get("summary", {}) or {}
-                oscillators = (analysis.get("oscillators", {}) or {}).get("COMPUTE", {}) or {}
-                moving_averages = (analysis.get("moving_averages", {}) or {}).get("COMPUTE", {}) or {}
-                indicators = analysis.get("indicators", {}) or {}
-                timing_market = {
-                    "exchange": str(analysis.get("exchange", "NASDAQ")),
-                    "screener": str(analysis.get("screener", "america")),
-                }
-                timing_summary = [
-                    {"label": "Recommendation", "value": str(summary.get("RECOMMENDATION", "N/A"))},
-                    {"label": "Buy", "value": str(summary.get("BUY", "0"))},
-                    {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
-                    {"label": "Sell", "value": str(summary.get("SELL", "0"))},
-                ]
+                    for ticker, item in sorted_tickers:
+                        count = item.get("count", 0)
+                        if count <= 0:
+                            continue
+                        profile_snapshot = load_local_profile_snapshot(ticker)
+                        company_name = profile_snapshot[0] if profile_snapshot else ticker
+                        logo_url = profile_snapshot[1] if profile_snapshot else ""
+                        top_tickers.append(
+                            {
+                                "ticker": ticker,
+                                "count": count,
+                                "company_name": company_name,
+                                "logo_url": logo_url,
+                                "url": build_more_timing_url(ticker),
+                            }
+                        )
+                        if len(top_tickers) >= 50:
+                            break
+                timing_selected_ticker = normalize_ticker_input(request.args.get("ticker", "MU")) or "MU"
+                if top_tickers and timing_selected_ticker not in {item["ticker"] for item in top_tickers}:
+                    timing_selected_ticker = top_tickers[0]["ticker"]
+                try:
+                    tradingview_settings = settings.get("integrations", {}).get("tradingview_ta", {})
+                    default_screener = str(tradingview_settings.get("default_screener", "america"))
+                    default_exchange = str(tradingview_settings.get("default_exchange", "NASDAQ"))
+                    profile_record = load_profile_record(timing_selected_ticker) or {}
+                    selected_screener = str(
+                        profile_record.get("tradingview_screener")
+                        or default_screener
+                    )
+                    selected_exchange = str(
+                        profile_record.get("tradingview_exchange")
+                        or default_exchange
+                    )
+                    analysis = fetch_tradingview_metrics(
+                        timing_selected_ticker,
+                        screener=selected_screener,
+                        exchange=selected_exchange,
+                    )
+                    summary = analysis.get("summary", {}) or {}
+                    oscillators = (analysis.get("oscillators", {}) or {}).get("COMPUTE", {}) or {}
+                    moving_averages = (analysis.get("moving_averages", {}) or {}).get("COMPUTE", {}) or {}
+                    indicators = analysis.get("indicators", {}) or {}
+                    timing_market = {
+                        "exchange": str(analysis.get("exchange", "NASDAQ")),
+                        "screener": str(analysis.get("screener", "america")),
+                    }
+                    timing_summary = [
+                        {"label": "Recommendation", "value": str(summary.get("RECOMMENDATION", "N/A"))},
+                        {"label": "Buy", "value": str(summary.get("BUY", "0"))},
+                        {"label": "Neutral", "value": str(summary.get("NEUTRAL", "0"))},
+                        {"label": "Sell", "value": str(summary.get("SELL", "0"))},
+                    ]
 
-                def format_metric_value(value: object) -> str:
-                    if isinstance(value, bool):
-                        return "True" if value else "False"
-                    if isinstance(value, int):
-                        return f"{value:,}" if abs(value) >= 1000 else str(value)
-                    if isinstance(value, float):
-                        if value.is_integer():
-                            integer_value = int(value)
-                            return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
-                        return f"{value:,.2f}"
-                    return str(value)
+                    def format_metric_value(value: object) -> str:
+                        if isinstance(value, bool):
+                            return "True" if value else "False"
+                        if isinstance(value, int):
+                            return f"{value:,}" if abs(value) >= 1000 else str(value)
+                        if isinstance(value, float):
+                            if value.is_integer():
+                                integer_value = int(value)
+                                return f"{integer_value:,}" if abs(integer_value) >= 1000 else str(integer_value)
+                            return f"{value:,.2f}"
+                        return str(value)
 
-                preferred_metric_keys = [
-                    "close",
-                    "open",
-                    "volume",
-                    "RSI",
-                    "RSI[1]",
-                    "Stoch.K",
-                    "Stoch.D",
-                    "CCI20",
-                    "ADX",
-                    "AO",
-                    "Mom",
-                    "MACD.macd",
-                    "MACD.signal",
-                    "Rec.Stoch.RSI",
-                    "Rec.WR",
-                    "Rec.BBPower",
-                    "EMA5",
-                    "EMA10",
-                    "EMA20",
-                    "EMA30",
-                    "EMA50",
-                    "EMA100",
-                    "EMA200",
-                    "SMA10",
-                    "SMA20",
-                    "SMA50",
-                    "SMA100",
-                    "SMA200",
-                    "VWMA",
-                    "HullMA9",
-                    "Pivot.M.Classic.S1",
-                    "Pivot.M.Classic.R1",
-                    "BB.lower",
-                    "BB.upper",
-                ]
-                metric_rows = []
-                for key in preferred_metric_keys:
-                    if key not in indicators:
-                        continue
-                    value = indicators.get(key)
-                    metric_rows.append({"label": key, "value": format_metric_value(value)})
-                for key, value in oscillators.items():
-                    metric_rows.append({"label": f"Oscillator · {key}", "value": format_metric_value(value)})
-                for key, value in moving_averages.items():
-                    metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
-                seen_labels = set()
-                deduped_metric_rows = []
-                for row in metric_rows:
-                    if row["label"] in seen_labels:
-                        continue
-                    seen_labels.add(row["label"])
-                    deduped_metric_rows.append(row)
-                timing_metrics = deduped_metric_rows
-            except Exception as exc:
-                timing_error = str(exc)
+                    preferred_metric_keys = [
+                        "close",
+                        "open",
+                        "volume",
+                        "RSI",
+                        "RSI[1]",
+                        "Stoch.K",
+                        "Stoch.D",
+                        "CCI20",
+                        "ADX",
+                        "AO",
+                        "Mom",
+                        "MACD.macd",
+                        "MACD.signal",
+                        "Rec.Stoch.RSI",
+                        "Rec.WR",
+                        "Rec.BBPower",
+                        "EMA5",
+                        "EMA10",
+                        "EMA20",
+                        "EMA30",
+                        "EMA50",
+                        "EMA100",
+                        "EMA200",
+                        "SMA10",
+                        "SMA20",
+                        "SMA50",
+                        "SMA100",
+                        "SMA200",
+                        "VWMA",
+                        "HullMA9",
+                        "Pivot.M.Classic.S1",
+                        "Pivot.M.Classic.R1",
+                        "BB.lower",
+                        "BB.upper",
+                    ]
+                    metric_rows = []
+                    for key in preferred_metric_keys:
+                        if key not in indicators:
+                            continue
+                        value = indicators.get(key)
+                        metric_rows.append({"label": key, "value": format_metric_value(value)})
+                    for key, value in oscillators.items():
+                        metric_rows.append({"label": f"Oscillator · {key}", "value": format_metric_value(value)})
+                    for key, value in moving_averages.items():
+                        metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
+                    seen_labels = set()
+                    deduped_metric_rows = []
+                    for row in metric_rows:
+                        if row["label"] in seen_labels:
+                            continue
+                        seen_labels.add(row["label"])
+                        deduped_metric_rows.append(row)
+                    timing_metrics = deduped_metric_rows
+                except Exception as exc:
+                    timing_error = str(exc)
 
         if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]

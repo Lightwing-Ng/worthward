@@ -7,7 +7,7 @@
 
 {% block workspace_content %}
 {% if series %}
-<div class="workspace-header">
+<section class="workspace-header">
     <article class="report-card">
         <div class="report-heading-row">
             <p class="report-heading">{{ report_heading }}</p>
@@ -30,7 +30,7 @@
             {% endfor %}
         </div>
     </article>
-</div>
+</section>
 {{ render_chart_surface(chart_heading, True, chart_region_id="compare_chart_region") }}
 {% else %}
 {{ render_chart_surface(chart_heading, False, "Please configure at least two tickers to compare.", "compare_chart_region") }}

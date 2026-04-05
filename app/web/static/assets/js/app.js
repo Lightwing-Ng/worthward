@@ -381,7 +381,7 @@
 				"Max drawdown",
 			];
 			return `
-				<div class="workspace-header">
+				<section class="workspace-header">
 					<article class="report-card trade-performance-card">
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 						<div class="trade-detail-tabs">
@@ -408,7 +408,7 @@
 							</div>
 						</div>
 					</article>
-				</div>
+				</section>
 				<article class="chart-surface backtest-surface">
 					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
 					<div class="trade-chart-stack">
@@ -420,7 +420,7 @@
 		}
 		if (state.currentView === "portfolio") {
 			return `
-				<div class="workspace-header">
+				<section class="workspace-header">
 					<article class="report-card">
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 						<div class="portfolio-summary">
@@ -435,11 +435,11 @@
 							</div>
 						</div>
 					</article>
-				</div>
-				<div class="chart-surface">
+				</section>
+				<article class="chart-surface">
 					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
 					<div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div>
-				</div>
+				</article>
 			`;
 		}
 		return bootstrap.buildComparePendingWorkspaceMarkup?.({

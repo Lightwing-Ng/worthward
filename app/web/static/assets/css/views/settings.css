@@ -1721,14 +1721,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     height: 100%;
     min-width: 0;
     min-height: 0;
-    scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 10px);
     overflow-y: auto;
     overflow-x: hidden;
 }
 
 .settings-body {
     display: block;
-    padding: 2px 2px calc(10px + var(--sidebar-dock-bottom-gap) + 56px);
+    padding: 2px 2px 10px;
     color: var(--text);
     font-size: var(--font-ui-lg);
     line-height: 1.45;
@@ -1920,6 +1919,14 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 @media (max-width: 767px) {
+    .settings-surface {
+        scroll-padding-bottom: calc(var(--workspace-mobile-dock-clearance) + 10px);
+    }
+
+    .settings-body {
+        padding-bottom: calc(10px + var(--workspace-mobile-dock-clearance));
+    }
+
     .settings-strategy-params {
         padding-left: 42px;
     }

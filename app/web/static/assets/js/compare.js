@@ -10,15 +10,15 @@
 	} = {}) => {
 		const itemCount = Math.max(currentValues.length, minimumRequiredTickers);
 		return `
-			<div class="workspace-header">
+			<section class="workspace-header">
 				<article class="report-card">
 					<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 					<div class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
 						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card"><div class="performance-accent"></div><div class="report-symbol-row"><p class="report-symbol">${currentValues[index] || "..."}</p></div><p class="report-company is-pending-value" data-workspace-mask="company-name">Loading</p><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
 					</div>
 				</article>
-			</div>
-			<div class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></div>
+			</section>
+			<article class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></article>
 		`;
 	};
 

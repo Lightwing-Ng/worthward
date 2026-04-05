@@ -36,7 +36,7 @@
 	.page {
 		width: 100%;
 		min-height: 100dvh;
-		padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px calc(var(--page-edge-pad) + var(--backtest-surface-bottom-pad) + env(safe-area-inset-bottom, 0px));
+		padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px max(10px, env(safe-area-inset-bottom, 0px));
 		overflow-x: hidden;
 		overflow-y: auto;
 	}

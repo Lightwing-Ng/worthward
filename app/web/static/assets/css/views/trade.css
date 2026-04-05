@@ -21,7 +21,7 @@
 .backtest-surface {
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: calc(var(--backtest-surface-bottom-pad) + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: var(--backtest-surface-bottom-pad) !important;
     container-type: inline-size;
 }
 
@@ -146,13 +146,14 @@
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
-    scrollbar-color: var(--muted) transparent;
+    scrollbar-color: transparent transparent;
     scrollbar-gutter: stable both-edges;
     -ms-overflow-style: auto;
 }
 
 .trade-metrics-grid::-webkit-scrollbar {
     width: 4px;
+    height: 4px;
 }
 
 .trade-metrics-grid::-webkit-scrollbar-track {
@@ -160,8 +161,20 @@
 }
 
 .trade-metrics-grid::-webkit-scrollbar-thumb {
-    background: var(--muted);
+    background: transparent;
     border-radius: 4px;
+}
+
+.trade-metrics-grid:hover,
+.trade-metrics-grid:focus-within,
+.trade-metrics-grid:active {
+    scrollbar-color: var(--muted) transparent;
+}
+
+.trade-metrics-grid:hover::-webkit-scrollbar-thumb,
+.trade-metrics-grid:focus-within::-webkit-scrollbar-thumb,
+.trade-metrics-grid:active::-webkit-scrollbar-thumb {
+    background: var(--muted);
 }
 
 .trade-view-panel-grid {
@@ -207,7 +220,7 @@
 
 @media (max-width: 767px) {
     .trade-metrics-panel-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -402,7 +415,7 @@
     width: 100%;
     height: 100%;
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: calc(100cqi / 2);
     display: grid;
     grid-template-rows: 2fr 1fr;
     gap: 0;

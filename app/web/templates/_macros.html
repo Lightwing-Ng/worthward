@@ -21,7 +21,7 @@
 {%- endmacro %}
 
 {% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None) -%}
-<div class="chart-surface">
+<article class="chart-surface">
     <div class="chart-heading-row">
         <p class="chart-heading">{{ chart_heading }}</p>
     </div>
@@ -36,7 +36,7 @@
     </div>
     {% endif %}
     </div>
-</div>
+</article>
 {%- endmacro %}
 
 {% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='') -%}

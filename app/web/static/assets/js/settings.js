@@ -630,7 +630,7 @@
         const page = Math.max(Number.parseInt(String(pageNumber || new URLSearchParams(window.location.search).get("page") || "1"), 10) || 1, 1);
         const pageSize = 10;
         const startIndex = (page - 1) * pageSize;
-        const article = document.createElement("article");
+        const article = document.createElement("section");
         article.className = "chart-surface settings-surface";
         article.id = "settings_workspace_region";
         article.dataset.settingsWorkspaceRegion = "";
@@ -639,8 +639,8 @@
 			<div class="chart-heading-row">
 				<p class="chart-heading">${labels.local_market_store || "Local Market Store"}</p>
 			</div>
-			<div class="settings-body">
-				<div class="local-store-layout" id="local_store_region" data-local-store-region>
+			<section class="settings-body">
+				<section class="local-store-layout" id="local_store_region" data-local-store-region>
 					<section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
 						<div class="settings-callout-copy">
 							<span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
@@ -713,8 +713,8 @@
 							</table>
 						</div>
 					</div>
-				</div>
-			</div>
+				</section>
+			</section>
 		`;
         return article;
     };
