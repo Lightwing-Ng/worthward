@@ -17,7 +17,10 @@
 .ticker-input-main { flex: 1 1 auto; min-width: 0; position: relative; }
 .portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 24px; position: relative; }
 .portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: 29px; }
-.portfolio-weight-input { padding-right: 16px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
+.portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
+.portfolio-weight-field.is-open .portfolio-weight-input,
+.portfolio-weight-field:focus-within .portfolio-weight-input,
+.portfolio-weight-input:focus { border-radius: var(--radius-soft); }
 .portfolio-weight-input::placeholder { color: var(--muted); opacity: 1; font-size: var(--font-tooltip); }
 .portfolio-weight-input::-webkit-outer-spin-button, .portfolio-weight-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .settings-stack-form input[type="number"] { appearance: textfield; -moz-appearance: textfield; }

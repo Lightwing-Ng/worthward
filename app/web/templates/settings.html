@@ -825,6 +825,17 @@
                             </div>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "portfolio-donut-orbit" %}
+                    <div class="style-token-portfolio-donut-shell">
+                        <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
+                            <div class="portfolio-donut-logo-layer">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.png" alt="NVDA logo" data-style-token-donut-angle="44.4">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/AAPL.png" alt="AAPL logo" data-style-token-donut-angle="134.4">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/QQQ.png" alt="QQQ logo" data-style-token-donut-angle="269.4">
+                            </div>
+                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(#0055cc 0deg 88.8deg, transparent 88.8deg 90deg, #7a64c1 90deg 178.8deg, transparent 178.8deg 180deg, #f472b6 180deg 358.8deg, transparent 358.8deg 360deg);"></div>
+                        </div>
+                    </div>
                     {% elif row.sample_kind == "metric-value" %}
                     <div class="style-token-metric-demo-shell">
                         <div class="trade-metric-card style-token-metric-card-demo">

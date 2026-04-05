@@ -68,41 +68,6 @@
 			};
 		};
 
-		const chordDistance = (leftAngle, rightAngle, radius) => {
-			const deltaRadians = (Math.abs(rightAngle - leftAngle) * Math.PI) / 180;
-			return 2 * radius * Math.sin(deltaRadians / 2);
-		};
-
-		const placeLogoItems = (logoItems, logoOrbitRadius, minimumCenterDistance) => {
-			if (!logoItems.length) return [];
-			const minimumAngularGap = (2 * Math.asin(Math.min(1, minimumCenterDistance / (2 * logoOrbitRadius))) * 180) / Math.PI;
-			const placedItems = logoItems
-				.map((item, index) => ({ ...item, index, placedAngle: item.midAngle }))
-				.sort((left, right) => left.midAngle - right.midAngle);
-			for (let pass = 0; pass < placedItems.length * 3; pass += 1) {
-				let changed = false;
-				for (let index = 0; index < placedItems.length - 1; index += 1) {
-					const current = placedItems[index];
-					const next = placedItems[index + 1];
-					const currentDistance = chordDistance(current.placedAngle, next.placedAngle, logoOrbitRadius);
-					if (currentDistance >= minimumCenterDistance) continue;
-					const deficit = minimumAngularGap - Math.abs(next.placedAngle - current.placedAngle);
-					if (deficit <= 0) continue;
-					const currentPush = Math.max(0, current.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
-					const nextPush = Math.max(0, next.sweep - minimumAngularGap) > 0 ? deficit / 2 : 0;
-					if (currentPush > 0) current.placedAngle -= currentPush;
-					if (nextPush > 0) next.placedAngle += nextPush;
-					if (currentPush === 0 && nextPush === 0) {
-						current.placedAngle -= deficit / 2;
-						next.placedAngle += deficit / 2;
-					}
-					changed = true;
-				}
-				if (!changed) break;
-			}
-			return placedItems;
-		};
-
 		const renderDonut = ({ donut, orbit, logoLayer, entries }) => {
 			if (!entries.length) {
 				donut.style.setProperty("--portfolio-donut-fill", fallbackDonutFill);
@@ -119,9 +84,8 @@
 			const gapDegrees = 1.2;
 			const donutSize = donut.clientWidth || 120;
 			const logoSize = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-size")) || 20;
-			const logoGap = Number.parseFloat(getComputedStyle(donut).getPropertyValue("--portfolio-donut-logo-gap")) || 10;
-			const logoPadding = Math.max(6, logoGap);
-			const logoOrbitRadius = (donutSize / 2) + (logoSize / 2) + logoGap;
+			const satelliteRadius = (logoSize * Math.SQRT2) / 2;
+			const logoOrbitRadius = (donutSize / 2) + satelliteRadius;
 			const orbitCenter = (orbit.clientWidth || donutSize) / 2;
 			const stops = [];
 			let angle = 0;
@@ -131,17 +95,17 @@
 				const sweep = ((entry.weight || 0) / 100) * 360;
 				const segmentEnd = angle + sweep;
 				const coloredEnd = Math.max(angle, segmentEnd - gapDegrees);
+				const coloredSweep = Math.max(0, coloredEnd - angle);
 				stops.push(`${colors[index]} ${angle}deg ${coloredEnd}deg`);
 				if (coloredEnd < segmentEnd) {
 					stops.push(`transparent ${coloredEnd}deg ${segmentEnd}deg`);
 				}
 				const logoUrl = getPortfolioLogoUrl(entry.ticker);
-				if (logoUrl && sweep > 0) {
+				if (logoUrl && coloredSweep > 0) {
 					logoItems.push({
 						ticker: entry.ticker,
 						logoUrl,
-						midAngle: angle + (sweep / 2),
-						sweep,
+						midAngle: angle + (coloredSweep / 2),
 					});
 				}
 				angle = segmentEnd;
@@ -149,9 +113,8 @@
 
 			donut.style.setProperty("--portfolio-donut-fill", `conic-gradient(${stops.join(", ")})`);
 
-			const placedItems = placeLogoItems(logoItems, logoOrbitRadius, logoSize + logoPadding);
-			logoLayer.innerHTML = placedItems.map((item) => {
-				const point = angleToPoint(item.placedAngle, orbitCenter, logoOrbitRadius);
+			logoLayer.innerHTML = logoItems.map((item) => {
+				const point = angleToPoint(item.midAngle, orbitCenter, logoOrbitRadius);
 				return `<img class="portfolio-donut-logo" src="${item.logoUrl}" alt="${item.ticker} logo" style="left:${point.x.toFixed(2)}px; top:${point.y.toFixed(2)}px;">`;
 			}).join("");
 		};

@@ -312,6 +312,34 @@
         };
     };
 
+    const refreshStyleTokenPortfolioDonutDemo = () => {
+        const shell = document.querySelector("[data-style-token-shell]");
+        if (!(shell instanceof HTMLElement)) return;
+        shell.querySelectorAll(".style-token-portfolio-donut-orbit").forEach((orbitElement) => {
+            if (!(orbitElement instanceof HTMLElement)) return;
+            const computed = getComputedStyle(orbitElement);
+            const donutSize = Number.parseFloat(computed.getPropertyValue("--portfolio-donut-orbit-donut-size"))
+                || Number.parseFloat(computed.getPropertyValue("--portfolio-donut-size"))
+                || 120;
+            const logoSize = Number.parseFloat(computed.getPropertyValue("--portfolio-donut-orbit-logo-size"))
+                || Number.parseFloat(computed.getPropertyValue("--portfolio-donut-logo-size"))
+                || 20;
+            const satelliteRadius = (logoSize * Math.SQRT2) / 2;
+            const orbitRadius = (donutSize / 2) + satelliteRadius;
+            const center = orbitElement.clientWidth / 2;
+            orbitElement.querySelectorAll(".portfolio-donut-logo[data-style-token-donut-angle]").forEach((logoElement) => {
+                if (!(logoElement instanceof HTMLImageElement)) return;
+                const angle = Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || "");
+                if (!Number.isFinite(angle)) return;
+                const radians = ((angle - 90) * Math.PI) / 180;
+                const x = center + (Math.cos(radians) * orbitRadius);
+                const y = center + (Math.sin(radians) * orbitRadius);
+                logoElement.style.left = `${x.toFixed(2)}px`;
+                logoElement.style.top = `${y.toFixed(2)}px`;
+            });
+        });
+    };
+
     const attachStyleTokenControls = () => {
         const shell = document.querySelector("[data-style-token-shell]");
         if (!(shell instanceof HTMLElement)) return;
@@ -343,6 +371,7 @@
                 if (!tokenName || !Number.isFinite(nextValue)) return;
                 const safeValue = Math.max(Number.isFinite(minValue) ? minValue : 0, nextValue);
                 shell.style.setProperty(tokenName, `${safeValue}${unit}`);
+                refreshStyleTokenPortfolioDonutDemo();
                 (controlsByToken.get(tokenName) || []).forEach((peerControl) => {
                     peerControl.dataset.styleTokenValue = String(safeValue);
                     const peerValueText = peerControl.querySelector("[data-style-token-value-text]");
@@ -1110,6 +1139,7 @@
         settingsContext = context;
         bootstrap.initThemeModeControls?.();
         applyTemplateInlineStyles();
+        refreshStyleTokenPortfolioDonutDemo();
         attachBrokerSettingsHandlers();
         attachNetworkRefreshButton();
         attachStyleTokenResizer();

@@ -597,6 +597,18 @@ div.style-token-modal-demo {
     min-height: 196px;
 }
 
+.style-token-portfolio-donut-shell {
+    width: 100%;
+    padding: 8px 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.style-token-portfolio-donut-orbit {
+    flex: 0 0 auto;
+}
+
 .style-token-metric-demo-shell {
     padding: 8px 0;
 }

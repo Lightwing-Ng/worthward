@@ -62,6 +62,7 @@
 }
 
 .portfolio-donut-block {
+    --portfolio-donut-flow-span: 56px;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -76,14 +77,14 @@
 }
 
 .portfolio-donut-orbit {
-    --portfolio-donut-size: 120px;
-    --portfolio-donut-ring-width: 10px;
-    --portfolio-donut-logo-size: var(--logo-card-size);
-    --portfolio-donut-logo-gap: 10px;
-    --portfolio-donut-frame-padding: calc((var(--portfolio-donut-logo-size) / 2) + var(--portfolio-donut-logo-gap));
+    --portfolio-donut-size: var(--portfolio-donut-orbit-donut-size);
+    --portfolio-donut-ring-width: var(--portfolio-donut-orbit-ring-width);
+    --portfolio-donut-logo-size: var(--portfolio-donut-orbit-logo-size);
+    --portfolio-donut-logo-gap: var(--portfolio-donut-orbit-logo-gap);
+    --portfolio-donut-frame-padding: var(--portfolio-donut-orbit-frame-padding);
     position: relative;
-    width: calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2));
-    height: calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2));
+    width: var(--portfolio-donut-orbit-boundary-size);
+    height: var(--portfolio-donut-orbit-boundary-size);
     flex: 0 0 auto;
 }
 
@@ -93,8 +94,9 @@
     height: var(--portfolio-donut-size);
     border-radius: 50%;
     position: absolute;
-    top: var(--portfolio-donut-frame-padding);
-    left: var(--portfolio-donut-frame-padding);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     overflow: visible;
     isolation: isolate;
 }
@@ -120,25 +122,26 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    width: var(--portfolio-donut-logo-size);
-    height: var(--portfolio-donut-logo-size);
-    border-radius: 50%;
-    object-fit: cover;
+    width: 20px;
+    height: 20px;
+    border-radius: 0;
+    object-fit: contain;
+    object-position: center;
     background: transparent;
     box-shadow: none;
     transform: translate(-50%, -50%);
 }
 
 .portfolio-donut-arrow {
-    width: 36px;
+    width: var(--portfolio-donut-flow-span);
     height: 36px;
-    padding: 0 10px;
+    padding: 0;
     margin: 0;
-    flex: 0 0 56px;
+    flex: 0 0 var(--portfolio-donut-flow-span);
     align-self: center;
     position: relative;
     z-index: var(--layer-inline-ornament);
-    box-sizing: content-box;
+    box-sizing: border-box;
 }
 
 .icon-portfolio-donut-flow {

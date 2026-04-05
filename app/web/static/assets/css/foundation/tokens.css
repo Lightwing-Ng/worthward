@@ -104,6 +104,15 @@
 	--style-token-column-gap: 24px;
 	--style-token-resizer-width: 32px;
 	--style-token-divider-gap: 24px;
+	--portfolio-donut-orbit-donut-size: 120px;
+	--portfolio-donut-orbit-ring-width: 10px;
+	--portfolio-donut-orbit-logo-size: 20px;
+	--portfolio-donut-orbit-logo-gap: 0px;
+	--portfolio-donut-orbit-satellite-radius: calc((var(--portfolio-donut-orbit-logo-size) * 1.41421356237) / 2);
+	--portfolio-donut-orbit-satellite-center-radius: calc((var(--portfolio-donut-orbit-donut-size) / 2) + var(--portfolio-donut-orbit-satellite-radius));
+	--portfolio-donut-orbit-outer-tangent-radius: calc(var(--portfolio-donut-orbit-satellite-center-radius) + var(--portfolio-donut-orbit-satellite-radius));
+	--portfolio-donut-orbit-frame-padding: calc(var(--portfolio-donut-orbit-outer-tangent-radius) - (var(--portfolio-donut-orbit-donut-size) / 2));
+	--portfolio-donut-orbit-boundary-size: calc(var(--portfolio-donut-orbit-outer-tangent-radius) * 2);
 	--ticker-identity-pad-block: 4px;
 	--ticker-identity-pad-inline: 6px;
 	--ticker-identity-gap: 10px;

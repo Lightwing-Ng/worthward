@@ -13,23 +13,24 @@
 @media (max-width: 767px) {
 	body { overflow-x: hidden; overflow-y: auto; width: 100%; }
 	.portfolio-donut-block {
+		--portfolio-donut-flow-span: 38px;
 		flex-wrap: nowrap;
 		justify-content: center;
 		padding: 10px 0 8px;
 		overflow-x: hidden;
 	}
 	.portfolio-donut-orbit {
-		--portfolio-donut-size: 96px;
-		--portfolio-donut-ring-width: 9px;
-		--portfolio-donut-logo-size: 18px;
-		--portfolio-donut-logo-gap: 6px;
-		flex: 0 1 auto;
+		--portfolio-donut-orbit-donut-size: 96px;
+		--portfolio-donut-orbit-ring-width: 9px;
+		--portfolio-donut-orbit-logo-size: 20px;
+		--portfolio-donut-orbit-logo-gap: 0px;
+		flex: 0 0 auto;
 	}
 	.portfolio-donut-arrow {
-		width: 26px;
+		width: var(--portfolio-donut-flow-span);
 		height: 26px;
-		padding: 0 6px;
-		flex: 0 0 38px;
+		padding: 0;
+		flex: 0 0 var(--portfolio-donut-flow-span);
 	}
 	/* Preserve the workspace panel's top rounded edge on narrow screens. */
 	.page {
@@ -178,15 +179,31 @@
 }
 @media (max-width: 430px) {
 	.portfolio-donut-block {
+		display: flex;
 		flex-direction: column;
 		align-items: center;
+		justify-content: center;
+		row-gap: 0;
 		padding: 8px 0;
 	}
 	.portfolio-donut-orbit {
-		min-width: 144px;
-		min-height: 144px;
+		width: max(144px, calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2)));
+		height: max(144px, calc(var(--portfolio-donut-size) + (var(--portfolio-donut-frame-padding) * 2)));
+		min-width: 0;
+		min-height: 0;
+		margin-inline: auto;
 	}
 	.portfolio-donut-arrow {
-		transform: rotate(90deg);
+		--portfolio-donut-flow-span: 42px;
+		width: var(--portfolio-donut-flow-span);
+		height: 32px;
+		padding: 0;
+		flex: 0 0 auto;
+		transform: none;
+		background: linear-gradient(180deg, var(--accent) 0%, var(--accent-secondary) 100%);
+	}
+	.portfolio-donut-arrow.icon-portfolio-donut-flow {
+		mask: url("/static/images/arrow.down.svg") center/contain no-repeat;
+		-webkit-mask: url("/static/images/arrow.down.svg") center/contain no-repeat;
 	}
 }
