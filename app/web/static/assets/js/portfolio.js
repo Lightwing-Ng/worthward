@@ -48,7 +48,7 @@
 		const getPortfolioLogoUrl = (ticker) => getPortfolioItem(ticker)?.logo_url || "";
 		const getPortfolioEntriesFromDom = () => Array.from(document.querySelectorAll(".ticker-field"))
 			.map((field, index) => {
-				const tickerInput = field.querySelector('input[name^="ticker_"]');
+				const tickerInput = field.querySelector('[data-ticker-input]') || field.querySelector('input[name="ticker"]');
 				const weightInput = field.querySelector(".portfolio-weight-input");
 				const ticker = tickerInput?.value?.trim()?.toUpperCase() || "";
 				if (!ticker || !weightInput) return null;

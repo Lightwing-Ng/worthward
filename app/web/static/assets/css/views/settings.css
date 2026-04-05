@@ -1721,13 +1721,14 @@ div.style-token-modal-demo::-webkit-scrollbar,
     height: 100%;
     min-width: 0;
     min-height: 0;
+    scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 10px);
     overflow-y: auto;
     overflow-x: hidden;
 }
 
 .settings-body {
     display: block;
-    padding: 2px 2px 0;
+    padding: 2px 2px calc(10px + var(--sidebar-dock-bottom-gap) + 56px);
     color: var(--text);
     font-size: var(--font-ui-lg);
     line-height: 1.45;

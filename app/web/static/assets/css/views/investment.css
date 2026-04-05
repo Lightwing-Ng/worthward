@@ -431,7 +431,7 @@
     height: auto;
     display: flex;
     flex-direction: column;
-    padding: 10px 12px calc(var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
+    padding: 10px 12px calc(10px + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
 }
 
@@ -1067,6 +1067,6 @@
 @media (min-width: 768px) {
     .investment-history-surface {
         flex: 1 1 auto;
-        padding-bottom: calc(var(--sidebar-dock-bottom-gap) + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(10px + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px));
     }
 }

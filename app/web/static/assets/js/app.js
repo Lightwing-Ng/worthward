@@ -1,4 +1,4 @@
-/* Code version: v0.3.4 */
+/* Code version: v0.3.5 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -725,6 +725,20 @@
 				return "about";
 			}
 		};
+		const resolveViewFromUrl = (url) => {
+			try {
+				const parsedUrl = new URL(url, window.location.origin);
+				const path = parsedUrl.pathname.toLowerCase();
+				if (path === "/compare" || path.startsWith("/compare/")) return "tickers";
+				if (path === "/portfolio" || path.startsWith("/portfolio/")) return "portfolio";
+				if (path === "/backtest" || path.startsWith("/backtest/")) return "backtest";
+				if (path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "more";
+				if (path === "/settings" || path.startsWith("/settings/")) return "settings";
+				return null;
+			} catch (_error) {
+				return null;
+			}
+		};
 		$$(".sidebar-dock-item").forEach((link, index) => {
 			const targetView = viewByDockIndex[index];
 			if (!targetView || link.dataset.boundDockMemory === "1") return;
@@ -735,7 +749,8 @@
 				const rememberedUrl = memory[targetView];
 				const fallbackUrl = link.getAttribute("href") || "";
 				event.preventDefault();
-				const nextUrl = rememberedUrl || fallbackUrl;
+				const rememberedView = rememberedUrl ? resolveViewFromUrl(rememberedUrl) : null;
+				const nextUrl = rememberedView === targetView ? rememberedUrl : fallbackUrl;
 				if (!nextUrl) return;
 				if (targetView === state.currentView && nextUrl === (window.location.pathname + window.location.search)) {
 					return;

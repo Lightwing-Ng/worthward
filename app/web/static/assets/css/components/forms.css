@@ -1261,7 +1261,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 input[type="date"]::-webkit-datetime-edit,
 input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.date-picker-field { position: relative; min-width: 0; }
+.date-picker-field { position: relative; min-width: 0; z-index: var(--layer-global-popover); }
 .date-picker-trigger { justify-content: flex-start; min-height: 36px; padding: 5px 10px; background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-form-control); font-weight: var(--font-weight-medium); border: 1px solid transparent; border-radius: 0; }
 .date-picker-trigger:hover, .date-picker-trigger:focus-visible { transform: none; background: var(--control-liquid-background-hover); box-shadow: var(--control-liquid-shadow-focus); }
 .date-picker-field.is-peer-highlight .date-picker-trigger { border-color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); }
@@ -1332,6 +1332,9 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 	background: var(--settings-round-icon-button-background);
 	color: var(--settings-round-icon-button-color);
 	box-shadow: var(--settings-round-icon-button-shadow);
+}
+.sidebar-secondary-button .icon-plus {
+	background-color: currentColor;
 }
 .sidebar-secondary-button:hover,
 .sidebar-secondary-button:focus-visible {

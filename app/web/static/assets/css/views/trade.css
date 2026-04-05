@@ -21,7 +21,7 @@
 .backtest-surface {
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: var(--backtest-surface-bottom-pad) !important;
+    padding-bottom: calc(var(--backtest-surface-bottom-pad) + var(--sidebar-dock-bottom-gap) + 56px + env(safe-area-inset-bottom, 0px)) !important;
     container-type: inline-size;
 }
 
