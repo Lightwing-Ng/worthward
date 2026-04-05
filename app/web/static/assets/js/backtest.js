@@ -544,11 +544,23 @@
 			const relativeX = event.clientX - canvasRect.left;
 			if (!Number.isFinite(relativeX)) return null;
 			const points = chart.getDatasetMeta(0)?.data || [];
+
+			const tradeIndexes = new Set();
+			tradeMarkerPoints.buy.forEach((marker) => tradeIndexes.add(marker.index));
+			tradeMarkerPoints.sell.forEach((marker) => tradeIndexes.add(marker.index));
+
 			let nearestIndex = null;
 			let nearestDistance = Number.POSITIVE_INFINITY;
+			
 			points.forEach((point, index) => {
 				if (!point || !Number.isFinite(point.x)) return;
-				const distance = Math.abs(point.x - relativeX);
+				
+				let distance = Math.abs(point.x - relativeX);
+				// Magnetic pull of 16px around trade points
+				if (tradeIndexes.has(index)) {
+					distance = Math.max(0, distance - 16);
+				}
+
 				if (distance < nearestDistance) {
 					nearestDistance = distance;
 					nearestIndex = index;
@@ -623,6 +635,31 @@
 			tooltip.classList.add("is-visible");
 		};
 
+		let activeBacktestRowElements = [];
+		const activateBacktestRows = (rows, scrollContainer) => {
+			activeBacktestRowElements.forEach((row) => {
+				row.classList.remove("is-metric-hover-target", "is-metric-hover-active");
+			});
+			if (!rows || !rows.length) {
+				activeBacktestRowElements = [];
+				return;
+			}
+			rows.forEach((row) => {
+				void row.offsetWidth;
+				row.classList.add("is-metric-hover-target", "is-metric-hover-active");
+			});
+			activeBacktestRowElements = rows;
+
+			const firstRow = rows[0];
+			if (scrollContainer) {
+				const rowOffset = firstRow.offsetTop - scrollContainer.offsetTop;
+				const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (firstRow.clientHeight / 2);
+				scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+			} else {
+				firstRow.scrollIntoView({ block: "center", behavior: "smooth" });
+			}
+		};
+
 		const syncHoverState = (index, sourceCanvas, sourceChart) => {
 			activeIndex = index;
 			const setActive = (chart) => {
@@ -633,6 +670,14 @@
 			setActive(priceChart);
 			setActive(equityChart);
 			updateSharedTooltip(index, sourceCanvas, sourceChart);
+
+			if (index !== null) {
+				const scrollContainer = document.querySelector("#tradeTransactionsTable")?.closest(".scrollable-data-table-scroll");
+				const rows = Array.from(document.querySelectorAll(`#tradeTransactionsTable tbody tr[data-chart-index="${index}"]`));
+				activateBacktestRows(rows, scrollContainer);
+			} else {
+				activateBacktestRows([], null);
+			}
 		};
 
 		const attachHover = (canvas, chart) => {
@@ -769,6 +814,13 @@
 			const tbody = table?.querySelector("tbody");
 			if (!table || !nav || !tbody) return;
 
+			const indexByDate = new Map();
+			rawDates.forEach((value, index) => {
+				indexByDate.set(String(value), index);
+				const formatted = formatTradeMarkerDateKey(value, interval);
+				if (formatted) indexByDate.set(formatted, index);
+			});
+
 			const trades = backtestResult.trades || [];
 			const displayTrades = trades.filter((trade) => !trade._virtual_close);
 			if (!displayTrades.length) {
@@ -776,14 +828,10 @@
 				return;
 			}
 
-			const PAGE_SIZE = 10;
-			const totalPages = Math.ceil(displayTrades.length / PAGE_SIZE);
+			const PAGE_SIZE = Math.max(displayTrades.length, 1);
+			const totalPages = 1;
 			
-			if (totalPages <= 1) {
-				nav.style.display = "none";
-			} else {
-				nav.style.display = "grid";
-			}
+			nav.style.display = "none";
 
 			let currentPage = 1;
 
@@ -838,6 +886,8 @@
 						continue;
 					}
 					const tr = document.createElement("tr");
+					const chartIndex = indexByDate.has(String(trade.date || "")) ? indexByDate.get(String(trade.date || "")) : "";
+					tr.dataset.chartIndex = chartIndex;
 					tr.innerHTML = `
 						<td class="trade-transactions-index">${displayIndex++}</td>
 						<td class="trade-transactions-date">${trade.date}</td>

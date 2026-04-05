@@ -1050,7 +1050,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--ticker-identity-gap", 10, 0),
                     px_token("--ticker-identity-min-height", 28, 1),
                     px_token("--ticker-identity-logo-height", 20, 1),
-                    px_token("--ticker-identity-logo-max-width", 32, 1),
+                    px_token("--ticker-identity-logo-max-width", 28, 1),
                     raw_token("--ticker-identity-symbol-font-size", "var(--font-tooltip)"),
                     px_token("--ticker-identity-name-margin-top", 2, 0),
                     raw_token("--ticker-identity-name-font-size", "var(--font-ui-xs)"),

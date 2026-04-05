@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .idea/
+.trae/rules/
 .trash/
 settings_store/
 node_modules/

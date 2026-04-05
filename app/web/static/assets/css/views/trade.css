@@ -418,8 +418,30 @@
     transform: translateX(-0.5px);
     pointer-events: none;
     opacity: 0;
-    transition: opacity 120ms var(--motion-standard);
+    transition: opacity 120ms var(--motion-standard), left 120ms ease-out;
     z-index: var(--layer-chart-overlay-line);
+}
+
+.trade-transactions-table tr.is-metric-hover-target {
+    animation: trade-history-row-pulse 1.4s ease;
+}
+
+.trade-transactions-table tr.is-metric-hover-active td {
+    background: color-mix(in srgb, var(--theme-accent-primary) 10%, transparent);
+}
+
+.trade-transactions-table tr.is-metric-hover-target td {
+    background: color-mix(in srgb, var(--theme-accent-primary) 8%, transparent);
+}
+
+@keyframes trade-history-row-pulse {
+    0% {
+        background: color-mix(in srgb, var(--theme-accent-primary) 16%, transparent);
+    }
+
+    100% {
+        background: transparent;
+    }
 }
 
 .trade-chart-hover-line.is-visible {

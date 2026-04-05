@@ -803,12 +803,14 @@
 
 .ticker-identity-logo,
 .timing-suggestion-logo {
-    width: auto;
+    display: block;
+    width: var(--ticker-identity-logo-max-width);
     height: var(--ticker-identity-logo-height);
+    max-height: var(--ticker-identity-logo-height);
     max-width: var(--ticker-identity-logo-max-width);
     object-fit: contain;
-    object-position: left center;
-    flex: 0 0 auto;
+    object-position: right center;
+    flex: 0 0 var(--ticker-identity-logo-max-width);
 }
 
 .checkbox {

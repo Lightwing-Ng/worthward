@@ -1408,6 +1408,24 @@ div.style-token-modal-demo::-webkit-scrollbar,
     min-width: 0;
 }
 
+.local-store-action-cell {
+    position: relative;
+}
+
+.local-store-action-slot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.local-store-action-slot .settings-action-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .local-store-table .settings-action-button {
     width: 24px;
     min-width: 24px;

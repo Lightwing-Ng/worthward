@@ -109,7 +109,7 @@
 	--ticker-identity-gap: 10px;
 	--ticker-identity-min-height: 28px;
 	--ticker-identity-logo-height: 20px;
-	--ticker-identity-logo-max-width: 32px;
+	--ticker-identity-logo-max-width: 28px;
 	--ticker-identity-symbol-font-size: var(--font-tooltip);
 	--ticker-identity-name-margin-top: 2px;
 	--ticker-identity-name-font-size: var(--font-ui-xs);
