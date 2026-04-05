@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.4.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -100,11 +100,10 @@
 		};
 	};
 
-	const initChartWorkspace = () => {
-		const state = window.ANTIGRAVITY_APP;
-		if (!state || !state.chart || !window.Chart) return;
-		const canvas = document.getElementById("returnsChart");
-		if (!canvas) return;
+	const renderReturnsChart = (config, data) => {
+		const canvas = config?.canvas;
+		const state = data?.state;
+		if (!canvas || !state || !state.chart || !window.Chart) return null;
 		const existingChart = window.Chart.getChart?.(canvas);
 		if (existingChart) existingChart.destroy();
 
@@ -489,8 +488,17 @@
 				chart.update();
 			});
 		}
+		return chart;
 	};
 
+	const initChartWorkspace = () => {
+		const state = window.ANTIGRAVITY_APP;
+		const canvas = document.getElementById("returnsChart");
+		if (!state || !state.chart || !canvas) return;
+		renderReturnsChart({ canvas }, { state });
+	};
+
+	bootstrap.renderReturnsChart = renderReturnsChart;
 	bootstrap.initChartWorkspace = initChartWorkspace;
 	initChartWorkspace();
 })();
