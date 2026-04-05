@@ -20,6 +20,7 @@
 .portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
 .portfolio-weight-field.is-open .portfolio-weight-input,
 .portfolio-weight-field:focus-within .portfolio-weight-input,
+.portfolio-weight-input:hover,
 .portfolio-weight-input:focus { border-radius: var(--radius-soft); }
 .portfolio-weight-input::placeholder { color: var(--muted); opacity: 1; font-size: var(--font-tooltip); }
 .portfolio-weight-input::-webkit-outer-spin-button, .portfolio-weight-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
