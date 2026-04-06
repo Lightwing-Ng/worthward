@@ -10,14 +10,21 @@
 	} = {}) => {
 		const itemCount = Math.max(currentValues.length, minimumRequiredTickers);
 		return `
-			<section class="workspace-header">
-				<article class="report-card">
+			<section class="workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
+				
+				<article class="report-card workspace-article-card workspace-summary-card">
 					<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
-					<div class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
-						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
-					</div>
 				</article>
-				<article class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></article>
+				
+				
+				<div class="workspace-summary-scroll-surface">
+					<article class="report-card workspace-content-card compare-summary-content-card">
+						<div class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
+							${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
+						</div>
+					</article>
+					<article class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></article>
+				</div>
 			</section>
 		`;
 	};

@@ -32,6 +32,7 @@
 .investment-report-card {
     --trade-detail-track-height: 36px;
     --trade-detail-panel-height: 160px;
+    --export-transactions-edge-offset: var(--page-edge-pad);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -39,13 +40,13 @@
     height: auto;
     flex: 0 0 50%;
     min-width: 0;
-    padding-top: max(10px, var(--workspace-title-safe-top));
     overflow: hidden;
     align-content: start;
     position: relative;
-    background: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+}
+
+.investment-report-header-card > .report-heading-row {
+    padding-right: calc(12px + var(--settings-round-icon-button-size) + 10px);
 }
 
 .investment-view-surface {
@@ -87,6 +88,7 @@
 
 .investment-report-card:has(#investment_view_surface[data-active-view="metrics"]) {
     overflow: visible;
+    z-index: var(--layer-global-popover);
 }
 
 .investment-view-surface-body>[data-investment-view-panel] {
@@ -170,17 +172,20 @@
 .investment-view-panel-grid {
     margin-top: 0;
     min-height: 0;
-    height: auto;
+    height: 100%;
 }
 
 #investment_holdings_panel {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     padding: 0 !important;
     scrollbar-gutter: auto !important;
     overflow: hidden;
 }
 
 #investment_metrics_panel {
+    height: 100%;
     overflow: visible;
 }
 

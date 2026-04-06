@@ -39,6 +39,7 @@
 .trade-performance-card {
     --trade-detail-track-height: 36px;
     --trade-detail-panel-height: 160px;
+    --export-transactions-edge-offset: var(--page-edge-pad);
     display: grid;
     grid-template-rows: auto 1fr;
     row-gap: 10px;
@@ -46,15 +47,23 @@
     overflow: hidden;
     align-content: start;
     position: relative;
-    background: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+}
+
+.backtest-trade-performance-card {
+    --workspace-article-pad-block-start: 8px;
+    --workspace-article-pad-inline: 12px;
+    --workspace-article-pad-block-end: 8px;
+}
+
+.trade-performance-card > .export-transactions-button,
+.investment-report-card > .export-transactions-button {
+    position: absolute;
+    top: var(--export-transactions-edge-offset);
+    right: var(--export-transactions-edge-offset);
+    z-index: calc(var(--layer-surface-content) + 2);
 }
 
 .export-transactions-button {
-    position: absolute;
-    top: 10px;
-    right: 10px;
     width: var(--settings-round-icon-button-size);
     height: var(--settings-round-icon-button-size);
     padding: 0;
@@ -72,7 +81,6 @@
     min-height: var(--settings-round-icon-button-size);
     flex-shrink: 0;
     cursor: pointer;
-    z-index: var(--layer-surface-content);
     transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard), transform 460ms var(--motion-press);
 }
 
@@ -101,13 +109,25 @@
 
 .trade-detail-tabs {
     display: grid;
-    grid-template-rows: var(--trade-detail-track-height) var(--trade-detail-panel-height);
+    grid-template-rows: auto var(--trade-detail-panel-height);
     gap: 10px;
     justify-items: center;
     min-height: 0;
     min-width: 0;
     align-content: start;
     overflow: hidden;
+}
+
+.trade-detail-toolbar {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+}
+
+.trade-detail-toolbar > .trade-detail-shell {
+    grid-column: 2;
 }
 
 .trade-detail-shell {
@@ -127,6 +147,8 @@
     min-width: 0;
     margin: 0 auto;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .trade-detail-shell .segmented-control-option span {
@@ -179,13 +201,19 @@
 }
 
 .trade-view-panel-grid {
-    margin-top: 12px;
+    margin-top: 0;
     min-height: 0;
-    height: auto;
+    height: 100%;
 }
 
 #backtest_metrics_panel {
     height: 100%;
+    min-height: 0;
+}
+
+.trade-detail-panel > .trade-metrics-grid,
+.trade-detail-panel > .scrollable-data-table-shell {
+    flex: 1 1 auto;
     min-height: 0;
 }
 

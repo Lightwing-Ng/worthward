@@ -631,6 +631,27 @@ div.style-token-modal-demo {
     color: var(--text);
 }
 
+.style-token-workspace-header-demo {
+    width: min(100%, 360px);
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.style-token-workspace-article-demo {
+    width: 100%;
+    margin: 0;
+}
+
+.style-token-workspace-article-copy {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.style-token-workspace-article-copy > p {
+    margin: 0;
+}
+
 .style-token-table-demo-shell {
     width: 100%;
     padding: 8px 0;
@@ -1715,6 +1736,94 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .about-meta dt {
     white-space: nowrap;
+}
+
+.settings-workspace-header {
+    --settings-summary-overlay-height: calc(max(10px, var(--workspace-title-safe-top)) + 28px);
+    --settings-summary-overlay-gap: 12px;
+    position: relative;
+}
+
+.settings-workspace-header > .settings-summary-card {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: calc(var(--layer-surface-content) + 1);
+    min-height: var(--settings-summary-overlay-height);
+    margin: 0;
+    background: var(--workspace-article-heading-background);
+    border: var(--workspace-article-heading-border);
+    box-shadow: var(--workspace-article-heading-shadow);
+    backdrop-filter: var(--workspace-article-blur);
+    -webkit-backdrop-filter: var(--workspace-article-blur);
+}
+
+@media (max-width: 767px) {
+    .settings-workspace-header {
+        --settings-summary-morph-translate-x: 0px;
+        --settings-summary-morph-translate-y: 0px;
+        --settings-summary-morph-scale-x: 1;
+        --settings-summary-morph-scale-y: 1;
+    }
+
+    .settings-workspace-header > .settings-summary-card {
+        overflow: visible;
+        transform-origin: top left;
+        will-change: transform, opacity, border-radius, background, box-shadow;
+        box-shadow: var(--workspace-article-mobile-shadow);
+        transition:
+            transform 620ms var(--workspace-article-sidebar-morph-easing),
+            opacity 420ms var(--motion-standard),
+            border-radius 620ms var(--workspace-article-sidebar-morph-easing),
+            background 220ms var(--motion-standard),
+            box-shadow 220ms var(--motion-standard),
+            border-color 220ms var(--motion-standard);
+    }
+
+    .settings-workspace-header > .settings-summary-card .report-heading-row {
+        transition:
+            opacity 180ms var(--motion-standard),
+            transform 560ms var(--motion-emphasized);
+    }
+
+    .app-shell.is-sidebar-open .settings-workspace-header > .settings-summary-card {
+        background: var(--glass-surface-background-strong);
+        box-shadow: var(--workspace-article-mobile-shadow);
+        transform:
+            translate3d(
+                var(--settings-summary-morph-translate-x),
+                var(--settings-summary-morph-translate-y),
+                0
+            )
+            scale3d(
+                var(--settings-summary-morph-scale-x),
+                var(--settings-summary-morph-scale-y),
+                1
+            );
+        opacity: 0;
+    }
+
+    .app-shell.is-sidebar-open .settings-workspace-header > .settings-summary-card .report-heading-row {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+}
+
+@media (min-width: 768px) {
+    .settings-workspace-header > .settings-summary-card {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+}
+
+.settings-workspace-header > .settings-surface {
+    padding-top: 0;
+}
+
+.settings-workspace-header > .settings-surface > .settings-body {
+    padding-top: calc(var(--settings-summary-overlay-height) + var(--settings-summary-overlay-gap));
 }
 
 .settings-surface {

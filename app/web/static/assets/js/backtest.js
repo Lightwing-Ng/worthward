@@ -185,6 +185,8 @@
 		if (existingEquityChart) existingEquityChart.destroy();
 		priceCanvas.dataset.tradeChartMounted = "1";
 		equityCanvas.dataset.tradeChartMounted = "1";
+		priceCanvas.dataset.tradeChartReady = "0";
+		equityCanvas.dataset.tradeChartReady = "0";
 
 		const { backtestResult } = state;
 		const resolvedTheme = readThemeTokens();
@@ -728,6 +730,34 @@
 			: allInEquity;
 		const priceYScale = buildPixelPaddedYScale(priceCanvas, [priceSeriesStart], chartYPaddingPx);
 		const equityYScale = buildPixelPaddedYScale(equityCanvas, [equitySeriesStart, allInSeriesStart], chartYPaddingPx);
+		const markBacktestChartReady = (canvas) => {
+			if (!canvas || canvas.dataset.tradeChartReady === "1") return;
+			canvas.dataset.tradeChartReady = "1";
+			if (priceCanvas.dataset.tradeChartReady === "1" && equityCanvas.dataset.tradeChartReady === "1") {
+				window.dispatchEvent(new CustomEvent("antigravity:backtest-charts-ready"));
+			}
+		};
+		const resolveChartReadyAnimation = (canvas, animationConfig) => {
+			if (animationConfig === false) {
+				window.requestAnimationFrame(() => {
+					window.requestAnimationFrame(() => {
+						markBacktestChartReady(canvas);
+					});
+				});
+				return false;
+			}
+			const normalizedAnimation = (animationConfig && typeof animationConfig === "object") ? animationConfig : {};
+			const previousOnComplete = typeof normalizedAnimation.onComplete === "function"
+				? normalizedAnimation.onComplete
+				: null;
+			return {
+				...normalizedAnimation,
+				onComplete: (context) => {
+					previousOnComplete?.(context);
+					markBacktestChartReady(canvas);
+				},
+			};
+		};
 
 		priceChart = new Chart(priceCanvas, {
 			type: "line",
@@ -756,7 +786,7 @@
 			},
 			options: {
 				...commonOptions,
-				animation: refreshTransition ? false : undefined,
+				animation: resolveChartReadyAnimation(priceCanvas, refreshTransition ? false : undefined),
 				scales: {
 					...commonOptions.scales,
 					x: { ...commonOptions.scales.x, display: false },
@@ -812,7 +842,7 @@
 			},
 			options: {
 				...commonOptions,
-				animation: refreshTransition ? false : undefined,
+				animation: resolveChartReadyAnimation(equityCanvas, refreshTransition ? false : undefined),
 				scales: {
 					...commonOptions.scales,
 					x: { ...commonOptions.scales.x, display: false },

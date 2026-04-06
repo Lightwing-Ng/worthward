@@ -9,6 +9,7 @@
     let styleTokenActiveControl = null;
     let activeStyleTokenResizerCleanup = null;
     let activeStyleTokenDemoDensityCleanup = null;
+    let activeSettingsSummaryMorphCleanup = null;
     let refreshStyleTokenDemoDensity = null;
 
     const getContext = () => settingsContext || {};
@@ -141,6 +142,78 @@
             const value = (element.dataset.inlineBoxShadow || "").trim();
             if (value) element.style.boxShadow = value;
         });
+    };
+
+    const attachSettingsSummaryMorph = () => {
+        if (typeof activeSettingsSummaryMorphCleanup === "function") {
+            activeSettingsSummaryMorphCleanup();
+            activeSettingsSummaryMorphCleanup = null;
+        }
+        const summaryCard = document.querySelector(".settings-workspace-header > .settings-summary-card");
+        const sidebar = document.getElementById("app_sidebar");
+        if (!(summaryCard instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) return;
+        summaryCard.classList.add("workspace-article-card", "workspace-summary-card");
+        const mobileMedia = window.matchMedia("(max-width: 767px)");
+        let frameId = 0;
+        let resizeObserver = null;
+        const clearMorph = () => {
+            summaryCard.style.removeProperty("--settings-summary-morph-translate-x");
+            summaryCard.style.removeProperty("--settings-summary-morph-translate-y");
+            summaryCard.style.removeProperty("--settings-summary-morph-scale-x");
+            summaryCard.style.removeProperty("--settings-summary-morph-scale-y");
+        };
+        const syncMorph = () => {
+            frameId = 0;
+            if (!mobileMedia.matches) {
+                clearMorph();
+                return;
+            }
+            const summaryRect = summaryCard.getBoundingClientRect();
+            if (!(summaryRect.width > 0) || !(summaryRect.height > 0)) {
+                clearMorph();
+                return;
+            }
+            const sidebarRect = sidebar.getBoundingClientRect();
+            const sidebarStyles = window.getComputedStyle(sidebar);
+            const targetLeft = Number.parseFloat(sidebarStyles.left || "") || sidebarRect.left;
+            const targetTop = Number.parseFloat(sidebarStyles.top || "") || sidebarRect.top;
+            const targetBottom = Number.parseFloat(sidebarStyles.bottom || "") || 0;
+            const targetWidth = sidebarRect.width > 0 ? sidebarRect.width : Math.max(1, window.innerWidth - (targetLeft * 2));
+            const targetHeight = Math.max(1, window.innerHeight - targetTop - targetBottom);
+            summaryCard.style.setProperty("--settings-summary-morph-translate-x", `${targetLeft - summaryRect.left}px`);
+            summaryCard.style.setProperty("--settings-summary-morph-translate-y", `${targetTop - summaryRect.top}px`);
+            summaryCard.style.setProperty("--settings-summary-morph-scale-x", `${targetWidth / summaryRect.width}`);
+            summaryCard.style.setProperty("--settings-summary-morph-scale-y", `${targetHeight / summaryRect.height}`);
+        };
+        const scheduleMorphSync = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(syncMorph);
+        };
+        scheduleMorphSync();
+        window.addEventListener("resize", scheduleMorphSync);
+        if (window.visualViewport) window.visualViewport.addEventListener("resize", scheduleMorphSync);
+        if (typeof mobileMedia.addEventListener === "function") {
+            mobileMedia.addEventListener("change", scheduleMorphSync);
+        } else if (typeof mobileMedia.addListener === "function") {
+            mobileMedia.addListener(scheduleMorphSync);
+        }
+        if (typeof ResizeObserver === "function") {
+            resizeObserver = new ResizeObserver(scheduleMorphSync);
+            resizeObserver.observe(summaryCard);
+            resizeObserver.observe(sidebar);
+        }
+        activeSettingsSummaryMorphCleanup = () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+            window.removeEventListener("resize", scheduleMorphSync);
+            if (window.visualViewport) window.visualViewport.removeEventListener("resize", scheduleMorphSync);
+            if (typeof mobileMedia.removeEventListener === "function") {
+                mobileMedia.removeEventListener("change", scheduleMorphSync);
+            } else if (typeof mobileMedia.removeListener === "function") {
+                mobileMedia.removeListener(scheduleMorphSync);
+            }
+            resizeObserver?.disconnect();
+            clearMorph();
+        };
     };
 
     const attachStyleTokenResizer = () => {
@@ -634,7 +707,7 @@
         article.className = "workspace-header settings-workspace-header";
         article.id = "settings_workspace_shell";
         article.innerHTML = `
-			<article class="report-card settings-summary-card">
+			<article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
 				<div class="report-heading-row">
 					<p class="report-heading">${labels.local_market_store || "Local Market Store"}</p>
 				</div>
@@ -1144,6 +1217,7 @@
         refreshStyleTokenPortfolioDonutDemo();
         attachBrokerSettingsHandlers();
         attachNetworkRefreshButton();
+        attachSettingsSummaryMorph();
         attachStyleTokenResizer();
         attachStyleTokenDemoResponsiveness();
         attachStyleTokenControls();

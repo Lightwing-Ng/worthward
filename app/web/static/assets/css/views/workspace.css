@@ -1,4 +1,4 @@
-/* Code version: v1.1.1-p1 */
+/* Code version: v1.1.1-p4 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -19,11 +19,45 @@
 .report-card {
     position: relative;
     z-index: var(--layer-surface-content);
-    border-radius: var(--radius-panel);
-    padding: 10px 12px 8px;
-    background: var(--glass-surface-background-strong);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
+    border-radius: var(--workspace-article-radius);
+    padding:
+        var(--workspace-article-pad-block-start)
+        var(--workspace-article-pad-inline)
+        var(--workspace-article-pad-block-end);
+    background: var(--workspace-article-background);
+    box-shadow: var(--workspace-article-shadow);
+    backdrop-filter: var(--workspace-article-blur);
+    -webkit-backdrop-filter: var(--workspace-article-blur);
+}
+
+.workspace-summary-card {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.workspace-article-card {
+    --workspace-article-radius: var(--radius-panel);
+    --workspace-article-pad-block-start: 10px;
+    --workspace-article-pad-inline: 12px;
+    --workspace-article-pad-block-end: 8px;
+    --workspace-article-background: var(--glass-surface-background-strong);
+    --workspace-article-shadow: none;
+    --workspace-article-blur: var(--glass-surface-blur);
+    --workspace-article-heading-min-height: 44px;
+    --workspace-article-heading-gap: 10px;
+    --workspace-article-heading-background: var(--glass-surface-background);
+    --workspace-article-heading-border: var(--glass-surface-border);
+    --workspace-article-heading-shadow: var(--glass-surface-shadow);
+    --workspace-article-mobile-shadow: none;
+    --workspace-article-sidebar-morph-easing: var(--motion-inertial);
+}
+
+.workspace-content-card {
+    --workspace-article-pad-block-start: 0px;
+    --workspace-article-background: var(--workspace-content-article-background);
+    --workspace-article-shadow: var(--workspace-content-article-shadow);
+    --workspace-article-blur: var(--workspace-content-article-blur);
 }
 
 .workspace-header > .report-card {
@@ -35,7 +69,25 @@
     min-height: 0;
 }
 
-.workspace > .workspace-header:first-child .report-card,
+.workspace-summary-scroll-surface {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    min-width: 0;
+}
+
+.workspace-summary-scroll-surface > .report-card {
+    flex: 0 0 auto;
+}
+
+.workspace-summary-scroll-surface > .chart-surface {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.workspace > .workspace-header:first-child > .workspace-article-card,
 .workspace > .chart-surface:first-child {
     padding-top: max(10px, var(--workspace-title-safe-top));
 }
@@ -44,13 +96,83 @@
     padding-top: var(--workspace-title-safe-top);
 }
 
+@media (max-width: 767px) {
+    .workspace-mobile-summary-shell {
+        --workspace-summary-sticky-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
+        --workspace-summary-overlay-gap: 12px;
+        --workspace-summary-content-clearance: 8px;
+        gap: var(--workspace-summary-overlay-gap);
+        position: relative;
+        min-height: 0;
+    }
+
+    .workspace-mobile-summary-shell > .workspace-summary-card {
+        position: sticky;
+        top: var(--workspace-summary-sticky-top);
+        z-index: calc(var(--layer-surface-content) + 1);
+        margin: 0;
+        padding-top: var(--workspace-article-pad-block-start);
+        background: var(--workspace-article-heading-background);
+        border: var(--workspace-article-heading-border);
+        box-shadow: var(--workspace-article-heading-shadow);
+        backdrop-filter: var(--workspace-article-blur);
+        -webkit-backdrop-filter: var(--workspace-article-blur);
+        overflow: visible;
+        transform-origin: top left;
+        will-change: transform, opacity, border-radius, background, box-shadow;
+        box-shadow: var(--workspace-article-mobile-shadow);
+        transition:
+            transform 620ms var(--workspace-article-sidebar-morph-easing),
+            opacity 420ms var(--motion-standard),
+            border-radius 620ms var(--workspace-article-sidebar-morph-easing),
+            background 220ms var(--motion-standard),
+            box-shadow 220ms var(--motion-standard),
+            border-color 220ms var(--motion-standard);
+    }
+
+    .workspace-mobile-summary-shell > .workspace-summary-card .report-heading-row {
+        transition:
+            opacity 180ms var(--motion-standard),
+            transform 560ms var(--motion-emphasized);
+    }
+
+    .workspace-mobile-summary-shell > .workspace-summary-scroll-surface {
+        overflow-x: hidden;
+        overflow-y: visible;
+        padding-top: var(--workspace-summary-content-clearance);
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .app-shell.is-sidebar-open .workspace-mobile-summary-shell > .workspace-summary-card {
+        background: var(--glass-surface-background-strong);
+        box-shadow: var(--workspace-article-mobile-shadow);
+        transform:
+            translate3d(
+                var(--workspace-summary-morph-translate-x, 0px),
+                var(--workspace-summary-morph-translate-y, 0px),
+                0
+            )
+            scale3d(
+                var(--workspace-summary-morph-scale-x, 1),
+                var(--workspace-summary-morph-scale-y, 1),
+                1
+            );
+        opacity: 0;
+    }
+
+    .app-shell.is-sidebar-open .workspace-mobile-summary-shell > .workspace-summary-card .report-heading-row {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+}
+
 .portfolio-summary {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
     margin-bottom: 0;
-    padding: 4px 0 4px;
+    padding: 0 0 4px;
 }
 
 .portfolio-summary-main {
@@ -81,7 +203,7 @@
     justify-content: flex-start;
     flex-wrap: nowrap;
     gap: 0;
-    padding: 14px 0 10px 16px;
+    padding: 0 0 10px 16px;
     width: 100%;
     min-width: 0;
     overflow-x: auto;
@@ -172,6 +294,49 @@
     justify-content: flex-start;
     gap: 1ch;
     margin-bottom: 6px;
+    position: relative;
+    z-index: calc(var(--layer-surface-content) + 1);
+}
+
+.workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card):not(.timing-report-card) > .report-heading-row {
+    min-height: var(--workspace-article-heading-min-height);
+    margin:
+        calc(-1 * var(--workspace-article-pad-block-start))
+        calc(-1 * var(--workspace-article-pad-inline))
+        var(--workspace-article-heading-gap);
+    padding: var(--workspace-article-pad-block-start) var(--workspace-article-pad-inline);
+    border-radius: var(--workspace-article-radius);
+    background: var(--workspace-article-heading-background);
+    border: var(--workspace-article-heading-border);
+    box-shadow: var(--workspace-article-heading-shadow);
+    backdrop-filter: var(--workspace-article-blur);
+    -webkit-backdrop-filter: var(--workspace-article-blur);
+}
+
+@media (max-width: 767px) {
+    .workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card):not(.timing-report-card) > .report-heading-row {
+        box-shadow: var(--workspace-article-mobile-shadow);
+    }
+}
+
+@media (min-width: 768px) {
+    .timing-report-card {
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+
+    .workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card) > .report-heading-row {
+        min-height: 0;
+        margin: 0 0 6px;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }
 
 .report-heading {

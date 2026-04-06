@@ -74,7 +74,7 @@
 
 {% block workspace_content %}
 <section class="workspace-header settings-workspace-header" id="settings_workspace_shell">
-    <article class="report-card settings-summary-card">
+    <article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
         <div class="report-heading-row">
             <p class="report-heading">{{ settings_title }}</p>
         </div>
@@ -745,6 +745,17 @@
                             <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
                         </div>
                     </div>
+                    {% elif row.sample_kind == "workspace-article" %}
+                    <section class="workspace-header style-token-workspace-header-demo" aria-hidden="true">
+                        <article class="report-card workspace-article-card style-token-workspace-article-demo">
+                            <div class="report-heading-row">
+                                <p class="report-heading">{{ row.sample_title }}</p>
+                            </div>
+                            <div class="style-token-workspace-article-copy">
+                                <p>{{ row.sample_copy }}</p>
+                            </div>
+                        </article>
+                    </section>
                     {% elif row.sample_kind == "settings-form-input" %}
                     <div class="style-token-settings-input-shell">
                         <label class="style-token-settings-input-label" for="style_token_settings_text_input">{{ row.sample_title }}</label>

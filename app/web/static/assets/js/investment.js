@@ -267,6 +267,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
+    let investmentChartReady = false;
+    let investmentHasExportableTransactions = false;
 
     function getActionButtonLabels(button) {
         return {
@@ -491,8 +493,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setInvestmentExportButtonVisibility(isVisible) {
+        investmentHasExportableTransactions = Boolean(isVisible);
         if (!exportTransactionsButton) return;
-        exportTransactionsButton.hidden = !isVisible;
+        exportTransactionsButton.hidden = !(investmentHasExportableTransactions && investmentChartReady);
+    }
+
+    function setInvestmentChartReady(isReady, canvas = null) {
+        investmentChartReady = Boolean(isReady);
+        if (canvas instanceof HTMLCanvasElement) {
+            canvas.dataset.investmentChartReady = investmentChartReady ? '1' : '0';
+        }
+        setInvestmentExportButtonVisibility(investmentHasExportableTransactions);
     }
 
     function escapeMarkdownTableCell(value) {
@@ -2019,21 +2030,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reuse the same chart styling from the backtest page
     function renderEquityChartWithEquity(chartPoints) {
         if (!chartPoints.length || !window.Chart) {
+            setInvestmentChartReady(false);
             console.warn('Chart.js not available');
             return;
         }
 
         const container = document.getElementById('investment_equity_chart');
         if (!container) {
+            setInvestmentChartReady(false);
             console.warn('Chart container not found');
             return;
         }
 
-        // Clear any existing chart
         container.innerHTML = `<canvas id="investmentEquityChart"></canvas>`;
         const canvas = document.getElementById('investmentEquityChart');
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
+        setInvestmentChartReady(false, canvas);
 
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         const rawDates = sortedChartPoints.map((point) => point.date);
@@ -2336,6 +2349,12 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             options: {
                 ...commonOptions,
+                animation: {
+                    onComplete: () => {
+                        if (canvas.dataset.investmentChartReady === '1') return;
+                        setInvestmentChartReady(true, canvas);
+                    },
+                },
                 scales: {
                     ...commonOptions.scales,
                     x: { ...commonOptions.scales.x, display: false },
@@ -2343,6 +2362,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             },
             plugins: [hoverGuidePlugin, xAxisLabelPlugin],
+        });
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                if (canvas.dataset.investmentChartReady === '1') return;
+                setInvestmentChartReady(true, canvas);
+            });
         });
     }
 
