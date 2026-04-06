@@ -1,4 +1,4 @@
-/* Code version: v0.4.0 */
+/* Code version: v0.4.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -98,6 +98,21 @@
 			rawMin,
 			rawMax,
 		};
+	};
+
+	const drawContainedImage = (ctx, image, drawX, drawY, boxSize) => {
+		const sourceWidth = Number(image?.naturalWidth || 0);
+		const sourceHeight = Number(image?.naturalHeight || 0);
+		if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+			ctx.drawImage(image, drawX, drawY, boxSize, boxSize);
+			return;
+		}
+		const scale = Math.min(boxSize / sourceWidth, boxSize / sourceHeight);
+		const drawWidth = sourceWidth * scale;
+		const drawHeight = sourceHeight * scale;
+		const offsetX = drawX + ((boxSize - drawWidth) / 2);
+		const offsetY = drawY + ((boxSize - drawHeight) / 2);
+		ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 	};
 
 	const renderReturnsChart = (config, data) => {
@@ -246,18 +261,9 @@
 					const centerY = lastPoint.y;
 					const drawX = centerX - (logoSize / 2);
 					const drawY = centerY - (logoSize / 2);
-					const radius = 10;
 
 					ctx.save();
-					ctx.beginPath();
-					ctx.moveTo(drawX + radius, drawY);
-					ctx.arcTo(drawX + logoSize, drawY, drawX + logoSize, drawY + logoSize, radius);
-					ctx.arcTo(drawX + logoSize, drawY + logoSize, drawX, drawY + logoSize, radius);
-					ctx.arcTo(drawX, drawY + logoSize, drawX, drawY, radius);
-					ctx.arcTo(drawX, drawY, drawX + logoSize, drawY, radius);
-					ctx.closePath();
-					ctx.clip();
-					ctx.drawImage(image, drawX, drawY, logoSize, logoSize);
+					drawContainedImage(ctx, image, drawX, drawY, logoSize);
 					ctx.restore();
 				});
 			},

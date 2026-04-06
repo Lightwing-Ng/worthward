@@ -270,15 +270,18 @@
 .performance-grid {
     display: grid;
     grid-template-rows: auto auto auto;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 0;
     align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .performance-item {
     position: relative;
-    min-width: 0;
-    padding: 8px 12px 6px 16px;
+    min-width: 128px;
+    padding: 8px 8px 6px;
     border-radius: var(--radius-panel);
     background: transparent;
     border: none;
@@ -303,16 +306,6 @@
     transform: translateX(-100%);
     animation: pending-sheen 1.25s var(--motion-shimmer) infinite;
     pointer-events: none;
-}
-
-.performance-accent {
-    position: absolute;
-    top: 6px;
-    bottom: 14px;
-    left: 0;
-    width: 4px;
-    background: var(--item-color);
-    border-radius: var(--radius-pill);
 }
 
 .report-grid h3, .report-grid p, .footer-meta dt, .footer-meta dd {
@@ -390,15 +383,19 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     align-self: end;
-    margin: 10px 0;
+    margin: 8px 0 0;
     font-size: var(--font-metric-value);
     line-height: 1;
     letter-spacing: -0.04em;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.ticker-identity-row:has(.ticker-identity-logo) + .report-value {
+    margin-inline-start: calc(var(--ticker-identity-logo-max-width) + var(--ticker-identity-gap));
 }
 
 .winner-badge {
@@ -1212,8 +1209,9 @@ footer {
 .chart-tooltip-logo {
     width: var(--logo-tooltip-size);
     height: var(--logo-tooltip-size);
-    border-radius: var(--radius-soft);
+    border-radius: 0;
     object-fit: contain;
+    object-position: center;
     background: transparent;
 }
 

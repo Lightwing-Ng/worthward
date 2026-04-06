@@ -1,6 +1,5 @@
 /* Code version: v3.24.1-p9 */
 @media (max-width: 980px) {
-	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 	.portfolio-summary { align-items: flex-start; }
 	.portfolio-donut-block { justify-content: flex-start; }
 	.settings-form-shell { width: 100%; }
@@ -12,6 +11,9 @@
 }
 @media (max-width: 767px) {
 	body { overflow-x: hidden; overflow-y: auto; width: 100%; }
+	#compare_summary_region {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 189px), 1fr)) !important;
+	}
 	.portfolio-donut-block {
 		--portfolio-donut-flow-span: 38px;
 		flex-wrap: nowrap;
@@ -154,10 +156,7 @@
 		order: 2;
 		z-index: var(--layer-surface-content);
 	}
-	.performance-grid { grid-template-columns: 1fr !important; grid-template-rows: none; }
 	.performance-item { grid-template-rows: auto auto auto; grid-row: auto; }
-	.performance-accent { bottom: 18px; }
-
 	.sidebar-dock {
 		position: fixed;
 		left: calc(10px + (min(var(--sidebar-width), calc(100vw - 20px)) / 2)) !important;

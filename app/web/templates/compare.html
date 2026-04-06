@@ -14,12 +14,16 @@
         </div>
         <div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat({{ performance_items | length }}, minmax(0, 1fr));">
             {% for item in performance_items %}
-            <section class="performance-item" style="--item-color: {{ item.color }};">
-                <div class="performance-accent"></div>
-                <div class="report-symbol-row">
-                    <p class="report-symbol">{{ item.ticker }}</p>
+            <section class="performance-item" data-ticker="{{ item.ticker }}">
+                <div class="ticker-identity-row">
+                    {% if item.logo_url %}
+                    <img src="{{ item.logo_url }}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                    {% endif %}
+                    <span class="ticker-identity-copy">
+                        <span class="suggestion-symbol ticker-identity-symbol">{{ item.ticker }}</span>
+                        <span class="suggestion-name ticker-identity-name" data-workspace-mask="company-name" title="{{ item.company_name }}">{{ item.company_name }}</span>
+                    </span>
                 </div>
-                <p class="report-company" data-workspace-mask="company-name">{{ item.company_name }}</p>
                 <p class="report-value">
                     <span data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ "%.2f"|format(item.ending_return) }}%</span>
                     {% if item.is_winner %}

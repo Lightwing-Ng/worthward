@@ -1,4 +1,4 @@
-/* Code version: v1.4.3 */
+/* Code version: v1.4.4 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -61,6 +61,10 @@
     overflow: hidden;
 }
 
+#investment_view_surface[data-active-view="metrics"] {
+    overflow: visible;
+}
+
 .investment-view-segmented-wrap {
     flex: 0 0 auto;
     display: flex;
@@ -78,6 +82,10 @@
 }
 
 #investment_view_surface[data-active-view="metrics"] .investment-view-surface-body {
+    overflow: visible;
+}
+
+.investment-report-card:has(#investment_view_surface[data-active-view="metrics"]) {
     overflow: visible;
 }
 
