@@ -1,4 +1,4 @@
-/* Code version: v0.3.6 */
+/* Code version: v0.3.7 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -46,6 +46,9 @@
 	--sidebar-dock-hit-size: 56px;
 	--sidebar-dock-bottom-gap: 14px;
 	--workspace-mobile-dock-clearance: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
+	--workspace-mobile-surface-bottom-pad: calc(var(--page-edge-pad) + var(--workspace-mobile-dock-clearance) + env(safe-area-inset-bottom, 0px));
+	--page-mobile-scroll-bottom-pad-base: var(--page-edge-pad);
+	--page-mobile-end-bottom-pad-base: calc(var(--page-mobile-scroll-bottom-pad-base) + var(--workspace-mobile-surface-bottom-pad));
 	--sidebar-dock-mobile-bottom-gap: 4px;
 	--sidebar-dock-mobile-shadow: 0 -10px 24px var(--theme-glass-border), 0 0 0 1px color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 	--backtest-surface-bottom-pad: 10px;

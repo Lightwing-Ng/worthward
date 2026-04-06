@@ -207,28 +207,28 @@
         <p class="trade-pane-placeholder">{{ labels.backtest_no_result }}</p>
         {% endif %}
     </article>
+    <article class="chart-surface backtest-surface">
+        <div class="chart-heading-row">
+            <p class="chart-heading">{{ labels.backtest_chart }}</p>
+        </div>
+        {% if backtest_result %}
+        <div class="trade-chart-stack">
+                    <div class="trade-chart-panel">
+                        <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
+                            <canvas id="tradePriceChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="trade-chart-panel trade-chart-panel-equity">
+                        <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-equity-chart">
+                            <canvas id="tradeEquityChart"></canvas>
+                        </div>
+                    </div>
+        </div>
+        {% else %}
+        <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>
+        {% endif %}
+    </article>
 </section>
-<article class="chart-surface backtest-surface">
-    <div class="chart-heading-row">
-        <p class="chart-heading">{{ labels.backtest_chart }}</p>
-    </div>
-    {% if backtest_result %}
-    <div class="trade-chart-stack">
-                <div class="trade-chart-panel">
-                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
-                        <canvas id="tradePriceChart"></canvas>
-                    </div>
-                </div>
-                <div class="trade-chart-panel trade-chart-panel-equity">
-                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-equity-chart">
-                        <canvas id="tradeEquityChart"></canvas>
-                    </div>
-                </div>
-    </div>
-    {% else %}
-    <p class="trade-pane-placeholder">{{ labels.backtest_detail_placeholder }}</p>
-    {% endif %}
-</article>
 {% endblock %}
 {% block scripts %}
 <script>

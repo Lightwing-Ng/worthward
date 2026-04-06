@@ -1,4 +1,4 @@
-/* Code version: v3.24.1-p7 */
+/* Code version: v3.24.1-p9 */
 @media (max-width: 980px) {
 	.performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 	.portfolio-summary { align-items: flex-start; }
@@ -36,9 +36,15 @@
 	.page {
 		width: 100%;
 		min-height: 100dvh;
-		padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) 10px max(10px, env(safe-area-inset-bottom, 0px));
+		--page-mobile-scroll-bottom-pad: var(--page-mobile-scroll-bottom-pad-base);
+		--page-mobile-end-bottom-pad: var(--page-mobile-end-bottom-pad-base);
+		--page-mobile-active-bottom-pad: var(--page-mobile-scroll-bottom-pad);
+		padding: max(var(--page-edge-pad), env(safe-area-inset-top, 0px)) var(--page-edge-pad) var(--page-mobile-active-bottom-pad);
 		overflow-x: hidden;
 		overflow-y: auto;
+	}
+	.page[data-mobile-scroll-edge="bottom"] {
+		--page-mobile-active-bottom-pad: var(--page-mobile-end-bottom-pad);
 	}
 	.app-shell {
 		display: flex;
@@ -59,8 +65,8 @@
 		max-width: calc(100vw - 20px);
 		bottom: calc(var(--page-edge-pad) + env(safe-area-inset-bottom, 0px));
 		flex-basis: auto;
-		padding: 16px 16px calc(16px + var(--sidebar-dock-bottom-gap) + 56px);
-		scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px);
+		padding: 16px 16px calc(16px + var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size));
+		scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + var(--sidebar-dock-hit-size) + 8px);
 		border-radius: var(--radius-panel);
 		margin: 0;
 		z-index: calc(var(--layer-fixed-dock) - 2);

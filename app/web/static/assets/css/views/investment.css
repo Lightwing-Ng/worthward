@@ -1034,7 +1034,7 @@
 
     .investment-history-surface {
         flex: 0 0 auto;
-        padding-bottom: calc(10px + var(--workspace-mobile-dock-clearance) + env(safe-area-inset-bottom, 0px));
+        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
 
     .investment-form-grid-primary,

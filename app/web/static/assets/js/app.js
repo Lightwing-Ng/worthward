@@ -1,4 +1,4 @@
-/* Code version: v0.3.5 */
+/* Code version: v0.3.7 */
 (() => {
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
@@ -26,6 +26,11 @@
 		: Boolean(state.chart?.series?.length);
 	let autoSubmitTimer = null;
 	let dockFrame = 0;
+	let mobilePagePaddingFrame = 0;
+	let mobilePagePaddingShouldPreserveBottom = false;
+	let mobilePagePaddingObserver = null;
+	let mobilePagePaddingScrollBound = false;
+	let mobilePagePaddingScrollTarget = null;
 	let isSubmittingWithOverlay = false;
 	let compareOverlayTimer = null;
 	let activeWorkspaceHydration = null;
@@ -247,9 +252,15 @@
 	}
 
 	if (typeof mobileSidebarMedia.addEventListener === "function") {
-		mobileSidebarMedia.addEventListener("change", () => applySidebarState(isSidebarOpen));
+		mobileSidebarMedia.addEventListener("change", () => {
+			applySidebarState(isSidebarOpen);
+			scheduleMobilePageBottomPaddingSync();
+		});
 	} else if (typeof mobileSidebarMedia.addListener === "function") {
-		mobileSidebarMedia.addListener(() => applySidebarState(isSidebarOpen));
+		mobileSidebarMedia.addListener(() => {
+			applySidebarState(isSidebarOpen);
+			scheduleMobilePageBottomPaddingSync();
+		});
 	}
 
 	const getTickerFields = () => $$(".ticker-field");
@@ -339,6 +350,7 @@
 	};
 
 	const initializeWorkspaceEnhancements = () => {
+		initMobilePageBottomPadding();
 		attachNoticeHandlers();
 		attachTradeDetailTabs();
 		attachExportButtonHandler();
@@ -408,14 +420,14 @@
 							</div>
 						</div>
 					</article>
+					<article class="chart-surface backtest-surface">
+						<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+						<div class="trade-chart-stack">
+							<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
+							<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
+						</div>
+					</article>
 				</section>
-				<article class="chart-surface backtest-surface">
-					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
-					<div class="trade-chart-stack">
-						<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
-						<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
-					</div>
-				</article>
 			`;
 		}
 		if (state.currentView === "portfolio") {
@@ -435,11 +447,11 @@
 							</div>
 						</div>
 					</article>
+					<article class="chart-surface">
+						<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+						<div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div>
+					</article>
 				</section>
-				<article class="chart-surface">
-					<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
-					<div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div>
-				</article>
 			`;
 		}
 		return bootstrap.buildComparePendingWorkspaceMarkup?.({
@@ -644,6 +656,7 @@
 		window.history.replaceState({}, "", nextUrl);
 		initializeWorkspaceEnhancements();
 		scheduleDockPosition();
+		scheduleMobilePageBottomPaddingSync();
 		if (activeWorkspaceHydration === controller) activeWorkspaceHydration = null;
 		return true;
 	};
@@ -1686,6 +1699,142 @@
 	const scheduleDockPosition = () => {
 		if (dockFrame) window.cancelAnimationFrame(dockFrame);
 		dockFrame = window.requestAnimationFrame(positionSidebarDock);
+	};
+
+	const readElementCssPx = (element, propertyName, fallback = 0) => {
+		if (!(element instanceof HTMLElement)) return fallback;
+		const rawValue = getComputedStyle(element).getPropertyValue(propertyName).trim();
+		const px = Number.parseFloat(rawValue);
+		return Number.isFinite(px) ? px : fallback;
+	};
+
+	const isVerticallyScrollable = (element) => {
+		if (!(element instanceof HTMLElement)) return false;
+		if (element.hidden || element.getClientRects().length === 0) return false;
+		const styles = getComputedStyle(element);
+		if (!["auto", "scroll", "overlay"].includes(styles.overflowY)) return false;
+		return element.clientHeight > 0 && element.scrollHeight > (element.clientHeight + 1);
+	};
+
+	const isMobilePageScrollHostCandidate = (candidate, page) => {
+		if (!(candidate instanceof HTMLElement) || candidate === page) return false;
+		if (!page.contains(candidate) || !isVerticallyScrollable(candidate)) return false;
+		return candidate.clientHeight >= (page.clientHeight * 0.45) && candidate.clientWidth >= (page.clientWidth * 0.6);
+	};
+
+	const getMobilePageBottomPaddingScrollHost = (page) => {
+		if (!(page instanceof HTMLElement)) return null;
+		if (isMobilePageScrollHostCandidate(mobilePagePaddingScrollTarget, page)) return mobilePagePaddingScrollTarget;
+		const workspacePanel = $("#workspace_panel");
+		if (!(workspacePanel instanceof HTMLElement)) return page;
+		const candidates = Array.from(workspacePanel.querySelectorAll(".workspace-header > .chart-surface, .settings-surface, .timing-surface"));
+		let bestCandidate = null;
+		let bestHeight = 0;
+		for (const candidate of candidates) {
+			if (!isMobilePageScrollHostCandidate(candidate, page)) continue;
+			if (candidate.clientHeight <= bestHeight) continue;
+			bestCandidate = candidate;
+			bestHeight = candidate.clientHeight;
+		}
+		mobilePagePaddingScrollTarget = bestCandidate;
+		return bestCandidate || page;
+	};
+
+	const syncMobilePageBottomPadMetrics = (page) => {
+		if (!(page instanceof HTMLElement)) return { scrollBottomPad: 0, endBottomPad: 0 };
+		const scrollBottomPad = readElementCssPx(page, "--page-mobile-scroll-bottom-pad-base", readElementCssPx(page, "--page-edge-pad", 10));
+		let endBottomPad = readElementCssPx(page, "--page-mobile-end-bottom-pad-base", scrollBottomPad);
+		const dock = $(".sidebar-dock");
+		if (dock instanceof HTMLElement) {
+			const pageRect = page.getBoundingClientRect();
+			const dockRect = dock.getBoundingClientRect();
+			if (pageRect.height > 0 && dockRect.height > 0) {
+				const dockClearance = Math.max(0, pageRect.bottom - dockRect.top);
+				endBottomPad = Math.max(scrollBottomPad, Math.ceil(scrollBottomPad + dockClearance));
+			}
+		}
+		page.style.setProperty("--page-mobile-scroll-bottom-pad", `${scrollBottomPad}px`);
+		page.style.setProperty("--page-mobile-end-bottom-pad", `${endBottomPad}px`);
+		return { scrollBottomPad, endBottomPad };
+	};
+
+	const syncMobilePageBottomPadding = ({ preserveBottom = false } = {}) => {
+		const page = $(".page");
+		if (!(page instanceof HTMLElement)) return;
+		if (!mobileSidebarMedia.matches) {
+			delete page.dataset.mobileScrollEdge;
+			page.style.removeProperty("--page-mobile-scroll-bottom-pad");
+			page.style.removeProperty("--page-mobile-end-bottom-pad");
+			mobilePagePaddingScrollTarget = null;
+			return;
+		}
+
+		const { scrollBottomPad, endBottomPad } = syncMobilePageBottomPadMetrics(page);
+		const scrollHost = getMobilePageBottomPaddingScrollHost(page) || page;
+		const isBottomState = page.dataset.mobileScrollEdge === "bottom";
+		const activeBottomPad = scrollHost === page && isBottomState ? endBottomPad : scrollBottomPad;
+		const contentHeight = scrollHost === page
+			? Math.max(0, scrollHost.scrollHeight - activeBottomPad)
+			: scrollHost.scrollHeight;
+		const baseBottomScrollTop = scrollHost === page
+			? Math.max(0, contentHeight + scrollBottomPad - scrollHost.clientHeight)
+			: Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+		const bottomThreshold = Math.max(2, Math.round(scrollBottomPad));
+		const shouldUseEndBottomPad = scrollHost === page
+			? contentHeight <= scrollHost.clientHeight || scrollHost.scrollTop >= (baseBottomScrollTop - bottomThreshold)
+			: scrollHost.scrollTop >= (baseBottomScrollTop - bottomThreshold);
+
+		if (shouldUseEndBottomPad) page.dataset.mobileScrollEdge = "bottom";
+		else delete page.dataset.mobileScrollEdge;
+
+		if (preserveBottom && scrollHost === page && shouldUseEndBottomPad && !isBottomState) {
+			window.requestAnimationFrame(() => {
+				const targetScrollTop = Math.max(0, contentHeight + endBottomPad - scrollHost.clientHeight);
+				if (page.scrollTop < targetScrollTop) page.scrollTop = targetScrollTop;
+			});
+		}
+	};
+
+	const scheduleMobilePageBottomPaddingSync = ({ preserveBottom = false } = {}) => {
+		if (preserveBottom) mobilePagePaddingShouldPreserveBottom = true;
+		if (mobilePagePaddingFrame) return;
+		mobilePagePaddingFrame = window.requestAnimationFrame(() => {
+			mobilePagePaddingFrame = 0;
+			const shouldPreserveBottom = mobilePagePaddingShouldPreserveBottom;
+			mobilePagePaddingShouldPreserveBottom = false;
+			syncMobilePageBottomPadding({ preserveBottom: shouldPreserveBottom });
+		});
+	};
+
+	const initMobilePageBottomPadding = () => {
+		const page = $(".page");
+		if (!(page instanceof HTMLElement)) return;
+		if (page.dataset.mobileBottomPaddingBound !== "1") {
+			page.dataset.mobileBottomPaddingBound = "1";
+			page.addEventListener("scroll", () => scheduleMobilePageBottomPaddingSync({ preserveBottom: true }), { passive: true });
+		}
+		if (!mobilePagePaddingScrollBound) {
+			mobilePagePaddingScrollBound = true;
+			document.addEventListener("scroll", (event) => {
+				const pageElement = $(".page");
+				if (!(pageElement instanceof HTMLElement)) return;
+				const target = event.target;
+				if (!(target instanceof HTMLElement)) return;
+				if (target !== pageElement && !pageElement.contains(target)) return;
+				if (target === pageElement) mobilePagePaddingScrollTarget = null;
+				else if (isMobilePageScrollHostCandidate(target, pageElement)) mobilePagePaddingScrollTarget = target;
+				scheduleMobilePageBottomPaddingSync({ preserveBottom: target === pageElement });
+			}, { capture: true, passive: true });
+		}
+		if (mobilePagePaddingObserver) mobilePagePaddingObserver.disconnect();
+		mobilePagePaddingObserver = null;
+		if (typeof ResizeObserver === "function") {
+			mobilePagePaddingObserver = new ResizeObserver(() => scheduleMobilePageBottomPaddingSync());
+			mobilePagePaddingObserver.observe(page);
+			const workspacePanel = $("#workspace_panel");
+			if (workspacePanel instanceof HTMLElement) mobilePagePaddingObserver.observe(workspacePanel);
+		}
+		scheduleMobilePageBottomPaddingSync();
 	};
 
 	const readThemeModePreference = () => {
@@ -3372,6 +3521,9 @@
 	window.addEventListener("resize", scheduleDockPosition);
 	window.addEventListener("orientationchange", scheduleDockPosition);
 	window.addEventListener("pageshow", scheduleDockPosition);
+	window.addEventListener("resize", scheduleMobilePageBottomPaddingSync);
+	window.addEventListener("orientationchange", scheduleMobilePageBottomPaddingSync);
+	window.addEventListener("pageshow", scheduleMobilePageBottomPaddingSync);
 	
 	initializeWorkspaceEnhancements();
 	syncTradeStrategyTriggerLabel();

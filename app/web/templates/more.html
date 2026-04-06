@@ -18,69 +18,73 @@
 {% endblock %}
 
 {% block workspace_content %}
-<article class="chart-surface settings-surface">
-    <div class="settings-body">
-        <div class="timing-shell" id="timing_shell">
-            <div class="chart-heading-row timing-heading-row">
-                <p class="chart-heading">{{ labels.more_timing }}</p>
-            </div>
-            <p class="settings-summary timing-summary">Helps gauge whether this may be a good buy-in window by combining your most watched tickers with TradingView technical metrics.</p>
-            <div class="timing-layout-row" id="timing_layout_row">
-            <section class="timing-metrics-panel">
-                <div class="timing-metrics-header">
-                    <p class="timing-metrics-eyebrow">TradingView metrics</p>
-                    <h2 class="timing-metrics-title">{{ timing_selected_ticker or 'MU' }}</h2>
-                    {% if timing_market.exchange %}
-                    <p class="timing-metrics-meta">{{ timing_market.exchange }} · {{ timing_market.screener }}</p>
-                    {% endif %}
-                </div>
-                {% if timing_error %}
-                <p class="settings-service-note">{{ timing_error }}</p>
-                {% else %}
-                <div class="timing-summary-grid">
-                    {% for item in timing_summary %}
-                    <div class="timing-summary-chip">
-                        <span class="timing-summary-label">{{ item.label }}</span>
-                        <span class="timing-summary-value">{{ item.value }}</span>
+<section class="workspace-header timing-workspace-header">
+    <article class="report-card timing-report-card">
+        <div class="report-heading-row">
+            <p class="report-heading">{{ labels.more_timing }}</p>
+        </div>
+        <p class="settings-summary timing-summary">Helps gauge whether this may be a good buy-in window by combining your most watched tickers with TradingView technical metrics.</p>
+    </article>
+    <article class="chart-surface settings-surface timing-surface">
+        <div class="settings-body">
+            <div class="timing-shell" id="timing_shell">
+                <div class="timing-layout-row" id="timing_layout_row">
+                <section class="timing-metrics-panel">
+                    <div class="timing-metrics-header">
+                        <p class="timing-metrics-eyebrow">TradingView metrics</p>
+                        <h2 class="timing-metrics-title">{{ timing_selected_ticker or 'MU' }}</h2>
+                        {% if timing_market.exchange %}
+                        <p class="timing-metrics-meta">{{ timing_market.exchange }} · {{ timing_market.screener }}</p>
+                        {% endif %}
                     </div>
-                    {% endfor %}
-                </div>
-                <div class="timing-metrics-scroll">
-                    <div class="timing-metrics-list">
-                        {% for item in timing_metrics %}
-                        <div class="timing-metric-row">
-                            <span class="timing-metric-label">{{ item.label }}</span>
-                            <span class="timing-metric-value">{{ item.value }}</span>
+                    {% if timing_error %}
+                    <p class="settings-service-note">{{ timing_error }}</p>
+                    {% else %}
+                    <div class="timing-summary-grid">
+                        {% for item in timing_summary %}
+                        <div class="timing-summary-chip">
+                            <span class="timing-summary-label">{{ item.label }}</span>
+                            <span class="timing-summary-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="timing-metrics-scroll">
+                        <div class="timing-metrics-list">
+                            {% for item in timing_metrics %}
+                            <div class="timing-metric-row">
+                                <span class="timing-metric-label">{{ item.label }}</span>
+                                <span class="timing-metric-value">{{ item.value }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </section>
+                <div class="timing-list-shell is-open" id="timing_list_shell">
+                    <button type="button" class="sidebar-toggle timing-list-toggle" id="timing_list_toggle" aria-label="Toggle timing list" aria-expanded="true">
+                        <span class="icon icon-timing-toggle icon-timing-toggle-right" aria-hidden="true"></span>
+                    </button>
+                    <div class="suggestions timing-suggestions-panel" id="timing_suggestions_panel" style="display: block; position: relative; top: auto; border-radius: var(--theme-timing-list-panel-radius); width: var(--sidebar-width); margin-left: auto; box-sizing: border-box; height: 70vh; overflow-y: auto;">
+                        {% for ticker in top_tickers %}
+                        <div class="suggestion-group">
+                            <a href="{{ ticker.url }}" class="suggestion-item timing-suggestion-item ticker-identity-item{% if ticker.ticker == timing_selected_ticker %} is-active{% endif %}" data-ticker="{{ ticker.ticker }}">
+                                <div class="ticker-identity-row">
+                                    {% if ticker.logo_url %}
+                                    <img src="{{ ticker.logo_url }}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                                    {% endif %}
+                                    <span class="ticker-identity-copy">
+                                        <span class="suggestion-symbol ticker-identity-symbol">{{ ticker.ticker }}</span>
+                                        <span class="suggestion-name ticker-identity-name" title="{{ ticker.company_name }}">{{ ticker.company_name }}</span>
+                                    </span>
+                                </div>
+                            </a>
                         </div>
                         {% endfor %}
                     </div>
                 </div>
-                {% endif %}
-            </section>
-            <div class="timing-list-shell is-open" id="timing_list_shell">
-                <button type="button" class="sidebar-toggle timing-list-toggle" id="timing_list_toggle" aria-label="Toggle timing list" aria-expanded="true">
-                    <span class="icon icon-timing-toggle icon-timing-toggle-right" aria-hidden="true"></span>
-                </button>
-                <div class="suggestions timing-suggestions-panel" id="timing_suggestions_panel" style="display: block; position: relative; top: auto; border-radius: var(--theme-timing-list-panel-radius); width: var(--sidebar-width); margin-left: auto; box-sizing: border-box; height: 70vh; overflow-y: auto;">
-                    {% for ticker in top_tickers %}
-                    <div class="suggestion-group">
-                        <a href="{{ ticker.url }}" class="suggestion-item timing-suggestion-item ticker-identity-item{% if ticker.ticker == timing_selected_ticker %} is-active{% endif %}" data-ticker="{{ ticker.ticker }}">
-                            <div class="ticker-identity-row">
-                                {% if ticker.logo_url %}
-                                <img src="{{ ticker.logo_url }}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
-                                {% endif %}
-                                <span class="ticker-identity-copy">
-                                    <span class="suggestion-symbol ticker-identity-symbol">{{ ticker.ticker }}</span>
-                                    <span class="suggestion-name ticker-identity-name" title="{{ ticker.company_name }}">{{ ticker.company_name }}</span>
-                                </span>
-                            </div>
-                        </a>
-                    </div>
-                    {% endfor %}
                 </div>
             </div>
-            </div>
         </div>
-    </div>
-</article>
+    </article>
+</section>
 {% endblock %}

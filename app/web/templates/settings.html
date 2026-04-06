@@ -73,11 +73,14 @@
 {% endblock %}
 
 {% block workspace_content %}
-<section class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
-    <div class="chart-heading-row">
-        <p class="chart-heading">{{ settings_title }}</p>
-    </div>
-    <section class="settings-body">
+<section class="workspace-header settings-workspace-header" id="settings_workspace_shell">
+    <article class="report-card settings-summary-card">
+        <div class="report-heading-row">
+            <p class="report-heading">{{ settings_title }}</p>
+        </div>
+    </article>
+    <article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
+        <section class="settings-body">
         {% if settings_section == "about" %}
         <section class="about-section">
             <h2 class="about-heading">What this service does</h2>
@@ -950,6 +953,7 @@
             </div>
         </section>
         {% endif %}
-    </section>
+        </section>
+    </article>
 </section>
 {% endblock %}

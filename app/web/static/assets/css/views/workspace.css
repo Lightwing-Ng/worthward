@@ -5,11 +5,15 @@
 }
 
 .workspace-header {
-    display: block;
-    margin-bottom: 8px;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    margin-bottom: 0;
     position: relative;
     z-index: var(--layer-surface-content);
-    flex: 0 0 auto;
+    width: 100%;
 }
 
 .report-card {
@@ -20,6 +24,15 @@
     background: var(--glass-surface-background-strong);
     backdrop-filter: var(--glass-surface-blur);
     -webkit-backdrop-filter: var(--glass-surface-blur);
+}
+
+.workspace-header > .report-card {
+    flex: 0 0 auto;
+}
+
+.workspace-header > .chart-surface {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .workspace > .workspace-header:first-child .report-card,

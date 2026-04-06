@@ -29,8 +29,8 @@
             </div>
         </div>
     </article>
+    {{ render_chart_surface(chart_heading, series|length > 0, labels.portfolio_placeholder, "portfolio_chart_region") }}
 </section>
-{{ render_chart_surface(chart_heading, series|length > 0, labels.portfolio_placeholder, "portfolio_chart_region") }}
 {% endblock %}
 
 {% block page_scripts %}

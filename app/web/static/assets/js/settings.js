@@ -608,7 +608,7 @@
     };
 
     const replaceSettingsWorkspaceRegion = async (nextRegion) => {
-        const currentRegion = document.getElementById("settings_workspace_region");
+        const currentRegion = document.getElementById("settings_workspace_shell");
         if (!(currentRegion instanceof HTMLElement) || !nextRegion) return;
         const applyReplacement = () => {
             currentRegion.replaceWith(nextRegion);
@@ -631,16 +631,17 @@
         const pageSize = 10;
         const startIndex = (page - 1) * pageSize;
         const article = document.createElement("section");
-        article.className = "chart-surface settings-surface";
-        article.id = "settings_workspace_region";
-        article.dataset.settingsWorkspaceRegion = "";
-        article.dataset.settingsSection = "local-market-store";
+        article.className = "workspace-header settings-workspace-header";
+        article.id = "settings_workspace_shell";
         article.innerHTML = `
-			<div class="chart-heading-row">
-				<p class="chart-heading">${labels.local_market_store || "Local Market Store"}</p>
-			</div>
-			<section class="settings-body">
-				<section class="local-store-layout" id="local_store_region" data-local-store-region>
+			<article class="report-card settings-summary-card">
+				<div class="report-heading-row">
+					<p class="report-heading">${labels.local_market_store || "Local Market Store"}</p>
+				</div>
+			</article>
+			<article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="local-market-store">
+				<section class="settings-body">
+					<section class="local-store-layout" id="local_store_region" data-local-store-region>
 					<section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
 						<div class="settings-callout-copy">
 							<span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
@@ -713,8 +714,9 @@
 							</table>
 						</div>
 					</div>
+					</section>
 				</section>
-			</section>
+			</article>
 		`;
         return article;
     };
@@ -1073,7 +1075,7 @@
                 });
                 const parser = new DOMParser();
                 const nextDocument = parser.parseFromString(responseText, "text/html");
-                const nextRegion = nextDocument.querySelector("#settings_workspace_region");
+                const nextRegion = nextDocument.querySelector("#settings_workspace_shell");
                 if (!nextRegion) throw new Error("Settings workspace region missing.");
                 await replaceSettingsWorkspaceRegion(nextRegion);
                 reinitializeSettingsWorkspaceRegion();
@@ -1117,7 +1119,7 @@
                 });
                 const parser = new DOMParser();
                 const nextDocument = parser.parseFromString(responseText, "text/html");
-                const nextRegion = nextDocument.querySelector("#settings_workspace_region");
+                const nextRegion = nextDocument.querySelector("#settings_workspace_shell");
                 if (nextRegion) {
                     await replaceSettingsWorkspaceRegion(nextRegion);
                     reinitializeSettingsWorkspaceRegion();

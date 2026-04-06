@@ -20,6 +20,7 @@
 
 .backtest-surface {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
     padding-bottom: var(--backtest-surface-bottom-pad) !important;
     container-type: inline-size;
@@ -413,12 +414,16 @@
 .trade-chart-stack {
     position: relative;
     width: 100%;
+    max-width: 100%;
     height: 100%;
     flex: 1 1 auto;
-    min-height: calc(100cqi / 2);
+    min-width: 0;
+    min-height: 0;
     display: grid;
-    grid-template-rows: 2fr 1fr;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
     gap: 0;
+    box-sizing: border-box;
+    padding-bottom: var(--backtest-surface-bottom-pad);
     overflow: hidden;
 }
 
@@ -464,7 +469,9 @@
 .trade-chart-panel {
     position: relative;
     width: 100%;
+    max-width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
     overflow: hidden;
     border-radius: var(--radius-panel);
@@ -475,13 +482,6 @@
 
 .trade-chart-panel.trade-chart-panel-equity {
     position: relative;
-}
-
-.trade-chart-canvas-wrap {
-    position: absolute;
-    inset: 2px;
-    width: calc(100% - 4px);
-    height: calc(100% - 4px);
 }
 
 .trade-chart-panel {
@@ -503,16 +503,21 @@
     position: relative;
     flex: 1 1 auto;
     width: 100%;
+    max-width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
     border-radius: var(--radius-panel);
     overflow: hidden;
 }
 
 .trade-chart-panel canvas {
+    display: block;
     width: 100% !important;
+    max-width: 100%;
     height: 100% !important;
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
 }
 

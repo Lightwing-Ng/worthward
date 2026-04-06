@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.3.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -118,6 +118,21 @@
 		const nextScale = buildPixelPaddedYScale(canvas, datasets, paddingPx);
 		chart.options.scales.y.min = nextScale.min;
 		chart.options.scales.y.max = nextScale.max;
+	};
+
+	const isWholeNumber = (value) => Number.isFinite(value) && Math.abs(value - Math.round(value)) < 1e-6;
+
+	const formatBacktestYAxisTick = (value, index, ticks) => {
+		if (index === 0 || index === ticks.length - 1) return "";
+		const numericValue = Number(value);
+		if (!Number.isFinite(numericValue)) return String(value ?? "");
+		const visibleTickValues = (Array.isArray(ticks) ? ticks : [])
+			.slice(1, -1)
+			.map((tick) => Number(tick?.value ?? tick))
+			.filter((tickValue) => Number.isFinite(tickValue));
+		const shouldAlignWithSingleDecimal = visibleTickValues.some((tickValue) => !isWholeNumber(tickValue));
+		if (shouldAlignWithSingleDecimal) return numericValue.toFixed(1);
+		return isWholeNumber(numericValue) ? String(Math.round(numericValue)) : String(numericValue);
 	};
 
 	const animateBacktestRefreshTransition = (priceChart, equityChart, transition, nextClose, nextEquity, nextAllIn, chartYPaddingPx) => {
@@ -378,7 +393,7 @@
 				const { ctx, chartArea, scales } = chart;
 				const xScale = scales?.x;
 				if (!chartArea || !xScale || !labels.length) return;
-				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+				const viewportWidth = tradeChartStack?.clientWidth || chart.canvas?.clientWidth || window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
 				const baselineY = chartArea.bottom;
 				const lineHeight = 10;
@@ -505,8 +520,7 @@
 						display: true,
 						padding: 8,
 						callback(value, index, ticks) {
-							if (index === 0 || index === ticks.length - 1) return "";
-							return typeof this.getLabelForValue === "function" ? this.getLabelForValue(value) : String(value);
+							return formatBacktestYAxisTick(value, index, ticks);
 						},
 					},
 				},

@@ -1920,11 +1920,11 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 @media (max-width: 767px) {
     .settings-surface {
-        scroll-padding-bottom: calc(var(--workspace-mobile-dock-clearance) + 10px);
+        scroll-padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
 
     .settings-body {
-        padding-bottom: calc(10px + var(--workspace-mobile-dock-clearance));
+        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
 
     .settings-strategy-params {
