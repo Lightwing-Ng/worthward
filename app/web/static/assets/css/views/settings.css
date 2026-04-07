@@ -1739,25 +1739,26 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-workspace-header {
+    --settings-summary-sticky-top: max(var(--page-edge-pad), env(safe-area-inset-top, 0px));
     --settings-summary-overlay-height: calc(max(10px, var(--workspace-title-safe-top)) + 28px);
     --settings-summary-overlay-gap: 12px;
     position: relative;
 }
 
-.settings-workspace-header > .settings-summary-card {
-    position: absolute;
-    inset: 0 0 auto;
-    z-index: calc(var(--layer-surface-content) + 1);
-    min-height: var(--settings-summary-overlay-height);
-    margin: 0;
-    background: var(--workspace-article-heading-background);
-    border: var(--workspace-article-heading-border);
-    box-shadow: var(--workspace-article-heading-shadow);
-    backdrop-filter: var(--workspace-article-blur);
-    -webkit-backdrop-filter: var(--workspace-article-blur);
-}
-
 @media (max-width: 767px) {
+    .settings-workspace-header > .settings-summary-card {
+        position: absolute;
+        inset: var(--settings-summary-sticky-top) 0 auto;
+        z-index: calc(var(--layer-surface-content) + 1);
+        min-height: var(--settings-summary-overlay-height);
+        margin: 0;
+        background: var(--workspace-article-heading-background);
+        border: var(--workspace-article-heading-border);
+        box-shadow: var(--workspace-article-heading-shadow);
+        backdrop-filter: var(--workspace-article-blur);
+        -webkit-backdrop-filter: var(--workspace-article-blur);
+    }
+
     .settings-workspace-header {
         --settings-summary-morph-translate-x: 0px;
         --settings-summary-morph-translate-y: 0px;
@@ -1810,11 +1811,14 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 @media (min-width: 768px) {
     .settings-workspace-header > .settings-summary-card {
-        background: transparent;
-        border: 0;
-        box-shadow: none;
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
+        position: relative;
+        inset: auto;
+        z-index: var(--layer-surface-content);
+        min-height: 0;
+    }
+
+    .settings-workspace-header > .settings-surface > .settings-body {
+        padding-top: 0;
     }
 }
 
@@ -1822,8 +1826,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding-top: 0;
 }
 
-.settings-workspace-header > .settings-surface > .settings-body {
-    padding-top: calc(var(--settings-summary-overlay-height) + var(--settings-summary-overlay-gap));
+@media (max-width: 767px) {
+    .settings-workspace-header > .settings-surface > .settings-body {
+        padding-top: calc(var(--settings-summary-sticky-top) + var(--settings-summary-overlay-height) + var(--settings-summary-overlay-gap));
+    }
 }
 
 .settings-surface {

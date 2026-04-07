@@ -308,7 +308,7 @@
         -webkit-backdrop-filter: none;
     }
 
-    .workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card) > .report-heading-row {
+    .workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card):not(.workspace-article-card) > .report-heading-row {
         min-height: 0;
         margin: 0 0 6px;
         padding: 0;
