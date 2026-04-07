@@ -134,16 +134,15 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn('value="QQQ"', html)
         self.assertIn("/api/market-store/logos/QQQ.png", html)
         self.assertIn(
-            'class="report-card workspace-article-card trade-performance-header-card backtest-trade-performance-header-card"',
-            html,
-        )
-        self.assertIn(
-            'class="report-card workspace-article-card trade-performance-header-card backtest-trade-performance-header-card">\n'
-            '            <button type="button" class="export-transactions-button" id="export_transactions_button"',
+            'class="report-card workspace-article-card workspace-summary-card"',
             html,
         )
         self.assertIn(
             '<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">',
+            html,
+        )
+        self.assertIn(
+            '<button type="button" class="export-transactions-button" id="export_transactions_button"',
             html,
         )
 

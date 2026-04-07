@@ -308,9 +308,7 @@
         if (state.currentView !== "backtest") return;
         const exportButton = document.getElementById("export_transactions_button");
         if (!exportButton) return;
-        const shell = $("[data-trade-detail-shell]");
-        const active = shell?.querySelector('input[name="trade_detail_tab"]:checked')?.value || "metrics";
-        exportButton.hidden = (active !== "transactions") || !areBacktestChartsReady();
+        exportButton.hidden = !areBacktestChartsReady();
     };
 
     const attachTradeDetailTabs = () => {
