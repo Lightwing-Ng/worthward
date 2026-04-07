@@ -6,7 +6,7 @@ A local-first Flask web app for comparing US stock tickers, building weighted po
 
 Backtest workspace captured on 28 Mar 2026, showing build `v2.11.11` with the in-app `Updated on` label set to `26 Mar 2026`:
 
-![Backtest workspace screenshot](screenshots/Screenshot%202026-03-28%20at%2017.36.03.png)
+![Backtest workspace screenshot](https://1drv.ms/i/c/abb04f9cf92bcd5b/IQRvAHM4lRuMR7Q7eOKZy3upAZYFjwZ_9p5jDfPHFIqKJyg)
 
 ## Current scope
 

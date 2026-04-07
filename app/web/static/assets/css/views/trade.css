@@ -43,7 +43,7 @@
     display: grid;
     grid-template-rows: auto 1fr;
     row-gap: 10px;
-    min-height: calc(var(--trade-detail-track-height) + var(--trade-detail-panel-height) + 68px);
+    min-height: 0;
     overflow: hidden;
     align-content: start;
     position: relative;
@@ -164,7 +164,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-auto-rows: min-content;
     gap: 8px;
-    padding: 2px 2px 4px;
+    padding: 2px 2px 0;
     align-content: flex-start;
     overflow-y: auto;
     overflow-x: hidden;
@@ -222,7 +222,7 @@
     grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
     align-items: start;
     justify-items: stretch;
-    padding-bottom: 14px;
+    padding-bottom: 0;
 }
 
 .trade-metrics-panel-grid .trade-metric-card {
