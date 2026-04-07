@@ -139,10 +139,6 @@
     opacity: 1;
 }
 
-.investment-section-heading {
-    font-size: calc(var(--text-size-small) * 0.9);
-}
-
 .investment-equity-chart {
     width: 100%;
     max-width: 100%;
