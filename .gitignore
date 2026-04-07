@@ -7,3 +7,5 @@ __pycache__/
 tests/
 settings_store/
 node_modules/
+.vercel/
+.vercelignore
