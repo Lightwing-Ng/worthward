@@ -517,8 +517,7 @@
 					</article>
 					
 					
-					<div class="workspace-summary-scroll-surface">
-						<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
+					<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
 							<div class="trade-detail-tabs">
 								<div class="trade-detail-toolbar">
 									<div class="range-mode-shell segmented-control--compact trade-detail-shell" data-active="metrics">
@@ -545,14 +544,13 @@
 								</div>
 							</div>
 						</article>
-						<article class="chart-surface backtest-surface">
+					<article class="chart-surface backtest-surface">
 							<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
 							<div class="trade-chart-stack">
 								<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
 								<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
 							</div>
-						</article>
-					</div>
+					</article>
 				</section>
 			`;
         }
@@ -562,8 +560,7 @@
 					<article class="report-card workspace-article-card workspace-summary-card">
 						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
 					</article>
-					<div class="workspace-summary-scroll-surface">
-						<article class="report-card workspace-content-card portfolio-summary-content-card">
+					<article class="report-card workspace-content-card portfolio-summary-content-card">
 							<div class="portfolio-summary">
 								<div class="portfolio-donut-block">
 									<div class="portfolio-donut-orbit is-pending-value" data-workspace-mask="portfolio-donut-start"><div class="portfolio-donut" aria-hidden="true"></div></div>
@@ -576,11 +573,10 @@
 								</div>
 							</div>
 						</article>
-						<article class="chart-surface">
+					<article class="chart-surface">
 							<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
 							<div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div>
-						</article>
-					</div>
+					</article>
 				</section>
 			`;
         }
