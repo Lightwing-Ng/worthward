@@ -221,6 +221,10 @@
     isolation: isolate;
 }
 
+.portfolio-donut.is-animated::before {
+    opacity: 0;
+}
+
 .portfolio-donut::before {
     content: "";
     position: absolute;
@@ -229,6 +233,22 @@
     background: var(--portfolio-donut-fill);
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px)));
     mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px)));
+}
+
+.portfolio-donut-fill-layer {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 300ms var(--motion-standard);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px)));
+    mask: radial-gradient(farthest-side, transparent calc(100% - var(--portfolio-donut-ring-width)), #000 calc(100% - (var(--portfolio-donut-ring-width) - 1px)));
+    pointer-events: none;
+}
+
+.portfolio-donut[data-active-fill-layer="a"] .portfolio-donut-fill-layer-a,
+.portfolio-donut[data-active-fill-layer="b"] .portfolio-donut-fill-layer-b {
+    opacity: 1;
 }
 
 .portfolio-donut-logo-layer {
@@ -250,6 +270,16 @@
     background: transparent;
     box-shadow: none;
     transform: translate(-50%, -50%);
+    opacity: 1;
+    transition:
+        left 300ms var(--motion-standard),
+        top 300ms var(--motion-standard),
+        opacity 220ms ease;
+    will-change: left, top, opacity;
+}
+
+.portfolio-donut-logo.is-exiting {
+    opacity: 0;
 }
 
 .portfolio-donut-arrow {

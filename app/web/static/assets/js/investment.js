@@ -275,6 +275,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentEquityChartInstance = null;
     let activeHoldingsHoverTicker = '';
     let activeHoldingsHoverLedgerNo = 0;
+    let investmentChartPointsCache = [];
+    let investmentChartPointIndexByLedgerNo = new Map();
+    let investmentLatestChartPoint = null;
+    let activeChartTooltipPointIndex = -1;
+    let investmentDummyTickerProfiles = {};
+    let animatedHoldingsMarkerPoint = null;
+    let animatedHoldingsMarkerTarget = null;
+    let animatedHoldingsMarkerFrame = 0;
+    let animatedHoldingsMarkerStartTime = 0;
 
     function getActionButtonLabels(button) {
         return {
@@ -470,30 +479,101 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderInvestmentDummyPortfolioDonut(tickerSummaries, totalEquity, runningCash, tickerProfiles) {
+    function ensureAnimatedDonutLayers(donutElement) {
+        if (!(donutElement instanceof HTMLElement)) return [];
+        donutElement.classList.add('is-animated');
+        let fillLayerA = donutElement.querySelector('.portfolio-donut-fill-layer-a');
+        let fillLayerB = donutElement.querySelector('.portfolio-donut-fill-layer-b');
+        if (!(fillLayerA instanceof HTMLElement)) {
+            fillLayerA = document.createElement('span');
+            fillLayerA.className = 'portfolio-donut-fill-layer portfolio-donut-fill-layer-a';
+            donutElement.appendChild(fillLayerA);
+        }
+        if (!(fillLayerB instanceof HTMLElement)) {
+            fillLayerB = document.createElement('span');
+            fillLayerB.className = 'portfolio-donut-fill-layer portfolio-donut-fill-layer-b';
+            donutElement.appendChild(fillLayerB);
+        }
+        return [fillLayerA, fillLayerB];
+    }
+
+    function applyAnimatedDonutFill(donutElement, fillValue) {
+        if (!(donutElement instanceof HTMLElement)) return;
+        const [fillLayerA, fillLayerB] = ensureAnimatedDonutLayers(donutElement);
+        if (!(fillLayerA instanceof HTMLElement) || !(fillLayerB instanceof HTMLElement)) {
+            donutElement.style.setProperty('--portfolio-donut-fill', fillValue);
+            return;
+        }
+        const activeLayerKey = donutElement.dataset.activeFillLayer === 'b' ? 'b' : 'a';
+        const nextLayerKey = activeLayerKey === 'a' ? 'b' : 'a';
+        const nextLayer = nextLayerKey === 'a' ? fillLayerA : fillLayerB;
+        nextLayer.style.background = fillValue;
+        donutElement.dataset.activeFillLayer = nextLayerKey;
+        donutElement.style.setProperty('--portfolio-donut-fill', fillValue);
+    }
+
+    function syncAnimatedDonutLogos(logoLayer, logoItems) {
+        if (!(logoLayer instanceof HTMLElement)) return;
+        const existingLogos = new Map(
+            Array.from(logoLayer.querySelectorAll('.portfolio-donut-logo')).map((logo) => [logo.dataset.ticker || '', logo])
+        );
+        const nextTickers = new Set();
+        logoItems.forEach((item) => {
+            nextTickers.add(item.ticker);
+            let logo = existingLogos.get(item.ticker);
+            if (!(logo instanceof HTMLImageElement)) {
+                logo = document.createElement('img');
+                logo.className = 'portfolio-donut-logo';
+                logo.dataset.ticker = item.ticker;
+                logo.alt = `${item.ticker} logo`;
+                logo.src = item.logoUrl;
+                logo.dataset.styleTokenDonutAngle = item.midAngle.toFixed(2);
+                logo.style.opacity = '0';
+                logoLayer.appendChild(logo);
+                window.requestAnimationFrame(() => {
+                    logo.style.opacity = '1';
+                });
+            } else {
+                if (logo.src !== item.logoUrl) logo.src = item.logoUrl;
+                logo.dataset.styleTokenDonutAngle = item.midAngle.toFixed(2);
+            }
+            logo.classList.remove('is-exiting');
+        });
+        existingLogos.forEach((logo, ticker) => {
+            if (nextTickers.has(ticker)) return;
+            logo.classList.add('is-exiting');
+            window.setTimeout(() => {
+                if (logo.classList.contains('is-exiting')) logo.remove();
+            }, 220);
+        });
+    }
+
+    function renderInvestmentDummyPortfolioDonut(pointRecord, tickerProfiles) {
         if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
-        const openSummaries = (Array.isArray(tickerSummaries) ? tickerSummaries : [])
-            .filter((summary) => summary?.hasOpenPosition && Number(summary?.marketValue) > 1e-9)
-            .sort((left, right) => (Number(right.marketValue) || 0) - (Number(left.marketValue) || 0));
-        const openTotalValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
-        const cashValue = Math.max(0, Number(runningCash) || 0);
+        const holdingsMarketValues = pointRecord?.holdings_market_values || {};
+        const openComponents = Object.entries(holdingsMarketValues)
+            .map(([ticker, value]) => ({ ticker: normalizeInvestmentTicker(ticker), marketValue: Number(value) || 0 }))
+            .filter((entry) => entry.ticker && entry.marketValue > 1e-9)
+            .sort((left, right) => right.marketValue - left.marketValue);
+        const openTotalValue = openComponents.reduce((sum, entry) => sum + entry.marketValue, 0);
+        const cashValue = Math.max(0, Number(pointRecord?.running_cash) || 0);
         const fallbackTotal = openTotalValue + cashValue;
-        const denominator = Math.max(Number(totalEquity) || 0, fallbackTotal, 0);
+        const denominator = Math.max(Number(pointRecord?.total_equity) || 0, fallbackTotal, 0);
         if (denominator <= 1e-9) {
-            investmentDummyLogoLayer.innerHTML = '';
-            investmentDummyDonut.style.setProperty('--portfolio-donut-fill', 'conic-gradient(var(--theme-accent-positive) 0deg 360deg)');
+            syncAnimatedDonutLogos(investmentDummyLogoLayer, []);
+            applyAnimatedDonutFill(investmentDummyDonut, 'conic-gradient(var(--theme-accent-positive) 0deg 360deg)');
             refreshInvestmentDummyDonut();
             return;
         }
 
-        const palette = buildInvestmentDummyPalette(openSummaries.length);
-        const logoFragments = [];
+        const palette = buildInvestmentDummyPalette(openComponents.length);
+        const logoItems = [];
         const fillFragments = [];
         const gapDegrees = 1.2;
         let angle = 0;
 
-        openSummaries.forEach((summary, index) => {
-            const marketValue = Number(summary.marketValue) || 0;
+        openComponents.forEach((entry, index) => {
+            const marketValue = entry.marketValue;
             if (marketValue <= 1e-9) return;
             const sweep = (marketValue / denominator) * 360;
             if (sweep <= 1e-9) return;
@@ -502,10 +582,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if ((segmentEnd - segmentStart) > 1e-9) {
                 fillFragments.push(`${palette[index] || '#0055cc'} ${segmentStart}deg ${segmentEnd}deg`);
                 const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
-                const ticker = String(summary.ticker || '').trim().toUpperCase();
+                const ticker = entry.ticker;
                 const profile = tickerProfiles?.[ticker] || {};
                 const logoUrl = String(profile.logo_url || '').trim() || `/market-store/logos/${encodeURIComponent(ticker)}.png`;
-                logoFragments.push(`<img class="portfolio-donut-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(ticker)} logo" data-style-token-donut-angle="${midAngle.toFixed(2)}">`);
+                logoItems.push({ ticker, logoUrl, midAngle });
             }
             const hasRemaining = segmentEnd < 360;
             const gapEnd = hasRemaining ? Math.min(segmentEnd + gapDegrees, 360) : segmentEnd;
@@ -520,9 +600,28 @@ document.addEventListener('DOMContentLoaded', () => {
             fillFragments.push(`var(--theme-accent-positive) ${cashStart}deg 360deg`);
         }
 
-        investmentDummyLogoLayer.innerHTML = logoFragments.join('');
-        investmentDummyDonut.style.setProperty('--portfolio-donut-fill', `conic-gradient(${fillFragments.join(', ')})`);
+        syncAnimatedDonutLogos(investmentDummyLogoLayer, logoItems);
+        applyAnimatedDonutFill(investmentDummyDonut, `conic-gradient(${fillFragments.join(', ')})`);
         refreshInvestmentDummyDonut();
+    }
+
+    function syncInvestmentDummyDonutFromInteraction() {
+        if (!Array.isArray(investmentChartPointsCache) || !investmentChartPointsCache.length) return;
+        let pointRecord = null;
+        if (Number.isFinite(activeChartTooltipPointIndex) && activeChartTooltipPointIndex >= 0) {
+            pointRecord = investmentChartPointsCache[activeChartTooltipPointIndex] || null;
+        }
+        if (!pointRecord && Number.isFinite(activeHoldingsHoverLedgerNo) && activeHoldingsHoverLedgerNo > 0) {
+            const hoverIndex = investmentChartPointIndexByLedgerNo.get(activeHoldingsHoverLedgerNo);
+            if (Number.isFinite(hoverIndex) && hoverIndex >= 0) {
+                pointRecord = investmentChartPointsCache[hoverIndex] || null;
+            }
+        }
+        if (!pointRecord) {
+            pointRecord = investmentLatestChartPoint || investmentChartPointsCache[investmentChartPointsCache.length - 1] || null;
+        }
+        if (!pointRecord) return;
+        renderInvestmentDummyPortfolioDonut(pointRecord, investmentDummyTickerProfiles);
     }
 
     function refreshInvestmentDummyDonut() {
@@ -651,8 +750,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const shouldUpdate = normalizedTicker !== activeHoldingsHoverTicker || normalizedLedgerNo !== activeHoldingsHoverLedgerNo;
         activeHoldingsHoverTicker = normalizedTicker;
         activeHoldingsHoverLedgerNo = normalizedLedgerNo;
+        syncInvestmentDummyDonutFromInteraction();
         if (!shouldUpdate || !investmentEquityChartInstance) return;
         investmentEquityChartInstance.update('none');
+    }
+
+    function easeOutCubic(t) {
+        const clamped = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+        const inverse = 1 - clamped;
+        return 1 - (inverse * inverse * inverse);
     }
 
     function escapeMarkdownTableCell(value) {
@@ -1593,8 +1699,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
-        if (!snapshot || !valuationDate) return 0;
+        if (!snapshot || !valuationDate) return { marketValue: 0, holdingsMarketValues: {} };
         let marketValue = 0;
+        const holdingsMarketValues = {};
 
         Object.entries(snapshot.holdings || {}).forEach(([ticker, quantity]) => {
             const numericQuantity = Number(quantity);
@@ -1617,10 +1724,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const safeClosePrice = Number.isFinite(closePrice) ? closePrice : 0;
-            marketValue += numericQuantity * safeClosePrice;
+            const holdingMarketValue = numericQuantity * safeClosePrice;
+            marketValue += holdingMarketValue;
+            if (Math.abs(holdingMarketValue) > 1e-9) {
+                holdingsMarketValues[ticker] = holdingMarketValue;
+            }
         });
 
-        return marketValue;
+        return { marketValue, holdingsMarketValues };
     }
 
     function buildDailyEquityChartPoints(processedTransactions, tickerClosePrices, moneyMarketTickers) {
@@ -1676,7 +1787,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!activeSnapshot) return;
 
-            const marketValue = calculateSnapshotMarketValue(activeSnapshot, date, tickerPriceIndex, moneyMarketTickers);
+            const valuation = calculateSnapshotMarketValue(activeSnapshot, date, tickerPriceIndex, moneyMarketTickers);
             const ledgerEntry = ledgerDateMap.get(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
@@ -1685,8 +1796,9 @@ document.addEventListener('DOMContentLoaded', () => {
             points.push({
                 date,
                 running_cash: Number(activeSnapshot.running_cash) || 0,
-                market_value: marketValue,
-                total_equity: (Number(activeSnapshot.running_cash) || 0) + marketValue,
+                market_value: valuation.marketValue,
+                holdings_market_values: valuation.holdingsMarketValues,
+                total_equity: (Number(activeSnapshot.running_cash) || 0) + valuation.marketValue,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
                 anchor_ledger_nos: anchorLedgerNos,
             });
@@ -1825,7 +1937,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <a href="/more/timing?ticker=${encodeURIComponent(summary.ticker)}" class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
+                        <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
                             <div class="ticker-identity-row">
                                 ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
                                 <span class="ticker-identity-copy">
@@ -1833,7 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
                                 </span>
                             </div>
-                        </a>
+                        </div>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${lastPriceDisplay}</td>
@@ -2208,13 +2320,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const fundingMetrics = getUsdFundingMetrics(rawTransactions);
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
+        investmentDummyTickerProfiles = tickerProfiles;
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
         syncHoldingsChartHoverState('', 0);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
         syncHoldingsStickyOffset(holdingsPanel);
-        renderInvestmentDummyPortfolioDonut(tickerSummaries, TOTAL_EQUITY, Number(last?.running_cash) || 0, tickerProfiles);
+        const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
+        renderInvestmentDummyPortfolioDonut(latestChartPoint || {
+            running_cash: Number(last?.running_cash) || 0,
+            total_equity: Number(last?.total_equity) || Number(last?.running_cash) || 0,
+            holdings_market_values: {},
+        }, tickerProfiles);
 
         metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
@@ -2222,6 +2340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             animateInvestmentSurfaceHeight();
         }
         renderEquityChartWithEquity(chartPoints);
+        syncInvestmentDummyDonutFromInteraction();
     }
 
     function syncHoldingsStickyOffset(holdingsPanel) {
@@ -2278,6 +2397,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
             });
         });
+        investmentChartPointsCache = sortedChartPoints;
+        investmentChartPointIndexByLedgerNo = chartPointIndexByLedgerNo;
+        investmentLatestChartPoint = sortedChartPoints[sortedChartPoints.length - 1] || null;
+        activeChartTooltipPointIndex = -1;
 
         // Read theme tokens
         const resolvedTheme = (() => {
@@ -2390,11 +2513,61 @@ document.addEventListener('DOMContentLoaded', () => {
             },
         };
 
+        const animateHoldingsMarkerToward = (targetPoint, chartInstance) => {
+            if (!targetPoint) {
+                animatedHoldingsMarkerPoint = null;
+                animatedHoldingsMarkerTarget = null;
+                if (animatedHoldingsMarkerFrame) {
+                    window.cancelAnimationFrame(animatedHoldingsMarkerFrame);
+                    animatedHoldingsMarkerFrame = 0;
+                }
+                return;
+            }
+            const normalizedTarget = {
+                x: Number(targetPoint.x),
+                y: Number(targetPoint.y),
+            };
+            if (!Number.isFinite(normalizedTarget.x) || !Number.isFinite(normalizedTarget.y)) return;
+            const sameTarget = animatedHoldingsMarkerTarget
+                && Math.abs(animatedHoldingsMarkerTarget.x - normalizedTarget.x) < 0.25
+                && Math.abs(animatedHoldingsMarkerTarget.y - normalizedTarget.y) < 0.25;
+            animatedHoldingsMarkerTarget = normalizedTarget;
+            if (!animatedHoldingsMarkerPoint) {
+                animatedHoldingsMarkerPoint = { ...normalizedTarget };
+                return;
+            }
+            if (sameTarget) return;
+            const startPoint = { ...animatedHoldingsMarkerPoint };
+            animatedHoldingsMarkerStartTime = performance.now();
+            if (animatedHoldingsMarkerFrame) {
+                window.cancelAnimationFrame(animatedHoldingsMarkerFrame);
+            }
+            const step = (now) => {
+                const progress = Math.min(1, (now - animatedHoldingsMarkerStartTime) / 300);
+                const eased = easeOutCubic(progress);
+                animatedHoldingsMarkerPoint = {
+                    x: startPoint.x + ((normalizedTarget.x - startPoint.x) * eased),
+                    y: startPoint.y + ((normalizedTarget.y - startPoint.y) * eased),
+                };
+                chartInstance.draw();
+                if (progress < 1) {
+                    animatedHoldingsMarkerFrame = window.requestAnimationFrame(step);
+                    return;
+                }
+                animatedHoldingsMarkerPoint = { ...normalizedTarget };
+                animatedHoldingsMarkerFrame = 0;
+            };
+            animatedHoldingsMarkerFrame = window.requestAnimationFrame(step);
+        };
+
         const holdingsHoverMarkerPlugin = {
             id: "investmentHoldingsHoverMarkerPlugin",
             afterDatasetsDraw(chartInstance) {
                 const ledgerNo = Number(activeHoldingsHoverLedgerNo);
-                if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
+                if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) {
+                    animateHoldingsMarkerToward(null, chartInstance);
+                    return;
+                }
                 const pointIndex = chartPointIndexByLedgerNo.get(ledgerNo);
                 if (!Number.isFinite(pointIndex)) return;
                 const dataset = chartInstance.data?.datasets?.[0];
@@ -2408,11 +2581,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const y = yScale.getPixelForValue(pointValue);
                 if (!Number.isFinite(x) || !Number.isFinite(y)) return;
                 if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
+                animateHoldingsMarkerToward({ x, y }, chartInstance);
+                const animatedPoint = animatedHoldingsMarkerPoint || { x, y };
                 const markerStroke = resolvedTheme.accentPositive || "#16a34a";
                 const markerGlow = resolvedTheme.accentPositive || "rgba(22, 163, 74, 0.85)";
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.arc(animatedPoint.x, animatedPoint.y, 5, 0, Math.PI * 2);
                 ctx.lineWidth = 2.8;
                 ctx.strokeStyle = markerStroke;
                 ctx.shadowColor = markerGlow;
@@ -2473,7 +2648,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tooltip.opacity === 0) {
                 tooltipEl.classList.remove("is-visible");
                 activeChartHoverDate = "";
+                activeChartTooltipPointIndex = -1;
                 clearInvestmentHistoryHighlights();
+                syncInvestmentDummyDonutFromInteraction();
                 return;
             }
 
@@ -2482,6 +2659,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
             const parsedDate = parseRawDate(rawDates[pointIndex]);
             const pointRecord = sortedChartPoints[pointIndex];
+            activeChartTooltipPointIndex = Number.isFinite(pointIndex) && pointIndex >= 0 ? pointIndex : -1;
+            syncInvestmentDummyDonutFromInteraction();
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
             const hoveredLedgerDate = String(pointRecord?.anchor_ledger_date || "").slice(0, 10);
 
@@ -2535,14 +2714,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
             const anchorX = canvasRect.left + tooltip.caretX;
             const anchorY = canvasRect.top + tooltip.caretY;
-            const roomRight = viewportWidth - anchorX - padding;
+            const donutRect = investmentDummyChart instanceof HTMLElement ? investmentDummyChart.getBoundingClientRect() : null;
+            const rightBoundary = donutRect && donutRect.left > padding
+                ? Math.min(viewportWidth - padding, donutRect.left - gap)
+                : viewportWidth - padding;
+            const roomRight = rightBoundary - anchorX;
             const roomLeft = anchorX - padding;
             const preferRight = roomRight >= tooltipRect.width + gap || roomRight >= roomLeft;
             let left = preferRight ? anchorX + gap : anchorX - tooltipRect.width - gap;
             if (left < padding) left = padding;
-            if (left + tooltipRect.width > viewportWidth - padding) {
-                left = viewportWidth - tooltipRect.width - padding;
+            const maxLeft = rightBoundary - tooltipRect.width;
+            if (left > maxLeft) {
+                left = maxLeft;
             }
+            if (left < padding) left = padding;
             let top = anchorY - (tooltipRect.height / 2);
             if (top < padding) top = padding;
             if (top + tooltipRect.height > viewportHeight - padding) {

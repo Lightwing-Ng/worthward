@@ -84,17 +84,87 @@
 			};
 		};
 
+		const ensureAnimatedDonutLayers = (donut) => {
+			if (!(donut instanceof HTMLElement)) return [];
+			donut.classList.add("is-animated");
+			let fillLayerA = donut.querySelector(".portfolio-donut-fill-layer-a");
+			let fillLayerB = donut.querySelector(".portfolio-donut-fill-layer-b");
+			if (!(fillLayerA instanceof HTMLElement)) {
+				fillLayerA = document.createElement("span");
+				fillLayerA.className = "portfolio-donut-fill-layer portfolio-donut-fill-layer-a";
+				donut.appendChild(fillLayerA);
+			}
+			if (!(fillLayerB instanceof HTMLElement)) {
+				fillLayerB = document.createElement("span");
+				fillLayerB.className = "portfolio-donut-fill-layer portfolio-donut-fill-layer-b";
+				donut.appendChild(fillLayerB);
+			}
+			return [fillLayerA, fillLayerB];
+		};
+
+		const applyAnimatedDonutFill = (donut, fill) => {
+			if (!(donut instanceof HTMLElement)) return;
+			const [fillLayerA, fillLayerB] = ensureAnimatedDonutLayers(donut);
+			if (!(fillLayerA instanceof HTMLElement) || !(fillLayerB instanceof HTMLElement)) {
+				donut.style.setProperty("--portfolio-donut-fill", fill);
+				return;
+			}
+			const activeLayerKey = donut.dataset.activeFillLayer === "b" ? "b" : "a";
+			const nextLayerKey = activeLayerKey === "a" ? "b" : "a";
+			const nextLayer = nextLayerKey === "a" ? fillLayerA : fillLayerB;
+			nextLayer.style.background = fill;
+			donut.dataset.activeFillLayer = nextLayerKey;
+			donut.style.setProperty("--portfolio-donut-fill", fill);
+		};
+
+		const syncAnimatedDonutLogos = ({ logoLayer, logoItems, orbitCenter, logoOrbitRadius }) => {
+			if (!(logoLayer instanceof HTMLElement)) return;
+			const existingLogos = new Map(
+				Array.from(logoLayer.querySelectorAll(".portfolio-donut-logo")).map((logo) => [logo.dataset.ticker || "", logo])
+			);
+			const nextTickers = new Set();
+			logoItems.forEach((item) => {
+				nextTickers.add(item.ticker);
+				const point = angleToPoint(item.midAngle, orbitCenter, logoOrbitRadius);
+				let logo = existingLogos.get(item.ticker);
+				if (!(logo instanceof HTMLImageElement)) {
+					logo = document.createElement("img");
+					logo.className = "portfolio-donut-logo";
+					logo.dataset.ticker = item.ticker;
+					logo.alt = `${item.ticker} logo`;
+					logo.src = item.logoUrl;
+					logo.style.opacity = "0";
+					logoLayer.appendChild(logo);
+					window.requestAnimationFrame(() => {
+						logo.style.opacity = "1";
+					});
+				} else if (logo.src !== item.logoUrl) {
+					logo.src = item.logoUrl;
+				}
+				logo.style.left = `${point.x.toFixed(2)}px`;
+				logo.style.top = `${point.y.toFixed(2)}px`;
+				logo.classList.remove("is-exiting");
+			});
+			existingLogos.forEach((logo, ticker) => {
+				if (nextTickers.has(ticker)) return;
+				logo.classList.add("is-exiting");
+				window.setTimeout(() => {
+					if (logo.classList.contains("is-exiting")) logo.remove();
+				}, 220);
+			});
+		};
+
 		const renderDonut = ({ donut, orbit, logoLayer, entries }) => {
 			if (!entries.length) {
-				donut.style.setProperty("--portfolio-donut-fill", fallbackDonutFill);
-				logoLayer.innerHTML = "";
+				applyAnimatedDonutFill(donut, fallbackDonutFill);
+				syncAnimatedDonutLogos({ logoLayer, logoItems: [], orbitCenter: 0, logoOrbitRadius: 0 });
 				return;
 			}
 
 			const colors = buildGradientColors(entries.length);
 			if (!colors.length) {
-				donut.style.setProperty("--portfolio-donut-fill", fallbackDonutFill);
-				logoLayer.innerHTML = "";
+				applyAnimatedDonutFill(donut, fallbackDonutFill);
+				syncAnimatedDonutLogos({ logoLayer, logoItems: [], orbitCenter: 0, logoOrbitRadius: 0 });
 				return;
 			}
 			const gapDegrees = 1.2;
@@ -127,12 +197,8 @@
 				angle = segmentEnd;
 			});
 
-			donut.style.setProperty("--portfolio-donut-fill", `conic-gradient(${stops.join(", ")})`);
-
-			logoLayer.innerHTML = logoItems.map((item) => {
-				const point = angleToPoint(item.midAngle, orbitCenter, logoOrbitRadius);
-				return `<img class="portfolio-donut-logo" src="${item.logoUrl}" alt="${item.ticker} logo" style="left:${point.x.toFixed(2)}px; top:${point.y.toFixed(2)}px;">`;
-			}).join("");
+			applyAnimatedDonutFill(donut, `conic-gradient(${stops.join(", ")})`);
+			syncAnimatedDonutLogos({ logoLayer, logoItems, orbitCenter, logoOrbitRadius });
 		};
 
 		const buildEndingEntries = (entries) => {
