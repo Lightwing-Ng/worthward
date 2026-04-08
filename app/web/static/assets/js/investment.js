@@ -269,6 +269,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeInvestmentHistoryRowIds = [];
     let investmentChartReady = false;
     let investmentHasExportableTransactions = false;
+    let investmentEquityChartInstance = null;
+    let activeHoldingsHoverTicker = '';
+    let activeHoldingsHoverLedgerNo = 0;
 
     function getActionButtonLabels(button) {
         return {
@@ -504,6 +507,22 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.dataset.investmentChartReady = investmentChartReady ? '1' : '0';
         }
         setInvestmentExportButtonVisibility(investmentHasExportableTransactions);
+    }
+
+    function normalizeInvestmentTicker(ticker) {
+        return String(ticker || '').trim().toUpperCase();
+    }
+
+    function syncHoldingsChartHoverState(ticker, ledgerNo) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedLedgerNo = Number.isFinite(Number(ledgerNo)) && Number(ledgerNo) > 0
+            ? Number(ledgerNo)
+            : 0;
+        const shouldUpdate = normalizedTicker !== activeHoldingsHoverTicker || normalizedLedgerNo !== activeHoldingsHoverLedgerNo;
+        activeHoldingsHoverTicker = normalizedTicker;
+        activeHoldingsHoverLedgerNo = normalizedLedgerNo;
+        if (!shouldUpdate || !investmentEquityChartInstance) return;
+        investmentEquityChartInstance.update('none');
     }
 
     function escapeMarkdownTableCell(value) {
@@ -751,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getLatestHistoryRowForTicker(ticker) {
-        const normalizedTicker = String(ticker || '').trim().toUpperCase();
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return null;
         return document.querySelector(`tr[data-investment-history-ticker="${CSS.escape(normalizedTicker)}"]`);
     }
@@ -1745,10 +1764,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ticker = row.dataset.investmentHoldingsTicker || '';
                 const historyRow = getLatestHistoryRowForTicker(ticker);
                 const ledgerNo = Number(historyRow?.dataset.investmentHistoryRow || 0);
+                syncHoldingsChartHoverState(ticker, ledgerNo);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
                 activateInvestmentHistoryRows([ledgerNo]);
             };
             const clearRelatedHistoryRow = () => {
+                syncHoldingsChartHoverState('', 0);
                 clearInvestmentHistoryHighlights();
             };
             row.addEventListener('mouseenter', activateRelatedHistoryRow);
@@ -1761,6 +1782,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function bindInvestmentHistoryChartInteractions(historyContainer) {
+        if (!historyContainer) return;
+        historyContainer.querySelectorAll('tr[data-investment-history-row]').forEach((row) => {
+            if (row.dataset.chartHoverBound === '1') return;
+            row.dataset.chartHoverBound = '1';
+            const activateChartMarker = () => {
+                const ledgerNo = Number(row.dataset.investmentHistoryRow || 0);
+                syncHoldingsChartHoverState('', ledgerNo);
+            };
+            const clearChartMarker = () => {
+                syncHoldingsChartHoverState('', 0);
+            };
+            row.addEventListener('mouseenter', activateChartMarker);
+            row.addEventListener('mouseleave', clearChartMarker);
+            row.addEventListener('focusin', activateChartMarker);
+            row.addEventListener('focusout', (event) => {
+                if (row.contains(event.relatedTarget)) return;
+                clearChartMarker();
+            });
+        });
+    }
+
     async function renderTransactionTable(transactions) {
         const tbody = document.getElementById('investment_history');
         if (!tbody) return;
@@ -1768,6 +1811,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!transactions.length) {
             setInvestmentExportButtonVisibility(false);
+            syncHoldingsChartHoverState('', 0);
             resetInvestmentDashboard();
             tbody.innerHTML = `
                 <tr>
@@ -2011,6 +2055,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
             `;
         }).join('');
+        bindInvestmentHistoryChartInteractions(tbody);
 
         // 5. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints);
@@ -2033,6 +2078,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
+        syncHoldingsChartHoverState('', 0);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
@@ -2058,6 +2104,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reuse the same chart styling from the backtest page
     function renderEquityChartWithEquity(chartPoints) {
         if (!chartPoints.length || !window.Chart) {
+            if (investmentEquityChartInstance) {
+                investmentEquityChartInstance.destroy();
+                investmentEquityChartInstance = null;
+            }
             setInvestmentChartReady(false);
             console.warn('Chart.js not available');
             return;
@@ -2065,6 +2115,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const container = document.getElementById('investment_equity_chart');
         if (!container) {
+            if (investmentEquityChartInstance) {
+                investmentEquityChartInstance.destroy();
+                investmentEquityChartInstance = null;
+            }
             setInvestmentChartReady(false);
             console.warn('Chart container not found');
             return;
@@ -2074,11 +2128,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const canvas = document.getElementById('investmentEquityChart');
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
+        if (investmentEquityChartInstance) {
+            investmentEquityChartInstance.destroy();
+            investmentEquityChartInstance = null;
+        }
         setInvestmentChartReady(false, canvas);
 
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         const rawDates = sortedChartPoints.map((point) => point.date);
         const equity = sortedChartPoints.map((point) => point.total_equity);
+        const chartPointIndexByLedgerNo = new Map();
+        sortedChartPoints.forEach((point, index) => {
+            const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
+            ledgerNos.forEach((ledgerNo) => {
+                const normalizedLedgerNo = Number(ledgerNo);
+                if (!Number.isFinite(normalizedLedgerNo) || normalizedLedgerNo <= 0) return;
+                chartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
+            });
+        });
 
         // Read theme tokens
         const resolvedTheme = (() => {
@@ -2186,6 +2253,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.beginPath();
                 ctx.moveTo(x, chartArea.top);
                 ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                ctx.restore();
+            },
+        };
+
+        const holdingsHoverMarkerPlugin = {
+            id: "investmentHoldingsHoverMarkerPlugin",
+            afterDatasetsDraw(chartInstance) {
+                const ledgerNo = Number(activeHoldingsHoverLedgerNo);
+                if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
+                const pointIndex = chartPointIndexByLedgerNo.get(ledgerNo);
+                if (!Number.isFinite(pointIndex)) return;
+                const dataset = chartInstance.data?.datasets?.[0];
+                const pointValue = Number(dataset?.data?.[pointIndex]);
+                if (!Number.isFinite(pointValue)) return;
+                const { ctx, scales, chartArea } = chartInstance;
+                const xScale = scales?.x;
+                const yScale = scales?.y;
+                if (!ctx || !xScale || !yScale || !chartArea) return;
+                const x = xScale.getPixelForValue(pointIndex);
+                const y = yScale.getPixelForValue(pointValue);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+                if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
+                const markerStroke = resolvedTheme.accentPositive || "#16a34a";
+                const markerGlow = resolvedTheme.accentPositive || "rgba(22, 163, 74, 0.85)";
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.lineWidth = 2.8;
+                ctx.strokeStyle = markerStroke;
+                ctx.shadowColor = markerGlow;
+                ctx.shadowBlur = 12;
                 ctx.stroke();
                 ctx.restore();
             },
@@ -2357,7 +2456,7 @@ document.addEventListener('DOMContentLoaded', () => {
             },
         };
 
-        new Chart(canvas, {
+        investmentEquityChartInstance = new Chart(canvas, {
             type: "line",
             data: {
                 labels,
@@ -2389,8 +2488,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: { ...commonOptions.scales.y, ...equityYScale },
                 },
             },
-            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, holdingsHoverMarkerPlugin, xAxisLabelPlugin],
         });
+        if (activeHoldingsHoverLedgerNo > 0) {
+            investmentEquityChartInstance.update('none');
+        }
         window.requestAnimationFrame(() => {
             window.requestAnimationFrame(() => {
                 if (canvas.dataset.investmentChartReady === '1') return;
