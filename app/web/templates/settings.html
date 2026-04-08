@@ -73,26 +73,20 @@
 {% endblock %}
 
 {% block workspace_content %}
-<section class="workspace-header settings-workspace-header" id="settings_workspace_shell">
+<section class="workspace-header settings-workspace-header{% if settings_section == 'about' %} settings-about-shell{% endif %}" id="settings_workspace_shell">
     <article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
         <div class="report-heading-row">
             <p class="report-heading">{{ settings_title }}</p>
         </div>
     </article>
 
-    <article>
-
-    </article>
-
-    <article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
-        <section class="settings-body">
-        {% if settings_section == "about" %}
-        <article class="about-section">
+    {% if settings_section == "about" %}
+    <article class="report-card workspace-content-card about-section">
             <h2 class="about-heading">What this service does</h2>
             <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.</p>
-        </article>
+    </article>
 
-        <article class="about-section">
+    <article class="report-card workspace-content-card about-section">
             <h2 class="about-heading">System information</h2>
             <dl class="footer-meta about-meta">
                 <dt>{{ labels.code_version }}</dt>
@@ -100,25 +94,28 @@
                 <dt>{{ labels.updated_on }}</dt>
                 <dd>{{ updated_on }}</dd>
             </dl>
-        </article>
+    </article>
 
-        <article class="about-section">
+    <article class="report-card workspace-content-card about-section">
             <h2 class="about-heading">Source code</h2>
             <a class="about-link-card" href="https://github.com/Lightwing-Ng/compareStocks" target="_blank" rel="noreferrer">
                 <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="GitHub logo">
                 <span class="about-link-copy">github.com/Lightwing-Ng/compareStocks</span>
             </a>
-        </article>
+    </article>
 
-        <article class="about-section about-disclaimer settings-reading-guard">
+    <article class="report-card workspace-content-card about-section about-disclaimer settings-reading-guard">
             <h2 class="about-heading">Disclaimer</h2>
             <ol class="about-disclaimer-list">
                 <li class="about-copy">This service does not provide financial advice. All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.</li>
                 <li class="about-copy">The value of investments can go down as well as up. Past performance is not a reliable indicator of future results. Seek independent professional advice before making investment decisions.</li>
                 <li class="about-copy">Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.</li>
             </ol>
-        </article>
-        {% elif settings_section == "general" %}
+    </article>
+    {% else %}
+    <section class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
+        <section class="settings-body">
+        {% if settings_section == "general" %}
         <section class="settings-general-stack">
             <section class="settings-card settings-general-card settings-general-panel">
                 <div class="settings-general-header">
@@ -363,7 +360,6 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-name">{{ labels.email_smtp_save }}</p>
                         <p class="settings-service-note">Store the current Outlook SMTP and OAuth configuration on this device.</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -373,7 +369,6 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-name">Start Outlook OAuth</p>
                         <p class="settings-service-note">Request a fresh Microsoft device code for this mailbox and tenant.</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -383,7 +378,6 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-name">Finish Outlook OAuth</p>
                         <p class="settings-service-note">Poll Microsoft for the completed device-flow authorization result.</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -393,7 +387,6 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-name">{{ labels.email_smtp_test }}</p>
                         <p class="settings-service-note">Verify SMTP `XOAUTH2` login against Outlook with the saved settings.</p>
                     </div>
                     <div class="settings-action-package-form">
@@ -407,8 +400,7 @@
             <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
                 <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-name">{{ labels.local_store_maintain_title }}</p>
-                        <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
+                    <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
                 </div>
                 <form method="post" action="/settings/local-market-store/action" class="settings-stack-form settings-callout-form settings-action-package-form">
                     <input type="hidden" name="action" value="maintain">
@@ -603,7 +595,6 @@
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name">Test connection</p>
                             <p class="settings-service-note">Try the current broker credentials against the selected service and report whether they work. This only verifies connectivity and does not place any order.</p>
                             {% if broker_test_status and broker_test_message %}
                             <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite">
@@ -621,7 +612,6 @@
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name">Save credentials</p>
                             <p class="settings-service-note">Store the current broker credentials only on this device so the app can reuse them later. This does not submit any trade and will not trigger any market action.</p>
                         </div>
                         <div class="settings-action-package-form">
@@ -636,7 +626,6 @@
             <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
-                    <p class="settings-service-name">Clear market data caches</p>
                     <p class="settings-service-note">This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
@@ -648,7 +637,6 @@
             <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
-                    <p class="settings-service-name">Clear local broker transaction record</p>
                     <p class="settings-service-note">This deletes <code>settings_store/investment.json</code> on this device, which removes the imported local broker transaction history shown in My investment.</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
@@ -970,6 +958,7 @@
         </section>
         {% endif %}
         </section>
-    </article>
+    </section>
+    {% endif %}
 </section>
 {% endblock %}

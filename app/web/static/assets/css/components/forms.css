@@ -1077,10 +1077,19 @@
 }
 .trade-strategy-boolean-row .switch-label {
 	flex: 1 1 auto;
+	display: inline-flex;
+	align-items: center;
 	font-size: var(--font-form-label);
 	line-height: 1;
 	font-weight: var(--font-weight-bold);
 	color: var(--text);
+}
+.trade-strategy-boolean-row .switch-label > span:not(.field-tooltip) {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 10px;
+	border-radius: var(--radius-pill);
+	background: var(--panel-strong);
 }
 .trade-strategy-boolean-row .trade-strategy-param-label-trigger {
 	display: inline-flex;

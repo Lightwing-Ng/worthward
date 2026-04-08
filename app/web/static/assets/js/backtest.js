@@ -553,35 +553,56 @@
 			};
 		};
 
+		const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
+		const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
+		const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
+
 		const resolveNearestHoverIndex = (chart, event) => {
 			const chartArea = chart?.chartArea;
 			if (!chartArea || !labels.length) return null;
 			const canvasRect = chart.canvas.getBoundingClientRect();
 			const relativeX = event.clientX - canvasRect.left;
+			const relativeY = event.clientY - canvasRect.top;
 			if (!Number.isFinite(relativeX)) return null;
 			const points = chart.getDatasetMeta(0)?.data || [];
 
-			const tradeIndexes = new Set();
-			tradeMarkerPoints.buy.forEach((marker) => tradeIndexes.add(marker.index));
-			tradeMarkerPoints.sell.forEach((marker) => tradeIndexes.add(marker.index));
-
 			let nearestIndex = null;
 			let nearestDistance = Number.POSITIVE_INFINITY;
-			
 			points.forEach((point, index) => {
 				if (!point || !Number.isFinite(point.x)) return;
-				
-				let distance = Math.abs(point.x - relativeX);
-				// Magnetic pull of 16px around trade points
-				if (tradeIndexes.has(index)) {
-					distance = Math.max(0, distance - 16);
-				}
-
+				const distance = Math.abs(point.x - relativeX);
 				if (distance < nearestDistance) {
 					nearestDistance = distance;
 					nearestIndex = index;
 				}
 			});
+
+			if (!Number.isInteger(nearestIndex)) return null;
+			if (chart.canvas !== priceCanvas || !Number.isFinite(relativeY)) return nearestIndex;
+			if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return nearestIndex;
+
+			const yScale = chart.scales?.y;
+			if (!yScale) return nearestIndex;
+
+			const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
+			let snappedMarkerIndex = null;
+			let snappedMarkerDistance = Number.POSITIVE_INFINITY;
+			markerCandidates.forEach((marker) => {
+				if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.price)) return;
+				if (Math.abs(marker.index - nearestIndex) > TRADE_MARKER_SNAP_HORIZONTAL_BARS) return;
+				const markerY = yScale.getPixelForValue(marker.price);
+				if (!Number.isFinite(markerY)) return;
+				if (Math.abs(markerY - relativeY) >= TRADE_MARKER_SNAP_VERTICAL_PX) return;
+				const markerPoint = points[marker.index];
+				if (!markerPoint || !Number.isFinite(markerPoint.x)) return;
+				const markerDistance = Math.abs(markerPoint.x - relativeX);
+				if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
+				if (markerDistance < snappedMarkerDistance) {
+					snappedMarkerDistance = markerDistance;
+					snappedMarkerIndex = marker.index;
+				}
+			});
+			if (Number.isInteger(snappedMarkerIndex)) return snappedMarkerIndex;
 			return nearestIndex;
 		};
 
