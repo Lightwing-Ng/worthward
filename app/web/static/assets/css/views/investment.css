@@ -867,7 +867,7 @@
 .investment-history-table th:nth-child(2),
 .investment-history-table td:nth-child(2) {
     width: 10%;
-    min-width: 48px;
+    min-width: 36px;
     text-align: right;
 }
 
@@ -880,8 +880,8 @@
 
 .investment-history-table th:nth-child(4),
 .investment-history-table td:nth-child(4) {
-    width: 14%;
-    min-width: 64px;
+    width: 18%;
+    min-width: 72px;
     text-align: left;
 }
 
@@ -894,15 +894,15 @@
 
 .investment-history-table th:nth-child(6),
 .investment-history-table td:nth-child(6) {
-    width: 10%;
-    min-width: 36px;
+    width: 8%;
+    min-width: 32px;
     text-align: right;
 }
 
 .investment-history-table th:nth-child(7),
 .investment-history-table td:nth-child(7) {
-    width: 10%;
-    min-width: 36px;
+    width: 8%;
+    min-width: 32px;
     text-align: right;
 }
 
