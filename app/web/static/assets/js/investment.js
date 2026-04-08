@@ -844,8 +844,33 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleBtn.setAttribute('aria-label', 'Import IBKR CSV files');
     }
 
+    function buildInvestmentRequestOptions(overrides = {}) {
+        const headers = {
+            'Cache-Control': 'no-cache',
+            ...(overrides.headers || {}),
+        };
+        return {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            ...overrides,
+            headers,
+        };
+    }
+
+    function buildInvestmentParquetUrl(ticker) {
+        const params = new URLSearchParams({ ticker });
+        const sectionFreshness = window.ANTIGRAVITY_INVESTMENT_DATA?.section_freshness || null;
+        if (sectionFreshness?.scope) {
+            params.set('freshness_scope', sectionFreshness.scope);
+        }
+        if (sectionFreshness?.target_trading_day) {
+            params.set('target_trading_day', sectionFreshness.target_trading_day);
+        }
+        return `/api/investment/parquet?${params.toString()}`;
+    }
+
     async function fetchInvestmentData() {
-        const response = await fetch('/api/investment/transactions', { credentials: 'same-origin' });
+        const response = await fetch('/api/investment/transactions', buildInvestmentRequestOptions());
         const data = await response.json();
         if (!response.ok || data.success === false) {
             throw new Error(data.error || `Failed to load investment data: ${response.status}`);
@@ -1875,7 +1900,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerClosePrices = {}; // {ticker: {dateString: closePrice}}
         await Promise.all(Array.from(tickers).map(async ticker => {
             try {
-                const response = await fetch(`/api/investment/parquet?ticker=${ticker}`);
+                const response = await fetch(
+                    buildInvestmentParquetUrl(ticker),
+                    buildInvestmentRequestOptions(),
+                );
                 const data = await response.json();
                 if (data.success && data.prices) {
                     // Create a map: date string (YYYY-MM-DD) -> close price

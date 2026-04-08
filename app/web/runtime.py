@@ -69,7 +69,7 @@ from app.core.config import (
     PERIOD_OFFSETS,
     SUPPORTED_PERIODS_1M,
 )
-from app.services.date_constraints import build_date_constraint_payload
+from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
 from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     normalize_investment_payload_tickers,
@@ -249,6 +249,29 @@ def build_web_runtime() -> WebRuntime:
             for ticker in tickers
             if str(ticker).strip().upper() not in configured_money_market_tickers
         ]
+
+    def apply_no_store_headers(response):
+        response.headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    def load_normalized_investment_payload() -> dict[str, Any]:
+        if not INVESTMENT_STORE_PATH.exists():
+            return {}
+        with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+            return normalize_investment_payload_tickers(json.load(f))
+
+    def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "scope": "section",
+            "target_trading_day": latest_completed_nyse_trading_day().strftime("%Y-%m-%d"),
+            "open_tickers": sorted(
+                exclude_configured_money_market_tickers(
+                    extract_open_investment_tickers(payload)
+                )
+            ),
+        }
 
     # Backtest result cache: skip redundant computation when config doesn't change
     _cached_backtest: dict[str, tuple] = {}
@@ -2722,6 +2745,8 @@ def build_web_runtime() -> WebRuntime:
         ))
         if current_view == "settings":
             response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
+        if current_view == "more" and more_section == "investment":
+            apply_no_store_headers(response)
         return response
 
     def export_transactions_api():
@@ -3354,22 +3379,18 @@ def build_web_runtime() -> WebRuntime:
     def investment_get_transactions():
         """Get all saved investment transactions from local storage."""
         if not INVESTMENT_STORE_PATH.exists():
-            return jsonify({
+            response = jsonify({
                 "transactions": [],
                 "ticker_profiles": {},
                 "money_market_tickers": sorted(configured_money_market_tickers),
+                "section_freshness": build_investment_section_freshness({}),
                 "success": True,
             })
+            return apply_no_store_headers(response)
         try:
-            with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            data = normalize_investment_payload_tickers(data)
-
-            freshness_refresh_failures = ensure_latest_daily_caches(
-                exclude_configured_money_market_tickers(
-                    extract_open_investment_tickers(data)
-                )
-            )
+            data = load_normalized_investment_payload()
+            section_freshness = build_investment_section_freshness(data)
+            freshness_refresh_failures = ensure_latest_daily_caches(section_freshness["open_tickers"])
 
             def resolve_money_market_company_name(
                     ticker: str,
@@ -3435,9 +3456,13 @@ def build_web_runtime() -> WebRuntime:
             data["ticker_profiles"] = ticker_profiles
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
             data["freshness_refresh_failures"] = freshness_refresh_failures
-            return jsonify(data)
+            data["section_freshness"] = section_freshness
+            response = jsonify(data)
+            return apply_no_store_headers(response)
         except Exception as exc:
-            return jsonify({"success": False, "error": str(exc)}), 500
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def investment_add_transactions():
         """Import IBKR CSV files and rebuild the local investment store."""
@@ -3501,51 +3526,73 @@ def build_web_runtime() -> WebRuntime:
         """Get the latest closing price for a ticker from local market store."""
         ticker = request.args.get("ticker", "").strip().upper()
         if not ticker:
-            return jsonify({"success": False, "error": "No ticker provided"}), 400
+            response = jsonify({"success": False, "error": "No ticker provided"})
+            response.status_code = 400
+            return apply_no_store_headers(response)
 
         try:
             path = history_store_path_for(ticker)
             if not path.exists():
-                return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
+                response = jsonify({"success": False, "error": f"No local data for {ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
 
             df = pd.read_parquet(path)
             if df.empty or "Close" not in df.columns:
-                return jsonify({"success": False, "error": f"No price data for {ticker}"}), 404
+                response = jsonify({"success": False, "error": f"No price data for {ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
 
             # Get the latest close price (last row)
             latest_row = df.sort_values("Date").iloc[-1]
             latest_close = float(latest_row["Close"])
             latest_date = str(latest_row["Date"].date()) if hasattr(latest_row["Date"], "date") else str(latest_row["Date"])
 
-            return jsonify({
+            response = jsonify({
                 "success": True,
                 "ticker": ticker,
                 "latest_close": latest_close,
                 "latest_date": latest_date
             })
+            return apply_no_store_headers(response)
         except Exception as exc:
-            return jsonify({"success": False, "error": str(exc)}), 500
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def investment_get_parquet():
         """Get all date -> close price mappings from the parquet file for a ticker."""
         ticker = request.args.get("ticker", "").strip().upper()
         if not ticker:
-            return jsonify({"success": False, "error": "No ticker provided"}), 400
+            response = jsonify({"success": False, "error": "No ticker provided"})
+            response.status_code = 400
+            return apply_no_store_headers(response)
 
         try:
             path = history_store_path_for(ticker)
+            freshness_scope = request.args.get("freshness_scope", "").strip().lower()
+            section_freshness = None
             if not path.exists():
                 if ticker in configured_money_market_tickers:
-                    return jsonify({"success": False, "error": f"No local data for {ticker}"}), 404
+                    response = jsonify({"success": False, "error": f"No local data for {ticker}"})
+                    response.status_code = 404
+                    return apply_no_store_headers(response)
                 fetch_history(ticker, include_dividends=False)
                 path = history_store_path_for(ticker)
             else:
                 if ticker not in configured_money_market_tickers:
-                    ensure_latest_daily_caches([ticker])
+                    should_refresh_ticker = True
+                    if freshness_scope == "section":
+                        section_freshness = build_investment_section_freshness(load_normalized_investment_payload())
+                        should_refresh_ticker = ticker in set(section_freshness["open_tickers"])
+                    if should_refresh_ticker:
+                        ensure_latest_daily_caches([ticker])
 
             df = pd.read_parquet(path)
             if df.empty or "Close" not in df.columns or "Date" not in df.columns:
-                return jsonify({"success": False, "error": f"No price/date data for {ticker}"}), 404
+                response = jsonify({"success": False, "error": f"No price/date data for {ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
 
             # Sort by date and extract (date string, close price) pairs
             df_sorted = df.sort_values("Date")
@@ -3560,14 +3607,19 @@ def build_web_runtime() -> WebRuntime:
                 close_val = float(row["Close"])
                 prices.append({"date": date_str, "close": close_val})
 
-            return jsonify({
+            response = jsonify({
                 "success": True,
                 "ticker": ticker,
                 "prices": prices,
-                "count": len(prices)
+                "count": len(prices),
+                "freshness_scope": freshness_scope or "ticker",
+                "target_trading_day": section_freshness["target_trading_day"] if section_freshness else "",
             })
+            return apply_no_store_headers(response)
         except Exception as exc:
-            return jsonify({"success": False, "error": str(exc)}), 500
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     return WebRuntime(
         root=root,
