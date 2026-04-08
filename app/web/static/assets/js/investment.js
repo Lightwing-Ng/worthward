@@ -213,6 +213,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    const investmentDummyChart = document.getElementById('investment_dummy_chart');
+    const investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
+    const investmentDummyDonut = document.getElementById('investment_dummy_donut');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'metrics'];
@@ -437,6 +440,133 @@ document.addEventListener('DOMContentLoaded', () => {
                     segmentedResizeObserver.observe(optionLabel);
                 }
             });
+        }
+    }
+
+    function interpolateHexColor(startHex, endHex, t) {
+        const normalizedT = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+        const parseHex = (hex) => {
+            const normalized = String(hex || '').replace('#', '');
+            if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return { r: 0, g: 0, b: 0 };
+            return {
+                r: Number.parseInt(normalized.slice(0, 2), 16),
+                g: Number.parseInt(normalized.slice(2, 4), 16),
+                b: Number.parseInt(normalized.slice(4, 6), 16),
+            };
+        };
+        const start = parseHex(startHex);
+        const end = parseHex(endHex);
+        const mix = (left, right) => Math.round(left + ((right - left) * normalizedT));
+        const toHex = (value) => value.toString(16).padStart(2, '0');
+        return `#${toHex(mix(start.r, end.r))}${toHex(mix(start.g, end.g))}${toHex(mix(start.b, end.b))}`;
+    }
+
+    function buildInvestmentDummyPalette(count) {
+        if (!Number.isFinite(count) || count <= 0) return [];
+        if (count === 1) return ['#0055cc'];
+        return Array.from({ length: count }, (_, index) => {
+            const ratio = index / (count - 1);
+            return interpolateHexColor('#0055cc', '#ff2f92', ratio);
+        });
+    }
+
+    function renderInvestmentDummyPortfolioDonut(tickerSummaries, totalEquity, runningCash, tickerProfiles) {
+        if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
+        const openSummaries = (Array.isArray(tickerSummaries) ? tickerSummaries : [])
+            .filter((summary) => summary?.hasOpenPosition && Number(summary?.marketValue) > 1e-9)
+            .sort((left, right) => (Number(right.marketValue) || 0) - (Number(left.marketValue) || 0));
+        const openTotalValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        const cashValue = Math.max(0, Number(runningCash) || 0);
+        const fallbackTotal = openTotalValue + cashValue;
+        const denominator = Math.max(Number(totalEquity) || 0, fallbackTotal, 0);
+        if (denominator <= 1e-9) {
+            investmentDummyLogoLayer.innerHTML = '';
+            investmentDummyDonut.style.setProperty('--portfolio-donut-fill', 'conic-gradient(var(--theme-accent-positive) 0deg 360deg)');
+            refreshInvestmentDummyDonut();
+            return;
+        }
+
+        const palette = buildInvestmentDummyPalette(openSummaries.length);
+        const logoFragments = [];
+        const fillFragments = [];
+        const gapDegrees = 1.2;
+        let angle = 0;
+
+        openSummaries.forEach((summary, index) => {
+            const marketValue = Number(summary.marketValue) || 0;
+            if (marketValue <= 1e-9) return;
+            const sweep = (marketValue / denominator) * 360;
+            if (sweep <= 1e-9) return;
+            const segmentStart = angle;
+            const segmentEnd = Math.min(segmentStart + sweep, 360);
+            if ((segmentEnd - segmentStart) > 1e-9) {
+                fillFragments.push(`${palette[index] || '#0055cc'} ${segmentStart}deg ${segmentEnd}deg`);
+                const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
+                const ticker = String(summary.ticker || '').trim().toUpperCase();
+                const profile = tickerProfiles?.[ticker] || {};
+                const logoUrl = String(profile.logo_url || '').trim() || `/market-store/logos/${encodeURIComponent(ticker)}.png`;
+                logoFragments.push(`<img class="portfolio-donut-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(ticker)} logo" data-style-token-donut-angle="${midAngle.toFixed(2)}">`);
+            }
+            const hasRemaining = segmentEnd < 360;
+            const gapEnd = hasRemaining ? Math.min(segmentEnd + gapDegrees, 360) : segmentEnd;
+            if ((gapEnd - segmentEnd) > 1e-9) {
+                fillFragments.push(`transparent ${segmentEnd}deg ${gapEnd}deg`);
+            }
+            angle = gapEnd;
+        });
+
+        const cashStart = Math.min(Math.max(angle, 0), 360);
+        if ((360 - cashStart) > 1e-9) {
+            fillFragments.push(`var(--theme-accent-positive) ${cashStart}deg 360deg`);
+        }
+
+        investmentDummyLogoLayer.innerHTML = logoFragments.join('');
+        investmentDummyDonut.style.setProperty('--portfolio-donut-fill', `conic-gradient(${fillFragments.join(', ')})`);
+        refreshInvestmentDummyDonut();
+    }
+
+    function refreshInvestmentDummyDonut() {
+        if (!(investmentDummyChart instanceof HTMLElement)) return;
+        investmentDummyChart.querySelectorAll('.style-token-portfolio-donut-orbit').forEach((orbitElement) => {
+            if (!(orbitElement instanceof HTMLElement)) return;
+            const computed = getComputedStyle(orbitElement);
+            const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
+                || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-size'))
+                || 120;
+            const logoSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-logo-size'))
+                || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-logo-size'))
+                || 20;
+            const satelliteRadius = (logoSize * Math.SQRT2) / 2;
+            const orbitRadius = (donutSize / 2) + satelliteRadius;
+            const centerX = orbitElement.clientWidth / 2;
+            const centerY = orbitElement.clientHeight / 2;
+            orbitElement.querySelectorAll('.portfolio-donut-logo[data-style-token-donut-angle]').forEach((logoElement) => {
+                if (!(logoElement instanceof HTMLImageElement)) return;
+                const angle = Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || '');
+                if (!Number.isFinite(angle)) return;
+                const radians = ((angle - 90) * Math.PI) / 180;
+                const x = centerX + (Math.cos(radians) * orbitRadius);
+                const y = centerY + (Math.sin(radians) * orbitRadius);
+                logoElement.style.left = `${x.toFixed(2)}px`;
+                logoElement.style.top = `${y.toFixed(2)}px`;
+            });
+        });
+    }
+
+    function initInvestmentDummyDonut() {
+        if (!(investmentDummyChart instanceof HTMLElement)) return;
+        refreshInvestmentDummyDonut();
+        if (window.ResizeObserver) {
+            const donutResizeObserver = new ResizeObserver(() => {
+                refreshInvestmentDummyDonut();
+            });
+            donutResizeObserver.observe(investmentDummyChart);
+            const orbit = investmentDummyChart.querySelector('.style-token-portfolio-donut-orbit');
+            if (orbit instanceof HTMLElement) {
+                donutResizeObserver.observe(orbit);
+            }
+        } else {
+            window.addEventListener('resize', refreshInvestmentDummyDonut, {passive: true});
         }
     }
 
@@ -962,6 +1092,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize shared selectors after DOM is ready - multiple passes to ensure all get bound
     initInvestmentViewTabs();
+    initInvestmentDummyDonut();
     bindInvestmentExportButton();
     setTimeout(initSharedSelectors, 50);
     setTimeout(initSharedSelectors, 150);
@@ -2083,6 +2214,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
         syncHoldingsStickyOffset(holdingsPanel);
+        renderInvestmentDummyPortfolioDonut(tickerSummaries, TOTAL_EQUITY, Number(last?.running_cash) || 0, tickerProfiles);
 
         metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
