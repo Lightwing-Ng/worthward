@@ -344,7 +344,7 @@
 
 .trade-transactions-table {
     width: 100%;
-    min-width: 760px;
+    min-width: 352px;
     table-layout: fixed;
 }
 
@@ -422,6 +422,46 @@
 .trade-transactions-number.equity {
     min-width: 0;
     vertical-align: top;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(1) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(2) {
+    width: 15%;
+    min-width: 52px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(3) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(4) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(5) {
+    width: 10%;
+    min-width: 36px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(6) {
+    width: 15%;
+    min-width: 52px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(7) {
+    width: 15%;
+    min-width: 52px;
+}
+
+.trade-transactions-shell .trade-transactions-table tr > :nth-child(8) {
+    width: 15%;
+    min-width: 52px;
 }
 
 .field-switch {
