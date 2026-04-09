@@ -1,30 +1,35 @@
 """
-Broker-backed intraday market data services.
+Broker-backed market data services.
 
-    Code version: v0.3.1
+    Code version: v0.3.4
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
+from threading import Lock
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.core.broker_settings import BrokerSettings, has_longbridge_credentials
+from app.core.broker_settings import BrokerSettings, has_longbridge_credentials, load_broker_settings
 from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 from app.services.date_constraints import latest_completed_nyse_trading_day
 
 ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
+DAILY_CHUNK_SIZE = 500
 ONE_MINUTE_MIN_SPAN_DAYS = 150
 DAILY_MIN_SPAN_DAYS = 330
 HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 NEW_YORK_TIMEZONE = "America/New_York"
 UTC_TIMEZONE = "UTC"
 NEW_YORK_ZONE = ZoneInfo(NEW_YORK_TIMEZONE)
+LONGBRIDGE_CONTEXT_LOCK = Lock()
+_LONGBRIDGE_CONTEXT_SIGNATURE: tuple[str, str, str] | None = None
+_LONGBRIDGE_QUOTE_CONTEXT: Any | None = None
 
 
 def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) -> pd.Timestamp:
@@ -41,9 +46,7 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
         if not has_longbridge_credentials(settings):
             return False, "Longbridge credentials (App Key, App Secret, Access Token) are required."
         try:
-            Config, QuoteContext, _, _ = _load_longbridge_openapi()
-            config = _build_longbridge_config(Config, settings)
-            context = QuoteContext(config)
+            context = get_longbridge_quote_context(settings)
             # Try to fetch a single quote for a common symbol to test connection
             quote = context.quote(["AAPL.US"])
             if quote:
@@ -83,6 +86,58 @@ def _build_longbridge_config(Config: Any, settings: BrokerSettings) -> Any:
     return Config(app_key, app_secret, access_token)
 
 
+def _longbridge_settings_signature(settings: BrokerSettings) -> tuple[str, str, str]:
+    return (
+        settings.longbridge_app_key.strip(),
+        settings.longbridge_app_secret.strip(),
+        settings.longbridge_access_token.strip(),
+    )
+
+
+def _close_longbridge_context_if_possible(context: Any) -> None:
+    close_handler = getattr(context, "close", None)
+    if callable(close_handler):
+        try:
+            close_handler()
+        except Exception:
+            pass
+
+
+def get_longbridge_quote_context(settings: BrokerSettings) -> Any:
+    if not has_longbridge_credentials(settings):
+        raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+
+    global _LONGBRIDGE_CONTEXT_SIGNATURE, _LONGBRIDGE_QUOTE_CONTEXT
+    signature = _longbridge_settings_signature(settings)
+
+    with LONGBRIDGE_CONTEXT_LOCK:
+        if _LONGBRIDGE_QUOTE_CONTEXT is not None and _LONGBRIDGE_CONTEXT_SIGNATURE == signature:
+            return _LONGBRIDGE_QUOTE_CONTEXT
+
+        Config, QuoteContext, _, _ = _load_longbridge_openapi()
+        config = _build_longbridge_config(Config, settings)
+        context = QuoteContext(config)
+
+        previous = _LONGBRIDGE_QUOTE_CONTEXT
+        _LONGBRIDGE_QUOTE_CONTEXT = context
+        _LONGBRIDGE_CONTEXT_SIGNATURE = signature
+        if previous is not None and previous is not context:
+            _close_longbridge_context_if_possible(previous)
+
+        return context
+
+
+def prewarm_longbridge_quote_context() -> tuple[bool, str]:
+    settings = load_broker_settings()
+    if settings.selected_broker != "longbridge":
+        return False, "Skipped Longbridge prewarm because selected broker is not longbridge."
+    if not has_longbridge_credentials(settings):
+        return False, "Skipped Longbridge prewarm because credentials are missing."
+    context = get_longbridge_quote_context(settings)
+    context.quote(["AAPL.US"])
+    return True, "Longbridge quote context is warmed up and ready."
+
+
 def _normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
@@ -90,6 +145,14 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
     if "." in normalized_ticker:
         return normalized_ticker
     return f"{normalized_ticker}.US"
+
+
+def _resolve_daily_period(period_enum: Any) -> Any:
+    for candidate in ("Day", "D1", "Day_1"):
+        value = getattr(period_enum, candidate, None)
+        if value is not None:
+            return value
+    raise RuntimeError("Longbridge OpenAPI does not expose a daily candlestick period enum.")
 
 
 def _normalize_to_new_york_naive(value: datetime | pd.Timestamp) -> pd.Timestamp:
@@ -250,6 +313,27 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _daily_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for candle in candlesticks:
+        raw_ts = getattr(candle, "timestamp")
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        rows.append(
+            {
+                "Date": pd.Timestamp(ts_nyt.date()),
+                "Open": float(getattr(candle, "open")),
+                "High": float(getattr(candle, "high")),
+                "Low": float(getattr(candle, "low")),
+                "Close": float(getattr(candle, "close")),
+                "Volume": float(getattr(candle, "volume")),
+                "Turnover": float(getattr(candle, "turnover")),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
+    return pd.DataFrame(rows)
+
+
 def fetch_longbridge_one_minute_history(
         ticker: str,
         settings: BrokerSettings,
@@ -258,9 +342,8 @@ def fetch_longbridge_one_minute_history(
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
-    Config, QuoteContext, Period, AdjustType = _load_longbridge_openapi()
-    config = _build_longbridge_config(Config, settings)
-    quote_context = QuoteContext(config)
+    _, _, Period, AdjustType = _load_longbridge_openapi()
+    quote_context = get_longbridge_quote_context(settings)
     symbol = _normalize_longbridge_symbol(ticker)
 
     # We fetch backwards from current time
@@ -337,6 +420,86 @@ def fetch_longbridge_one_minute_history(
 
     if dataset.empty:
         raise ValueError(f"No 1-minute market data returned for {ticker}.")
+    return dataset.reset_index(drop=True)
+
+
+def fetch_longbridge_daily_history(
+        ticker: str,
+        settings: BrokerSettings,
+        since: datetime | None = None,
+) -> pd.DataFrame:
+    if not has_longbridge_credentials(settings):
+        raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+
+    _, _, Period, AdjustType = _load_longbridge_openapi()
+    period_day = _resolve_daily_period(Period)
+    quote_context = get_longbridge_quote_context(settings)
+    symbol = _normalize_longbridge_symbol(ticker)
+
+    effective_start_nyt: pd.Timestamp | None = None
+    if since is not None:
+        effective_start_nyt = _normalize_to_new_york_naive(since) - timedelta(days=2)
+
+    frames: list[pd.DataFrame] = []
+    cursor: datetime | None = None
+    previous_oldest: datetime | None = None
+
+    import time
+    for _ in range(500):
+        try:
+            if cursor is None:
+                batch = quote_context.history_candlesticks_by_offset(
+                    symbol,
+                    period_day,
+                    AdjustType.NoAdjust,
+                    False,
+                    DAILY_CHUNK_SIZE,
+                )
+            else:
+                batch = quote_context.history_candlesticks_by_offset(
+                    symbol,
+                    period_day,
+                    AdjustType.NoAdjust,
+                    False,
+                    DAILY_CHUNK_SIZE,
+                    cursor,
+                )
+        except Exception as e:
+            if "timeout" in str(e).lower() and frames:
+                break
+            raise e
+
+        if not batch:
+            break
+
+        frame = _daily_candlestick_rows_to_frame(list(batch))
+        if frame.empty:
+            break
+        frames.append(frame)
+
+        batch_min_date = pd.Timestamp(frame["Date"].min())
+        oldest_ts_naive = _normalize_to_new_york_naive(batch_min_date)
+        if effective_start_nyt is not None and oldest_ts_naive <= effective_start_nyt:
+            break
+
+        next_cursor_utc = (_localize_new_york(batch_min_date).tz_convert(UTC_TIMEZONE) - pd.Timedelta(seconds=1)).to_pydatetime()
+        if previous_oldest is not None and next_cursor_utc >= previous_oldest:
+            break
+        previous_oldest = next_cursor_utc
+        cursor = next_cursor_utc
+        time.sleep(0.04)
+
+    if not frames:
+        raise ValueError(f"No daily market data returned for {ticker}.")
+
+    dataset = pd.concat(frames, ignore_index=True)
+    dataset = dataset.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
+    if effective_start_nyt is not None:
+        start_date = pd.Timestamp(effective_start_nyt.date())
+        dataset = dataset.loc[dataset["Date"] >= start_date].copy()
+
+    if dataset.empty:
+        raise ValueError(f"No daily market data returned for {ticker}.")
     return dataset.reset_index(drop=True)
 
 

@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.3.1
+Code version: v0.3.3
 """
 
 import os
@@ -87,7 +87,17 @@ def _bootstrap_runtime_network():
 _bootstrap_runtime_network()
 
 from app import create_app
+from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context
 from app.core.settings import get_settings
+
+try:
+    prewarmed, prewarm_message = prewarm_longbridge_quote_context()
+    if prewarmed:
+        print(f"[antigravity] {prewarm_message}")
+    else:
+        print(f"[antigravity] {prewarm_message}")
+except Exception as exc:
+    print(f"[antigravity] Longbridge prewarm failed: {exc}")
 
 app = create_app()
 settings = get_settings()
