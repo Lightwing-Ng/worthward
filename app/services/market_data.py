@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.4
+Code version: v0.3.5
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import pandas as pd
 import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_credentials, load_broker_settings
-from app.core.config import DEFAULT_INTERVAL
 from app.infrastructure.broker_market_data import (
     fetch_longbridge_daily_history,
+    fetch_longbridge_one_minute_history,
     is_daily_store_fresh,
     normalize_one_minute_store_frame,
+    refresh_longbridge_one_minute_store,
 )
-from app.infrastructure.connectivity import has_remote_market_access
 from app.infrastructure.storage import (
     ensure_market_store_dir,
     history_store_path_for,
@@ -58,13 +58,23 @@ def _download_daily_history_with_yfinance(
         )
 
 
-def _load_longbridge_daily_settings():
+def _load_longbridge_market_settings():
     settings = load_broker_settings()
-    if settings.selected_broker != "longbridge":
-        return None
     if not has_longbridge_credentials(settings):
         return None
     return settings
+
+
+def _download_one_minute_history_with_longbridge(
+        ticker: str,
+) -> pd.DataFrame:
+    settings = _load_longbridge_market_settings()
+    if settings is None:
+        raise ValueError(
+            f"Unable to fetch 1-minute market data for {ticker}. "
+            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
+        )
+    return fetch_longbridge_one_minute_history(ticker, settings, since=None)
 
 
 def _download_daily_history_with_longbridge(
@@ -72,9 +82,12 @@ def _download_daily_history_with_longbridge(
         *,
         start: str | None = None,
 ) -> pd.DataFrame:
-    settings = _load_longbridge_daily_settings()
+    settings = _load_longbridge_market_settings()
     if settings is None:
-        raise ValueError("Longbridge daily fallback is unavailable.")
+        raise ValueError(
+            f"Unable to fetch 1-day market data for {ticker}. "
+            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
+        )
     since = pd.to_datetime(start, errors="coerce") if start else None
     if since is not None and pd.isna(since):
         since = None
@@ -82,10 +95,36 @@ def _download_daily_history_with_longbridge(
     return fetch_longbridge_daily_history(ticker, settings, since=since_dt)
 
 
-def _has_daily_remote_source_available() -> bool:
-    if has_remote_market_access():
-        return True
-    return _load_longbridge_daily_settings() is not None
+def _download_daily_history_with_fallback(
+        ticker: str,
+        *,
+        start: str | None = None,
+        period: str | None = None,
+) -> pd.DataFrame:
+    yfinance_error: Exception | None = None
+    try:
+        return _download_daily_history_with_yfinance(
+            ticker,
+            start=start,
+            period=period,
+            interval="1d",
+        )
+    except Exception as exc:
+        yfinance_error = exc
+
+    settings = _load_longbridge_market_settings()
+    if settings is None:
+        raise ValueError(
+            f"Unable to fetch 1-day market data for {ticker} via yfinance. "
+            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access to enable automatic fallback."
+        ) from yfinance_error
+
+    try:
+        return _download_daily_history_with_longbridge(ticker, start=start)
+    except Exception as exc:
+        raise ValueError(
+            f"Unable to fetch 1-day market data for {ticker}. yfinance failed and Longbridge fallback also failed: {exc}"
+        ) from exc
 
 
 def drop_duplicate_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -151,45 +190,6 @@ def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.Da
     return result
 
 
-def _download_yfinance_1m_rolling(ticker: str) -> pd.DataFrame:
-    normalized_ticker = normalize_ticker(ticker)
-    from datetime import datetime, timedelta, timezone
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=29)
-
-    dfs = []
-    current_end = end_date
-    while current_end > start_date:
-        current_start = max(current_end - timedelta(days=7), start_date)
-        try:
-            with YFINANCE_DOWNLOAD_LOCK:
-                df = yf.download(
-                    tickers=normalized_ticker,
-                    start=current_start,
-                    end=current_end,
-                    interval="1m",
-                    auto_adjust=False,
-                    progress=False,
-                    multi_level_index=False,
-                    threads=False,
-                    timeout=12,
-                )
-            if not df.empty:
-                dfs.append(df)
-        except Exception:
-            pass
-        current_end = current_start
-
-    if not dfs:
-        raise ValueError(f"Unable to download 1m market data for {normalized_ticker}.")
-
-    combined = pd.concat(dfs)
-    if not combined.empty:
-        # Keep 'last' duplicate to handle boundary overlaps safely
-        combined = combined[~combined.index.duplicated(keep="last")]
-        combined = combined.sort_index()
-    return combined
-
 def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
     normalized_ticker = normalize_ticker(ticker)
     if interval == "1m":
@@ -199,35 +199,16 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
             if delay > 0:
                 sleep(delay)
             try:
-                return _download_yfinance_1m_rolling(normalized_ticker)
+                return _download_one_minute_history_with_longbridge(normalized_ticker)
             except Exception as exc:
                 last_error = exc
         if last_error is not None:
             raise last_error
         raise ValueError(f"Unable to download market data for {ticker}.")
-
-    last_error: Exception | None = None
-    for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
-        delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt] if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS) else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
-        if delay > 0:
-            sleep(delay)
-        try:
-            return _download_daily_history_with_yfinance(
-                normalized_ticker,
-                period="max",
-                interval=interval,
-            )
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-    if last_error is not None:
-        try:
-            return _download_daily_history_with_longbridge(
-                normalized_ticker,
-                start=None,
-            )
-        except Exception:
-            raise last_error
-    raise ValueError(f"Unable to download market data for {normalized_ticker}.")
+    return _download_daily_history_with_fallback(
+        normalized_ticker,
+        period="max",
+    )
 
 
 def fetch_history(
@@ -251,15 +232,10 @@ def fetch_history(
             dataset = normalized_intraday
         return select_price_series(dataset, include_dividends)
 
-    if interval == "1d" and not _has_daily_remote_source_available():
+    if interval == "1m" and _load_longbridge_market_settings() is None:
         raise ValueError(
-            f"Local market data for {normalized_ticker} is unavailable and remote access is blocked. "
-            "Sync the latest market_store/ directory from a connected machine first."
-        )
-    if interval == "1m" and not has_remote_market_access():
-        raise ValueError(
-            f"Local market data for {normalized_ticker} is unavailable and remote access is blocked. "
-            "Sync the latest market_store/ directory from a connected machine first."
+            f"Local 1-minute market data for {normalized_ticker} is unavailable. "
+            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
         )
 
     history = download_full_history(normalized_ticker, interval=interval)
@@ -271,8 +247,6 @@ def fetch_history(
 def refresh_history_store(ticker: str) -> Path:
     normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
-    if not _has_daily_remote_source_available():
-        raise ValueError("Remote market access is unavailable.")
 
     path = history_store_path_for(normalized_ticker)
 
@@ -291,17 +265,10 @@ def refresh_history_store(ticker: str) -> Path:
     if start_date:
         # Incremental download logic
         try:
-            try:
-                new_history = _download_daily_history_with_yfinance(
-                    normalized_ticker,
-                    start=start_date,
-                    interval="1d",
-                )
-            except Exception:
-                new_history = _download_daily_history_with_longbridge(
-                    normalized_ticker,
-                    start=start_date,
-                )
+            new_history = _download_daily_history_with_fallback(
+                normalized_ticker,
+                start=start_date,
+            )
             if not new_history.empty:
                 new_df = normalize_history_frame(new_history, normalized_ticker)
                 if existing_df is not None:
@@ -328,6 +295,18 @@ def refresh_history_store(ticker: str) -> Path:
     return path
 
 
+def refresh_one_minute_store(ticker: str) -> Path:
+    normalized_ticker = normalize_ticker(ticker)
+    settings = _load_longbridge_market_settings()
+    if settings is None:
+        raise ValueError(
+            f"Unable to refresh 1-minute market data for {normalized_ticker}. "
+            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
+        )
+    refresh_longbridge_one_minute_store(normalized_ticker, settings)
+    return intraday_history_store_path_for(normalized_ticker, "1m")
+
+
 def ensure_fresh_history_store(ticker: str) -> bool:
     """
     Ensures the local daily cache includes the latest completed trading day.
@@ -338,7 +317,8 @@ def ensure_fresh_history_store(ticker: str) -> bool:
     ensure_market_store_dir()
     if is_daily_store_fresh(normalized_ticker):
         return False
-    if not _has_daily_remote_source_available():
+    try:
+        refresh_history_store(normalized_ticker)
+    except Exception:
         return False
-    refresh_history_store(normalized_ticker)
     return True

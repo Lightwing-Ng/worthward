@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.5
+Code version: v0.3.6
 """
 
 from __future__ import annotations
@@ -25,12 +25,10 @@ from app.infrastructure.broker_market_data import (
     has_recent_one_minute_store,
     normalize_one_minute_store_frame,
     one_minute_lookback_start,
-    refresh_longbridge_one_minute_store,
     test_broker_connection,
 )
 from app.core.broker_settings import (
     BrokerSettings,
-    has_longbridge_credentials,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
@@ -76,7 +74,7 @@ from app.services.investment_import import (
 )
 from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
     search_tickers
-from app.services.market_data import fetch_history, refresh_history_store
+from app.services.market_data import fetch_history, refresh_history_store, refresh_one_minute_store
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
@@ -3158,19 +3156,8 @@ def build_web_runtime() -> WebRuntime:
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
                 return _redirect_with_settings_feedback("local-market-store", notice=notice)
             elif action == "refresh-1m":
-                broker_settings = load_broker_settings()
-                if broker_settings.selected_broker == "longbridge" and has_longbridge_credentials(broker_settings):
-                    refresh_longbridge_one_minute_store(ticker, broker_settings)
-                    notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache (via Longbridge)."
-                else:
-                    from app.services.market_data import download_full_history, normalize_history_frame
-                    from app.infrastructure.storage import intraday_history_store_path_for
-
-                    history = download_full_history(ticker, interval="1m")
-                    normalized_dataset = normalize_history_frame(history, ticker, interval="1m")
-                    path = intraday_history_store_path_for(ticker, "1m")
-                    normalized_dataset.to_parquet(path, index=False)
-                    notice = f"Saved the latest month of 1-minute market data for {ticker} to local cache (yfinance fallback)."
+                refresh_one_minute_store(ticker)
+                notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache (via Longbridge)."
                 return _redirect_with_settings_feedback("local-market-store", notice=notice)
             elif action == "delete":
                 delete_ticker_data(ticker)
