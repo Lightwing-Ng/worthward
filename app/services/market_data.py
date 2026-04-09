@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.5
+Code version: v0.3.6
 """
 
 from __future__ import annotations
@@ -317,8 +317,5 @@ def ensure_fresh_history_store(ticker: str) -> bool:
     ensure_market_store_dir()
     if is_daily_store_fresh(normalized_ticker):
         return False
-    try:
-        refresh_history_store(normalized_ticker)
-    except Exception:
-        return False
+    refresh_history_store(normalized_ticker)
     return True

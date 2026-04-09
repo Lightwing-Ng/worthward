@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.6
+Code version: v0.3.7
 """
 
 from __future__ import annotations
@@ -3226,8 +3226,18 @@ def build_web_runtime() -> WebRuntime:
         include_dividends = request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
+        freshness_refresh_failures: list[str] = []
+        if requested_view in {"tickers", "portfolio"}:
+            freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
+        if freshness_refresh_failures:
+            failed_preview = ", ".join(freshness_refresh_failures)
+            freshness_notice = (
+                f"Could not refresh the latest trading-day cache for {failed_preview}. "
+                "Using the newest local daily data currently available."
+            )
+            payload.message = f"{payload.message} {freshness_notice}".strip() if payload.message else freshness_notice
         return jsonify(asdict(payload))
 
     def trade_strategy_fields_api():
