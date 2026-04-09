@@ -719,7 +719,6 @@
 						<div class="settings-callout-copy">
 							<span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
 							<div class="settings-callout-text">
-								<p class="settings-service-name">${labels.local_store_maintain_title || "Maintain all data"}</p>
 								<p class="settings-service-note">${labels.local_store_maintain_note || ""}</p>
 							</div>
 						</div>

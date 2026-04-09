@@ -220,7 +220,6 @@
         <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-name">Check connectivity again</p>
                 <p class="settings-service-note">Run the network checks again and refresh the availability results shown below.</p>
                 <p class="settings-service-note settings-service-meta" data-network-last-checked>Last checked: {% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text|replace('Last checked: ', '') }}{% else %}Not checked yet.{% endif %}</p>
             </div>
@@ -317,7 +316,6 @@
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-name">Status</p>
                 <p class="settings-service-note">{% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet. Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.{% endif %}</p>
             </div>
         </section>
@@ -557,7 +555,6 @@
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-name">Security & Privacy</p>
                 <p class="settings-service-note">This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.</p>
             </div>
         </section>
