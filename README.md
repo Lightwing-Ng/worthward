@@ -4,7 +4,7 @@ A local-first Flask web app for comparing US stock tickers, building weighted po
 
 ## Screenshot
 
-Backtest workspace captured on 28 Mar 2026, showing build `v2.11.11` with the in-app `Updated on` label set to `26 Mar 2026`:
+Backtest workspace captured on 28 Mar 2026:
 
 <img src="https://free.boltp.com/2026/04/09/69d754e3d81d8.webp" alt="Screenshot 2026-04-09 at 15.21.05" />
 
@@ -20,7 +20,7 @@ Backtest workspace captured on 28 Mar 2026, showing build `v2.11.11` with the in
 - Cache daily history, company profiles, logos, and search results locally
 - Cache broker-backed `1m` history locally for the latest 6 months of trading days
 - Review TradingView-based timing signals from the `More` workspace
-- Review manually imported investment transactions from the `More → My investment` workspace
+- Review manually imported investment transactions from the `More → Investment` workspace
 - Manage connectivity checks, broker access, Outlook SMTP, Local Market Store maintenance, strategy metadata, and design tokens from the `Settings` workspace
 
 ## Runtime requirements
@@ -61,13 +61,13 @@ Start the app through the pinned host-interpreter wrapper:
 ./scripts/run_app.sh
 ```
 
-Default server endpoint:
+Default server bind:
 
 ```text
-http://127.0.0.1:8688
+0.0.0.0:8688
 ```
 
-The host and port are configured in `config.toml`.
+Open `http://127.0.0.1:8688` locally in your browser. The host and port are configured in `config.toml`.
 
 ## Workspace map
 
@@ -78,7 +78,7 @@ The host and port are configured in `config.toml`.
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
 - `More`
-  Inspect the `Timing` view, which combines your watched tickers with TradingView technical metrics.
+  Inspect the `Timing` and `Investment` views.
 - `Settings`
   Review app metadata, execution preferences, design tokens, service health, broker and SMTP configuration, Local Market Store maintenance, strategy metadata, and cache controls.
 
@@ -93,10 +93,9 @@ app/                     → Main application package
 strategies/              → Strategy framework and implementations
 tests/                   → Focused regression tests
 market_store/            → Local parquet, profile, logo, and search caches
-screenshots/             → README and release screenshots
 ```
 
-`settings_store/` is not committed in this repository, but it is created locally at runtime when broker or SMTP settings are saved.
+`settings_store/` is not committed in this repository, but it is created locally at runtime when broker or SMTP settings are saved or when investment transactions are imported.
 
 ## Key modules
 
@@ -149,7 +148,7 @@ screenshots/             → README and release screenshots
 ### Investment ledger and valuation
 
 - Investment transactions are read from `settings_store/investment.json`
-- The `More → My investment` workspace renders a holdings table, an equity curve, metrics, and a transaction history table from that ledger
+- The `More → Investment` workspace renders a holdings table, an equity curve, metrics, and a transaction history table from that ledger
 - The investment equity curve starts from the first real transaction row in the ledger and does not prepend any synthetic zero-value point
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can fall back to the transaction `description` field for their display name when no local profile is available
@@ -227,7 +226,7 @@ For the current workspace, ticker `005276756` is configured this way so the hold
 - The application standardizes market timestamps to `America/New_York`
 - Longbridge `1m` timestamps for US symbols are interpreted as `Asia/Hong_Kong` before conversion
 - Stored parquet timestamps are saved as naive New York Time values for consistency across the app
-- A dedicated verification route is available at `/test/chart/1m/<ticker>/<date>` and `/test/chart/1m/last5`
+- A developer verification route is available at `/test/chart/1m/<ticker>/<date_str>` (`date_str=last5` checks the latest 5 trading days)
 
 ## Running tests
 
