@@ -66,9 +66,10 @@
                                 [
                                     {"id": "investment_view_chart", "value": "chart", "label": "Charts"},
                                     {"id": "investment_view_holdings", "value": "holdings", "label": "Holdings"},
+                                    {"id": "investment_view_stock_details", "value": "stock_details", "label": "Stock details"},
                                     {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
                                 ],
-                                'id="investment_view_segmented" data-active="chart" data-option-count="3"'
+                                'id="investment_view_segmented" data-active="chart" data-option-count="4"'
                             ) }}
                 </div>
                 <div class="investment-view-surface-body" id="investment_view_surface_body">
@@ -90,6 +91,10 @@
                     <div class="trade-metrics-grid investment-view-panel-grid trade-metrics-panel-grid"
                          id="investment_metrics_panel"
                          data-investment-view-panel="metrics" hidden></div>
+                    <div class="investment-stock-details-panel"
+                         id="investment_stock_details_panel"
+                         data-investment-view-panel="stock_details"
+                         hidden></div>
                 </div>
             </div>
         </article>

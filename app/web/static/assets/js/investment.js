@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.28.0
+ * Code version: v1.29.0
+ * - Added: Investment segmented control now appends a fourth "Stock details" view with same-page holdings links and animated pill focus
+ * - Added: Stock details view now shows a selected ticker identity block, a standard donut shell, and a per-ticker detail table with realized P&L per transaction
+ * - Improved: Trade effective price and realized P&L calculations now account for separate commissions in manual buy and sell rows
  * - Added: Settings action button import flow now exposes explicit disabled and in-progress states, including present-participle copy while the task is running
  * - Changed: Investment Charts now render one equity point per market day, filling no-trade trading days from parquet closes and collapsing same-day multi-trade activity into a single daily close snapshot
  * - Changed: Non-trading days with investment ledger activity now render on the curve using the previous available market close, while hover only anchors to history rows on dates that actually have ledger activity
@@ -216,9 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentDummyChart = document.getElementById('investment_dummy_chart');
     const investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
     const investmentDummyDonut = document.getElementById('investment_dummy_donut');
+    const investmentStockDetailsPanel = document.getElementById('investment_stock_details_panel');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
-    const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'metrics'];
+    const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
     const NO_COMMISSION_TRANSACTION_TYPES = new Set([
         'foreign_tax_withholding',
         'dividend',
@@ -270,6 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
+    let activeInvestmentStockDetailRowIds = [];
     let investmentChartReady = false;
     let investmentHasExportableTransactions = false;
     let investmentEquityChartInstance = null;
@@ -280,6 +285,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentLatestChartPoint = null;
     let activeChartTooltipPointIndex = -1;
     let investmentDummyTickerProfiles = {};
+    let selectedInvestmentStockTicker = '';
+    let investmentProcessedTransactionsCache = [];
+    let investmentTickerSummariesCache = [];
     let animatedHoldingsMarkerPoint = null;
     let animatedHoldingsMarkerTarget = null;
     let animatedHoldingsMarkerFrame = 0;
@@ -391,7 +399,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setInvestmentView(nextView) {
-        if (!nextView || nextView === activeInvestmentView) {
+        if (!nextView) {
+            return;
+        }
+
+        if (nextView === 'stock_details') {
+            ensureSelectedInvestmentStockTicker();
+        }
+
+        if (nextView === activeInvestmentView) {
+            if (nextView === 'stock_details') {
+                refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+            }
             return;
         }
 
@@ -399,6 +418,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (segmentedControl) {
             const activeIndex = Math.max(INVESTMENT_VIEW_ORDER.indexOf(nextView), 0);
+            const nextRadio = segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(nextView)}"]`);
+            if (nextRadio instanceof HTMLInputElement) {
+                nextRadio.checked = true;
+            }
             segmentedControl.dataset.active = nextView;
             segmentedControl.style.setProperty('--segmented-option-count', String(INVESTMENT_VIEW_ORDER.length));
             segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
@@ -412,6 +435,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         activeInvestmentView = nextView;
         animateInvestmentSurfaceHeight();
+        if (nextView === 'stock_details') {
+            window.requestAnimationFrame(() => {
+                refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+            });
+        }
     }
 
     function initInvestmentViewTabs() {
@@ -426,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const checkedRadio = segmentedControl.querySelector('input[type="radio"]:checked');
         activeInvestmentView = '';
-        setInvestmentView(checkedRadio?.value || 'chart');
+        syncInvestmentViewFromLocationHash(checkedRadio?.value || 'chart');
         scheduleInvestmentSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
 
@@ -450,6 +478,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+        window.addEventListener('hashchange', () => {
+            syncInvestmentViewFromLocationHash(activeInvestmentView || 'chart');
+        });
     }
 
     function interpolateHexColor(startHex, endHex, t) {
@@ -624,9 +656,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderInvestmentDummyPortfolioDonut(pointRecord, investmentDummyTickerProfiles);
     }
 
-    function refreshInvestmentDummyDonut() {
-        if (!(investmentDummyChart instanceof HTMLElement)) return;
-        investmentDummyChart.querySelectorAll('.style-token-portfolio-donut-orbit').forEach((orbitElement) => {
+    function refreshPortfolioDonutOrbits(rootElement) {
+        if (!(rootElement instanceof HTMLElement)) return;
+        rootElement.querySelectorAll('.style-token-portfolio-donut-orbit').forEach((orbitElement) => {
             if (!(orbitElement instanceof HTMLElement)) return;
             const computed = getComputedStyle(orbitElement);
             const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
@@ -652,20 +684,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function refreshInvestmentDummyDonut() {
+        refreshPortfolioDonutOrbits(investmentDummyChart);
+    }
+
     function initInvestmentDummyDonut() {
         if (!(investmentDummyChart instanceof HTMLElement)) return;
         refreshInvestmentDummyDonut();
+        refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
         if (window.ResizeObserver) {
             const donutResizeObserver = new ResizeObserver(() => {
                 refreshInvestmentDummyDonut();
+                refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
             });
             donutResizeObserver.observe(investmentDummyChart);
             const orbit = investmentDummyChart.querySelector('.style-token-portfolio-donut-orbit');
             if (orbit instanceof HTMLElement) {
                 donutResizeObserver.observe(orbit);
             }
+            if (investmentStockDetailsPanel instanceof HTMLElement) {
+                donutResizeObserver.observe(investmentStockDetailsPanel);
+            }
         } else {
-            window.addEventListener('resize', refreshInvestmentDummyDonut, {passive: true});
+            window.addEventListener('resize', () => {
+                refreshInvestmentDummyDonut();
+                refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+            }, {passive: true});
         }
     }
 
@@ -969,6 +1013,18 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(Boolean);
     }
 
+    function getInvestmentStockDetailsScrollContainer() {
+        return document.querySelector('.investment-stock-details-table-scroll');
+    }
+
+    function getInvestmentStockDetailRowsByLedgerNos(ledgerNos) {
+        return Array.from(new Set((Array.isArray(ledgerNos) ? ledgerNos : [])
+            .map((ledgerNo) => Number(ledgerNo))
+            .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)))
+            .map((ledgerNo) => document.querySelector(`tr[data-investment-stock-detail-ledger="${CSS.escape(String(ledgerNo))}"]`))
+            .filter(Boolean);
+    }
+
     function clearInvestmentHistoryHighlights() {
         activeInvestmentHistoryRowIds.forEach((rowId) => {
             const row = document.getElementById(rowId);
@@ -977,6 +1033,16 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.remove('is-metric-hover-target');
         });
         activeInvestmentHistoryRowIds = [];
+    }
+
+    function clearInvestmentStockDetailHighlights() {
+        activeInvestmentStockDetailRowIds.forEach((rowId) => {
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            row.classList.remove('is-metric-hover-active');
+            row.classList.remove('is-metric-hover-target');
+        });
+        activeInvestmentStockDetailRowIds = [];
     }
 
     function scrollInvestmentHistoryRowIntoView(row, behavior = 'smooth') {
@@ -991,7 +1057,19 @@ document.addEventListener('DOMContentLoaded', () => {
         row.scrollIntoView({ block: 'center', behavior });
     }
 
-    function activateInvestmentHistoryRows(ledgerNos, { behavior = 'smooth' } = {}) {
+    function scrollInvestmentStockDetailRowIntoView(row, behavior = 'smooth') {
+        if (!row) return;
+        const scrollContainer = getInvestmentStockDetailsScrollContainer();
+        if (scrollContainer) {
+            const rowOffset = row.offsetTop - scrollContainer.offsetTop;
+            const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (row.clientHeight / 2);
+            scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
+            return;
+        }
+        row.scrollIntoView({ block: 'center', behavior });
+    }
+
+    function activateInvestmentHistoryRows(ledgerNos, { behavior = 'smooth', scroll = true } = {}) {
         const rows = getInvestmentHistoryRowsByLedgerNos(ledgerNos);
         if (!rows.length) return;
         clearInvestmentHistoryHighlights();
@@ -1002,7 +1080,31 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.add('is-metric-hover-active');
         });
         activeInvestmentHistoryRowIds = rows.map((row) => row.id);
-        scrollInvestmentHistoryRowIntoView(rows[0], behavior);
+        if (scroll) {
+            scrollInvestmentHistoryRowIntoView(rows[0], behavior);
+        }
+    }
+
+    function activateInvestmentStockDetailRows(ledgerNos, { behavior = 'smooth', scroll = true } = {}) {
+        const rows = getInvestmentStockDetailRowsByLedgerNos(ledgerNos);
+        if (!rows.length) {
+            clearInvestmentStockDetailHighlights();
+            return;
+        }
+        clearInvestmentStockDetailHighlights();
+        rows.forEach((row, index) => {
+            if (!row.id) {
+                row.id = `investment_stock_detail_row_${ledgerNos[index]}`;
+            }
+            row.classList.remove('is-metric-hover-target');
+            void row.offsetWidth;
+            row.classList.add('is-metric-hover-target');
+            row.classList.add('is-metric-hover-active');
+        });
+        activeInvestmentStockDetailRowIds = rows.map((row) => row.id).filter(Boolean);
+        if (scroll) {
+            scrollInvestmentStockDetailRowIntoView(rows[0], behavior);
+        }
     }
 
     function getLatestHistoryRowForTicker(ticker) {
@@ -1034,14 +1136,26 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetInvestmentDashboard() {
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
+        const stockDetailsPanel = document.getElementById('investment_stock_details_panel');
         const chartContainer = document.getElementById('investment_equity_chart');
 
+        selectedInvestmentStockTicker = '';
+        investmentProcessedTransactionsCache = [];
+        investmentTickerSummariesCache = [];
+        clearInvestmentStockDetailHighlights();
         if (holdingsPanel) {
             holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
         }
         if (metricsPanel) {
             metricsPanel.innerHTML = renderFundingMetricCards(getUsdFundingMetrics([]));
             bindInvestmentMetricTooltipInteractions(metricsPanel);
+        }
+        if (stockDetailsPanel) {
+            stockDetailsPanel.innerHTML = `
+                <div class="investment-stock-details-empty-shell">
+                    <p class="investment-holdings-empty">Open Holdings or import transactions, then pick a ticker to inspect its stock details.</p>
+                </div>
+            `;
         }
         if (chartContainer) {
             chartContainer.innerHTML = '';
@@ -1423,6 +1537,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return 0;
     }
 
+    function getTransactionCommission(txn) {
+        const commission = txn?.normalized?.commission ?? txn?.commission ?? 0;
+        const numericCommission = Number(commission);
+        return Number.isFinite(numericCommission) ? numericCommission : 0;
+    }
+
     function getInvestmentStartingCash() {
         const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash;
         if (rawValue === undefined || rawValue === null || rawValue === '') {
@@ -1458,6 +1578,42 @@ document.addEventListener('DOMContentLoaded', () => {
             return Number(txn.price);
         }
         return null;
+    }
+
+    function formatTransactionDateDisplay(txn) {
+        let formattedTime = txn?.date ? String(txn.date).replace(/-/g, '/') : '';
+        if (formattedTime.includes(' ') && formattedTime.endsWith('20:00:00')) {
+            formattedTime = formattedTime.split(' ')[0];
+        }
+        return formattedTime;
+    }
+
+    function formatAmountWithCurrency(value, currency) {
+        if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
+        const numericValue = Number(value);
+        const sign = numericValue < 0 ? '-' : '';
+        const absDisplay = formatAmount(Math.abs(numericValue));
+        const normalizedCurrency = String(currency || '').trim().toUpperCase();
+        if (normalizedCurrency === 'USD') {
+            return `${sign}$${absDisplay}`;
+        }
+        if (normalizedCurrency) {
+            return `${sign}${normalizedCurrency} ${absDisplay}`;
+        }
+        return `${sign}${absDisplay}`;
+    }
+
+    function formatTransactionCommissionDisplay(txn, { includeCurrency = false } = {}) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        const commission = getTransactionCommission(txn);
+        if ((!commission || Math.abs(commission) < 1e-9) && NO_COMMISSION_TRANSACTION_TYPES.has(normalizedType)) {
+            return '-';
+        }
+        const absoluteCommission = Math.abs(commission);
+        if (!includeCurrency) {
+            return formatAmount(absoluteCommission);
+        }
+        return formatAmountWithCurrency(absoluteCommission, formatTransactionCurrency(txn));
     }
 
     function formatTransactionCurrency(txn) {
@@ -1587,9 +1743,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
         if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
-            const amount = getTransactionAmount(txn);
-            if (Number.isFinite(amount) && Math.abs(amount) > 1e-9) {
-                return Math.abs(amount) / quantity;
+            if (txn?.normalized?.net_amount !== undefined && txn?.normalized?.net_amount !== null) {
+                const normalizedAmount = Number(txn.normalized.net_amount);
+                if (Number.isFinite(normalizedAmount) && Math.abs(normalizedAmount) > 1e-9) {
+                    return Math.abs(normalizedAmount) / quantity;
+                }
+            }
+            const normalizedType = getNormalizedTransactionType(txn);
+            const economicAmount = getTransactionEconomicAmount(txn);
+            const commission = Math.abs(getTransactionCommission(txn));
+            if (Number.isFinite(economicAmount) && Math.abs(economicAmount) > 1e-9) {
+                if (normalizedType === 'buy') {
+                    return (Math.abs(economicAmount) + commission) / quantity;
+                }
+                if (normalizedType === 'sell') {
+                    return Math.max(0, Math.abs(economicAmount) - commission) / quantity;
+                }
+                return Math.abs(economicAmount) / quantity;
             }
         }
         const price = getTransactionPrice(txn);
@@ -1609,48 +1779,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function closePositionLots(state, quantity, unitPrice) {
-        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return;
+        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return 0;
 
         const averagePrice = state.totalCost / Math.abs(state.shares);
         const isLongPosition = state.shares > 0;
+        let realizedDelta = 0;
 
         if (isLongPosition) {
-            state.realizedPnl += (unitPrice - averagePrice) * quantity;
+            realizedDelta = (unitPrice - averagePrice) * quantity;
             state.shares -= quantity;
         } else {
-            state.realizedPnl += (averagePrice - unitPrice) * quantity;
+            realizedDelta = (averagePrice - unitPrice) * quantity;
             state.shares += quantity;
         }
 
+        state.realizedPnl += realizedDelta;
         state.totalCost -= averagePrice * quantity;
 
         if (isFlatPosition(state.shares) || isFlatPosition(state.totalCost)) {
             resetPositionState(state);
         }
+        return realizedDelta;
     }
 
     function applyDirectionalTrade(state, side, quantity, unitPrice) {
-        if (!Number.isFinite(quantity) || quantity <= 0) return;
+        if (!Number.isFinite(quantity) || quantity <= 0) return 0;
 
         if (isFlatPosition(state.shares)) {
             openPositionLots(state, side, quantity, unitPrice);
-            return;
+            return 0;
         }
 
         const currentSide = state.shares > 0 ? 'long' : 'short';
         if (currentSide === side) {
             openPositionLots(state, side, quantity, unitPrice);
-            return;
+            return 0;
         }
 
         const closingQuantity = Math.min(Math.abs(state.shares), quantity);
-        closePositionLots(state, closingQuantity, unitPrice);
+        const realizedDelta = closePositionLots(state, closingQuantity, unitPrice);
 
         const openingQuantity = quantity - closingQuantity;
         if (openingQuantity > 1e-9) {
             resetPositionState(state);
             openPositionLots(state, side, openingQuantity, unitPrice);
         }
+        return realizedDelta;
     }
 
     function getMoneyMarketTickerSet() {
@@ -1937,15 +2111,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
-                            <div class="ticker-identity-row">
-                                ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
-                                <span class="ticker-identity-copy">
-                                    <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(summary.ticker)}</span>
-                                    <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
-                                </span>
+                        <a class="investment-holdings-ticker-anchor" href="#investment_stock_details_panel" data-investment-stock-link data-investment-stock-ticker="${escapeHtml(summary.ticker)}">
+                            <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
+                                <div class="ticker-identity-row">
+                                    ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                                    <span class="ticker-identity-copy">
+                                        <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(summary.ticker)}</span>
+                                        <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                                    </span>
+                                </div>
                             </div>
-                        </div>
+                        </a>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${lastPriceDisplay}</td>
@@ -2025,6 +2201,268 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function syncSelectedStockLinkState() {
+        document.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
+            const ticker = normalizeInvestmentTicker(link.dataset.investmentStockTicker || '');
+            link.classList.toggle('is-active', Boolean(selectedInvestmentStockTicker) && ticker === selectedInvestmentStockTicker);
+        });
+    }
+
+    function bindHoldingsStockDetailsLinks(holdingsPanel) {
+        if (!holdingsPanel) return;
+        holdingsPanel.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
+            if (link.dataset.stockDetailsBound === '1') return;
+            link.dataset.stockDetailsBound = '1';
+            link.addEventListener('click', () => {
+                selectInvestmentStockTicker(link.dataset.investmentStockTicker || '', { focusView: true });
+            });
+        });
+        syncSelectedStockLinkState();
+    }
+
+    function bindStockDetailsHistoryInteractions(stockDetailsPanel) {
+        if (!stockDetailsPanel) return;
+        stockDetailsPanel.querySelectorAll('tr[data-investment-stock-detail-ledger]').forEach((row) => {
+            if (row.dataset.stockHistoryBound === '1') return;
+            row.dataset.stockHistoryBound = '1';
+            const activateRelatedHistoryRow = () => {
+                const ledgerNo = Number(row.dataset.investmentStockDetailLedger || 0);
+                if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
+                syncHoldingsChartHoverState('', ledgerNo);
+                activateInvestmentStockDetailRows([ledgerNo], { behavior: 'auto', scroll: false });
+                activateInvestmentHistoryRows([ledgerNo], { behavior: 'smooth', scroll: true });
+            };
+            const clearRelatedHistoryRow = () => {
+                syncHoldingsChartHoverState('', 0);
+                clearInvestmentStockDetailHighlights();
+                clearInvestmentHistoryHighlights();
+            };
+            row.addEventListener('mouseenter', activateRelatedHistoryRow);
+            row.addEventListener('mouseleave', clearRelatedHistoryRow);
+            row.addEventListener('focusin', activateRelatedHistoryRow);
+            row.addEventListener('focusout', (event) => {
+                if (row.contains(event.relatedTarget)) return;
+                clearRelatedHistoryRow();
+            });
+        });
+    }
+
+    function getAvailableInvestmentStockTickers() {
+        if (Array.isArray(investmentTickerSummariesCache) && investmentTickerSummariesCache.length) {
+            return investmentTickerSummariesCache
+                .map((summary) => normalizeInvestmentTicker(summary?.ticker))
+                .filter(Boolean);
+        }
+        return Array.from(new Set((Array.isArray(investmentProcessedTransactionsCache) ? investmentProcessedTransactionsCache : [])
+            .filter((txn) => shouldTrackHoldingTicker(txn))
+            .map((txn) => normalizeInvestmentTicker(txn?.ticker))
+            .filter(Boolean)));
+    }
+
+    function ensureSelectedInvestmentStockTicker() {
+        const availableTickers = getAvailableInvestmentStockTickers();
+        if (!availableTickers.length) {
+            selectedInvestmentStockTicker = '';
+            return '';
+        }
+        if (!availableTickers.includes(selectedInvestmentStockTicker)) {
+            selectedInvestmentStockTicker = availableTickers[0];
+        }
+        return selectedInvestmentStockTicker;
+    }
+
+    function buildInvestmentStockDetailRows(processedTransactions, ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return [];
+        const stockState = createPositionState(normalizedTicker);
+        const detailRows = [];
+        (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
+            if (normalizeInvestmentTicker(txn?.ticker) !== normalizedTicker) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            const quantity = getTransactionQuantity(txn);
+            let realizedPnl = null;
+            if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
+                applyDirectionalTrade(stockState, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+            } else if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares += quantity;
+            } else if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares += quantity;
+            } else if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
+                realizedPnl = applyDirectionalTrade(stockState, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+            } else if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
+                realizedPnl = getTransactionAmount(txn);
+            }
+            detailRows.push({
+                ...txn,
+                rowRealizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : null,
+            });
+        });
+        return detailRows.reverse();
+    }
+
+    function buildInvestmentStockDonutMarkup(summary, profile) {
+        const logoUrl = String(profile?.logo_url || '').trim() || `/market-store/logos/${encodeURIComponent(summary?.ticker || 'stock')}.png`;
+        const totalPnl = (Number(summary?.realizedPnl) || 0) + (Number(summary?.unrealizedPnl) || 0);
+        const donutFill = totalPnl > 1e-9
+            ? 'conic-gradient(#0055cc 0deg 358.8deg, transparent 358.8deg 360deg)'
+            : totalPnl < -1e-9
+                ? 'conic-gradient(var(--theme-accent-secondary) 0deg 358.8deg, transparent 358.8deg 360deg)'
+                : 'conic-gradient(color-mix(in srgb, var(--theme-muted) 70%, transparent) 0deg 358.8deg, transparent 358.8deg 360deg)';
+        return `
+            <div class="style-token-portfolio-donut-shell">
+                <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
+                    <div class="portfolio-donut-logo-layer">
+                        <img class="portfolio-donut-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(summary?.ticker || 'Ticker')} logo" loading="lazy" decoding="async" data-style-token-donut-angle="44.4">
+                    </div>
+                    <div class="portfolio-donut" style="--portfolio-donut-fill: ${donutFill};"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
+        if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
+        const activeTicker = ensureSelectedInvestmentStockTicker();
+        if (!activeTicker) {
+            investmentStockDetailsPanel.innerHTML = `
+                <div class="investment-stock-details-empty-shell">
+                    <p class="investment-holdings-empty">Open Holdings or import transactions, then pick a ticker to inspect its stock details.</p>
+                </div>
+            `;
+            syncSelectedStockLinkState();
+            return;
+        }
+        const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
+        const profile = tickerProfiles?.[activeTicker] || {};
+        const companyName = String(profile.company_name || activeTicker);
+        const logoUrl = String(profile.logo_url || '').trim();
+        const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
+        const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
+        const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
+        const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
+        const unrealizedClass = (Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
+        const stockMetricCards = [
+            {
+                label: 'Unrealized P&L',
+                value: tickerSummary.unrealizedPnl === null ? '-' : formatHoldingsMoney(tickerSummary.unrealizedPnl),
+                valueClass: tickerSummary.unrealizedPnl === null ? '' : unrealizedClass,
+            },
+            {
+                label: 'Realized P&L',
+                value: formatHoldingsMoney(tickerSummary.realizedPnl),
+                valueClass: realizedClass,
+            },
+            {
+                label: 'Total P&L',
+                value: formatHoldingsMoney(totalPnl),
+                valueClass: totalPnlClass,
+            },
+            {
+                label: 'Position',
+                value: formatHoldingsPosition(tickerSummary.shares),
+                valueClass: '',
+            },
+            {
+                label: 'Market value',
+                value: tickerSummary.hasOpenPosition ? formatHoldingsMoney(tickerSummary.marketValue) : '-',
+                valueClass: '',
+            },
+            {
+                label: 'Average price',
+                value: tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice),
+                valueClass: '',
+            },
+        ];
+        const rowsHtml = detailRows.length ? detailRows.map((txn) => `
+            <tr data-investment-stock-detail-ledger="${txn.ledger_no}">
+                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
+                <td class="investment-history-cell investment-history-cell-left">${formatTransactionDescription(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn))}</td>
+            </tr>
+        `).join('') : `
+            <tr>
+                <td colspan="8" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
+            </tr>
+        `;
+        investmentStockDetailsPanel.innerHTML = `
+            <div class="investment-stock-details-overview">
+                <div class="investment-stock-details-summary">
+                    <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
+                        <div class="ticker-identity-row">
+                            ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                            <span class="ticker-identity-copy">
+                                <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(activeTicker)}</span>
+                                <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="investment-stock-details-metrics">
+                        ${stockMetricCards.map((metric) => `
+                            <div class="trade-metric-card investment-stock-details-metric-card">
+                                <span class="trade-metric-label">${metric.label}</span>
+                                <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="investment-stock-details-donut-card">
+                    ${buildInvestmentStockDonutMarkup(tickerSummary, profile)}
+                </div>
+            </div>
+            <div class="scrollable-data-table-shell investment-history-table-shell investment-stock-details-table-shell">
+                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table" aria-hidden="true">
+                    <thead>
+                    <tr>
+                        <th>No.</th>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Currency</th>
+                        <th>Amount</th>
+                        <th>Commission</th>
+                        <th>Realized P&amp;L</th>
+                    </tr>
+                    </thead>
+                </table>
+                <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll investment-stock-details-table-scroll">
+                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table">
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
+        bindStockDetailsHistoryInteractions(investmentStockDetailsPanel);
+        syncSelectedStockLinkState();
+        refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+    }
+
+    function selectInvestmentStockTicker(ticker, { focusView = false } = {}) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (normalizedTicker) {
+            selectedInvestmentStockTicker = normalizedTicker;
+        }
+        renderInvestmentStockDetailsPanel(window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {});
+        if (focusView) {
+            setInvestmentView('stock_details');
+        }
+    }
+
+    function syncInvestmentViewFromLocationHash(fallbackView = 'chart') {
+        const hash = String(window.location.hash || '').trim();
+        if (hash === '#investment_stock_details_panel') {
+            ensureSelectedInvestmentStockTicker();
+            setInvestmentView('stock_details');
+            return;
+        }
+        setInvestmentView(fallbackView);
+    }
+
     function bindInvestmentHistoryChartInteractions(historyContainer) {
         if (!historyContainer) return;
         historyContainer.querySelectorAll('tr[data-investment-history-row]').forEach((row) => {
@@ -2032,10 +2470,18 @@ document.addEventListener('DOMContentLoaded', () => {
             row.dataset.chartHoverBound = '1';
             const activateChartMarker = () => {
                 const ledgerNo = Number(row.dataset.investmentHistoryRow || 0);
+                const ticker = normalizeInvestmentTicker(row.dataset.investmentHistoryTicker || '');
                 syncHoldingsChartHoverState('', ledgerNo);
+                activateInvestmentHistoryRows([ledgerNo], { behavior: 'auto', scroll: false });
+                if (ticker) {
+                    selectInvestmentStockTicker(ticker, { focusView: false });
+                }
+                activateInvestmentStockDetailRows([ledgerNo], { behavior: 'smooth', scroll: true });
             };
             const clearChartMarker = () => {
                 syncHoldingsChartHoverState('', 0);
+                clearInvestmentStockDetailHighlights();
+                clearInvestmentHistoryHighlights();
             };
             row.addEventListener('mouseenter', activateChartMarker);
             row.addEventListener('mouseleave', clearChartMarker);
@@ -2266,32 +2712,15 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = [...processed].reverse().map((txn, index) => {
             const description = formatTransactionDescription(txn);
 
-            // Format time: if time is exactly 20:00:00 (EOD), hide it to show only date
-            let formattedTime = txn.date ? txn.date.replace(/-/g, '/') : '';
-            if (formattedTime.includes(' ') && formattedTime.endsWith('20:00:00')) {
-                formattedTime = formattedTime.split(' ')[0];
-            }
-
-            // Show '-' instead of 0.00 for commission on types that don't normally have commission
-            const normalizedType = getNormalizedTransactionType(txn);
-            let commissionDisplay;
-            // Get commission from normalized.commission if available (IBKR imported format), otherwise top-level
-            const commission = txn.normalized?.commission ?? txn.commission ?? 0;
-            if ((!commission || commission === 0) && NO_COMMISSION_TRANSACTION_TYPES.has(normalizedType)) {
-                commissionDisplay = '-';
-            } else {
-                commissionDisplay = formatAmount(Math.abs(commission));
-            }
-
             return `
             <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
                 <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formattedTime}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
                 <td class="investment-history-cell investment-history-cell-left">${description}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${commissionDisplay}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.market_value)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.running_cash)}</td>
                 <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(txn.total_equity)}</strong></td>
@@ -2311,8 +2740,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
-        if (!holdingsPanel || !metricsPanel) return;
-        const shouldAnimateVisibleMetricsPanel = activeInvestmentView === 'holdings' || activeInvestmentView === 'metrics';
+        if (!holdingsPanel || !metricsPanel || !(investmentStockDetailsPanel instanceof HTMLElement)) return;
+        const shouldAnimateVisibleMetricsPanel = activeInvestmentView === 'holdings' || activeInvestmentView === 'metrics' || activeInvestmentView === 'stock_details';
         if (shouldAnimateVisibleMetricsPanel) {
             lockInvestmentSurfaceHeight();
         }
@@ -2322,11 +2751,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         investmentDummyTickerProfiles = tickerProfiles;
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
+        investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
+        investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
+        bindHoldingsStockDetailsLinks(holdingsPanel);
         syncHoldingsStickyOffset(holdingsPanel);
+        renderInvestmentStockDetailsPanel(tickerProfiles);
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
         renderInvestmentDummyPortfolioDonut(latestChartPoint || {
             running_cash: Number(last?.running_cash) || 0,
