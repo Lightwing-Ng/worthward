@@ -225,7 +225,7 @@
         }
         if (!(shell instanceof HTMLElement) || !(handle instanceof HTMLElement) || handle.dataset.bound === "1") return;
         handle.dataset.bound = "1";
-        const scrollViewport = shell.closest("[data-settings-workspace-region]");
+        const scrollViewport = shell.closest("[data-settings-workspace-region], #settings_workspace_shell");
         const minWidth = 220;
         const clampWidth = (desiredWidth) => {
             const rect = shell.getBoundingClientRect();
@@ -635,13 +635,13 @@
         });
     };
 
-    const syncLocalStorePagination = (currentRegion, nextRegion) => {
-        if (!(currentRegion instanceof HTMLElement) || !(nextRegion instanceof HTMLElement)) return;
-        const currentPagination = currentRegion.querySelector("[data-local-store-pagination]");
-        const nextPagination = nextRegion.querySelector("[data-local-store-pagination]");
+    const syncLocalStorePagination = (currentShell, nextShell) => {
+        if (!(currentShell instanceof HTMLElement) || !(nextShell instanceof HTMLElement)) return;
+        const currentPagination = currentShell.querySelector("[data-local-store-pagination]");
+        const nextPagination = nextShell.querySelector("[data-local-store-pagination]");
         if (!(currentPagination instanceof HTMLElement) && !(nextPagination instanceof HTMLElement)) return;
         if (!(currentPagination instanceof HTMLElement) && nextPagination instanceof HTMLElement) {
-            currentRegion.append(nextPagination.cloneNode(true));
+            currentShell.append(nextPagination.cloneNode(true));
             return;
         }
         if (currentPagination instanceof HTMLElement && !(nextPagination instanceof HTMLElement)) {
@@ -659,25 +659,34 @@
         });
     };
 
-    const syncLocalStoreRegion = (currentRegion, nextRegion) => {
-        if (!(currentRegion instanceof HTMLElement) || !(nextRegion instanceof HTMLElement)) return;
-        const currentSummary = currentRegion.querySelector(".settings-summary");
-        const nextSummary = nextRegion.querySelector(".settings-summary");
+    const syncLocalStoreRegion = (currentShell, nextShell) => {
+        if (!(currentShell instanceof HTMLElement) || !(nextShell instanceof HTMLElement)) return;
+        const currentSummary = currentShell.querySelector(".settings-summary");
+        const nextSummary = nextShell.querySelector(".settings-summary");
         if (currentSummary instanceof HTMLElement && nextSummary instanceof HTMLElement) {
             currentSummary.replaceWith(nextSummary.cloneNode(true));
         }
-        const currentTableWrap = currentRegion.querySelector(".local-store-table-wrap");
-        const nextTableWrap = nextRegion.querySelector(".local-store-table-wrap");
+        const currentTableWrap = currentShell.querySelector(".local-store-table-wrap");
+        const nextTableWrap = nextShell.querySelector(".local-store-table-wrap");
         if (currentTableWrap instanceof HTMLElement && nextTableWrap instanceof HTMLElement) {
             currentTableWrap.replaceWith(nextTableWrap.cloneNode(true));
         }
-        syncLocalStorePagination(currentRegion, nextRegion);
+        const currentMaintainForm = currentShell.querySelector(".local-store-maintain-card form");
+        const nextMaintainForm = nextShell.querySelector(".local-store-maintain-card form");
+        if (currentMaintainForm instanceof HTMLFormElement && nextMaintainForm instanceof HTMLFormElement) {
+            const currentPageInput = currentMaintainForm.querySelector('input[name="page"]');
+            const nextPageInput = nextMaintainForm.querySelector('input[name="page"]');
+            if (currentPageInput instanceof HTMLInputElement && nextPageInput instanceof HTMLInputElement) {
+                currentPageInput.value = nextPageInput.value;
+            }
+        }
+        syncLocalStorePagination(currentShell, nextShell);
     };
 
-    const replaceLocalStoreRegion = (nextRegion) => {
-        const currentRegion = document.getElementById("local_store_region");
-        if (!(currentRegion instanceof HTMLElement) || !nextRegion) return;
-        syncLocalStoreRegion(currentRegion, nextRegion);
+    const replaceLocalStoreRegion = (nextShell) => {
+        const currentShell = document.getElementById("settings_workspace_shell");
+        if (!(currentShell instanceof HTMLElement) || !nextShell) return;
+        syncLocalStoreRegion(currentShell, nextShell);
     };
 
     const replaceSettingsWorkspaceRegion = async (nextRegion) => {
@@ -704,91 +713,85 @@
         const pageSize = 10;
         const startIndex = (page - 1) * pageSize;
         const article = document.createElement("section");
-        article.className = "workspace-header settings-workspace-header";
+        article.className = "workspace-header settings-workspace-header settings-shell-local-market-store";
         article.id = "settings_workspace_shell";
+        article.dataset.settingsWorkspaceRegion = "";
+        article.dataset.settingsSection = "local-market-store";
         article.innerHTML = `
 			<article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
 				<div class="report-heading-row">
 					<p class="report-heading">${labels.local_market_store || "Local Market Store"}</p>
 				</div>
 			</article>
-			<article class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="local-market-store">
-				<section class="settings-body">
-					<section class="local-store-layout" id="local_store_region" data-local-store-region>
-					<section class="settings-callout-card settings-callout-card-primary local-store-maintain-card">
-						<div class="settings-callout-copy">
-							<span class="settings-nav-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
-							<div class="settings-callout-text">
-								<p class="settings-service-note">${labels.local_store_maintain_note || ""}</p>
-							</div>
-						</div>
-						<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_button || "Maintain all data"}</span>
-					</section>
-					<p class="settings-summary">${labels.local_store_summary || ""}</p>
-					<div class="scrollable-data-table-shell local-store-table-shell">
-						<table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
-							<colgroup>
-								<col class="local-store-col-index">
-								<col class="local-store-col-ticker">
-								<col class="local-store-col-range">
-								<col class="local-store-col-update">
-								<col class="local-store-col-1m">
-								<col class="local-store-col-delete">
-							</colgroup>
-							<thead>
-								<tr>
-									<th class="local-store-col-index">No.</th>
-									<th>Ticker</th>
-									<th>${labels.local_store_range || "Range"}</th>
-									<th>1d</th>
-									<th>${labels.local_store_intraday || "1m"}</th>
-									<th>${labels.local_store_delete || ""}</th>
-								</tr>
-							</thead>
-						</table>
-						<div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
-							<table class="settings-table local-store-table scrollable-data-table">
-								<colgroup>
-									<col class="local-store-col-index">
-									<col class="local-store-col-ticker">
-									<col class="local-store-col-range">
-									<col class="local-store-col-update">
-									<col class="local-store-col-1m">
-									<col class="local-store-col-delete">
-								</colgroup>
-								<tbody>
-								${Array.from({length: 6}, (_, index) => `
-									<tr data-local-store-ticker="pending-${index + 1}">
-										<td class="local-store-index-cell is-pending-value" data-workspace-mask="metric-value">${startIndex + index + 1}</td>
-										<td class="local-store-ticker-cell">
-											<div class="ticker-identity-item">
-												<div class="ticker-identity-row">
-													<span class="ticker-identity-copy">
-														<span class="suggestion-symbol ticker-identity-symbol is-pending-value" data-workspace-mask="company-name">TICK</span>
-														<span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name">Loading</span>
-													</span>
-												</div>
-											</div>
-										</td>
-										<td class="local-store-range-cell">
-											<span class="local-store-range-value">
-												<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">0000/00/00</span>
-												<span class="local-store-range-separator"> - </span>
-												<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">0000/00/00</span>
+			<section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
+				<span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
+				<div class="settings-action-package-copy settings-callout-text">
+					<p class="settings-service-note">${labels.local_store_maintain_note || ""}</p>
+				</div>
+				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_button || "Maintain all data"}</span>
+			</section>
+			<p class="settings-summary">${labels.local_store_summary || ""}</p>
+			<div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
+				<table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
+					<colgroup>
+						<col class="local-store-col-index">
+						<col class="local-store-col-ticker">
+						<col class="local-store-col-range">
+						<col class="local-store-col-update">
+						<col class="local-store-col-1m">
+						<col class="local-store-col-delete">
+					</colgroup>
+					<thead>
+						<tr>
+							<th class="local-store-col-index">No.</th>
+							<th>Ticker</th>
+							<th>${labels.local_store_range || "Range"}</th>
+							<th>1d</th>
+							<th>${labels.local_store_intraday || "1m"}</th>
+							<th>${labels.local_store_delete || ""}</th>
+						</tr>
+					</thead>
+				</table>
+				<div class="settings-table-wrap local-store-table-wrap scrollable-data-table-scroll">
+					<table class="settings-table local-store-table scrollable-data-table">
+						<colgroup>
+							<col class="local-store-col-index">
+							<col class="local-store-col-ticker">
+							<col class="local-store-col-range">
+							<col class="local-store-col-update">
+							<col class="local-store-col-1m">
+							<col class="local-store-col-delete">
+						</colgroup>
+						<tbody>
+						${Array.from({length: 6}, (_, index) => `
+							<tr data-local-store-ticker="pending-${index + 1}">
+								<td class="local-store-index-cell is-pending-value" data-workspace-mask="metric-value">${startIndex + index + 1}</td>
+								<td class="local-store-ticker-cell">
+									<div class="ticker-identity-item">
+										<div class="ticker-identity-row">
+											<span class="ticker-identity-copy">
+												<span class="suggestion-symbol ticker-identity-symbol is-pending-value" data-workspace-mask="company-name">TICK</span>
+												<span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name">Loading</span>
 											</span>
-										</td>
-										<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>
-										<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-fetch-1m"></span></span></td>
-										<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
-									</tr>
-								`).join("")}
-								</tbody>
-							</table>
-						</div>
-					</div>
-					</section>
-				</section>
-			</article>
+										</div>
+									</div>
+								</td>
+								<td class="local-store-range-cell">
+									<span class="local-store-range-value">
+										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">0000/00/00</span>
+										<span class="local-store-range-separator"> - </span>
+										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">0000/00/00</span>
+									</span>
+								</td>
+								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>
+								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-fetch-1m"></span></span></td>
+								<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
+							</tr>
+						`).join("")}
+						</tbody>
+					</table>
+				</div>
+			</div>
 		`;
         return article;
     };
@@ -1016,9 +1019,9 @@
         const html = await response.text();
         const parser = new DOMParser();
         const nextDocument = parser.parseFromString(html, "text/html");
-        const nextRegion = nextDocument.querySelector("#local_store_region");
-        if (!nextRegion) throw new Error("Local store region missing from response.");
-        replaceLocalStoreRegion(nextRegion);
+        const nextShell = nextDocument.querySelector("#settings_workspace_shell");
+        if (!nextShell) throw new Error("Settings workspace shell missing from response.");
+        replaceLocalStoreRegion(nextShell);
         if (pushHistory) window.history.pushState({localStore: true}, "", url);
         rememberCurrentViewUrl(url);
         void hydrateLocalStoreRanges();

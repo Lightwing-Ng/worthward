@@ -1853,7 +1853,7 @@
         if (isMobilePageScrollHostCandidate(mobilePagePaddingScrollTarget, page)) return mobilePagePaddingScrollTarget;
         const workspacePanel = $("#workspace_panel");
         if (!(workspacePanel instanceof HTMLElement)) return page;
-        const candidates = Array.from(workspacePanel.querySelectorAll(".workspace-header > .chart-surface, .settings-surface, .timing-surface"));
+        const candidates = Array.from(workspacePanel.querySelectorAll(".workspace-header > .chart-surface, .settings-surface, .settings-workspace-header, .timing-surface"));
         let bestCandidate = null;
         let bestHeight = 0;
         for (const candidate of candidates) {

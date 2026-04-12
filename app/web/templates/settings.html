@@ -73,7 +73,7 @@
 {% endblock %}
 
 {% block workspace_content %}
-<section class="workspace-header settings-workspace-header{% if settings_section == 'about' %} settings-about-shell{% endif %}" id="settings_workspace_shell">
+<section class="workspace-header settings-workspace-header settings-shell-{{ settings_section }}{% if settings_section == 'about' %} settings-about-shell{% elif settings_section == 'general' %} settings-general-shell{% endif %}" id="settings_workspace_shell" data-settings-workspace-region data-settings-section="{{ settings_section }}">
     <article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
         <div class="report-heading-row">
             <p class="report-heading">{{ settings_title }}</p>
@@ -81,12 +81,12 @@
     </article>
 
     {% if settings_section == "about" %}
-    <article class="report-card workspace-content-card about-section">
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">What this service does</h2>
             <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.</p>
     </article>
 
-    <article class="report-card workspace-content-card about-section">
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">System information</h2>
             <dl class="footer-meta about-meta">
                 <dt>{{ labels.code_version }}</dt>
@@ -96,7 +96,7 @@
             </dl>
     </article>
 
-    <article class="report-card workspace-content-card about-section">
+    <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">Source code</h2>
             <a class="about-link-card" href="https://github.com/Lightwing-Ng/compareStocks" target="_blank" rel="noreferrer">
                 <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="GitHub logo">
@@ -112,67 +112,61 @@
                 <li class="about-copy">Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.</li>
             </ol>
     </article>
-    {% else %}
-    <section class="chart-surface settings-surface" id="settings_workspace_region" data-settings-workspace-region data-settings-section="{{ settings_section }}">
-        <section class="settings-body">
-        {% if settings_section == "general" %}
-        <section class="settings-general-stack">
-            <section class="settings-card settings-general-card settings-general-panel">
-                <div class="settings-general-header">
-                    <p class="settings-general-kicker">Appearance</p>
-                    <p class="settings-general-copy">Choose whether the interface follows your system appearance or stays locked to Light or Dark mode.</p>
-                </div>
-                <form class="settings-general-form" data-theme-mode-form>
-                    <label class="settings-general-option">
-                        <input type="radio" name="theme_mode" value="system" checked data-theme-mode-option>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">System</span>
-                            <span class="settings-general-option-desc">Follow your operating system appearance automatically, including live switching when the system changes.</span>
-                        </span>
-                    </label>
-                    <label class="settings-general-option">
-                        <input type="radio" name="theme_mode" value="light" data-theme-mode-option>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">Light</span>
-                            <span class="settings-general-option-desc">Force the interface to stay in the bright palette, regardless of the system setting.</span>
-                        </span>
-                    </label>
-                    <label class="settings-general-option">
-                        <input type="radio" name="theme_mode" value="dark" data-theme-mode-option>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">Dark</span>
-                            <span class="settings-general-option-desc">Force the interface to stay in the dark palette for lower glare and better night-time use.</span>
-                        </span>
-                    </label>
-                </form>
-            </section>
-            <section class="settings-card settings-general-card settings-general-panel">
-                <div class="settings-general-header">
-                    <p class="settings-general-kicker">Backtest execution model</p>
-                    <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
-                </div>
-                <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
-                    <label class="settings-general-option">
-                        <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">Signal bar close</span>
-                            <span class="settings-general-option-desc">When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.</span>
-                        </span>
-                    </label>
-                    <label class="settings-general-option">
-                        <input type="radio" name="backtest_execution_mode" value="next_open" onchange="this.form.submit()" {% if backtest_execution_mode == 'next_open' %}checked{% endif %}>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">Next bar open</span>
-                            <span class="settings-general-option-desc">When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.</span>
-                        </span>
-                    </label>
-                </form>
-            </section>
-        </section>
-        {% elif settings_section == "font-tokens" %}
-        <section class="font-token-stack">
-            {% for row in font_token_rows %}
-            <section id="{{ row.id }}" class="font-preview-card settings-general-panel settings-reading-guard font-token-panel">
+    {% elif settings_section == "general" %}
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">Appearance</p>
+            <p class="settings-general-copy">Choose whether the interface follows your system appearance or stays locked to Light or Dark mode.</p>
+        </div>
+        <form class="settings-general-form" data-theme-mode-form>
+            <label class="settings-general-option">
+                <input type="radio" name="theme_mode" value="system" checked data-theme-mode-option>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">System</span>
+                    <span class="settings-general-option-desc">Follow your operating system appearance automatically, including live switching when the system changes.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="theme_mode" value="light" data-theme-mode-option>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">Light</span>
+                    <span class="settings-general-option-desc">Force the interface to stay in the bright palette, regardless of the system setting.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="theme_mode" value="dark" data-theme-mode-option>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">Dark</span>
+                    <span class="settings-general-option-desc">Force the interface to stay in the dark palette for lower glare and better night-time use.</span>
+                </span>
+            </label>
+        </form>
+    </section>
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">Backtest execution model</p>
+            <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
+        </div>
+        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
+            <label class="settings-general-option">
+                <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">Signal bar close</span>
+                    <span class="settings-general-option-desc">When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="backtest_execution_mode" value="next_open" onchange="this.form.submit()" {% if backtest_execution_mode == 'next_open' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">Next bar open</span>
+                    <span class="settings-general-option-desc">When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.</span>
+                </span>
+            </label>
+        </form>
+    </section>
+    {% elif settings_section == "font-tokens" %}
+        {% for row in font_token_rows %}
+        <section id="{{ row.id }}" class="font-preview-card settings-general-panel settings-reading-guard font-token-panel">
                 <div class="font-preview-header">
                     <p class="font-preview-kicker">{{ row.name }}</p>
                     <p class="font-preview-copy">{{ row.description }}</p>
@@ -213,11 +207,10 @@
                     <div class="font-token-panel-actions">
                     </div>
                 </div>
-            </section>
-            {% endfor %}
         </section>
-        {% elif settings_section == "network" %}
-        <section class="settings-action-package settings-callout-card-primary">
+        {% endfor %}
+    {% elif settings_section == "network" %}
+    <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
                 <p class="settings-service-note">Run the network checks again and refresh the availability results shown below.</p>
@@ -230,8 +223,8 @@
                     data-network-refresh-button
                 >Check again</button>
             </div>
-        </section>
-        <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
+    </section>
+    <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
             <div class="settings-general-header">
                 <p class="settings-general-kicker">{{ labels.service_status }}</p>
                 <p class="settings-general-copy">Review the latest connectivity and dependency availability checks for this device.</p>
@@ -256,12 +249,11 @@
                 </div>
                 {% endfor %}
             </div>
-        </section>
-        {% elif settings_section == "strategies" %}
-        <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
-        <section class="settings-service-list settings-strategy-list settings-reading-guard">
-            {% for row in strategy_settings_rows %}
-            <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
+    </section>
+    {% elif settings_section == "strategies" %}
+    <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
+    {% for row in strategy_settings_rows %}
+    <details class="settings-service-row settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
                     <div class="settings-service-main settings-strategy-main">
                         <p class="settings-service-name">{{ row.name }}</p>
@@ -306,11 +298,10 @@
                     </div>
                 </div>
                 {% endif %}
-            </details>
-            {% endfor %}
-        </section>
-        {% elif settings_section == "email-smtp" %}
-        <section class="settings-action-package settings-callout-card-warning">
+    </details>
+    {% endfor %}
+    {% elif settings_section == "email-smtp" %}
+    <section class="settings-action-package settings-callout-card-warning">
             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
                 <span class="icon icon-dismiss-control" aria-hidden="true"></span>
             </button>
@@ -318,8 +309,8 @@
             <div class="settings-action-package-copy settings-callout-text">
                 <p class="settings-service-note">{% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet. Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.{% endif %}</p>
             </div>
-        </section>
-        <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
+    </section>
+    <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
             <div class="settings-form-grid">
                 <div class="field">
                     <label for="smtp_host">{{ labels.email_smtp_host }}</label>
@@ -392,10 +383,9 @@
                     </div>
                 </section>
             </div>
-        </form>
-        {% elif settings_section == "local-market-store" %}
-        <section class="local-store-layout" id="local_store_region" data-local-store-region>
-            <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
+    </form>
+    {% elif settings_section == "local-market-store" %}
+    <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
                 <div class="settings-action-package-copy settings-callout-text">
                     <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
@@ -405,9 +395,9 @@
                     <input type="hidden" name="page" value="{{ local_store_current_page }}">
                     <button type="submit" class="settings-inline-button settings-inline-button-primary">{{ labels.local_store_maintain_button }}</button>
                 </form>
-            </section>
-            <p class="settings-summary">{{ labels.local_store_summary }}</p>
-            <div class="scrollable-data-table-shell local-store-table-shell">
+    </section>
+    <p class="settings-summary">{{ labels.local_store_summary }}</p>
+    <div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
                 <table class="settings-table local-store-table scrollable-data-table" aria-hidden="true">
                     <colgroup>
                         <col class="local-store-col-index">
@@ -521,9 +511,9 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-            {% if local_store_total_pages > 1 %}
-            <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
+    </div>
+    {% if local_store_total_pages > 1 %}
+    <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
                 {% if local_store_prev_slot.page %}
                 <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
                     <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -545,11 +535,10 @@
                 {% else %}
                 <span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>
                 {% endif %}
-            </nav>
-            {% endif %}
-        </section>
-        {% elif settings_section == "broker-access" %}
-        <section class="settings-action-package settings-callout-card-warning">
+    </nav>
+    {% endif %}
+    {% elif settings_section == "broker-access" %}
+    <section class="settings-action-package settings-callout-card-warning">
             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
                 <span class="icon icon-dismiss-control" aria-hidden="true"></span>
             </button>
@@ -557,10 +546,8 @@
             <div class="settings-action-package-copy settings-callout-text">
                 <p class="settings-service-note">This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.</p>
             </div>
-        </section>
-
-        <section class="settings-card">
-            <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
+    </section>
+    <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
                 <div class="settings-form-row">
                     <label class="settings-form-label" for="selected_broker">Broker</label>
                     <select id="selected_broker" name="selected_broker" class="settings-form-control settings-form-select">
@@ -616,11 +603,9 @@
                         </div>
                     </section>
                 </div>
-            </form>
-        </section>
-        {% elif settings_section == "clear-caches" %}
-        <section class="settings-clear-caches-stack">
-            <section class="settings-action-package settings-danger-option">
+    </form>
+    {% elif settings_section == "clear-caches" %}
+    <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
                     <p class="settings-service-note">This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
@@ -630,8 +615,8 @@
                     <input type="hidden" name="action" value="market-data">
                     <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear market data caches</button>
                 </form>
-            </section>
-            <section class="settings-action-package settings-danger-option">
+    </section>
+    <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
                     <p class="settings-service-note">This deletes <code>settings_store/investment.json</code> on this device, which removes the imported local broker transaction history shown in My investment.</p>
@@ -641,10 +626,9 @@
                     <input type="hidden" name="action" value="investment-transactions">
                     <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear local broker transaction record</button>
                 </form>
-            </section>
-        </section>
-        {% elif settings_section == "material-tokens" %}
-        <section class="style-token-shell" data-style-token-shell>
+    </section>
+    {% elif settings_section == "material-tokens" %}
+    <section class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in material_token_rows %}
@@ -699,9 +683,9 @@
             </section>
             {% endfor %}
             </div>
-        </section>
-        {% elif settings_section == "style-tokens" %}
-        <section class="style-token-shell" data-style-token-shell>
+    </section>
+    {% elif settings_section == "style-tokens" %}
+    <section class="style-token-shell" data-style-token-shell>
             <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
@@ -952,9 +936,6 @@
             </section>
             {% endfor %}
             </div>
-        </section>
-        {% endif %}
-        </section>
     </section>
     {% endif %}
 </section>

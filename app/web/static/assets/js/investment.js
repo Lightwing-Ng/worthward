@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.29.0
+ * Code version: v1.29.1
+ * - Improved: Investment chart hover now scrolls the full same-day Transaction history row group into view instead of centering only the first matching row
  * - Added: Investment segmented control now appends a fourth "Stock details" view with same-page holdings links and animated pill focus
  * - Added: Stock details view now shows a selected ticker identity block, a standard donut shell, and a per-ticker detail table with realized P&L per transaction
  * - Improved: Trade effective price and realized P&L calculations now account for separate commissions in manual buy and sell rows
@@ -1045,16 +1046,22 @@ document.addEventListener('DOMContentLoaded', () => {
         activeInvestmentStockDetailRowIds = [];
     }
 
-    function scrollInvestmentHistoryRowIntoView(row, behavior = 'smooth') {
-        if (!row) return;
+    // Code version: v0.2.0.0
+    function scrollInvestmentHistoryRowsIntoView(rows, behavior = 'smooth') {
+        const normalizedRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+        if (!normalizedRows.length) return;
         const scrollContainer = getInvestmentHistoryScrollContainer();
         if (scrollContainer) {
-            const rowOffset = row.offsetTop - scrollContainer.offsetTop;
-            const targetTop = rowOffset - (scrollContainer.clientHeight / 2) + (row.clientHeight / 2);
+            const rowTop = Math.min(...normalizedRows.map((row) => row.offsetTop - scrollContainer.offsetTop));
+            const rowBottom = Math.max(...normalizedRows.map((row) => row.offsetTop - scrollContainer.offsetTop + row.clientHeight));
+            const groupHeight = Math.max(0, rowBottom - rowTop);
+            const groupCenter = rowTop + (groupHeight / 2);
+            const targetTop = groupCenter - (scrollContainer.clientHeight / 2);
             scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
             return;
         }
-        row.scrollIntoView({ block: 'center', behavior });
+        const midpointRow = normalizedRows[Math.floor(normalizedRows.length / 2)];
+        midpointRow.scrollIntoView({ block: 'center', behavior });
     }
 
     function scrollInvestmentStockDetailRowIntoView(row, behavior = 'smooth') {
@@ -1081,7 +1088,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         activeInvestmentHistoryRowIds = rows.map((row) => row.id);
         if (scroll) {
-            scrollInvestmentHistoryRowIntoView(rows[0], behavior);
+            scrollInvestmentHistoryRowsIntoView(rows, behavior);
         }
     }
 
@@ -1105,6 +1112,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (scroll) {
             scrollInvestmentStockDetailRowIntoView(rows[0], behavior);
         }
+    }
+
+    function scheduleInvestmentStockDetailRowActivation(ledgerNos, { behavior = 'auto', scroll = true } = {}) {
+        window.requestAnimationFrame(() => {
+            activateInvestmentStockDetailRows(ledgerNos, { behavior, scroll });
+        });
     }
 
     function getLatestHistoryRowForTicker(ticker) {
@@ -2476,7 +2489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ticker) {
                     selectInvestmentStockTicker(ticker, { focusView: false });
                 }
-                activateInvestmentStockDetailRows([ledgerNo], { behavior: 'smooth', scroll: true });
+                scheduleInvestmentStockDetailRowActivation([ledgerNo], { behavior: 'auto', scroll: true });
             };
             const clearChartMarker = () => {
                 syncHoldingsChartHoverState('', 0);
@@ -3103,6 +3116,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     : getHistoryRowsForLedgerDate(hoveredLedgerDate).map((row) => Number(row.dataset.investmentHistoryRow || 0));
                 activateInvestmentHistoryRows(ledgerNos, { behavior: "smooth" });
                 activeChartHoverDate = hoveredLedgerDate;
+            } else if (!hoveredLedgerDate && activeChartHoverDate) {
+                activeChartHoverDate = "";
+                clearInvestmentHistoryHighlights();
             }
 
             const tooltipRows = [];
