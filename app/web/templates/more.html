@@ -73,6 +73,8 @@
                                 <div class="ticker-identity-row">
                                     {% if ticker.logo_url %}
                                     <img src="{{ ticker.logo_url }}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async">
+                                    {% else %}
+                                    <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                                     {% endif %}
                                     <span class="ticker-identity-copy">
                                         <span class="suggestion-symbol ticker-identity-symbol">{{ ticker.ticker }}</span>

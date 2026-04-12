@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.7
+Code version: v0.3.8
 """
 
 from __future__ import annotations
@@ -72,9 +72,9 @@ from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     normalize_investment_payload_tickers,
 )
-from app.services.logos import build_market_store_logo_url, fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
-    search_tickers
-from app.services.market_data import fetch_history, refresh_history_store, refresh_one_minute_store
+from app.services.logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
+    resolve_stored_logo_url, search_tickers
+from app.services.market_data import fetch_history, list_available_market_intervals, refresh_history_store, refresh_one_minute_store
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
@@ -270,6 +270,110 @@ def build_web_runtime() -> WebRuntime:
                 )
             ),
         }
+
+    def collect_investment_display_tickers(transactions: list[dict[str, Any]]) -> list[str]:
+        tickers: list[str] = []
+        seen: set[str] = set()
+        excluded_types = {"forex_trade", "forex_trade_component", "fx_translation_pnl"}
+        for txn in transactions:
+            ticker = str(txn.get("ticker") or "").strip().upper()
+            if not ticker:
+                continue
+            normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
+            if normalized_type in excluded_types or ticker in seen:
+                continue
+            seen.add(ticker)
+            tickers.append(ticker)
+        return tickers
+
+    def resolve_money_market_company_name(
+            ticker: str,
+            transactions: list[dict[str, Any]],
+    ) -> str | None:
+        if ticker not in configured_money_market_tickers or not money_market_name_from_description:
+            return None
+
+        preferred_transaction_types = {"buy", "sell"}
+        fallback_candidate = None
+        for txn in transactions:
+            if str(txn.get("ticker") or "").strip().upper() != ticker:
+                continue
+            description = " ".join(str(txn.get("description") or "").split()).strip()
+            if not description:
+                continue
+            description_upper = description.upper()
+            if money_market_description_keywords and not any(
+                    keyword in description_upper for keyword in money_market_description_keywords
+            ):
+                continue
+            normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
+            if normalized_type in preferred_transaction_types:
+                return description
+            if fallback_candidate is None:
+                fallback_candidate = description
+        return fallback_candidate
+
+    def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+        ticker_profiles: dict[str, dict[str, str]] = {}
+        for raw_ticker in collect_investment_display_tickers(transactions):
+            company_name, logo_url = resolve_ticker_identity_snapshot(raw_ticker)
+            if company_name == raw_ticker:
+                inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
+                if inferred_money_market_name:
+                    company_name = inferred_money_market_name
+            ticker_profiles[raw_ticker] = {
+                "ticker": raw_ticker,
+                "company_name": company_name,
+                "logo_url": logo_url,
+            }
+        return ticker_profiles
+
+    def load_price_history_series(path: Path) -> list[dict[str, Any]]:
+        dataset = pd.read_parquet(path, columns=["Date", "Close"]).sort_values("Date")
+        prices: list[dict[str, Any]] = []
+        for _, row in dataset.iterrows():
+            date_val = row["Date"]
+            if isinstance(date_val, pd.Timestamp):
+                date_str = date_val.strftime("%Y-%m-%d")
+            else:
+                date_str = str(pd.to_datetime(date_val).date())
+            prices.append({
+                "date": date_str,
+                "close": float(row["Close"]),
+            })
+        return prices
+
+    def load_investment_price_histories(
+            transactions: list[dict[str, Any]],
+    ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]:
+        price_history_by_ticker: dict[str, list[dict[str, Any]]] = {}
+        failures: list[dict[str, str]] = []
+        for ticker in collect_investment_display_tickers(transactions):
+            try:
+                path = history_store_path_for(ticker)
+                if not path.exists():
+                    failures.append({
+                        "ticker": ticker,
+                        "reason": "missing_store",
+                        "message": f"No local market history is available for {ticker}.",
+                    })
+                    continue
+                prices = load_price_history_series(path)
+                if not prices:
+                    failures.append({
+                        "ticker": ticker,
+                        "reason": "empty_store",
+                        "message": f"No closing-price rows are available for {ticker}.",
+                    })
+                    continue
+                price_history_by_ticker[ticker] = prices
+            except Exception as exc:
+                failures.append({
+                    "ticker": ticker,
+                    "reason": "read_failed",
+                    "message": f"Could not read local market history for {ticker}: {exc}",
+                })
+        return price_history_by_ticker, failures
 
     # Backtest result cache: skip redundant computation when config doesn't change
     _cached_backtest: dict[str, tuple] = {}
@@ -630,9 +734,7 @@ def build_web_runtime() -> WebRuntime:
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
         include_dividends = parse_bool_flag("dividends", "include_dividends")
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        supported_intervals = ["1d"]
-        if has_recent_one_minute_store(trade_ticker):
-            supported_intervals.append("1m")
+        supported_intervals = list_available_market_intervals(trade_ticker)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         if not request.args.get("interval") and period == "1w" and "1m" in supported_intervals:
             requested_interval = "1m"
@@ -1547,14 +1649,31 @@ def build_web_runtime() -> WebRuntime:
         profile_record = load_profile_record(ticker)
         if profile_record is None:
             return None
-        logo_path = logo_store_path_for(ticker)
-        if not logo_path.exists():
+        logo_url = resolve_stored_logo_url(ticker)
+        if not logo_url:
             return None
-        logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
         company_name = str(profile_record.get("company_name") or "").strip()
         if company_name:
             return company_name, logo_url
         return None
+
+    def resolve_ticker_identity_snapshot(
+            ticker: str,
+            *,
+            allow_remote_refresh: bool = True,
+    ) -> tuple[str, str]:
+        profile_snapshot = load_local_profile_snapshot(ticker)
+        if profile_snapshot is not None:
+            return profile_snapshot
+
+        profile_record = load_profile_record(ticker) or {}
+        company_name = str(profile_record.get("company_name") or ticker).strip() or ticker
+        logo_url = resolve_stored_logo_url(ticker)
+        if allow_remote_refresh and (not logo_url or company_name == ticker):
+            profile = fetch_quote_profile(ticker, force_refresh=False)
+            company_name = str(profile.company_name or company_name).strip() or ticker
+            logo_url = str(profile.logo_url or "").strip() or logo_url
+        return company_name, logo_url
 
     def build_local_market_rows_for_tickers(
             tickers: list[str],
@@ -2070,8 +2189,7 @@ def build_web_runtime() -> WebRuntime:
         if current_view == "backtest" and requested_tickers:
             try:
                 trade_ticker = validate_ticker_or_raise(requested_tickers[0])
-                if has_recent_one_minute_store(trade_ticker):
-                    supported_intervals.append("1m")
+                supported_intervals = list_available_market_intervals(trade_ticker)
             except ValueError:
                 pass
 
@@ -2512,9 +2630,7 @@ def build_web_runtime() -> WebRuntime:
                         count = item.get("count", 0)
                         if count <= 0:
                             continue
-                        profile_snapshot = load_local_profile_snapshot(ticker)
-                        company_name = profile_snapshot[0] if profile_snapshot else ticker
-                        logo_url = profile_snapshot[1] if profile_snapshot else ""
+                        company_name, logo_url = resolve_ticker_identity_snapshot(ticker)
                         top_tickers.append(
                             {
                                 "ticker": ticker,
@@ -3379,6 +3495,8 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({
                 "transactions": [],
                 "ticker_profiles": {},
+                "price_history_by_ticker": {},
+                "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
@@ -3388,72 +3506,15 @@ def build_web_runtime() -> WebRuntime:
             data = load_normalized_investment_payload()
             section_freshness = build_investment_section_freshness(data)
             freshness_refresh_failures = ensure_latest_daily_caches(section_freshness["open_tickers"])
-
-            def resolve_money_market_company_name(
-                    ticker: str,
-                    transactions: list[dict[str, object]],
-            ) -> str | None:
-                if ticker not in configured_money_market_tickers or not money_market_name_from_description:
-                    return None
-
-                preferred_transaction_types = {"buy", "sell"}
-                fallback_candidate = None
-                for txn in transactions:
-                    if str(txn.get("ticker") or "").strip().upper() != ticker:
-                        continue
-                    description = " ".join(str(txn.get("description") or "").split()).strip()
-                    if not description:
-                        continue
-                    description_upper = description.upper()
-                    if money_market_description_keywords and not any(
-                            keyword in description_upper for keyword in money_market_description_keywords
-                    ):
-                        continue
-                    normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
-                    if normalized_type in preferred_transaction_types:
-                        return description
-                    if fallback_candidate is None:
-                        fallback_candidate = description
-                return fallback_candidate
-
-            ticker_profiles: dict[str, dict[str, str]] = {}
             transactions = data.get("transactions", [])
-            for txn in transactions:
-                raw_ticker = str(txn.get("ticker") or "").strip().upper()
-                if not raw_ticker:
-                    continue
-                normalized_type = str(txn.get("type") or "").replace(" ", "_").lower()
-                if normalized_type in {"forex_trade", "forex_trade_component", "fx_translation_pnl"}:
-                    continue
-                if raw_ticker in ticker_profiles:
-                    continue
-                profile_snapshot = load_local_profile_snapshot(raw_ticker)
-                if profile_snapshot is not None:
-                    company_name, logo_url = profile_snapshot
-                else:
-                    profile_record = load_profile_record(raw_ticker) or {}
-                    company_name = str(profile_record.get("company_name") or raw_ticker).strip() or raw_ticker
-                    logo_url = ""
-                    if has_logo_asset(raw_ticker):
-                        logo_path = logo_store_path_for(raw_ticker)
-                        logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
-                    else:
-                        profile = fetch_quote_profile(raw_ticker, force_refresh=False)
-                        company_name = str(profile.company_name or company_name).strip() or raw_ticker
-                        logo_url = str(profile.logo_url or "").strip()
-                    if company_name == raw_ticker:
-                        inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
-                        if inferred_money_market_name:
-                            company_name = inferred_money_market_name
-                ticker_profiles[raw_ticker] = {
-                    "ticker": raw_ticker,
-                    "company_name": company_name,
-                    "logo_url": logo_url,
-                }
-            data["ticker_profiles"] = ticker_profiles
+            price_history_by_ticker, price_history_failures = load_investment_price_histories(transactions)
+            data["ticker_profiles"] = build_investment_ticker_profiles(transactions)
+            data["price_history_by_ticker"] = price_history_by_ticker
+            data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
             data["freshness_refresh_failures"] = freshness_refresh_failures
             data["section_freshness"] = section_freshness
+            data["success"] = True
             response = jsonify(data)
             return apply_no_store_headers(response)
         except Exception as exc:
@@ -3585,24 +3646,11 @@ def build_web_runtime() -> WebRuntime:
                     if should_refresh_ticker:
                         ensure_latest_daily_caches([ticker])
 
-            df = pd.read_parquet(path)
-            if df.empty or "Close" not in df.columns or "Date" not in df.columns:
+            prices = load_price_history_series(path)
+            if not prices:
                 response = jsonify({"success": False, "error": f"No price/date data for {ticker}"})
                 response.status_code = 404
                 return apply_no_store_headers(response)
-
-            # Sort by date and extract (date string, close price) pairs
-            df_sorted = df.sort_values("Date")
-            prices = []
-            for _, row in df_sorted.iterrows():
-                date_val = row["Date"]
-                if isinstance(date_val, pd.Timestamp):
-                    date_str = date_val.strftime("%Y-%m-%d")
-                else:
-                    # If already string, ensure YYYY-MM-DD format
-                    date_str = str(pd.to_datetime(date_val).date())
-                close_val = float(row["Close"])
-                prices.append({"date": date_str, "close": close_val})
 
             response = jsonify({
                 "success": True,

@@ -1,4 +1,4 @@
-/* Code version: v0.3.7 */
+/* Code version: v0.3.8-p1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1910,7 +1910,7 @@
             ? contentHeight <= scrollHost.clientHeight || scrollHost.scrollTop >= (baseBottomScrollTop - bottomThreshold)
             : scrollHost.scrollTop >= (baseBottomScrollTop - bottomThreshold);
 
-        if (shouldUseEndBottomPad) page.dataset.mobileScrollEdge = "bottom";
+        if (scrollHost === page && shouldUseEndBottomPad) page.dataset.mobileScrollEdge = "bottom";
         else delete page.dataset.mobileScrollEdge;
 
         if (preserveBottom && scrollHost === page && shouldUseEndBottomPad && !isBottomState) {

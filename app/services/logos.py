@@ -69,6 +69,14 @@ def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None
     return url_for("market_store_logo", filename=filename, v=modified_at_ns)
 
 
+def resolve_stored_logo_url(ticker: str) -> str:
+    normalized_ticker = normalize_ticker_input(ticker)
+    logo_path = logo_store_path_for(normalized_ticker)
+    if not logo_path.exists():
+        return ""
+    return build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+
+
 def normalize_ticker_input(raw_ticker: str) -> str:
     return normalize_ticker(raw_ticker)
 
@@ -319,7 +327,7 @@ def fetch_and_store_logo(
     refresh_logo_store(ticker, website, force_refresh=force_refresh)
     if not path.exists():
         return None
-    return build_market_store_logo_url(path.name, path.stat().st_mtime_ns)
+    return resolve_stored_logo_url(ticker) or None
 
 
 def resolve_logo_url_with_fallback(
@@ -434,10 +442,7 @@ def build_local_search_items(query: str) -> list[dict[str, str]]:
         if not is_supported_local_symbol(symbol, query, company_name):
             continue
         seen.add(symbol)
-        logo_url = ""
-        logo_path = logo_store_path_for(symbol)
-        if has_logo_asset(symbol):
-            logo_url = build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+        logo_url = resolve_stored_logo_url(symbol) if has_logo_asset(symbol) else ""
         items.append(
             {
                 "symbol": symbol,

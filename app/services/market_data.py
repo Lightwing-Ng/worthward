@@ -17,6 +17,7 @@ from app.core.broker_settings import has_longbridge_credentials, load_broker_set
 from app.infrastructure.broker_market_data import (
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
+    has_recent_one_minute_store,
     is_daily_store_fresh,
     normalize_one_minute_store_frame,
     refresh_longbridge_one_minute_store,
@@ -31,6 +32,32 @@ from app.infrastructure.storage import (
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 YFINANCE_DOWNLOAD_LOCK = Lock()
+INTRADAY_INTERVALS = {"1m"}
+
+
+def normalize_market_interval(interval: str | None) -> str:
+    normalized_interval = str(interval or "1d").strip().lower()
+    return normalized_interval or "1d"
+
+
+def is_intraday_market_interval(interval: str | None) -> bool:
+    return normalize_market_interval(interval) in INTRADAY_INTERVALS
+
+
+def history_store_path_for_interval(ticker: str, interval: str = "1d") -> Path:
+    normalized_ticker = normalize_ticker(ticker)
+    normalized_interval = normalize_market_interval(interval)
+    if is_intraday_market_interval(normalized_interval):
+        return intraday_history_store_path_for(normalized_ticker, normalized_interval)
+    return history_store_path_for(normalized_ticker)
+
+
+def list_available_market_intervals(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    supported_intervals = ["1d"]
+    if has_recent_one_minute_store(normalized_ticker):
+        supported_intervals.append("1m")
+    return supported_intervals
 
 
 def _download_daily_history_with_yfinance(
@@ -142,6 +169,7 @@ def _normalize_store_frame_for_compare(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = "1d") -> pd.DataFrame:
+    interval = normalize_market_interval(interval)
     if history.empty:
         raise ValueError(f"No market data returned for {ticker}.")
     if isinstance(history.columns, pd.MultiIndex):
@@ -160,7 +188,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
 
     all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
     dataset = drop_duplicate_columns(history[all_to_keep].copy())
-    if interval == "1m":
+    if is_intraday_market_interval(interval):
         try:
             from app.infrastructure.broker_market_data import NEW_YORK_TIMEZONE
         except ImportError:
@@ -192,7 +220,8 @@ def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.Da
 
 def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
     normalized_ticker = normalize_ticker(ticker)
-    if interval == "1m":
+    normalized_interval = normalize_market_interval(interval)
+    if is_intraday_market_interval(normalized_interval):
         last_error: Exception | None = None
         for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
             delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt] if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS) else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
@@ -217,29 +246,26 @@ def fetch_history(
         interval: str = "1d",
 ) -> pd.DataFrame:
     normalized_ticker = normalize_ticker(ticker)
+    normalized_interval = normalize_market_interval(interval)
     ensure_market_store_dir()
-    path = (
-        intraday_history_store_path_for(normalized_ticker)
-        if interval == "1m"
-        else history_store_path_for(normalized_ticker)
-    )
+    path = history_store_path_for_interval(normalized_ticker, normalized_interval)
     if path.exists():
         dataset = pd.read_parquet(path)
-        if interval == "1m":
+        if is_intraday_market_interval(normalized_interval):
             normalized_intraday = normalize_one_minute_store_frame(dataset)
             if not normalized_intraday.equals(dataset):
                 normalized_intraday.to_parquet(path, index=False)
             dataset = normalized_intraday
         return select_price_series(dataset, include_dividends)
 
-    if interval == "1m" and _load_longbridge_market_settings() is None:
+    if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
         raise ValueError(
             f"Local 1-minute market data for {normalized_ticker} is unavailable. "
             "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
         )
 
-    history = download_full_history(normalized_ticker, interval=interval)
-    normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=interval)
+    history = download_full_history(normalized_ticker, interval=normalized_interval)
+    normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     normalized_dataset.to_parquet(path, index=False)
     return select_price_series(normalized_dataset, include_dividends)
 

@@ -1006,6 +1006,12 @@
     flex: 0 0 var(--ticker-identity-logo-max-width);
 }
 
+.ticker-identity-logo-placeholder {
+    border-radius: 999px;
+    background: var(--theme-glass-border);
+    box-shadow: inset 0 0 0 1px var(--theme-glass-border);
+}
+
 .checkbox {
     display: flex;
     align-items: center;

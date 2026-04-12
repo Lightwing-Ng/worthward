@@ -1,4 +1,4 @@
-/* Code version: v0.4.1 */
+/* Code version: v0.4.2-p2 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1102,9 +1102,15 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding: 0;
     min-height: var(--settings-strategy-card-min-height);
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
     width: min(100%, var(--settings-reading-guard-single-column-width));
     max-width: 100%;
+    border-radius: var(--radius-panel);
+    background: var(--glass-surface-background-soft);
+    backdrop-filter: var(--glass-surface-blur);
+    -webkit-backdrop-filter: var(--glass-surface-blur);
+    border: var(--glass-surface-border);
+    box-shadow: 0 8px 22px var(--theme-shadow-ambient);
 }
 
 .settings-strategy-card[open] {
@@ -1129,9 +1135,12 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-strategy-main {
+    display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
     column-gap: 0;
+    row-gap: 4px;
+    align-items: start;
 }
 
 .settings-strategy-main .settings-service-name,
@@ -1146,6 +1155,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     max-width: 100%;
     box-sizing: border-box;
     grid-template-rows: 0fr;
+    overflow: hidden;
     transition: grid-template-rows 320ms var(--motion-emphasized), opacity 220ms var(--motion-emphasized), padding-bottom 320ms var(--motion-emphasized);
     opacity: 0;
     padding-bottom: 0;
@@ -1830,6 +1840,18 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 @media (max-width: 767px) {
+    .settings-about-shell {
+        padding-bottom: 0;
+    }
+
+    .settings-about-shell::after {
+        content: "";
+        display: block;
+        flex: 0 0 var(--workspace-mobile-surface-bottom-pad);
+        height: var(--workspace-mobile-surface-bottom-pad);
+        pointer-events: none;
+    }
+
     .settings-workspace-header {
         gap: var(--settings-summary-overlay-gap);
     }
@@ -2151,6 +2173,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
         padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
 
+    .settings-about-shell {
+        padding-bottom: 0;
+    }
+
     .settings-surface {
         scroll-padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
@@ -2161,6 +2187,42 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
     .settings-strategy-params {
         padding-left: 42px;
+    }
+
+    .settings-strategy-card {
+        min-height: 0;
+    }
+
+    .settings-strategy-summary {
+        min-height: 0;
+        padding: 16px;
+    }
+
+    .settings-strategy-params-shell {
+        display: none;
+        grid-template-rows: none;
+        overflow: visible;
+        opacity: 1;
+        padding-bottom: 0;
+        transition: none;
+    }
+
+    .settings-strategy-card[open] .settings-strategy-params-shell {
+        display: block;
+        padding-bottom: 16px;
+    }
+
+    .settings-strategy-params-table-shell {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        margin: 0;
+    }
+
+    .settings-strategy-params-table-wrap {
+        height: auto;
+        max-height: none;
+        overflow-y: visible;
     }
 
     .settings-form-grid,

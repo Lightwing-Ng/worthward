@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.29.1
+ * Code version: v1.30.0
+ * - Fixed: Investment valuation now consumes bundled price history from the primary transactions payload, reports degraded states explicitly, and avoids per-ticker N+1 refresh fetches during first render
+ * - Removed: Legacy manual-entry selector and transaction-form branches that no longer match the current Investment template contract
  * - Improved: Investment chart hover now scrolls the full same-day Transaction history row group into view instead of centering only the first matching row
  * - Added: Investment segmented control now appends a fourth "Stock details" view with same-page holdings links and animated pill focus
  * - Added: Stock details view now shows a selected ticker identity block, a standard donut shell, and a per-ticker detail table with realized P&L per transaction
@@ -581,6 +583,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function buildMarketStoreLogoUrl(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        return `/market-store/logos/${encodeURIComponent(normalizedTicker || 'stock')}.png`;
+    }
+
+    function resolveInvestmentLogoUrl(profile, ticker) {
+        const logoUrl = String(profile?.logo_url || '').trim();
+        return logoUrl || buildMarketStoreLogoUrl(ticker);
+    }
+
     function renderInvestmentDummyPortfolioDonut(pointRecord, tickerProfiles) {
         if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
         const holdingsMarketValues = pointRecord?.holdings_market_values || {};
@@ -617,7 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const ticker = entry.ticker;
                 const profile = tickerProfiles?.[ticker] || {};
-                const logoUrl = String(profile.logo_url || '').trim() || `/market-store/logos/${encodeURIComponent(ticker)}.png`;
+                const logoUrl = resolveInvestmentLogoUrl(profile, ticker);
                 logoItems.push({ ticker, logoUrl, midAngle });
             }
             const hasRemaining = segmentEnd < 360;
@@ -714,22 +726,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function setImportFeedback(message, isError = false) {
+    function setImportFeedback(message, variant = 'success') {
         if (!importFeedback) return;
+        const resolvedVariant = ['error', 'warning', 'success'].includes(variant) ? variant : 'success';
+        const isError = resolvedVariant === 'error';
+        const isWarning = resolvedVariant === 'warning';
         importFeedback.hidden = true;
         importFeedback.style.animation = 'none';
         void importFeedback.offsetWidth;
         importFeedback.style.animation = '';
         importFeedback.removeAttribute('hidden');
         if (importFeedbackMessage) {
-            importFeedbackMessage.textContent = String(message || '').trim() || (isError ? 'Import failed.' : 'Import complete.');
+            importFeedbackMessage.textContent = String(message || '').trim()
+                || (isError ? 'Import failed.' : (isWarning ? 'Investment data loaded with warnings.' : 'Import complete.'));
         } else {
             importFeedback.textContent = message;
         }
         if (importFeedbackIcon) {
-            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-error', Boolean(isError));
-            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-success', !isError);
-            importFeedbackIcon.classList.toggle('icon-modal-dialog-banner-default', Boolean(isError));
+            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-error', isError || isWarning);
+            importFeedbackIcon.classList.toggle('investment-import-feedback-banner-icon-success', !isError && !isWarning);
+            importFeedbackIcon.classList.toggle('icon-modal-dialog-banner-default', isError || isWarning);
         }
     }
 
@@ -1239,18 +1255,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function buildInvestmentParquetUrl(ticker) {
-        const params = new URLSearchParams({ ticker });
-        const sectionFreshness = window.ANTIGRAVITY_INVESTMENT_DATA?.section_freshness || null;
-        if (sectionFreshness?.scope) {
-            params.set('freshness_scope', sectionFreshness.scope);
-        }
-        if (sectionFreshness?.target_trading_day) {
-            params.set('target_trading_day', sectionFreshness.target_trading_day);
-        }
-        return `/api/investment/parquet?${params.toString()}`;
-    }
-
     async function fetchInvestmentData() {
         const response = await fetch('/api/investment/transactions', buildInvestmentRequestOptions());
         const data = await response.json();
@@ -1258,80 +1262,14 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.error || `Failed to load investment data: ${response.status}`);
         }
         window.ANTIGRAVITY_INVESTMENT_DATA = data;
-        await renderTransactionTable(data.transactions || []);
+        const valuationStatus = await renderTransactionTable(data.transactions || []);
         scheduleInvestmentSegmentedPillUpdate();
-        return data;
+        return { data, valuationStatus };
     }
 
-    // Copy shared-select initialization from base.html
-    function initSharedSelectors() {
-        document.querySelectorAll('[data-shared-select-field]').forEach(container => {
-            if (container.dataset.sharedSelectBound === "1") return;
-            const select = container.querySelector('select');
-            const trigger = container.querySelector('[data-shared-select-trigger]');
-            const dropdown = container.querySelector('[data-shared-select-dropdown]');
-            const label = container.querySelector('[data-shared-select-trigger-label]');
-            if (!select || !trigger || !dropdown) return;
-            container.dataset.sharedSelectBound = "1";
-
-            const options = Array.from(select.options).map(opt => ({
-                value: opt.value,
-                text: opt.text,
-                selected: opt.selected,
-            }));
-
-            let currentValue = options.find(opt => opt.selected)?.value || options[0]?.value;
-            label.textContent = options.find(opt => opt.value === currentValue)?.text || '';
-
-            function renderDropdown() {
-                dropdown.innerHTML = options.map(opt => `
-                    <button type="button" class="trade-strategy-dropdown-item ${opt.value === currentValue ? 'is-selected' : ''}" data-value="${opt.value}">
-                        ${opt.text}
-                    </button>
-                `).join('');
-            }
-
-            renderDropdown();
-
-            trigger.addEventListener('click', () => {
-                const isHidden = dropdown.hidden;
-                dropdown.hidden = !isHidden;
-                trigger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
-            });
-
-            dropdown.addEventListener('click', (e) => {
-                const btn = e.target.closest('button');
-                if (!btn) return;
-                const value = btn.dataset.value;
-                currentValue = value;
-                select.value = value;
-                label.textContent = options.find(opt => opt.value === value)?.text || '';
-                dropdown.hidden = true;
-                trigger.setAttribute('aria-expanded', 'false');
-                // Update visibility of ticker/quantity/price/commission fields based on type
-                updateConditionalFields();
-                // Recalculate net amount when type changes
-                calculateNetAmount();
-            });
-
-            document.addEventListener('click', (e) => {
-                if (!container.contains(e.target)) {
-                    dropdown.hidden = true;
-                    trigger.setAttribute('aria-expanded', 'false');
-                }
-            });
-        });
-    }
-
-    // Initialize shared selectors after DOM is ready - multiple passes to ensure all get bound
     initInvestmentViewTabs();
     initInvestmentDummyDonut();
     bindInvestmentExportButton();
-    setTimeout(initSharedSelectors, 50);
-    setTimeout(initSharedSelectors, 150);
-    setTimeout(initSharedSelectors, 300);
-    // Update conditional fields after everything is initialized
-    setTimeout(updateConditionalFields, 350);
     syncImportValidationState();
     [transactionsCsvInput, positionsCsvInput].forEach((input) => {
         if (input) {
@@ -1341,12 +1279,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-
-    function getInvestmentFormOffset() {
-        if (!formContainer) return 0;
-        const marginTop = Number.parseFloat(window.getComputedStyle(formContainer).marginTop || '0') || 0;
-        return Math.ceil(formContainer.getBoundingClientRect().height + marginTop);
-    }
 
     function syncInvestmentFormLayout() {
         if (!formContainer || !historyTable || !parentSection) return;
@@ -1379,97 +1311,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Show/hide conditional fields based on event type
-    function updateConditionalFields() {
-        const typeSelect = document.getElementById('txn_type');
-        if (!typeSelect) return;
-        const type = typeSelect.value;
-        // Rules:
-        // - Always show: Broker, Date, Event type, Currency, Net Amount, Notes
-        // - Ticker/Quantity: only buy/sell (dividend/foreign_tax_withholding already have amount, no need quantity/price)
-        // - Price: only buy/sell
-        // - Commission: only buy/sell/dividend_reinvestment
-        const needTicker = ['buy', 'sell'].includes(type);
-        const needQuantity = ['buy', 'sell'].includes(type);
-        const needPrice = ['buy', 'sell'].includes(type);
-        const needCommission = ['buy', 'sell', 'dividend_reinvestment'].includes(type);
-        const tickerRow = document.getElementById('txn_ticker_row');
-        const quantityRow = document.getElementById('txn_quantity_row');
-        const priceRow = document.getElementById('txn_price_row');
-        const commissionRow = document.getElementById('txn_commission_row');
-        if (tickerRow) tickerRow.style.display = needTicker ? 'block' : 'none';
-        if (quantityRow) quantityRow.style.display = needQuantity ? 'block' : 'none';
-        if (priceRow) priceRow.style.display = needPrice ? 'block' : 'none';
-        if (commissionRow) commissionRow.style.display = needCommission ? 'block' : 'none';
-    }
-
-    // Auto-calculate net amount based on type, quantity, price, commission
-    function calculateNetAmount() {
-        const typeEl = document.getElementById('txn_type');
-        const quantityEl = document.getElementById('txn_quantity');
-        const priceEl = document.getElementById('txn_price');
-        const commissionEl = document.getElementById('txn_commission');
-        const amountEl = document.getElementById('txn_amount');
-
-        if (!typeEl || !quantityEl || !priceEl || !commissionEl || !amountEl) return;
-
-        const selectedType = typeEl.value;
-        const quantity = parseFloat(quantityEl.value || 0);
-        const price = parseFloat(priceEl.value || 0);
-        const commission = parseFloat(commissionEl.value || 0);
-
-        if (!isNaN(quantity) && !isNaN(price) && quantity > 0 && price > 0) {
-            let gross = quantity * price;
-            let net = gross + commission; // Buy: you spend more due to commission
-            if (selectedType === 'sell') {
-                net = gross - commission; // Sell: you receive less due to commission
-            }
-            amountEl.value = net.toFixed(2);
-        }
-    }
-
-    // Attach auto-calculate to input events
-    ['txn_quantity', 'txn_price', 'txn_commission', 'txn_type'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('input', calculateNetAmount);
-            el.addEventListener('change', calculateNetAmount);
-        }
-    });
-
-    // Format date from picker to YYYY-MM-DD 20:00:00 (EOD)
-    function getFormattedDate() {
-        const dateInput = document.getElementById('txn_date');
-        if (!dateInput || !dateInput.value) {
-            const today = new Date();
-            return `${today.toISOString().slice(0, 10)} 20:00:00`;
-        }
-
-        // If date picker populated with D MMM YYYY format, parse it
-        const value = dateInput.value.trim();
-        let dateStr;
-        const match = value.match(/^(\d{1,2}) (\w{3}) (\d{4})$/);
-        if (match) {
-            const [_, day, mon, year] = match;
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const monthIndex = months.findIndex(m => m.toLowerCase() === mon.toLowerCase());
-            const dateObj = new Date(parseInt(year), monthIndex, parseInt(day));
-            dateStr = dateObj.toISOString().slice(0, 10);
-        } else {
-            // Try direct parsing
-            const parsed = new Date(value);
-            if (!isNaN(parsed.getTime())) {
-                dateStr = parsed.toISOString().slice(0, 10);
-            } else {
-                const today = new Date();
-                dateStr = today.toISOString().slice(0, 10);
-            }
-        }
-
-        // Always default to 20:00:00 for end-of-day transactions
-        return `${dateStr} 20:00:00`;
-    }
-
     // Handle form submission
     if (investmentForm) {
         investmentForm.addEventListener('submit', (e) => {
@@ -1480,11 +1321,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const transactionsFile = transactionsCsv?.files?.[0];
             const positionsFile = positionsCsv?.files?.[0];
             if (!transactionsFile || !positionsFile) {
-                setImportFeedback('Please choose both IBKR CSV files before importing.', true);
+                setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                 return;
             }
             if (!isLikelyTransactionHistoryFile(transactionsFile) || !isLikelyPositionsFile(positionsFile)) {
-                setImportFeedback('Please make sure the first file is your Transaction History CSV and the second file is your Realized Summary CSV.', true);
+                setImportFeedback('Please make sure the first file is your Transaction History CSV and the second file is your Realized Summary CSV.', 'error');
                 return;
             }
 
@@ -1502,18 +1343,20 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(response => response.json())
             .then(async result => {
                 if (result.success) {
-                    const freshnessNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
+                    const refreshNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
                         ? ` Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.join(', ')}.`
                         : '';
-                    setImportFeedback(`${result.message || 'Import complete.'}${freshnessNotice}`);
-                    await fetchInvestmentData();
+                    const { valuationStatus } = await fetchInvestmentData();
+                    const valuationNotice = valuationStatus?.isDegraded ? ` ${valuationStatus.message}` : '';
+                    const feedbackVariant = valuationStatus?.isDegraded ? 'warning' : 'success';
+                    setImportFeedback(`${result.message || 'Import complete.'}${refreshNotice}${valuationNotice}`, feedbackVariant);
                     closeInvestmentImportForm();
                 } else {
-                    setImportFeedback(result.error || 'Import failed.', true);
+                    setImportFeedback(result.error || 'Import failed.', 'error');
                 }
             })
             .catch(err => {
-                setImportFeedback(`Network error: ${err.message}`, true);
+                setImportFeedback(`Network error: ${err.message}`, 'error');
             })
             .finally(() => {
                 investmentImportInFlight = false;
@@ -1524,8 +1367,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load and render transactions
     fetchInvestmentData()
+        .then(({ valuationStatus }) => {
+            if (valuationStatus?.isDegraded) {
+                setImportFeedback(valuationStatus.message, 'warning');
+            }
+        })
         .catch(err => {
             console.error('Failed to load transactions:', err);
+            setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
         });
 
     function getNormalizedTransactionType(txn) {
@@ -1874,6 +1723,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return priceIndex;
     }
 
+    function normalizePriceHistoryPayload(priceHistoryByTicker) {
+        const normalized = {};
+        Object.entries(priceHistoryByTicker || {}).forEach(([ticker, rows]) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            if (!normalizedTicker || !Array.isArray(rows)) return;
+            normalized[normalizedTicker] = {};
+            rows.forEach((row) => {
+                const date = normalizeLedgerDate(row?.date);
+                const close = Number(row?.close);
+                if (!date || !Number.isFinite(close)) return;
+                normalized[normalizedTicker][date] = close;
+            });
+        });
+        return normalized;
+    }
+
     function getIndexedClosePriceOnOrBefore(priceEntry, targetDate) {
         if (!priceEntry || !targetDate) return null;
         const dates = Array.isArray(priceEntry.dates) ? priceEntry.dates : [];
@@ -1883,6 +1748,46 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         return null;
+    }
+
+    function buildValuationStatus({ backendFailures = [], fallbackTickers = [], missingTickers = [] } = {}) {
+        const normalizedBackendFailures = Array.isArray(backendFailures) ? backendFailures : [];
+        const normalizedFallbackTickers = Array.from(new Set((Array.isArray(fallbackTickers) ? fallbackTickers : [])
+            .map((ticker) => normalizeInvestmentTicker(ticker))
+            .filter(Boolean)));
+        const normalizedMissingTickers = Array.from(new Set((Array.isArray(missingTickers) ? missingTickers : [])
+            .map((ticker) => normalizeInvestmentTicker(ticker))
+            .filter(Boolean)));
+        const hasBackendFailures = normalizedBackendFailures.length > 0;
+        const isDegraded = hasBackendFailures || normalizedFallbackTickers.length > 0 || normalizedMissingTickers.length > 0;
+        if (!isDegraded) {
+            return {
+                isDegraded: false,
+                message: '',
+                backendFailures: normalizedBackendFailures,
+                fallbackTickers: normalizedFallbackTickers,
+                missingTickers: normalizedMissingTickers,
+            };
+        }
+
+        const messageParts = [];
+        if (normalizedMissingTickers.length) {
+            messageParts.push(`Valuation is incomplete for ${normalizedMissingTickers.join(', ')} because no usable local close history was found.`);
+        }
+        if (normalizedFallbackTickers.length) {
+            messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.join(', ')} until local market history is refreshed.`);
+        }
+        if (hasBackendFailures) {
+            messageParts.push(normalizedBackendFailures.map((entry) => entry?.message).filter(Boolean).join(' '));
+        }
+
+        return {
+            isDegraded: true,
+            message: messageParts.filter(Boolean).join(' '),
+            backendFailures: normalizedBackendFailures,
+            fallbackTickers: normalizedFallbackTickers,
+            missingTickers: normalizedMissingTickers,
+        };
     }
 
     function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
@@ -2314,7 +2219,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentStockDonutMarkup(summary, profile) {
-        const logoUrl = String(profile?.logo_url || '').trim() || `/market-store/logos/${encodeURIComponent(summary?.ticker || 'stock')}.png`;
+        const logoUrl = resolveInvestmentLogoUrl(profile, summary?.ticker || 'stock');
         const totalPnl = (Number(summary?.realizedPnl) || 0) + (Number(summary?.unrealizedPnl) || 0);
         const donutFill = totalPnl > 1e-9
             ? 'conic-gradient(#0055cc 0deg 358.8deg, transparent 358.8deg 360deg)'
@@ -2508,7 +2413,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderTransactionTable(transactions) {
         const tbody = document.getElementById('investment_history');
-        if (!tbody) return;
+        if (!tbody) return { isDegraded: false, message: '' };
         clearInvestmentHistoryHighlights();
 
         if (!transactions.length) {
@@ -2527,7 +2432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 </tr>
             `;
-            return;
+            return { isDegraded: false, message: '' };
         }
 
         setInvestmentExportButtonVisibility(true);
@@ -2536,9 +2441,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Read starting_cash from top-level JSON if available, otherwise default to 0
         let runningCash = getInvestmentStartingCash();
         const holdings = {}; // {ticker: quantity}
-        const tickers = new Set();
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const moneyMarketAnchors = {}; // {ticker: weightedAveragePrice}
+        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const priceHistoryFailures = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_failures || [];
+        const tickerClosePrices = normalizePriceHistoryPayload(priceHistoryRows);
+        const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const lastKnownTickerPrices = {};
 
         const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
         const processed = orderedTransactions.map((txn, processedIndex) => {
@@ -2593,8 +2502,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (shouldTrackHoldingTicker(txn)) {
-                tickers.add(String(txn.ticker).trim().toUpperCase());
+            if (shouldTrackHoldingTicker(txn) && price !== null && Number.isFinite(price) && price > 0) {
+                lastKnownTickerPrices[String(txn.ticker).trim().toUpperCase()] = price;
             }
 
             // Calculate cash impact based on transaction type
@@ -2642,27 +2551,6 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
 
-        // 2. Load {TICKER}.parquet files and get close prices for all transaction dates
-        const tickerClosePrices = {}; // {ticker: {dateString: closePrice}}
-        await Promise.all(Array.from(tickers).map(async ticker => {
-            try {
-                const response = await fetch(
-                    buildInvestmentParquetUrl(ticker),
-                    buildInvestmentRequestOptions(),
-                );
-                const data = await response.json();
-                if (data.success && data.prices) {
-                    // Create a map: date string (YYYY-MM-DD) -> close price
-                    tickerClosePrices[ticker] = {};
-                    data.prices.forEach(item => {
-                        tickerClosePrices[ticker][item.date] = item.close;
-                    });
-                }
-            } catch (err) {
-                console.warn(`Failed to load parquet data for ${ticker}:`, err);
-            }
-        }));
-
         // Get latest price from parquet (last available close) for final valuation
         const latestPrices = {};
         Object.entries(tickerClosePrices).forEach(([ticker, dateMap]) => {
@@ -2671,24 +2559,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 latestPrices[ticker] = dateMap[dates[dates.length - 1]];
             }
         });
+        Object.entries(lastKnownTickerPrices).forEach(([ticker, price]) => {
+            if (!Number.isFinite(latestPrices[ticker]) && Number.isFinite(price)) {
+                latestPrices[ticker] = price;
+            }
+        });
 
-        // 3. For each transaction, get the closest available close price on or before the transaction date
+        // 2. For each transaction, get the closest available close price on or before the transaction date
         //    and calculate total equity = cash + sum(holdings * historical close price)
+        const fallbackTickers = new Set();
+        const missingTickers = new Set();
         processed.forEach((txn) => {
             let marketValue = 0;
             Object.entries(txn.holdings).forEach(([ticker, quantity]) => {
-                let closePrice = 0;
                 const normalizedTicker = String(ticker).trim().toUpperCase();
                 const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
-                if (tickerClosePrices[ticker]) {
-                    // Find the latest date in parquet that is <= transaction date
-                    const txnDate = txn.date; // YYYY-MM-DD
-                    const availableDates = Object.keys(tickerClosePrices[ticker]).filter(d => d <= txnDate).sort();
-                    if (availableDates.length > 0) {
-                        const closestDate = availableDates[availableDates.length - 1];
-                        closePrice = tickerClosePrices[ticker][closestDate];
-                    }
-                }
+                const valuationDate = normalizeLedgerDate(txn.date);
+                let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex[normalizedTicker], valuationDate);
                 if (isMoneyMarketTicker) {
                     const sameDaySellPrice = normalizedTicker === String(txn.ticker || '').trim().toUpperCase()
                         && getNormalizedTransactionType(txn) === 'sell'
@@ -2697,9 +2584,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     const anchoredPrice = txn.money_market_anchors?.[ticker] ?? txn.money_market_anchors?.[normalizedTicker];
                     closePrice = sameDaySellPrice ?? anchoredPrice ?? closePrice;
                 }
-                // Fallback: if no historical data, use txn.price if available, otherwise 0
-                if (closePrice === 0 && txn.ticker === ticker && txn.price) {
-                    closePrice = txn.price;
+                if (!Number.isFinite(closePrice) || Math.abs(closePrice) < 1e-9) {
+                    const fallbackPrice = lastKnownTickerPrices[normalizedTicker];
+                    if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
+                        closePrice = fallbackPrice;
+                        fallbackTickers.add(normalizedTicker);
+                    } else {
+                        closePrice = 0;
+                        missingTickers.add(normalizedTicker);
+                    }
                 }
                 marketValue += quantity * closePrice;
             });
@@ -2720,8 +2613,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const latestSnapshot = processed[processed.length - 1];
         const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
+        const valuationStatus = buildValuationStatus({
+            backendFailures: priceHistoryFailures,
+            fallbackTickers: Array.from(fallbackTickers),
+            missingTickers: Array.from(missingTickers),
+        });
 
-        // 4. Render reverse chronological (newest first)
+        // 3. Render reverse chronological (newest first)
         tbody.innerHTML = [...processed].reverse().map((txn, index) => {
             const description = formatTransactionDescription(txn);
 
@@ -2742,8 +2640,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
         bindInvestmentHistoryChartInteractions(tbody);
 
-        // 5. Update dashboard with latest total equity
+        // 4. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints);
+        return valuationStatus;
     }
 
     function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions, chartPoints = []) {
@@ -3281,88 +3180,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatAmount(value) {
         if (value === undefined || value === null || isNaN(value)) return '--';
         return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function renderEquityChart(transactions) {
-        if (!transactions.length) return;
-
-        // Prepare data for cumulative cash chart
-        // Read starting_cash from top-level JSON if available
-        let runningCash = getInvestmentStartingCash();
-        const points = transactions.sort((a, b) => new Date(a.date) - new Date(b.date)).map(txn => {
-            // Read amount from normalized.net_amount if available (IBKR imported format), otherwise fall back to top-level
-            let amount = (txn.normalized?.net_amount ?? txn.amount ?? txn.cash) || 0;
-
-            // Auto-calculate amount if missing
-            if (!amount && txn.quantity && txn.price && (txn.type === 'buy' || txn.type === 'sell')) {
-                amount = txn.quantity * txn.price;
-            }
-
-            const commission = txn.commission || 0;
-
-            if (txn.type === 'deposit' || txn.type === 'sell' || txn.type === 'dividend' || txn.type === 'credit_interest') {
-                if (txn.type === 'sell' && amount && commission) {
-                    runningCash += (amount - commission);
-                } else {
-                    runningCash += amount;
-                }
-            } else if (txn.type === 'withdrawal' || txn.type === 'buy' || txn.type === 'dividend_reinvestment' || txn.type === 'tax_withholding' || txn.type === 'debit_interest') {
-                if (txn.type === 'buy' && amount && commission) {
-                    runningCash -= (amount + commission);
-                } else {
-                    runningCash -= Math.abs(amount);
-                }
-            } else {
-                runningCash += amount;
-            }
-
-            // Commission already accounted for buy/sell
-            if (txn.commission && !['buy', 'sell'].includes(txn.type)) {
-                runningCash -= Math.abs(commission);
-            }
-
-            return {
-                date: new Date(txn.date),
-                cash: runningCash,
-            };
-        });
-
-        // Use the same chart drawing infrastructure as the rest of the app
-        const container = document.getElementById('investment_equity_chart');
-        if (!container || typeof drawLineChart !== 'function') {
-            console.warn('Chart drawing not available');
-            return;
-        }
-
-        const colors = getComputedStyle(document.documentElement);
-        const accentColor = colors.getPropertyValue('--accent-fill').trim()
-            || colors.getPropertyValue('--theme-accent-primary').trim()
-            || '#0055cc';
-
-        const chartData = {
-            labels: points.map(p => p.date.toLocaleDateString()),
-            series: [{
-                name: 'Cash Balance',
-                values: points.map(p => p.cash),
-                color: accentColor,
-            }],
-        };
-
-        // Clear any existing content
-        container.innerHTML = '';
-
-        // Draw the chart using the global chart helper from base.html
-        try {
-            window.drawLineChart(container, chartData, {
-                yAxisFormatter: (value) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-                tooltipFormatter: (value) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-            });
-        } catch (err) {
-            console.error('Failed to draw chart', err);
-        }
-
-        // Update dashboard summary
-        updateDashboard(points[points.length - 1]?.cash || 0);
     }
 
     function getTotalDeposits(transactions) {
