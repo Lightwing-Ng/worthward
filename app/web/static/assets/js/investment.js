@@ -3000,8 +3000,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const markerGlow = resolvedTheme.accentPositive || "rgba(22, 163, 74, 0.85)";
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(animatedPoint.x, animatedPoint.y, 5, 0, Math.PI * 2);
-                ctx.lineWidth = 2.8;
+                ctx.arc(animatedPoint.x, animatedPoint.y, holdingsMarkerRadius, 0, Math.PI * 2);
+                ctx.lineWidth = holdingsMarkerStrokeWidth;
                 ctx.strokeStyle = markerStroke;
                 ctx.shadowColor = markerGlow;
                 ctx.shadowBlur = 12;
@@ -3157,10 +3157,20 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltipEl.classList.add("is-visible");
         };
 
+        const holdingsMarkerRadius = 5;
+        const holdingsMarkerStrokeWidth = 2.8;
+        const holdingsMarkerSafePadding = Math.ceil(holdingsMarkerRadius + holdingsMarkerStrokeWidth + 2);
+
         const commonOptions = {
             responsive: true,
             maintainAspectRatio: false,
-            layout: { padding: { bottom: 24 } },
+            layout: {
+                padding: {
+                    left: holdingsMarkerSafePadding,
+                    right: holdingsMarkerSafePadding,
+                    bottom: 24,
+                },
+            },
             interaction: { mode: "index", intersect: false },
             plugins: {
                 legend: { display: false },

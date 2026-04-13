@@ -164,12 +164,14 @@
     padding: 10px;
     border-left: 0;
     background: transparent;
-    overflow: hidden;
+    overflow: visible;
     --portfolio-donut-size: clamp(72px, 88%, 170px);
+    --investment-donut-satellite-radius: calc((var(--portfolio-donut-orbit-logo-size) * 1.41421356237) / 2);
+    --investment-donut-boundary-size: calc(var(--portfolio-donut-size) + (var(--investment-donut-satellite-radius) * 4));
 }
 
 .investment-dummy-chart .style-token-portfolio-donut-shell {
-    width: var(--portfolio-donut-size);
+    width: min(100%, var(--investment-donut-boundary-size));
     max-width: 100%;
     aspect-ratio: 1 / 1;
     height: auto;
