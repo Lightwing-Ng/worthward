@@ -2227,12 +2227,65 @@
         select.value = normalizedValue;
     };
 
+    const SIDEBAR_OVERLAY_GAP_PX = 4;
+    const getSidebarOverlayMetrics = (anchorRect, minimumHeight = 120) => {
+        if (!(anchorRect instanceof DOMRect)) return null;
+        const sidebar = document.querySelector(".sidebar");
+        if (!(sidebar instanceof HTMLElement)) return null;
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const dock = document.querySelector(".sidebar-dock");
+        const rootStyles = getComputedStyle(document.documentElement);
+        const pageEdgePad = Number.parseFloat(rootStyles.getPropertyValue("--page-edge-pad")) || 10;
+        const lowerBoundary = dock instanceof HTMLElement
+            ? Math.min(sidebarRect.bottom, dock.getBoundingClientRect().top) - pageEdgePad
+            : sidebarRect.bottom - pageEdgePad;
+        const availableHeight = Math.max(minimumHeight, lowerBoundary - anchorRect.bottom - SIDEBAR_OVERLAY_GAP_PX);
+        return {availableHeight};
+    };
+
+    const resetSidebarDropdownPosition = (dropdown) => {
+        if (!(dropdown instanceof HTMLElement)) return;
+        dropdown.style.left = "";
+        dropdown.style.top = "";
+        dropdown.style.right = "";
+        dropdown.style.width = "";
+        dropdown.style.maxHeight = "";
+    };
+
+    const positionSidebarDropdownFromTrigger = (trigger, dropdown, container) => {
+        if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement) || !(container instanceof HTMLElement)) return;
+        const triggerRect = trigger.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const overlayMetrics = getSidebarOverlayMetrics(triggerRect);
+        const left = Math.max(0, triggerRect.left - containerRect.left);
+        const top = Math.max(0, triggerRect.bottom - containerRect.top + SIDEBAR_OVERLAY_GAP_PX);
+        const availableWidth = Math.max(0, containerRect.width - left);
+        const width = availableWidth > 0 ? availableWidth : triggerRect.width;
+        dropdown.style.left = `${Math.round(left)}px`;
+        dropdown.style.top = `${Math.round(top)}px`;
+        dropdown.style.right = "auto";
+        dropdown.style.width = `${Math.round(width)}px`;
+        dropdown.style.maxHeight = overlayMetrics ? `${Math.round(overlayMetrics.availableHeight)}px` : "";
+    };
+
+    const positionSharedSelectDropdown = (field) => {
+        const parts = getSharedSelectParts(field);
+        if (!parts || parts.dropdown.hidden) return;
+        const container = parts.dropdown.parentElement;
+        positionSidebarDropdownFromTrigger(parts.trigger, parts.dropdown, container instanceof HTMLElement ? container : parts.field);
+    };
+
     const setSharedSelectDropdownOpen = (field, isOpen) => {
         const parts = getSharedSelectParts(field);
         if (!parts) return;
         parts.dropdown.hidden = !isOpen;
         parts.trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
         parts.field.classList.toggle("is-open", isOpen);
+        if (isOpen) {
+            positionSharedSelectDropdown(field);
+        } else {
+            resetSidebarDropdownPosition(parts.dropdown);
+        }
     };
 
     const closeSharedSelectDropdowns = (exceptField = null) => {
@@ -3046,18 +3099,11 @@
     const positionTradeStrategyPanel = () => {
         if (!(tradeStrategyPanel instanceof HTMLElement) || tradeStrategyPanel.hidden) return;
         if (!(tradeStrategyField instanceof HTMLElement)) return;
-        const sidebar = document.querySelector(".sidebar");
-        if (!(sidebar instanceof HTMLElement)) return;
-        const panelRect = tradeStrategyField.getBoundingClientRect();
-        const sidebarRect = sidebar.getBoundingClientRect();
-        const dock = document.querySelector(".sidebar-dock");
-        const rootStyles = getComputedStyle(document.documentElement);
-        const pageEdgePad = Number.parseFloat(rootStyles.getPropertyValue("--page-edge-pad")) || 10;
         const panelStyles = getComputedStyle(tradeStrategyPanel);
-        const lowerBoundary = dock instanceof HTMLElement
-            ? Math.min(sidebarRect.bottom, dock.getBoundingClientRect().top) - pageEdgePad
-            : sidebarRect.bottom - pageEdgePad;
-        const availableHeight = Math.max(160, lowerBoundary - panelRect.bottom);
+        const panelAnchor = tradeStrategyField.querySelector(".trade-strategy-row");
+        const anchorRect = panelAnchor instanceof HTMLElement ? panelAnchor.getBoundingClientRect() : tradeStrategyField.getBoundingClientRect();
+        const overlayMetrics = getSidebarOverlayMetrics(anchorRect, 160);
+        const availableHeight = overlayMetrics ? overlayMetrics.availableHeight : 160;
         const panelGrid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
         if (panelGrid instanceof HTMLElement) {
             const verticalChrome = (Number.parseFloat(panelStyles.paddingTop) || 0)
@@ -3234,12 +3280,27 @@
         if (tradeStrategyField instanceof HTMLElement) {
             tradeStrategyField.classList.toggle("is-open", isOpen || (!(tradeStrategyPanel instanceof HTMLElement) ? false : !tradeStrategyPanel.hidden));
         }
+        if (isOpen) {
+            positionTradeStrategyDropdown();
+        } else {
+            resetSidebarDropdownPosition(tradeStrategyDropdown);
+        }
     };
 
     const syncTradeStrategyTriggerLabel = () => {
         if (!(tradeStrategySelect instanceof HTMLSelectElement) || !(tradeStrategyTriggerLabel instanceof HTMLElement)) return;
         const selectedOption = Array.from(tradeStrategySelect.options).find((option) => option.value === tradeStrategySelect.value);
         tradeStrategyTriggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+    };
+
+    const positionTradeStrategyDropdown = () => {
+        if (!(tradeStrategyDropdown instanceof HTMLElement) || tradeStrategyDropdown.hidden) return;
+        const container = tradeStrategyDropdown.parentElement;
+        positionSidebarDropdownFromTrigger(
+            tradeStrategyTrigger,
+            tradeStrategyDropdown,
+            container instanceof HTMLElement ? container : tradeStrategyField,
+        );
     };
 
     const renderTradeStrategyDropdown = () => {
@@ -3373,8 +3434,16 @@
         });
     }
 
-    window.addEventListener("resize", positionTradeStrategyPanel);
-    document.addEventListener("scroll", positionTradeStrategyPanel, true);
+    window.addEventListener("resize", () => {
+        sharedSelectFields.forEach((field) => positionSharedSelectDropdown(field));
+        positionTradeStrategyDropdown();
+        positionTradeStrategyPanel();
+    });
+    document.addEventListener("scroll", () => {
+        sharedSelectFields.forEach((field) => positionSharedSelectDropdown(field));
+        positionTradeStrategyDropdown();
+        positionTradeStrategyPanel();
+    }, true);
     document.addEventListener("click", (event) => {
         const clickedInsideStrategyField = tradeStrategyField instanceof HTMLElement && tradeStrategyField.contains(event.target);
         const clickedInsideSharedField = sharedSelectFields.some((field) => field.contains(event.target));

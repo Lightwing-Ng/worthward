@@ -78,6 +78,12 @@ html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-e
 	-webkit-backdrop-filter: var(--glass-mask-blur);
 	pointer-events: none;
 }
+.is-pending-value[data-workspace-mask="compare-return"]::after,
+.is-pending-value[data-workspace-mask="portfolio-total-return"]::after,
+.is-pending-value[data-workspace-mask="trade-metric"]::after {
+	inset: -1px -3px;
+	border-radius: var(--radius-soft);
+}
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch {
 	color: transparent !important;
 }

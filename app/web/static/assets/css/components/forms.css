@@ -643,7 +643,7 @@
 	overflow: visible;
 }
 .trade-strategy-field.is-open {
-	z-index: var(--layer-inline-overlay-host);
+	z-index: var(--layer-global-popover);
 }
 .trade-strategy-row {
 	display: grid;
@@ -692,7 +692,10 @@
 	border: 1px solid var(--theme-glass-highlight);
 	z-index: var(--layer-inline-overlay);
 	max-height: min(320px, 48vh);
+	overflow-x: hidden;
 	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
 	scrollbar-width: thin;
 	scrollbar-color: var(--theme-muted-translucent) transparent;
 }
@@ -701,7 +704,7 @@
 }
 .backtest-shared-select-field.is-open,
 .field.range-panel:has(.backtest-shared-select-trigger[aria-expanded="true"]) {
-	z-index: var(--layer-inline-overlay-host);
+	z-index: var(--layer-global-popover);
 }
 .backtest-shared-select-dropdown {
 	position: absolute;
@@ -861,6 +864,12 @@
 	-webkit-backdrop-filter: var(--glass-popover-blur);
 	border: 1px solid var(--theme-glass-highlight);
 	z-index: var(--layer-inline-overlay);
+}
+
+.trade-controls:has(.trade-strategy-field.is-open),
+.trade-controls:has(.backtest-shared-select-field.is-open),
+.trade-controls:has(.field.range-panel .backtest-shared-select-trigger[aria-expanded="true"]) {
+	z-index: var(--layer-global-popover);
 }
 .trade-strategy-params-popover:has(.trade-strategy-param.is-open) {
 	padding-bottom: 58px;
