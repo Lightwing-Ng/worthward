@@ -1,7 +1,7 @@
-/* Code version: v0.3.7 */
+/* Code version: v0.3.11 */
 @import url("./foundation/tokens.css?v=3.24.3");
 @import url("./layout/shell.css?v=3.23.1");
-@import url("./components/forms.css?v=3.23.0");
+@import url("./components/forms.css?v=3.23.4");
 @import url("./views/workspace.css?v=3.23.4");
 @import url("./views/settings.css?v=3.23.2");
 @import url("./views/trade.css?v=3.23.0");

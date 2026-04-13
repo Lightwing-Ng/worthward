@@ -29,47 +29,89 @@
 .settings-stack-form input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .portfolio-weight-unit { position: absolute; right: 0; color: var(--text); font-size: var(--font-form-label); line-height: 1; font-weight: var(--font-weight-semibold); pointer-events: none; }
 .portfolio-weight-slider-shell {
+	--portfolio-weight-slider-track-height: 4px;
+	--portfolio-weight-slider-thumb-size: 16px;
 	position: relative;
+	display: flex;
+	align-items: center;
+	box-sizing: border-box;
 	width: 100%;
-	height: 6px;
-	margin-top: 6px;
-	background: color-mix(in srgb, var(--theme-text) 12%, transparent);
-	border-radius: var(--radius-pill);
+	height: 36px;
+	margin-top: 0;
+	padding: 0 10px;
+	background: var(--glass-popover-background);
+	border: var(--glass-popover-border);
+	border-radius: 10px;
+	box-shadow: var(--glass-popover-shadow);
 	overflow: hidden;
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: var(--glass-popover-blur);
+	-webkit-backdrop-filter: var(--glass-popover-blur);
+	isolation: isolate;
 	opacity: 0;
 	visibility: hidden;
 	pointer-events: none;
 	max-height: 0;
-	margin-bottom: 0;
 	transform: translateY(-4px) scaleY(0.85);
 	transform-origin: top;
-	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), max-height 180ms var(--motion-standard), margin 180ms var(--motion-standard), transform 180ms var(--motion-standard);
+	z-index: var(--layer-global-popover);
+	transition: opacity 180ms var(--motion-standard), visibility 180ms var(--motion-standard), max-height 180ms var(--motion-standard), transform 180ms var(--motion-standard);
 }
 .portfolio-weight-field.is-open .portfolio-weight-slider-shell,
 .portfolio-weight-field:focus-within .portfolio-weight-slider-shell {
 	opacity: 1;
 	visibility: visible;
 	pointer-events: auto;
-	max-height: 12px;
-	margin-bottom: 2px;
+	max-height: 36px;
 	transform: translateY(0) scaleY(1);
 }
 .portfolio-weight-slider {
+	flex: 1 1 auto;
+	display: block;
 	width: 100%;
-	height: 100%;
+	height: var(--portfolio-weight-slider-thumb-size);
+	min-height: var(--portfolio-weight-slider-thumb-size);
+	padding: 0;
+	margin: 0;
+	border: 0;
 	appearance: none;
+	-webkit-appearance: none;
 	background: transparent;
 	cursor: pointer;
 }
+.portfolio-weight-slider:focus { outline: none; }
+.portfolio-weight-slider::-webkit-slider-runnable-track {
+	height: var(--portfolio-weight-slider-track-height);
+	border-radius: var(--radius-pill);
+	background: var(--accent-border-soft);
+}
 .portfolio-weight-slider::-webkit-slider-thumb {
 	appearance: none;
-	width: 14px;
-	height: 14px;
+	-webkit-appearance: none;
+	margin-top: calc((var(--portfolio-weight-slider-track-height) - var(--portfolio-weight-slider-thumb-size)) / 2);
+	width: var(--portfolio-weight-slider-thumb-size);
+	height: var(--portfolio-weight-slider-thumb-size);
 	border-radius: 50%;
-	background: var(--accent);
-	box-shadow: 0 0 0 2px var(--glass-surface-background);
+	background: var(--color-white-adaptive);
+	border: 0;
+	box-shadow: 0 5px 12px var(--theme-shadow-ambient), 0 1px 0 var(--theme-glass-highlight) inset, 0 0 0 0.5px var(--theme-glass-border);
+}
+.portfolio-weight-slider::-moz-range-track {
+	height: var(--portfolio-weight-slider-track-height);
+	border-radius: var(--radius-pill);
+	background: var(--accent-border-soft);
+}
+.portfolio-weight-slider::-moz-range-thumb {
+	width: var(--portfolio-weight-slider-thumb-size);
+	height: var(--portfolio-weight-slider-thumb-size);
+	border-radius: 50%;
+	background: var(--color-white-adaptive);
+	border: 0;
+	box-shadow: 0 5px 12px var(--theme-shadow-ambient), 0 1px 0 var(--theme-glass-highlight) inset, 0 0 0 0.5px var(--theme-glass-border);
+}
+.portfolio-weight-slider::-moz-range-progress {
+	height: var(--portfolio-weight-slider-track-height);
+	border-radius: var(--radius-pill);
+	background: var(--accent-border-strong);
 }
 .trade-capital-field { position: relative; }
 .trade-capital-row { position: relative; }
@@ -485,9 +527,11 @@
 }
 .ticker-controls .ticker-field:has(.suggestions.is-open),
 .ticker-controls .ticker-field:has(.field-tooltip-validation:not([hidden])),
-.portfolio-controls .ticker-field:has(.portfolio-weight-field.is-open),
 .trade-controls .trade-capital-field.is-open {
 	z-index: var(--layer-inline-overlay-host);
+}
+.portfolio-controls .ticker-field:has(.portfolio-weight-field.is-open) {
+	z-index: var(--layer-global-popover);
 }
 .ticker-form-controls .ticker-remove {
 	position: absolute;
@@ -552,6 +596,17 @@
 	display: block;
 	flex: 0 0 90px;
 	min-width: 90px;
+	overflow: visible;
+}
+.portfolio-controls .portfolio-weight-field.is-open,
+.portfolio-controls .portfolio-weight-field:focus-within {
+	z-index: var(--layer-global-popover);
+}
+.portfolio-controls .portfolio-weight-slider-shell {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: calc(var(--trade-control-label-height) + var(--trade-control-input-height));
 }
 .portfolio-controls .portfolio-weight-row {
 	min-height: var(--trade-control-input-height);
