@@ -85,6 +85,9 @@
     --settings-shell-gap: 8px;
     --settings-shell-content-max-width: 100%;
     gap: var(--settings-shell-gap);
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .settings-shell-about,
@@ -689,12 +692,9 @@ div.style-token-modal-demo {
 }
 
 .style-token-metric-card-demo {
+    --trade-metric-card-padding: 0;
+    --trade-metric-card-radius: 0;
     width: min(100%, 280px);
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
 }
 
 .style-token-metric-card-demo .trade-metric-label {

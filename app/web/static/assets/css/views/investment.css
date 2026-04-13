@@ -281,12 +281,15 @@
 }
 
 .investment-stock-details-metric-card {
-    --workspace-metric-card-row-gap: 0px;
+    --trade-metric-card-padding: 0;
+    --trade-metric-card-label-min-height: 0px;
+    --trade-metric-card-row-gap: 0px;
+    --trade-metric-label-line-height: 1;
+    --trade-metric-value-min-height: 0;
+    --trade-metric-value-padding-bottom: 0;
     height: 48px;
     min-height: 48px;
     max-height: 48px;
-    padding: 0;
-    grid-template-rows: auto auto;
     align-content: center;
 }
 
@@ -297,8 +300,6 @@
 }
 
 .investment-stock-details-metric-value {
-    min-height: 0;
-    padding-bottom: 0;
     color: var(--text);
 }
 
@@ -1211,11 +1212,8 @@
 
 .investment-metric-tooltip-trigger {
     position: relative;
-    display: inline-flex;
-    align-items: flex-end;
-    justify-self: start;
-    min-width: 0;
     outline: none;
+    cursor: default;
 }
 
 .investment-metric-tooltip-trigger:focus-visible {
@@ -1223,8 +1221,8 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent-primary) 28%, transparent);
 }
 
-.investment-metric-tooltip-trigger .trade-metric-value {
-    cursor: default;
+.investment-metric-tooltip-value-copy {
+    display: inline;
 }
 
 .investment-metric-tooltip {

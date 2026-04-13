@@ -1585,7 +1585,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const ticker = String(txn?.ticker || '').trim();
         if (!ticker) return false;
         const normalizedType = getNormalizedTransactionType(txn);
-        return !['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType);
+        if (['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType)) return false;
+        return !isForexPairTicker(ticker);
+    }
+
+    function isForexPairTicker(ticker) {
+        return /^[A-Z]{3}\.[A-Z]{3}$/i.test(String(ticker || '').trim());
     }
 
     // Code version: v0.2.0.1
@@ -1754,17 +1759,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedBackendFailures = Array.isArray(backendFailures) ? backendFailures : [];
         const normalizedFallbackTickers = Array.from(new Set((Array.isArray(fallbackTickers) ? fallbackTickers : [])
             .map((ticker) => normalizeInvestmentTicker(ticker))
+            .filter((ticker) => !isForexPairTicker(ticker))
             .filter(Boolean)));
         const normalizedMissingTickers = Array.from(new Set((Array.isArray(missingTickers) ? missingTickers : [])
             .map((ticker) => normalizeInvestmentTicker(ticker))
+            .filter((ticker) => !isForexPairTicker(ticker))
             .filter(Boolean)));
-        const hasBackendFailures = normalizedBackendFailures.length > 0;
+        const filteredBackendFailures = normalizedBackendFailures.filter((entry) => {
+            const ticker = normalizeInvestmentTicker(entry?.ticker || '');
+            return ticker ? !isForexPairTicker(ticker) : true;
+        });
+        const hasBackendFailures = filteredBackendFailures.length > 0;
         const isDegraded = hasBackendFailures || normalizedFallbackTickers.length > 0 || normalizedMissingTickers.length > 0;
         if (!isDegraded) {
             return {
                 isDegraded: false,
                 message: '',
-                backendFailures: normalizedBackendFailures,
+                backendFailures: filteredBackendFailures,
                 fallbackTickers: normalizedFallbackTickers,
                 missingTickers: normalizedMissingTickers,
             };
@@ -1778,13 +1789,13 @@ document.addEventListener('DOMContentLoaded', () => {
             messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.join(', ')} until local market history is refreshed.`);
         }
         if (hasBackendFailures) {
-            messageParts.push(normalizedBackendFailures.map((entry) => entry?.message).filter(Boolean).join(' '));
+            messageParts.push(filteredBackendFailures.map((entry) => entry?.message).filter(Boolean).join(' '));
         }
 
         return {
             isDegraded: true,
             message: messageParts.filter(Boolean).join(' '),
-            backendFailures: normalizedBackendFailures,
+            backendFailures: filteredBackendFailures,
             fallbackTickers: normalizedFallbackTickers,
             missingTickers: normalizedMissingTickers,
         };
@@ -2475,29 +2486,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // Normalize type first
             const normalizedType = getNormalizedTransactionType(txn);
             if (txn.ticker && qty !== null && !isNaN(qty)) {
-                if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
                 const normalizedTicker = String(txn.ticker).trim().toUpperCase();
-                const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
-                if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
-                    if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
-                        const previousQuantity = holdings[txn.ticker];
-                        const previousAnchor = moneyMarketAnchors[txn.ticker] ?? price;
-                        const nextQuantity = previousQuantity + qty;
-                        moneyMarketAnchors[txn.ticker] = nextQuantity > 0
-                            ? (((previousQuantity * previousAnchor) + (qty * price)) / nextQuantity)
-                            : price;
-                    }
-                    holdings[txn.ticker] += qty;
-                } else if (['sell'].includes(normalizedType)) {
-                    holdings[txn.ticker] -= qty;
-                    if (isMoneyMarketTicker && holdings[txn.ticker] > 0 && price !== null && !Number.isNaN(price)) {
-                        moneyMarketAnchors[txn.ticker] = moneyMarketAnchors[txn.ticker] ?? price;
-                    }
-                    if (holdings[txn.ticker] <= 0) {
-                        delete moneyMarketAnchors[txn.ticker];
-                    }
-                    if (Math.abs(holdings[txn.ticker]) < 1e-9) {
-                        delete holdings[txn.ticker];
+                if (!isForexPairTicker(normalizedTicker)) {
+                    if (!holdings[txn.ticker]) holdings[txn.ticker] = 0;
+                    const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+                    if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
+                        if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
+                            const previousQuantity = holdings[txn.ticker];
+                            const previousAnchor = moneyMarketAnchors[txn.ticker] ?? price;
+                            const nextQuantity = previousQuantity + qty;
+                            moneyMarketAnchors[txn.ticker] = nextQuantity > 0
+                                ? (((previousQuantity * previousAnchor) + (qty * price)) / nextQuantity)
+                                : price;
+                        }
+                        holdings[txn.ticker] += qty;
+                    } else if (['sell'].includes(normalizedType)) {
+                        holdings[txn.ticker] -= qty;
+                        if (isMoneyMarketTicker && holdings[txn.ticker] > 0 && price !== null && !Number.isNaN(price)) {
+                            moneyMarketAnchors[txn.ticker] = moneyMarketAnchors[txn.ticker] ?? price;
+                        }
+                        if (holdings[txn.ticker] <= 0) {
+                            delete moneyMarketAnchors[txn.ticker];
+                        }
+                        if (Math.abs(holdings[txn.ticker]) < 1e-9) {
+                            delete holdings[txn.ticker];
+                        }
                     }
                 }
             }
@@ -2573,6 +2586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let marketValue = 0;
             Object.entries(txn.holdings).forEach(([ticker, quantity]) => {
                 const normalizedTicker = String(ticker).trim().toUpperCase();
+                if (isForexPairTicker(normalizedTicker)) return;
                 const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
                 const valuationDate = normalizeLedgerDate(txn.date);
                 let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex[normalizedTicker], valuationDate);
@@ -3235,8 +3249,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const latestRow = rows.length ? rows[0] : '';
 
         return `
-            <span class="investment-metric-tooltip-trigger" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}">
-                <span class="trade-metric-value" data-workspace-mask="trade-metric">${metric?.value || '--'}</span>
+            <span class="investment-metric-tooltip-trigger trade-metric-value" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
+                <span class="investment-metric-tooltip-value-copy">${metric?.value || '--'}</span>
                 <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
                     <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
                     ${rowListHtml}

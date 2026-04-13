@@ -159,6 +159,10 @@ market_store/            → Local parquet, profile, logo, and search caches
 - Money market funds are intentionally simplified through configuration:
   buy-to-sell valuation is anchored to the effective buy price, and the sell date uses the sell price
 - This money market rule is opt-in through `config.toml` under `investment.money_market_funds`, so regular equities and ETFs such as `MSFT`, `TQQQ`, `BOXX`, and `JEPQ` continue to use the standard historical-close workflow unchanged
+- Configured money market funds are treated as ledger-priced cash-like instruments rather than normal market-data tickers:
+  they do not require local daily-history parquet files, they do not contribute `missing market history` warnings, and their display identity may come from the imported ledger instead of remote profile lookup
+- IBKR internal FX conversion symbols such as `USD.HKD` are treated as non-market ledger artifacts rather than queryable securities:
+  they affect cash flow in the transaction ledger, but they are excluded from holdings, historical-close valuation, local market-history fetching, and missing-valuation warnings
 
 ## Settings workspace
 
@@ -195,6 +199,8 @@ The current `Settings` navigation includes:
 
 - The UI exposes IBKR configuration status
 - Historical `1m` fetching is not implemented yet
+- Imported IBKR transaction ledgers may include internal FX conversion rows whose synthetic symbols, for example `USD.HKD`, are not valid market-data tickers in this app
+- Those FX symbols are intentionally handled as cash-conversion bookkeeping only and must not be interpreted as securities that need `1d`, `1m`, or logo data
 
 ## Local Market Store behavior
 
@@ -218,6 +224,12 @@ Current supported rule family:
     When enabled, use a matching transaction description as the holdings display name if no local profile exists
   - `description_keywords`
     Extra guardrails for matching only the intended instrument descriptions
+
+Related permanent investment-ledger rule:
+
+- IBKR internal FX conversion symbols in `AAA.BBB` form, for example `USD.HKD`
+  These are treated as non-queryable ledger-only artifacts by design
+  They should never trigger market-history refreshes, logo lookup, holdings valuation, or `Valuation is incomplete...` warnings
 
 For the current workspace, ticker `005276756` is configured this way so the holdings table shows its proper fund name and avoids misleading equity-curve drawdowns caused by incomplete money market pricing data.
 

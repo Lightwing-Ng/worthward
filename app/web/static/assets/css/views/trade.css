@@ -254,29 +254,40 @@
 }
 
 .trade-metric-card {
+    --trade-metric-card-padding: var(--workspace-metric-card-padding);
+    --trade-metric-card-radius: var(--workspace-metric-card-radius);
+    --trade-metric-card-label-min-height: var(--workspace-metric-card-label-min-height);
+    --trade-metric-card-row-gap: var(--workspace-metric-card-row-gap);
+    --trade-metric-card-align-self-local: var(--workspace-metric-card-align-self);
+    --trade-metric-label-font-size: var(--font-tooltip);
+    --trade-metric-label-line-height: 1.1;
+    --trade-metric-label-font-weight: var(--font-weight-bold);
+    --trade-metric-label-color: var(--muted);
+    --trade-metric-value-min-height: calc(var(--workspace-metric-value-line-height) * 1em);
+    --trade-metric-value-padding-bottom: 2px;
     min-width: 0;
     min-height: var(--workspace-metric-card-min-height);
     overflow: visible;
-    padding: var(--workspace-metric-card-padding);
-    border-radius: var(--workspace-metric-card-radius);
+    padding: var(--trade-metric-card-padding);
+    border-radius: var(--trade-metric-card-radius);
     background: transparent;
     border: none;
     box-shadow: none;
     display: grid;
-    grid-template-rows: minmax(var(--workspace-metric-card-label-min-height), auto) minmax(0, auto);
-    row-gap: var(--workspace-metric-card-row-gap);
+    grid-template-rows: minmax(var(--trade-metric-card-label-min-height), auto) minmax(0, auto);
+    row-gap: var(--trade-metric-card-row-gap);
     align-items: start;
-    align-self: var(--workspace-metric-card-align-self);
+    align-self: var(--trade-metric-card-align-self-local);
 }
 
 .trade-metric-label {
     display: flex;
     align-items: flex-start;
     margin-bottom: 0;
-    font-size: var(--font-tooltip);
-    line-height: 1.1;
-    font-weight: var(--font-weight-bold);
-    color: var(--muted);
+    font-size: var(--trade-metric-label-font-size);
+    line-height: var(--trade-metric-label-line-height);
+    font-weight: var(--trade-metric-label-font-weight);
+    color: var(--trade-metric-label-color);
 }
 
 .trade-metric-value {
@@ -287,18 +298,21 @@
     max-inline-size: 100%;
     justify-self: start;
     min-width: 0;
-    min-height: calc(var(--workspace-metric-value-line-height) * 1em);
+    min-height: var(--trade-metric-value-min-height);
     overflow: visible;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding-bottom: var(--trade-metric-value-padding-bottom);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.trade-metric-value {
     font-size: var(--workspace-metric-value-font-size);
     line-height: var(--workspace-metric-value-line-height);
     letter-spacing: var(--workspace-metric-value-letter-spacing);
     color: var(--text);
     font-weight: var(--workspace-metric-value-font-weight);
-    padding-bottom: 2px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
 }
 
 @media (min-width: 1024px) {

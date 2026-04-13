@@ -248,6 +248,9 @@ def build_web_runtime() -> WebRuntime:
             if str(ticker).strip().upper() not in configured_money_market_tickers
         ]
 
+    def is_configured_money_market_ticker(ticker: str) -> bool:
+        return str(ticker).strip().upper() in configured_money_market_tickers
+
     def apply_no_store_headers(response):
         response.headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -349,6 +352,8 @@ def build_web_runtime() -> WebRuntime:
         price_history_by_ticker: dict[str, list[dict[str, Any]]] = {}
         failures: list[dict[str, str]] = []
         for ticker in collect_investment_display_tickers(transactions):
+            if is_configured_money_market_ticker(ticker):
+                continue
             try:
                 path = history_store_path_for(ticker)
                 if not path.exists():
