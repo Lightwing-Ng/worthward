@@ -128,7 +128,7 @@
 }
 
 .investment-view-segmented .segmented-control-option input:checked + span {
-    color: var(--theme-text);
+    color: var(--color-white-adaptive);
 }
 
 .investment-equity-chart {

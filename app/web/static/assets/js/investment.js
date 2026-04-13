@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.0
+ * Code version: v1.31.2
+ * - Fixed: Shared investment theme resolution now lives in page scope, so refresh no longer throws `resolvedTheme is not defined`
  * - Fixed: History-row and chart hover now preview matching stock-detail rows without overwriting the user's selected ticker
  * - Fixed: Holdings ticker clicks now use controlled stock-details hash syncing instead of native anchor jumps, so view state and scrolling stay aligned
  * - Fixed: Investment valuation now consumes bundled price history from the primary transactions payload, reports degraded states explicitly, and avoids per-ticker N+1 refresh fetches during first render
@@ -34,7 +35,7 @@
  * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
  * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
  * - Updated: Investment equity hover guide now matches the compare chart vertical hover line behavior
- * - Updated: Investment equity series color is fixed to #0055cc to match the tooltip legend
+ * - Updated: Investment equity series color now resolves from the shared theme accent token
  * - Reworked: Holdings view now renders as a scrollable data table with per-ticker cost basis and P&L metrics
  * - Improved: Holdings and Metrics data now consistently use the Workspace metric value token
  * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
@@ -78,13 +79,17 @@ window.drawMultipleLineChart = function(container, data, options) {
     container.appendChild(canvas);
 
     const theme = window.ANTIGRAVITY_APP.theme;
+    const themePrimaryColor = String(theme?.accent_primary || '').trim();
+    const themeSecondaryColor = String(theme?.accent_secondary || '').trim();
+    const themePositiveColor = String(theme?.accent_positive || '').trim();
+    const themeMutedColor = String(theme?.muted || '').trim();
     const resolvedTheme = (() => {
         const computed = getComputedStyle(document.body);
         return {
-            text: computed.getPropertyValue("--theme-text").trim(),
-            muted: computed.getPropertyValue("--theme-muted").trim(),
-            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim(),
-            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
+            text: computed.getPropertyValue("--theme-text").trim() || String(theme?.text || '').trim(),
+            muted: computed.getPropertyValue("--theme-muted").trim() || themeMutedColor,
+            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim() || themePrimaryColor,
+            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim() || themeSecondaryColor,
         };
     })();
 
@@ -206,6 +211,23 @@ window.drawMultipleLineChart = function(container, data, options) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    const theme = window.ANTIGRAVITY_APP?.theme || {};
+    const resolveInvestmentTheme = () => {
+        const computed = getComputedStyle(document.body);
+        const themeTextColor = String(theme?.text || '').trim();
+        const themeMutedColor = String(theme?.muted || '').trim();
+        const themePrimaryColor = String(theme?.accent_primary || '').trim();
+        const themeSecondaryColor = String(theme?.accent_secondary || '').trim();
+        const themePositiveColor = String(theme?.accent_positive || '').trim();
+        return {
+            text: computed.getPropertyValue("--theme-text").trim() || themeTextColor,
+            muted: computed.getPropertyValue("--theme-muted").trim() || themeMutedColor,
+            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim() || themePrimaryColor,
+            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim() || themeSecondaryColor,
+            accentPositive: computed.getPropertyValue("--theme-accent-positive").trim() || themePositiveColor,
+        };
+    };
+
     const toggleBtn = document.getElementById('toggle_form_button');
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
@@ -519,11 +541,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentDummyPalette(count) {
+        const resolvedTheme = resolveInvestmentTheme();
         if (!Number.isFinite(count) || count <= 0) return [];
-        if (count === 1) return ['#0055cc'];
+        if (count === 1) return [resolvedTheme.accentPrimary];
         return Array.from({ length: count }, (_, index) => {
             const ratio = index / (count - 1);
-            return interpolateHexColor('#0055cc', '#ff2f92', ratio);
+            return interpolateHexColor(resolvedTheme.accentPrimary, resolvedTheme.accentSecondary, ratio);
         });
     }
 
@@ -607,6 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderInvestmentDummyPortfolioDonut(pointRecord, tickerProfiles) {
+        const resolvedTheme = resolveInvestmentTheme();
         if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
         const holdingsMarketValues = pointRecord?.holdings_market_values || {};
         const openComponents = Object.entries(holdingsMarketValues)
@@ -638,7 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const segmentStart = angle;
             const segmentEnd = Math.min(segmentStart + sweep, 360);
             if ((segmentEnd - segmentStart) > 1e-9) {
-                fillFragments.push(`${palette[index] || '#0055cc'} ${segmentStart}deg ${segmentEnd}deg`);
+                fillFragments.push(`${palette[index] || resolvedTheme.accentPrimary} ${segmentStart}deg ${segmentEnd}deg`);
                 const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const ticker = entry.ticker;
                 const profile = tickerProfiles?.[ticker] || {};
@@ -2269,7 +2293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const logoUrl = resolveInvestmentLogoUrl(profile, summary?.ticker || 'stock');
         const totalPnl = (Number(summary?.realizedPnl) || 0) + (Number(summary?.unrealizedPnl) || 0);
         const donutFill = totalPnl > 1e-9
-            ? 'conic-gradient(#0055cc 0deg 358.8deg, transparent 358.8deg 360deg)'
+            ? 'conic-gradient(var(--theme-accent-primary) 0deg 358.8deg, transparent 358.8deg 360deg)'
             : totalPnl < -1e-9
                 ? 'conic-gradient(var(--theme-accent-secondary) 0deg 358.8deg, transparent 358.8deg 360deg)'
                 : 'conic-gradient(color-mix(in srgb, var(--theme-muted) 70%, transparent) 0deg 358.8deg, transparent 358.8deg 360deg)';
@@ -2801,17 +2825,8 @@ document.addEventListener('DOMContentLoaded', () => {
         activeChartTooltipPointIndex = -1;
 
         // Read theme tokens
-        const resolvedTheme = (() => {
-            const computed = getComputedStyle(document.body);
-            return {
-                text: computed.getPropertyValue("--theme-text").trim(),
-                muted: computed.getPropertyValue("--theme-muted").trim(),
-                accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim(),
-                accentPositive: computed.getPropertyValue("--theme-accent-positive").trim(),
-                accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim(),
-            };
-        })();
-        const equitySeriesColor = resolvedTheme.accentPrimary || "#0055cc";
+        const resolvedTheme = resolveInvestmentTheme();
+        const equitySeriesColor = resolvedTheme.accentPrimary;
 
         const labels = [...rawDates];
         const fixedYAxisWidth = 52;

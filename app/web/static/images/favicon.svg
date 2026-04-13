@@ -3,8 +3,8 @@
     <defs>
         <linearGradient id="faviconGradient" x1="0" y1="23.0957" x2="28.2617" y2="0" gradientUnits="userSpaceOnUse"
                         gradientTransform="rotate(45 14.13085 11.54785)">
-            <stop offset="0%" stop-color="#0055cc"/>
-            <stop offset="100%" stop-color="#ff2f92"/>
+            <stop offset="0%" stop-color="currentColor"/>
+            <stop offset="100%" stop-color="currentColor"/>
         </linearGradient>
     </defs>
     <g>

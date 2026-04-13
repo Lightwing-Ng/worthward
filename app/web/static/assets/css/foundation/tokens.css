@@ -77,7 +77,7 @@
 	--settings-action-button-pad-block: 0px;
 	--settings-action-button-pad-inline: 18px;
 	--settings-action-button-min-height: 32px;
-	--settings-action-button-background: #0055cc;
+	--settings-action-button-background: var(--theme-accent-primary);
 	--settings-action-button-color: var(--color-white-adaptive);
 	--settings-action-button-background-disabled: color-mix(in srgb, var(--theme-muted) 28%, transparent);
 	--settings-action-button-color-disabled: color-mix(in srgb, var(--settings-action-button-color) 72%, transparent);

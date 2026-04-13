@@ -155,7 +155,7 @@ market_store/            → Local parquet, profile, logo, and search caches
 - Realized P&L uses the investment ledger cash-flow model, with dividend reinvestment shares added without double-counting the reinvested cash as fresh cost basis
 - Unrealized P&L uses the latest locally available close price for regular securities
 - The equity-curve hover tooltip reports `Equity`, `Market value`, and `Cash` from the same processed transaction snapshots that feed the transaction-history table
-- The investment equity chart uses a fixed `#0055cc` equity stroke, keeps `Market value` on the standard accent magenta, uses the theme positive accent for `Cash`, and reuses the compare-style vertical hover guide
+- The investment equity chart now resolves its equity stroke from the shared primary accent token, keeps `Market value` on the standard accent magenta, uses the theme positive accent for `Cash`, and reuses the compare-style vertical hover guide
 - Money market funds are intentionally simplified through configuration:
   buy-to-sell valuation is anchored to the effective buy price, and the sell date uses the sell price
 - This money market rule is opt-in through `config.toml` under `investment.money_market_funds`, so regular equities and ETFs such as `MSFT`, `TQQQ`, `BOXX`, and `JEPQ` continue to use the standard historical-close workflow unchanged

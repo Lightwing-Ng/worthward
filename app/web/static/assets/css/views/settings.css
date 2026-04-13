@@ -189,19 +189,19 @@
     height: auto;
     padding: 0;
     background: transparent;
-    accent-color: #0055cc;
+    accent-color: var(--theme-accent-primary);
     cursor: pointer;
     flex: 0 0 auto;
 }
 
 .settings-general-option:has(input:checked) {
-    background: color-mix(in srgb, #0055cc 12%, var(--settings-general-option-background));
-    border-color: color-mix(in srgb, #0055cc 56%, transparent);
-    box-shadow: inset 0 0 0 1px #0055cc;
+    background: color-mix(in srgb, var(--theme-accent-primary) 12%, var(--settings-general-option-background));
+    border-color: color-mix(in srgb, var(--theme-accent-primary) 56%, transparent);
+    box-shadow: inset 0 0 0 1px var(--theme-accent-primary);
 }
 
 .settings-general-option:has(input:checked) .settings-general-option-title {
-    color: #0055cc;
+    color: var(--theme-accent-primary);
 }
 
 .settings-general-option-copy {

@@ -250,7 +250,7 @@
 	outline: none;
 	padding-right: 36px;
 	background-image:
-		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z' fill='%23505a5f'/%3E%3C/svg%3E");
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z' fill='currentColor'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: calc(100% - 12px) 50%;
 	background-size: 12px 8px;
@@ -1206,7 +1206,27 @@
 .segmented-control-option:hover span,
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
-.range-mode-option input:checked + span { color: var(--accent-contrast); letter-spacing: 0; }
+.range-mode-option input:checked + span { color: var(--color-white-adaptive); letter-spacing: 0; }
+/* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
+.segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell[data-active="period"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell[data-active="metrics"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
+.range-mode-shell[data-active="chart"] > .segmented-control-option:nth-child(1) > span,
+.segmented-control[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell[data-active="exact"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell[data-active="transactions"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
+.range-mode-shell[data-active="holdings"] > .segmented-control-option:nth-child(2) > span,
+.segmented-control[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
+.range-mode-shell[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
+.segmented-control[data-active="metrics"] > .segmented-control-option:nth-child(4) > span,
+.range-mode-shell[data-active="metrics"] > .segmented-control-option:nth-child(4) > span {
+	color: var(--color-white-adaptive);
+	letter-spacing: 0;
+}
 .segmented-control--compact {
 	width: min(320px, 100%);
 	max-width: 320px;

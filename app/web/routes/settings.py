@@ -10,6 +10,7 @@ from app.web.runtime import WebRuntime
 
 
 def register_settings_routes(app: Flask, runtime: WebRuntime) -> None:
+    app.get("/favicon.svg")(runtime.favicon_icon)
     app.get("/settings")(runtime.settings_root)
     app.get("/settings/<section_name>")(runtime.settings_page)
     app.post("/settings/general/action")(runtime.general_settings_action)

@@ -1,12 +1,14 @@
 """
 Formatting helpers for display labels.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
 import pandas as pd
+
+from app.core.settings import get_settings
 
 
 def format_period_label(period: str) -> str:
@@ -33,7 +35,10 @@ def format_display_date(value: pd.Timestamp | str) -> str:
     return f"{timestamp.day} {timestamp.strftime('%b %Y')}"
 
 
-def build_series_colors(count: int, start_hex: str = "#0055cc", end_hex: str = "#ff2f92") -> list[str]:
+def build_series_colors(count: int, start_hex: str | None = None, end_hex: str | None = None) -> list[str]:
+    theme_light = get_settings().get("ui", {}).get("theme", {}).get("light", {})
+    start_hex = start_hex or str(theme_light.get("accent_primary", ""))
+    end_hex = end_hex or str(theme_light.get("accent_secondary", ""))
     if count <= 1:
         return [start_hex]
 
