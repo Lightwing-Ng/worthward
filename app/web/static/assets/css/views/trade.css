@@ -254,19 +254,21 @@
 }
 
 .trade-metric-card {
-    --trade-metric-card-padding: var(--workspace-metric-card-padding);
+    --trade-metric-card-padding: 0;
     --trade-metric-card-radius: var(--workspace-metric-card-radius);
-    --trade-metric-card-label-min-height: var(--workspace-metric-card-label-min-height);
-    --trade-metric-card-row-gap: var(--workspace-metric-card-row-gap);
+    --trade-metric-card-label-min-height: 0px;
+    --trade-metric-card-row-gap: 0px;
     --trade-metric-card-align-self-local: var(--workspace-metric-card-align-self);
     --trade-metric-label-font-size: var(--font-tooltip);
-    --trade-metric-label-line-height: 1.1;
+    --trade-metric-label-line-height: 1;
     --trade-metric-label-font-weight: var(--font-weight-bold);
     --trade-metric-label-color: var(--muted);
-    --trade-metric-value-min-height: calc(var(--workspace-metric-value-line-height) * 1em);
-    --trade-metric-value-padding-bottom: 2px;
+    --trade-metric-value-min-height: 0;
+    --trade-metric-value-padding-bottom: 0;
     min-width: 0;
-    min-height: var(--workspace-metric-card-min-height);
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
     overflow: visible;
     padding: var(--trade-metric-card-padding);
     border-radius: var(--trade-metric-card-radius);
@@ -278,6 +280,7 @@
     row-gap: var(--trade-metric-card-row-gap);
     align-items: start;
     align-self: var(--trade-metric-card-align-self-local);
+    align-content: center;
 }
 
 .trade-metric-label {
@@ -288,6 +291,8 @@
     line-height: var(--trade-metric-label-line-height);
     font-weight: var(--trade-metric-label-font-weight);
     color: var(--trade-metric-label-color);
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .trade-metric-value {

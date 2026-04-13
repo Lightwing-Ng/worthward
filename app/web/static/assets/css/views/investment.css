@@ -280,29 +280,6 @@
     min-width: 0;
 }
 
-.investment-stock-details-metric-card {
-    --trade-metric-card-padding: 0;
-    --trade-metric-card-label-min-height: 0px;
-    --trade-metric-card-row-gap: 0px;
-    --trade-metric-label-line-height: 1;
-    --trade-metric-value-min-height: 0;
-    --trade-metric-value-padding-bottom: 0;
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
-    align-content: center;
-}
-
-.investment-stock-details-metric-card .trade-metric-label {
-    text-transform: none;
-    letter-spacing: 0;
-    line-height: 1;
-}
-
-.investment-stock-details-metric-value {
-    color: var(--text);
-}
-
 .investment-stock-details-donut-card {
     flex: 0 0 clamp(160px, 28%, 240px);
     min-width: 0;

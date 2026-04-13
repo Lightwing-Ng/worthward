@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.30.0
+ * Code version: v1.31.0
+ * - Fixed: History-row and chart hover now preview matching stock-detail rows without overwriting the user's selected ticker
+ * - Fixed: Holdings ticker clicks now use controlled stock-details hash syncing instead of native anchor jumps, so view state and scrolling stay aligned
  * - Fixed: Investment valuation now consumes bundled price history from the primary transactions payload, reports degraded states explicitly, and avoids per-ticker N+1 refresh fetches during first render
  * - Removed: Legacy manual-entry selector and transaction-form branches that no longer match the current Investment template contract
  * - Improved: Investment chart hover now scrolls the full same-day Transaction history row group into view instead of centering only the first matching row
@@ -401,7 +403,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 460);
     }
 
-    function setInvestmentView(nextView) {
+    function syncInvestmentViewHash(nextView) {
+        const currentHash = String(window.location.hash || '').trim();
+        const nextHash = nextView === 'stock_details' ? '#investment_stock_details_panel' : '';
+        if (currentHash === nextHash) return;
+        const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+        window.history.replaceState(null, '', nextUrl);
+    }
+
+    function setInvestmentView(nextView, { syncHash = true } = {}) {
         if (!nextView) {
             return;
         }
@@ -437,6 +447,9 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.hidden = panel.dataset.investmentViewPanel !== nextView;
         });
         activeInvestmentView = nextView;
+        if (syncHash) {
+            syncInvestmentViewHash(nextView);
+        }
         animateInvestmentSurfaceHeight();
         if (nextView === 'stock_details') {
             window.requestAnimationFrame(() => {
@@ -1062,22 +1075,33 @@ document.addEventListener('DOMContentLoaded', () => {
         activeInvestmentStockDetailRowIds = [];
     }
 
-    // Code version: v0.2.0.0
+    function getElementScrollOffsetWithinContainer(element, scrollContainer) {
+        if (!(element instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return 0;
+        const elementRect = element.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        return scrollContainer.scrollTop + (elementRect.top - containerRect.top);
+    }
+
+    // Code version: v0.3.0.0
     function scrollInvestmentHistoryRowsIntoView(rows, behavior = 'smooth') {
         const normalizedRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
         if (!normalizedRows.length) return;
+        const sortedRows = [...normalizedRows].sort((leftRow, rightRow) => leftRow.offsetTop - rightRow.offsetTop);
+        const firstRow = sortedRows[0];
         const scrollContainer = getInvestmentHistoryScrollContainer();
         if (scrollContainer) {
-            const rowTop = Math.min(...normalizedRows.map((row) => row.offsetTop - scrollContainer.offsetTop));
-            const rowBottom = Math.max(...normalizedRows.map((row) => row.offsetTop - scrollContainer.offsetTop + row.clientHeight));
-            const groupHeight = Math.max(0, rowBottom - rowTop);
-            const groupCenter = rowTop + (groupHeight / 2);
-            const targetTop = groupCenter - (scrollContainer.clientHeight / 2);
+            const edgePadding = Math.max(12, Math.min(24, Math.round(scrollContainer.clientHeight * 0.08)));
+            const firstRowTop = getElementScrollOffsetWithinContainer(firstRow, scrollContainer);
+            const lastRowBottom = Math.max(...sortedRows.map((row) => getElementScrollOffsetWithinContainer(row, scrollContainer) + row.offsetHeight));
+            const visibleTop = scrollContainer.scrollTop + edgePadding;
+            const visibleBottom = scrollContainer.scrollTop + scrollContainer.clientHeight - edgePadding;
+            const isGroupAlreadyVisible = firstRowTop >= visibleTop && lastRowBottom <= visibleBottom;
+            if (isGroupAlreadyVisible) return;
+            const targetTop = firstRowTop - edgePadding;
             scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
             return;
         }
-        const midpointRow = normalizedRows[Math.floor(normalizedRows.length / 2)];
-        midpointRow.scrollIntoView({ block: 'center', behavior });
+        firstRow.scrollIntoView({ block: 'nearest', behavior });
     }
 
     function scrollInvestmentStockDetailRowIntoView(row, behavior = 'smooth') {
@@ -1130,10 +1154,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function scheduleInvestmentStockDetailRowActivation(ledgerNos, { behavior = 'auto', scroll = true } = {}) {
-        window.requestAnimationFrame(() => {
-            activateInvestmentStockDetailRows(ledgerNos, { behavior, scroll });
-        });
+    // Code version: v0.4.0.0
+    function syncInvestmentStockDetailPreviewRows(ledgerNos, { behavior = 'auto', scroll = false } = {}) {
+        const normalizedLedgerNos = Array.from(new Set((Array.isArray(ledgerNos) ? ledgerNos : [])
+            .map((ledgerNo) => Number(ledgerNo))
+            .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)));
+        if (!normalizedLedgerNos.length) {
+            clearInvestmentStockDetailHighlights();
+            return;
+        }
+        const matchingRows = getInvestmentStockDetailRowsByLedgerNos(normalizedLedgerNos);
+        if (!matchingRows.length) {
+            clearInvestmentStockDetailHighlights();
+            return;
+        }
+        activateInvestmentStockDetailRows(normalizedLedgerNos, { behavior, scroll });
     }
 
     function getLatestHistoryRowForTicker(ticker) {
@@ -2142,7 +2177,8 @@ document.addEventListener('DOMContentLoaded', () => {
         holdingsPanel.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
             if (link.dataset.stockDetailsBound === '1') return;
             link.dataset.stockDetailsBound = '1';
-            link.addEventListener('click', () => {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
                 selectInvestmentStockTicker(link.dataset.investmentStockTicker || '', { focusView: true });
             });
         });
@@ -2266,6 +2302,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const companyName = String(profile.company_name || activeTicker);
         const logoUrl = String(profile.logo_url || '').trim();
         const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
+        const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
+        const totalCommissionCurrency = detailRows
+            .map((txn) => formatTransactionCurrency(txn))
+            .find((currency) => String(currency || '').trim());
+        const totalCommissionDisplay = totalCommissionCurrency
+            ? formatAmountWithCurrency(totalCommission, totalCommissionCurrency)
+            : formatAmount(totalCommission);
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
@@ -2297,8 +2340,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 valueClass: '',
             },
             {
-                label: 'Average price',
-                value: tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice),
+                label: 'Total commission',
+                value: totalCommissionDisplay,
                 valueClass: '',
             },
         ];
@@ -2378,7 +2421,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderInvestmentStockDetailsPanel(window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {});
         if (focusView) {
-            setInvestmentView('stock_details');
+            setInvestmentView('stock_details', { syncHash: true });
         }
     }
 
@@ -2386,10 +2429,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const hash = String(window.location.hash || '').trim();
         if (hash === '#investment_stock_details_panel') {
             ensureSelectedInvestmentStockTicker();
-            setInvestmentView('stock_details');
+            setInvestmentView('stock_details', { syncHash: false });
             return;
         }
-        setInvestmentView(fallbackView);
+        setInvestmentView(fallbackView, { syncHash: false });
     }
 
     function bindInvestmentHistoryChartInteractions(historyContainer) {
@@ -2399,13 +2442,9 @@ document.addEventListener('DOMContentLoaded', () => {
             row.dataset.chartHoverBound = '1';
             const activateChartMarker = () => {
                 const ledgerNo = Number(row.dataset.investmentHistoryRow || 0);
-                const ticker = normalizeInvestmentTicker(row.dataset.investmentHistoryTicker || '');
                 syncHoldingsChartHoverState('', ledgerNo);
                 activateInvestmentHistoryRows([ledgerNo], { behavior: 'auto', scroll: false });
-                if (ticker) {
-                    selectInvestmentStockTicker(ticker, { focusView: false });
-                }
-                scheduleInvestmentStockDetailRowActivation([ledgerNo], { behavior: 'auto', scroll: true });
+                syncInvestmentStockDetailPreviewRows([ledgerNo], { behavior: 'auto', scroll: activeInvestmentView === 'stock_details' });
             };
             const clearChartMarker = () => {
                 syncHoldingsChartHoverState('', 0);
@@ -3009,6 +3048,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeChartHoverDate = "";
                 activeChartTooltipPointIndex = -1;
                 clearInvestmentHistoryHighlights();
+                clearInvestmentStockDetailHighlights();
                 syncInvestmentDummyDonutFromInteraction();
                 return;
             }
@@ -3027,11 +3067,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerNos = Array.isArray(pointRecord?.anchor_ledger_nos)
                     ? pointRecord.anchor_ledger_nos
                     : getHistoryRowsForLedgerDate(hoveredLedgerDate).map((row) => Number(row.dataset.investmentHistoryRow || 0));
-                activateInvestmentHistoryRows(ledgerNos, { behavior: "smooth" });
+                activateInvestmentHistoryRows(ledgerNos, { behavior: "auto" });
+                syncInvestmentStockDetailPreviewRows(ledgerNos, { behavior: 'auto', scroll: false });
                 activeChartHoverDate = hoveredLedgerDate;
             } else if (!hoveredLedgerDate && activeChartHoverDate) {
                 activeChartHoverDate = "";
                 clearInvestmentHistoryHighlights();
+                clearInvestmentStockDetailHighlights();
             }
 
             const tooltipRows = [];

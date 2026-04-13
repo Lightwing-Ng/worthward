@@ -692,18 +692,8 @@ div.style-token-modal-demo {
 }
 
 .style-token-metric-card-demo {
-    --trade-metric-card-padding: 0;
     --trade-metric-card-radius: 0;
     width: min(100%, 280px);
-}
-
-.style-token-metric-card-demo .trade-metric-label {
-    text-transform: none;
-    letter-spacing: 0;
-}
-
-.style-token-metric-value-demo {
-    color: var(--text);
 }
 
 .style-token-workspace-header-demo {
