@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.3
+ * Code version: v1.31.4
+ * - Fixed: Holdings weight column now uses the latest valuation-point total equity, so unlevered accounts no longer show allocations above 100% when the last trade date lags the latest 1d close
  * - Fixed: Investment Metrics no longer show false panel scrollbars when tooltip content extends beyond metric cards
  * - Added: Investment Metrics now include total commission and interest charged, and loss-like values render with explicit negative signs plus the shared negative color token
  * - Improved: Stock details metric cards now reuse the same negative-value treatment for total commission and align to the shared responsive metric grid pattern
@@ -1790,7 +1791,15 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
-    function getLatestTransactionHistoryEquity(processedTransactions) {
+    function getLatestDashboardEquity(processedTransactions, chartPoints = []) {
+        const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length
+            ? chartPoints[chartPoints.length - 1]
+            : null;
+        const latestValuationEquity = Number(latestChartPoint?.total_equity);
+        if (Number.isFinite(latestValuationEquity)) {
+            return latestValuationEquity;
+        }
+
         const latestRecord = Array.isArray(processedTransactions) && processedTransactions.length
             ? processedTransactions[processedTransactions.length - 1]
             : null;
@@ -2757,7 +2766,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions, chartPoints = []) {
         const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
-        const TOTAL_EQUITY = getLatestTransactionHistoryEquity(processed);
+        const TOTAL_EQUITY = getLatestDashboardEquity(processed, chartPoints);
 
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
