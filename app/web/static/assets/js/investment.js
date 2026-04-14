@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.2
+ * Code version: v1.31.3
+ * - Fixed: Investment Metrics no longer show false panel scrollbars when tooltip content extends beyond metric cards
+ * - Added: Investment Metrics now include total commission and interest charged, and loss-like values render with explicit negative signs plus the shared negative color token
+ * - Improved: Stock details metric cards now reuse the same negative-value treatment for total commission and align to the shared responsive metric grid pattern
  * - Fixed: Shared investment theme resolution now lives in page scope, so refresh no longer throws `resolvedTheme is not defined`
  * - Fixed: History-row and chart hover now preview matching stock-detail rows without overwriting the user's selected ticker
  * - Fixed: Holdings ticker clicks now use controlled stock-details hash syncing instead of native anchor jumps, so view state and scrolling stay aligned
@@ -286,6 +289,8 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
             valueKey: 'fxFundingLoss',
             rowsKey: 'fxFundingLossRows',
+            formatValue: (metrics) => formatMetricLossAmount(metrics?.fxFundingLoss),
+            valueClass: (metrics) => getNegativeMetricClass(metrics?.fxFundingLoss),
         },
         {
             key: 'final-investable-usd',
@@ -293,6 +298,24 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
             valueKey: 'finalInvestableUsd',
             rowsKey: 'finalInvestableUsdRows',
+        },
+        {
+            key: 'total-commission',
+            label: 'Total commission',
+            summary: 'All commissions charged across the imported investment ledger.',
+            valueKey: 'totalCommission',
+            rowsKey: 'totalCommissionRows',
+            formatValue: (metrics) => formatMetricLossAmount(metrics?.totalCommission),
+            valueClass: (metrics) => getNegativeMetricClass(metrics?.totalCommission),
+        },
+        {
+            key: 'interest-charged',
+            label: 'Interest charged',
+            summary: 'Debit interest charged by the broker and deducted from cash.',
+            valueKey: 'interestCharged',
+            rowsKey: 'interestChargedRows',
+            formatValue: (metrics) => formatMetricLossAmount(metrics?.interestCharged),
+            valueClass: (metrics) => getNegativeMetricClass(metrics?.interestCharged),
         },
     ];
     let activeInvestmentView = 'chart';
@@ -1213,7 +1236,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="trade-metric-label">${definition.label}</span>
                 ${renderMetricValueWithTooltip({
                     key: definition.key,
-                    value: formatAmount(fundingMetrics?.[definition.valueKey]),
+                    value: definition.formatValue
+                        ? definition.formatValue(fundingMetrics)
+                        : formatAmount(fundingMetrics?.[definition.valueKey]),
+                    valueClass: typeof definition.valueClass === 'function'
+                        ? definition.valueClass(fundingMetrics)
+                        : (definition.valueClass || ''),
                     summary: definition.summary,
                     rows: fundingMetrics?.[definition.rowsKey],
                 })}
@@ -2331,8 +2359,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .map((txn) => formatTransactionCurrency(txn))
             .find((currency) => String(currency || '').trim());
         const totalCommissionDisplay = totalCommissionCurrency
-            ? formatAmountWithCurrency(totalCommission, totalCommissionCurrency)
-            : formatAmount(totalCommission);
+            ? formatMetricLossAmountWithCurrency(totalCommission, totalCommissionCurrency)
+            : formatMetricLossAmount(totalCommission);
+        const totalCommissionClass = getNegativeMetricClass(totalCommission);
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
@@ -2366,7 +2395,7 @@ document.addEventListener('DOMContentLoaded', () => {
             {
                 label: 'Total commission',
                 value: totalCommissionDisplay,
-                valueClass: '',
+                valueClass: totalCommissionClass,
             },
         ];
         const rowsHtml = detailRows.length ? detailRows.map((txn) => `
@@ -3263,6 +3292,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function formatMetricLossAmount(value) {
+        if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
+        const numericValue = Number(value);
+        if (Math.abs(numericValue) < 1e-9) return formatAmount(0);
+        return formatAmount(-Math.abs(numericValue));
+    }
+
+    function formatMetricLossAmountWithCurrency(value, currency) {
+        if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
+        const numericValue = Number(value);
+        if (Math.abs(numericValue) < 1e-9) return formatAmountWithCurrency(0, currency);
+        return formatAmountWithCurrency(-Math.abs(numericValue), currency);
+    }
+
+    function getNegativeMetricClass(value) {
+        const numericValue = Number(value);
+        return Number.isFinite(numericValue) && Math.abs(numericValue) > 1e-9
+            ? 'investment-holdings-value-negative'
+            : '';
+    }
+
     function getTotalDeposits(transactions) {
         return transactions
             .filter(t => getNormalizedTransactionType(t) === 'deposit')
@@ -3314,10 +3364,11 @@ document.addEventListener('DOMContentLoaded', () => {
             `
             : `<p class="investment-metric-tooltip-note">No contributing rows were detected.</p>`;
         const latestRow = rows.length ? rows[0] : '';
+        const valueClass = String(metric?.valueClass || '').trim();
 
         return `
-            <span class="investment-metric-tooltip-trigger trade-metric-value" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
-                <span class="investment-metric-tooltip-value-copy">${metric?.value || '--'}</span>
+            <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
+                <span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${metric?.value || '--'}</span>
                 <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
                     <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
                     ${rowListHtml}
@@ -3358,10 +3409,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 netUsdConverted: 0,
                 fxFundingLoss: 0,
                 finalInvestableUsd: 0,
+                totalCommission: 0,
+                interestCharged: 0,
                 directDepositRows: [],
                 netUsdConvertedRows: [],
                 fxFundingLossRows: [],
                 finalInvestableUsdRows: [],
+                totalCommissionRows: [],
+                interestChargedRows: [],
             };
         }
 
@@ -3387,9 +3442,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let pairedDepositFunding = 0;
         let netUsdConverted = 0;
         let pairedNetUsdConverted = 0;
+        let totalCommission = 0;
+        let interestCharged = 0;
         const pairedDepositRowSet = new Set();
         const netUsdConvertedRowSet = new Set();
         const pairedNetUsdConvertedRowSet = new Set();
+        const totalCommissionRowSet = new Set();
+        const interestChargedRowSet = new Set();
 
         const getFundingTolerance = (targetAmount) => Math.max(0.01, targetAmount * 0.001);
         const chooseClosestDepositSubset = (entries, targetAmount) => {
@@ -3423,6 +3482,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             const normalizedType = getNormalizedTransactionType(txn);
+            const commissionAmount = Math.abs(getTransactionCommission(txn));
+
+            if (commissionAmount > 1e-9) {
+                totalCommission += commissionAmount;
+                totalCommissionRowSet.add(ledgerNo);
+            }
+
+            if (normalizedType === 'debit_interest') {
+                const chargedInterest = Math.abs(getTransactionAmount(txn));
+                if (chargedInterest > 1e-9) {
+                    interestCharged += chargedInterest;
+                    interestChargedRowSet.add(ledgerNo);
+                }
+            }
 
             if (normalizedType === 'deposit') {
                 const depositAmount = getTransactionAmount(txn);
@@ -3507,10 +3580,14 @@ document.addEventListener('DOMContentLoaded', () => {
             netUsdConverted,
             fxFundingLoss,
             finalInvestableUsd,
+            totalCommission,
+            interestCharged,
             directDepositRows,
             netUsdConvertedRows,
             fxFundingLossRows,
             finalInvestableUsdRows,
+            totalCommissionRows: Array.from(totalCommissionRowSet),
+            interestChargedRows: Array.from(interestChargedRowSet),
         };
     }
 });
