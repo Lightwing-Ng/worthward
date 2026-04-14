@@ -132,8 +132,12 @@
     opacity: 1;
 }
 
+.investment-view-segmented > .segmented-control-option > span {
+    color: var(--theme-muted) !important;
+}
+
 .investment-view-segmented .segmented-control-option input:checked + span {
-    color: var(--color-white-adaptive);
+    color: var(--color-white-adaptive) !important;
 }
 
 .investment-equity-chart {

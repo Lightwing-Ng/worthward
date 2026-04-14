@@ -2358,8 +2358,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalCommissionCurrency = detailRows
             .map((txn) => formatTransactionCurrency(txn))
             .find((currency) => String(currency || '').trim());
+        const normalizedTotalCommissionCurrency = String(totalCommissionCurrency || '').trim().toUpperCase();
         const totalCommissionDisplay = totalCommissionCurrency
-            ? formatMetricLossAmountWithCurrency(totalCommission, totalCommissionCurrency)
+            ? (normalizedTotalCommissionCurrency === 'USD'
+                ? formatMetricLossAmount(totalCommission)
+                : formatMetricLossAmountWithCurrency(totalCommission, totalCommissionCurrency))
             : formatMetricLossAmount(totalCommission);
         const totalCommissionClass = getNegativeMetricClass(totalCommission);
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
