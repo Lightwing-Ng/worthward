@@ -3301,8 +3301,24 @@ def build_web_runtime() -> WebRuntime:
                     query_params={"page": page},
                 )
             elif action == "refresh-1m":
-                refresh_one_minute_store(ticker)
-                notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache (via Longbridge)."
+                refresh_result = refresh_one_minute_store(ticker)
+                if refresh_result.source == "longbridge":
+                    notice = (
+                        f"Saved the latest 6 months of 1-minute market data for {ticker} "
+                        "to local cache (via Longbridge)."
+                    )
+                elif refresh_result.source == "yfinance_30d":
+                    notice = (
+                        f"Longbridge was unavailable for {ticker}, so the app saved the latest "
+                        f"{refresh_result.fetched_days} days of 1-minute market data to local cache "
+                        "(via yfinance fallback window stitching)."
+                    )
+                else:
+                    notice = (
+                        f"Longbridge was unavailable for {ticker}, so the app saved the latest "
+                        f"{refresh_result.fetched_days} days of 1-minute market data to local cache "
+                        "(via yfinance fallback)."
+                    )
                 return _redirect_with_settings_feedback(
                     "local-market-store",
                     notice=notice,

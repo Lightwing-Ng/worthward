@@ -1,11 +1,12 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.6
+Code version: v0.3.7
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -20,6 +21,7 @@ from app.infrastructure.broker_market_data import (
     has_recent_one_minute_store,
     is_daily_store_fresh,
     normalize_one_minute_store_frame,
+    one_minute_lookback_start,
     refresh_longbridge_one_minute_store,
 )
 from app.infrastructure.storage import (
@@ -33,6 +35,16 @@ DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 YFINANCE_DOWNLOAD_LOCK = Lock()
 INTRADAY_INTERVALS = {"1m"}
+YFINANCE_INTRADAY_FALLBACK_DAYS = 30
+YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
+YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS = 7
+
+
+@dataclass(frozen=True)
+class OneMinuteRefreshResult:
+    path: Path
+    source: str
+    fetched_days: int
 
 
 def normalize_market_interval(interval: str | None) -> str:
@@ -64,6 +76,7 @@ def _download_daily_history_with_yfinance(
         ticker: str,
         *,
         start: str | None = None,
+        end: str | None = None,
         period: str | None = None,
         interval: str = "1d",
 ) -> pd.DataFrame:
@@ -75,6 +88,7 @@ def _download_daily_history_with_yfinance(
         return yf.download(
             tickers=ticker,
             start=start,
+            end=end,
             period=period,
             interval=interval,
             auto_adjust=False,
@@ -102,6 +116,87 @@ def _download_one_minute_history_with_longbridge(
             "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
         )
     return fetch_longbridge_one_minute_history(ticker, settings, since=None)
+
+
+def _download_one_minute_history_with_yfinance_window(
+        ticker: str,
+        *,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+) -> pd.DataFrame:
+    history = _download_daily_history_with_yfinance(
+        ticker,
+        start=start.strftime("%Y-%m-%d"),
+        end=(end + pd.Timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S"),
+        interval="1m",
+    )
+    if history.empty:
+        return history
+    normalized = normalize_history_frame(history, ticker, interval="1m")
+    return normalized.loc[
+        (normalized["Date"] >= start.tz_convert(None))
+        & (normalized["Date"] <= end.tz_convert(None))
+    ].copy()
+
+
+def _download_recent_one_minute_history_with_yfinance(
+        ticker: str,
+        *,
+        days: int = YFINANCE_INTRADAY_FALLBACK_DAYS,
+) -> pd.DataFrame:
+    window_days = max(1, YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS)
+    now_utc = pd.Timestamp.now(tz="UTC").floor("min")
+    start_utc = now_utc - pd.Timedelta(days=max(1, days))
+    cursor = start_utc
+    frames: list[pd.DataFrame] = []
+
+    while cursor < now_utc:
+        window_end = min(cursor + pd.Timedelta(days=window_days), now_utc)
+        try:
+            frame = _download_one_minute_history_with_yfinance_window(
+                ticker,
+                start=cursor,
+                end=window_end,
+            )
+        except Exception:
+            frame = pd.DataFrame()
+        if not frame.empty:
+            frames.append(frame)
+        if window_end >= now_utc:
+            break
+        cursor = window_end - pd.Timedelta(minutes=1)
+
+    if not frames:
+        raise ValueError(f"No recent 1-minute market data returned for {ticker} via yfinance.")
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+    if combined.empty:
+        raise ValueError(f"No recent 1-minute market data returned for {ticker} via yfinance.")
+    return combined.reset_index(drop=True)
+
+
+def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
+    normalized_ticker = normalize_ticker(ticker)
+    ensure_market_store_dir()
+    path = intraday_history_store_path_for(normalized_ticker, "1m")
+    normalized_dataset = normalize_one_minute_store_frame(dataset)
+    if normalized_dataset.empty:
+        raise ValueError(f"No 1-minute market data returned for {normalized_ticker}.")
+
+    if path.exists():
+        try:
+            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+        except Exception:
+            existing_df = pd.DataFrame()
+        if not existing_df.empty:
+            normalized_dataset = pd.concat([existing_df, normalized_dataset], ignore_index=True)
+            normalized_dataset = normalized_dataset.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+
+    cut_off = one_minute_lookback_start().tz_convert("America/New_York").tz_localize(None)
+    normalized_dataset = normalized_dataset.loc[normalized_dataset["Date"] >= cut_off].copy()
+    normalized_dataset.to_parquet(path, index=False)
+    return path
 
 
 def _download_daily_history_with_longbridge(
@@ -321,16 +416,58 @@ def refresh_history_store(ticker: str) -> Path:
     return path
 
 
-def refresh_one_minute_store(ticker: str) -> Path:
+def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
     normalized_ticker = normalize_ticker(ticker)
     settings = _load_longbridge_market_settings()
-    if settings is None:
-        raise ValueError(
-            f"Unable to refresh 1-minute market data for {normalized_ticker}. "
-            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
+    longbridge_error: Exception | None = None
+
+    if settings is not None:
+        try:
+            refresh_longbridge_one_minute_store(normalized_ticker, settings)
+            return OneMinuteRefreshResult(
+                path=intraday_history_store_path_for(normalized_ticker, "1m"),
+                source="longbridge",
+                fetched_days=180,
+            )
+        except Exception as exc:
+            longbridge_error = exc
+
+    try:
+        fallback_dataset = _download_recent_one_minute_history_with_yfinance(
+            normalized_ticker,
+            days=YFINANCE_INTRADAY_FALLBACK_DAYS,
         )
-    refresh_longbridge_one_minute_store(normalized_ticker, settings)
-    return intraday_history_store_path_for(normalized_ticker, "1m")
+        fallback_path = _upsert_one_minute_store(normalized_ticker, fallback_dataset)
+        return OneMinuteRefreshResult(
+            path=fallback_path,
+            source="yfinance_30d",
+            fetched_days=YFINANCE_INTRADAY_FALLBACK_DAYS,
+        )
+    except Exception as thirty_day_error:
+        try:
+            fallback_dataset = _download_recent_one_minute_history_with_yfinance(
+                normalized_ticker,
+                days=YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+            )
+            fallback_path = _upsert_one_minute_store(normalized_ticker, fallback_dataset)
+            return OneMinuteRefreshResult(
+                path=fallback_path,
+                source="yfinance_7d",
+                fetched_days=YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+            )
+        except Exception as seven_day_error:
+            if longbridge_error is not None:
+                raise ValueError(
+                    f"Unable to refresh 1-minute market data for {normalized_ticker}. "
+                    f"Longbridge failed: {longbridge_error}. "
+                    f"yfinance 30-day fallback failed: {thirty_day_error}. "
+                    f"yfinance 7-day fallback failed: {seven_day_error}."
+                ) from seven_day_error
+            raise ValueError(
+                f"Unable to refresh 1-minute market data for {normalized_ticker}. "
+                f"yfinance 30-day fallback failed: {thirty_day_error}. "
+                f"yfinance 7-day fallback failed: {seven_day_error}."
+            ) from seven_day_error
 
 
 def ensure_fresh_history_store(ticker: str) -> bool:

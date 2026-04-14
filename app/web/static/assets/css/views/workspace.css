@@ -1435,11 +1435,17 @@ footer {
     min-height: 220px;
 }
 
+.panel.sidebar:has(.settings-nav) {
+    display: flex;
+    flex-direction: column;
+}
+
 .settings-nav {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-top: auto;
     padding-top: 2px;
     isolation: isolate;
 }

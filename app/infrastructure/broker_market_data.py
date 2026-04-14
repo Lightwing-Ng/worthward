@@ -1,14 +1,14 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.3.4
+    Code version: v0.3.5
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -27,9 +27,14 @@ HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 NEW_YORK_TIMEZONE = "America/New_York"
 UTC_TIMEZONE = "UTC"
 NEW_YORK_ZONE = ZoneInfo(NEW_YORK_TIMEZONE)
+LONGBRIDGE_KEEPALIVE_INTERVAL_SECONDS = 240
+LONGBRIDGE_KEEPALIVE_SYMBOL = "AAPL.US"
 LONGBRIDGE_CONTEXT_LOCK = Lock()
 _LONGBRIDGE_CONTEXT_SIGNATURE: tuple[str, str, str] | None = None
 _LONGBRIDGE_QUOTE_CONTEXT: Any | None = None
+_LONGBRIDGE_KEEPALIVE_SIGNATURE: tuple[str, str, str] | None = None
+_LONGBRIDGE_KEEPALIVE_THREAD: Thread | None = None
+_LONGBRIDGE_KEEPALIVE_STOP_EVENT: Event | None = None
 
 
 def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) -> pd.Timestamp:
@@ -103,6 +108,49 @@ def _close_longbridge_context_if_possible(context: Any) -> None:
             pass
 
 
+def _run_longbridge_keepalive(
+        signature: tuple[str, str, str],
+        stop_event: Event,
+) -> None:
+    while not stop_event.wait(LONGBRIDGE_KEEPALIVE_INTERVAL_SECONDS):
+        with LONGBRIDGE_CONTEXT_LOCK:
+            if _LONGBRIDGE_CONTEXT_SIGNATURE != signature or _LONGBRIDGE_QUOTE_CONTEXT is None:
+                return
+            context = _LONGBRIDGE_QUOTE_CONTEXT
+        try:
+            # Keep the broker session warm without rebuilding the context.
+            context.quote([LONGBRIDGE_KEEPALIVE_SYMBOL])
+        except Exception:
+            # Avoid churn on transient broker/network errors. The active context
+            # remains owned by the serving process and will be reused on demand.
+            continue
+
+
+def _ensure_longbridge_keepalive_unlocked(signature: tuple[str, str, str]) -> None:
+    global _LONGBRIDGE_KEEPALIVE_SIGNATURE, _LONGBRIDGE_KEEPALIVE_THREAD, _LONGBRIDGE_KEEPALIVE_STOP_EVENT
+    if (
+        _LONGBRIDGE_KEEPALIVE_THREAD is not None
+        and _LONGBRIDGE_KEEPALIVE_THREAD.is_alive()
+        and _LONGBRIDGE_KEEPALIVE_SIGNATURE == signature
+    ):
+        return
+
+    if _LONGBRIDGE_KEEPALIVE_STOP_EVENT is not None:
+        _LONGBRIDGE_KEEPALIVE_STOP_EVENT.set()
+
+    stop_event = Event()
+    keepalive_thread = Thread(
+        target=_run_longbridge_keepalive,
+        args=(signature, stop_event),
+        name="longbridge-quote-keepalive",
+        daemon=True,
+    )
+    _LONGBRIDGE_KEEPALIVE_SIGNATURE = signature
+    _LONGBRIDGE_KEEPALIVE_STOP_EVENT = stop_event
+    _LONGBRIDGE_KEEPALIVE_THREAD = keepalive_thread
+    keepalive_thread.start()
+
+
 def get_longbridge_quote_context(settings: BrokerSettings) -> Any:
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
@@ -112,6 +160,7 @@ def get_longbridge_quote_context(settings: BrokerSettings) -> Any:
 
     with LONGBRIDGE_CONTEXT_LOCK:
         if _LONGBRIDGE_QUOTE_CONTEXT is not None and _LONGBRIDGE_CONTEXT_SIGNATURE == signature:
+            _ensure_longbridge_keepalive_unlocked(signature)
             return _LONGBRIDGE_QUOTE_CONTEXT
 
         Config, QuoteContext, _, _ = _load_longbridge_openapi()
@@ -121,6 +170,7 @@ def get_longbridge_quote_context(settings: BrokerSettings) -> Any:
         previous = _LONGBRIDGE_QUOTE_CONTEXT
         _LONGBRIDGE_QUOTE_CONTEXT = context
         _LONGBRIDGE_CONTEXT_SIGNATURE = signature
+        _ensure_longbridge_keepalive_unlocked(signature)
         if previous is not None and previous is not context:
             _close_longbridge_context_if_possible(previous)
 
