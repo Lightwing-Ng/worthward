@@ -7,6 +7,7 @@ Code version: v0.3.7
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -75,8 +76,8 @@ def list_available_market_intervals(ticker: str) -> list[str]:
 def _download_daily_history_with_yfinance(
         ticker: str,
         *,
-        start: str | None = None,
-        end: str | None = None,
+        start: str | datetime | None = None,
+        end: str | datetime | None = None,
         period: str | None = None,
         interval: str = "1d",
 ) -> pd.DataFrame:
@@ -126,8 +127,8 @@ def _download_one_minute_history_with_yfinance_window(
 ) -> pd.DataFrame:
     history = _download_daily_history_with_yfinance(
         ticker,
-        start=start.strftime("%Y-%m-%d"),
-        end=(end + pd.Timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S"),
+        start=start.to_pydatetime(),
+        end=(end + pd.Timedelta(minutes=1)).to_pydatetime(),
         interval="1m",
     )
     if history.empty:
@@ -146,7 +147,7 @@ def _download_recent_one_minute_history_with_yfinance(
 ) -> pd.DataFrame:
     window_days = max(1, YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS)
     now_utc = pd.Timestamp.now(tz="UTC").floor("min")
-    start_utc = now_utc - pd.Timedelta(days=max(1, days))
+    start_utc = now_utc - pd.Timedelta(days=max(1, days)) + pd.Timedelta(minutes=1)
     cursor = start_utc
     frames: list[pd.DataFrame] = []
 
