@@ -430,8 +430,18 @@ def build_web_runtime() -> WebRuntime:
         broker_test_status: str = "",
         broker_test_message: str = "",
         broker_test_checked_at: str = "",
+        query_params: dict[str, Any] | None = None,
     ):
-        response = make_response(redirect(build_settings_path(section_name), code=303))
+        target_path = build_settings_path(section_name)
+        if query_params:
+            normalized_params = {
+                str(key): str(value).strip()
+                for key, value in query_params.items()
+                if value is not None and str(value).strip()
+            }
+            if normalized_params:
+                target_path = f"{target_path}?{urlencode(normalized_params)}"
+        response = make_response(redirect(target_path, code=303))
         payload = {
             key: value.strip()
             for key, value in {
@@ -3232,12 +3242,17 @@ def build_web_runtime() -> WebRuntime:
                     return _redirect_with_settings_feedback(
                         "local-market-store",
                         error=f"Unable to refresh historical market data for {failed_preview}.",
+                        query_params={"page": page},
                     )
 
                 notice_parts: list[str] = []
                 if total_count == 0:
                     notice = "Local Market Store is already up to date."
-                    return _redirect_with_settings_feedback("local-market-store", notice=notice)
+                    return _redirect_with_settings_feedback(
+                        "local-market-store",
+                        notice=notice,
+                        query_params={"page": page},
+                    )
 
                 if history_refreshed_count > 0:
                     notice_parts.append(
@@ -3263,7 +3278,11 @@ def build_web_runtime() -> WebRuntime:
                         f"{': ' + preview if preview else '.'}"
                     )
                 notice = " ".join(part.rstrip(".") + "." for part in notice_parts if part)
-                return _redirect_with_settings_feedback("local-market-store", notice=notice)
+                return _redirect_with_settings_feedback(
+                    "local-market-store",
+                    notice=notice,
+                    query_params={"page": page},
+                )
             if not ticker:
                 return redirect(redirect_url, code=303)
             if action == "refresh":
@@ -3276,18 +3295,34 @@ def build_web_runtime() -> WebRuntime:
                     except Exception:
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
-                return _redirect_with_settings_feedback("local-market-store", notice=notice)
+                return _redirect_with_settings_feedback(
+                    "local-market-store",
+                    notice=notice,
+                    query_params={"page": page},
+                )
             elif action == "refresh-1m":
                 refresh_one_minute_store(ticker)
                 notice = f"Saved the latest 6 months of 1-minute market data for {ticker} to local cache (via Longbridge)."
-                return _redirect_with_settings_feedback("local-market-store", notice=notice)
+                return _redirect_with_settings_feedback(
+                    "local-market-store",
+                    notice=notice,
+                    query_params={"page": page},
+                )
             elif action == "delete":
                 delete_ticker_data(ticker)
                 notice = f"Removed all cached data for {ticker} from local storage."
-                return _redirect_with_settings_feedback("local-market-store", notice=notice)
+                return _redirect_with_settings_feedback(
+                    "local-market-store",
+                    notice=notice,
+                    query_params={"page": page},
+                )
         except Exception as exc:  # noqa: BLE001
             message = str(exc).strip() or f"Unable to update local cache for {ticker}."
-            return _redirect_with_settings_feedback("local-market-store", error=message)
+            return _redirect_with_settings_feedback(
+                "local-market-store",
+                error=message,
+                query_params={"page": page},
+            )
 
         return redirect(redirect_url, code=303)
 
