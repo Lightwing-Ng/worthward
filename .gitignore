@@ -4,6 +4,7 @@ __pycache__/
 .idea/
 .trae/rules/
 .trash/
+market_store/
 tests/
 settings_store/
 node_modules/
