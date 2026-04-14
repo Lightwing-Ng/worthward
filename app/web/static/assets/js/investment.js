@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.4
+ * Code version: v1.31.6
  * - Fixed: Holdings weight column now uses the latest valuation-point total equity, so unlevered accounts no longer show allocations above 100% when the last trade date lags the latest 1d close
  * - Fixed: Investment Metrics no longer show false panel scrollbars when tooltip content extends beyond metric cards
  * - Added: Investment Metrics now include total commission and interest charged, and loss-like values render with explicit negative signs plus the shared negative color token
@@ -2438,7 +2438,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </span>
                         </div>
                     </div>
-                    <div class="investment-stock-details-metrics">
+                    <div class="trade-metrics-panel-grid investment-stock-details-metrics">
                         ${stockMetricCards.map((metric) => `
                             <div class="trade-metric-card investment-stock-details-metric-card">
                                 <span class="trade-metric-label">${metric.label}</span>
