@@ -89,6 +89,10 @@
     }
 
     .workspace-mobile-summary-shell > .workspace-summary-card {
+        --workspace-summary-morph-translate-x: 0px;
+        --workspace-summary-morph-translate-y: 0px;
+        --workspace-summary-morph-scale-x: 1;
+        --workspace-summary-morph-scale-y: 1;
         position: sticky;
         top: var(--workspace-summary-sticky-top);
         z-index: calc(var(--layer-surface-content) + 1);
@@ -130,13 +134,13 @@
         box-shadow: var(--workspace-article-mobile-shadow);
         transform:
             translate3d(
-                var(--workspace-summary-morph-translate-x, 0px),
-                var(--workspace-summary-morph-translate-y, 0px),
+                var(--workspace-summary-morph-translate-x),
+                var(--workspace-summary-morph-translate-y),
                 0
             )
             scale3d(
-                var(--workspace-summary-morph-scale-x, 1),
-                var(--workspace-summary-morph-scale-y, 1),
+                var(--workspace-summary-morph-scale-x),
+                var(--workspace-summary-morph-scale-y),
                 1
             );
         opacity: 0;

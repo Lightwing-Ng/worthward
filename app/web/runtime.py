@@ -74,7 +74,13 @@ from app.services.investment_import import (
 )
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
-from app.services.market_data import fetch_history, list_available_market_intervals, refresh_history_store, refresh_one_minute_store
+from app.services.market_data import (
+    fetch_history,
+    list_available_market_intervals,
+    refresh_history_store,
+    refresh_one_minute_store,
+    select_price_series,
+)
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.market_freshness import ensure_latest_backtest_caches
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
