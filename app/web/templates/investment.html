@@ -1,4 +1,4 @@
-{# Code version: v1.0.1 #}
+{# Code version: v1.0.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control with context %}
 
@@ -215,5 +215,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/investment.js') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/investment.js', v=version) }}"></script>
 {% endblock %}

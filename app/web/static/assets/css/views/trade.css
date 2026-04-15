@@ -219,7 +219,7 @@
 
 .trade-metrics-panel-grid {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
+    grid-auto-rows: max-content;
     align-items: start;
     justify-items: stretch;
     padding-bottom: 0;
@@ -264,7 +264,7 @@
     --trade-metric-label-font-weight: var(--font-weight-bold);
     --trade-metric-label-color: var(--muted);
     --trade-metric-value-min-height: 0;
-    --trade-metric-value-padding-bottom: 0;
+    --trade-metric-value-padding-bottom: 4px;
     min-width: 0;
     height: 48px;
     min-height: 48px;

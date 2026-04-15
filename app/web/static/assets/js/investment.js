@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.8
+ * Code version: v1.31.9
+ * - Added: Stock details transaction history now shows a per-row Market value column based on post-trade holdings times the same-day close, with flat positions rendered as '-'
  * - Improved: Investment Markdown export now reads the rendered Metrics panel so exported metric rows stay fully aligned with the page
  * - Added: Investment Metrics now include cumulative, realized, and unrealized P&L summary cards sourced from Holdings totals
  * - Fixed: Holdings weight column now uses the latest valuation-point total equity, so unlevered accounts no longer show allocations above 100% when the last trade date lags the latest 1d close
@@ -2351,11 +2352,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return [];
         const stockState = createPositionState(normalizedTicker);
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
+        let lastKnownTickerPrice = null;
         const detailRows = [];
         (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
             if (normalizeInvestmentTicker(txn?.ticker) !== normalizedTicker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const quantity = getTransactionQuantity(txn);
+            const transactionPrice = getTransactionPrice(txn);
             let realizedPnl = null;
             if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
                 applyDirectionalTrade(stockState, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
@@ -2368,8 +2374,31 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
                 realizedPnl = getTransactionAmount(txn);
             }
+            if (shouldTrackHoldingTicker(txn) && Number.isFinite(transactionPrice) && transactionPrice > 0) {
+                lastKnownTickerPrice = transactionPrice;
+            }
+            const holdingQuantity = Number(txn?.holdings?.[normalizedTicker]);
+            const safeHoldingQuantity = Number.isFinite(holdingQuantity) ? holdingQuantity : 0;
+            let rowMarketValue = null;
+            if (!isFlatPosition(safeHoldingQuantity)) {
+                const valuationDate = normalizeLedgerDate(txn?.date);
+                const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+                let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex[normalizedTicker], valuationDate);
+                if (isMoneyMarketTicker) {
+                    const sameDaySellPrice = getNormalizedTransactionType(txn) === 'sell' ? transactionPrice : null;
+                    const anchoredPrice = txn.money_market_anchors?.[normalizedTicker];
+                    closePrice = sameDaySellPrice ?? anchoredPrice ?? closePrice;
+                }
+                if ((!Number.isFinite(closePrice) || Math.abs(closePrice) < 1e-9) && Number.isFinite(lastKnownTickerPrice) && lastKnownTickerPrice > 0) {
+                    closePrice = lastKnownTickerPrice;
+                }
+                if (Number.isFinite(closePrice)) {
+                    rowMarketValue = safeHoldingQuantity * closePrice;
+                }
+            }
             detailRows.push({
                 ...txn,
+                rowMarketValue,
                 rowRealizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : null,
             });
         });
@@ -2469,11 +2498,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmount(txn.rowMarketValue)}</td>
                 <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn))}</td>
             </tr>
         `).join('') : `
             <tr>
-                <td colspan="8" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
+                <td colspan="9" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
             </tr>
         `;
         investmentStockDetailsPanel.innerHTML = `
@@ -2512,6 +2542,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th>Currency</th>
                         <th>Amount</th>
                         <th>Commission</th>
+                        <th>Market value</th>
                         <th>Realized P&amp;L</th>
                     </tr>
                     </thead>

@@ -185,13 +185,12 @@
 	--workspace-metric-value-line-height: 1;
 	--workspace-metric-value-letter-spacing: -0.04em;
 	--workspace-metric-value-font-weight: var(--font-weight-regular);
-	--workspace-metric-card-min-height: 58px;
 	--workspace-metric-card-padding: 6px 8px 8px;
 	--workspace-metric-card-row-gap: 4px;
 	--workspace-metric-card-radius: var(--radius-panel);
 	--workspace-metric-card-label-min-height: 24px;
 	--workspace-metric-card-align-self: start;
-	--workspace-metrics-grid-auto-rows-wide: minmax(var(--workspace-metric-card-min-height), max-content);
+	--workspace-metrics-grid-auto-rows-wide: max-content;
 	--trade-chart-y-padding-px: 2px;
 	--investment-view-surface-padding: 0;
 	--investment-history-surface-padding: 10px 12px 20px 12px;

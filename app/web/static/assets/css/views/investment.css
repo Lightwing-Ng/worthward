@@ -1,4 +1,4 @@
-/* Code version: v1.5.7 */
+/* Code version: v1.5.7.2 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -233,10 +233,18 @@
 }
 
 #investment_metrics_panel.trade-metrics-grid {
+    grid-auto-rows: max-content;
     gap: 0;
     overflow: visible;
     scrollbar-width: none;
     scrollbar-gutter: auto;
+}
+
+#investment_metrics_panel.trade-metrics-grid > .trade-metric-card {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    align-content: start;
 }
 
 #investment_metrics_panel.trade-metrics-grid::-webkit-scrollbar {
@@ -299,7 +307,7 @@
 .investment-stock-details-metrics {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
+    grid-auto-rows: max-content;
     align-items: start;
     justify-items: stretch;
     gap: 2px;
@@ -312,6 +320,13 @@
 
 .investment-stock-details-metrics > div {
     min-width: 0;
+}
+
+.investment-stock-details-metric-card {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    align-content: start;
 }
 
 .investment-stock-details-donut-card {
@@ -1232,7 +1247,14 @@
 
 .investment-stock-details-table th:nth-child(8),
 .investment-stock-details-table td:nth-child(8) {
-    width: calc(100% - var(--investment-col-no-width) - var(--investment-col-time-width) - var(--investment-col-type-width) - var(--investment-col-description-width) - var(--investment-col-currency-width) - var(--investment-col-amount-width) - var(--investment-col-commission-width));
+    width: 10%;
+    min-width: 36px;
+    text-align: right;
+}
+
+.investment-stock-details-table th:nth-child(9),
+.investment-stock-details-table td:nth-child(9) {
+    width: calc(100% - var(--investment-col-no-width) - var(--investment-col-time-width) - var(--investment-col-type-width) - var(--investment-col-description-width) - var(--investment-col-currency-width) - var(--investment-col-amount-width) - var(--investment-col-commission-width) - 10%);
     min-width: 0;
     text-align: right;
 }
