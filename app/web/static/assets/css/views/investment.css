@@ -201,6 +201,11 @@
     inset: 0;
 }
 
+.investment-dummy-chart .portfolio-donut-logo.is-orbit-animated {
+    transition: opacity 220ms ease;
+    will-change: left, top, opacity;
+}
+
 .investment-equity-chart canvas {
     display: block;
     width: 100% !important;

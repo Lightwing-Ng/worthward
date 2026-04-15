@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.12
+ * Code version: v1.31.13
+ * - Improved: Charts portfolio donut satellites now enter from a distant transparent orbit, move along the shared orbit with non-linear angular easing, and resolve tiny-slice crowding with constrained on-orbit spacing
  * - Changed: Stock details donut now uses scoped non-linear orbit animation for its ring and ticker satellite while keeping the selected ticker on the standard blue token and cash on the standard green token
  * - Changed: Stock details donut is now decoupled from the Charts donut and renders a three-part allocation view for the selected ticker, cash, and remaining equity with hover-linked snapshot updates
  * - Fixed: History and stock-detail tables now respect recent manual scrolling, so hover-linked auto-scroll no longer snaps the view back to an older row while the user is browsing another date
@@ -219,6 +220,274 @@ window.drawMultipleLineChart = function(container, data, options) {
         },
     });
 };
+
+const investmentDonutOrbitLayerState = new WeakMap();
+
+function normalizeOrbitAngle(angle) {
+    if (!Number.isFinite(angle)) return 0;
+    const normalized = angle % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function getShortestOrbitAngleDelta(fromAngle, toAngle) {
+    const start = normalizeOrbitAngle(fromAngle);
+    const end = normalizeOrbitAngle(toAngle);
+    let delta = end - start;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    return delta;
+}
+
+function easeInOutCubic(progress) {
+    if (progress <= 0) return 0;
+    if (progress >= 1) return 1;
+    return progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - (Math.pow(-2 * progress + 2, 3) / 2);
+}
+
+function getPortfolioDonutOrbitMetrics(orbitElement) {
+    if (!(orbitElement instanceof HTMLElement)) return null;
+    const computed = getComputedStyle(orbitElement);
+    const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
+        || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-size'))
+        || 120;
+    const logoSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-logo-size'))
+        || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-logo-size'))
+        || 20;
+    const satelliteRadius = (logoSize * Math.SQRT2) / 2;
+    const orbitRadius = (donutSize / 2) + satelliteRadius;
+    const centerX = orbitElement.clientWidth / 2;
+    const centerY = orbitElement.clientHeight / 2;
+    const centerSeparationAngle = orbitRadius > 1e-6
+        ? (2 * Math.asin(Math.min(1, satelliteRadius / orbitRadius)) * 180) / Math.PI
+        : 0;
+    return {
+        centerX,
+        centerY,
+        donutSize,
+        logoSize,
+        satelliteRadius,
+        orbitRadius,
+        minSeparationAngle: Math.max(centerSeparationAngle * 0.8, 6),
+    };
+}
+
+function renderInvestmentDonutOrbitLogoPosition(logoElement, angle, orbitMetrics, radiusScale = 1, opacity = 1) {
+    if (!(logoElement instanceof HTMLElement) || !orbitMetrics) return;
+    const radians = ((normalizeOrbitAngle(angle) - 90) * Math.PI) / 180;
+    const x = orbitMetrics.centerX + (Math.cos(radians) * orbitMetrics.orbitRadius * radiusScale);
+    const y = orbitMetrics.centerY + (Math.sin(radians) * orbitMetrics.orbitRadius * radiusScale);
+    logoElement.style.left = `${x.toFixed(2)}px`;
+    logoElement.style.top = `${y.toFixed(2)}px`;
+    logoElement.style.opacity = `${Math.max(0, Math.min(1, opacity))}`;
+}
+
+function resolveInvestmentDonutOrbitAngles(logoItems, orbitMetrics) {
+    if (!Array.isArray(logoItems) || !logoItems.length || !orbitMetrics) return [];
+    const minSeparationAngle = Math.max(orbitMetrics.minSeparationAngle || 0, 0);
+    const sortedItems = logoItems
+        .map((item, index) => ({
+            ...item,
+            originalIndex: index,
+            desiredAngle: normalizeOrbitAngle(item.midAngle),
+        }))
+        .sort((left, right) => left.desiredAngle - right.desiredAngle);
+    const resolvedAngles = new Array(sortedItems.length);
+    const desiredAngles = sortedItems.map((item) => item.desiredAngle);
+
+    sortedItems.forEach((item, index) => {
+        if (index === 0) {
+            resolvedAngles[index] = item.desiredAngle;
+            return;
+        }
+        resolvedAngles[index] = Math.max(item.desiredAngle, resolvedAngles[index - 1] + minSeparationAngle);
+    });
+
+    const wrapLimit = resolvedAngles[0] + 360 - minSeparationAngle;
+    let overflow = Math.max(0, resolvedAngles[resolvedAngles.length - 1] - wrapLimit);
+    if (overflow > 1e-6) {
+        for (let index = resolvedAngles.length - 1; index > 0 && overflow > 1e-6; index -= 1) {
+            const previousFloor = resolvedAngles[index - 1] + minSeparationAngle;
+            const shiftBudget = Math.max(0, resolvedAngles[index] - Math.max(desiredAngles[index], previousFloor));
+            if (shiftBudget <= 1e-6) continue;
+            const appliedShift = Math.min(shiftBudget, overflow);
+            resolvedAngles[index] -= appliedShift;
+            overflow -= appliedShift;
+        }
+    }
+
+    const result = new Array(sortedItems.length);
+    sortedItems.forEach((item, index) => {
+        result[item.originalIndex] = normalizeOrbitAngle(resolvedAngles[index]);
+    });
+    return result;
+}
+
+function ensureInvestmentDonutOrbitLayerState(logoLayer) {
+    let state = investmentDonutOrbitLayerState.get(logoLayer);
+    if (state) return state;
+    state = {
+        animationFrame: 0,
+        logos: new Map(),
+    };
+    investmentDonutOrbitLayerState.set(logoLayer, state);
+    return state;
+}
+
+function stopInvestmentDonutOrbitLayerAnimation(layerState) {
+    if (!layerState?.animationFrame) return;
+    window.cancelAnimationFrame(layerState.animationFrame);
+    layerState.animationFrame = 0;
+}
+
+function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
+    if (!(logoLayer instanceof HTMLElement)) return;
+    const layerState = ensureInvestmentDonutOrbitLayerState(logoLayer);
+    if (layerState.animationFrame) return;
+    const step = (now) => {
+        const orbitElement = logoLayer.closest('.portfolio-donut-orbit');
+        const orbitMetrics = getPortfolioDonutOrbitMetrics(orbitElement);
+        let hasActiveAnimation = false;
+        layerState.logos.forEach((entry) => {
+            const logoElement = entry.element;
+            if (!(logoElement instanceof HTMLImageElement) || !logoElement.isConnected || !orbitMetrics) return;
+            const animationStartTime = Number.isFinite(entry.animationStartTime) ? entry.animationStartTime : now;
+            const duration = Math.max(1, Number(entry.duration) || 1);
+            const progress = Math.max(0, Math.min(1, (now - animationStartTime) / duration));
+            const easedProgress = easeInOutCubic(progress);
+            const currentAngle = entry.startAngle + (entry.deltaAngle * easedProgress);
+            const currentRadiusScale = entry.startRadiusScale + ((entry.targetRadiusScale - entry.startRadiusScale) * easedProgress);
+            const currentOpacity = entry.startOpacity + ((entry.targetOpacity - entry.startOpacity) * easedProgress);
+            entry.currentAngle = normalizeOrbitAngle(currentAngle);
+            entry.currentRadiusScale = currentRadiusScale;
+            entry.currentOpacity = currentOpacity;
+            renderInvestmentDonutOrbitLogoPosition(
+                logoElement,
+                entry.currentAngle,
+                orbitMetrics,
+                currentRadiusScale,
+                currentOpacity
+            );
+            if (progress >= 1) {
+                entry.startAngle = entry.currentAngle;
+                entry.deltaAngle = 0;
+                entry.startRadiusScale = currentRadiusScale;
+                entry.targetRadiusScale = currentRadiusScale;
+                entry.startOpacity = currentOpacity;
+                entry.targetOpacity = currentOpacity;
+                entry.animationStartTime = now;
+                if (entry.isExiting) {
+                    logoElement.remove();
+                    layerState.logos.delete(entry.ticker);
+                }
+            } else {
+                hasActiveAnimation = true;
+            }
+        });
+        if (hasActiveAnimation) {
+            layerState.animationFrame = window.requestAnimationFrame(step);
+        } else {
+            stopInvestmentDonutOrbitLayerAnimation(layerState);
+        }
+    };
+    layerState.animationFrame = window.requestAnimationFrame(step);
+}
+
+function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
+    if (!(logoLayer instanceof HTMLElement)) return;
+    const orbitElement = logoLayer.closest('.portfolio-donut-orbit');
+    const orbitMetrics = getPortfolioDonutOrbitMetrics(orbitElement);
+    if (!orbitMetrics) return;
+    const layerState = ensureInvestmentDonutOrbitLayerState(logoLayer);
+    const existingLogos = new Map(
+        Array.from(logoLayer.querySelectorAll('.portfolio-donut-logo')).map((logo) => [logo.dataset.ticker || '', logo])
+    );
+    const nextTickers = new Set();
+    const resolvedAngles = resolveInvestmentDonutOrbitAngles(logoItems, orbitMetrics);
+
+    logoItems.forEach((item, index) => {
+        const ticker = item.ticker;
+        const targetAngle = Number.isFinite(resolvedAngles[index]) ? resolvedAngles[index] : normalizeOrbitAngle(item.midAngle);
+        nextTickers.add(ticker);
+        let logo = existingLogos.get(ticker);
+        if (!(logo instanceof HTMLImageElement)) {
+            logo = document.createElement('img');
+            logo.className = 'portfolio-donut-logo is-orbit-animated';
+            logo.dataset.ticker = ticker;
+            logo.alt = `${ticker} logo`;
+            logo.src = item.logoUrl;
+            logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
+            logoLayer.appendChild(logo);
+            renderInvestmentDonutOrbitLogoPosition(logo, targetAngle, orbitMetrics, 1.85, 0);
+        } else {
+            if (logo.src !== item.logoUrl) logo.src = item.logoUrl;
+            logo.classList.add('is-orbit-animated');
+            logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
+        }
+
+        let entry = layerState.logos.get(ticker);
+        if (!entry) {
+            entry = {
+                ticker,
+                element: logo,
+                currentAngle: targetAngle,
+                currentRadiusScale: 1.85,
+                currentOpacity: 0,
+                startAngle: targetAngle,
+                deltaAngle: 0,
+                startRadiusScale: 1.85,
+                targetRadiusScale: 1,
+                startOpacity: 0,
+                targetOpacity: 1,
+                animationStartTime: performance.now(),
+                duration: 620,
+                isExiting: false,
+            };
+            layerState.logos.set(ticker, entry);
+        } else {
+            entry.element = logo;
+            entry.ticker = ticker;
+            entry.isExiting = false;
+            entry.startAngle = entry.currentAngle;
+            entry.deltaAngle = getShortestOrbitAngleDelta(entry.currentAngle, targetAngle);
+            entry.startRadiusScale = entry.currentRadiusScale;
+            entry.targetRadiusScale = 1;
+            entry.startOpacity = entry.currentOpacity;
+            entry.targetOpacity = 1;
+            entry.animationStartTime = performance.now();
+            entry.duration = 520;
+        }
+
+        if (item.className) {
+            logo.classList.add(...String(item.className).split(/\s+/).filter(Boolean));
+        }
+        logo.classList.remove('is-exiting');
+    });
+
+    existingLogos.forEach((logo, ticker) => {
+        if (nextTickers.has(ticker)) return;
+        const entry = layerState.logos.get(ticker);
+        logo.classList.add('is-exiting');
+        if (!entry) {
+            window.setTimeout(() => {
+                if (logo.classList.contains('is-exiting')) logo.remove();
+            }, 220);
+            return;
+        }
+        entry.isExiting = true;
+        entry.startAngle = entry.currentAngle;
+        entry.deltaAngle = 0;
+        entry.startRadiusScale = entry.currentRadiusScale;
+        entry.targetRadiusScale = 1.18;
+        entry.startOpacity = entry.currentOpacity;
+        entry.targetOpacity = 0;
+        entry.animationStartTime = performance.now();
+        entry.duration = 220;
+    });
+
+    scheduleInvestmentDonutOrbitLayerAnimation(logoLayer);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     const theme = window.ANTIGRAVITY_APP?.theme || {};
@@ -777,7 +1046,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fillFragments.push(`var(--theme-accent-positive) ${cashStart}deg 360deg`);
         }
 
-        syncAnimatedDonutLogos(investmentDummyLogoLayer, logoItems);
+        syncInvestmentDonutOrbitLogos(investmentDummyLogoLayer, logoItems);
         applyAnimatedDonutFill(investmentDummyDonut, `conic-gradient(${fillFragments.join(', ')})`);
         refreshInvestmentDummyDonut();
     }
@@ -959,26 +1228,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(rootElement instanceof HTMLElement)) return;
         rootElement.querySelectorAll('.style-token-portfolio-donut-orbit').forEach((orbitElement) => {
             if (!(orbitElement instanceof HTMLElement)) return;
-            const computed = getComputedStyle(orbitElement);
-            const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
-                || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-size'))
-                || 120;
-            const logoSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-logo-size'))
-                || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-logo-size'))
-                || 20;
-            const satelliteRadius = (logoSize * Math.SQRT2) / 2;
-            const orbitRadius = (donutSize / 2) + satelliteRadius;
-            const centerX = orbitElement.clientWidth / 2;
-            const centerY = orbitElement.clientHeight / 2;
+            const orbitMetrics = getPortfolioDonutOrbitMetrics(orbitElement);
+            if (!orbitMetrics) return;
             orbitElement.querySelectorAll('.portfolio-donut-logo[data-style-token-donut-angle]').forEach((logoElement) => {
                 if (!(logoElement instanceof HTMLImageElement)) return;
+                if (logoElement.classList.contains('is-orbit-animated')) {
+                    const layerState = investmentDonutOrbitLayerState.get(logoElement.parentElement);
+                    const stateEntry = layerState?.logos?.get(logoElement.dataset.ticker || '');
+                    if (stateEntry) {
+                        renderInvestmentDonutOrbitLogoPosition(
+                            logoElement,
+                            stateEntry.currentAngle,
+                            orbitMetrics,
+                            stateEntry.currentRadiusScale,
+                            stateEntry.currentOpacity
+                        );
+                        return;
+                    }
+                }
                 const angle = Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || '');
                 if (!Number.isFinite(angle)) return;
-                const radians = ((angle - 90) * Math.PI) / 180;
-                const x = centerX + (Math.cos(radians) * orbitRadius);
-                const y = centerY + (Math.sin(radians) * orbitRadius);
-                logoElement.style.left = `${x.toFixed(2)}px`;
-                logoElement.style.top = `${y.toFixed(2)}px`;
+                renderInvestmentDonutOrbitLogoPosition(logoElement, angle, orbitMetrics, 1, Number.parseFloat(logoElement.style.opacity || '1'));
             });
         });
     }
