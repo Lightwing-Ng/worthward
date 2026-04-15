@@ -1,15 +1,16 @@
 """
 Reusable market freshness helpers.
 
-Code version: v0.2.1
+Code version: v0.3.0
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.infrastructure.broker_market_data import is_one_minute_store_fresh
 from app.infrastructure.storage import normalize_ticker
-from app.services.market_data import ensure_fresh_history_store
+from app.services.market_data import ensure_fresh_history_store, refresh_one_minute_store
 
 _NON_MARKET_TICKER_TYPES = {"forex_trade", "forex_trade_component", "fx_translation_pnl"}
 
@@ -27,6 +28,38 @@ def ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
         except Exception:
             failed_tickers.append(ticker)
     return failed_tickers
+
+
+def ensure_latest_backtest_caches(ticker: str) -> dict[str, str | bool | None]:
+    """
+    Refresh backtest caches for both daily and 1-minute market data when stale.
+
+    The 1-minute branch focuses on freshness rather than six-month completeness,
+    so a fresh cached dataset fetched via fallback providers can still be reused
+    without triggering a redundant refresh on every page load.
+    """
+    normalized_ticker = normalize_ticker(ticker)
+    result: dict[str, str | bool | None] = {
+        "ticker": normalized_ticker,
+        "daily_refreshed": False,
+        "daily_error": None,
+        "intraday_refreshed": False,
+        "intraday_error": None,
+    }
+
+    try:
+        result["daily_refreshed"] = ensure_fresh_history_store(normalized_ticker)
+    except Exception as exc:
+        result["daily_error"] = str(exc)
+
+    try:
+        if not is_one_minute_store_fresh(normalized_ticker):
+            refresh_one_minute_store(normalized_ticker)
+            result["intraday_refreshed"] = True
+    except Exception as exc:
+        result["intraday_error"] = str(exc)
+
+    return result
 
 
 def extract_open_investment_tickers(investment_payload: dict[str, Any]) -> list[str]:

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.8
+Code version: v0.3.9
 """
 
 from __future__ import annotations
@@ -76,6 +76,7 @@ from app.services.logos import fetch_quote_profile, has_valid_ticker_format, is_
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import fetch_history, list_available_market_intervals, refresh_history_store, refresh_one_minute_store
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
+from app.services.market_freshness import ensure_latest_backtest_caches
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
 from app.infrastructure.storage import (
@@ -386,6 +387,12 @@ def build_web_runtime() -> WebRuntime:
 
     def _get_backtest_cache_key() -> str:
         """Generate a cache key from all backtest configuration parameters."""
+        requested_ticker = request.args.get("ticker", "").strip()
+        if not requested_ticker:
+            requested_ticker = str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0]))
+        normalized_ticker = normalize_ticker_input(requested_ticker)
+        daily_path = history_store_path_for(normalized_ticker) if normalized_ticker else None
+        intraday_path = intraday_history_store_path_for(normalized_ticker, "1m") if normalized_ticker else None
         params = [
             request.args.get("ticker", ""),
             request.args.get("strategy", ""),
@@ -401,6 +408,10 @@ def build_web_runtime() -> WebRuntime:
                 "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "dividends",
                 "view", "section", "view", "tickers", "weight",
             }]),
+            {
+                "daily_mtime_ns": daily_path.stat().st_mtime_ns if daily_path and daily_path.exists() else None,
+                "intraday_mtime_ns": intraday_path.stat().st_mtime_ns if intraday_path and intraday_path.exists() else None,
+            },
         ]
         key_string = json.dumps(params, sort_keys=True)
         return hashlib.sha256(key_string.encode("utf-8")).hexdigest()[:16]
@@ -748,6 +759,7 @@ def build_web_runtime() -> WebRuntime:
         if not requested_tickers:
             raise ValueError("No ticker selected for backtest.")
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
+        backtest_cache_refresh = ensure_latest_backtest_caches(trade_ticker)
         include_dividends = parse_bool_flag("dividends", "include_dividends")
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         supported_intervals = list_available_market_intervals(trade_ticker)
@@ -803,7 +815,16 @@ def build_web_runtime() -> WebRuntime:
             execution_mode=backtest_execution_mode,
             interval=requested_interval,
         )
-        return backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params
+        return (
+            backtest_result,
+            trade_ticker,
+            requested_interval,
+            date_constraints,
+            trade_dataset,
+            selected_strategy_id,
+            selected_strategy_params,
+            backtest_cache_refresh,
+        )
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
         baseline_items = [item for item in strategy_options if item.get("id") == "buy-and-hold"]
@@ -2216,6 +2237,7 @@ def build_web_runtime() -> WebRuntime:
             requested_interval = supported_intervals[0]
 
         backtest_result = None
+        backtest_market_refresh: dict[str, str | bool | None] | None = None
         date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
@@ -2315,14 +2337,34 @@ def build_web_runtime() -> WebRuntime:
 
         try:
             if current_view == "backtest":
+                if requested_tickers:
+                    backtest_refresh_ticker = validate_ticker_or_raise(requested_tickers[0])
+                    backtest_market_refresh = ensure_latest_backtest_caches(backtest_refresh_ticker)
                 # Check cache: skip re-computation if config unchanged
                 cache_key = _get_backtest_cache_key()
                 if cache_key in _cached_backtest:
                     # Cache hit - use cached result directly
-                    backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _cached_backtest[cache_key]
+                    (
+                        backtest_result,
+                        trade_ticker,
+                        requested_interval,
+                        date_constraints,
+                        trade_dataset,
+                        selected_strategy_id,
+                        selected_strategy_params,
+                    ) = _cached_backtest[cache_key]
                 else:
                     # Cache miss - need to recompute and cache
-                    backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, selected_strategy_id, selected_strategy_params = _run_backtest_from_request()
+                    (
+                        backtest_result,
+                        trade_ticker,
+                        requested_interval,
+                        date_constraints,
+                        trade_dataset,
+                        selected_strategy_id,
+                        selected_strategy_params,
+                        _,
+                    ) = _run_backtest_from_request()
                     _cached_backtest[cache_key] = (
                         backtest_result, trade_ticker, requested_interval, date_constraints,
                         trade_dataset, selected_strategy_id, selected_strategy_params
@@ -2344,6 +2386,22 @@ def build_web_runtime() -> WebRuntime:
                         trade_dataset["Date"],
                         interval=requested_interval,
                     )
+                if backtest_market_refresh:
+                    refresh_notices: list[str] = []
+                    if backtest_market_refresh.get("daily_error"):
+                        refresh_notices.append(
+                            "Could not refresh the latest 1d cache automatically, so the backtest reused the newest local daily data."
+                        )
+                    if backtest_market_refresh.get("intraday_error"):
+                        refresh_notices.append(
+                            "Could not refresh the latest 1m cache automatically, so the backtest reused the newest local intraday data when available."
+                        )
+                    if refresh_notices:
+                        refresh_notice = " ".join(refresh_notices)
+                        if notice is None:
+                            notice = refresh_notice
+                        else:
+                            notice += " " + refresh_notice
                 supported_periods = backtest_periods_by_interval.get(requested_interval, list(ADAPTIVE_PERIODS_1D))
                 period, period_notice = resolve_requested_period_from_supported(
                     period,
@@ -2881,7 +2939,16 @@ def build_web_runtime() -> WebRuntime:
     def export_transactions_api():
         try:
             # Re-run backtest to get the full transaction list
-            backtest_result, trade_ticker, requested_interval, date_constraints, trade_dataset, strategy_id, strategy_params = _run_backtest_from_request()
+            (
+                backtest_result,
+                trade_ticker,
+                requested_interval,
+                date_constraints,
+                trade_dataset,
+                strategy_id,
+                strategy_params,
+                _,
+            ) = _run_backtest_from_request()
 
             summary = backtest_result.get("summary", {})
             trades = backtest_result.get("trades", [])

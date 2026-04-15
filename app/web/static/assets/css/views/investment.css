@@ -1,4 +1,4 @@
-/* Code version: v1.5.7.2 */
+/* Code version: v1.5.7.4 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -305,24 +305,16 @@
 }
 
 .investment-stock-details-metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    grid-auto-rows: max-content;
-    align-items: start;
-    justify-items: stretch;
-    gap: 2px;
     height: auto;
     min-height: 0;
-    padding-bottom: 0;
     margin: 0;
     overflow: visible;
+    scrollbar-width: auto;
+    scrollbar-gutter: auto;
 }
 
-.investment-stock-details-metrics > div {
+.investment-stock-details-metrics > .trade-metric-card {
     min-width: 0;
-}
-
-.investment-stock-details-metric-card {
     height: auto;
     min-height: 0;
     max-height: none;
@@ -339,7 +331,7 @@
     --portfolio-donut-size: clamp(112px, 90%, 190px);
 }
 
-.investment-stock-details-donut-card .style-token-portfolio-donut-shell {
+.investment-stock-details-donut-card .investment-stock-details-donut-shell {
     width: var(--portfolio-donut-size);
     max-width: 100%;
     aspect-ratio: 1 / 1;
@@ -348,13 +340,18 @@
     justify-content: center;
 }
 
-.investment-stock-details-donut-card .portfolio-donut-orbit {
+.investment-stock-details-donut-card .investment-stock-details-donut-orbit {
     width: 100%;
     height: 100%;
 }
 
-.investment-stock-details-donut-card .portfolio-donut-logo-layer {
+.investment-stock-details-donut-card .investment-stock-details-donut-logo-layer {
     inset: 0;
+}
+
+.investment-stock-details-donut-card .investment-stock-details-donut-logo {
+    transition: opacity 220ms ease;
+    will-change: left, top, opacity;
 }
 
 .investment-stock-details-table-shell {
@@ -1432,10 +1429,6 @@
 
     .investment-stock-details-overview {
         flex-direction: column;
-    }
-
-    .investment-stock-details-metrics {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .investment-stock-details-donut-card {
