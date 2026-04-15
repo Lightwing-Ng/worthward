@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.6
+ * Code version: v1.31.8
+ * - Improved: Investment Markdown export now reads the rendered Metrics panel so exported metric rows stay fully aligned with the page
+ * - Added: Investment Metrics now include cumulative, realized, and unrealized P&L summary cards sourced from Holdings totals
  * - Fixed: Holdings weight column now uses the latest valuation-point total equity, so unlevered accounts no longer show allocations above 100% when the last trade date lags the latest 1d close
  * - Fixed: Investment Metrics no longer show false panel scrollbars when tooltip content extends beyond metric cards
  * - Added: Investment Metrics now include total commission and interest charged, and loss-like values render with explicit negative signs plus the shared negative color token
@@ -317,6 +319,35 @@ document.addEventListener('DOMContentLoaded', () => {
             rowsKey: 'interestChargedRows',
             formatValue: (metrics) => formatMetricLossAmount(metrics?.interestCharged),
             valueClass: (metrics) => getNegativeMetricClass(metrics?.interestCharged),
+        },
+    ];
+    const HOLDINGS_SUMMARY_METRIC_DEFINITIONS = [
+        {
+            key: 'cumulative-pnl',
+            label: 'Cumulative P&L',
+            summary: 'Combined realized and unrealized profit and loss across all tracked holdings.',
+            valueKey: 'cumulativePnl',
+            rowsKey: 'cumulativePnlRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.cumulativePnl),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.cumulativePnl),
+        },
+        {
+            key: 'realized-pnl',
+            label: 'Realized P&L',
+            summary: 'Total realized profit and loss across all tracked holdings activity.',
+            valueKey: 'totalRealizedPnl',
+            rowsKey: 'realizedPnlRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.totalRealizedPnl),
+        },
+        {
+            key: 'unrealized-pnl',
+            label: 'Unrealized P&L',
+            summary: 'Mark-to-market profit and loss for holdings that still have an open position.',
+            valueKey: 'totalUnrealizedPnl',
+            rowsKey: 'unrealizedPnlRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalUnrealizedPnl),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.totalUnrealizedPnl),
         },
     ];
     let activeInvestmentView = 'chart';
@@ -946,16 +977,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return { start: sortedDates[0], end: sortedDates[sortedDates.length - 1] };
     }
 
-    function buildInvestmentMetricsMarkdown(transactions) {
-        const fundingMetrics = getUsdFundingMetrics(Array.isArray(transactions) ? transactions : []);
-        const metrics = [
-            ['Direct deposits', fundingMetrics.directUsdDeposits],
-            ['Net USD converted', fundingMetrics.netUsdConverted],
-            ['FX funding loss', fundingMetrics.fxFundingLoss],
-            ['Final investable USD', fundingMetrics.finalInvestableUsd],
-        ];
-        return metrics
-            .map(([label, value]) => `**${label}:** ${formatAmount(value)}`)
+    function buildInvestmentMetricsMarkdown(metricsPanel) {
+        const metricCards = Array.from(metricsPanel?.querySelectorAll('.trade-metric-card') || [])
+            .map((card) => {
+                const label = card.querySelector('.trade-metric-label')?.textContent?.trim() || '';
+                const value = card.querySelector('.investment-metric-tooltip-value-copy, .trade-metric-value')?.textContent?.trim() || '';
+                return [label, value];
+            })
+            .filter(([label, value]) => label && value);
+
+        return metricCards
+            .map(([label, value]) => `**${label}:** ${value}`)
             .join('\n');
     }
 
@@ -992,9 +1024,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildInvestmentMarkdownExport() {
         const holdingsHeaderTable = document.querySelector('#investment_holdings_panel .investment-holdings-table[aria-hidden="true"]');
         const holdingsBodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
+        const metricsPanel = document.getElementById('investment_metrics_panel');
         const historyHeaderTable = document.querySelector('#history_table_wrap table[aria-hidden="true"]');
         const historyBodyTable = document.querySelector('#history_table_wrap .investment-history-table-scroll table');
-        if (!holdingsHeaderTable || !holdingsBodyTable || !historyHeaderTable || !historyBodyTable) {
+        if (!holdingsHeaderTable || !holdingsBodyTable || !metricsPanel || !historyHeaderTable || !historyBodyTable) {
             return null;
         }
 
@@ -1031,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const transactions = window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [];
         const dateRange = buildExportDateRange(transactions);
         const title = guessInvestmentExportDescription(transactions, holdingsMarkdown);
-        const metricsMarkdown = buildInvestmentMetricsMarkdown(transactions);
+        const metricsMarkdown = buildInvestmentMetricsMarkdown(metricsPanel);
         const formattedRange = `${formatInvestmentExportDate(dateRange.start)} - ${formatInvestmentExportDate(dateRange.end)}`;
         const markdown = [
             `# ${title}`,
@@ -1231,23 +1264,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(document.querySelectorAll(`tr[data-investment-history-date="${CSS.escape(normalizedDate)}"]`));
     }
 
-    function renderFundingMetricCards(fundingMetrics) {
-        return FUNDING_METRIC_DEFINITIONS.map((definition) => `
+    function renderMetricCards(metricDefinitions, metricValues) {
+        return metricDefinitions.map((definition) => `
             <div class="trade-metric-card">
                 <span class="trade-metric-label">${definition.label}</span>
                 ${renderMetricValueWithTooltip({
                     key: definition.key,
                     value: definition.formatValue
-                        ? definition.formatValue(fundingMetrics)
-                        : formatAmount(fundingMetrics?.[definition.valueKey]),
+                        ? definition.formatValue(metricValues)
+                        : formatAmount(metricValues?.[definition.valueKey]),
                     valueClass: typeof definition.valueClass === 'function'
-                        ? definition.valueClass(fundingMetrics)
+                        ? definition.valueClass(metricValues)
                         : (definition.valueClass || ''),
                     summary: definition.summary,
-                    rows: fundingMetrics?.[definition.rowsKey],
+                    rows: metricValues?.[definition.rowsKey],
                 })}
             </div>
         `).join('');
+    }
+
+    function renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics) {
+        return [
+            renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics),
+            renderMetricCards(FUNDING_METRIC_DEFINITIONS, fundingMetrics),
+        ].join('');
     }
 
     function resetInvestmentDashboard() {
@@ -1264,7 +1304,10 @@ document.addEventListener('DOMContentLoaded', () => {
             holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
         }
         if (metricsPanel) {
-            metricsPanel.innerHTML = renderFundingMetricCards(getUsdFundingMetrics([]));
+            metricsPanel.innerHTML = renderFundingMetricCards(
+                getUsdFundingMetrics([]),
+                getHoldingsSummaryMetrics([], {}, 0)
+            );
             bindInvestmentMetricTooltipInteractions(metricsPanel);
         }
         if (stockDetailsPanel) {
@@ -1631,6 +1674,13 @@ document.addEventListener('DOMContentLoaded', () => {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         }).format(value);
+    }
+
+    function formatSignedHoldingsMoney(value) {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+        const numericValue = Number(value);
+        if (Math.abs(numericValue) < 1e-9) return formatHoldingsMoney(0);
+        return `${numericValue > 0 ? '+' : '-'}${formatHoldingsMoney(Math.abs(numericValue))}`;
     }
 
     function formatHoldingsPercent(value) {
@@ -2776,11 +2826,11 @@ document.addEventListener('DOMContentLoaded', () => {
             lockInvestmentSurfaceHeight();
         }
 
-        const fundingMetrics = getUsdFundingMetrics(rawTransactions);
-
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         investmentDummyTickerProfiles = tickerProfiles;
         const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, TOTAL_EQUITY);
+        const fundingMetrics = getUsdFundingMetrics(rawTransactions);
+        const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, latestPrices, TOTAL_EQUITY);
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
@@ -2797,7 +2847,7 @@ document.addEventListener('DOMContentLoaded', () => {
             holdings_market_values: {},
         }, tickerProfiles);
 
-        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics);
+        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
@@ -3325,10 +3375,70 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
     }
 
+    function getSignedMetricClass(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || Math.abs(numericValue) <= 1e-9) return '';
+        return numericValue >= 0
+            ? 'investment-holdings-value-positive'
+            : 'investment-holdings-value-negative';
+    }
+
     function getTotalDeposits(transactions) {
         return transactions
             .filter(t => getNormalizedTransactionType(t) === 'deposit')
             .reduce((sum, t) => sum + getTransactionAmount(t), 0);
+    }
+
+    function getHoldingsSummaryMetrics(transactions, latestPrices, TOTAL_EQUITY) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
+        const tickerSummaries = buildTickerSummaries(safeTransactions, safeLatestPrices, TOTAL_EQUITY);
+        const totalRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const totalUnrealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
+        const openTickers = new Set(
+            tickerSummaries
+                .filter((summary) => summary.hasOpenPosition)
+                .map((summary) => normalizeInvestmentTicker(summary.ticker))
+                .filter(Boolean)
+        );
+        const sortedTransactions = safeTransactions
+            .map((txn, index) => ({ txn, index }))
+            .sort((left, right) => {
+                const leftDate = new Date(left.txn?.date || 0).getTime();
+                const rightDate = new Date(right.txn?.date || 0).getTime();
+                if (leftDate !== rightDate) return leftDate - rightDate;
+                const leftRow = Number(left.txn?.source?.row_number ?? left.index);
+                const rightRow = Number(right.txn?.source?.row_number ?? right.index);
+                return leftRow - rightRow;
+            })
+            .map(({ txn }, sortedIndex) => ({
+                txn,
+                ledgerNo: sortedIndex + 1,
+            }));
+        const realizedPnlRows = [];
+        const unrealizedPnlRows = [];
+
+        sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            if (!shouldTrackHoldingTicker(txn)) return;
+            realizedPnlRows.push(ledgerNo);
+            const normalizedTicker = normalizeInvestmentTicker(txn?.ticker);
+            if (normalizedTicker && openTickers.has(normalizedTicker)) {
+                unrealizedPnlRows.push(ledgerNo);
+            }
+        });
+
+        return {
+            totalRealizedPnl,
+            totalUnrealizedPnl,
+            cumulativePnl,
+            realizedPnlRows,
+            unrealizedPnlRows,
+            cumulativePnlRows: Array.from(new Set([
+                ...realizedPnlRows,
+                ...unrealizedPnlRows,
+            ])),
+        };
     }
 
     function renderMetricValueWithTooltip(metric) {

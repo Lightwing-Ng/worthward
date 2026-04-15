@@ -233,6 +233,7 @@
 }
 
 #investment_metrics_panel.trade-metrics-grid {
+    gap: 0;
     overflow: visible;
     scrollbar-width: none;
     scrollbar-gutter: auto;
@@ -301,7 +302,7 @@
     grid-auto-rows: minmax(var(--workspace-metric-card-min-height), max-content);
     align-items: start;
     justify-items: stretch;
-    gap: 8px;
+    gap: 2px;
     height: auto;
     min-height: 0;
     padding-bottom: 0;
