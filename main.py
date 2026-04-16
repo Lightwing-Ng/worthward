@@ -1,9 +1,10 @@
 """
 Project entrypoint.
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
+from json import JSONDecodeError
 import os
 
 from app.core.broker_settings import has_longbridge_credentials, load_broker_settings
@@ -24,7 +25,7 @@ def _log_startup(message: str) -> None:
 def _should_manage_longbridge_as_long_lived() -> bool:
     try:
         broker_settings = load_broker_settings()
-    except Exception:
+    except (OSError, JSONDecodeError):
         return False
     return (
         broker_settings.selected_broker == "longbridge"
@@ -43,7 +44,7 @@ def _prewarm_broker_context(debug_enabled: bool) -> None:
         _log_startup("Skipped Longbridge prewarm in the Werkzeug reloader supervisor process.")
         return
     try:
-        _prewarmed, prewarm_message = prewarm_longbridge_quote_context()
+        _primed, prewarm_message = prewarm_longbridge_quote_context()
         _log_startup(prewarm_message)
     except Exception as exc:
         _log_startup(f"Longbridge prewarm failed: {exc}")
@@ -64,12 +65,12 @@ def _build_run_options(config: dict) -> dict:
 
 
 def _initialize_runtime():
-    settings = get_settings()
-    debug_enabled = settings["app"].get("debug", DEFAULT_DEBUG)
+    runtime_settings = get_settings()
+    debug_enabled = runtime_settings["app"].get("debug", DEFAULT_DEBUG)
     bootstrap_runtime_network_for_yfinance()
     _prewarm_broker_context(debug_enabled)
     from app import create_app
-    return create_app(), settings
+    return create_app(), runtime_settings
 
 
 app, settings = _initialize_runtime()
