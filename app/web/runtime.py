@@ -255,6 +255,7 @@ def build_web_runtime() -> WebRuntime:
             "adjusted_end": payload.adjusted_end,
             "message": payload.message,
         }
+
     configured_money_market_tickers = {
         str(value).strip().upper()
         for value in money_market_settings.get("tickers", [])
@@ -454,18 +455,18 @@ def build_web_runtime() -> WebRuntime:
             key: str(value).strip()
             for key, value in payload.items()
             if key in {"notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"}
-            and str(value).strip()
+               and str(value).strip()
         }
 
     def _redirect_with_settings_feedback(
-        section_name: str,
-        *,
-        notice: str = "",
-        error: str = "",
-        broker_test_status: str = "",
-        broker_test_message: str = "",
-        broker_test_checked_at: str = "",
-        query_params: dict[str, Any] | None = None,
+            section_name: str,
+            *,
+            notice: str = "",
+            error: str = "",
+            broker_test_status: str = "",
+            broker_test_message: str = "",
+            broker_test_checked_at: str = "",
+            query_params: dict[str, Any] | None = None,
     ):
         target_path = build_settings_path(section_name)
         if query_params:
@@ -1239,8 +1240,10 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--portfolio-donut-orbit-logo-size", 20, 1),
                     px_token("--portfolio-donut-orbit-logo-gap", 0, 0),
                     raw_token("--portfolio-donut-orbit-satellite-radius", "calc((var(--portfolio-donut-orbit-logo-size) * 1.41421356237) / 2)"),
-                    raw_token("--portfolio-donut-orbit-satellite-center-radius", "calc((var(--portfolio-donut-orbit-donut-size) / 2) + var(--portfolio-donut-orbit-satellite-radius))"),
-                    raw_token("--portfolio-donut-orbit-outer-tangent-radius", "calc(var(--portfolio-donut-orbit-satellite-center-radius) + var(--portfolio-donut-orbit-satellite-radius))"),
+                    raw_token("--portfolio-donut-orbit-satellite-center-radius",
+                              "calc((var(--portfolio-donut-orbit-donut-size) / 2) + var(--portfolio-donut-orbit-satellite-radius))"),
+                    raw_token("--portfolio-donut-orbit-outer-tangent-radius",
+                              "calc(var(--portfolio-donut-orbit-satellite-center-radius) + var(--portfolio-donut-orbit-satellite-radius))"),
                     raw_token("--portfolio-donut-orbit-frame-padding", "calc(var(--portfolio-donut-orbit-outer-tangent-radius) - (var(--portfolio-donut-orbit-donut-size) / 2))"),
                     raw_token("--portfolio-donut-orbit-boundary-size", "calc(var(--portfolio-donut-orbit-outer-tangent-radius) * 2)"),
                 ],
@@ -2978,7 +2981,12 @@ def build_web_runtime() -> WebRuntime:
                 _,
             ) = _run_backtest_from_request()
 
-            summary = backtest_result.get("summary", {})
+            raw_summary = backtest_result.get("summary", {})
+            summary: dict[str, object] = (
+                cast(dict[str, object], raw_summary)
+                if isinstance(raw_summary, dict)
+                else {}
+            )
             raw_trades = backtest_result.get("trades", [])
             trades: list[dict[str, object]] = (
                 [cast(dict[str, object], trade) for trade in raw_trades if isinstance(trade, dict)]
@@ -3007,7 +3015,7 @@ def build_web_runtime() -> WebRuntime:
             long_loss = float(summary.get("long_loss", 0) or 0)
             beat_bh_pct = float(summary.get("beat_bh_pct", 0) or 0)
             win_rate_pct = summary.get("win_rate_pct")
-            win_rate_display = "N/A" if win_rate_pct is None else f"{float(win_rate_pct):,.2f}%"
+            win_rate_display = "N/A" if win_rate_pct is None else f"{parse_float_value(win_rate_pct, 0.0):,.2f}%"
 
             md_lines = [
                 f"## Backtest Report: {trade_ticker}",
