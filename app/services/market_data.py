@@ -1,13 +1,14 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.7
+Code version: v0.3.9
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -17,6 +18,7 @@ import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_credentials, load_broker_settings
 from app.infrastructure.broker_market_data import (
+    NEW_YORK_TIMEZONE,
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
     has_recent_one_minute_store,
@@ -39,6 +41,7 @@ INTRADAY_INTERVALS = {"1m"}
 YFINANCE_INTRADAY_FALLBACK_DAYS = 30
 YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
 YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS = 7
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -159,7 +162,14 @@ def _download_recent_one_minute_history_with_yfinance(
                 start=cursor,
                 end=window_end,
             )
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning(
+                "Unable to download 1-minute yfinance window for %s between %s and %s: %s",
+                ticker,
+                cursor,
+                window_end,
+                exc,
+            )
             frame = pd.DataFrame()
         if not frame.empty:
             frames.append(frame)
@@ -188,7 +198,8 @@ def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
     if path.exists():
         try:
             existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
-        except Exception:
+        except (ImportError, OSError, ValueError, KeyError) as exc:
+            LOGGER.warning("Unable to read existing 1-minute store for %s from %s: %s", normalized_ticker, path, exc)
             existing_df = pd.DataFrame()
         if not existing_df.empty:
             normalized_dataset = pd.concat([existing_df, normalized_dataset], ignore_index=True)
@@ -224,7 +235,6 @@ def _download_daily_history_with_fallback(
         start: str | None = None,
         period: str | None = None,
 ) -> pd.DataFrame:
-    yfinance_error: Exception | None = None
     try:
         return _download_daily_history_with_yfinance(
             ticker,
@@ -285,11 +295,6 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
     all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
     dataset = drop_duplicate_columns(history[all_to_keep].copy())
     if is_intraday_market_interval(interval):
-        try:
-            from app.infrastructure.broker_market_data import NEW_YORK_TIMEZONE
-        except ImportError:
-            import pytz
-            NEW_YORK_TIMEZONE = pytz.timezone("America/New_York")
         dates = pd.to_datetime(dataset["Date"], utc=True)
         dataset["Date"] = dates.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
     else:
@@ -381,8 +386,9 @@ def refresh_history_store(ticker: str) -> Path:
                 # Get the max date and go back 1 day to ensure overlap and consistency
                 max_date = pd.to_datetime(existing_df["Date"].max())
                 start_date = (max_date - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-        except:
-            pass
+        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.warning("Unable to inspect existing daily history store for %s at %s: %s", normalized_ticker, path, exc)
+            existing_df = None
 
     if start_date:
         # Incremental download logic
@@ -406,9 +412,9 @@ def refresh_history_store(ticker: str) -> Path:
                     if not combined.reset_index(drop=True).equals(existing_normalized):
                         combined.to_parquet(path, index=False)
                     return path
-        except:
+        except Exception as exc:
             # Fallback to full download if incremental fails
-            pass
+            LOGGER.warning("Incremental daily history refresh failed for %s; falling back to full download: %s", normalized_ticker, exc)
 
     # Fallback / Initial download
     history = download_full_history(normalized_ticker)

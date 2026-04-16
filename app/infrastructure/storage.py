@@ -130,13 +130,12 @@ def intraday_history_store_path_for(ticker: str, interval: str = "1m") -> Path:
     return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.parquet"
 
 
-def profile_store_path_for(ticker: str, namespace: str = "primary") -> Path:
-    del ticker, namespace
+def profile_store_path_for(ticker: str) -> Path:
+    del ticker
     return PROFILES_PARQUET_PATH
 
 
-def logo_store_path_for(ticker: str, namespace: str = "primary") -> Path:
-    del namespace
+def logo_store_path_for(ticker: str) -> Path:
     return LOGOS_STORE_DIR / f"{normalize_ticker(ticker)}.png"
 
 

@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -118,12 +118,13 @@ def is_known_ticker(ticker: str) -> bool:
             quote_type = str(item.get("quoteType", "")).upper()
             if symbol == normalized_ticker and quote_type in VALID_QUOTE_TYPES:
                 return True
-    except Exception:
-        pass
+    except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
+        LOGGER.warning("Ticker search validation failed for %s: %s", normalized_ticker, exc)
 
     try:
         info = yf.Ticker(normalized_ticker).info
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("Ticker info validation failed for %s: %s", normalized_ticker, exc)
         return False
 
     quote_type = str(info.get("quoteType", "")).upper()
@@ -199,7 +200,7 @@ def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, 
     is_symbol_prefix = 0 if normalized_symbol.startswith(normalized_query) else 1
     is_name_match = 0 if normalized_query and normalized_query in normalized_name else 1
     is_etf = 1 if item.get("asset_type") == "ETF" else 0
-    return (is_symbol_exact, is_symbol_prefix, is_name_match, is_etf, symbol)
+    return is_symbol_exact, is_symbol_prefix, is_name_match, is_etf, symbol
 
 
 def should_cache_search_results(query: str, items: list[dict[str, str]]) -> bool:
@@ -298,9 +299,7 @@ def refresh_logo_store(
         ticker: str,
         website: str | None,
         force_refresh: bool = False,
-        namespace: str = "primary",
 ) -> None:
-    del namespace
     ensure_market_store_dir()
     path = logo_store_path_for(ticker)
     if path.exists() and not force_refresh:
@@ -319,9 +318,7 @@ def fetch_and_store_logo(
         ticker: str,
         website: str | None,
         force_refresh: bool = False,
-        namespace: str = "primary",
 ) -> str | None:
-    del namespace
     ensure_market_store_dir()
     path = logo_store_path_for(ticker)
     refresh_logo_store(ticker, website, force_refresh=force_refresh)
@@ -334,19 +331,18 @@ def resolve_logo_url_with_fallback(
         ticker: str,
         website: str | None,
         force_refresh: bool = False,
-        namespace: str = "primary",
 ) -> str | None:
-    return fetch_and_store_logo(ticker, website, force_refresh=force_refresh, namespace=namespace)
+    return fetch_and_store_logo(ticker, website, force_refresh=force_refresh)
 
 
-def fetch_quote_profile(
+def _fetch_quote_profile_for_scope(
         ticker: str,
         force_refresh: bool = False,
-        namespace: str = "primary",
+        *,
+        scope: str = PROFILE_SCOPE_LOCAL,
 ) -> QuoteProfile:
     ensure_market_store_dir()
     normalized_ticker = normalize_ticker_input(ticker)
-    scope = PROFILE_SCOPE_LOCAL if namespace == "primary" else PROFILE_SCOPE_SEARCH
     record = load_profile_record(normalized_ticker)
 
     if record and (_record_is_fresh(record.get("updated_at")) or not has_remote_market_access() or not force_refresh):
@@ -358,7 +354,6 @@ def fetch_quote_profile(
                 record["ticker"],
                 record.get("website"),
                 force_refresh=False,
-                namespace=namespace,
             ),
         )
 
@@ -386,15 +381,20 @@ def fetch_quote_profile(
             stored["ticker"],
             stored.get("website"),
             force_refresh=force_refresh,
-            namespace=namespace,
         ),
     )
+
+
+def fetch_quote_profile(
+        ticker: str,
+        force_refresh: bool = False,
+) -> QuoteProfile:
+    return _fetch_quote_profile_for_scope(ticker, force_refresh, scope=PROFILE_SCOPE_LOCAL)
 
 
 def refresh_quote_profile_cache(
         ticker: str,
         force_refresh: bool = False,
-        namespace: str = "primary",
 ) -> bool:
     ensure_market_store_dir()
     if not has_remote_market_access():
@@ -406,20 +406,21 @@ def refresh_quote_profile_cache(
             payload["ticker"],
             str(payload.get("company_name") or payload["ticker"]),
             payload.get("website"),
-            scope=PROFILE_SCOPE_LOCAL if namespace == "primary" else PROFILE_SCOPE_SEARCH,
+            scope=PROFILE_SCOPE_LOCAL,
         )
         refresh_logo_store(
             payload["ticker"],
             payload.get("website"),
             force_refresh=force_refresh,
         )
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("Quote profile cache refresh failed for %s: %s", ticker, exc)
         return False
     return True
 
 
 def _build_recent_suggestion(symbol: str) -> dict[str, str]:
-    profile = fetch_quote_profile(symbol, force_refresh=False, namespace="primary")
+    profile = fetch_quote_profile(symbol, force_refresh=False)
     return {
         "symbol": symbol,
         "name": profile.company_name or symbol,
@@ -451,7 +452,25 @@ def build_local_search_items(query: str) -> list[dict[str, str]]:
                 "source": "local",
             }
         )
-    return sorted(items, key=lambda item: search_result_sort_key(item, query))
+    return sorted(items, key=lambda search_item: search_result_sort_key(search_item, query))
+
+
+def combine_unique_search_items(
+        *item_groups: list[dict[str, str]],
+        limit: int,
+) -> list[dict[str, str]]:
+    combined: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item_group in item_groups:
+        for search_item in item_group:
+            symbol = search_item["symbol"]
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            combined.append(search_item)
+            if len(combined) >= limit:
+                return combined
+    return combined
 
 
 def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
@@ -462,53 +481,22 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     local_items = build_local_search_items(normalized_query) if normalized_query else []
 
     if len(normalized_query) < 1:
-        combined_recent: list[dict[str, str]] = []
-        seen_recent: set[str] = set()
-        for item in recent_items + local_items:
-            symbol = item["symbol"]
-            if symbol in seen_recent:
-                continue
-            seen_recent.add(symbol)
-            combined_recent.append(item)
-            if len(combined_recent) >= limit:
-                break
-        return combined_recent[:limit]
+        return combine_unique_search_items(recent_items, local_items, limit=limit)
 
     if len(normalized_query) == 1 and local_items:
-        combined_local: list[dict[str, str]] = []
-        seen_local: set[str] = set()
-        for item in recent_items + local_items:
-            symbol = item["symbol"]
-            if symbol in seen_local:
-                continue
-            seen_local.add(symbol)
-            combined_local.append(item)
-            if len(combined_local) >= limit:
-                break
-        return combined_local
+        return combine_unique_search_items(recent_items, local_items, limit=limit)
 
     if any(
             str(item.get("symbol") or "").upper() == normalized_query
             for item in local_items
     ):
-        combined_exact: list[dict[str, str]] = []
-        seen_exact: set[str] = set()
         prioritized_local_items = sorted(
             local_items,
-            key=lambda item: 0 if str(item.get("symbol") or "").upper() == normalized_query else 1,
+            key=lambda local_item: 0 if str(local_item.get("symbol") or "").upper() == normalized_query else 1,
         )
-        for item in prioritized_local_items + recent_items:
-            symbol = item["symbol"]
-            if symbol in seen_exact:
-                continue
-            seen_exact.add(symbol)
-            combined_exact.append(item)
-            if len(combined_exact) >= limit:
-                break
-        return combined_exact
+        return combine_unique_search_items(prioritized_local_items, recent_items, limit=limit)
 
     cached_items = load_search_cache_items(normalized_query)
-    remote_items: list[dict[str, str]] = []
     if len(local_items) >= limit:
         remote_items = []
     elif cached_items and all("logo_url" in item for item in cached_items):
@@ -540,9 +528,9 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
             if not is_supported_search_result(item, normalized_query):
                 continue
             website = item.get("website") or item.get("webSite")
-            logo_url = fetch_and_store_logo(symbol, website, namespace="search")
+            logo_url = fetch_and_store_logo(symbol, website)
             if not logo_url:
-                profile = fetch_quote_profile(symbol, force_refresh=False, namespace="search")
+                profile = _fetch_quote_profile_for_scope(symbol, force_refresh=False, scope=PROFILE_SCOPE_SEARCH)
                 logo_url = profile.logo_url
             filtered.append(
                 {
@@ -554,22 +542,15 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
                 }
             )
 
-        deduped_remote = {item["symbol"]: item for item in filtered}
-        remote_items = sorted(deduped_remote.values(), key=lambda item: search_result_sort_key(item, normalized_query))
+        deduplicated_remote = {item["symbol"]: item for item in filtered}
+        remote_items = sorted(
+            deduplicated_remote.values(),
+            key=lambda remote_item: search_result_sort_key(remote_item, normalized_query),
+        )
         if should_cache_search_results(normalized_query, remote_items):
             store_search_cache_items(normalized_query, remote_items)
 
     if not remote_items and not has_remote_market_access():
         remote_items = []
 
-    combined: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for item in recent_items + local_items + remote_items:
-        symbol = item["symbol"]
-        if symbol in seen:
-            continue
-        seen.add(symbol)
-        combined.append(item)
-        if len(combined) >= limit:
-            break
-    return combined
+    return combine_unique_search_items(recent_items, local_items, remote_items, limit=limit)

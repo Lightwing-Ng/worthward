@@ -8,3 +8,7 @@ urllib3<2
 longbridge==4.0.5
 openpyxl==3.1.5
 tomli>=2.0.1; python_version < "3.11"
+
+pathlib~=1.0.1
+curl_cffi~=0.13.0
+numpy~=2.2.1
