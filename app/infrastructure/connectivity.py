@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.3.0
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -210,12 +210,18 @@ def has_tradingview_ta_available() -> bool:
         return cached_value
 
     try:
-        import tradingview_ta  # noqa: F401
+        __import__("tradingview_ta")
         _tradingview_ta_cache = _cache_result(True)
         return True
     except ImportError:
         _tradingview_ta_cache = _cache_result(False)
         return False
+
+
+def _normalize_tradingview_section(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): section_value for key, section_value in value.items()}
 
 
 def fetch_tradingview_metrics(
@@ -248,15 +254,22 @@ def fetch_tradingview_metrics(
             ) from exc
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-    return {
+
+    summary = _normalize_tradingview_section(analysis.summary)
+    oscillators = _normalize_tradingview_section(analysis.oscillators)
+    moving_averages = _normalize_tradingview_section(analysis.moving_averages)
+    indicators = _normalize_tradingview_section(analysis.indicators)
+
+    payload: dict[str, object] = {
         "symbol": symbol,
         "screener": screener,
         "exchange": exchange,
-        "summary": analysis.summary,
-        "oscillators": analysis.oscillators,
-        "moving_averages": analysis.moving_averages,
-        "indicators": analysis.indicators,
+        "summary": summary,
+        "oscillators": oscillators,
+        "moving_averages": moving_averages,
+        "indicators": indicators,
     }
+    return payload
 
 
 def reset_connectivity_caches() -> None:

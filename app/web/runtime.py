@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.9
+Code version: v0.3.10
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ from app.infrastructure.storage import (
     INVESTMENT_STORE_PATH,
     LOGOS_STORE_DIR,
     TICKER_USAGE_STORE_PATH,
-    clear_nonhistorical_market_cache,
+    clear_non_historical_market_cache,
     delete_ticker_data,
     has_logo_asset,
     has_profile_record,
@@ -3460,7 +3460,7 @@ def build_web_runtime() -> WebRuntime:
                 else:
                     notice = "No local broker transaction record was found in settings_store/investment.json."
             else:
-                cache_summary = clear_nonhistorical_market_cache()
+                cache_summary = clear_non_historical_market_cache()
                 reset_connectivity_caches()
                 notice = (
                     f"Cleared {cache_summary['removed_search_queries']:,} market search cache entr"

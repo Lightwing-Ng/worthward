@@ -1,7 +1,7 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.2.0
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -26,12 +26,20 @@ def _has_explicit_proxy_environment() -> bool:
     )
 
 
+def _enable_unverified_https_context_for_proxy() -> None:
+    unverified_context_factory = getattr(ssl, "_create_unverified_context", None)
+    if unverified_context_factory is None:
+        return
+
+    setattr(ssl, "_create_default_https_context", unverified_context_factory)
+
+
 def bootstrap_runtime_network() -> None:
     if _is_truthy(os.environ.get("ANTIGRAVITY_DISABLE_PROXY")):
         return
 
     if _has_explicit_proxy_environment():
-        ssl._create_default_https_context = ssl._create_unverified_context
+        _enable_unverified_https_context_for_proxy()
 
 
 def configure_yfinance_for_proxy() -> None:
@@ -50,10 +58,12 @@ def configure_yfinance_for_proxy() -> None:
         return
 
     try:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        import urllib3 as urllib3_module
     except ImportError:
-        pass
+        urllib3_module = None
+
+    if urllib3_module is not None:
+        urllib3_module.disable_warnings(urllib3_module.exceptions.InsecureRequestWarning)
 
     warnings.filterwarnings("ignore")
 
@@ -68,7 +78,6 @@ def configure_yfinance_for_proxy() -> None:
         return
 
     original_session_request = session_cls.request
-    original_get = session_cls.get
 
     def patched_request(self, method, url, **kwargs):
         kwargs.setdefault("verify", False)

@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.1
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -130,18 +130,8 @@ def intraday_history_store_path_for(ticker: str, interval: str = "1m") -> Path:
     return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.parquet"
 
 
-def profile_store_path_for(ticker: str) -> Path:
-    del ticker
-    return PROFILES_PARQUET_PATH
-
-
 def logo_store_path_for(ticker: str) -> Path:
     return LOGOS_STORE_DIR / f"{normalize_ticker(ticker)}.png"
-
-
-def search_store_path_for(query: str) -> Path:
-    del query
-    return SEARCH_CACHE_PARQUET_PATH
 
 
 def ticker_from_store_path(path: Path) -> str:
@@ -472,8 +462,8 @@ def list_historical_tickers() -> list[str]:
         ticker_from_store_path(path)
         for path in HISTORICAL_STORE_DIR.glob("*.parquet")
         if path.is_file()
-           and path.stat().st_size > 0
-           and _INTRADAY_STORE_SUFFIX_PATTERN.search(path.stem) is None
+        and path.stat().st_size > 0
+        and _INTRADAY_STORE_SUFFIX_PATTERN.search(path.stem) is None
     )
 
 
@@ -581,7 +571,7 @@ def top_used_strategies(limit: int = 3) -> list[str]:
     return [strategy_id for strategy_id, _, _ in ranked[:limit]]
 
 
-def clear_nonhistorical_market_cache() -> dict[str, int]:
+def clear_non_historical_market_cache() -> dict[str, int]:
     ensure_market_store_dir()
     protected_tickers = {normalize_ticker(ticker) for ticker in list_historical_tickers()}
     investment_settings = get_settings().get("investment", {})
@@ -620,11 +610,11 @@ def clear_nonhistorical_market_cache() -> dict[str, int]:
         profiles_table = _load_profiles_table()
         removed_profiles = 0
         if not profiles_table.empty:
-            keep_mask = (
+            keep_mask: pd.Series = (
                     (profiles_table["storage_scope"] == PROFILE_SCOPE_LOCAL)
                     | profiles_table["ticker"].isin(protected_tickers)
             )
-            removed_profiles = int((~keep_mask).sum())
+            removed_profiles = int(len(profiles_table.index) - int(keep_mask.sum()))
             profiles_table = profiles_table.loc[keep_mask].copy()
             _save_profiles_table(profiles_table)
 

@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.3.5
+    Code version: v0.3.6
 """
 
 from __future__ import annotations
@@ -81,14 +81,14 @@ def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
     )
 
 
-def _build_longbridge_config(Config: Any, settings: BrokerSettings) -> Any:
+def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
     app_key = settings.longbridge_app_key.strip()
     app_secret = settings.longbridge_app_secret.strip()
     access_token = settings.longbridge_access_token.strip()
-    factory = getattr(Config, "from_apikey", None)
+    factory = getattr(config_cls, "from_apikey", None)
     if callable(factory):
         return factory(app_key, app_secret, access_token)
-    return Config(app_key, app_secret, access_token)
+    return config_cls(app_key, app_secret, access_token)
 
 
 def _longbridge_settings_signature(settings: BrokerSettings) -> tuple[str, str, str]:
@@ -129,9 +129,9 @@ def _run_longbridge_keepalive(
 def _ensure_longbridge_keepalive_unlocked(signature: tuple[str, str, str]) -> None:
     global _LONGBRIDGE_KEEPALIVE_SIGNATURE, _LONGBRIDGE_KEEPALIVE_THREAD, _LONGBRIDGE_KEEPALIVE_STOP_EVENT
     if (
-        _LONGBRIDGE_KEEPALIVE_THREAD is not None
-        and _LONGBRIDGE_KEEPALIVE_THREAD.is_alive()
-        and _LONGBRIDGE_KEEPALIVE_SIGNATURE == signature
+            _LONGBRIDGE_KEEPALIVE_THREAD is not None
+            and _LONGBRIDGE_KEEPALIVE_THREAD.is_alive()
+            and _LONGBRIDGE_KEEPALIVE_SIGNATURE == signature
     ):
         return
 
@@ -163,9 +163,9 @@ def get_longbridge_quote_context(settings: BrokerSettings) -> Any:
             _ensure_longbridge_keepalive_unlocked(signature)
             return _LONGBRIDGE_QUOTE_CONTEXT
 
-        Config, QuoteContext, _, _ = _load_longbridge_openapi()
-        config = _build_longbridge_config(Config, settings)
-        context = QuoteContext(config)
+        config_cls, quote_context_cls, _, _ = _load_longbridge_openapi()
+        config = _build_longbridge_config(config_cls, settings)
+        context = quote_context_cls(config)
 
         previous = _LONGBRIDGE_QUOTE_CONTEXT
         _LONGBRIDGE_QUOTE_CONTEXT = context
@@ -392,7 +392,7 @@ def fetch_longbridge_one_minute_history(
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
-    _, _, Period, AdjustType = _load_longbridge_openapi()
+    _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
     quote_context = get_longbridge_quote_context(settings)
     symbol = _normalize_longbridge_symbol(ticker)
 
@@ -418,16 +418,16 @@ def fetch_longbridge_one_minute_history(
             if cursor is None:
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
-                    Period.Min_1,
-                    AdjustType.NoAdjust,
+                    period_enum.Min_1,
+                    adjust_type_enum.NoAdjust,
                     False,
                     ONE_MINUTE_CHUNK_SIZE,
                 )
             else:
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
-                    Period.Min_1,
-                    AdjustType.NoAdjust,
+                    period_enum.Min_1,
+                    adjust_type_enum.NoAdjust,
                     False,
                     ONE_MINUTE_CHUNK_SIZE,
                     cursor,
@@ -481,8 +481,8 @@ def fetch_longbridge_daily_history(
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
-    _, _, Period, AdjustType = _load_longbridge_openapi()
-    period_day = _resolve_daily_period(Period)
+    _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
+    period_day = _resolve_daily_period(period_enum)
     quote_context = get_longbridge_quote_context(settings)
     symbol = _normalize_longbridge_symbol(ticker)
 
@@ -501,7 +501,7 @@ def fetch_longbridge_daily_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_day,
-                    AdjustType.NoAdjust,
+                    adjust_type_enum.NoAdjust,
                     False,
                     DAILY_CHUNK_SIZE,
                 )
@@ -509,7 +509,7 @@ def fetch_longbridge_daily_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_day,
-                    AdjustType.NoAdjust,
+                    adjust_type_enum.NoAdjust,
                     False,
                     DAILY_CHUNK_SIZE,
                     cursor,
