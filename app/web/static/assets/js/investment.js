@@ -1413,11 +1413,40 @@ document.addEventListener('DOMContentLoaded', () => {
         return 1 - (inverse * inverse * inverse);
     }
 
+    function normalizeMarkdownCellWhitespace(value, { preserveLineBreaks = false } = {}) {
+        const normalized = String(value ?? '')
+            .replace(/\u00a0/g, ' ')
+            .trim();
+        if (!preserveLineBreaks) {
+            return normalized
+                .replace(/\r?\n/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+        return normalized
+            .replace(/[ \t]*\r?\n[ \t]*/g, '\n')
+            .replace(/\n{2,}/g, '\n');
+    }
+
+    function extractMarkdownTableCellText(cell) {
+        if (!(cell instanceof HTMLElement)) return '';
+        const clone = cell.cloneNode(true);
+        clone.querySelectorAll('br').forEach((lineBreakNode) => {
+            lineBreakNode.replaceWith('\n');
+        });
+        const rawText = clone.innerText || clone.textContent || '';
+        const normalized = normalizeMarkdownCellWhitespace(rawText, { preserveLineBreaks: true });
+        return normalized
+            .split('\n')
+            .map((line) => line.replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .join('<br/>');
+    }
+
     function escapeMarkdownTableCell(value) {
-        return String(value ?? '')
+        return normalizeMarkdownCellWhitespace(value, { preserveLineBreaks: true })
             .replace(/\|/g, '\\|')
-            .replace(/\r?\n/g, ' ')
-            .replace(/\s+/g, ' ')
+            .replace(/\n/g, '<br/>')
             .trim();
     }
 
@@ -1427,7 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rows.length) return '';
 
         const matrix = rows
-            .map((row) => Array.from(row.children).map((cell) => escapeMarkdownTableCell(cell.textContent)))
+            .map((row) => Array.from(row.children).map((cell) => escapeMarkdownTableCell(extractMarkdownTableCellText(cell))))
             .filter((row) => row.some((cell) => cell.length > 0));
         if (!matrix.length) return '';
 
@@ -1458,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${day} ${monthAbbreviations[monthIndex] || ''} ${year}`.trim();
     }
 
-    function buildExportDateRange(transactions) {
+    function buildExportDateRange(transactions, latestEquityDate = '') {
         const rawDates = Array.isArray(transactions)
             ? transactions
                 .map((txn) => String(txn?.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/)?.slice(1).join('-') || '')
@@ -1473,14 +1502,35 @@ document.addEventListener('DOMContentLoaded', () => {
             return { start: fallback, end: fallback };
         }
         const sortedDates = [...rawDates].sort();
-        return { start: sortedDates[0], end: sortedDates[sortedDates.length - 1] };
+        const normalizedLatestEquityDate = String(latestEquityDate || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+        const transactionEndDate = sortedDates[sortedDates.length - 1];
+        const exportEndDate = normalizedLatestEquityDate && normalizedLatestEquityDate >= transactionEndDate
+            ? normalizedLatestEquityDate
+            : transactionEndDate;
+        return { start: sortedDates[0], end: exportEndDate };
+    }
+
+    function getMetricCardExportValue(card) {
+        const valueCopyNode = card?.querySelector('.investment-metric-tooltip-value-copy');
+        if (valueCopyNode) {
+            return valueCopyNode.textContent?.trim() || '';
+        }
+
+        const metricValueNode = card?.querySelector('.trade-metric-value');
+        if (!metricValueNode) return '';
+        const ownText = Array.from(metricValueNode.childNodes || [])
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent || '')
+            .join(' ')
+            .trim();
+        return ownText || metricValueNode.textContent?.trim() || '';
     }
 
     function buildInvestmentMetricsMarkdown(metricsPanel) {
         const metricCards = Array.from(metricsPanel?.querySelectorAll('.trade-metric-card') || [])
             .map((card) => {
                 const label = card.querySelector('.trade-metric-label')?.textContent?.trim() || '';
-                const value = card.querySelector('.investment-metric-tooltip-value-copy, .trade-metric-value')?.textContent?.trim() || '';
+                const value = getMetricCardExportValue(card);
                 return [label, value];
             })
             .filter(([label, value]) => label && value);
@@ -1561,7 +1611,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const transactions = window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [];
-        const dateRange = buildExportDateRange(transactions);
+        const latestEquityDate = String(investmentLatestChartPoint?.date || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+        const dateRange = buildExportDateRange(transactions, latestEquityDate);
         const title = guessInvestmentExportDescription(transactions, holdingsMarkdown);
         const metricsMarkdown = buildInvestmentMetricsMarkdown(metricsPanel);
         const formattedRange = `${formatInvestmentExportDate(dateRange.start)} - ${formatInvestmentExportDate(dateRange.end)}`;
