@@ -9,10 +9,10 @@ from datetime import datetime
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 import hashlib
 import pandas as pd
@@ -23,7 +23,6 @@ from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
     has_recent_one_minute_store,
-    normalize_one_minute_store_frame,
     one_minute_lookback_start,
     test_broker_connection,
 )
@@ -72,7 +71,7 @@ from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     normalize_investment_payload_tickers,
 )
-from app.services.logos import fetch_quote_profile, has_valid_ticker_format, is_known_ticker, normalize_ticker_input, refresh_quote_profile_cache, \
+from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
     fetch_history,
@@ -83,6 +82,7 @@ from app.services.market_data import (
 )
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.market_freshness import ensure_latest_backtest_caches
+from app.models.schemas import DateConstraintPayload, QuoteProfile, SeriesPayload
 from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
 from app.core.settings import get_settings
 from app.infrastructure.storage import (
@@ -98,7 +98,6 @@ from app.infrastructure.storage import (
     list_local_tickers,
     list_historical_tickers,
     load_profile_record,
-    logo_store_path_for,
     record_ticker_usage,
     record_strategy_usage,
     top_used_strategies,
@@ -169,7 +168,6 @@ class WebRuntime:
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
-    test_chart_1m_view: Any
     investment_page: Any
     investment_get_transactions: Any
     investment_add_transaction: Any
@@ -237,6 +235,26 @@ def build_web_runtime() -> WebRuntime:
         if isinstance(investment_settings.get("money_market_funds"), dict)
         else {}
     )
+
+    def quote_profile_to_json(profile: QuoteProfile) -> dict[str, str | None]:
+        return {
+            "ticker": profile.ticker,
+            "company_name": profile.company_name,
+            "website": profile.website,
+            "logo_url": profile.logo_url,
+        }
+
+    def date_constraint_payload_to_json(
+            payload: DateConstraintPayload,
+    ) -> dict[str, str | list[str] | None]:
+        return {
+            "min_date": payload.min_date,
+            "max_date": payload.max_date,
+            "trading_dates": list(payload.trading_dates),
+            "adjusted_start": payload.adjusted_start,
+            "adjusted_end": payload.adjusted_end,
+            "message": payload.message,
+        }
     configured_money_market_tickers = {
         str(value).strip().upper()
         for value in money_market_settings.get("tickers", [])
@@ -653,14 +671,14 @@ def build_web_runtime() -> WebRuntime:
     def build_benchmark_series_payloads(
             reference_dates: pd.Series,
             include_dividends: bool,
-    ) -> tuple[list, list]:
-        benchmark_series = []
-        benchmark_profiles = []
+    ) -> tuple[list[SeriesPayload], list[QuoteProfile]]:
+        benchmark_series: list[SeriesPayload] = []
+        benchmark_profiles: list[QuoteProfile] = []
         reference_date_frame = pd.DataFrame({"Date": reference_dates})
         for ticker in PORTFOLIO_BENCHMARK_TICKERS:
             try:
                 dataset = fetch_history(ticker, include_dividends)
-            except Exception:
+            except (ImportError, OSError, ValueError, KeyError, TypeError):
                 continue
             aligned = pd.merge(
                 reference_date_frame,
@@ -887,7 +905,6 @@ def build_web_runtime() -> WebRuntime:
             return f"{numeric_value:.{decimals}f}"
 
         resolved_value = definition.default if value is None else value
-        field_type = "select"
         input_mode = "text"
         slider_min: int | float | None = None
         slider_max: int | float | None = None
@@ -993,10 +1010,16 @@ def build_web_runtime() -> WebRuntime:
             )
         supertrend_ai_row = next((row for row in rows if row.get("id") == "supertrend-ai"), None)
         if supertrend_ai_row is not None:
+            raw_parameters = supertrend_ai_row.get("parameters", [])
+            copied_parameters = (
+                [dict(parameter) for parameter in raw_parameters if isinstance(parameter, dict)]
+                if isinstance(raw_parameters, list)
+                else []
+            )
             rows.append(
                 {
                     **supertrend_ai_row,
-                    "parameters": [dict(parameter) for parameter in supertrend_ai_row.get("parameters", [])],
+                    "parameters": copied_parameters,
                 }
             )
         return rows
@@ -1667,12 +1690,6 @@ def build_web_runtime() -> WebRuntime:
             {"page": next_page},
         )
 
-    def build_local_market_rows() -> list[dict[str, str]]:
-        rows: list[dict[str, str]] = []
-        for ticker in list_local_market_tickers():
-            rows.extend(build_local_market_rows_for_tickers([ticker], include_ranges=True))
-        return rows
-
     def has_local_profile_snapshot(ticker: str) -> bool:
         return has_profile_record(ticker)
 
@@ -1743,7 +1760,7 @@ def build_web_runtime() -> WebRuntime:
                         date_values = date_values.iloc[:, 0]
                     range_start = format_store_range_date(date_values.min())
                     range_end = format_store_range_date(date_values.max())
-                except Exception:
+                except (ImportError, OSError, ValueError, KeyError, TypeError):
                     pass
             daily_store_status = classify_daily_store_status(ticker)
             intraday_store_status = classify_one_minute_store_status(ticker)
@@ -1897,10 +1914,10 @@ def build_web_runtime() -> WebRuntime:
 
         def refresh_local_entry(ticker: str) -> tuple[str, bool]:
             refresh_history_store(ticker)
-            metadata_refreshed = refresh_quote_profile_cache(ticker, force_refresh=True)
-            if not metadata_refreshed:
+            metadata_was_refreshed = refresh_quote_profile_cache(ticker, force_refresh=True)
+            if not metadata_was_refreshed:
                 fetch_quote_profile(ticker, force_refresh=False)
-            return ticker, metadata_refreshed
+            return ticker, metadata_was_refreshed
 
         history_refreshed_count = 0
         metadata_refreshed_count = 0
@@ -1911,11 +1928,11 @@ def build_web_runtime() -> WebRuntime:
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
-                    _, metadata_refreshed = future.result()
+                    _, entry_metadata_refreshed = future.result()
                     history_refreshed_count += 1
-                    if metadata_refreshed:
+                    if entry_metadata_refreshed:
                         metadata_refreshed_count += 1
-                except Exception:
+                except (ImportError, OSError, ValueError, KeyError, TypeError):
                     history_failed_tickers.append(ticker)
         return {
             "total_count": len(historical_tickers),
@@ -2005,7 +2022,7 @@ def build_web_runtime() -> WebRuntime:
             try:
                 strategy = instantiate_strategy(strategy_value)
                 strategy_param_keys = {definition.key for definition in strategy.get_parameter_definitions()}
-            except Exception:
+            except (AttributeError, ImportError, TypeError, ValueError):
                 strategy_param_keys = set()
 
         for key in request.args.keys():
@@ -2117,7 +2134,7 @@ def build_web_runtime() -> WebRuntime:
             return ["1d"] if interval == "1m" else ["max"]
         try:
             dataset = pd.read_parquet(path, columns=["Date"])
-        except Exception:
+        except (ImportError, OSError, ValueError, KeyError, TypeError):
             return ["1d"] if interval == "1m" else ["max"]
         if dataset.empty:
             return ["1d"] if interval == "1m" else ["max"]
@@ -2197,15 +2214,13 @@ def build_web_runtime() -> WebRuntime:
         exact_start_value = exact_start
         exact_end_value = exact_end
         display_range = ""
-        profiles = []
-        series = []
+        profiles: list[QuoteProfile] = []
+        series: list[SeriesPayload] = []
         performance_items = []
         portfolio_items = []
         portfolio_weights = []
         portfolio_total_return = None
         validated_tickers: list[str] = []
-        datasets: list[pd.DataFrame] = []
-        aligned_datasets: list[pd.DataFrame] = []
         strategy_options = list_enabled_strategies()
         strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = request.args.get(
@@ -2244,7 +2259,6 @@ def build_web_runtime() -> WebRuntime:
 
         backtest_result = None
         backtest_market_refresh: dict[str, str | bool | None] | None = None
-        date_constraints = build_date_constraint_payload()
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
         has_weight_query = bool(request.args.getlist("weight")) or any(
@@ -2273,7 +2287,6 @@ def build_web_runtime() -> WebRuntime:
         local_store_prev_slot = {"page": None}
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
-        more_cards: list[dict[str, str]] = []
         backtest_periods_by_interval: dict[str, list[str]] = {
             "1d": list(ADAPTIVE_PERIODS_1D),
             "1m": list(SUPPORTED_PERIODS_1M),
@@ -2328,7 +2341,7 @@ def build_web_runtime() -> WebRuntime:
         if period not in supported_periods:
             period = supported_periods[0] if supported_periods else DEFAULT_PERIOD
 
-        def handle_fetch_history_failure(ticker: str, include_dividends: bool) -> pd.DataFrame:
+        def handle_fetch_history_failure(ticker: str, include_dividends_flag: bool) -> pd.DataFrame:
             """
             If fetching fails because remote data cannot be retrieved, try to load whatever local data exists.
             If any local parquet exists, even if incomplete, return it instead of raising immediately.
@@ -2336,8 +2349,8 @@ def build_web_runtime() -> WebRuntime:
             path = history_store_path_for(ticker)
             if path.exists():
                 try:
-                    return select_price_series(pd.read_parquet(path), include_dividends)
-                except Exception:
+                    return select_price_series(pd.read_parquet(path), include_dividends_flag)
+                except (ImportError, OSError, ValueError, KeyError, TypeError):
                     pass
             raise ValueError(f"No market data returned for {ticker}.")
 
@@ -2429,19 +2442,30 @@ def build_web_runtime() -> WebRuntime:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
                         validated_tickers = [normalize_ticker_input(t) or t for t in requested_tickers]
-                        profiles = [type("Mock", (), {"company_name": t, "logo_url": ""})() for t in validated_tickers]
+                        profiles = [
+                            QuoteProfile(ticker=t, company_name=t, logo_url="")
+                            for t in validated_tickers
+                        ]
                         if current_view == "portfolio":
                             portfolio_weights = requested_weights or [0] * len(validated_tickers)
                             portfolio_items = [{"ticker": t, "company_name": t, "logo_url": "", "weight": w, "growth_multiple": 1.0, "color": "transparent"} for t, w in
                                                zip(validated_tickers, portfolio_weights)]
                             portfolio_total_return = 0.0
                         else:
-                            series = [type("Mock", (), {"ticker": t, "normalized_returns": [0.0], "color": "transparent"})() for t in validated_tickers]
+                            series = [
+                                SeriesPayload(
+                                    ticker=t,
+                                    dates=[""],
+                                    raw_dates=[""],
+                                    normalized_returns=[0.0],
+                                    color="transparent",
+                                    glow=False,
+                                )
+                                for t in validated_tickers
+                            ]
                             performance_items = [
                                 {"ticker": t, "company_name": t, "logo_url": "", "ending_return": 0.0, "color": "transparent", "shadow_color": "transparent", "is_winner": False}
                                 for t in validated_tickers]
-                        common_start = pd.Timestamp.now()
-                        common_end = pd.Timestamp.now()
                         display_range = "Loading range..."
                         ticker_slots = validated_tickers.copy()
                         continue_process_tickers = False
@@ -2495,7 +2519,7 @@ def build_web_runtime() -> WebRuntime:
                                     if len(datasets) > idx:
                                         datasets.pop(idx)
                                     datasets.insert(idx, dataset)
-                                except Exception:
+                                except (ImportError, OSError, ValueError, KeyError, TypeError):
                                     # This should not happen since we filtered local_tickers to only include available ones
                                     pass
                                 # Add to notice
@@ -2516,7 +2540,6 @@ def build_web_runtime() -> WebRuntime:
                         )
 
                         # Auto-switch to Exact mode if we're in Relative mode and any ticker couldn't fetch full recent data
-                        auto_notice = None
                         if range_mode != "exact" and len(failed_fetches) > 0:
                             # Get the minimal max date across all datasets (latest available data is bounded by the ticker with incomplete data)
                             common_max_end = min(dataset["Date"].max() for dataset in datasets)
@@ -2565,8 +2588,8 @@ def build_web_runtime() -> WebRuntime:
                             )
                             if any(dataset.empty for dataset in aligned_datasets):
                                 raise ValueError("The selected exact range does not contain shared trading dates.")
-                            exact_start_value = date_constraints.adjusted_start or adjusted_start
-                            exact_end_value = date_constraints.adjusted_end or adjusted_end
+                            exact_start_value = date_constraints.adjusted_start or date_constraints.min_date or ""
+                            exact_end_value = date_constraints.adjusted_end or date_constraints.max_date or ""
                             period_label = "Exact range"
                         else:
                             period, notice_resolve = resolve_effective_period_for_many(period, datasets)
@@ -2645,7 +2668,6 @@ def build_web_runtime() -> WebRuntime:
                 floating_banner_icon_class = modal_banner_icon_class(error)
 
         remote_market_access = True
-        remote_logo_access = False
 
         if current_view != "settings" and not error and not notice:
             requires_remote_probe = any(
@@ -2816,13 +2838,13 @@ def build_web_runtime() -> WebRuntime:
                     for key, value in moving_averages.items():
                         metric_rows.append({"label": f"Moving average · {key}", "value": format_metric_value(value)})
                     seen_labels = set()
-                    deduped_metric_rows = []
+                    deduplicated_metric_rows = []
                     for row in metric_rows:
                         if row["label"] in seen_labels:
                             continue
                         seen_labels.add(row["label"])
-                        deduped_metric_rows.append(row)
-                    timing_metrics = deduped_metric_rows
+                        deduplicated_metric_rows.append(row)
+                    timing_metrics = deduplicated_metric_rows
                 except Exception as exc:
                     timing_error = str(exc)
 
@@ -2856,7 +2878,7 @@ def build_web_runtime() -> WebRuntime:
             periods=supported_periods,
             period_labels={item: format_period_label(item) for item in supported_periods},
             series=series,
-            profiles_json=[asdict(profile) for profile in profiles],
+            profiles_json=[quote_profile_to_json(profile) for profile in profiles],
             performance_items=performance_items,
             portfolio_items=portfolio_items,
             portfolio_weights=portfolio_weights,
@@ -2949,7 +2971,7 @@ def build_web_runtime() -> WebRuntime:
                 backtest_result,
                 trade_ticker,
                 requested_interval,
-                date_constraints,
+                _date_constraints,
                 trade_dataset,
                 strategy_id,
                 strategy_params,
@@ -2957,7 +2979,12 @@ def build_web_runtime() -> WebRuntime:
             ) = _run_backtest_from_request()
 
             summary = backtest_result.get("summary", {})
-            trades = backtest_result.get("trades", [])
+            raw_trades = backtest_result.get("trades", [])
+            trades: list[dict[str, object]] = (
+                [cast(dict[str, object], trade) for trade in raw_trades if isinstance(trade, dict)]
+                if isinstance(raw_trades, list)
+                else []
+            )
             if not trades:
                 return "No transactions to export.", 404
 
@@ -3361,10 +3388,10 @@ def build_web_runtime() -> WebRuntime:
                 refresh_history_store(ticker)
                 try:
                     fetch_quote_profile(ticker, force_refresh=True)
-                except Exception:
+                except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError):
                     try:
                         fetch_quote_profile(ticker, force_refresh=False)
-                    except Exception:
+                    except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError):
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
                 return _redirect_with_settings_feedback(
@@ -3449,13 +3476,13 @@ def build_web_runtime() -> WebRuntime:
         candidate = LOGOS_STORE_DIR / filename
         if candidate.exists():
             return send_from_directory(LOGOS_STORE_DIR, filename)
-        return ("Not Found", 404)
+        return "Not Found", 404
 
     def favicon_icon():
-        settings = get_settings()
-        theme_light = settings.get("ui", {}).get("theme", {}).get("light", {})
-        accent_primary = str(theme_light.get("accent_primary", "#000000"))
-        accent_secondary = str(theme_light.get("accent_secondary", accent_primary))
+        app_settings = get_settings()
+        light_theme = app_settings.get("ui", {}).get("theme", {}).get("light", {})
+        accent_primary = str(light_theme.get("accent_primary", "#000000"))
+        accent_secondary = str(light_theme.get("accent_secondary", accent_primary))
         svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28.2617 23.0957">
     <defs>
@@ -3498,17 +3525,17 @@ def build_web_runtime() -> WebRuntime:
         requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
         minimum_required = 1 if requested_view == "backtest" else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
-            return jsonify(asdict(build_date_constraint_payload()))
+            return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):
-            return jsonify(asdict(build_date_constraint_payload()))
-        include_dividends = request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+            return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
+        include_dividends_flag = request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
         freshness_refresh_failures: list[str] = []
         if requested_view in {"tickers", "portfolio"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
-        datasets = [fetch_history(ticker, include_dividends) for ticker in validated_tickers]
+        datasets = [fetch_history(ticker, include_dividends_flag) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         if freshness_refresh_failures:
             failed_preview = ", ".join(freshness_refresh_failures)
@@ -3517,7 +3544,7 @@ def build_web_runtime() -> WebRuntime:
                 "Using the newest local daily data currently available."
             )
             payload.message = f"{payload.message} {freshness_notice}".strip() if payload.message else freshness_notice
-        return jsonify(asdict(payload))
+        return jsonify(date_constraint_payload_to_json(payload))
 
     def trade_strategy_fields_api():
         strategy_id = request.args.get("strategy", "").strip()
@@ -3599,54 +3626,6 @@ def build_web_runtime() -> WebRuntime:
             }
         )
 
-    def test_chart_1m_view(ticker: str, date_str: str):
-        path = intraday_history_store_path_for(ticker, "1m")
-        if not path.exists():
-            return f"No 1m data for {ticker} at {path}", 404
-
-        try:
-            df = normalize_one_minute_store_frame(pd.read_parquet(path))
-            # 1m Parquet storage is now standardized strictly to New York Time (NYT).
-            df['DateNYT'] = pd.to_datetime(df['Date'])
-
-            # Audit unique dates for debugging
-            all_unique_dates = sorted(df['DateNYT'].dt.date.unique())
-            print(f"DEBUG: All unique NYT dates in file: {all_unique_dates[-10:]}")
-
-            if date_str == 'last5':
-                target_dates = all_unique_dates[-5:]
-                print(f"DEBUG: Filtering for target dates: {target_dates}")
-                day_data = df[df['DateNYT'].dt.date.isin(target_dates)].copy()
-                display_date = f"Last 5 Days ({target_dates[0]} to {target_dates[-1]})"
-            else:
-                day_data = df[df['DateNYT'].dt.strftime('%Y-%m-%d') == date_str].copy()
-                display_date = date_str
-
-            if day_data.empty:
-                print(f"DEBUG: No rows found for {ticker} on {date_str} NYT")
-                return f"No data found for {ticker} on {date_str}. NYT range: {df['DateNYT'].min()} to {df['DateNYT'].max()}", 404
-
-            day_data = day_data.sort_values("DateNYT")
-            print(f"DEBUG: Found {len(day_data)} rows for {ticker} in final selection (NYT Store).")
-
-            rows = []
-            is_multi = date_str == 'last5'
-            for _, row in day_data.iterrows():
-                rows.append({
-                    "time": row['DateNYT'].strftime('%m-%d %H:%M') if is_multi else row['DateNYT'].strftime('%H:%M:%S'),
-                    "close": float(row['Close']),
-                    "volume": int(row['Volume']),
-                })
-
-            return render_template(
-                "test_chart_1m.html",
-                ticker=ticker,
-                date=display_date,
-                rows=rows
-            )
-        except Exception as e:
-            return f"Error loading chart: {str(e)}", 500
-
     def investment_page():
         query_string = request.query_string.decode().strip()
         target_path = build_more_path("investment")
@@ -3718,9 +3697,15 @@ def build_web_runtime() -> WebRuntime:
             )
 
             INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(INVESTMENT_STORE_PATH, "w", encoding="utf-8") as f:
-                json.dump(investment_payload, f, indent=2, ensure_ascii=False)
-                f.write("\n")
+            INVESTMENT_STORE_PATH.write_text(
+                json.dumps(
+                    cast(dict[str, Any], investment_payload),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
             return jsonify({
                 "success": True,
@@ -3853,7 +3838,6 @@ def build_web_runtime() -> WebRuntime:
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,
-        test_chart_1m_view=test_chart_1m_view,
         investment_page=investment_page,
         investment_get_transactions=investment_get_transactions,
         investment_add_transaction=investment_add_transactions,

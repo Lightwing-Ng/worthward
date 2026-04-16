@@ -238,7 +238,6 @@ For the current workspace, ticker `005276756` is configured this way so the hold
 - The application standardizes market timestamps to `America/New_York`
 - Longbridge `1m` timestamps for US symbols are interpreted as `Asia/Hong_Kong` before conversion
 - Stored parquet timestamps are saved as naive New York Time values for consistency across the app
-- A developer verification route is available at `/test/chart/1m/<ticker>/<date_str>` (`date_str=last5` checks the latest 5 trading days)
 
 ## Running tests
 
