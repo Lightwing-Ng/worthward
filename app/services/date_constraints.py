@@ -139,8 +139,8 @@ def align_requested_exact_dates(
         end = max_date
         adjusted = True
 
-    start_idx = min(available.searchsorted(start, side="left"), len(available) - 1)
-    end_idx = max(available.searchsorted(end, side="right") - 1, 0)
+    start_idx = min(int(available.searchsorted(start, side="left")), len(available) - 1)
+    end_idx = max(int(available.searchsorted(end, side="right")) - 1, 0)
     aligned_start = available[start_idx]
     aligned_end = available[end_idx]
 

@@ -25,7 +25,7 @@ def ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
     for ticker in tickers:
         try:
             ensure_fresh_history_store(ticker)
-        except Exception:
+        except (ImportError, OSError, ValueError, KeyError, TypeError):
             failed_tickers.append(ticker)
     return failed_tickers
 

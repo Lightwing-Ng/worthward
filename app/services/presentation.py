@@ -54,9 +54,10 @@ def build_series_colors(count: int, start_hex: str | None = None, end_hex: str |
     colors: list[str] = []
     for index in range(count):
         ratio = index / (count - 1)
-        color = tuple(
-            round(start_rgb[channel] + (end_rgb[channel] - start_rgb[channel]) * ratio)
-            for channel in range(3)
+        color: tuple[int, int, int] = (
+            round(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
+            round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
+            round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio),
         )
         colors.append(rgb_to_hex(color))
     return colors
