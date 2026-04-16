@@ -1,15 +1,14 @@
 """
 SMTP settings persistence and Outlook OAuth checks.
 
-Code version: v0.3.0
+Code version: v0.3.2
 """
 
 from __future__ import annotations
 
 from base64 import b64encode
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
-from pathlib import Path
 import smtplib
 import socket
 import ssl
@@ -91,7 +90,26 @@ def load_smtp_settings() -> SmtpSettings:
 
 def save_smtp_settings(settings: SmtpSettings) -> None:
     ensure_settings_store_dir()
-    SMTP_SETTINGS_PATH.write_text(json.dumps(asdict(settings), ensure_ascii=False, indent=2))
+    payload = {
+        "host": settings.host,
+        "port": settings.port,
+        "username": settings.username,
+        "password": settings.password,
+        "from_email": settings.from_email,
+        "use_starttls": settings.use_starttls,
+        "oauth_client_id": settings.oauth_client_id,
+        "oauth_tenant": settings.oauth_tenant,
+        "oauth_access_token": settings.oauth_access_token,
+        "oauth_refresh_token": settings.oauth_refresh_token,
+        "oauth_token_expires_at": settings.oauth_token_expires_at,
+        "oauth_device_code": settings.oauth_device_code,
+        "oauth_user_code": settings.oauth_user_code,
+        "oauth_verification_uri": settings.oauth_verification_uri,
+        "oauth_verification_uri_complete": settings.oauth_verification_uri_complete,
+        "oauth_device_expires_at": settings.oauth_device_expires_at,
+        "oauth_device_interval_seconds": settings.oauth_device_interval_seconds,
+    }
+    SMTP_SETTINGS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def smtp_mailbox(settings: SmtpSettings) -> str:
@@ -359,9 +377,9 @@ def test_smtp_connection(settings: SmtpSettings, timeout_seconds: float = 12.0) 
         return False, "SMTP connection timed out or was closed by the server.", settings
     except ssl.SSLError:
         return False, "SMTP TLS negotiation failed.", settings
-    except OSError as exc:
-        return False, f"SMTP network error: {exc}", settings
     except smtplib.SMTPException as exc:
         return False, f"SMTP error: {exc}", settings
+    except OSError as exc:
+        return False, f"SMTP network error: {exc}", settings
 
     return True, "SMTP connection and Outlook OAuth login succeeded.", settings

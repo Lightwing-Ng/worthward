@@ -1,7 +1,7 @@
 """
 Backtest execution preference persistence.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -22,7 +22,11 @@ def load_backtest_execution_mode() -> BacktestExecutionMode:
     except (json.JSONDecodeError, OSError):
         return DEFAULT_BACKTEST_EXECUTION_MODE
     mode = str(payload.get("execution_mode", DEFAULT_BACKTEST_EXECUTION_MODE)).strip().lower()
-    return mode if mode in {"signal_close", "next_open"} else DEFAULT_BACKTEST_EXECUTION_MODE
+    if mode == "signal_close":
+        return "signal_close"
+    if mode == "next_open":
+        return "next_open"
+    return DEFAULT_BACKTEST_EXECUTION_MODE
 
 
 def save_backtest_execution_mode(mode: str) -> BacktestExecutionMode:

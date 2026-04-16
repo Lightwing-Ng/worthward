@@ -6,7 +6,6 @@ Code version: v0.3.0
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 try:

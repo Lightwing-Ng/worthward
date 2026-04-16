@@ -1,12 +1,12 @@
 """
 Broker credential persistence for local integrations.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 
 from app.core.config import BASE_DIR
@@ -51,7 +51,13 @@ def load_broker_settings() -> BrokerSettings:
 
 def save_broker_settings(settings: BrokerSettings) -> None:
     ensure_settings_store_dir()
-    BROKER_SETTINGS_PATH.write_text(json.dumps(asdict(settings), ensure_ascii=False, indent=2))
+    payload = {
+        "selected_broker": settings.selected_broker,
+        "longbridge_app_key": settings.longbridge_app_key,
+        "longbridge_app_secret": settings.longbridge_app_secret,
+        "longbridge_access_token": settings.longbridge_access_token,
+    }
+    BROKER_SETTINGS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def has_longbridge_credentials(settings: BrokerSettings) -> bool:
