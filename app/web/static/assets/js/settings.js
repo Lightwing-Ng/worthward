@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.3.2-p1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -150,8 +150,17 @@
             activeSettingsSummaryMorphCleanup = null;
         }
         const summaryCard = document.querySelector(".settings-workspace-header > .settings-summary-card");
+        const workspaceRegion = document.querySelector("[data-settings-workspace-region]");
+        const settingsSection = (workspaceRegion instanceof HTMLElement ? workspaceRegion.dataset.settingsSection : "").trim();
         const sidebar = document.getElementById("app_sidebar");
         if (!(summaryCard instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) return;
+        if (settingsSection === "strategies") {
+            summaryCard.style.removeProperty("--settings-summary-morph-translate-x");
+            summaryCard.style.removeProperty("--settings-summary-morph-translate-y");
+            summaryCard.style.removeProperty("--settings-summary-morph-scale-x");
+            summaryCard.style.removeProperty("--settings-summary-morph-scale-y");
+            return;
+        }
         summaryCard.classList.add("workspace-article-card", "workspace-summary-card");
         const mobileMedia = window.matchMedia("(max-width: 767px)");
         let frameId = 0;

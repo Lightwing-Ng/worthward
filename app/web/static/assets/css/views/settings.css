@@ -1,4 +1,4 @@
-/* Code version: v0.4.2-p2 */
+/* Code version: v0.4.3-p3 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1084,6 +1084,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .settings-strategy-list {
     --settings-strategy-card-min-height: 88px;
+    --settings-strategy-card-expanded-max-height: min(52vh, 480px);
     gap: 12px;
 }
 
@@ -1092,7 +1093,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding: 0;
     min-height: var(--settings-strategy-card-min-height);
     min-width: 0;
-    overflow: visible;
+    overflow: hidden;
     width: min(100%, var(--settings-reading-guard-single-column-width));
     max-width: 100%;
     border-radius: var(--radius-panel);
@@ -1101,10 +1102,12 @@ div.style-token-modal-demo::-webkit-scrollbar,
     -webkit-backdrop-filter: var(--glass-surface-blur);
     border: var(--glass-surface-border);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
+    isolation: isolate;
 }
 
 .settings-strategy-card[open] {
     background: var(--glass-surface-background);
+    max-height: var(--settings-strategy-card-expanded-max-height);
 }
 
 .settings-strategy-summary {
@@ -1120,8 +1123,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     -webkit-tap-highlight-color: transparent;
 }
 
+.settings-strategy-summary::marker,
 .settings-strategy-summary::-webkit-details-marker {
     display: none;
+    content: "";
 }
 
 .settings-strategy-main {
@@ -1136,6 +1141,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-strategy-main .settings-service-name,
 .settings-strategy-main .settings-service-note {
     grid-column: 1;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .settings-strategy-params-shell {
@@ -1146,6 +1153,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     box-sizing: border-box;
     grid-template-rows: 0fr;
     overflow: hidden;
+    contain: layout paint;
     transition: grid-template-rows 320ms var(--motion-emphasized), opacity 220ms var(--motion-emphasized), padding-bottom 320ms var(--motion-emphasized);
     opacity: 0;
     padding-bottom: 0;
@@ -1172,10 +1180,12 @@ div.style-token-modal-demo::-webkit-scrollbar,
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
+    max-height: min(100%, calc(var(--settings-strategy-card-expanded-max-height) - var(--settings-strategy-card-min-height) - 28px));
     overflow-x: auto;
     overflow-y: auto;
     width: 100%;
     max-width: 100%;
+    overscroll-behavior: contain;
 }
 
 .settings-strategy-params-table {
@@ -2158,6 +2168,36 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 @media (max-width: 767px) {
+    .settings-shell-strategies {
+        gap: 8px;
+    }
+
+    .settings-shell-strategies > .settings-summary-card {
+        position: relative;
+        top: auto;
+        z-index: auto;
+        transform: none !important;
+        opacity: 1 !important;
+        will-change: auto;
+        transition: none;
+    }
+
+    .app-shell.is-sidebar-open .settings-shell-strategies > .settings-summary-card {
+        background: var(--workspace-article-heading-background);
+        box-shadow: var(--workspace-article-heading-shadow);
+    }
+
+    .settings-shell-strategies > .settings-summary-card .report-heading-row,
+    .app-shell.is-sidebar-open .settings-shell-strategies > .settings-summary-card .report-heading-row {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+
+    .settings-shell-strategies > .settings-summary-card + * {
+        margin-top: 0;
+    }
+
     .settings-workspace-header {
         scroll-padding-bottom: var(--workspace-mobile-surface-bottom-pad);
         padding-bottom: var(--workspace-mobile-surface-bottom-pad);
@@ -2181,17 +2221,23 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
     .settings-strategy-card {
         min-height: 0;
+        width: 100%;
+        overflow: visible;
+        max-height: none;
     }
 
     .settings-strategy-summary {
         min-height: 0;
         padding: 16px;
+        display: flex;
+        align-items: flex-start;
     }
 
     .settings-strategy-params-shell {
         display: none;
         grid-template-rows: none;
         overflow: visible;
+        contain: none;
         opacity: 1;
         padding-bottom: 0;
         transition: none;
@@ -2212,7 +2258,86 @@ div.style-token-modal-demo::-webkit-scrollbar,
     .settings-strategy-params-table-wrap {
         height: auto;
         max-height: none;
+        overflow-x: visible;
         overflow-y: visible;
+    }
+
+    .settings-strategy-main,
+    .settings-strategy-main .settings-service-name,
+    .settings-strategy-main .settings-service-note {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .settings-strategy-main .settings-service-name,
+    .settings-strategy-main .settings-service-note {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .settings-strategy-params-table[aria-hidden="true"] {
+        display: none;
+    }
+
+    .settings-strategy-params-table,
+    .settings-strategy-params-table tbody,
+    .settings-strategy-params-table tr,
+    .settings-strategy-params-table td {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .settings-strategy-params-table {
+        min-width: 0;
+        table-layout: auto;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .settings-strategy-params-table colgroup,
+    .settings-strategy-params-table thead {
+        display: none;
+    }
+
+    .settings-strategy-params-table tbody {
+        display: grid;
+        gap: 10px;
+    }
+
+    .settings-strategy-params-table tr {
+        padding: 12px;
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--glass-surface-background-strong) 84%, transparent);
+        border: 1px solid var(--theme-glass-border);
+        box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
+    }
+
+    .settings-strategy-params-table td {
+        padding: 0;
+        border: 0;
+    }
+
+    .settings-strategy-params-table td + td {
+        margin-top: 10px;
+    }
+
+    .settings-strategy-params-table td::before {
+        content: attr(data-column-label);
+        display: block;
+        margin-bottom: 4px;
+        font-size: var(--font-ui-xs);
+        line-height: 1.2;
+        font-weight: var(--font-weight-bold);
+        letter-spacing: 0.01em;
+        color: var(--theme-muted);
+        text-transform: uppercase;
+    }
+
+    .settings-strategy-param-value {
+        text-align: left;
     }
 
     .settings-form-grid,

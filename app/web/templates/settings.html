@@ -137,7 +137,7 @@
                 <input type="radio" name="theme_mode" value="dark" data-theme-mode-option>
                 <span class="settings-general-option-copy">
                     <span class="settings-general-option-title">Dark</span>
-                    <span class="settings-general-option-desc">Force the interface to stay in the dark palette for lower glare and better night-time use.</span>
+                    <span class="settings-general-option-desc">Force the interface to stay in the dark palette for lower glare and better nighttime use.</span>
                 </span>
             </label>
         </form>
@@ -287,9 +287,9 @@
                                 <tbody>
                                     {% for parameter in row.parameters %}
                                     <tr>
-                                        <td class="settings-strategy-param-label">{{ parameter.label }}</td>
-                                        <td class="settings-strategy-param-value">{{ parameter.default_display }}</td>
-                                        <td class="settings-strategy-param-meaning">{{ parameter.meaning }}</td>
+                                        <td class="settings-strategy-param-label" data-column-label="Value name">{{ parameter.label }}</td>
+                                        <td class="settings-strategy-param-value" data-column-label="Default">{{ parameter.default_display }}</td>
+                                        <td class="settings-strategy-param-meaning" data-column-label="Meaning">{{ parameter.meaning }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
