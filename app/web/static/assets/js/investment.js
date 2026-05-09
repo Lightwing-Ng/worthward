@@ -3039,6 +3039,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartCanvas._abortController.abort();
                 chartCanvas._abortController = null;
             }
+            if (chartCanvas?._resizeObserver) {
+                chartCanvas._resizeObserver.disconnect();
+                chartCanvas._resizeObserver = null;
+            }
+            if (typeof chartCanvas?._windowResizeHandler === 'function') {
+                window.removeEventListener('resize', chartCanvas._windowResizeHandler);
+                chartCanvas._windowResizeHandler = null;
+            }
+            if (Number.isInteger(chartCanvas?._layoutSyncRaf) && chartCanvas._layoutSyncRaf > 0) {
+                window.cancelAnimationFrame(chartCanvas._layoutSyncRaf);
+                chartCanvas._layoutSyncRaf = 0;
+            }
             investmentStockDetailsPriceChartInstance.destroy();
             investmentStockDetailsPriceChartInstance = null;
         }
@@ -3087,7 +3099,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
             const markerIndex = dateIndex.get(normalizeLedgerDate(txn?.date));
             if (!Number.isInteger(markerIndex)) return accumulator;
-            const markerPrice = closeValues[markerIndex];
+            const transactionPrice = getTransactionPrice(txn);
+            const markerPrice = Number.isFinite(transactionPrice) ? transactionPrice : closeValues[markerIndex];
             if (!Number.isFinite(markerPrice)) return accumulator;
             const marker = { index: markerIndex, x: labels[markerIndex], y: markerPrice };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
@@ -3373,6 +3386,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     {
                         label: `${normalizedTicker} close`,
                         data: closeValues,
+                        order: 0,
                         borderColor: resolvedTheme.accentPrimary,
                         borderWidth: 1.0,
                         pointRadius: 0,
@@ -3383,6 +3397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     {
                         label: `${normalizedTicker} buys`,
                         data: tradeMarkerPoints.buy,
+                        order: 10,
                         parsing: false,
                         showLine: false,
                         pointStyle: 'triangle',
@@ -3396,6 +3411,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     {
                         label: `${normalizedTicker} sells`,
                         data: tradeMarkerPoints.sell,
+                        order: 10,
                         parsing: false,
                         showLine: false,
                         pointStyle: 'triangle',
@@ -3430,7 +3446,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         ticks: { display: false },
                     },
                     y: {
-                        ...buildPixelPaddedYScale(canvas, closeValues, 5),
+                        ...buildPixelPaddedYScale(
+                            canvas,
+                            [
+                                ...closeValues,
+                                ...tradeMarkerPoints.buy.map((marker) => marker.y),
+                                ...tradeMarkerPoints.sell.map((marker) => marker.y),
+                            ],
+                            5,
+                        ),
                         bounds: 'ticks',
                         grid: { display: false, drawTicks: false },
                         border: { display: false },
@@ -3532,6 +3556,48 @@ document.addEventListener('DOMContentLoaded', () => {
             }, { signal });
         };
         attachStockDetailsHover(investmentStockDetailsPriceChartInstance);
+        const attachStockDetailsResizeSync = (chart) => {
+            const chartCanvas = chart?.canvas;
+            if (!chartCanvas) return;
+            const applyLayoutSync = () => {
+                chartCanvas._layoutSyncRaf = 0;
+                const nextYScale = buildPixelPaddedYScale(
+                    chartCanvas,
+                    [
+                        ...closeValues,
+                        ...tradeMarkerPoints.buy.map((marker) => marker.y),
+                        ...tradeMarkerPoints.sell.map((marker) => marker.y),
+                    ],
+                    5,
+                );
+                if (Number.isFinite(nextYScale?.min) && Number.isFinite(nextYScale?.max)) {
+                    chart.options.scales.y.min = nextYScale.min;
+                    chart.options.scales.y.max = nextYScale.max;
+                }
+                chart.resize();
+                chart.update('none');
+            };
+            const scheduleLayoutSync = () => {
+                if (Number.isInteger(chartCanvas._layoutSyncRaf) && chartCanvas._layoutSyncRaf > 0) return;
+                chartCanvas._layoutSyncRaf = window.requestAnimationFrame(applyLayoutSync);
+            };
+            if (window.ResizeObserver && chartHost instanceof HTMLElement) {
+                const resizeObserver = new ResizeObserver(() => {
+                    scheduleLayoutSync();
+                });
+                resizeObserver.observe(chartHost);
+                resizeObserver.observe(chartCanvas);
+                chartCanvas._resizeObserver = resizeObserver;
+            } else {
+                const windowResizeHandler = () => {
+                    scheduleLayoutSync();
+                };
+                window.addEventListener('resize', windowResizeHandler);
+                chartCanvas._windowResizeHandler = windowResizeHandler;
+            }
+            scheduleLayoutSync();
+        };
+        attachStockDetailsResizeSync(investmentStockDetailsPriceChartInstance);
     }
 
     function buildInvestmentStockDonutMarkup(summary, profile) {

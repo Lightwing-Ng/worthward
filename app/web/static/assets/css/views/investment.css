@@ -39,8 +39,8 @@
     gap: 10px;
     min-height: 0;
     height: auto;
-    flex: 0 0 30%;
-    max-height: 50%;
+    flex: 1 1 0;
+    max-height: none;
     min-width: 0;
     overflow: hidden;
     align-content: start;
@@ -291,7 +291,8 @@
     display: grid;
     grid-template-columns: minmax(0, 30fr) minmax(0, 50fr) minmax(0, 20fr);
     align-items: stretch;
-    gap: 10px;
+    column-gap: 10px;
+    row-gap: 6px;
     min-width: 0;
     min-height: 0;
 }
@@ -741,7 +742,7 @@
 .investment-history-surface {
     --investment-history-button-top: var(--page-edge-pad);
     position: relative;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
     height: auto;
     display: flex;
