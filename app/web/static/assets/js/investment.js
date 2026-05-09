@@ -1869,6 +1869,70 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(document.querySelectorAll(`tr[data-investment-history-date="${CSS.escape(normalizedDate)}"]`));
     }
 
+    function normalizeInvestmentLedgerNos(ledgerNos) {
+        return Array.from(new Set((Array.isArray(ledgerNos) ? ledgerNos : [])
+            .map((ledgerNo) => Number(ledgerNo))
+            .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)))
+            .sort((left, right) => left - right);
+    }
+
+    function getInvestmentProcessedTransactionByLedgerNo(ledgerNo) {
+        const normalizedLedgerNo = Number(ledgerNo);
+        if (!Number.isFinite(normalizedLedgerNo) || normalizedLedgerNo <= 0) return null;
+        if (!Array.isArray(investmentProcessedTransactionsCache)) return null;
+        return investmentProcessedTransactionsCache.find((txn) => Number(txn?.ledger_no) === normalizedLedgerNo) || null;
+    }
+
+    function getInvestmentLedgerDateByLedgerNo(ledgerNo) {
+        return normalizeLedgerDate(getInvestmentProcessedTransactionByLedgerNo(ledgerNo)?.date);
+    }
+
+    function getFirstStockDetailLedgerNoForDate(rawDate) {
+        const normalizedDate = normalizeLedgerDate(rawDate);
+        const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
+        if (!normalizedDate || !activeTicker || !Array.isArray(investmentProcessedTransactionsCache)) return 0;
+        const match = investmentProcessedTransactionsCache.find((txn) => (
+            normalizeLedgerDate(txn?.date) === normalizedDate
+            && normalizeInvestmentTicker(txn?.ticker) === activeTicker
+        ));
+        const ledgerNo = Number(match?.ledger_no);
+        return Number.isFinite(ledgerNo) && ledgerNo > 0 ? ledgerNo : 0;
+    }
+
+    function syncInvestmentHoverLinkedViews({
+        historyLedgerNos = [],
+        stockDetailLedgerNos = [],
+        interactionLedgerNo = 0,
+        historyBehavior = 'auto',
+        historyScroll = false,
+        stockDetailBehavior = 'auto',
+        stockDetailScroll = false,
+    } = {}) {
+        const normalizedHistoryLedgerNos = normalizeInvestmentLedgerNos(historyLedgerNos);
+        const normalizedStockDetailLedgerNos = normalizeInvestmentLedgerNos(stockDetailLedgerNos);
+        const normalizedInteractionLedgerNo = Number(interactionLedgerNo);
+        const focusLedgerNo = normalizedStockDetailLedgerNos[0]
+            || normalizedHistoryLedgerNos[0]
+            || (Number.isFinite(normalizedInteractionLedgerNo) && normalizedInteractionLedgerNo > 0 ? normalizedInteractionLedgerNo : 0);
+        syncHoldingsChartHoverState('', focusLedgerNo);
+        if (normalizedHistoryLedgerNos.length) {
+            activateInvestmentHistoryRows(normalizedHistoryLedgerNos, {
+                behavior: historyBehavior,
+                scroll: historyScroll,
+            });
+        } else {
+            clearInvestmentHistoryHighlights();
+        }
+        if (normalizedStockDetailLedgerNos.length) {
+            syncInvestmentStockDetailPreviewRows(normalizedStockDetailLedgerNos, {
+                behavior: stockDetailBehavior,
+                scroll: stockDetailScroll,
+            });
+        } else {
+            clearInvestmentStockDetailHighlights();
+        }
+    }
+
     function renderMetricCards(metricDefinitions, metricValues) {
         return metricDefinitions.map((definition) => `
             <div class="trade-metric-card">
@@ -2932,9 +2996,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const activateRelatedHistoryRow = () => {
                 const ledgerNo = Number(row.dataset.investmentStockDetailLedger || 0);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
-                syncHoldingsChartHoverState('', ledgerNo);
-                activateInvestmentStockDetailRows([ledgerNo], { behavior: 'auto', scroll: false });
-                activateInvestmentHistoryRows([ledgerNo], { behavior: 'smooth', scroll: true });
+                syncInvestmentHoverLinkedViews({
+                    historyLedgerNos: [ledgerNo],
+                    stockDetailLedgerNos: [ledgerNo],
+                    interactionLedgerNo: ledgerNo,
+                    historyBehavior: 'smooth',
+                    historyScroll: true,
+                    stockDetailBehavior: 'auto',
+                    stockDetailScroll: false,
+                });
             };
             const clearRelatedHistoryRow = () => {
                 syncHoldingsChartHoverState('', 0);
@@ -3189,6 +3259,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 count - 1,
             ]);
         };
+        const STOCK_DETAILS_MARKER_HEIGHT_PX = 10;
+        const STOCK_DETAILS_MARKER_HALF_BASE_PX = 5.5;
+        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 1;
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
                 .filter((value) => value !== null && value !== undefined && value !== '')
@@ -3259,6 +3332,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.restore();
             },
         };
+        const tradeMarkerPlugin = {
+            id: 'investmentStockDetailsTradeMarkerPlugin',
+            afterDatasetsDraw(chartInstance) {
+                const { ctx, chartArea, scales } = chartInstance;
+                const xScale = scales?.x;
+                const yScale = scales?.y;
+                if (!ctx || !chartArea || !xScale || !yScale) return;
+                const drawMarker = (marker, direction, fillStyle) => {
+                    if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
+                    const x = xScale.getPixelForValue(marker.index);
+                    const apexY = yScale.getPixelForValue(marker.y);
+                    if (!Number.isFinite(x) || !Number.isFinite(apexY)) return;
+                    const baseY = direction === 'buy'
+                        ? apexY + STOCK_DETAILS_MARKER_HEIGHT_PX
+                        : apexY - STOCK_DETAILS_MARKER_HEIGHT_PX;
+                    const markerTop = Math.min(apexY, baseY);
+                    const markerBottom = Math.max(apexY, baseY);
+                    if (x < chartArea.left || x > chartArea.right) return;
+                    if (markerBottom < chartArea.top || markerTop > chartArea.bottom) return;
+                    ctx.beginPath();
+                    ctx.moveTo(x, apexY);
+                    ctx.lineTo(x - STOCK_DETAILS_MARKER_HALF_BASE_PX, baseY);
+                    ctx.lineTo(x + STOCK_DETAILS_MARKER_HALF_BASE_PX, baseY);
+                    ctx.closePath();
+                    ctx.fillStyle = fillStyle;
+                    ctx.fill();
+                };
+                ctx.save();
+                tradeMarkerPoints.buy.forEach((marker) => {
+                    drawMarker(marker, 'buy', resolvedTheme.accentPositive);
+                });
+                tradeMarkerPoints.sell.forEach((marker) => {
+                    drawMarker(marker, 'sell', resolvedTheme.accentSecondary);
+                });
+                ctx.restore();
+            },
+        };
         const getOrCreateTooltip = () => {
             let tooltip = document.querySelector('[data-investment-stock-details-tooltip="1"]');
             if (tooltip) return tooltip;
@@ -3296,9 +3406,17 @@ document.addEventListener('DOMContentLoaded', () => {
             activeStockDetailsHoverPointRecord = investmentPointByDate.get(String(rawDate)) || null;
             syncInvestmentStockDetailsDonutFromInteraction();
             if (String(rawDate) !== activeStockDetailsHoverDate) {
-                if (buySellLedgerNos.length) {
-                    activateInvestmentHistoryRows(buySellLedgerNos, { behavior: 'auto', scroll: true });
-                    syncInvestmentStockDetailPreviewRows(buySellLedgerNos, { behavior: 'auto', scroll: true });
+                const primaryLedgerNo = normalizeInvestmentLedgerNos(buySellLedgerNos)[0] || 0;
+                if (primaryLedgerNo > 0) {
+                    syncInvestmentHoverLinkedViews({
+                        historyLedgerNos: [primaryLedgerNo],
+                        stockDetailLedgerNos: [primaryLedgerNo],
+                        interactionLedgerNo: primaryLedgerNo,
+                        historyBehavior: 'auto',
+                        historyScroll: true,
+                        stockDetailBehavior: 'auto',
+                        stockDetailScroll: true,
+                    });
                 } else {
                     clearInvestmentStockDetailHighlights();
                     clearInvestmentHistoryHighlights();
@@ -3400,10 +3518,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         order: 10,
                         parsing: false,
                         showLine: false,
-                        pointStyle: 'triangle',
-                        rotation: 0,
-                        pointRadius: 5,
-                        pointHoverRadius: 5,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
                         pointBorderWidth: 0,
                         pointBackgroundColor: resolvedTheme.accentPositive,
                         pointBorderColor: resolvedTheme.accentPositive,
@@ -3414,10 +3530,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         order: 10,
                         parsing: false,
                         showLine: false,
-                        pointStyle: 'triangle',
-                        rotation: 180,
-                        pointRadius: 5,
-                        pointHoverRadius: 5,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
                         pointBorderWidth: 0,
                         pointBackgroundColor: resolvedTheme.accentSecondary,
                         pointBorderColor: resolvedTheme.accentSecondary,
@@ -3453,7 +3567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ...tradeMarkerPoints.buy.map((marker) => marker.y),
                                 ...tradeMarkerPoints.sell.map((marker) => marker.y),
                             ],
-                            5,
+                            STOCK_DETAILS_MARKER_Y_PADDING_PX,
                         ),
                         bounds: 'ticks',
                         grid: { display: false, drawTicks: false },
@@ -3470,7 +3584,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, tradeMarkerPlugin, xAxisLabelPlugin],
         });
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
@@ -3568,7 +3682,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...tradeMarkerPoints.buy.map((marker) => marker.y),
                         ...tradeMarkerPoints.sell.map((marker) => marker.y),
                     ],
-                    5,
+                    STOCK_DETAILS_MARKER_Y_PADDING_PX,
                 );
                 if (Number.isFinite(nextYScale?.min) && Number.isFinite(nextYScale?.max)) {
                     chart.options.scales.y.min = nextYScale.min;
@@ -3790,9 +3904,17 @@ document.addEventListener('DOMContentLoaded', () => {
             row.dataset.chartHoverBound = '1';
             const activateChartMarker = () => {
                 const ledgerNo = Number(row.dataset.investmentHistoryRow || 0);
-                syncHoldingsChartHoverState('', ledgerNo);
-                activateInvestmentHistoryRows([ledgerNo], { behavior: 'auto', scroll: false });
-                syncInvestmentStockDetailPreviewRows([ledgerNo], { behavior: 'auto', scroll: activeInvestmentView === 'stock_details' });
+                const ledgerDate = getInvestmentLedgerDateByLedgerNo(ledgerNo) || row.dataset.investmentHistoryDate || '';
+                const stockDetailLedgerNo = getFirstStockDetailLedgerNoForDate(ledgerDate);
+                syncInvestmentHoverLinkedViews({
+                    historyLedgerNos: [ledgerNo],
+                    stockDetailLedgerNos: stockDetailLedgerNo > 0 ? [stockDetailLedgerNo] : [],
+                    interactionLedgerNo: stockDetailLedgerNo > 0 ? stockDetailLedgerNo : ledgerNo,
+                    historyBehavior: 'auto',
+                    historyScroll: false,
+                    stockDetailBehavior: 'auto',
+                    stockDetailScroll: activeInvestmentView === 'stock_details',
+                });
             };
             const clearChartMarker = () => {
                 syncHoldingsChartHoverState('', 0);
