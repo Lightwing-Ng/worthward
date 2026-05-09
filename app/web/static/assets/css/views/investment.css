@@ -326,6 +326,12 @@
     height: 100%;
 }
 
+.investment-chart-tooltip-triangle {
+    width: 10px;
+    height: 10px;
+    display: block;
+}
+
 .investment-stock-details-price-chart-empty {
     width: 100%;
     min-height: 220px;

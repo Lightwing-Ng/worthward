@@ -668,6 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentChartPointIndexByLedgerNo = new Map();
     let investmentLatestChartPoint = null;
     let activeChartTooltipPointIndex = -1;
+    let activeStockDetailsHoverPointRecord = null;
     let investmentDummyTickerProfiles = {};
     let selectedInvestmentStockTicker = '';
     let investmentProcessedTransactionsCache = [];
@@ -1270,7 +1271,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activeTicker) return;
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles?.[activeTicker] || {};
-        const pointRecord = getActiveInvestmentInteractionPoint() || investmentLatestChartPoint || null;
+        const pointRecord = activeStockDetailsHoverPointRecord
+            || getActiveInvestmentInteractionPoint()
+            || investmentLatestChartPoint
+            || null;
         renderInvestmentStockDetailsDonut(pointRecord, tickerSummary, profile);
     }
 
@@ -3041,6 +3045,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentStockDetailsPriceChartInstance.destroy();
             investmentStockDetailsPriceChartInstance = null;
         }
+        activeStockDetailsHoverPointRecord = null;
     }
 
     function renderInvestmentStockDetailsPriceChart(ticker, detailRows = []) {
@@ -3093,6 +3098,49 @@ document.addEventListener('DOMContentLoaded', () => {
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
         }, { buy: [], sell: [] });
+        const transactionsByDate = chronologicalRows.reduce((accumulator, txn) => {
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (!ledgerDate) return accumulator;
+            if (!accumulator.has(ledgerDate)) accumulator.set(ledgerDate, []);
+            accumulator.get(ledgerDate).push(txn);
+            return accumulator;
+        }, new Map());
+        const stockSnapshotsByDate = new Map();
+        const investmentPointByDate = new Map((Array.isArray(investmentChartPointsCache) ? investmentChartPointsCache : [])
+            .map((point) => [normalizeLedgerDate(point?.date), point])
+            .filter(([date]) => Boolean(date)));
+        let latestShares = 0;
+        labels.forEach((label, index) => {
+            const dateTxns = transactionsByDate.get(String(label)) || [];
+            const buySellLedgerNos = dateTxns
+                .filter((txn) => ['buy', 'sell'].includes(getNormalizedTransactionType(txn)))
+                .map((txn) => Number(txn?.ledger_no))
+                .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
+                .sort((left, right) => right - left);
+            if (dateTxns.length) {
+                const latestTxn = dateTxns[dateTxns.length - 1];
+                const txnShares = Number(latestTxn?.holdings?.[normalizedTicker]);
+                if (Number.isFinite(txnShares)) {
+                    latestShares = txnShares;
+                }
+            }
+            const close = Number(closeValues[index]);
+            stockSnapshotsByDate.set(String(label), {
+                shares: latestShares,
+                close: Number.isFinite(close) ? close : null,
+                buyQuantity: dateTxns.reduce((sum, txn) => {
+                    if (getNormalizedTransactionType(txn) !== 'buy') return sum;
+                    const quantity = Number(getTransactionQuantity(txn));
+                    return Number.isFinite(quantity) && quantity > 0 ? sum + quantity : sum;
+                }, 0),
+                sellQuantity: dateTxns.reduce((sum, txn) => {
+                    if (getNormalizedTransactionType(txn) !== 'sell') return sum;
+                    const quantity = Number(getTransactionQuantity(txn));
+                    return Number.isFinite(quantity) && quantity > 0 ? sum + quantity : sum;
+                }, 0),
+                buySellLedgerNos,
+            });
+        });
 
         const resolvedTheme = resolveInvestmentTheme();
         const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -3100,6 +3148,14 @@ document.addEventListener('DOMContentLoaded', () => {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         }).format(value);
+        const formatShareCount = (value) => {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) return '--';
+            return numericValue.toLocaleString('en-US', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 6,
+            });
+        };
         const parseRawDate = (value) => {
             if (typeof value !== 'string') return null;
             const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -3177,6 +3233,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.restore();
             },
         };
+        const hoverGuidePlugin = {
+            id: 'investmentStockDetailsHoverGuidePlugin',
+            afterDatasetsDraw(chartInstance) {
+                const { ctx, chartArea, tooltip } = chartInstance;
+                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
+                const x = tooltip.caretX;
+                if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
+                ctx.save();
+                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, chartArea.top);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                ctx.restore();
+            },
+        };
         const tradeMarkerPlugin = {
             id: 'investmentStockDetailsTradeMarkerPlugin',
             afterDatasetsDraw(chart) {
@@ -3201,6 +3274,123 @@ document.addEventListener('DOMContentLoaded', () => {
                 tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, 'up', resolvedTheme.accentPositive));
                 tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, 'down', resolvedTheme.accentSecondary));
             },
+        };
+        const getOrCreateTooltip = () => {
+            let tooltip = document.querySelector('[data-investment-stock-details-tooltip="1"]');
+            if (tooltip) return tooltip;
+            tooltip = document.createElement('div');
+            tooltip.className = 'chart-tooltip';
+            tooltip.dataset.investmentStockDetailsTooltip = '1';
+            tooltip.style.position = 'fixed';
+            tooltip.innerHTML = '<p class="chart-tooltip-date"></p><div class="chart-tooltip-list"></div>';
+            document.body.appendChild(tooltip);
+            return tooltip;
+        };
+        const formatTooltipDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+        let activeStockDetailsHoverDate = '';
+        const externalTooltipHandler = ({ chart, tooltip }) => {
+            const tooltipEl = getOrCreateTooltip();
+            if (tooltip.opacity === 0) {
+                tooltipEl.classList.remove('is-visible');
+                activeStockDetailsHoverDate = '';
+                activeStockDetailsHoverPointRecord = null;
+                clearInvestmentStockDetailHighlights();
+                clearInvestmentHistoryHighlights();
+                syncInvestmentStockDetailsDonutFromInteraction();
+                return;
+            }
+            const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
+            const rawDate = labels[pointIndex];
+            const parsedDate = parseRawDate(rawDate);
+            const snapshot = stockSnapshotsByDate.get(String(rawDate)) || {};
+            const buySellLedgerNos = Array.isArray(snapshot?.buySellLedgerNos) ? snapshot.buySellLedgerNos : [];
+            const shares = Number(snapshot?.shares);
+            const closePrice = Number(snapshot?.close);
+            const marketValue = Number.isFinite(shares) && Number.isFinite(closePrice) ? shares * closePrice : null;
+            const buyQuantity = Number(snapshot?.buyQuantity);
+            const sellQuantity = Number(snapshot?.sellQuantity);
+            activeStockDetailsHoverPointRecord = investmentPointByDate.get(String(rawDate)) || null;
+            syncInvestmentStockDetailsDonutFromInteraction();
+            if (String(rawDate) !== activeStockDetailsHoverDate) {
+                if (buySellLedgerNos.length) {
+                    activateInvestmentHistoryRows(buySellLedgerNos, { behavior: 'auto', scroll: true });
+                    syncInvestmentStockDetailPreviewRows(buySellLedgerNos, { behavior: 'auto', scroll: true });
+                } else {
+                    clearInvestmentStockDetailHighlights();
+                    clearInvestmentHistoryHighlights();
+                }
+                activeStockDetailsHoverDate = String(rawDate || '');
+            }
+            const dateEl = tooltipEl.querySelector('.chart-tooltip-date');
+            const listEl = tooltipEl.querySelector('.chart-tooltip-list');
+            dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
+            const tooltipRows = [
+                {
+                    label: 'Position',
+                    value: formatShareCount(shares),
+                    color: resolvedTheme.accentPrimary,
+                    markerHtml: '<span></span>',
+                },
+                {
+                    label: 'Market value',
+                    value: Number.isFinite(marketValue) ? formatMoney(marketValue) : '--',
+                    color: resolvedTheme.accentSecondary,
+                    markerHtml: '<span></span>',
+                },
+            ];
+            if (Number.isFinite(buyQuantity) && buyQuantity > 0) {
+                tooltipRows.push({
+                    label: 'Buy shares',
+                    value: formatShareCount(buyQuantity),
+                    color: resolvedTheme.accentPositive,
+                    markerHtml: `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${resolvedTheme.accentPositive}" d="M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z"></path></svg>`,
+                });
+            }
+            if (Number.isFinite(sellQuantity) && sellQuantity > 0) {
+                tooltipRows.push({
+                    label: 'Sell shares',
+                    value: formatShareCount(sellQuantity),
+                    color: resolvedTheme.accentSecondary,
+                    markerHtml: `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${resolvedTheme.accentSecondary}" d="M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z"></path></svg>`,
+                });
+            }
+            listEl.innerHTML = tooltipRows.map((row) => `
+                <div class="chart-tooltip-row">
+                    <span class="chart-tooltip-dot" style="background:${row.color}"></span>
+                    ${row.markerHtml}
+                    <span class="chart-tooltip-label">${row.label}</span>
+                    <span class="chart-tooltip-value">${row.value}</span>
+                </div>
+            `).join('');
+            const canvasRect = chart.canvas.getBoundingClientRect();
+            const tooltipRect = tooltipEl.getBoundingClientRect();
+            const padding = 12;
+            const gap = 14;
+            const viewportWidth = document.documentElement.clientWidth || window.innerWidth || 0;
+            const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
+            const anchorX = canvasRect.left + tooltip.caretX;
+            const anchorY = canvasRect.top + tooltip.caretY;
+            const donutCard = investmentStockDetailsPanel?.querySelector('.investment-stock-details-donut-card');
+            const donutRect = donutCard instanceof HTMLElement ? donutCard.getBoundingClientRect() : null;
+            const rightBoundary = donutRect && donutRect.left > padding
+                ? Math.min(viewportWidth - padding, donutRect.left - gap)
+                : viewportWidth - padding;
+            const roomRight = rightBoundary - anchorX;
+            const roomLeft = anchorX - padding;
+            const preferRight = roomRight >= tooltipRect.width + gap || roomRight >= roomLeft;
+            let left = preferRight ? anchorX + gap : anchorX - tooltipRect.width - gap;
+            if (left < padding) left = padding;
+            const maxLeft = rightBoundary - tooltipRect.width;
+            if (left > maxLeft) left = maxLeft;
+            if (left < padding) left = padding;
+            let top = anchorY - (tooltipRect.height / 2);
+            if (top < padding) top = padding;
+            if (top + tooltipRect.height > viewportHeight - padding) {
+                top = viewportHeight - tooltipRect.height - padding;
+            }
+            tooltipEl.style.left = `${left}px`;
+            tooltipEl.style.top = `${top}px`;
+            tooltipEl.classList.add('is-visible');
         };
 
         investmentStockDetailsPriceChartInstance = new Chart(canvas, {
@@ -3234,14 +3424,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label(context) {
-                                const value = Number(context.parsed?.y);
-                                return Number.isFinite(value) ? ` Close: ${formatMoney(value)}` : ' Close: --';
-                            },
-                        },
-                    },
+                    tooltip: { enabled: false, external: externalTooltipHandler },
                 },
                 scales: {
                     x: {
@@ -3266,7 +3449,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [tradeMarkerPlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, tradeMarkerPlugin, xAxisLabelPlugin],
         });
     }
 
