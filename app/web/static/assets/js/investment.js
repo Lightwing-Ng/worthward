@@ -685,14 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
-    const STOCK_DETAILS_MARKER_TIP = {
-        up: { x: 9.9707, y: 0.00976562 },
-        down: { x: 9.9707, y: 20.5176 },
-    };
-    const STOCK_DETAILS_MARKER_PATH = {
-        up: new Path2D('M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z'),
-        down: new Path2D('M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z'),
-    };
 
     function getActionButtonLabels(button) {
         return {
@@ -3042,6 +3034,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function destroyInvestmentStockDetailsPriceChart() {
         if (investmentStockDetailsPriceChartInstance) {
+            const chartCanvas = investmentStockDetailsPriceChartInstance.canvas;
+            if (chartCanvas?._abortController) {
+                chartCanvas._abortController.abort();
+                chartCanvas._abortController = null;
+            }
             investmentStockDetailsPriceChartInstance.destroy();
             investmentStockDetailsPriceChartInstance = null;
         }
@@ -3090,10 +3087,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
             const markerIndex = dateIndex.get(normalizeLedgerDate(txn?.date));
             if (!Number.isInteger(markerIndex)) return accumulator;
-            const transactionPrice = getTransactionPrice(txn);
-            const markerPrice = Number.isFinite(transactionPrice) ? transactionPrice : closeValues[markerIndex];
+            const markerPrice = closeValues[markerIndex];
             if (!Number.isFinite(markerPrice)) return accumulator;
-            const marker = { index: markerIndex, price: markerPrice };
+            const marker = { index: markerIndex, x: labels[markerIndex], y: markerPrice };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
@@ -3250,31 +3246,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.restore();
             },
         };
-        const tradeMarkerPlugin = {
-            id: 'investmentStockDetailsTradeMarkerPlugin',
-            afterDatasetsDraw(chart) {
-                const yScale = chart.scales?.y;
-                const priceMeta = chart.getDatasetMeta(0);
-                if (!yScale || !priceMeta?.data?.length) return;
-                const drawMarker = (marker, direction, color) => {
-                    const point = priceMeta.data[marker.index];
-                    const y = yScale.getPixelForValue(marker.price);
-                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(y)) return;
-                    const scale = 8 / STOCK_DETAILS_MARKER_VIEW_BOX.width;
-                    const tip = STOCK_DETAILS_MARKER_TIP[direction];
-                    const path = STOCK_DETAILS_MARKER_PATH[direction];
-                    chart.ctx.save();
-                    chart.ctx.fillStyle = color;
-                    chart.ctx.translate(point.x, y);
-                    chart.ctx.scale(scale, scale);
-                    chart.ctx.translate(-tip.x, -tip.y);
-                    chart.ctx.fill(path);
-                    chart.ctx.restore();
-                };
-                tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, 'up', resolvedTheme.accentPositive));
-                tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, 'down', resolvedTheme.accentSecondary));
-            },
-        };
         const getOrCreateTooltip = () => {
             let tooltip = document.querySelector('[data-investment-stock-details-tooltip="1"]');
             if (tooltip) return tooltip;
@@ -3409,6 +3380,32 @@ document.addEventListener('DOMContentLoaded', () => {
                         borderJoinStyle: 'round',
                         borderCapStyle: 'round',
                     },
+                    {
+                        label: `${normalizedTicker} buys`,
+                        data: tradeMarkerPoints.buy,
+                        parsing: false,
+                        showLine: false,
+                        pointStyle: 'triangle',
+                        rotation: 0,
+                        pointRadius: 5,
+                        pointHoverRadius: 5,
+                        pointBorderWidth: 0,
+                        pointBackgroundColor: resolvedTheme.accentPositive,
+                        pointBorderColor: resolvedTheme.accentPositive,
+                    },
+                    {
+                        label: `${normalizedTicker} sells`,
+                        data: tradeMarkerPoints.sell,
+                        parsing: false,
+                        showLine: false,
+                        pointStyle: 'triangle',
+                        rotation: 180,
+                        pointRadius: 5,
+                        pointHoverRadius: 5,
+                        pointBorderWidth: 0,
+                        pointBackgroundColor: resolvedTheme.accentSecondary,
+                        pointBorderColor: resolvedTheme.accentSecondary,
+                    },
                 ],
             },
             options: {
@@ -3449,8 +3446,92 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [hoverGuidePlugin, tradeMarkerPlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
         });
+        const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
+        const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
+        const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
+        const resolveNearestHoverIndex = (chart, event) => {
+            const chartArea = chart?.chartArea;
+            if (!chartArea || !labels.length) return null;
+            const canvasRect = chart.canvas.getBoundingClientRect();
+            const relativeX = event.clientX - canvasRect.left;
+            const relativeY = event.clientY - canvasRect.top;
+            if (!Number.isFinite(relativeX)) return null;
+            const points = chart.getDatasetMeta(0)?.data || [];
+            let nearestIndex = null;
+            let nearestDistance = Number.POSITIVE_INFINITY;
+            points.forEach((point, index) => {
+                if (!point || !Number.isFinite(point.x)) return;
+                const distance = Math.abs(point.x - relativeX);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIndex = index;
+                }
+            });
+            if (!Number.isInteger(nearestIndex)) return null;
+            if (!Number.isFinite(relativeY)) return nearestIndex;
+            if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return nearestIndex;
+            const yScale = chart.scales?.y;
+            if (!yScale) return nearestIndex;
+            const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
+            let snappedMarkerIndex = null;
+            let snappedMarkerDistance = Number.POSITIVE_INFINITY;
+            markerCandidates.forEach((marker) => {
+                if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
+                if (Math.abs(marker.index - nearestIndex) > TRADE_MARKER_SNAP_HORIZONTAL_BARS) return;
+                const markerY = yScale.getPixelForValue(marker.y);
+                if (!Number.isFinite(markerY)) return;
+                if (Math.abs(markerY - relativeY) >= TRADE_MARKER_SNAP_VERTICAL_PX) return;
+                const markerPoint = points[marker.index];
+                if (!markerPoint || !Number.isFinite(markerPoint.x)) return;
+                const markerDistance = Math.abs(markerPoint.x - relativeX);
+                if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
+                if (markerDistance < snappedMarkerDistance) {
+                    snappedMarkerDistance = markerDistance;
+                    snappedMarkerIndex = marker.index;
+                }
+            });
+            if (Number.isInteger(snappedMarkerIndex)) return snappedMarkerIndex;
+            return nearestIndex;
+        };
+        const syncStockDetailsHoverState = (chart, index) => {
+            const activeElements = index === null ? [] : [{ datasetIndex: 0, index }];
+            chart.setActiveElements(activeElements);
+            if (typeof chart.tooltip?.setActiveElements === 'function') {
+                if (index === null) {
+                    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+                } else {
+                    const point = chart.getDatasetMeta(0)?.data?.[index];
+                    const fallbackX = Number(chart.chartArea?.left) || 0;
+                    const fallbackY = Number(chart.chartArea?.top) || 0;
+                    chart.tooltip.setActiveElements(
+                        activeElements,
+                        {
+                            x: Number(point?.x) || fallbackX,
+                            y: Number(point?.y) || fallbackY,
+                        },
+                    );
+                }
+            }
+            chart.update('none');
+        };
+        const attachStockDetailsHover = (chart) => {
+            const chartCanvas = chart?.canvas;
+            if (!chartCanvas) return;
+            if (chartCanvas._abortController) chartCanvas._abortController.abort();
+            const controller = new AbortController();
+            chartCanvas._abortController = controller;
+            const { signal } = controller;
+            chartCanvas.addEventListener('mousemove', (event) => {
+                const nearestIndex = resolveNearestHoverIndex(chart, event);
+                syncStockDetailsHoverState(chart, nearestIndex);
+            }, { signal });
+            chartCanvas.addEventListener('mouseleave', () => {
+                syncStockDetailsHoverState(chart, null);
+            }, { signal });
+        };
+        attachStockDetailsHover(investmentStockDetailsPriceChartInstance);
     }
 
     function buildInvestmentStockDonutMarkup(summary, profile) {
