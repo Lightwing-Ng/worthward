@@ -262,12 +262,15 @@
 }
 
 #investment_stock_details_panel {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 10px;
-    height: 100%;
+    display: block;
+    height: auto;
     min-height: 0;
-    overflow: hidden;
+}
+
+.investment-stock-details-table-host {
+    width: 100%;
+    min-height: 0;
+    margin: 10px 0;
 }
 
 .investment-stock-details-empty-shell {
@@ -285,7 +288,7 @@
 
 .investment-stock-details-overview {
     display: grid;
-    grid-template-columns: minmax(0, 40fr) minmax(0, 30fr) minmax(0, 30fr);
+    grid-template-columns: minmax(0, 30fr) minmax(0, 50fr) minmax(0, 20fr);
     align-items: stretch;
     gap: 10px;
     min-width: 0;
@@ -307,7 +310,7 @@
     min-width: 0;
     display: flex;
     align-items: stretch;
-    padding: 10px 6px 6px 6px;
+    padding: 10px 4px 6px 4px;
 }
 
 .investment-stock-details-price-chart-shell {
@@ -348,7 +351,7 @@
     overflow: visible;
     scrollbar-width: auto;
     scrollbar-gutter: auto;
-    padding: 14px 16px;
+    padding: 14px 4px;
 }
 
 .investment-stock-details-metrics > .trade-metric-card {
@@ -364,12 +367,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12px;
-    --portfolio-donut-size: clamp(112px, 90%, 190px);
+    padding: 12px 4px;
+    --investment-donut-orbit-extra-width: calc(var(--portfolio-donut-orbit-logo-size, 20px) * 2.82842712475);
+    --portfolio-donut-size: clamp(72px, calc(100% - var(--investment-donut-orbit-extra-width)), 240px);
 }
 
 .investment-stock-details-donut-card .investment-stock-details-donut-shell {
-    width: var(--portfolio-donut-size);
+    width: 100%;
     max-width: 100%;
     aspect-ratio: 1 / 1;
     display: flex;
@@ -1498,7 +1502,7 @@
     }
 
     .investment-stock-details-price-chart-card {
-        padding: 8px 0 0 0;
+        padding: 8px 4px 0 4px;
     }
 
     .investment-stock-details-price-chart-shell,

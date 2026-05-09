@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.15
+ * Code version: v1.31.17
+ * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
+ * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
  * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
  * - Fixed: Charts portfolio donut hover now coalesces duplicate updates and reuses cached orbit geometry to avoid flicker and animation stutter
  * - Improved: Charts portfolio donut satellites now enter from a distant transparent orbit, move along the shared orbit with non-linear angular easing, and resolve tiny-slice crowding with constrained on-orbit spacing
@@ -538,6 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
     const investmentDummyDonut = document.getElementById('investment_dummy_donut');
     const investmentStockDetailsPanel = document.getElementById('investment_stock_details_panel');
+    const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
@@ -661,6 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeHoldingsHoverTicker = '';
     let activeHoldingsHoverLedgerNo = 0;
     let investmentChartPointsCache = [];
+    let investmentSharedChartDateRange = [];
     let investmentChartPointIndexByLedgerNo = new Map();
     let investmentLatestChartPoint = null;
     let activeChartTooltipPointIndex = -1;
@@ -802,6 +806,13 @@ document.addEventListener('DOMContentLoaded', () => {
         window.history.replaceState(null, '', nextUrl);
     }
 
+    function syncInvestmentStockDetailsTableVisibility() {
+        if (!(investmentStockDetailsTableHost instanceof HTMLElement)) return;
+        const hasContent = investmentStockDetailsTableHost.childElementCount > 0
+            || Boolean(investmentStockDetailsTableHost.textContent.trim());
+        investmentStockDetailsTableHost.hidden = activeInvestmentView !== 'stock_details' || !hasContent;
+    }
+
     function setInvestmentView(nextView, { syncHash = true } = {}) {
         if (!nextView) {
             return;
@@ -838,6 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.hidden = panel.dataset.investmentViewPanel !== nextView;
         });
         activeInvestmentView = nextView;
+        syncInvestmentStockDetailsTableVisibility();
         if (syncHash) {
             syncInvestmentViewHash(nextView);
         }
@@ -1914,6 +1926,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }
+        if (investmentStockDetailsTableHost instanceof HTMLElement) {
+            investmentStockDetailsTableHost.innerHTML = '';
+            syncInvestmentStockDetailsTableVisibility();
+        }
         if (chartContainer) {
             chartContainer.innerHTML = '';
         }
@@ -2653,6 +2669,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return points;
     }
 
+    function setInvestmentSharedChartDateRange(chartPoints = []) {
+        const normalizedDates = Array.isArray(chartPoints)
+            ? chartPoints
+                .map((point) => normalizeLedgerDate(point?.date))
+                .filter(Boolean)
+            : [];
+        investmentSharedChartDateRange = Array.from(new Set(normalizedDates)).sort();
+    }
+
+    function getInvestmentSharedChartDateRange(fallbackDates = []) {
+        if (Array.isArray(investmentSharedChartDateRange) && investmentSharedChartDateRange.length) {
+            return [...investmentSharedChartDateRange];
+        }
+        const normalizedFallbackDates = Array.isArray(fallbackDates)
+            ? fallbackDates.map((value) => normalizeLedgerDate(value)).filter(Boolean)
+            : [];
+        return Array.from(new Set(normalizedFallbackDates)).sort();
+    }
+
     function buildTickerSummaries(transactions, latestPrices, TOTAL_EQUITY) {
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -3024,9 +3059,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
         const tickerPriceMap = priceHistoryByTicker[normalizedTicker] || {};
-        const labels = Object.keys(tickerPriceMap).sort();
-        const closeValues = labels.map((date) => Number(tickerPriceMap[date]));
-        if (!labels.length || !closeValues.some((value) => Number.isFinite(value))) {
+        const tickerLabels = Object.keys(tickerPriceMap).sort();
+        const sharedLabels = getInvestmentSharedChartDateRange(tickerLabels);
+        const labels = sharedLabels.length ? sharedLabels : tickerLabels;
+        const closeValues = labels.map((date) => {
+            const close = Number(tickerPriceMap[date]);
+            return Number.isFinite(close) ? close : null;
+        });
+        if (!tickerLabels.length || !closeValues.some((value) => Number.isFinite(value))) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
@@ -3055,7 +3095,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { buy: [], sell: [] });
 
         const resolvedTheme = resolveInvestmentTheme();
-        const fixedYAxisWidth = 52;
         const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const formatMoney = (value) => new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 2,
@@ -3087,6 +3126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
+                .filter((value) => value !== null && value !== undefined && value !== '')
                 .map((value) => Number(value))
                 .filter((value) => Number.isFinite(value));
             if (!finiteValues.length) return {};
@@ -3186,8 +3226,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 maintainAspectRatio: false,
                 layout: {
                     padding: {
-                        left: 4,
-                        right: 8,
+                        left: 0,
+                        right: 0,
                         bottom: 24,
                     },
                 },
@@ -3214,13 +3254,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         bounds: 'ticks',
                         grid: { display: false, drawTicks: false },
                         border: { display: false },
-                        afterFit: (scale) => {
-                            scale.width = fixedYAxisWidth;
-                        },
                         ticks: {
                             color: resolvedTheme.muted,
                             display: true,
-                            padding: 8,
+                            padding: 0,
                             callback(value, index, ticks) {
                                 if (index === 0 || index === ticks.length - 1) return '';
                                 return typeof this.getLabelForValue === 'function' ? this.getLabelForValue(value) : String(value);
@@ -3235,11 +3272,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildInvestmentStockDonutMarkup(summary, profile) {
         const logoUrl = resolveInvestmentLogoUrl(profile, summary?.ticker || 'stock');
+        const ticker = escapeHtml(summary?.ticker || 'Ticker');
         return `
             <div class="style-token-portfolio-donut-shell investment-stock-details-donut-shell">
                 <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit investment-stock-details-donut-orbit" aria-hidden="true">
                     <div class="portfolio-donut-logo-layer investment-stock-details-donut-logo-layer">
-                        <img class="portfolio-donut-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(summary?.ticker || 'Ticker')} logo" loading="lazy" decoding="async" data-style-token-donut-angle="44.4">
+                        <img class="portfolio-donut-logo investment-stock-details-donut-logo" src="${escapeHtml(logoUrl)}" alt="${ticker} logo" loading="lazy" decoding="async" data-ticker="${ticker}" data-style-token-donut-angle="44.4">
                     </div>
                     <div class="portfolio-donut investment-stock-details-donut" style="--portfolio-donut-fill: ${STOCK_DETAILS_DONUT_GRAY_FILL};"></div>
                 </div>
@@ -3257,6 +3295,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="investment-holdings-empty">Open Holdings or import transactions, then pick a ticker to inspect its stock details.</p>
                 </div>
             `;
+            if (investmentStockDetailsTableHost instanceof HTMLElement) {
+                investmentStockDetailsTableHost.innerHTML = '';
+                syncInvestmentStockDetailsTableVisibility();
+            }
             syncSelectedStockLinkState();
             return;
         }
@@ -3355,32 +3397,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${buildInvestmentStockDonutMarkup(tickerSummary, profile)}
                 </div>
             </div>
-            <div class="scrollable-data-table-shell investment-history-table-shell investment-stock-details-table-shell">
-                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table" aria-hidden="true">
-                    <thead>
-                    <tr>
-                        <th>No.</th>
-                        <th>Time</th>
-                        <th>Type</th>
-                        <th>Description</th>
-                        <th>Currency</th>
-                        <th>Amount</th>
-                        <th>Commission</th>
-                        <th>Market value</th>
-                        <th>Realized P&amp;L</th>
-                    </tr>
-                    </thead>
-                </table>
-                <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll investment-stock-details-table-scroll">
-                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table">
-                        <tbody>${rowsHtml}</tbody>
-                    </table>
-                </div>
-            </div>
         `;
+        if (investmentStockDetailsTableHost instanceof HTMLElement) {
+            investmentStockDetailsTableHost.innerHTML = `
+                <div class="scrollable-data-table-shell investment-history-table-shell investment-stock-details-table-shell">
+                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table" aria-hidden="true">
+                        <thead>
+                        <tr>
+                            <th>No.</th>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th>Currency</th>
+                            <th>Amount</th>
+                            <th>Commission</th>
+                            <th>Market value</th>
+                            <th>Realized P&amp;L</th>
+                        </tr>
+                        </thead>
+                    </table>
+                    <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll investment-stock-details-table-scroll">
+                        <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table">
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
+            syncInvestmentStockDetailsTableVisibility();
+        }
         renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
-        bindStockDetailsHistoryInteractions(investmentStockDetailsPanel);
         syncSelectedStockLinkState();
         syncInvestmentStockDetailsDonutFromInteraction();
     }
@@ -3681,6 +3728,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (shouldAnimateVisibleMetricsPanel) {
             lockInvestmentSurfaceHeight();
         }
+        setInvestmentSharedChartDateRange(chartPoints);
 
         const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
         investmentDummyTickerProfiles = tickerProfiles;
@@ -3756,6 +3804,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentChartReady(false, canvas);
 
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        setInvestmentSharedChartDateRange(sortedChartPoints);
         const rawDates = sortedChartPoints.map((point) => point.date);
         const equity = sortedChartPoints.map((point) => point.total_equity);
         const chartPointIndexByLedgerNo = new Map();
