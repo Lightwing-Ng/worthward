@@ -284,14 +284,17 @@
 }
 
 .investment-stock-details-overview {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 40fr) minmax(0, 30fr) minmax(0, 30fr);
     align-items: stretch;
     gap: 10px;
     min-width: 0;
     min-height: 0;
 }
 
-.investment-stock-details-summary,
+.investment-stock-details-identity,
+.investment-stock-details-metrics,
+.investment-stock-details-price-chart-card,
 .investment-stock-details-donut-card {
     border-radius: 10px;
     background: transparent;
@@ -300,26 +303,52 @@
     box-shadow: none;
 }
 
-.investment-stock-details-summary {
-    flex: 1 1 auto;
+.investment-stock-details-price-chart-card {
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 14px 16px;
+    align-items: stretch;
+    padding: 10px 6px 6px 6px;
+}
+
+.investment-stock-details-price-chart-shell {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 220px;
+    position: relative;
+}
+
+.investment-stock-details-price-chart-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.investment-stock-details-price-chart-empty {
+    width: 100%;
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--theme-muted);
+    text-align: center;
+    padding: 16px;
+    font-size: var(--font-note);
 }
 
 .investment-stock-details-identity {
+    grid-column: 1 / -1;
     width: 100%;
 }
 
 .investment-stock-details-metrics {
+    min-width: 0;
     height: auto;
     min-height: 0;
     margin: 0;
     overflow: visible;
     scrollbar-width: auto;
     scrollbar-gutter: auto;
+    padding: 14px 16px;
 }
 
 .investment-stock-details-metrics > .trade-metric-card {
@@ -331,7 +360,6 @@
 }
 
 .investment-stock-details-donut-card {
-    flex: 0 0 clamp(160px, 28%, 240px);
     min-width: 0;
     display: flex;
     align-items: center;
@@ -1461,12 +1489,20 @@
     }
 
     .investment-stock-details-overview {
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .investment-stock-details-donut-card {
-        flex-basis: auto;
         min-height: 180px;
         --portfolio-donut-size: clamp(96px, 56vw, 160px);
+    }
+
+    .investment-stock-details-price-chart-card {
+        padding: 8px 0 0 0;
+    }
+
+    .investment-stock-details-price-chart-shell,
+    .investment-stock-details-price-chart-empty {
+        min-height: 200px;
     }
 }

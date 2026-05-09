@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.14
+ * Code version: v1.31.15
+ * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
  * - Fixed: Charts portfolio donut hover now coalesces duplicate updates and reuses cached orbit geometry to avoid flicker and animation stutter
  * - Improved: Charts portfolio donut satellites now enter from a distant transparent orbit, move along the shared orbit with non-linear angular easing, and resolve tiny-slice crowding with constrained on-orbit spacing
  * - Changed: Stock details donut now uses scoped non-linear orbit animation for its ring and ticker satellite while keeping the selected ticker on the standard blue token and cash on the standard green token
@@ -656,6 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentChartReady = false;
     let investmentHasExportableTransactions = false;
     let investmentEquityChartInstance = null;
+    let investmentStockDetailsPriceChartInstance = null;
     let activeHoldingsHoverTicker = '';
     let activeHoldingsHoverLedgerNo = 0;
     let investmentChartPointsCache = [];
@@ -677,6 +679,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentDummyDonutRenderSignature = '';
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
+    const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
+    const STOCK_DETAILS_MARKER_TIP = {
+        up: { x: 9.9707, y: 0.00976562 },
+        down: { x: 9.9707, y: 20.5176 },
+    };
+    const STOCK_DETAILS_MARKER_PATH = {
+        up: new Path2D('M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z'),
+        down: new Path2D('M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z'),
+    };
 
     function getActionButtonLabels(button) {
         return {
@@ -2990,6 +3001,238 @@ document.addEventListener('DOMContentLoaded', () => {
         return detailRows.reverse();
     }
 
+    function destroyInvestmentStockDetailsPriceChart() {
+        if (investmentStockDetailsPriceChartInstance) {
+            investmentStockDetailsPriceChartInstance.destroy();
+            investmentStockDetailsPriceChartInstance = null;
+        }
+    }
+
+    function renderInvestmentStockDetailsPriceChart(ticker, detailRows = []) {
+        const chartHost = investmentStockDetailsPanel?.querySelector('[data-investment-stock-price-chart]');
+        if (!(chartHost instanceof HTMLElement)) {
+            destroyInvestmentStockDetailsPriceChart();
+            return;
+        }
+
+        destroyInvestmentStockDetailsPriceChart();
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker || !window.Chart) {
+            chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
+            return;
+        }
+
+        const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
+        const tickerPriceMap = priceHistoryByTicker[normalizedTicker] || {};
+        const labels = Object.keys(tickerPriceMap).sort();
+        const closeValues = labels.map((date) => Number(tickerPriceMap[date]));
+        if (!labels.length || !closeValues.some((value) => Number.isFinite(value))) {
+            chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
+            return;
+        }
+
+        chartHost.innerHTML = '<canvas class="investment-stock-details-price-chart-canvas"></canvas>';
+        const canvas = chartHost.querySelector('canvas');
+        if (!(canvas instanceof HTMLCanvasElement)) return;
+
+        const chronologicalRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
+        const dateIndex = new Map();
+        labels.forEach((value, index) => {
+            dateIndex.set(String(value), index);
+        });
+        const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
+            const markerIndex = dateIndex.get(normalizeLedgerDate(txn?.date));
+            if (!Number.isInteger(markerIndex)) return accumulator;
+            const transactionPrice = getTransactionPrice(txn);
+            const markerPrice = Number.isFinite(transactionPrice) ? transactionPrice : closeValues[markerIndex];
+            if (!Number.isFinite(markerPrice)) return accumulator;
+            const marker = { index: markerIndex, price: markerPrice };
+            if (normalizedType === 'buy') accumulator.buy.push(marker);
+            if (normalizedType === 'sell') accumulator.sell.push(marker);
+            return accumulator;
+        }, { buy: [], sell: [] });
+
+        const resolvedTheme = resolveInvestmentTheme();
+        const fixedYAxisWidth = 52;
+        const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formatMoney = (value) => new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(value);
+        const parseRawDate = (value) => {
+            if (typeof value !== 'string') return null;
+            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!match) return null;
+            return {
+                year: Number(match[1]),
+                monthIndex: Number(match[2]) - 1,
+                day: Number(match[3]),
+            };
+        };
+        const buildTickIndexSet = (count, plotWidth) => {
+            if (count <= 0) return new Set();
+            if (count === 1) return new Set([0]);
+            const maxTickCount = plotWidth >= 768 ? 4 : 3;
+            if (maxTickCount === 3 || count < 4) {
+                return new Set([0, Math.round((count - 1) / 2), count - 1]);
+            }
+            return new Set([
+                0,
+                Math.round((count - 1) / 3),
+                Math.round(((count - 1) * 2) / 3),
+                count - 1,
+            ]);
+        };
+        const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
+            const finiteValues = (Array.isArray(values) ? values : [])
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value));
+            if (!finiteValues.length) return {};
+            const rawMin = Math.min(...finiteValues);
+            const rawMax = Math.max(...finiteValues);
+            if (rawMin === rawMax) {
+                const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
+                return {
+                    min: rawMin - fallbackPadding,
+                    max: rawMax + fallbackPadding,
+                };
+            }
+            const canvasHeight = Math.max(chartCanvas?.clientHeight || 0, 80);
+            const usableHeight = Math.max(canvasHeight - (paddingPx * 2), 1);
+            const dataPadding = (rawMax - rawMin) * (paddingPx / usableHeight);
+            return {
+                min: rawMin - dataPadding,
+                max: rawMax + dataPadding,
+            };
+        };
+        const xAxisLabelPlugin = {
+            id: 'investmentStockDetailsXAxisLabelPlugin',
+            afterDraw(chart) {
+                const { ctx, chartArea, scales } = chart;
+                const xScale = scales?.x;
+                if (!chartArea || !xScale || !labels.length) return;
+                const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+                const baselineY = chartArea.bottom;
+                const lineHeight = 10;
+                ctx.save();
+                ctx.fillStyle = resolvedTheme.muted;
+                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.textBaseline = 'top';
+                tickIndexes.forEach((index, tickIndex) => {
+                    const parsedDate = parseRawDate(labels[index]);
+                    if (!parsedDate) return;
+                    const firstLine = `${parsedDate.day} ${monthAbbreviations[parsedDate.monthIndex]}`;
+                    const secondLine = `${parsedDate.year}`;
+                    const x = xScale.getPixelForValue(index);
+                    if (!Number.isFinite(x)) return;
+                    if (tickIndex === 0) ctx.textAlign = 'left';
+                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = 'right';
+                    else ctx.textAlign = 'center';
+                    ctx.fillText(firstLine, x, baselineY);
+                    ctx.fillText(secondLine, x, baselineY + lineHeight);
+                });
+                ctx.restore();
+            },
+        };
+        const tradeMarkerPlugin = {
+            id: 'investmentStockDetailsTradeMarkerPlugin',
+            afterDatasetsDraw(chart) {
+                const yScale = chart.scales?.y;
+                const priceMeta = chart.getDatasetMeta(0);
+                if (!yScale || !priceMeta?.data?.length) return;
+                const drawMarker = (marker, direction, color) => {
+                    const point = priceMeta.data[marker.index];
+                    const y = yScale.getPixelForValue(marker.price);
+                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(y)) return;
+                    const scale = 8 / STOCK_DETAILS_MARKER_VIEW_BOX.width;
+                    const tip = STOCK_DETAILS_MARKER_TIP[direction];
+                    const path = STOCK_DETAILS_MARKER_PATH[direction];
+                    chart.ctx.save();
+                    chart.ctx.fillStyle = color;
+                    chart.ctx.translate(point.x, y);
+                    chart.ctx.scale(scale, scale);
+                    chart.ctx.translate(-tip.x, -tip.y);
+                    chart.ctx.fill(path);
+                    chart.ctx.restore();
+                };
+                tradeMarkerPoints.buy.forEach((marker) => drawMarker(marker, 'up', resolvedTheme.accentPositive));
+                tradeMarkerPoints.sell.forEach((marker) => drawMarker(marker, 'down', resolvedTheme.accentSecondary));
+            },
+        };
+
+        investmentStockDetailsPriceChartInstance = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels,
+                rawLabels: labels,
+                datasets: [
+                    {
+                        label: `${normalizedTicker} close`,
+                        data: closeValues,
+                        borderColor: resolvedTheme.accentPrimary,
+                        borderWidth: 1.0,
+                        pointRadius: 0,
+                        tension: 0,
+                        borderJoinStyle: 'round',
+                        borderCapStyle: 'round',
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: {
+                        left: 4,
+                        right: 8,
+                        bottom: 24,
+                    },
+                },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label(context) {
+                                const value = Number(context.parsed?.y);
+                                return Number.isFinite(value) ? ` Close: ${formatMoney(value)}` : ' Close: --';
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        border: { display: false },
+                        ticks: { display: false },
+                    },
+                    y: {
+                        ...buildPixelPaddedYScale(canvas, closeValues, 5),
+                        bounds: 'ticks',
+                        grid: { display: false, drawTicks: false },
+                        border: { display: false },
+                        afterFit: (scale) => {
+                            scale.width = fixedYAxisWidth;
+                        },
+                        ticks: {
+                            color: resolvedTheme.muted,
+                            display: true,
+                            padding: 8,
+                            callback(value, index, ticks) {
+                                if (index === 0 || index === ticks.length - 1) return '';
+                                return typeof this.getLabelForValue === 'function' ? this.getLabelForValue(value) : String(value);
+                            },
+                        },
+                    },
+                },
+            },
+            plugins: [tradeMarkerPlugin, xAxisLabelPlugin],
+        });
+    }
+
     function buildInvestmentStockDonutMarkup(summary, profile) {
         const logoUrl = resolveInvestmentLogoUrl(profile, summary?.ticker || 'stock');
         return `
@@ -3007,6 +3250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
         const activeTicker = ensureSelectedInvestmentStockTicker();
+        destroyInvestmentStockDetailsPriceChart();
         if (!activeTicker) {
             investmentStockDetailsPanel.innerHTML = `
                 <div class="investment-stock-details-empty-shell">
@@ -3087,24 +3331,25 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         investmentStockDetailsPanel.innerHTML = `
             <div class="investment-stock-details-overview">
-                <div class="investment-stock-details-summary">
-                    <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
-                        <div class="ticker-identity-row">
-                            ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
-                            <span class="ticker-identity-copy">
-                                <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(activeTicker)}</span>
-                                <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
-                            </span>
+                <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
+                    <div class="ticker-identity-row">
+                        ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                        <span class="ticker-identity-copy">
+                            <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(activeTicker)}</span>
+                            <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
+                    ${stockMetricCards.map((metric) => `
+                        <div class="trade-metric-card investment-stock-details-metric-card">
+                            <span class="trade-metric-label">${metric.label}</span>
+                            <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
                         </div>
-                    </div>
-                    <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
-                        ${stockMetricCards.map((metric) => `
-                            <div class="trade-metric-card investment-stock-details-metric-card">
-                                <span class="trade-metric-label">${metric.label}</span>
-                                <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
-                            </div>
-                        `).join('')}
-                    </div>
+                    `).join('')}
+                </div>
+                <div class="investment-stock-details-price-chart-card">
+                    <div class="investment-stock-details-price-chart-shell" data-investment-stock-price-chart></div>
                 </div>
                 <div class="investment-stock-details-donut-card">
                     ${buildInvestmentStockDonutMarkup(tickerSummary, profile)}
@@ -3133,6 +3378,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+        renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
         bindStockDetailsHistoryInteractions(investmentStockDetailsPanel);
         syncSelectedStockLinkState();
