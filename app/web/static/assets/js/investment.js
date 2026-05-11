@@ -791,11 +791,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 460);
     }
 
-    function syncInvestmentViewHash(nextView) {
-        const currentHash = String(window.location.hash || '').trim();
-        const nextHash = nextView === 'stock_details' ? '#investment_stock_details_panel' : '';
-        if (currentHash === nextHash) return;
-        const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    function getInvestmentLocationTicker() {
+        const search = new URLSearchParams(window.location.search || '');
+        return normalizeInvestmentTicker(search.get('ticker') || '');
+    }
+
+    function buildInvestmentViewUrl(nextView, ticker = '') {
+        const nextUrl = new URL(window.location.href);
+        if (nextView === 'stock_details') {
+            const normalizedTicker = normalizeInvestmentTicker(ticker || selectedInvestmentStockTicker || '');
+            nextUrl.hash = '#investment_stock_details_panel';
+            if (normalizedTicker) nextUrl.searchParams.set('ticker', normalizedTicker);
+            else nextUrl.searchParams.delete('ticker');
+            return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+        }
+        nextUrl.hash = '';
+        nextUrl.searchParams.delete('ticker');
+        return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+    }
+
+    function buildInvestmentStockDetailsHref(ticker = '') {
+        return buildInvestmentViewUrl('stock_details', ticker);
+    }
+
+    function syncInvestmentViewHash(nextView, ticker = '') {
+        const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        const nextUrl = buildInvestmentViewUrl(nextView, ticker);
+        if (currentUrl === nextUrl) return;
         window.history.replaceState(null, '', nextUrl);
     }
 
@@ -850,6 +872,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nextView === 'stock_details') {
             window.requestAnimationFrame(() => {
                 refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+                const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
+                chartCanvas?._scheduleLayoutSync?.();
             });
         }
     }
@@ -2878,7 +2902,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <a class="investment-holdings-ticker-anchor" href="#investment_stock_details_panel" data-investment-stock-link data-investment-stock-ticker="${escapeHtml(summary.ticker)}">
+                        <a class="investment-holdings-ticker-anchor" href="${escapeHtml(buildInvestmentStockDetailsHref(summary.ticker))}" data-investment-stock-link data-investment-stock-ticker="${escapeHtml(summary.ticker)}">
                             <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
                                 <div class="ticker-identity-row">
                                     ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
@@ -2971,6 +2995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncSelectedStockLinkState() {
         document.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
             const ticker = normalizeInvestmentTicker(link.dataset.investmentStockTicker || '');
+            link.setAttribute('href', buildInvestmentStockDetailsHref(ticker));
             link.classList.toggle('is-active', Boolean(selectedInvestmentStockTicker) && ticker === selectedInvestmentStockTicker);
         });
     }
@@ -3036,8 +3061,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function ensureSelectedInvestmentStockTicker() {
         const availableTickers = getAvailableInvestmentStockTickers();
         if (!availableTickers.length) {
-            selectedInvestmentStockTicker = '';
-            return '';
+            const locationTicker = getInvestmentLocationTicker();
+            if (locationTicker) {
+                selectedInvestmentStockTicker = locationTicker;
+            }
+            return normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
         }
         if (!availableTickers.includes(selectedInvestmentStockTicker)) {
             selectedInvestmentStockTicker = availableTickers[0];
@@ -3121,6 +3149,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.cancelAnimationFrame(chartCanvas._layoutSyncRaf);
                 chartCanvas._layoutSyncRaf = 0;
             }
+            if (Number.isInteger(chartCanvas?._layoutSyncTimer) && chartCanvas._layoutSyncTimer > 0) {
+                window.clearTimeout(chartCanvas._layoutSyncTimer);
+                chartCanvas._layoutSyncTimer = 0;
+            }
+            chartCanvas._scheduleLayoutSync = null;
             investmentStockDetailsPriceChartInstance.destroy();
             investmentStockDetailsPriceChartInstance = null;
         }
@@ -3172,7 +3205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const transactionPrice = getTransactionPrice(txn);
             const markerPrice = Number.isFinite(transactionPrice) ? transactionPrice : closeValues[markerIndex];
             if (!Number.isFinite(markerPrice)) return accumulator;
-            const marker = { index: markerIndex, x: labels[markerIndex], y: markerPrice };
+            const marker = { index: markerIndex, x: labels[markerIndex], y: markerPrice, type: normalizedType };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
@@ -3259,9 +3292,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 count - 1,
             ]);
         };
-        const STOCK_DETAILS_MARKER_HEIGHT_PX = 10;
-        const STOCK_DETAILS_MARKER_HALF_BASE_PX = 5.5;
-        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 1;
+        const STOCK_DETAILS_MARKER_RADIUS_PX = 6;
+        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_RADIUS_PX + 5;
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
                 .filter((value) => value !== null && value !== undefined && value !== '')
@@ -3332,43 +3364,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.restore();
             },
         };
-        const tradeMarkerPlugin = {
-            id: 'investmentStockDetailsTradeMarkerPlugin',
-            afterDatasetsDraw(chartInstance) {
-                const { ctx, chartArea, scales } = chartInstance;
-                const xScale = scales?.x;
-                const yScale = scales?.y;
-                if (!ctx || !chartArea || !xScale || !yScale) return;
-                const drawMarker = (marker, direction, fillStyle) => {
-                    if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
-                    const x = xScale.getPixelForValue(marker.index);
-                    const apexY = yScale.getPixelForValue(marker.y);
-                    if (!Number.isFinite(x) || !Number.isFinite(apexY)) return;
-                    const baseY = direction === 'buy'
-                        ? apexY + STOCK_DETAILS_MARKER_HEIGHT_PX
-                        : apexY - STOCK_DETAILS_MARKER_HEIGHT_PX;
-                    const markerTop = Math.min(apexY, baseY);
-                    const markerBottom = Math.max(apexY, baseY);
-                    if (x < chartArea.left || x > chartArea.right) return;
-                    if (markerBottom < chartArea.top || markerTop > chartArea.bottom) return;
-                    ctx.beginPath();
-                    ctx.moveTo(x, apexY);
-                    ctx.lineTo(x - STOCK_DETAILS_MARKER_HALF_BASE_PX, baseY);
-                    ctx.lineTo(x + STOCK_DETAILS_MARKER_HALF_BASE_PX, baseY);
-                    ctx.closePath();
-                    ctx.fillStyle = fillStyle;
-                    ctx.fill();
-                };
-                ctx.save();
-                tradeMarkerPoints.buy.forEach((marker) => {
-                    drawMarker(marker, 'buy', resolvedTheme.accentPositive);
-                });
-                tradeMarkerPoints.sell.forEach((marker) => {
-                    drawMarker(marker, 'sell', resolvedTheme.accentSecondary);
-                });
-                ctx.restore();
-            },
-        };
         const getOrCreateTooltip = () => {
             let tooltip = document.querySelector('[data-investment-stock-details-tooltip="1"]');
             if (tooltip) return tooltip;
@@ -3381,6 +3376,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return tooltip;
         };
         const formatTooltipDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+        const buildTooltipTriangle = (color, direction = 'up') => {
+            const path = direction === 'down'
+                ? 'M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z'
+                : 'M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z';
+            return `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${color}" d="${path}"></path></svg>`;
+        };
         let activeStockDetailsHoverDate = '';
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
@@ -3425,19 +3426,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const dateEl = tooltipEl.querySelector('.chart-tooltip-date');
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
+            const activeMarkerType = String(chart?._activeInvestmentStockDetailsMarkerType || '');
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
             const tooltipRows = [
                 {
                     label: 'Position',
                     value: formatShareCount(shares),
                     color: resolvedTheme.accentPrimary,
-                    markerHtml: '<span></span>',
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
                 {
                     label: 'Market value',
                     value: Number.isFinite(marketValue) ? formatMoney(marketValue) : '--',
                     color: resolvedTheme.accentSecondary,
-                    markerHtml: '<span></span>',
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
             ];
             if (Number.isFinite(buyQuantity) && buyQuantity > 0) {
@@ -3445,7 +3447,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     label: 'Buy shares',
                     value: formatShareCount(buyQuantity),
                     color: resolvedTheme.accentPositive,
-                    markerHtml: `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${resolvedTheme.accentPositive}" d="M19.9414 19.1406C19.9414 18.6914 19.7461 18.3398 19.5117 17.8516L11.4844 1.26953C11.0254 0.332031 10.5859 0.00976562 9.9707 0.00976562C9.36523 0.00976562 8.92578 0.332031 8.45703 1.26953L0.439453 17.8516C0.195312 18.3496 0 18.7012 0 19.1504C0 20 0.634766 20.5176 1.64062 20.5176L18.3105 20.5078C19.3066 20.5078 19.9414 19.9902 19.9414 19.1406Z"></path></svg>`,
+                    bulletHtml: activeMarkerType === 'buy'
+                        ? buildTooltipTriangle(resolvedTheme.accentPositive, 'up')
+                        : '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 });
             }
             if (Number.isFinite(sellQuantity) && sellQuantity > 0) {
@@ -3453,13 +3457,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     label: 'Sell shares',
                     value: formatShareCount(sellQuantity),
                     color: resolvedTheme.accentSecondary,
-                    markerHtml: `<svg class="investment-chart-tooltip-triangle" viewBox="0 0 ${STOCK_DETAILS_MARKER_VIEW_BOX.width} ${STOCK_DETAILS_MARKER_VIEW_BOX.height}" aria-hidden="true"><path fill="${resolvedTheme.accentSecondary}" d="M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z"></path></svg>`,
+                    bulletHtml: activeMarkerType === 'sell'
+                        ? buildTooltipTriangle(resolvedTheme.accentSecondary, 'down')
+                        : '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 });
             }
             listEl.innerHTML = tooltipRows.map((row) => `
                 <div class="chart-tooltip-row">
-                    <span class="chart-tooltip-dot" style="background:${row.color}"></span>
-                    ${row.markerHtml}
+                    ${row.bulletHtml.replace('class="chart-tooltip-dot"', `class="chart-tooltip-dot" style="background:${row.color}"`)}
+                    <span aria-hidden="true"></span>
                     <span class="chart-tooltip-label">${row.label}</span>
                     <span class="chart-tooltip-value">${row.value}</span>
                 </div>
@@ -3514,27 +3520,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                     {
                         label: `${normalizedTicker} buys`,
+                        type: 'scatter',
                         data: tradeMarkerPoints.buy,
                         order: 10,
-                        parsing: false,
                         showLine: false,
-                        pointRadius: 0,
+                        pointRadius: STOCK_DETAILS_MARKER_RADIUS_PX,
                         pointHoverRadius: 0,
+                        pointHitRadius: 0,
                         pointBorderWidth: 0,
+                        pointStyle: 'triangle',
+                        rotation: 0,
                         pointBackgroundColor: resolvedTheme.accentPositive,
                         pointBorderColor: resolvedTheme.accentPositive,
+                        clip: false,
                     },
                     {
                         label: `${normalizedTicker} sells`,
+                        type: 'scatter',
                         data: tradeMarkerPoints.sell,
                         order: 10,
-                        parsing: false,
                         showLine: false,
-                        pointRadius: 0,
+                        pointRadius: STOCK_DETAILS_MARKER_RADIUS_PX,
                         pointHoverRadius: 0,
+                        pointHitRadius: 0,
                         pointBorderWidth: 0,
+                        pointStyle: 'triangle',
+                        rotation: 180,
                         pointBackgroundColor: resolvedTheme.accentSecondary,
                         pointBorderColor: resolvedTheme.accentSecondary,
+                        clip: false,
                     },
                 ],
             },
@@ -3584,12 +3598,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [hoverGuidePlugin, tradeMarkerPlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
         });
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
         const TRADE_MARKER_SNAP_VERTICAL_PX = 20;
-        const resolveNearestHoverIndex = (chart, event) => {
+        const resolveNearestHoverState = (chart, event) => {
             const chartArea = chart?.chartArea;
             if (!chartArea || !labels.length) return null;
             const canvasRect = chart.canvas.getBoundingClientRect();
@@ -3608,12 +3622,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
             if (!Number.isInteger(nearestIndex)) return null;
-            if (!Number.isFinite(relativeY)) return nearestIndex;
-            if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return nearestIndex;
+            if (!Number.isFinite(relativeY)) return { index: nearestIndex, markerType: '' };
+            if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return { index: nearestIndex, markerType: '' };
             const yScale = chart.scales?.y;
-            if (!yScale) return nearestIndex;
+            if (!yScale) return { index: nearestIndex, markerType: '' };
             const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
-            let snappedMarkerIndex = null;
+            let snappedMarker = null;
             let snappedMarkerDistance = Number.POSITIVE_INFINITY;
             markerCandidates.forEach((marker) => {
                 if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
@@ -3627,13 +3641,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
                 if (markerDistance < snappedMarkerDistance) {
                     snappedMarkerDistance = markerDistance;
-                    snappedMarkerIndex = marker.index;
+                    snappedMarker = marker;
                 }
             });
-            if (Number.isInteger(snappedMarkerIndex)) return snappedMarkerIndex;
-            return nearestIndex;
+            if (snappedMarker && Number.isInteger(snappedMarker.index)) {
+                return {
+                    index: snappedMarker.index,
+                    markerType: String(snappedMarker.type || ''),
+                };
+            }
+            return { index: nearestIndex, markerType: '' };
         };
-        const syncStockDetailsHoverState = (chart, index) => {
+        const syncStockDetailsHoverState = (chart, hoverState) => {
+            const index = hoverState && Number.isInteger(hoverState.index) ? hoverState.index : null;
+            chart._activeInvestmentStockDetailsMarkerType = index === null
+                ? ''
+                : String(hoverState?.markerType || '');
             const activeElements = index === null ? [] : [{ datasetIndex: 0, index }];
             chart.setActiveElements(activeElements);
             if (typeof chart.tooltip?.setActiveElements === 'function') {
@@ -3662,8 +3685,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chartCanvas._abortController = controller;
             const { signal } = controller;
             chartCanvas.addEventListener('mousemove', (event) => {
-                const nearestIndex = resolveNearestHoverIndex(chart, event);
-                syncStockDetailsHoverState(chart, nearestIndex);
+                const hoverState = resolveNearestHoverState(chart, event);
+                syncStockDetailsHoverState(chart, hoverState);
             }, { signal });
             chartCanvas.addEventListener('mouseleave', () => {
                 syncStockDetailsHoverState(chart, null);
@@ -3695,21 +3718,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (Number.isInteger(chartCanvas._layoutSyncRaf) && chartCanvas._layoutSyncRaf > 0) return;
                 chartCanvas._layoutSyncRaf = window.requestAnimationFrame(applyLayoutSync);
             };
+            const scheduleSettledLayoutSync = () => {
+                if (Number.isInteger(chartCanvas._layoutSyncTimer) && chartCanvas._layoutSyncTimer > 0) {
+                    window.clearTimeout(chartCanvas._layoutSyncTimer);
+                }
+                chartCanvas._layoutSyncTimer = window.setTimeout(() => {
+                    chartCanvas._layoutSyncTimer = 0;
+                    scheduleLayoutSync();
+                }, 260);
+            };
+            chartCanvas._scheduleLayoutSync = () => {
+                scheduleLayoutSync();
+                scheduleSettledLayoutSync();
+            };
             if (window.ResizeObserver && chartHost instanceof HTMLElement) {
                 const resizeObserver = new ResizeObserver(() => {
-                    scheduleLayoutSync();
+                    chartCanvas._scheduleLayoutSync?.();
                 });
                 resizeObserver.observe(chartHost);
                 resizeObserver.observe(chartCanvas);
+                if (investmentStockDetailsPanel instanceof HTMLElement) {
+                    resizeObserver.observe(investmentStockDetailsPanel);
+                }
                 chartCanvas._resizeObserver = resizeObserver;
             } else {
                 const windowResizeHandler = () => {
-                    scheduleLayoutSync();
+                    chartCanvas._scheduleLayoutSync?.();
                 };
                 window.addEventListener('resize', windowResizeHandler);
                 chartCanvas._windowResizeHandler = windowResizeHandler;
             }
-            scheduleLayoutSync();
+            chartCanvas._scheduleLayoutSync?.();
         };
         attachStockDetailsResizeSync(investmentStockDetailsPriceChartInstance);
     }
@@ -3882,14 +3921,21 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedInvestmentStockTicker = normalizedTicker;
         }
         renderInvestmentStockDetailsPanel(window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {});
+        if (focusView || activeInvestmentView === 'stock_details') {
+            syncInvestmentViewHash('stock_details', selectedInvestmentStockTicker);
+        }
         if (focusView) {
-            setInvestmentView('stock_details', { syncHash: true });
+            setInvestmentView('stock_details', { syncHash: false });
         }
     }
 
     function syncInvestmentViewFromLocationHash(fallbackView = 'chart') {
         const hash = String(window.location.hash || '').trim();
         if (hash === '#investment_stock_details_panel') {
+            const locationTicker = getInvestmentLocationTicker();
+            if (locationTicker) {
+                selectedInvestmentStockTicker = locationTicker;
+            }
             ensureSelectedInvestmentStockTicker();
             setInvestmentView('stock_details', { syncHash: false });
             return;
