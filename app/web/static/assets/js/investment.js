@@ -3203,9 +3203,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const markerIndex = dateIndex.get(normalizeLedgerDate(txn?.date));
             if (!Number.isInteger(markerIndex)) return accumulator;
             const transactionPrice = getTransactionPrice(txn);
-            const markerPrice = Number.isFinite(transactionPrice) ? transactionPrice : closeValues[markerIndex];
+            const plottedClosePrice = Number(closeValues[markerIndex]);
+            const markerPrice = Number.isFinite(plottedClosePrice) ? plottedClosePrice : transactionPrice;
             if (!Number.isFinite(markerPrice)) return accumulator;
-            const marker = { index: markerIndex, x: labels[markerIndex], y: markerPrice, type: normalizedType };
+            // Daily trade markers should track the rendered price series instead of raw fills.
+            // This keeps the triangles on-curve after split-adjusted history rewrites.
+            const marker = {
+                index: markerIndex,
+                x: labels[markerIndex],
+                y: markerPrice,
+                type: normalizedType,
+                transactionPrice: Number.isFinite(transactionPrice) ? transactionPrice : null,
+            };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
@@ -3292,8 +3301,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 count - 1,
             ]);
         };
-        const STOCK_DETAILS_MARKER_RADIUS_PX = 6;
-        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_RADIUS_PX + 5;
+        const STOCK_DETAILS_MARKER_HALF_WIDTH_PX = 6;
+        const STOCK_DETAILS_MARKER_HEIGHT_PX = 11;
+        const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 2;
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
                 .filter((value) => value !== null && value !== undefined && value !== '')
@@ -3362,6 +3372,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.lineTo(x, chartArea.bottom);
                 ctx.stroke();
                 ctx.restore();
+            },
+        };
+        const drawTradeMarker = (ctx, { x, y, type, color }) => {
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !color) return;
+            const halfWidth = STOCK_DETAILS_MARKER_HALF_WIDTH_PX;
+            const height = STOCK_DETAILS_MARKER_HEIGHT_PX;
+            ctx.save();
+            ctx.beginPath();
+            if (type === 'sell') {
+                ctx.moveTo(x, y);
+                ctx.lineTo(x - halfWidth, y - height);
+                ctx.lineTo(x + halfWidth, y - height);
+            } else {
+                ctx.moveTo(x, y);
+                ctx.lineTo(x - halfWidth, y + height);
+                ctx.lineTo(x + halfWidth, y + height);
+            }
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.restore();
+        };
+        const tradeMarkerPlugin = {
+            id: 'investmentStockDetailsTradeMarkerPlugin',
+            afterDatasetsDraw(chartInstance) {
+                const yScale = chartInstance?.scales?.y;
+                const linePoints = chartInstance?.getDatasetMeta(0)?.data || [];
+                if (!yScale || !linePoints.length) return;
+                const drawMarkerGroup = (markers, color) => {
+                    (Array.isArray(markers) ? markers : []).forEach((marker) => {
+                        if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
+                        const linePoint = linePoints[marker.index];
+                        const x = Number(linePoint?.x);
+                        const y = Number(yScale.getPixelForValue(marker.y));
+                        drawTradeMarker(chartInstance.ctx, {
+                            x,
+                            y,
+                            type: String(marker.type || ''),
+                            color,
+                        });
+                    });
+                };
+                drawMarkerGroup(tradeMarkerPoints.buy, resolvedTheme.accentPositive);
+                drawMarkerGroup(tradeMarkerPoints.sell, resolvedTheme.accentSecondary);
             },
         };
         const getOrCreateTooltip = () => {
@@ -3518,38 +3572,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         borderJoinStyle: 'round',
                         borderCapStyle: 'round',
                     },
-                    {
-                        label: `${normalizedTicker} buys`,
-                        type: 'scatter',
-                        data: tradeMarkerPoints.buy,
-                        order: 10,
-                        showLine: false,
-                        pointRadius: STOCK_DETAILS_MARKER_RADIUS_PX,
-                        pointHoverRadius: 0,
-                        pointHitRadius: 0,
-                        pointBorderWidth: 0,
-                        pointStyle: 'triangle',
-                        rotation: 0,
-                        pointBackgroundColor: resolvedTheme.accentPositive,
-                        pointBorderColor: resolvedTheme.accentPositive,
-                        clip: false,
-                    },
-                    {
-                        label: `${normalizedTicker} sells`,
-                        type: 'scatter',
-                        data: tradeMarkerPoints.sell,
-                        order: 10,
-                        showLine: false,
-                        pointRadius: STOCK_DETAILS_MARKER_RADIUS_PX,
-                        pointHoverRadius: 0,
-                        pointHitRadius: 0,
-                        pointBorderWidth: 0,
-                        pointStyle: 'triangle',
-                        rotation: 180,
-                        pointBackgroundColor: resolvedTheme.accentSecondary,
-                        pointBorderColor: resolvedTheme.accentSecondary,
-                        clip: false,
-                    },
                 ],
             },
             options: {
@@ -3598,7 +3620,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [hoverGuidePlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin],
         });
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
