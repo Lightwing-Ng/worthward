@@ -1,4 +1,4 @@
-/* Code version: v1.5.7.5 */
+/* Code version: v1.5.7.6 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -354,6 +354,8 @@
     height: auto;
     min-height: 0;
     margin: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
     overflow: visible;
     scrollbar-width: auto;
     scrollbar-gutter: auto;
