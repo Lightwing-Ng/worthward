@@ -682,9 +682,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let stockDetailsDonutAnimatedState = null;
     let investmentDummyDonutSyncFrame = 0;
     let investmentDummyDonutRenderSignature = '';
+    let investmentStockDetailsVisibleLayoutTimer = 0;
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
+    const INVESTMENT_SURFACE_LAYOUT_SETTLE_MS = 520;
 
     function getActionButtonLabels(button) {
         return {
@@ -828,6 +830,27 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentStockDetailsTableHost.hidden = activeInvestmentView !== 'stock_details' || !hasContent;
     }
 
+    function scheduleInvestmentStockDetailsVisibleLayoutSync() {
+        if (investmentStockDetailsVisibleLayoutTimer) {
+            window.clearTimeout(investmentStockDetailsVisibleLayoutTimer);
+            investmentStockDetailsVisibleLayoutTimer = 0;
+        }
+        if (activeInvestmentView !== 'stock_details') return;
+        window.requestAnimationFrame(() => {
+            if (activeInvestmentView !== 'stock_details') return;
+            refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+            const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
+            chartCanvas?._scheduleLayoutSync?.();
+        });
+        investmentStockDetailsVisibleLayoutTimer = window.setTimeout(() => {
+            investmentStockDetailsVisibleLayoutTimer = 0;
+            if (activeInvestmentView !== 'stock_details') return;
+            refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
+            const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
+            chartCanvas?._scheduleLayoutSync?.();
+        }, INVESTMENT_SURFACE_LAYOUT_SETTLE_MS);
+    }
+
     function setInvestmentView(nextView, { syncHash = true } = {}) {
         if (!nextView) {
             return;
@@ -870,11 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         animateInvestmentSurfaceHeight();
         if (nextView === 'stock_details') {
-            window.requestAnimationFrame(() => {
-                refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
-                const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
-                chartCanvas?._scheduleLayoutSync?.();
-            });
+            scheduleInvestmentStockDetailsVisibleLayoutSync();
         }
     }
 
@@ -3131,6 +3150,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function destroyInvestmentStockDetailsPriceChart() {
+        if (investmentStockDetailsVisibleLayoutTimer) {
+            window.clearTimeout(investmentStockDetailsVisibleLayoutTimer);
+            investmentStockDetailsVisibleLayoutTimer = 0;
+        }
         if (investmentStockDetailsPriceChartInstance) {
             const chartCanvas = investmentStockDetailsPriceChartInstance.canvas;
             if (chartCanvas?._abortController) {
@@ -3935,6 +3958,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
         syncSelectedStockLinkState();
         syncInvestmentStockDetailsDonutFromInteraction();
+        scheduleInvestmentStockDetailsVisibleLayoutSync();
     }
 
     function selectInvestmentStockTicker(ticker, { focusView = false } = {}) {
@@ -3942,12 +3966,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalizedTicker) {
             selectedInvestmentStockTicker = normalizedTicker;
         }
+        if (focusView) {
+            setInvestmentView('stock_details', { syncHash: false });
+        }
         renderInvestmentStockDetailsPanel(window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {});
         if (focusView || activeInvestmentView === 'stock_details') {
             syncInvestmentViewHash('stock_details', selectedInvestmentStockTicker);
-        }
-        if (focusView) {
-            setInvestmentView('stock_details', { syncHash: false });
         }
     }
 
