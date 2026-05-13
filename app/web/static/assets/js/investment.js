@@ -1943,6 +1943,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function syncInvestmentHoverLinkedViews({
+        hoverTicker = '',
+        hoverLedgerNo = 0,
         historyLedgerNos = [],
         stockDetailLedgerNos = [],
         interactionLedgerNo = 0,
@@ -1954,10 +1956,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedHistoryLedgerNos = normalizeInvestmentLedgerNos(historyLedgerNos);
         const normalizedStockDetailLedgerNos = normalizeInvestmentLedgerNos(stockDetailLedgerNos);
         const normalizedInteractionLedgerNo = Number(interactionLedgerNo);
-        const focusLedgerNo = normalizedStockDetailLedgerNos[0]
+        const normalizedHoverLedgerNo = Number(hoverLedgerNo);
+        const focusLedgerNo = (Number.isFinite(normalizedHoverLedgerNo) && normalizedHoverLedgerNo > 0 ? normalizedHoverLedgerNo : 0)
+            || normalizedStockDetailLedgerNos[0]
             || normalizedHistoryLedgerNos[0]
             || (Number.isFinite(normalizedInteractionLedgerNo) && normalizedInteractionLedgerNo > 0 ? normalizedInteractionLedgerNo : 0);
-        syncHoldingsChartHoverState('', focusLedgerNo);
+        syncHoldingsChartHoverState(hoverTicker, focusLedgerNo);
         if (normalizedHistoryLedgerNos.length) {
             activateInvestmentHistoryRows(normalizedHistoryLedgerNos, {
                 behavior: historyBehavior,
@@ -3041,6 +3045,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerNo = Number(row.dataset.investmentStockDetailLedger || 0);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
                 syncInvestmentHoverLinkedViews({
+                    hoverTicker: ensureSelectedInvestmentStockTicker(),
+                    hoverLedgerNo: ledgerNo,
                     historyLedgerNos: [ledgerNo],
                     stockDetailLedgerNos: [ledgerNo],
                     interactionLedgerNo: ledgerNo,
@@ -3487,6 +3493,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const primaryLedgerNo = normalizeInvestmentLedgerNos(buySellLedgerNos)[0] || 0;
                 if (primaryLedgerNo > 0) {
                     syncInvestmentHoverLinkedViews({
+                        hoverLedgerNo: primaryLedgerNo,
                         historyLedgerNos: [primaryLedgerNo],
                         stockDetailLedgerNos: [primaryLedgerNo],
                         interactionLedgerNo: primaryLedgerNo,
@@ -3846,6 +3853,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 : formatMetricLossAmountWithCurrency(totalCommission, totalCommissionCurrency))
             : formatMetricLossAmount(totalCommission);
         const totalCommissionClass = getNegativeMetricClass(totalCommission);
+        const totalTradeCount = detailRows.filter((txn) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+            return normalizedType === 'buy' || normalizedType === 'sell';
+        }).length;
+        const totalTradeCountDisplay = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(totalTradeCount);
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
@@ -3874,6 +3889,11 @@ document.addEventListener('DOMContentLoaded', () => {
             {
                 label: 'Market value',
                 value: tickerSummary.hasOpenPosition ? formatHoldingsMoney(tickerSummary.marketValue) : '-',
+                valueClass: '',
+            },
+            {
+                label: 'Total trades',
+                value: totalTradeCountDisplay,
                 valueClass: '',
             },
             {
@@ -3999,6 +4019,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerDate = getInvestmentLedgerDateByLedgerNo(ledgerNo) || row.dataset.investmentHistoryDate || '';
                 const stockDetailLedgerNo = getFirstStockDetailLedgerNoForDate(ledgerDate);
                 syncInvestmentHoverLinkedViews({
+                    hoverTicker: row.dataset.investmentHistoryTicker || '',
+                    hoverLedgerNo: ledgerNo,
                     historyLedgerNos: [ledgerNo],
                     stockDetailLedgerNos: stockDetailLedgerNo > 0 ? [stockDetailLedgerNo] : [],
                     interactionLedgerNo: stockDetailLedgerNo > 0 ? stockDetailLedgerNo : ledgerNo,
