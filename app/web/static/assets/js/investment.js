@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.31.17
+ * Code version: v1.32.0
+ * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 2W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
  * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
  * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
  * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
@@ -683,10 +684,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentDummyDonutSyncFrame = 0;
     let investmentDummyDonutRenderSignature = '';
     let investmentStockDetailsVisibleLayoutTimer = 0;
+    let selectedInvestmentStockDetailsRange = 'max';
+    let investmentStockDetailsRangeMeasureRaf = 0;
+    let investmentStockDetailsRangeControlAbortController = null;
+    let investmentStockDetailsRangeControlResizeObserver = null;
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
     const INVESTMENT_SURFACE_LAYOUT_SETTLE_MS = 520;
+    const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
+        { value: '3d', label: '3D' },
+        { value: '1w', label: '1W' },
+        { value: '2w', label: '2W' },
+        { value: '1m', label: '1M' },
+        { value: 'ytd', label: 'YTD' },
+        { value: '1y', label: '1Y' },
+        { value: 'max', label: 'Max' },
+    ];
 
     function getActionButtonLabels(button) {
         return {
@@ -756,6 +770,86 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
                 investmentSegmentedMeasureRaf = 0;
                 updateInvestmentSegmentedPill();
+            });
+        });
+    }
+
+    function getInvestmentStockDetailsRangeControl() {
+        const control = investmentStockDetailsPanel?.querySelector('[data-investment-stock-details-range-segmented]');
+        return control instanceof HTMLElement ? control : null;
+    }
+
+    function normalizeInvestmentStockDetailsRange(range) {
+        const normalizedRange = String(range || '').trim().toLowerCase();
+        return INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.some((option) => option.value === normalizedRange)
+            ? normalizedRange
+            : 'max';
+    }
+
+    function clearInvestmentStockDetailsRangeControlBindings() {
+        if (investmentStockDetailsRangeMeasureRaf) {
+            window.cancelAnimationFrame(investmentStockDetailsRangeMeasureRaf);
+            investmentStockDetailsRangeMeasureRaf = 0;
+        }
+        if (investmentStockDetailsRangeControlAbortController) {
+            investmentStockDetailsRangeControlAbortController.abort();
+            investmentStockDetailsRangeControlAbortController = null;
+        }
+        if (investmentStockDetailsRangeControlResizeObserver) {
+            investmentStockDetailsRangeControlResizeObserver.disconnect();
+            investmentStockDetailsRangeControlResizeObserver = null;
+        }
+    }
+
+    function updateInvestmentStockDetailsRangePill() {
+        const rangeControl = getInvestmentStockDetailsRangeControl();
+        if (!rangeControl) return;
+        const activeLabel = rangeControl.querySelector('input[type="radio"]:checked + span');
+        if (!activeLabel) {
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        const controlRect = rangeControl.getBoundingClientRect();
+        const activeOption = activeLabel.closest('.segmented-control-option');
+        const measureTarget = activeLabel.querySelector('.investment-stock-details-range-label') || activeLabel;
+        const labelRect = measureTarget.getBoundingClientRect();
+        const optionRect = activeOption instanceof HTMLElement ? activeOption.getBoundingClientRect() : activeLabel.getBoundingClientRect();
+        const rangeControlStyles = window.getComputedStyle(rangeControl);
+        const thumbInset = Number.parseFloat(rangeControlStyles.getPropertyValue('--mode-switch-thumb-inset')) || 0;
+        const horizontalInset = 12;
+        const unclampedWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
+        const maxOptionWidth = Math.max(0, Math.round(optionRect.width - (thumbInset * 2) - 2));
+        const measuredWidth = Math.min(unclampedWidth, maxOptionWidth || unclampedWidth);
+        const innerWidth = Math.max(0, Math.round(controlRect.width - (thumbInset * 2)));
+        const optionCenter = (optionRect.left - controlRect.left) + (optionRect.width / 2);
+        const measuredLeft = Math.round(optionCenter - thumbInset - (measuredWidth / 2));
+
+        if (controlRect.width <= 0 || innerWidth <= 0 || measuredWidth <= 0) {
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        const maxLeft = Math.max(0, Math.round(innerWidth - measuredWidth));
+        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
+
+        rangeControl.style.setProperty('--investment-stock-details-range-pill-left', `${clampedLeft}px`);
+        rangeControl.style.setProperty('--investment-stock-details-range-pill-width', `${measuredWidth}px`);
+        rangeControl.classList.add('is-pill-ready');
+    }
+
+    function scheduleInvestmentStockDetailsRangePillUpdate() {
+        const rangeControl = getInvestmentStockDetailsRangeControl();
+        if (!rangeControl) return;
+        rangeControl.classList.remove('is-pill-ready');
+        if (investmentStockDetailsRangeMeasureRaf) {
+            window.cancelAnimationFrame(investmentStockDetailsRangeMeasureRaf);
+            investmentStockDetailsRangeMeasureRaf = 0;
+        }
+        investmentStockDetailsRangeMeasureRaf = window.requestAnimationFrame(() => {
+            investmentStockDetailsRangeMeasureRaf = window.requestAnimationFrame(() => {
+                investmentStockDetailsRangeMeasureRaf = 0;
+                updateInvestmentStockDetailsRangePill();
             });
         });
     }
@@ -838,6 +932,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeInvestmentView !== 'stock_details') return;
         window.requestAnimationFrame(() => {
             if (activeInvestmentView !== 'stock_details') return;
+            // Re-measure the segmented pill after the panel becomes visible.
+            scheduleInvestmentStockDetailsRangePillUpdate();
             refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
             const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
             chartCanvas?._scheduleLayoutSync?.();
@@ -845,6 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentStockDetailsVisibleLayoutTimer = window.setTimeout(() => {
             investmentStockDetailsVisibleLayoutTimer = 0;
             if (activeInvestmentView !== 'stock_details') return;
+            scheduleInvestmentStockDetailsRangePillUpdate();
             refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
             const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
             chartCanvas?._scheduleLayoutSync?.();
@@ -2582,6 +2679,124 @@ document.addEventListener('DOMContentLoaded', () => {
         return match ? match[1] : '';
     }
 
+    function parseInvestmentChartDate(value) {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const monthIndex = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || !Number.isInteger(day)) return null;
+        return new Date(Date.UTC(year, monthIndex, day));
+    }
+
+    function getInvestmentStockDetailsRangeLabels(labels, range = 'max') {
+        const orderedLabels = Array.isArray(labels)
+            ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
+            : [];
+        if (!orderedLabels.length) return [];
+        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
+        if (normalizedRange === 'max') return orderedLabels;
+
+        const latestDate = parseInvestmentChartDate(orderedLabels[orderedLabels.length - 1]);
+        if (!(latestDate instanceof Date) || Number.isNaN(latestDate.getTime())) {
+            return orderedLabels;
+        }
+
+        if (normalizedRange === '3d') {
+            return orderedLabels.slice(-Math.min(3, orderedLabels.length));
+        }
+
+        let startDate = null;
+        if (normalizedRange === '1w') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCDate(startDate.getUTCDate() - 6);
+        } else if (normalizedRange === '2w') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCDate(startDate.getUTCDate() - 13);
+        } else if (normalizedRange === '1m') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCMonth(startDate.getUTCMonth() - 1);
+        } else if (normalizedRange === 'ytd') {
+            startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
+        } else if (normalizedRange === '1y') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+        }
+
+        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+            return orderedLabels;
+        }
+
+        const filteredLabels = orderedLabels.filter((label) => {
+            const currentDate = parseInvestmentChartDate(label);
+            return currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) && currentDate >= startDate;
+        });
+        return filteredLabels.length ? filteredLabels : orderedLabels;
+    }
+
+    function renderInvestmentStockDetailsRangeControl() {
+        const activeRange = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+        const activeIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === activeRange));
+        return `
+            <div class="investment-stock-details-range-shell">
+                <div class="segmented-control investment-stock-details-range-segmented"
+                     data-investment-stock-details-range-segmented
+                     data-active="${escapeHtml(activeRange)}"
+                     data-option-count="${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.length}"
+                     style="--segmented-active-index: ${activeIndex}; --investment-stock-details-range-pill-left: 0px; --investment-stock-details-range-pill-width: 0px;">
+                    ${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.map((option) => `
+                        <label class="segmented-control-option" for="investment_stock_details_range_${option.value}">
+                            <input id="investment_stock_details_range_${option.value}"
+                                   name="investment_stock_details_range"
+                                   type="radio"
+                                   value="${option.value}"
+                                   ${option.value === activeRange ? 'checked' : ''}>
+                            <span><span class="investment-stock-details-range-label">${option.label}</span></span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
+        clearInvestmentStockDetailsRangeControlBindings();
+        const rangeControl = getInvestmentStockDetailsRangeControl();
+        if (!rangeControl) return;
+
+        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange))}"]`);
+        if (checkedInput instanceof HTMLInputElement) {
+            checkedInput.checked = true;
+        }
+        rangeControl.dataset.active = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+
+        const abortController = new AbortController();
+        investmentStockDetailsRangeControlAbortController = abortController;
+        const { signal } = abortController;
+        rangeControl.addEventListener('change', (event) => {
+            const nextInput = event.target;
+            if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_stock_details_range') return;
+            const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
+            selectedInvestmentStockDetailsRange = nextRange;
+            rangeControl.dataset.active = nextRange;
+            const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
+            rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
+            scheduleInvestmentStockDetailsRangePillUpdate();
+            renderInvestmentStockDetailsPriceChart(ticker, detailRows);
+        }, { signal });
+        window.addEventListener('resize', scheduleInvestmentStockDetailsRangePillUpdate, { signal });
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                scheduleInvestmentStockDetailsRangePillUpdate();
+            });
+            resizeObserver.observe(rangeControl);
+            const rangeShell = rangeControl.closest('.investment-stock-details-range-shell');
+            if (rangeShell instanceof HTMLElement) resizeObserver.observe(rangeShell);
+            investmentStockDetailsRangeControlResizeObserver = resizeObserver;
+        }
+        scheduleInvestmentStockDetailsRangePillUpdate();
+    }
+
     function buildTickerPriceIndex(tickerClosePrices) {
         const priceIndex = {};
         Object.entries(tickerClosePrices || {}).forEach(([ticker, dateMap]) => {
@@ -3207,7 +3422,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerPriceMap = priceHistoryByTicker[normalizedTicker] || {};
         const tickerLabels = Object.keys(tickerPriceMap).sort();
         const sharedLabels = getInvestmentSharedChartDateRange(tickerLabels);
-        const labels = sharedLabels.length ? sharedLabels : tickerLabels;
+        const fullLabels = sharedLabels.length ? sharedLabels : tickerLabels;
+        const labels = getInvestmentStockDetailsRangeLabels(fullLabels, selectedInvestmentStockDetailsRange);
         const closeValues = labels.map((date) => {
             const close = Number(tickerPriceMap[date]);
             return Number.isFinite(close) ? close : null;
@@ -3611,6 +3827,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     padding: {
                         left: 0,
                         right: 0,
+                        top: 44,
                         bottom: 24,
                     },
                 },
@@ -3825,6 +4042,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeTicker = ensureSelectedInvestmentStockTicker();
         destroyInvestmentStockDetailsPriceChart();
         if (!activeTicker) {
+            clearInvestmentStockDetailsRangeControlBindings();
             investmentStockDetailsPanel.innerHTML = `
                 <div class="investment-stock-details-empty-shell">
                     <p class="investment-holdings-empty">Open Holdings or import transactions, then pick a ticker to inspect its stock details.</p>
@@ -3837,6 +4055,7 @@ document.addEventListener('DOMContentLoaded', () => {
             syncSelectedStockLinkState();
             return;
         }
+        clearInvestmentStockDetailsRangeControlBindings();
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = tickerProfiles?.[activeTicker] || {};
         const companyName = String(profile.company_name || activeTicker);
@@ -3939,6 +4158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `).join('')}
                 </div>
                 <div class="investment-stock-details-price-chart-card">
+                    ${renderInvestmentStockDetailsRangeControl()}
                     <div class="investment-stock-details-price-chart-shell" data-investment-stock-price-chart></div>
                 </div>
                 <div class="investment-stock-details-donut-card">
@@ -3974,6 +4194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
             syncInvestmentStockDetailsTableVisibility();
         }
+        bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
         renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
         syncSelectedStockLinkState();

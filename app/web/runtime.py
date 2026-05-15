@@ -1,11 +1,12 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.10
+Code version: v0.3.11
 """
 
 from __future__ import annotations
 from datetime import datetime
+from http.client import RemoteDisconnected
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3396,10 +3397,10 @@ def build_web_runtime() -> WebRuntime:
                 refresh_history_store(ticker)
                 try:
                     fetch_quote_profile(ticker, force_refresh=True)
-                except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError):
+                except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError, RemoteDisconnected):
                     try:
                         fetch_quote_profile(ticker, force_refresh=False)
-                    except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError):
+                    except (AttributeError, ImportError, OSError, ValueError, KeyError, TypeError, RemoteDisconnected):
                         pass
                 notice = f"Saved the latest daily market data for {ticker} to local cache."
                 return _redirect_with_settings_feedback(

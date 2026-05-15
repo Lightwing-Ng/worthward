@@ -1,4 +1,4 @@
-/* Code version: v1.5.7.6 */
+/* Code version: v1.6.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -313,6 +313,7 @@
     display: flex;
     align-items: stretch;
     padding: 10px 4px 6px 4px;
+    position: relative;
 }
 
 .investment-stock-details-price-chart-shell {
@@ -320,6 +321,64 @@
     min-width: 0;
     min-height: 220px;
     position: relative;
+}
+
+.investment-stock-details-range-shell {
+    position: absolute;
+    top: 10px;
+    left: 8px;
+    right: 8px;
+    z-index: var(--layer-surface-content);
+    display: flex;
+    justify-content: flex-end;
+    width: auto;
+    pointer-events: none;
+}
+
+.investment-stock-details-range-segmented {
+    --segmented-active-index: 0;
+    --investment-stock-details-range-pill-left: 0px;
+    --investment-stock-details-range-pill-width: 0px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    pointer-events: auto;
+}
+
+.segmented-control.investment-stock-details-range-segmented[data-option-count]::before {
+    width: var(--investment-stock-details-range-pill-width);
+    transform: translateX(var(--investment-stock-details-range-pill-left));
+    opacity: 0;
+    transition:
+        transform 320ms var(--motion-standard),
+        width 320ms var(--motion-standard),
+        opacity 140ms ease,
+        box-shadow 220ms var(--motion-standard);
+}
+
+.segmented-control.investment-stock-details-range-segmented.is-pill-ready[data-option-count]::before {
+    opacity: 1;
+}
+
+.investment-stock-details-range-segmented > .segmented-control-option > span {
+    min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
+    padding: 0 8px;
+    font-size: 11px;
+    color: var(--theme-muted) !important;
+}
+
+.investment-stock-details-range-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: max-content;
+    color: inherit;
+}
+
+.investment-stock-details-range-segmented .segmented-control-option input:checked + span,
+.investment-stock-details-range-segmented .segmented-control-option input:checked + span .investment-stock-details-range-label {
+    color: var(--color-white-adaptive) !important;
 }
 
 .investment-stock-details-price-chart-canvas {
@@ -1511,6 +1570,18 @@
 
     .investment-stock-details-price-chart-card {
         padding: 8px 4px 0 4px;
+    }
+
+    .investment-stock-details-range-shell {
+        top: 8px;
+        left: 4px;
+        right: 4px;
+        width: auto;
+    }
+
+    .investment-stock-details-range-segmented > .segmented-control-option > span {
+        padding: 0 6px;
+        font-size: 10px;
     }
 
     .investment-stock-details-price-chart-shell,

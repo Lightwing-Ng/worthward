@@ -1,12 +1,13 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from http.client import RemoteDisconnected
 import json
 from time import monotonic, time
 from urllib.error import HTTPError, URLError
@@ -143,7 +144,7 @@ def has_remote_logo_access() -> bool:
                 if is_available:
                     _remote_logo_access_cache = _cache_result(True)
                     return True
-        except (HTTPError, URLError, TimeoutError, ValueError):
+        except (HTTPError, URLError, TimeoutError, ValueError, RemoteDisconnected):
             continue
 
     _remote_logo_access_cache = _cache_result(False)
@@ -160,7 +161,7 @@ def _probe_http_endpoints(remote_urls: tuple[str, ...]) -> bool:
             with urlopen(request_obj, timeout=4) as response:
                 if response.status < 500:
                     return True
-        except (HTTPError, URLError, TimeoutError, ValueError):
+        except (HTTPError, URLError, TimeoutError, ValueError, RemoteDisconnected):
             continue
     return False
 
