@@ -18,3 +18,4 @@ def register_more_routes(app: Flask, runtime: WebRuntime) -> None:
     app.post("/api/investment/transactions")(runtime.investment_add_transaction)
     app.get("/api/investment/latest-price")(runtime.investment_get_latest_price)
     app.get("/api/investment/parquet")(runtime.investment_get_parquet)
+    app.get("/api/investment/intraday")(runtime.investment_get_intraday_history)

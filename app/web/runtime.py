@@ -174,6 +174,7 @@ class WebRuntime:
     investment_add_transaction: Any
     investment_get_latest_price: Any
     investment_get_parquet: Any
+    investment_get_intraday_history: Any
 
 
 def extract_first_non_null_value(raw_value: object) -> object | None:
@@ -3823,6 +3824,78 @@ def build_web_runtime() -> WebRuntime:
             response.status_code = 500
             return apply_no_store_headers(response)
 
+    def investment_get_intraday_history():
+        """Get local 1-minute OHLC history for Investment stock details charts."""
+        ticker = request.args.get("ticker", "").strip().upper()
+        requested_range = request.args.get("range", "").strip().lower() or "1w"
+        ensure_store = request.args.get("ensure_store", "").strip() == "1"
+        if not ticker:
+            response = jsonify({"success": False, "error": "No ticker provided"})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+
+        try:
+            normalized_ticker = validate_ticker_or_raise(ticker)
+            refresh_result = None
+            if ensure_store and not has_recent_one_minute_store(normalized_ticker):
+                refresh_result = refresh_one_minute_store(normalized_ticker)
+
+            dataset = fetch_history(normalized_ticker, include_dividends=False, interval="1m")
+            if dataset.empty:
+                response = jsonify({"success": False, "error": f"No 1-minute market data for {normalized_ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
+
+            intraday = dataset.copy()
+            intraday["Date"] = pd.to_datetime(intraday["Date"], errors="coerce")
+            intraday = intraday.dropna(subset=["Date", "Open", "High", "Low", "Close"]).sort_values("Date")
+            if intraday.empty:
+                response = jsonify({"success": False, "error": f"No 1-minute OHLC data for {normalized_ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
+
+            latest_timestamp = intraday["Date"].max()
+            if requested_range == "3d":
+                trading_days = intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
+                selected_days = set(trading_days[-3:])
+                if selected_days:
+                    intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d").isin(selected_days)].copy()
+            elif requested_range == "1w":
+                start_at = latest_timestamp - pd.Timedelta(days=6)
+                intraday = intraday.loc[intraday["Date"] >= start_at].copy()
+
+            rows = [
+                {
+                    "date": timestamp.strftime("%Y-%m-%d %H:%M"),
+                    "open": float(open_value),
+                    "high": float(high_value),
+                    "low": float(low_value),
+                    "close": float(close_value),
+                }
+                for timestamp, open_value, high_value, low_value, close_value in zip(
+                    intraday["Date"],
+                    intraday["Open"],
+                    intraday["High"],
+                    intraday["Low"],
+                    intraday["Close"],
+                )
+            ]
+            response = jsonify({
+                "success": True,
+                "ticker": normalized_ticker,
+                "interval": "1m",
+                "range": requested_range,
+                "rows": rows,
+                "count": len(rows),
+                "refreshed": refresh_result is not None,
+                "source": refresh_result.source if refresh_result is not None else "local",
+            })
+            return apply_no_store_headers(response)
+        except Exception as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
     return WebRuntime(
         root=root,
         compare_page=compare_page,
@@ -3852,4 +3925,5 @@ def build_web_runtime() -> WebRuntime:
         investment_add_transaction=investment_add_transactions,
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,
+        investment_get_intraday_history=investment_get_intraday_history,
     )

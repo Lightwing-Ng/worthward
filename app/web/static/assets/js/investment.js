@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.32.0
+ * Code version: v1.33.0
+ * - Added: Stock details now uses local 1-minute OHLC candlesticks for the 3D and 1W ranges, auto-refreshing and storing missing intraday cache via the existing market-store pipeline
  * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 2W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
  * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
  * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
@@ -688,6 +689,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsRangeMeasureRaf = 0;
     let investmentStockDetailsRangeControlAbortController = null;
     let investmentStockDetailsRangeControlResizeObserver = null;
+    let investmentStockDetailsPriceChartRequestSerial = 0;
+    const investmentStockDetailsIntradayCache = new Map();
+    const investmentStockDetailsIntradayInflight = new Map();
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
@@ -798,6 +802,74 @@ document.addEventListener('DOMContentLoaded', () => {
     function getInvestmentStockDetailsRangeControl() {
         const control = investmentStockDetailsPanel?.querySelector('[data-investment-stock-details-range-segmented]');
         return control instanceof HTMLElement ? control : null;
+    }
+
+    function isInvestmentStockDetailsIntradayRange(range) {
+        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
+        return normalizedRange === '3d' || normalizedRange === '1w';
+    }
+
+    function parseInvestmentIntradayTimestamp(value) {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const monthIndex = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        const hours = Number(match[4]);
+        const minutes = Number(match[5]);
+        if (![year, monthIndex, day, hours, minutes].every(Number.isFinite)) return null;
+        return new Date(year, monthIndex, day, hours, minutes, 0, 0);
+    }
+
+    function normalizeInvestmentIntradayMinuteKey(value) {
+        const parsed = parseInvestmentIntradayTimestamp(value);
+        if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return '';
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        const hours = String(parsed.getHours()).padStart(2, '0');
+        const minutes = String(parsed.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+    }
+
+    function buildInvestmentIntradayDayFallbackIndex(labels = []) {
+        return (Array.isArray(labels) ? labels : []).reduce((accumulator, label, index) => {
+            const dayKey = normalizeLedgerDate(label);
+            if (dayKey) accumulator.set(dayKey, index);
+            return accumulator;
+        }, new Map());
+    }
+
+    async function loadInvestmentStockDetailsIntradayRows(ticker, range) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
+        if (!normalizedTicker || !isInvestmentStockDetailsIntradayRange(normalizedRange)) return [];
+        const cacheKey = `${normalizedTicker}:${normalizedRange}`;
+        if (investmentStockDetailsIntradayCache.has(cacheKey)) {
+            return investmentStockDetailsIntradayCache.get(cacheKey) || [];
+        }
+        if (investmentStockDetailsIntradayInflight.has(cacheKey)) {
+            return investmentStockDetailsIntradayInflight.get(cacheKey);
+        }
+        const requestPromise = (async () => {
+            const response = await fetch(
+                `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=${encodeURIComponent(normalizedRange)}&ensure_store=1`,
+                buildInvestmentRequestOptions(),
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.error || `Unable to load 1-minute market data for ${normalizedTicker}.`);
+            }
+            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            investmentStockDetailsIntradayCache.set(cacheKey, rows);
+            return rows;
+        })();
+        investmentStockDetailsIntradayInflight.set(cacheKey, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            investmentStockDetailsIntradayInflight.delete(cacheKey);
+        }
     }
 
     function normalizeInvestmentStockDetailsRange(range) {
@@ -3410,7 +3482,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeStockDetailsHoverPointRecord = null;
     }
 
-    function renderInvestmentStockDetailsPriceChart(ticker, detailRows = []) {
+    async function renderInvestmentStockDetailsPriceChart(ticker, detailRows = []) {
         const chartHost = investmentStockDetailsPanel?.querySelector('[data-investment-stock-price-chart]');
         if (!(chartHost instanceof HTMLElement)) {
             destroyInvestmentStockDetailsPriceChart();
@@ -3418,10 +3490,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         destroyInvestmentStockDetailsPriceChart();
+        const renderRequestId = ++investmentStockDetailsPriceChartRequestSerial;
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker || !window.Chart) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
+        }
+
+        const normalizedRange = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+        let intradayRows = [];
+        if (isInvestmentStockDetailsIntradayRange(normalizedRange)) {
+            chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Loading 1-minute price history...</div>';
+            try {
+                intradayRows = await loadInvestmentStockDetailsIntradayRows(normalizedTicker, normalizedRange);
+            } catch (error) {
+                console.warn(error);
+                intradayRows = [];
+            }
+            if (renderRequestId !== investmentStockDetailsPriceChartRequestSerial) return;
         }
 
         const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
@@ -3429,12 +3515,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerLabels = Object.keys(tickerPriceMap).sort();
         const sharedLabels = getInvestmentSharedChartDateRange(tickerLabels);
         const fullLabels = sharedLabels.length ? sharedLabels : tickerLabels;
-        const labels = getInvestmentStockDetailsRangeLabels(fullLabels, selectedInvestmentStockDetailsRange);
-        const closeValues = labels.map((date) => {
-            const close = Number(tickerPriceMap[date]);
-            return Number.isFinite(close) ? close : null;
-        });
-        if (!tickerLabels.length || !closeValues.some((value) => Number.isFinite(value))) {
+        const useIntradayCandles = Array.isArray(intradayRows) && intradayRows.length > 0;
+        const labels = useIntradayCandles
+            ? intradayRows.map((row) => String(row?.date || ''))
+            : getInvestmentStockDetailsRangeLabels(fullLabels, normalizedRange);
+        const closeValues = useIntradayCandles
+            ? labels.map((_, index) => {
+                const close = Number(intradayRows[index]?.close);
+                return Number.isFinite(close) ? close : null;
+            })
+            : labels.map((date) => {
+                const close = Number(tickerPriceMap[date]);
+                return Number.isFinite(close) ? close : null;
+            });
+        const openValues = useIntradayCandles
+            ? labels.map((_, index) => {
+                const open = Number(intradayRows[index]?.open);
+                return Number.isFinite(open) ? open : null;
+            })
+            : [];
+        const highValues = useIntradayCandles
+            ? labels.map((_, index) => {
+                const high = Number(intradayRows[index]?.high);
+                return Number.isFinite(high) ? high : null;
+            })
+            : [];
+        const lowValues = useIntradayCandles
+            ? labels.map((_, index) => {
+                const low = Number(intradayRows[index]?.low);
+                return Number.isFinite(low) ? low : null;
+            })
+            : [];
+        if ((!tickerLabels.length && !useIntradayCandles) || !closeValues.some((value) => Number.isFinite(value))) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
@@ -3447,11 +3559,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const dateIndex = new Map();
         labels.forEach((value, index) => {
             dateIndex.set(String(value), index);
+            const minuteKey = normalizeInvestmentIntradayMinuteKey(value);
+            if (minuteKey) dateIndex.set(minuteKey, index);
         });
+        const intradayDayFallbackIndex = buildInvestmentIntradayDayFallbackIndex(labels);
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
-            const markerIndex = dateIndex.get(normalizeLedgerDate(txn?.date));
+            const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(txn?.date);
+            const markerIndex = isInvestmentStockDetailsIntradayRange(normalizedRange)
+                ? (dateIndex.get(exactMinuteKey) ?? intradayDayFallbackIndex.get(normalizeLedgerDate(txn?.date)))
+                : dateIndex.get(normalizeLedgerDate(txn?.date));
             if (!Number.isInteger(markerIndex)) return accumulator;
             const transactionPrice = getTransactionPrice(txn);
             const plottedClosePrice = Number(closeValues[markerIndex]);
@@ -3483,7 +3601,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(([date]) => Boolean(date)));
         let latestShares = 0;
         labels.forEach((label, index) => {
-            const dateTxns = transactionsByDate.get(String(label)) || [];
+            const labelDateKey = normalizeLedgerDate(label);
+            const dateTxns = transactionsByDate.get(labelDateKey) || [];
             const buySellLedgerNos = dateTxns
                 .filter((txn) => ['buy', 'sell'].includes(getNormalizedTransactionType(txn)))
                 .map((txn) => Number(txn?.ledger_no))
@@ -3530,13 +3649,30 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const parseRawDate = (value) => {
             if (typeof value !== 'string') return null;
-            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
             if (!match) return null;
             return {
                 year: Number(match[1]),
                 monthIndex: Number(match[2]) - 1,
                 day: Number(match[3]),
+                hours: match[4] ? Number(match[4]) : null,
+                minutes: match[5] ? Number(match[5]) : null,
             };
+        };
+        const padTwo = (value) => String(value).padStart(2, '0');
+        const formatTooltipDate = (dateParts) => {
+            const baseDate = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+            if (Number.isInteger(dateParts.hours) && Number.isInteger(dateParts.minutes)) {
+                return `${baseDate} ${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
+            }
+            return baseDate;
+        };
+        const formatAxisDateLines = (dateParts) => {
+            const firstLine = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`;
+            const secondLine = Number.isInteger(dateParts.hours) && Number.isInteger(dateParts.minutes)
+                ? `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`
+                : `${dateParts.year}`;
+            return [firstLine, secondLine];
         };
         const buildTickIndexSet = (count, plotWidth) => {
             if (count <= 0) return new Set();
@@ -3595,8 +3731,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tickIndexes.forEach((index, tickIndex) => {
                     const parsedDate = parseRawDate(labels[index]);
                     if (!parsedDate) return;
-                    const firstLine = `${parsedDate.day} ${monthAbbreviations[parsedDate.monthIndex]}`;
-                    const secondLine = `${parsedDate.year}`;
+                    const [firstLine, secondLine] = formatAxisDateLines(parsedDate);
                     const x = xScale.getPixelForValue(index);
                     if (!Number.isFinite(x)) return;
                     if (tickIndex === 0) ctx.textAlign = 'left';
@@ -3604,6 +3739,45 @@ document.addEventListener('DOMContentLoaded', () => {
                     else ctx.textAlign = 'center';
                     ctx.fillText(firstLine, x, baselineY);
                     ctx.fillText(secondLine, x, baselineY + lineHeight);
+                });
+                ctx.restore();
+            },
+        };
+        const candlestickPlugin = {
+            id: 'investmentStockDetailsCandlestickPlugin',
+            afterDatasetsDraw(chartInstance) {
+                if (!useIntradayCandles) return;
+                const { ctx, chartArea, scales } = chartInstance;
+                const meta = chartInstance.getDatasetMeta(0);
+                const xScale = scales?.x;
+                const yScale = scales?.y;
+                if (!meta || !meta.data.length || !xScale || !yScale || !chartArea) return;
+                const columnWidth = (chartArea.right - chartArea.left) / labels.length;
+                const candleWidth = Math.min(20, Math.max(1.5, columnWidth * 0.72));
+                ctx.save();
+                meta.data.forEach((point, index) => {
+                    const open = Number(openValues[index]);
+                    const high = Number(highValues[index]);
+                    const low = Number(lowValues[index]);
+                    const close = Number(closeValues[index]);
+                    if (![open, high, low, close].every(Number.isFinite)) return;
+                    const x = Number(point?.x);
+                    if (!Number.isFinite(x)) return;
+                    const openY = yScale.getPixelForValue(open);
+                    const highY = yScale.getPixelForValue(high);
+                    const lowY = yScale.getPixelForValue(low);
+                    const closeY = yScale.getPixelForValue(close);
+                    ctx.strokeStyle = resolvedTheme.accentPrimary;
+                    ctx.fillStyle = resolvedTheme.accentPrimary;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x, highY);
+                    ctx.lineTo(x, lowY);
+                    ctx.stroke();
+                    const bodyTop = Math.min(openY, closeY);
+                    const bodyBottom = Math.max(openY, closeY);
+                    const bodyHeight = Math.max(0.75, bodyBottom - bodyTop);
+                    ctx.fillRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
                 });
                 ctx.restore();
             },
@@ -3680,7 +3854,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.appendChild(tooltip);
             return tooltip;
         };
-        const formatTooltipDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
         const buildTooltipTriangle = (color, direction = 'up') => {
             const path = direction === 'down'
                 ? 'M19.9414 1.38672C19.9414 0.546875 19.3066 0.0195312 18.3105 0.0195312L1.64062 0.00976562C0.634766 0.00976562 0 0.537109 0 1.37695C0 1.83594 0.195312 2.1875 0.439453 2.68555L8.45703 19.2578C8.92578 20.2051 9.36523 20.5176 9.9707 20.5176C10.5859 20.5176 11.0254 20.2051 11.4844 19.2578L19.5117 2.68555C19.7461 2.19727 19.9414 1.8457 19.9414 1.38672Z'
@@ -3709,9 +3882,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const marketValue = Number.isFinite(shares) && Number.isFinite(closePrice) ? shares * closePrice : null;
             const buyQuantity = Number(snapshot?.buyQuantity);
             const sellQuantity = Number(snapshot?.sellQuantity);
-            activeStockDetailsHoverPointRecord = investmentPointByDate.get(String(rawDate)) || null;
+            const hoverLedgerDate = normalizeLedgerDate(rawDate);
+            activeStockDetailsHoverPointRecord = investmentPointByDate.get(hoverLedgerDate) || null;
             syncInvestmentStockDetailsDonutFromInteraction();
-            if (String(rawDate) !== activeStockDetailsHoverDate) {
+            if (hoverLedgerDate !== activeStockDetailsHoverDate) {
                 const primaryLedgerNo = normalizeInvestmentLedgerNos(buySellLedgerNos)[0] || 0;
                 if (primaryLedgerNo > 0) {
                     syncInvestmentHoverLinkedViews({
@@ -3728,7 +3902,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     clearInvestmentStockDetailHighlights();
                     clearInvestmentHistoryHighlights();
                 }
-                activeStockDetailsHoverDate = String(rawDate || '');
+                activeStockDetailsHoverDate = hoverLedgerDate;
             }
             const dateEl = tooltipEl.querySelector('.chart-tooltip-date');
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
@@ -3817,8 +3991,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         label: `${normalizedTicker} close`,
                         data: closeValues,
                         order: 0,
-                        borderColor: resolvedTheme.accentPrimary,
-                        borderWidth: 1.0,
+                        borderColor: useIntradayCandles ? 'transparent' : resolvedTheme.accentPrimary,
+                        borderWidth: useIntradayCandles ? 0 : 1.0,
                         pointRadius: 0,
                         tension: 0,
                         borderJoinStyle: 'round',
@@ -3852,6 +4026,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...buildPixelPaddedYScale(
                             canvas,
                             [
+                                ...openValues,
+                                ...highValues,
+                                ...lowValues,
                                 ...closeValues,
                                 ...tradeMarkerPoints.buy.map((marker) => marker.y),
                                 ...tradeMarkerPoints.sell.map((marker) => marker.y),
@@ -3873,7 +4050,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                 },
             },
-            plugins: [hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin],
+            plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin],
         });
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
