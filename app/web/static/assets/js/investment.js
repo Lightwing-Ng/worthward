@@ -3,7 +3,7 @@
  *
  * Code version: v1.33.0
  * - Added: Stock details now uses local 1-minute OHLC candlesticks for the 3D and 1W ranges, auto-refreshing and storing missing intraday cache via the existing market-store pipeline
- * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 2W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
+ * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
  * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
  * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
  * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
@@ -699,7 +699,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
         { value: '3d', label: '3D' },
         { value: '1w', label: '1W' },
-        { value: '2w', label: '2W' },
         { value: '1m', label: '1M' },
         { value: 'ytd', label: 'YTD' },
         { value: '1y', label: '1Y' },
@@ -2788,9 +2787,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalizedRange === '1w') {
             startDate = new Date(latestDate.getTime());
             startDate.setUTCDate(startDate.getUTCDate() - 6);
-        } else if (normalizedRange === '2w') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCDate(startDate.getUTCDate() - 13);
         } else if (normalizedRange === '1m') {
             startDate = new Date(latestDate.getTime());
             startDate.setUTCMonth(startDate.getUTCMonth() - 1);

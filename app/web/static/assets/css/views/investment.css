@@ -339,7 +339,7 @@
     --segmented-active-index: 0;
     --investment-stock-details-range-pill-left: 0px;
     --investment-stock-details-range-pill-width: 0px;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     width: 100%;
     max-width: 100%;
     margin: 0;
