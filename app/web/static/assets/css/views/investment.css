@@ -117,7 +117,7 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.investment-view-segmented::before {
+.segmented-control.investment-view-segmented[data-option-count]::before {
     width: var(--investment-segmented-pill-width);
     transform: translateX(var(--investment-segmented-pill-left));
     opacity: 0;
@@ -128,7 +128,7 @@
         box-shadow 220ms var(--motion-standard);
 }
 
-.investment-view-segmented.is-pill-ready::before {
+.segmented-control.investment-view-segmented.is-pill-ready[data-option-count]::before {
     opacity: 1;
 }
 

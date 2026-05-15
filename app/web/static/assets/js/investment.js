@@ -735,6 +735,35 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentSegmentedMeasureRaf = 0;
     }
 
+    function measureInvestmentSegmentedPillGeometry(control, activeLabel, {
+        labelSelector = '',
+        horizontalInset = 12,
+    } = {}) {
+        if (!(control instanceof HTMLElement) || !(activeLabel instanceof HTMLElement)) return null;
+        const controlRect = control.getBoundingClientRect();
+        const activeOption = activeLabel.closest('.segmented-control-option');
+        const measureTarget = labelSelector
+            ? (activeLabel.querySelector(labelSelector) || activeLabel)
+            : activeLabel;
+        const labelRect = measureTarget.getBoundingClientRect();
+        const optionRect = activeOption instanceof HTMLElement ? activeOption.getBoundingClientRect() : activeLabel.getBoundingClientRect();
+        const controlStyles = window.getComputedStyle(control);
+        const thumbInset = Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-thumb-inset')) || 0;
+        const unclampedWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
+        const maxOptionWidth = Math.max(0, Math.round(optionRect.width - (thumbInset * 2) - 2));
+        const measuredWidth = Math.min(unclampedWidth, maxOptionWidth || unclampedWidth);
+        const innerWidth = Math.max(0, Math.round(controlRect.width - (thumbInset * 2)));
+        const optionCenter = (optionRect.left - controlRect.left) + (optionRect.width / 2);
+        const measuredLeft = Math.round(optionCenter - thumbInset - (measuredWidth / 2));
+        if (controlRect.width <= 0 || innerWidth <= 0 || measuredWidth <= 0) return null;
+        const maxLeft = Math.max(0, Math.round(innerWidth - measuredWidth));
+        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
+        return {
+            left: clampedLeft,
+            width: measuredWidth,
+        };
+    }
+
     function updateInvestmentSegmentedPill() {
         if (!segmentedControl) return;
         const activeLabel = segmentedControl.querySelector('input[type="radio"]:checked + span');
@@ -743,22 +772,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const controlRect = segmentedControl.getBoundingClientRect();
-        const labelRect = activeLabel.getBoundingClientRect();
-        const horizontalInset = 12;
-        const measuredWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
-        const measuredLeft = Math.round((labelRect.left - controlRect.left) - horizontalInset);
-
-        if (controlRect.width <= 0 || measuredWidth <= 0) {
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(segmentedControl, activeLabel);
+        if (!pillGeometry) {
             segmentedControl.classList.remove('is-pill-ready');
             return;
         }
 
-        const maxLeft = Math.max(0, Math.round(controlRect.width - measuredWidth));
-        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
-
-        segmentedControl.style.setProperty('--investment-segmented-pill-left', `${clampedLeft}px`);
-        segmentedControl.style.setProperty('--investment-segmented-pill-width', `${measuredWidth}px`);
+        segmentedControl.style.setProperty('--investment-segmented-pill-left', `${pillGeometry.left}px`);
+        segmentedControl.style.setProperty('--investment-segmented-pill-width', `${pillGeometry.width}px`);
         segmentedControl.classList.add('is-pill-ready');
     }
 
@@ -810,31 +831,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const controlRect = rangeControl.getBoundingClientRect();
-        const activeOption = activeLabel.closest('.segmented-control-option');
-        const measureTarget = activeLabel.querySelector('.investment-stock-details-range-label') || activeLabel;
-        const labelRect = measureTarget.getBoundingClientRect();
-        const optionRect = activeOption instanceof HTMLElement ? activeOption.getBoundingClientRect() : activeLabel.getBoundingClientRect();
-        const rangeControlStyles = window.getComputedStyle(rangeControl);
-        const thumbInset = Number.parseFloat(rangeControlStyles.getPropertyValue('--mode-switch-thumb-inset')) || 0;
-        const horizontalInset = 12;
-        const unclampedWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
-        const maxOptionWidth = Math.max(0, Math.round(optionRect.width - (thumbInset * 2) - 2));
-        const measuredWidth = Math.min(unclampedWidth, maxOptionWidth || unclampedWidth);
-        const innerWidth = Math.max(0, Math.round(controlRect.width - (thumbInset * 2)));
-        const optionCenter = (optionRect.left - controlRect.left) + (optionRect.width / 2);
-        const measuredLeft = Math.round(optionCenter - thumbInset - (measuredWidth / 2));
-
-        if (controlRect.width <= 0 || innerWidth <= 0 || measuredWidth <= 0) {
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel, {
+            labelSelector: '.investment-stock-details-range-label',
+        });
+        if (!pillGeometry) {
             rangeControl.classList.remove('is-pill-ready');
             return;
         }
 
-        const maxLeft = Math.max(0, Math.round(innerWidth - measuredWidth));
-        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
-
-        rangeControl.style.setProperty('--investment-stock-details-range-pill-left', `${clampedLeft}px`);
-        rangeControl.style.setProperty('--investment-stock-details-range-pill-width', `${measuredWidth}px`);
+        rangeControl.style.setProperty('--investment-stock-details-range-pill-left', `${pillGeometry.left}px`);
+        rangeControl.style.setProperty('--investment-stock-details-range-pill-width', `${pillGeometry.width}px`);
         rangeControl.classList.add('is-pill-ready');
     }
 
