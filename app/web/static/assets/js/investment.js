@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.33.0
+ * Code version: v1.33.3
+ * - Changed: Stock details now shows Average price instead of Buy cost so the metric matches the holdings average-price calculation
  * - Added: Stock details now uses local 1-minute OHLC candlesticks for the 3D and 1W ranges, auto-refreshing and storing missing intraday cache via the existing market-store pipeline
  * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
  * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
@@ -4255,6 +4256,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalizedType = getNormalizedTransactionType(txn);
             return normalizedType === 'buy' || normalizedType === 'sell';
         }).length;
+        const averagePriceDisplay = tickerSummary.averagePrice === null ? '-' : formatHoldingsMoney(tickerSummary.averagePrice);
         const totalTradeCountDisplay = new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
@@ -4287,6 +4289,11 @@ document.addEventListener('DOMContentLoaded', () => {
             {
                 label: 'Market value',
                 value: tickerSummary.hasOpenPosition ? formatHoldingsMoney(tickerSummary.marketValue) : '-',
+                valueClass: '',
+            },
+            {
+                label: 'Average price',
+                value: averagePriceDisplay,
                 valueClass: '',
             },
             {
