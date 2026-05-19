@@ -2850,6 +2850,11 @@ def build_web_runtime() -> WebRuntime:
                         seen_labels.add(row["label"])
                         deduplicated_metric_rows.append(row)
                     timing_metrics = deduplicated_metric_rows
+                except TimeoutError:
+                    timing_error = (
+                        f"TradingView metrics for {timing_selected_ticker} did not respond in time. "
+                        "Try again in a moment."
+                    )
                 except Exception as exc:
                     timing_error = str(exc)
 

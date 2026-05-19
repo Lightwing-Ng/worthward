@@ -9,7 +9,7 @@
                     <div class="ticker-input-control">
                         <span class="ticker-leading-slot" aria-hidden="true">
                             <span class="ticker-logo-placeholder"></span>
-                            <img class="ticker-input-logo" alt="">
+                            <img class="ticker-input-logo" alt="" hidden>
                         </span>
                         <input id="ticker_{{ index }}" name="ticker" data-ticker-input value="{{ ticker_slots[index - 1] }}" placeholder="" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META." {% if index <= min_tickers %}required{% endif %}>
                         <button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>

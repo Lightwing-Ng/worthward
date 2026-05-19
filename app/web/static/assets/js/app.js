@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p1 */
+/* Code version: v0.3.8-p2 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1046,6 +1046,51 @@
         clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
     };
 
+    const setTickerLogoVisibility = (logo, placeholder, isLoaded) => {
+        if (logo instanceof HTMLImageElement) {
+            logo.hidden = !isLoaded;
+            logo.dataset.loaded = isLoaded ? "1" : "0";
+        }
+        if (placeholder) placeholder.hidden = isLoaded;
+    };
+
+    const syncTickerLogoAsset = (logo, placeholder, logoUrl, altText = "") => {
+        if (!(logo instanceof HTMLImageElement)) {
+            if (placeholder) placeholder.hidden = Boolean(logoUrl);
+            return;
+        }
+        const normalizedUrl = String(logoUrl || "").trim();
+        logo.onload = null;
+        logo.onerror = null;
+        if (!normalizedUrl) {
+            delete logo.dataset.requestedSrc;
+            logo.removeAttribute("src");
+            logo.alt = "";
+            setTickerLogoVisibility(logo, placeholder, false);
+            return;
+        }
+        logo.dataset.requestedSrc = normalizedUrl;
+        logo.alt = altText;
+        setTickerLogoVisibility(logo, placeholder, false);
+        const finalize = (isLoaded) => {
+            if (logo.dataset.requestedSrc !== normalizedUrl) return;
+            if (!isLoaded) {
+                logo.removeAttribute("src");
+                setTickerLogoVisibility(logo, placeholder, false);
+                return;
+            }
+            setTickerLogoVisibility(logo, placeholder, true);
+        };
+        logo.onload = () => finalize(true);
+        logo.onerror = () => finalize(false);
+        if (logo.getAttribute("src") !== normalizedUrl) {
+            logo.src = normalizedUrl;
+        }
+        if (logo.complete) {
+            finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
+        }
+    };
+
     const syncTickerInputDecoration = (input, suggestion = null) => {
         const control = input?.closest(".ticker-input-control");
         if (!control || !input) return;
@@ -1058,18 +1103,7 @@
         const logoUrl = suggestion?.logo_url || input.dataset.logoUrl || profileLogoUrl || "";
         control.classList.toggle("has-value", hasTickerLikeValue);
         control.classList.toggle("has-logo", Boolean(logoUrl));
-        if (logo) {
-            if (logoUrl) {
-                logo.src = logoUrl;
-                logo.alt = `${tickerValue} logo`;
-                logo.hidden = false;
-            } else {
-                logo.removeAttribute("src");
-                logo.alt = "";
-                logo.hidden = true;
-            }
-        }
-        if (placeholder) placeholder.hidden = Boolean(logoUrl);
+        syncTickerLogoAsset(logo, placeholder, logoUrl, logoUrl ? `${tickerValue} logo` : "");
         if (suggestion) {
             input.dataset.logoUrl = suggestion.logo_url || "";
             input.dataset.symbol = suggestion.symbol || "";
@@ -2108,7 +2142,7 @@
 					<div class="ticker-input-control">
 						<span class="ticker-leading-slot" aria-hidden="true">
 							<span class="ticker-logo-placeholder"></span>
-							<img class="ticker-input-logo" alt="">
+							<img class="ticker-input-logo" alt="" hidden>
 						</span>
 						<input id="ticker_${index}" name="ticker" data-ticker-input value="${value}" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" title="Use a valid ticker such as MSFT, GOOGL, NVDA, AMZN, MU, AMD, or META.">
 						<button type="button" class="ticker-clear" aria-label="Clear ticker"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>

@@ -40,7 +40,10 @@
                         {% endif %}
                     </div>
                     {% if timing_error %}
-                    <p class="settings-service-note">{{ timing_error }}</p>
+                    <section class="report-card workspace-content-card timing-error-state" aria-live="polite">
+                        <p class="timing-error-eyebrow">Temporarily unavailable</p>
+                        <p class="timing-error-copy">{{ timing_error }}</p>
+                    </section>
                     {% else %}
                     <div class="timing-summary-grid">
                         {% for item in timing_summary %}

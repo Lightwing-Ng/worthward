@@ -109,27 +109,9 @@
 }
 
 .investment-view-segmented {
-    --segmented-active-index: 0;
-    --investment-segmented-pill-left: 0px;
-    --investment-segmented-pill-width: 0px;
-    width: min(560px, 100%);
-    max-width: 560px;
+    width: fit-content;
+    max-width: none;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.segmented-control.investment-view-segmented[data-option-count]::before {
-    width: var(--investment-segmented-pill-width);
-    transform: translateX(var(--investment-segmented-pill-left));
-    opacity: 0;
-    transition:
-        transform 320ms var(--motion-standard),
-        width 320ms var(--motion-standard),
-        opacity 140ms ease,
-        box-shadow 220ms var(--motion-standard);
-}
-
-.segmented-control.investment-view-segmented.is-pill-ready[data-option-count]::before {
-    opacity: 1;
 }
 
 .investment-view-segmented > .segmented-control-option > span {
@@ -330,40 +312,25 @@
     right: 8px;
     z-index: var(--layer-surface-content);
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     width: auto;
     pointer-events: none;
 }
 
 .investment-stock-details-range-segmented {
-    --segmented-active-index: 0;
-    --investment-stock-details-range-pill-left: 0px;
-    --investment-stock-details-range-pill-width: 0px;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    width: 100%;
-    max-width: 100%;
+    --mode-switch-pad: 5px;
+    --mode-switch-thumb-inset: 5px;
+    --segmented-text-render-safety-px: 3px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: fit-content;
+    max-width: none;
     margin: 0;
     pointer-events: auto;
 }
 
-.segmented-control.investment-stock-details-range-segmented[data-option-count]::before {
-    width: var(--investment-stock-details-range-pill-width);
-    transform: translateX(var(--investment-stock-details-range-pill-left));
-    opacity: 0;
-    transition:
-        transform 320ms var(--motion-standard),
-        width 320ms var(--motion-standard),
-        opacity 140ms ease,
-        box-shadow 220ms var(--motion-standard);
-}
-
-.segmented-control.investment-stock-details-range-segmented.is-pill-ready[data-option-count]::before {
-    opacity: 1;
-}
-
 .investment-stock-details-range-segmented > .segmented-control-option > span {
     min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
-    padding: 0 8px;
+    padding: 0 9px;
     font-size: 11px;
     color: var(--theme-muted) !important;
 }

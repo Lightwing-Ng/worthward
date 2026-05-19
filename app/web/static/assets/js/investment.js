@@ -1,10 +1,13 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.33.3
+ * Code version: v1.33.6
+ * - Changed: Stock details time-range segmented control replaces 1M with 3M and now filters by the natural prior 3-month window
+ * - Changed: Stock details time-range segmented control removes the 1Y option and its matching date-filter branch
+ * - Fixed: Segmented control measured-pill geometry now includes container inline padding in explicit width calculation, so the rightmost blue pill arc stays concentric with the outer shell and no longer clips
  * - Changed: Stock details now shows Average price instead of Buy cost so the metric matches the holdings average-price calculation
  * - Added: Stock details now uses local 1-minute OHLC candlesticks for the 3D and 1W ranges, auto-refreshing and storing missing intraday cache via the existing market-store pipeline
- * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 1M, YTD, 1Y, and Max filters that reuse the shared pill animation
+ * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 3M, YTD, and Max filters that reuse the shared pill animation
  * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
  * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
  * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
@@ -700,9 +703,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
         { value: '3d', label: '3D' },
         { value: '1w', label: '1W' },
-        { value: '1m', label: '1M' },
+        { value: '3m', label: '3M' },
         { value: 'ytd', label: 'YTD' },
-        { value: '1y', label: '1Y' },
         { value: 'max', label: 'Max' },
     ];
 
@@ -739,32 +741,95 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentSegmentedMeasureRaf = 0;
     }
 
+    const SEGMENTED_TEXT_RENDER_SAFETY_PX = 2;
+
+    function measureSegmentedInlineContentWidth(element, renderSafetyPx = SEGMENTED_TEXT_RENDER_SAFETY_PX) {
+        if (!(element instanceof HTMLElement)) return 0;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rects = Array.from(range.getClientRects());
+        let maxWidth = 0;
+        rects.forEach((rect) => {
+            maxWidth = Math.max(maxWidth, rect.width);
+        });
+        if (typeof range.detach === 'function') {
+            range.detach();
+        }
+        if (maxWidth > 0) return Math.ceil(maxWidth + renderSafetyPx);
+        return element.textContent
+            ? Math.max(0, Math.ceil(element.getBoundingClientRect().width + renderSafetyPx))
+            : 0;
+    }
+
     function measureInvestmentSegmentedPillGeometry(control, activeLabel, {
         labelSelector = '',
-        horizontalInset = 12,
+        horizontalInset = null,
     } = {}) {
         if (!(control instanceof HTMLElement) || !(activeLabel instanceof HTMLElement)) return null;
-        const controlRect = control.getBoundingClientRect();
         const activeOption = activeLabel.closest('.segmented-control-option');
-        const measureTarget = labelSelector
-            ? (activeLabel.querySelector(labelSelector) || activeLabel)
-            : activeLabel;
-        const labelRect = measureTarget.getBoundingClientRect();
-        const optionRect = activeOption instanceof HTMLElement ? activeOption.getBoundingClientRect() : activeLabel.getBoundingClientRect();
+        const options = Array.from(control.querySelectorAll('.segmented-control-option')).filter((option) => option instanceof HTMLElement);
+        if (!(activeOption instanceof HTMLElement) || !options.length) return null;
         const controlStyles = window.getComputedStyle(control);
-        const thumbInset = Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-thumb-inset')) || 0;
-        const unclampedWidth = Math.max(0, Math.round(labelRect.width + horizontalInset * 2));
-        const maxOptionWidth = Math.max(0, Math.round(optionRect.width - (thumbInset * 2) - 2));
-        const measuredWidth = Math.min(unclampedWidth, maxOptionWidth || unclampedWidth);
-        const innerWidth = Math.max(0, Math.round(controlRect.width - (thumbInset * 2)));
-        const optionCenter = (optionRect.left - controlRect.left) + (optionRect.width / 2);
-        const measuredLeft = Math.round(optionCenter - thumbInset - (measuredWidth / 2));
-        if (controlRect.width <= 0 || innerWidth <= 0 || measuredWidth <= 0) return null;
-        const maxLeft = Math.max(0, Math.round(innerWidth - measuredWidth));
-        const clampedLeft = Math.min(Math.max(0, measuredLeft), maxLeft);
+        const renderSafetyPx = Math.max(
+            0,
+            Math.round(
+                Number.parseFloat(controlStyles.getPropertyValue('--segmented-text-render-safety-px'))
+                || SEGMENTED_TEXT_RENDER_SAFETY_PX,
+            ),
+        );
+        const resolvedHorizontalInset = Math.max(
+            0,
+            Math.round(
+                Number.parseFloat(horizontalInset)
+                || Math.max(
+                    Number.parseFloat(window.getComputedStyle(activeLabel).paddingLeft) || 0,
+                    Number.parseFloat(window.getComputedStyle(activeLabel).paddingRight) || 0,
+                )
+                || Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-label-pad-inline'))
+                || 0,
+            ),
+        );
+        const columnGap = Math.max(
+            0,
+            Math.round(
+                Number.parseFloat(controlStyles.columnGap)
+                || Number.parseFloat(controlStyles.getPropertyValue('gap'))
+                || Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-gap'))
+                || 0,
+            ),
+        );
+        const controlPaddingInline = Math.max(
+            0,
+            Math.round(
+                (Number.parseFloat(controlStyles.paddingLeft) || 0)
+                + (Number.parseFloat(controlStyles.paddingRight) || 0),
+            ),
+        );
+        const maxContentWidth = options.reduce((currentMax, option) => {
+            const optionLabel = option.querySelector('input + span');
+            if (!(optionLabel instanceof HTMLElement)) return currentMax;
+            const measureTarget = labelSelector
+                ? (optionLabel.querySelector(labelSelector) || optionLabel)
+                : optionLabel;
+            const measuredWidth = measureSegmentedInlineContentWidth(
+                measureTarget instanceof HTMLElement ? measureTarget : optionLabel,
+                renderSafetyPx,
+            );
+            return Math.max(currentMax, measuredWidth);
+        }, 0);
+        const optionWidth = Math.max(1, Math.ceil(maxContentWidth + (resolvedHorizontalInset * 2)));
+        const optionCount = options.length;
+        const activeIndex = Math.max(0, options.indexOf(activeOption));
+        const totalControlWidth = controlPaddingInline
+            + (optionWidth * optionCount)
+            + (columnGap * Math.max(0, optionCount - 1));
+        control.style.setProperty('--segmented-option-width', `${optionWidth}px`);
+        control.style.setProperty('--segmented-option-count', String(optionCount));
+        control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
+        control.style.width = `${totalControlWidth}px`;
         return {
-            left: clampedLeft,
-            width: measuredWidth,
+            left: activeIndex * (optionWidth + columnGap),
+            width: optionWidth,
         };
     }
 
@@ -782,8 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        segmentedControl.style.setProperty('--investment-segmented-pill-left', `${pillGeometry.left}px`);
-        segmentedControl.style.setProperty('--investment-segmented-pill-width', `${pillGeometry.width}px`);
+        segmentedControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
+        segmentedControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
         segmentedControl.classList.add('is-pill-ready');
     }
 
@@ -911,8 +976,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        rangeControl.style.setProperty('--investment-stock-details-range-pill-left', `${pillGeometry.left}px`);
-        rangeControl.style.setProperty('--investment-stock-details-range-pill-width', `${pillGeometry.width}px`);
+        rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
+        rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
         rangeControl.classList.add('is-pill-ready');
     }
 
@@ -2788,14 +2853,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalizedRange === '1w') {
             startDate = new Date(latestDate.getTime());
             startDate.setUTCDate(startDate.getUTCDate() - 6);
-        } else if (normalizedRange === '1m') {
+        } else if (normalizedRange === '3m') {
             startDate = new Date(latestDate.getTime());
-            startDate.setUTCMonth(startDate.getUTCMonth() - 1);
+            startDate.setUTCMonth(startDate.getUTCMonth() - 3);
         } else if (normalizedRange === 'ytd') {
             startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
-        } else if (normalizedRange === '1y') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
         }
 
         if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
@@ -2816,9 +2878,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="investment-stock-details-range-shell">
                 <div class="segmented-control investment-stock-details-range-segmented"
                      data-investment-stock-details-range-segmented
+                     data-segmented-pill="measured"
                      data-active="${escapeHtml(activeRange)}"
                      data-option-count="${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.length}"
-                     style="--segmented-active-index: ${activeIndex}; --investment-stock-details-range-pill-left: 0px; --investment-stock-details-range-pill-width: 0px;">
+                     style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
                     ${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.map((option) => `
                         <label class="segmented-control-option" for="investment_stock_details_range_${option.value}">
                             <input id="investment_stock_details_range_${option.value}"
