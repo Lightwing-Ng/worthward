@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.33.6
+ * Code version: v1.33.8
+ * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
+ * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
  * - Changed: Stock details time-range segmented control replaces 1M with 3M and now filters by the natural prior 3-month window
  * - Changed: Stock details time-range segmented control removes the 1Y option and its matching date-filter branch
  * - Fixed: Segmented control measured-pill geometry now includes container inline padding in explicit width calculation, so the rightmost blue pill arc stays concentric with the outer shell and no longer clips
@@ -1000,8 +1002,30 @@ document.addEventListener('DOMContentLoaded', () => {
     function lockInvestmentSurfaceHeight() {
         if (!investmentViewSurface) return;
         const currentHeight = investmentViewSurface.getBoundingClientRect().height;
-        investmentViewSurface.style.height = `${currentHeight}px`;
+        const cappedHeight = getInvestmentSurfaceCappedHeight(currentHeight);
+        investmentViewSurface.style.height = `${cappedHeight}px`;
         investmentViewSurface.style.overflow = 'clip';
+    }
+
+    function getInvestmentSurfaceMaxHeight() {
+        if (!investmentViewSurface) return null;
+        const reportCard = investmentViewSurface.closest('.investment-report-card');
+        if (!(reportCard instanceof HTMLElement)) return null;
+        const reportCardRect = reportCard.getBoundingClientRect();
+        if (!Number.isFinite(reportCardRect.height) || reportCardRect.height <= 0) return null;
+        const styles = window.getComputedStyle(reportCard);
+        const paddingTop = parseFloat(styles.paddingTop) || 0;
+        const paddingBottom = parseFloat(styles.paddingBottom) || 0;
+        return Math.max(0, reportCardRect.height - paddingTop - paddingBottom);
+    }
+
+    function getInvestmentSurfaceCappedHeight(height) {
+        const numericHeight = Number(height) || 0;
+        const maxHeight = getInvestmentSurfaceMaxHeight();
+        if (!Number.isFinite(maxHeight) || maxHeight <= 0) {
+            return Math.max(0, numericHeight);
+        }
+        return Math.max(0, Math.min(numericHeight, maxHeight));
     }
 
     function cleanupInvestmentSurfaceHeight() {
@@ -1020,7 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lockInvestmentSurfaceHeight();
         }
         void investmentViewSurface.offsetHeight;
-        const targetHeight = investmentViewSurface.scrollHeight;
+        const targetHeight = getInvestmentSurfaceCappedHeight(investmentViewSurface.scrollHeight);
         investmentViewSurface.style.height = `${targetHeight}px`;
         if (investmentSurfaceCleanupTimer) {
             window.clearTimeout(investmentSurfaceCleanupTimer);
@@ -2541,14 +2565,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return formattedTime;
     }
 
-    function formatAmountWithCurrency(value, currency) {
+    function formatAmountWithCurrency(value, currency, { showUsdSymbol = true } = {}) {
         if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
         const numericValue = Number(value);
         const sign = numericValue < 0 ? '-' : '';
         const absDisplay = formatAmount(Math.abs(numericValue));
         const normalizedCurrency = String(currency || '').trim().toUpperCase();
         if (normalizedCurrency === 'USD') {
-            return `${sign}$${absDisplay}`;
+            return showUsdSymbol ? `${sign}$${absDisplay}` : `${sign}${absDisplay}`;
         }
         if (normalizedCurrency) {
             return `${sign}${normalizedCurrency} ${absDisplay}`;
@@ -3750,6 +3774,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const STOCK_DETAILS_MARKER_HALF_WIDTH_PX = 6;
         const STOCK_DETAILS_MARKER_HEIGHT_PX = 11;
+        const STOCK_DETAILS_MARKER_X_PADDING_PX = STOCK_DETAILS_MARKER_HALF_WIDTH_PX + 2;
         const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 2;
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
@@ -4065,8 +4090,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 maintainAspectRatio: false,
                 layout: {
                     padding: {
-                        left: 0,
-                        right: 0,
+                        left: STOCK_DETAILS_MARKER_X_PADDING_PX,
+                        right: STOCK_DETAILS_MARKER_X_PADDING_PX,
                         top: 44,
                         bottom: 24,
                     },
@@ -4380,7 +4405,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmount(txn.rowMarketValue)}</td>
-                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn))}</td>
+                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
             </tr>
         `).join('') : `
             <tr>
