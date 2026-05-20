@@ -1405,6 +1405,7 @@ footer {
     color: var(--text);
     font-weight: var(--font-weight-regular);
     text-align: var(--chart-tooltip-date-align);
+    white-space: nowrap;
 }
 
 .chart-tooltip-list {

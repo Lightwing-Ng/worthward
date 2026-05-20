@@ -1,10 +1,12 @@
-/* Code version: v0.3.8-p2 */
+/* Code version: v0.3.8-p3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
     const {defaults, labels, endpoints, constraints, theme} = state;
+    const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
     const isBacktestView = state.currentView === "backtest";
@@ -2225,12 +2227,6 @@
     const tradeCapitalField = $(".trade-capital-field");
     const tradeCapitalInput = $("#trade_initial_capital");
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
-    const displayDateFormatter = new Intl.DateTimeFormat("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-    });
     const sharedSelectFields = Array.from(document.querySelectorAll("[data-shared-select-field]"));
 
     const getSharedSelectParts = (field) => {
@@ -2400,12 +2396,6 @@
             refreshSharedSelectField(field);
         });
     };
-    const monthDateFormatter = new Intl.DateTimeFormat("en-GB", {
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-    });
-
     const parseIsoDate = (rawValue) => {
         const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(rawValue || ""));
         if (!match) return null;
@@ -2419,10 +2409,86 @@
         return `${year}-${month}-${day}`;
     };
 
+    const padTwo = (value) => String(value).padStart(2, "0");
+    const readFullDateFormat = () => String(window.ANTIGRAVITY_APP?.dateDisplay?.full || "d_mmm_yyyy");
+    const readShortDateFormat = () => String(window.ANTIGRAVITY_APP?.dateDisplay?.short || "yyyy_mm_dd");
+    const buildFullDateLayout = (dateParts) => {
+        if (!dateParts) return {tokens: [], wrapAfterIndex: 1};
+        const year = Number(dateParts.year);
+        const monthIndex = Number(dateParts.monthIndex);
+        const day = Number(dateParts.day);
+        const monthLabel = MONTH_ABBREVIATIONS[Math.max(0, Math.min(11, monthIndex))] || "";
+        const fullFormat = readFullDateFormat();
+        const paddedDay = padTwo(day);
+        if (fullFormat === "dd_mmm_yyyy") {
+            return {tokens: [paddedDay, monthLabel, `${year}`], wrapAfterIndex: 1};
+        }
+        if (fullFormat === "yyyy_mmm_d") {
+            return {tokens: [`${year}`, monthLabel, `${day}`], wrapAfterIndex: 0};
+        }
+        if (fullFormat === "yyyy_mmm_dd") {
+            return {tokens: [`${year}`, monthLabel, paddedDay], wrapAfterIndex: 0};
+        }
+        return {tokens: [`${day}`, monthLabel, `${year}`], wrapAfterIndex: 1};
+    };
+    const formatFullDateParts = (dateParts, {includeTime = false, includeSeconds = false} = {}) => {
+        if (!dateParts) return "";
+        const {tokens} = buildFullDateLayout(dateParts);
+        const baseDate = tokens.join(" ");
+        if (!includeTime) return baseDate;
+        const hasHours = Number.isInteger(dateParts.hours);
+        const hasMinutes = Number.isInteger(dateParts.minutes);
+        if (!hasHours || !hasMinutes) return baseDate;
+        const timeText = includeSeconds && Number.isInteger(dateParts.seconds)
+            ? `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}:${padTwo(dateParts.seconds)}`
+            : `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
+        return `${baseDate} ${timeText}`;
+    };
+    const formatShortDateParts = (dateParts) => {
+        if (!dateParts) return "";
+        const year = Number(dateParts.year);
+        const month = Number(dateParts.monthIndex) + 1;
+        const day = Number(dateParts.day);
+        if (readShortDateFormat() === "dd_mm_yyyy") {
+            return `${padTwo(day)}/${padTwo(month)}/${year}`;
+        }
+        return `${year}/${padTwo(month)}/${padTwo(day)}`;
+    };
+    const formatFullDateLines = (dateParts, {allowWrap = true} = {}) => {
+        if (!dateParts) return ["", ""];
+        if (!allowWrap) return [formatFullDateParts(dateParts), ""];
+        const {tokens, wrapAfterIndex} = buildFullDateLayout(dateParts);
+        const hasHours = Number.isInteger(dateParts.hours);
+        const hasMinutes = Number.isInteger(dateParts.minutes);
+        const firstLine = tokens.slice(0, wrapAfterIndex + 1).join(" ");
+        const secondLineTokens = tokens.slice(wrapAfterIndex + 1);
+        const secondLineBase = secondLineTokens.join(" ");
+        if (!hasHours || !hasMinutes) return [firstLine, secondLineBase];
+        const timeText = `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
+        return [firstLine, secondLineBase ? `${secondLineBase} ${timeText}` : timeText];
+    };
+    const formatPickerMonthLabel = (date) => {
+        if (!(date instanceof Date)) return "";
+        const monthLabel = MONTH_LABELS[date.getUTCMonth()] || "";
+        const year = date.getUTCFullYear();
+        return readFullDateFormat().startsWith("yyyy_") ? `${year} ${monthLabel}` : `${monthLabel} ${year}`;
+    };
+    const getShortDatePlaceholder = () => readShortDateFormat() === "dd_mm_yyyy" ? "00/00/0000" : "0000/00/00";
     const formatDisplayDate = (rawValue) => {
         const date = parseIsoDate(rawValue);
         if (!date) return "Select date";
-        return displayDateFormatter.format(date);
+        return formatFullDateParts({
+            year: date.getUTCFullYear(),
+            monthIndex: date.getUTCMonth(),
+            day: date.getUTCDate(),
+        });
+    };
+    bootstrap.dateDisplay = {
+        formatFullDateParts,
+        formatShortDateParts,
+        formatFullDateLines,
+        formatPickerMonthLabel,
+        getShortDatePlaceholder,
     };
 
     const startOfMonthUtc = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -2703,7 +2769,7 @@
             picker.visibleMonth = startOfMonthUtc(anchorDate);
             picker.forceSyncMonth = false;
         }
-        picker.monthLabel.textContent = monthDateFormatter.format(picker.visibleMonth);
+        picker.monthLabel.textContent = formatPickerMonthLabel(picker.visibleMonth);
         picker.grid.innerHTML = "";
 
         const firstDay = startOfMonthUtc(picker.visibleMonth);

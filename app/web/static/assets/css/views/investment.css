@@ -1221,6 +1221,7 @@
 
 .investment-history-cell-right {
     text-align: right;
+    white-space: nowrap;
 }
 
 .investment-history-cell-emphasis {

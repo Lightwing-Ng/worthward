@@ -1,4 +1,4 @@
-/* Code version: v0.4.1 */
+/* Code version: v0.4.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -151,7 +151,8 @@
 		const chartWrap = canvas.closest(".chart-wrap") || canvas.parentElement;
 		const chartYPaddingPx = readPxToken(chartWrap, "--trade-chart-y-padding-px", 5);
 		const previousSeriesMap = new Map((refreshTransition?.series || []).map((item) => [item.ticker, item]));
-		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+		const formatFullDateParts = bootstrap.dateDisplay?.formatFullDateParts;
+		const formatFullDateLines = bootstrap.dateDisplay?.formatFullDateLines;
 		const portfolioLabelMap = {
 			Portfolio: "Portfolio",
 			SPY: "SPX",
@@ -379,9 +380,17 @@
 			};
 		};
 
-		const formatChartDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+		const formatChartDate = (dateParts) => (
+			typeof formatFullDateParts === "function"
+				? formatFullDateParts(dateParts)
+				: `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`
+		);
 
-		const formatChartDateLines = (dateParts) => [`${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`, `${dateParts.year}`];
+		const formatChartDateLines = (dateParts) => (
+			typeof formatFullDateLines === "function"
+				? formatFullDateLines(dateParts, { allowWrap: true })
+				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
+		);
 
 		const buildTickIndexSet = (count, plotWidth) => {
 			if (count <= 0) return new Set();

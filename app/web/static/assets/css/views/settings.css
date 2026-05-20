@@ -1577,6 +1577,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     min-height: 1.1em;
     font-size: var(--font-ui-xs);
     vertical-align: top;
+    white-space: nowrap;
 }
 
 .settings-pagination {

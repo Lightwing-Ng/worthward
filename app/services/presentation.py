@@ -1,13 +1,18 @@
 """
 Formatting helpers for display labels.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
+from app.core.date_display_settings import (
+    format_full_date_parts,
+    format_short_date_parts,
+    load_date_display_settings,
+)
 from app.core.settings import get_settings
 
 
@@ -32,7 +37,39 @@ def format_period_label(period: str) -> str:
 
 def format_display_date(value: pd.Timestamp | str) -> str:
     timestamp = pd.Timestamp(value)
-    return f"{timestamp.day} {timestamp.strftime('%b %Y')}"
+    date_settings = load_date_display_settings()
+    return format_full_date_parts(
+        timestamp.year,
+        timestamp.month,
+        timestamp.day,
+        date_settings.full_date_format,
+    )
+
+
+def format_short_display_date(value: pd.Timestamp | str) -> str:
+    timestamp = pd.Timestamp(value)
+    date_settings = load_date_display_settings()
+    return format_short_date_parts(
+        timestamp.year,
+        timestamp.month,
+        timestamp.day,
+        date_settings.short_date_format,
+    )
+
+
+def format_display_datetime(
+    value: pd.Timestamp | str,
+    *,
+    use_short_date: bool = False,
+    include_seconds: bool = False,
+    timezone_suffix: str = "",
+) -> str:
+    timestamp = pd.Timestamp(value)
+    date_text = format_short_display_date(timestamp) if use_short_date else format_display_date(timestamp)
+    time_format = "%H:%M:%S" if include_seconds else "%H:%M"
+    time_text = timestamp.strftime(time_format)
+    suffix = f" {timezone_suffix.strip()}" if timezone_suffix.strip() else ""
+    return f"{date_text} {time_text}{suffix}"
 
 
 def build_series_colors(count: int, start_hex: str | None = None, end_hex: str | None = None) -> list[str]:

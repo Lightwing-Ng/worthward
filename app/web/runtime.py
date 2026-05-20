@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.11
+Code version: v0.3.12
 """
 
 from __future__ import annotations
@@ -20,6 +20,11 @@ import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
+from app.core.date_display_settings import (
+    load_date_display_settings,
+    save_full_date_display_format,
+    save_short_date_display_format,
+)
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
@@ -84,7 +89,14 @@ from app.services.market_data import (
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
 from app.services.market_freshness import ensure_latest_backtest_caches
 from app.models.schemas import DateConstraintPayload, QuoteProfile, SeriesPayload
-from app.services.presentation import build_series_colors, format_display_date, format_period_label, hex_to_rgba
+from app.services.presentation import (
+    build_series_colors,
+    format_display_date,
+    format_display_datetime,
+    format_period_label,
+    format_short_display_date,
+    hex_to_rgba,
+)
 from app.core.settings import get_settings
 from app.infrastructure.storage import (
     INVESTMENT_STORE_PATH,
@@ -217,7 +229,7 @@ def format_store_range_date_value(raw_value: object) -> str:
     timestamp = pd.Timestamp(candidate)
     if pd.isna(timestamp):
         return ""
-    return timestamp.strftime("%Y/%m/%d")
+    return format_short_display_date(timestamp)
 
 
 def build_web_runtime() -> WebRuntime:
@@ -1793,7 +1805,7 @@ def build_web_runtime() -> WebRuntime:
             if value is None:
                 return "Last checked: Not checked yet."
             stamp = pd.Timestamp(value, unit="s")
-            return f"Last checked: {stamp.day} {stamp.strftime('%b %Y %H:%M:%S')}"
+            return f"Last checked: {format_display_datetime(stamp, include_seconds=True)}"
 
         if pending:
             return [
@@ -2158,6 +2170,7 @@ def build_web_runtime() -> WebRuntime:
 
     def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "timing"):
         backtest_execution_mode = load_backtest_execution_mode()
+        date_display_settings = load_date_display_settings()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         if current_view == "backtest" and not requested_tickers:
@@ -2919,6 +2932,8 @@ def build_web_runtime() -> WebRuntime:
             style_token_rows=style_token_rows,
             material_token_rows=material_token_rows,
             backtest_execution_mode=backtest_execution_mode,
+            date_display_full_format=date_display_settings.full_date_format,
+            date_display_short_format=date_display_settings.short_date_format,
             broker_settings=broker_settings,
             broker_test_status=broker_test_status,
             broker_test_message=broker_test_message,
@@ -3011,7 +3026,7 @@ def build_web_runtime() -> WebRuntime:
             report_filename = f"{trade_ticker} Backtest Report {start_str} - {end_str} ({strategy_name}).md"
             period_start = pd.to_datetime(trade_dataset["Date"].min())
             period_end = pd.to_datetime(trade_dataset["Date"].max())
-            period_label = f"{period_start.day} {period_start.strftime('%b %Y')} - {period_end.day} {period_end.strftime('%b %Y')}"
+            period_label = f"{format_display_date(period_start)} - {format_display_date(period_end)}"
             dataset_export_date_format = "%Y-%m-%d %H:%M" if requested_interval == "1m" else "%Y-%m-%d"
             market_data_csv = trade_dataset.to_csv(index=False, date_format=dataset_export_date_format).rstrip()
 
@@ -3026,7 +3041,7 @@ def build_web_runtime() -> WebRuntime:
 
             md_lines = [
                 f"## Backtest Report: {trade_ticker}",
-                f"**Generated on**: {pd.Timestamp.now().strftime('%d %b %Y %H:%M:%S HKT')}",
+                f"**Generated on**: {format_display_datetime(pd.Timestamp.now(), include_seconds=True, timezone_suffix='HKT')}",
                 f"**Algorithm**: {strategy_name}",
                 f"**Period**: {period_label}",
                 "",
@@ -3054,7 +3069,7 @@ def build_web_runtime() -> WebRuntime:
             for i, trade in enumerate(trades):
                 if trade.get("_virtual_close"):
                     continue  # Skip virtual closing trade, same as table display
-                trade_date = pd.to_datetime(trade.get('date')).strftime('%Y/%m/%d %H:%M') if trade.get('date') else "N/A"
+                trade_date = format_display_datetime(pd.to_datetime(trade.get("date")), use_short_date=True) if trade.get("date") else "N/A"
                 md_lines.append(
                     f"| {i + 1} | {trade_date} | {trade.get('side')} | "
                     f"{trade.get('price', 0):,.2f} | {trade.get('shares', 0):,.0f} | "
@@ -3238,10 +3253,34 @@ def build_web_runtime() -> WebRuntime:
         return render_workspace_page("settings", section_name)
 
     def general_settings_action():
-        current_mode = load_backtest_execution_mode()
-        selected_mode = save_backtest_execution_mode(request.form.get("backtest_execution_mode", "next_open"))
-        selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
-        notice = f"Backtest execution model updated: {selected_label}." if selected_mode != current_mode else ""
+        notices: list[str] = []
+        if "full_date_format" in request.form:
+            current_full = load_date_display_settings().full_date_format
+            selected_full = save_full_date_display_format(request.form.get("full_date_format", current_full))
+            if selected_full != current_full:
+                full_labels = {
+                    "d_mmm_yyyy": "D Mmm yyyy",
+                    "dd_mmm_yyyy": "DD Mmm yyyy",
+                    "yyyy_mmm_d": "yyyy Mmm D",
+                    "yyyy_mmm_dd": "yyyy Mmm DD",
+                }
+                notices.append(f"Full date format updated: {full_labels[selected_full]}.")
+        if "short_date_format" in request.form:
+            current_short = load_date_display_settings().short_date_format
+            selected_short = save_short_date_display_format(request.form.get("short_date_format", current_short))
+            if selected_short != current_short:
+                short_labels = {
+                    "yyyy_mm_dd": "yyyy/mm/dd",
+                    "dd_mm_yyyy": "dd/mm/yyyy",
+                }
+                notices.append(f"Compact date format updated: {short_labels[selected_short]}.")
+        if "backtest_execution_mode" in request.form:
+            current_mode = load_backtest_execution_mode()
+            selected_mode = save_backtest_execution_mode(request.form.get("backtest_execution_mode", "next_open"))
+            if selected_mode != current_mode:
+                selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
+                notices.append(f"Backtest execution model updated: {selected_label}.")
+        notice = " ".join(notices)
         return _redirect_with_settings_feedback("general", notice=notice)
 
     def email_smtp_action():
@@ -3317,7 +3356,11 @@ def build_web_runtime() -> WebRuntime:
         if action == "test":
             success, message = test_broker_connection(updated_settings)
             checked_at = datetime.now().astimezone()
-            checked_at_label = f"{checked_at.day} {checked_at.strftime('%b %Y %H:%M:%S %Z')}"
+            checked_at_label = format_display_datetime(
+                checked_at,
+                include_seconds=True,
+                timezone_suffix=checked_at.strftime("%Z"),
+            )
             return _redirect_with_settings_feedback(
                 "broker-access",
                 broker_test_status="success" if success else "error",

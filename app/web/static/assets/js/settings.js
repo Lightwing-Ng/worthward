@@ -16,6 +16,10 @@
     const getState = () => getContext().state || null;
     const getEndpoints = () => getContext().endpoints || {};
     const getLabels = () => getContext().labels || {};
+    const getShortDatePlaceholder = () => {
+        const helper = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.getShortDatePlaceholder;
+        return typeof helper === "function" ? helper() : "0000/00/00";
+    };
     const canTransitionDom = () => Boolean(getContext().canTransitionDom);
     const rememberCurrentViewUrl = (url) => getContext().rememberCurrentViewUrl?.(url);
     const getProgressiveManifest = (view, section = null) => getContext().getProgressiveManifest?.(view, section) || {masks: []};
@@ -721,6 +725,7 @@
         const page = Math.max(Number.parseInt(String(pageNumber || new URLSearchParams(window.location.search).get("page") || "1"), 10) || 1, 1);
         const pageSize = 10;
         const startIndex = (page - 1) * pageSize;
+        const compactPlaceholder = getShortDatePlaceholder();
         const article = document.createElement("section");
         article.className = "workspace-header settings-workspace-header settings-shell-local-market-store";
         article.id = "settings_workspace_shell";
@@ -787,9 +792,9 @@
 								</td>
 								<td class="local-store-range-cell">
 									<span class="local-store-range-value">
-										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">0000/00/00</span>
+										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="start">${compactPlaceholder}</span>
 										<span class="local-store-range-separator"> - </span>
-										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">0000/00/00</span>
+										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">${compactPlaceholder}</span>
 									</span>
 								</td>
 								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>

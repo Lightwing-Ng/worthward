@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.34.0
+ * Code version: v1.35.0
  * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
  * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
  * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
@@ -1889,14 +1889,50 @@ document.addEventListener('DOMContentLoaded', () => {
         return tableLines.join('\n');
     }
 
+    function getInvestmentDateDisplayHelpers() {
+        return window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay || {};
+    }
+
+    function parseInvestmentDateParts(rawValue) {
+        const match = String(rawValue || '').match(/^(\d{4})-?(\d{2})-?(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (!match) return null;
+        return {
+            year: Number(match[1]),
+            monthIndex: Number(match[2]) - 1,
+            day: Number(match[3]),
+            hours: match[4] ? Number(match[4]) : null,
+            minutes: match[5] ? Number(match[5]) : null,
+            seconds: match[6] ? Number(match[6]) : null,
+        };
+    }
+
+    function formatInvestmentFullDateParts(dateParts, options = {}) {
+        const formatter = getInvestmentDateDisplayHelpers().formatFullDateParts;
+        if (typeof formatter === 'function') return formatter(dateParts, options);
+        if (!dateParts) return '';
+        return `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`;
+    }
+
+    function formatInvestmentFullDateLines(dateParts, options = {}) {
+        const formatter = getInvestmentDateDisplayHelpers().formatFullDateLines;
+        if (typeof formatter === 'function') return formatter(dateParts, options);
+        if (!dateParts) return ['', ''];
+        return [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`];
+    }
+
+    function formatInvestmentShortDateParts(dateParts) {
+        const formatter = getInvestmentDateDisplayHelpers().formatShortDateParts;
+        if (typeof formatter === 'function') return formatter(dateParts);
+        if (!dateParts) return '';
+        const month = String(dateParts.monthIndex + 1).padStart(2, '0');
+        const day = String(dateParts.day).padStart(2, '0');
+        return `${dateParts.year}/${month}/${day}`;
+    }
+
     function formatInvestmentExportDate(rawDate) {
-        const match = String(rawDate || '').match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
-        if (!match) return String(rawDate || '').trim();
-        const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const year = Number(match[1]);
-        const monthIndex = Number(match[2]) - 1;
-        const day = Number(match[3]);
-        return `${day} ${monthAbbreviations[monthIndex] || ''} ${year}`.trim();
+        const dateParts = parseInvestmentDateParts(rawDate);
+        if (!dateParts) return String(rawDate || '').trim();
+        return formatInvestmentFullDateParts(dateParts);
     }
 
     function buildExportDateRange(transactions, latestEquityDate = '') {
@@ -2644,11 +2680,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatTransactionDateDisplay(txn) {
-        let formattedTime = txn?.date ? String(txn.date).replace(/-/g, '/') : '';
-        if (formattedTime.includes(' ') && formattedTime.endsWith('20:00:00')) {
-            formattedTime = formattedTime.split(' ')[0];
+        const rawDate = String(txn?.date || '').trim();
+        const dateParts = parseInvestmentDateParts(rawDate);
+        if (!dateParts) return rawDate;
+        const baseDate = formatInvestmentShortDateParts(dateParts);
+        if (!rawDate.includes(' ') || rawDate.endsWith('20:00:00')) {
+            return baseDate;
         }
-        return formattedTime;
+        const timeText = rawDate.split(' ')[1] || '';
+        return timeText ? `${baseDate} ${timeText}` : baseDate;
     }
 
     function formatAmountWithCurrency(value, currency, { showUsdSymbol = true } = {}) {
@@ -3807,7 +3847,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const resolvedTheme = resolveInvestmentTheme();
-        const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const formatMoney = (value) => new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -3832,20 +3871,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 minutes: match[5] ? Number(match[5]) : null,
             };
         };
-        const padTwo = (value) => String(value).padStart(2, '0');
         const formatTooltipDate = (dateParts) => {
-            const baseDate = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
-            if (Number.isInteger(dateParts.hours) && Number.isInteger(dateParts.minutes)) {
-                return `${baseDate} ${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
-            }
-            return baseDate;
+            return formatInvestmentFullDateParts(dateParts, { includeTime: true });
         };
         const formatAxisDateLines = (dateParts) => {
-            const firstLine = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`;
-            const secondLine = Number.isInteger(dateParts.hours) && Number.isInteger(dateParts.minutes)
-                ? `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`
-                : `${dateParts.year}`;
-            return [firstLine, secondLine];
+            return formatInvestmentFullDateLines(dateParts, { allowWrap: true });
         };
         const buildTickIndexSet = (count, plotWidth) => {
             if (count <= 0) return new Set();
@@ -4978,7 +5008,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const labels = [...rawDates];
         const fixedYAxisWidth = 52;
-        const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         let activeChartHoverDate = "";
 
         const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -5001,10 +5030,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${year}-${month}-${day}`;
         };
 
-        const formatChartDateLines = (dateParts) => [
-            `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`,
-            `${dateParts.year}`
-        ];
+        const formatChartDateLines = (dateParts) => formatInvestmentFullDateLines(dateParts, { allowWrap: true });
 
         const buildTickIndexSet = (count, plotWidth) => {
             if (count <= 0) return new Set();
@@ -5202,7 +5228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return tooltip;
         };
 
-        const formatTooltipDate = (dateParts) => `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
+        const formatTooltipDate = (dateParts) => formatInvestmentFullDateParts(dateParts);
 
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip(chart);
@@ -5501,7 +5527,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderMetricValueWithTooltip(metric) {
-        const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
             ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
                 .sort((left, right) => {
@@ -5519,12 +5544,9 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
         const ledgerDateMap = new Map(sortedLedgerEntries.map((entry) => [entry.ledgerNo, entry.date]));
         const formatTooltipLedgerDate = (rawDate) => {
-            const match = String(rawDate || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (!match) return '';
-            const day = Number(match[3]);
-            const monthIndex = Number(match[2]) - 1;
-            const year = Number(match[1]);
-            return `${day} ${monthAbbreviations[monthIndex] || ''} ${year}`.trim();
+            const dateParts = parseInvestmentDateParts(rawDate);
+            if (!dateParts) return '';
+            return formatInvestmentFullDateParts(dateParts);
         };
         const rows = Array.isArray(metric?.rows) ? [...metric.rows].sort((left, right) => right - left) : [];
         const visibleRows = rows.slice(0, 4);

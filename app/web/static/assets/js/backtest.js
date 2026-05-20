@@ -1,4 +1,4 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.3.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -220,7 +220,8 @@
 		
 		const initialCapital = Number(backtestResult.summary?.initial_capital || 0);
 		const allInReferenceColor = resolvedTheme.muted;
-		const monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+		const formatFullDateParts = bootstrap.dateDisplay?.formatFullDateParts;
+		const formatFullDateLines = bootstrap.dateDisplay?.formatFullDateLines;
 		const svgMarkerViewBox = { width: 20.3027, height: 20.5176 };
 		const svgMarkerTip = {
 			up: { x: 9.9707, y: 0.00976562 },
@@ -342,16 +343,18 @@
 			};
 		};
 
-		const padTwo = (num) => num < 10 ? `0${num}` : `${num}`;
 		const formatChartDate = (dateParts) => {
-			const baseDate = `${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]} ${dateParts.year}`;
-			if (dateParts.hours !== null && dateParts.minutes !== null) {
-				return `${baseDate} ${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
+			if (typeof formatFullDateParts === "function") {
+				return formatFullDateParts(dateParts, { includeTime: true });
 			}
-			return baseDate;
+			return `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`;
 		};
 
-		const formatChartDateLines = (dateParts) => [`${dateParts.day} ${monthAbbreviations[dateParts.monthIndex]}`, `${dateParts.year}`];
+		const formatChartDateLines = (dateParts) => (
+			typeof formatFullDateLines === "function"
+				? formatFullDateLines(dateParts, { allowWrap: true })
+				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
+		);
 
 		const buildTickIndexSet = (count, plotWidth) => {
 			if (count <= 0) return new Set();

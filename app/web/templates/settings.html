@@ -144,6 +144,64 @@
     </section>
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
+            <p class="settings-general-kicker">Date format · Full</p>
+            <p class="settings-general-copy">Choose the verbose date style used in chart labels, tooltips, and other long-form date displays.</p>
+        </div>
+        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
+            <label class="settings-general-option">
+                <input type="radio" name="full_date_format" value="d_mmm_yyyy" onchange="this.form.submit()" {% if date_display_full_format == 'd_mmm_yyyy' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">D Mmm yyyy</span>
+                    <span class="settings-general-option-desc">Single-digit day without leading zero, such as `8 Dec 2026`.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="full_date_format" value="dd_mmm_yyyy" onchange="this.form.submit()" {% if date_display_full_format == 'dd_mmm_yyyy' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">DD Mmm yyyy</span>
+                    <span class="settings-general-option-desc">Day is always zero-padded, such as `08 Dec 2026`.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="full_date_format" value="yyyy_mmm_d" onchange="this.form.submit()" {% if date_display_full_format == 'yyyy_mmm_d' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">yyyy Mmm D</span>
+                    <span class="settings-general-option-desc">East Asian ordering without day padding, such as `2026 Dec 8`.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="full_date_format" value="yyyy_mmm_dd" onchange="this.form.submit()" {% if date_display_full_format == 'yyyy_mmm_dd' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">yyyy Mmm DD</span>
+                    <span class="settings-general-option-desc">East Asian ordering with zero-padded day, such as `2026 Dec 08`.</span>
+                </span>
+            </label>
+        </form>
+    </section>
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
+            <p class="settings-general-kicker">Date format · Compact</p>
+            <p class="settings-general-copy">Choose the numeric date style used in compact date displays. Only European and East Asian ordering are offered here.</p>
+        </div>
+        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
+            <label class="settings-general-option">
+                <input type="radio" name="short_date_format" value="yyyy_mm_dd" onchange="this.form.submit()" {% if date_display_short_format == 'yyyy_mm_dd' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">yyyy/mm/dd</span>
+                    <span class="settings-general-option-desc">Year-first numeric format, such as `2026/12/08`.</span>
+                </span>
+            </label>
+            <label class="settings-general-option">
+                <input type="radio" name="short_date_format" value="dd_mm_yyyy" onchange="this.form.submit()" {% if date_display_short_format == 'dd_mm_yyyy' %}checked{% endif %}>
+                <span class="settings-general-option-copy">
+                    <span class="settings-general-option-title">dd/mm/yyyy</span>
+                    <span class="settings-general-option-desc">European day-first numeric format, such as `08/12/2026`.</span>
+                </span>
+            </label>
+        </form>
+    </section>
+    <section class="settings-card settings-general-card settings-general-panel">
+        <div class="settings-general-header">
             <p class="settings-general-kicker">Backtest execution model</p>
             <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
         </div>
