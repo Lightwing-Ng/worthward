@@ -1,4 +1,4 @@
-/* Code version: v1.6.1 */
+/* Code version: v1.6.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -38,9 +38,9 @@
     flex-direction: column;
     gap: 10px;
     min-height: 0;
-    height: 50%;
-    flex: 0 0 50%;
-    max-height: none;
+    height: auto;
+    flex: 1 1 0;
+    max-height: 50vh;
     min-width: 0;
     overflow: hidden;
     align-content: start;
@@ -1506,12 +1506,6 @@
         flex: 0 0 auto;
         min-height: auto;
         display: block;
-    }
-
-    .investment-report-card {
-        height: auto;
-        flex: 0 0 auto;
-        max-height: none;
     }
 
     .investment-history-surface {

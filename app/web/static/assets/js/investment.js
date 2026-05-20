@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.33.8
+ * Code version: v1.34.0
+ * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
  * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
  * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
  * - Changed: Stock details time-range segmented control replaces 1M with 3M and now filters by the natural prior 3-month window
@@ -552,6 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
+    const INVESTMENT_PAGE_MEMORY_STORAGE_KEY = 'antigravity:investment:page-memory:v1';
     const NO_COMMISSION_TRANSACTION_TYPES = new Set([
         'foreign_tax_withholding',
         'dividend',
@@ -709,6 +711,80 @@ document.addEventListener('DOMContentLoaded', () => {
         { value: 'ytd', label: 'YTD' },
         { value: 'max', label: 'Max' },
     ];
+
+    function normalizeInvestmentView(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return INVESTMENT_VIEW_ORDER.includes(normalized) ? normalized : 'chart';
+    }
+
+    function readInvestmentPageMemory() {
+        try {
+            const raw = window.localStorage.getItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    function writeInvestmentPageMemory(nextMemory) {
+        try {
+            window.localStorage.setItem(INVESTMENT_PAGE_MEMORY_STORAGE_KEY, JSON.stringify(nextMemory));
+        } catch (_error) {
+        }
+    }
+
+    function rememberInvestmentPageState({
+        view = activeInvestmentView || 'chart',
+        ticker = selectedInvestmentStockTicker || '',
+        range = selectedInvestmentStockDetailsRange || 'max',
+    } = {}) {
+        const normalizedView = normalizeInvestmentView(view);
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
+        const nextUrl = buildInvestmentViewUrl(normalizedView, normalizedTicker);
+        const currentMemory = readInvestmentPageMemory();
+        writeInvestmentPageMemory({
+            ...currentMemory,
+            page_key: 'investment',
+            page_path: '/more/investment',
+            last_used_at: new Date().toISOString(),
+            last_view: normalizedView,
+            last_stock_ticker: normalizedTicker,
+            last_stock_details_range: normalizedRange,
+            last_stock_details_url: normalizedView === 'stock_details' ? nextUrl : buildInvestmentViewUrl('stock_details', normalizedTicker),
+        });
+    }
+
+    function restoreRememberedInvestmentPageState() {
+        const memory = readInvestmentPageMemory();
+        const rememberedTicker = normalizeInvestmentTicker(memory.last_stock_ticker || '');
+        const rememberedRange = normalizeInvestmentStockDetailsRange(memory.last_stock_details_range || 'max');
+        if (rememberedTicker) {
+            selectedInvestmentStockTicker = rememberedTicker;
+        }
+        selectedInvestmentStockDetailsRange = rememberedRange;
+        return normalizeInvestmentView(memory.last_view || 'chart');
+    }
+
+    function restoreRememberedInvestmentLocation() {
+        const currentHash = String(window.location.hash || '').trim();
+        const currentTicker = getInvestmentLocationTicker();
+        if (currentHash || currentTicker) return false;
+        const memory = readInvestmentPageMemory();
+        if (normalizeInvestmentView(memory.last_view || '') !== 'stock_details') return false;
+        const rememberedUrl = String(memory.last_stock_details_url || '').trim();
+        if (!rememberedUrl) return false;
+        try {
+            const parsed = new URL(rememberedUrl, window.location.origin);
+            if (parsed.pathname !== window.location.pathname) return false;
+            window.history.replaceState(null, '', `${parsed.pathname}${parsed.search}${parsed.hash}`);
+            return true;
+        } catch (_error) {
+            return false;
+        }
+    }
 
     function getActionButtonLabels(button) {
         return {
@@ -1120,12 +1196,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (nextView === 'stock_details') {
+        const normalizedNextView = normalizeInvestmentView(nextView);
+
+        if (normalizedNextView === 'stock_details') {
             ensureSelectedInvestmentStockTicker();
         }
 
-        if (nextView === activeInvestmentView) {
-            if (nextView === 'stock_details') {
+        if (normalizedNextView === activeInvestmentView) {
+            rememberInvestmentPageState({ view: normalizedNextView });
+            if (normalizedNextView === 'stock_details') {
                 refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
             }
             return;
@@ -1134,29 +1213,30 @@ document.addEventListener('DOMContentLoaded', () => {
         lockInvestmentSurfaceHeight();
 
         if (segmentedControl) {
-            const activeIndex = Math.max(INVESTMENT_VIEW_ORDER.indexOf(nextView), 0);
-            const nextRadio = segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(nextView)}"]`);
+            const activeIndex = Math.max(INVESTMENT_VIEW_ORDER.indexOf(normalizedNextView), 0);
+            const nextRadio = segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(normalizedNextView)}"]`);
             if (nextRadio instanceof HTMLInputElement) {
                 nextRadio.checked = true;
             }
-            segmentedControl.dataset.active = nextView;
+            segmentedControl.dataset.active = normalizedNextView;
             segmentedControl.style.setProperty('--segmented-option-count', String(INVESTMENT_VIEW_ORDER.length));
             segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
             scheduleInvestmentSegmentedPillUpdate();
         }
         if (investmentViewSurface) {
-            investmentViewSurface.dataset.activeView = nextView;
+            investmentViewSurface.dataset.activeView = normalizedNextView;
         }
         investmentPanels.forEach((panel) => {
-            panel.hidden = panel.dataset.investmentViewPanel !== nextView;
+            panel.hidden = panel.dataset.investmentViewPanel !== normalizedNextView;
         });
-        activeInvestmentView = nextView;
+        activeInvestmentView = normalizedNextView;
         syncInvestmentStockDetailsTableVisibility();
         if (syncHash) {
-            syncInvestmentViewHash(nextView);
+            syncInvestmentViewHash(normalizedNextView);
         }
+        rememberInvestmentPageState({ view: normalizedNextView });
         animateInvestmentSurfaceHeight();
-        if (nextView === 'stock_details') {
+        if (normalizedNextView === 'stock_details') {
             scheduleInvestmentStockDetailsVisibleLayoutSync();
         }
     }
@@ -1172,8 +1252,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         const checkedRadio = segmentedControl.querySelector('input[type="radio"]:checked');
+        const rememberedView = restoreRememberedInvestmentPageState();
+        const restoredLocationFromMemory = restoreRememberedInvestmentLocation();
         activeInvestmentView = '';
-        syncInvestmentViewFromLocationHash(checkedRadio?.value || 'chart');
+        syncInvestmentViewFromLocationHash(restoredLocationFromMemory ? 'stock_details' : (rememberedView || checkedRadio?.value || 'chart'));
+        if (!String(window.location.hash || '').trim() && activeInvestmentView === 'stock_details') {
+            syncInvestmentViewHash('stock_details', selectedInvestmentStockTicker);
+        }
+        rememberInvestmentPageState({ view: activeInvestmentView || rememberedView || checkedRadio?.value || 'chart' });
         scheduleInvestmentSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
 
@@ -2940,6 +3026,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_stock_details_range') return;
             const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
             selectedInvestmentStockDetailsRange = nextRange;
+            rememberInvestmentPageState({ range: nextRange });
             rangeControl.dataset.active = nextRange;
             const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
@@ -3467,11 +3554,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (locationTicker) {
                 selectedInvestmentStockTicker = locationTicker;
             }
+            rememberInvestmentPageState({ ticker: selectedInvestmentStockTicker || '' });
             return normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
         }
         if (!availableTickers.includes(selectedInvestmentStockTicker)) {
             selectedInvestmentStockTicker = availableTickers[0];
         }
+        rememberInvestmentPageState({ ticker: selectedInvestmentStockTicker });
         return selectedInvestmentStockTicker;
     }
 
@@ -4481,6 +4570,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalizedTicker) {
             selectedInvestmentStockTicker = normalizedTicker;
         }
+        rememberInvestmentPageState({ ticker: selectedInvestmentStockTicker, view: focusView ? 'stock_details' : activeInvestmentView || 'chart' });
         if (focusView) {
             setInvestmentView('stock_details', { syncHash: false });
         }
