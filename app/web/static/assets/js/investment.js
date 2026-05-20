@@ -983,6 +983,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }, new Map());
     }
 
+    function buildInvestmentIntradayDayBoundaries(labels = []) {
+        const orderedDays = [];
+        const dayMap = new Map();
+        (Array.isArray(labels) ? labels : []).forEach((label, index) => {
+            const dayKey = normalizeLedgerDate(label);
+            if (!dayKey) return;
+            const existing = dayMap.get(dayKey);
+            if (existing) {
+                existing.lastIndex = index;
+                return;
+            }
+            const entry = {
+                dayKey,
+                ordinal: orderedDays.length,
+                firstIndex: index,
+                lastIndex: index,
+            };
+            orderedDays.push(entry);
+            dayMap.set(dayKey, entry);
+        });
+        return { orderedDays, dayMap };
+    }
+
+    function getInvestmentTradeSessionType(value) {
+        const dateParts = parseInvestmentDateParts(value);
+        if (!dateParts || !Number.isInteger(dateParts.hours) || !Number.isInteger(dateParts.minutes)) {
+            return 'intraday';
+        }
+        const totalMinutes = (dateParts.hours * 60) + dateParts.minutes;
+        const intradayOpenMinutes = (9 * 60) + 30;
+        const intradayCloseMinutes = 16 * 60;
+        const premarketOpenMinutes = 4 * 60;
+        const postmarketCloseMinutes = 20 * 60;
+        if (totalMinutes >= intradayOpenMinutes && totalMinutes < intradayCloseMinutes) return 'intraday';
+        if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
+        if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
+        return 'night';
+    }
+
     async function loadInvestmentStockDetailsIntradayRows(ticker, range) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
@@ -3776,25 +3815,63 @@ document.addEventListener('DOMContentLoaded', () => {
             if (minuteKey) dateIndex.set(minuteKey, index);
         });
         const intradayDayFallbackIndex = buildInvestmentIntradayDayFallbackIndex(labels);
+        const intradayDayBoundaries = buildInvestmentIntradayDayBoundaries(labels);
+        const resolveTradeMarkerPrice = (markerIndex, transactionPrice) => {
+            const normalizedTransactionPrice = Number(transactionPrice);
+            const normalizedClosePrice = Number(closeValues[markerIndex]);
+            if (Number.isFinite(normalizedTransactionPrice)) {
+                return normalizedTransactionPrice;
+            }
+            return Number.isFinite(normalizedClosePrice) ? normalizedClosePrice : null;
+        };
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
             const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(txn?.date);
-            const markerIndex = isInvestmentStockDetailsIntradayRange(normalizedRange)
-                ? (dateIndex.get(exactMinuteKey) ?? intradayDayFallbackIndex.get(normalizeLedgerDate(txn?.date)))
-                : dateIndex.get(normalizeLedgerDate(txn?.date));
-            if (!Number.isInteger(markerIndex)) return accumulator;
             const transactionPrice = getTransactionPrice(txn);
-            const plottedClosePrice = Number(closeValues[markerIndex]);
-            const markerPrice = Number.isFinite(plottedClosePrice) ? plottedClosePrice : transactionPrice;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            let markerIndex = null;
+            let markerPlacement = 'bar';
+            let markerSessionType = 'intraday';
+            let markerPrice = null;
+            if (useIntradayCandles) {
+                markerSessionType = getInvestmentTradeSessionType(txn?.date);
+                const exactMinuteIndex = dateIndex.get(exactMinuteKey);
+                if (Number.isInteger(exactMinuteIndex)) {
+                    markerIndex = exactMinuteIndex;
+                    markerPrice = resolveTradeMarkerPrice(exactMinuteIndex, transactionPrice);
+                } else if (markerSessionType !== 'intraday') {
+                    const dayBoundary = intradayDayBoundaries.dayMap.get(ledgerDate);
+                    if (dayBoundary) {
+                        markerPlacement = 'gap';
+                        markerIndex = markerSessionType === 'post' ? dayBoundary.lastIndex : dayBoundary.firstIndex;
+                        markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
+                    }
+                }
+                if (!Number.isInteger(markerIndex)) {
+                    markerIndex = intradayDayFallbackIndex.get(ledgerDate);
+                    if (Number.isInteger(markerIndex)) {
+                        markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
+                    }
+                }
+            } else {
+                markerIndex = dateIndex.get(ledgerDate);
+                if (Number.isInteger(markerIndex)) {
+                    markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
+                }
+            }
+            if (!Number.isInteger(markerIndex)) return accumulator;
             if (!Number.isFinite(markerPrice)) return accumulator;
-            // Daily trade markers should track the rendered price series instead of raw fills.
-            // This keeps the triangles on-curve after split-adjusted history rewrites.
+            // Match every trade marker vertically to the executed fill price whenever it exists.
+            // If a transaction lacks a usable fill price, fall back to the rendered series value.
             const marker = {
                 index: markerIndex,
                 x: labels[markerIndex],
                 y: markerPrice,
                 type: normalizedType,
+                placement: markerPlacement,
+                sessionType: markerSessionType,
+                ledgerDate,
                 transactionPrice: Number.isFinite(transactionPrice) ? transactionPrice : null,
             };
             if (normalizedType === 'buy') accumulator.buy.push(marker);
@@ -4023,18 +4100,62 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fill();
             ctx.restore();
         };
+        const resolveTradeMarkerPixelPosition = (chartInstance, marker) => {
+            const yScale = chartInstance?.scales?.y;
+            const linePoints = chartInstance?.getDatasetMeta(0)?.data || [];
+            const chartArea = chartInstance?.chartArea;
+            if (!yScale || !linePoints.length || !chartArea) return null;
+            const fallbackPoint = linePoints[marker?.index];
+            const fallbackX = Number(fallbackPoint?.x);
+            const y = Number(yScale.getPixelForValue(marker?.y));
+            if (!Number.isFinite(y)) return null;
+            if (marker?.placement !== 'gap' || !useIntradayCandles) {
+                return Number.isFinite(fallbackX) ? { x: fallbackX, y } : null;
+            }
+            const dayBoundary = intradayDayBoundaries.dayMap.get(marker?.ledgerDate);
+            if (!dayBoundary) {
+                return Number.isFinite(fallbackX) ? { x: fallbackX, y } : null;
+            }
+            const previousDay = dayBoundary.ordinal > 0
+                ? intradayDayBoundaries.orderedDays[dayBoundary.ordinal - 1]
+                : null;
+            const nextDay = dayBoundary.ordinal < intradayDayBoundaries.orderedDays.length - 1
+                ? intradayDayBoundaries.orderedDays[dayBoundary.ordinal + 1]
+                : null;
+            const getPointX = (index) => Number(linePoints[index]?.x);
+            let leftX = Number.NaN;
+            let rightX = Number.NaN;
+            let fraction = 0.5;
+            if (marker?.sessionType === 'post') {
+                leftX = getPointX(dayBoundary.lastIndex);
+                rightX = nextDay ? getPointX(nextDay.firstIndex) : chartArea.right;
+                fraction = nextDay ? 0.25 : 0.5;
+            } else if (marker?.sessionType === 'night' || marker?.sessionType === 'pre') {
+                leftX = previousDay ? getPointX(previousDay.lastIndex) : chartArea.left;
+                rightX = getPointX(dayBoundary.firstIndex);
+                if (previousDay) {
+                    fraction = marker.sessionType === 'night' ? 0.5 : 0.75;
+                } else {
+                    fraction = marker.sessionType === 'night' ? (1 / 3) : (2 / 3);
+                }
+            }
+            if (!Number.isFinite(leftX) || !Number.isFinite(rightX) || rightX <= leftX) {
+                return Number.isFinite(fallbackX) ? { x: fallbackX, y } : null;
+            }
+            return {
+                x: leftX + ((rightX - leftX) * fraction),
+                y,
+            };
+        };
         const tradeMarkerPlugin = {
             id: 'investmentStockDetailsTradeMarkerPlugin',
             afterDatasetsDraw(chartInstance) {
-                const yScale = chartInstance?.scales?.y;
-                const linePoints = chartInstance?.getDatasetMeta(0)?.data || [];
-                if (!yScale || !linePoints.length) return;
                 const drawMarkerGroup = (markers, color) => {
                     (Array.isArray(markers) ? markers : []).forEach((marker) => {
                         if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
-                        const linePoint = linePoints[marker.index];
-                        const x = Number(linePoint?.x);
-                        const y = Number(yScale.getPixelForValue(marker.y));
+                        const markerPosition = resolveTradeMarkerPixelPosition(chartInstance, marker);
+                        const x = Number(markerPosition?.x);
+                        const y = Number(markerPosition?.y);
                         drawTradeMarker(chartInstance.ctx, {
                             x,
                             y,
@@ -4288,22 +4409,30 @@ document.addEventListener('DOMContentLoaded', () => {
             markerCandidates.forEach((marker) => {
                 if (!marker || !Number.isInteger(marker.index) || !Number.isFinite(marker.y)) return;
                 if (Math.abs(marker.index - nearestIndex) > TRADE_MARKER_SNAP_HORIZONTAL_BARS) return;
-                const markerY = yScale.getPixelForValue(marker.y);
-                if (!Number.isFinite(markerY)) return;
+                const markerPosition = resolveTradeMarkerPixelPosition(chart, marker);
+                const markerX = Number(markerPosition?.x);
+                const markerY = Number(markerPosition?.y);
+                if (!Number.isFinite(markerX) || !Number.isFinite(markerY)) return;
                 if (Math.abs(markerY - relativeY) >= TRADE_MARKER_SNAP_VERTICAL_PX) return;
-                const markerPoint = points[marker.index];
-                if (!markerPoint || !Number.isFinite(markerPoint.x)) return;
-                const markerDistance = Math.abs(markerPoint.x - relativeX);
+                const markerDistance = Math.abs(markerX - relativeX);
                 if (markerDistance >= TRADE_MARKER_SNAP_HORIZONTAL_PX) return;
                 if (markerDistance < snappedMarkerDistance) {
                     snappedMarkerDistance = markerDistance;
-                    snappedMarker = marker;
+                    snappedMarker = {
+                        ...marker,
+                        pixelX: markerX,
+                        pixelY: markerY,
+                    };
                 }
             });
             if (snappedMarker && Number.isInteger(snappedMarker.index)) {
                 return {
                     index: snappedMarker.index,
                     markerType: String(snappedMarker.type || ''),
+                    markerPosition: {
+                        x: snappedMarker.pixelX,
+                        y: snappedMarker.pixelY,
+                    },
                 };
             }
             return { index: nearestIndex, markerType: '' };
@@ -4322,11 +4451,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const point = chart.getDatasetMeta(0)?.data?.[index];
                     const fallbackX = Number(chart.chartArea?.left) || 0;
                     const fallbackY = Number(chart.chartArea?.top) || 0;
+                    const markerX = Number(hoverState?.markerPosition?.x);
+                    const markerY = Number(hoverState?.markerPosition?.y);
                     chart.tooltip.setActiveElements(
                         activeElements,
                         {
-                            x: Number(point?.x) || fallbackX,
-                            y: Number(point?.y) || fallbackY,
+                            x: markerX || Number(point?.x) || fallbackX,
+                            y: markerY || Number(point?.y) || fallbackY,
                         },
                     );
                 }
