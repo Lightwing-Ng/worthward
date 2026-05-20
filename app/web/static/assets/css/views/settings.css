@@ -1,4 +1,4 @@
-/* Code version: v0.4.3-p4 */
+/* Code version: v0.4.3-p5 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -162,6 +162,31 @@
     display: grid;
     gap: 12px;
     width: min(100%, var(--settings-general-option-max-width));
+}
+
+.settings-date-format-form {
+    gap: 14px;
+}
+
+.settings-date-format-field {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    overflow: visible;
+}
+
+.settings-date-format-field > label {
+    margin-bottom: 0;
+}
+
+.settings-date-format-field .trade-strategy-row,
+.settings-date-format-field .trade-strategy-combobox,
+.settings-date-format-field .backtest-shared-select-trigger {
+    width: 100%;
+}
+
+.settings-date-format-field .trade-strategy-row {
+    margin-top: 2px;
 }
 
 .settings-general-option {

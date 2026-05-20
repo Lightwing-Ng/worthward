@@ -144,60 +144,70 @@
     </section>
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
-            <p class="settings-general-kicker">Date format · Full</p>
-            <p class="settings-general-copy">Choose the verbose date style used in chart labels, tooltips, and other long-form date displays.</p>
+            <p class="settings-general-kicker">Date format</p>
+            <p class="settings-general-copy">Choose the date styles used across long-form and compact displays throughout the workspace.</p>
         </div>
-        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
-            <label class="settings-general-option">
-                <input type="radio" name="full_date_format" value="d_mmm_yyyy" onchange="this.form.submit()" {% if date_display_full_format == 'd_mmm_yyyy' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">D Mmm yyyy</span>
-                    <span class="settings-general-option-desc">Single-digit day without leading zero, such as `8 Dec 2026`.</span>
-                </span>
-            </label>
-            <label class="settings-general-option">
-                <input type="radio" name="full_date_format" value="dd_mmm_yyyy" onchange="this.form.submit()" {% if date_display_full_format == 'dd_mmm_yyyy' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">DD Mmm yyyy</span>
-                    <span class="settings-general-option-desc">Day is always zero-padded, such as `08 Dec 2026`.</span>
-                </span>
-            </label>
-            <label class="settings-general-option">
-                <input type="radio" name="full_date_format" value="yyyy_mmm_d" onchange="this.form.submit()" {% if date_display_full_format == 'yyyy_mmm_d' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">yyyy Mmm D</span>
-                    <span class="settings-general-option-desc">East Asian ordering without day padding, such as `2026 Dec 8`.</span>
-                </span>
-            </label>
-            <label class="settings-general-option">
-                <input type="radio" name="full_date_format" value="yyyy_mmm_dd" onchange="this.form.submit()" {% if date_display_full_format == 'yyyy_mmm_dd' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">yyyy Mmm DD</span>
-                    <span class="settings-general-option-desc">East Asian ordering with zero-padded day, such as `2026 Dec 08`.</span>
-                </span>
-            </label>
-        </form>
-    </section>
-    <section class="settings-card settings-general-card settings-general-panel">
-        <div class="settings-general-header">
-            <p class="settings-general-kicker">Date format · Compact</p>
-            <p class="settings-general-copy">Choose the numeric date style used in compact date displays. Only European and East Asian ordering are offered here.</p>
-        </div>
-        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
-            <label class="settings-general-option">
-                <input type="radio" name="short_date_format" value="yyyy_mm_dd" onchange="this.form.submit()" {% if date_display_short_format == 'yyyy_mm_dd' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">yyyy/mm/dd</span>
-                    <span class="settings-general-option-desc">Year-first numeric format, such as `2026/12/08`.</span>
-                </span>
-            </label>
-            <label class="settings-general-option">
-                <input type="radio" name="short_date_format" value="dd_mm_yyyy" onchange="this.form.submit()" {% if date_display_short_format == 'dd_mm_yyyy' %}checked{% endif %}>
-                <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">dd/mm/yyyy</span>
-                    <span class="settings-general-option-desc">European day-first numeric format, such as `08/12/2026`.</span>
-                </span>
-            </label>
+        <form class="settings-general-form settings-date-format-form" method="post" action="{{ settings_urls.general }}/action">
+            <div class="field settings-date-format-field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="settings-full-date">
+                <label for="settings_full_date_format">Full</label>
+                <div class="trade-strategy-row backtest-shared-select-row">
+                    <select id="settings_full_date_format" name="full_date_format" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
+                        <option value="d_mmm_yyyy" data-description="Single-digit day without leading zero, such as 8 Dec 2026." {% if date_display_full_format == 'd_mmm_yyyy' %}selected{% endif %}>D Mmm yyyy</option>
+                        <option value="dd_mmm_yyyy" data-description="Day is always zero-padded, such as 08 Dec 2026." {% if date_display_full_format == 'dd_mmm_yyyy' %}selected{% endif %}>DD Mmm yyyy</option>
+                        <option value="yyyy_mmm_d" data-description="East Asian ordering without day padding, such as 2026 Dec 8." {% if date_display_full_format == 'yyyy_mmm_d' %}selected{% endif %}>yyyy Mmm D</option>
+                        <option value="yyyy_mmm_dd" data-description="East Asian ordering with zero-padded day, such as 2026 Dec 08." {% if date_display_full_format == 'yyyy_mmm_dd' %}selected{% endif %}>yyyy Mmm DD</option>
+                    </select>
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button
+                            type="button"
+                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                            data-shared-select-trigger
+                            aria-haspopup="listbox"
+                            aria-expanded="false"
+                            aria-controls="settings_full_date_format_dropdown"
+                        >
+                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                        </button>
+                    </div>
+                    <div
+                        id="settings_full_date_format_dropdown"
+                        class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                        data-shared-select-dropdown
+                        role="listbox"
+                        aria-label="Full date format"
+                        hidden
+                    ></div>
+                </div>
+            </div>
+            <div class="field settings-date-format-field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="settings-short-date">
+                <label for="settings_short_date_format">Compact</label>
+                <div class="trade-strategy-row backtest-shared-select-row">
+                    <select id="settings_short_date_format" name="short_date_format" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
+                        <option value="yyyy_mm_dd" data-description="Year-first numeric format, such as 2026/12/08." {% if date_display_short_format == 'yyyy_mm_dd' %}selected{% endif %}>yyyy/mm/dd</option>
+                        <option value="dd_mm_yyyy" data-description="European day-first numeric format, such as 08/12/2026." {% if date_display_short_format == 'dd_mm_yyyy' %}selected{% endif %}>dd/mm/yyyy</option>
+                    </select>
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button
+                            type="button"
+                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                            data-shared-select-trigger
+                            aria-haspopup="listbox"
+                            aria-expanded="false"
+                            aria-controls="settings_short_date_format_dropdown"
+                        >
+                            <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                        </button>
+                    </div>
+                    <div
+                        id="settings_short_date_format_dropdown"
+                        class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                        data-shared-select-dropdown
+                        role="listbox"
+                        aria-label="Compact date format"
+                        hidden
+                    ></div>
+                </div>
+            </div>
         </form>
     </section>
     <section class="settings-card settings-general-card settings-general-panel">

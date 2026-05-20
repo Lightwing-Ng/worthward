@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p3 */
+/* Code version: v0.3.8-p4 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2238,7 +2238,13 @@
         if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
             return null;
         }
-        return {field, select, trigger, triggerLabel, dropdown};
+        return {
+            field,
+            select,
+            trigger,
+            triggerLabel,
+            dropdown,
+        };
     };
 
     const syncNativeSelectSelection = (select, selectedValue) => {
@@ -2352,12 +2358,25 @@
             checkElement.className = "trade-strategy-dropdown-check";
             checkElement.setAttribute("aria-hidden", "true");
 
-            const textElement = document.createElement("span");
-            textElement.className = "trade-strategy-dropdown-text";
-            textElement.textContent = option.textContent || option.value;
+            const copyElement = document.createElement("span");
+            copyElement.className = "trade-strategy-dropdown-copy";
+
+            const titleElement = document.createElement("span");
+            titleElement.className = "trade-strategy-dropdown-title";
+            titleElement.textContent = option.textContent || option.value;
+
+            copyElement.appendChild(titleElement);
+
+            const descriptionText = option.dataset.description?.trim() || "";
+            if (descriptionText) {
+                const descriptionElement = document.createElement("span");
+                descriptionElement.className = "trade-strategy-dropdown-desc";
+                descriptionElement.textContent = descriptionText;
+                copyElement.appendChild(descriptionElement);
+            }
 
             optionButton.appendChild(checkElement);
-            optionButton.appendChild(textElement);
+            optionButton.appendChild(copyElement);
             optionButton.addEventListener("click", () => {
                 if (parts.select.value === option.value) {
                     setSharedSelectDropdownOpen(field, false);

@@ -763,7 +763,7 @@
 	display: grid;
 	grid-template-columns: 16px minmax(0, 1fr);
 	column-gap: 8px;
-	align-items: center;
+	align-items: start;
 	text-align: left;
 	font-size: var(--font-form-label);
 	line-height: 1.2;
@@ -789,11 +789,25 @@
 .trade-strategy-dropdown-option.is-selected .trade-strategy-dropdown-check {
 	opacity: 1;
 }
-.trade-strategy-dropdown-text {
+.trade-strategy-dropdown-copy {
 	min-width: 0;
+	display: grid;
+	gap: 4px;
+}
+.trade-strategy-dropdown-title {
+	min-width: 0;
+	display: block;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+.trade-strategy-dropdown-desc {
+	display: block;
+	font-size: var(--font-table-body);
+	line-height: 1.35;
+	font-weight: var(--font-weight-regular);
+	color: var(--muted);
+	white-space: normal;
 }
 .trade-strategy-tune-button {
 	width: var(--trade-control-input-height);

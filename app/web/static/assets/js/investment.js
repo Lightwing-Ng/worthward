@@ -4923,7 +4923,6 @@ document.addEventListener('DOMContentLoaded', () => {
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
         bindHoldingsStockDetailsLinks(holdingsPanel);
-        syncHoldingsStickyOffset(holdingsPanel);
         renderInvestmentStockDetailsPanel(tickerProfiles);
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
         renderInvestmentDummyPortfolioDonut(latestChartPoint || {
@@ -4940,15 +4939,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEquityChartWithEquity(chartPoints);
         syncInvestmentDummyDonutFromInteraction();
         syncInvestmentStockDetailsDonutFromInteraction();
-    }
-
-    function syncHoldingsStickyOffset(holdingsPanel) {
-        if (!holdingsPanel) return;
-        const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
-        const headerTable = tableShell?.querySelector('.investment-holdings-table[aria-hidden="true"]');
-        if (!tableShell || !headerTable) return;
-        const headerHeight = Math.ceil(headerTable.getBoundingClientRect().height);
-        tableShell.style.setProperty('--investment-holdings-sticky-offset', `${headerHeight}px`);
     }
 
     // Reuse the same chart styling from the backtest page
