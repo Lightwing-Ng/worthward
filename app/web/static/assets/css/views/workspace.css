@@ -1,4 +1,4 @@
-/* Code version: v1.1.1-p5 */
+/* Code version: v1.1.1-p6 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -828,21 +828,22 @@
     margin-bottom: 10px;
 }
 
-.timing-error-state {
+.timing-error-state,
+.about-disclaimer {
     --workspace-article-pad-block-start: 14px;
-    --workspace-article-pad-inline: 16px;
+    --workspace-article-pad-inline: 14px;
     --workspace-article-pad-block-end: 14px;
+    border: 1px solid var(--theme-warning);
+    border-radius: var(--radius-soft);
+    background: var(--theme-warning-translucent);
+    box-shadow: inset 0 1px 0 var(--theme-glass-highlight);
+}
+
+.timing-error-state {
     display: grid;
     gap: 6px;
     align-content: start;
     margin-bottom: 10px;
-    border-radius: var(--radius-card);
-    border: 1px solid color-mix(in srgb, var(--theme-warning) 42%, transparent);
-    background: color-mix(
-        in srgb,
-        var(--theme-warning-translucent) 68%,
-        var(--workspace-content-article-background) 32%
-    );
 }
 
 .timing-error-eyebrow,
