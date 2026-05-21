@@ -2406,6 +2406,72 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function setInvestmentHoverContainerPayload(container, payload = null) {
+        if (!(container instanceof HTMLElement)) return;
+        if (!payload || typeof payload !== 'object') {
+            delete container.dataset.investmentHoverPayload;
+            return;
+        }
+        const normalizedPayload = {
+            hoverTicker: normalizeInvestmentTicker(payload.hoverTicker || ''),
+            hoverLedgerNo: Number.isFinite(Number(payload.hoverLedgerNo)) && Number(payload.hoverLedgerNo) > 0
+                ? Number(payload.hoverLedgerNo)
+                : 0,
+            historyLedgerNos: normalizeInvestmentLedgerNos(payload.historyLedgerNos),
+            stockDetailLedgerNos: normalizeInvestmentLedgerNos(payload.stockDetailLedgerNos),
+            interactionLedgerNo: Number.isFinite(Number(payload.interactionLedgerNo)) && Number(payload.interactionLedgerNo) > 0
+                ? Number(payload.interactionLedgerNo)
+                : 0,
+            historyBehavior: payload.historyBehavior === 'smooth' ? 'smooth' : 'auto',
+            historyScroll: Boolean(payload.historyScroll),
+            stockDetailBehavior: payload.stockDetailBehavior === 'smooth' ? 'smooth' : 'auto',
+            stockDetailScroll: Boolean(payload.stockDetailScroll),
+        };
+        container.dataset.investmentHoverPayload = JSON.stringify(normalizedPayload);
+    }
+
+    function getInvestmentHoverContainerPayload(container) {
+        if (!(container instanceof HTMLElement)) return null;
+        const rawPayload = String(container.dataset.investmentHoverPayload || '').trim();
+        if (!rawPayload) return null;
+        try {
+            const payload = JSON.parse(rawPayload);
+            return {
+                hoverTicker: normalizeInvestmentTicker(payload?.hoverTicker || ''),
+                hoverLedgerNo: Number(payload?.hoverLedgerNo) || 0,
+                historyLedgerNos: normalizeInvestmentLedgerNos(payload?.historyLedgerNos),
+                stockDetailLedgerNos: normalizeInvestmentLedgerNos(payload?.stockDetailLedgerNos),
+                interactionLedgerNo: Number(payload?.interactionLedgerNo) || 0,
+                historyBehavior: payload?.historyBehavior === 'smooth' ? 'smooth' : 'auto',
+                historyScroll: Boolean(payload?.historyScroll),
+                stockDetailBehavior: payload?.stockDetailBehavior === 'smooth' ? 'smooth' : 'auto',
+                stockDetailScroll: Boolean(payload?.stockDetailScroll),
+            };
+        } catch (error) {
+            delete container.dataset.investmentHoverPayload;
+            return null;
+        }
+    }
+
+    function clearInvestmentChartLinkedHoverState() {
+        syncHoldingsChartHoverState('', 0);
+        clearInvestmentStockDetailHighlights();
+        clearInvestmentHistoryHighlights();
+    }
+
+    function bindInvestmentHoverContainerPersistence(container) {
+        if (!(container instanceof HTMLElement) || container.dataset.investmentHoverContainerBound === '1') return;
+        container.dataset.investmentHoverContainerBound = '1';
+        container.addEventListener('mouseenter', () => {
+            const payload = getInvestmentHoverContainerPayload(container);
+            if (!payload) return;
+            syncInvestmentHoverLinkedViews(payload);
+        });
+        container.addEventListener('mouseleave', () => {
+            clearInvestmentChartLinkedHoverState();
+        });
+    }
+
     function renderMetricCards(metricDefinitions, metricValues) {
         return metricDefinitions.map((definition) => `
             <div class="trade-metric-card">
@@ -3582,13 +3648,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function bindStockDetailsHistoryInteractions(stockDetailsPanel) {
         if (!stockDetailsPanel) return;
+        const hoverContainer = stockDetailsPanel.querySelector('.investment-stock-details-table-shell')
+            || stockDetailsPanel.querySelector('.investment-stock-details-table-host')
+            || stockDetailsPanel;
+        setInvestmentHoverContainerPayload(hoverContainer, null);
+        bindInvestmentHoverContainerPersistence(hoverContainer);
         stockDetailsPanel.querySelectorAll('tr[data-investment-stock-detail-ledger]').forEach((row) => {
             if (row.dataset.stockHistoryBound === '1') return;
             row.dataset.stockHistoryBound = '1';
             const activateRelatedHistoryRow = () => {
                 const ledgerNo = Number(row.dataset.investmentStockDetailLedger || 0);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
-                syncInvestmentHoverLinkedViews({
+                const hoverPayload = {
                     hoverTicker: ensureSelectedInvestmentStockTicker(),
                     hoverLedgerNo: ledgerNo,
                     historyLedgerNos: [ledgerNo],
@@ -3598,12 +3669,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     historyScroll: true,
                     stockDetailBehavior: 'auto',
                     stockDetailScroll: false,
-                });
+                };
+                setInvestmentHoverContainerPayload(hoverContainer, hoverPayload);
+                syncInvestmentHoverLinkedViews(hoverPayload);
             };
             const clearRelatedHistoryRow = () => {
-                syncHoldingsChartHoverState('', 0);
-                clearInvestmentStockDetailHighlights();
-                clearInvestmentHistoryHighlights();
+                if (hoverContainer instanceof HTMLElement && hoverContainer.matches(':hover')) return;
+                clearInvestmentChartLinkedHoverState();
             };
             row.addEventListener('mouseenter', activateRelatedHistoryRow);
             row.addEventListener('mouseleave', clearRelatedHistoryRow);
@@ -4755,6 +4827,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function bindInvestmentHistoryChartInteractions(historyContainer) {
         if (!historyContainer) return;
+        const hoverContainer = historyContainer.closest('#history_table_wrap')
+            || historyContainer.closest('.investment-history-table-shell')
+            || historyContainer;
+        setInvestmentHoverContainerPayload(hoverContainer, null);
+        bindInvestmentHoverContainerPersistence(hoverContainer);
         historyContainer.querySelectorAll('tr[data-investment-history-row]').forEach((row) => {
             if (row.dataset.chartHoverBound === '1') return;
             row.dataset.chartHoverBound = '1';
@@ -4762,7 +4839,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerNo = Number(row.dataset.investmentHistoryRow || 0);
                 const ledgerDate = getInvestmentLedgerDateByLedgerNo(ledgerNo) || row.dataset.investmentHistoryDate || '';
                 const stockDetailLedgerNo = getFirstStockDetailLedgerNoForDate(ledgerDate);
-                syncInvestmentHoverLinkedViews({
+                const hoverPayload = {
                     hoverTicker: row.dataset.investmentHistoryTicker || '',
                     hoverLedgerNo: ledgerNo,
                     historyLedgerNos: [ledgerNo],
@@ -4772,12 +4849,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     historyScroll: false,
                     stockDetailBehavior: 'auto',
                     stockDetailScroll: activeInvestmentView === 'stock_details',
-                });
+                };
+                setInvestmentHoverContainerPayload(hoverContainer, hoverPayload);
+                syncInvestmentHoverLinkedViews(hoverPayload);
             };
             const clearChartMarker = () => {
-                syncHoldingsChartHoverState('', 0);
-                clearInvestmentStockDetailHighlights();
-                clearInvestmentHistoryHighlights();
+                if (hoverContainer instanceof HTMLElement && hoverContainer.matches(':hover')) return;
+                clearInvestmentChartLinkedHoverState();
             };
             row.addEventListener('mouseenter', activateChartMarker);
             row.addEventListener('mouseleave', clearChartMarker);
