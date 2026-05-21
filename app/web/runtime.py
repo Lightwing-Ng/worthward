@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.12
+Code version: v0.3.13
 """
 
 from __future__ import annotations
@@ -181,6 +181,7 @@ class WebRuntime:
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
+    age_page: Any
     investment_page: Any
     investment_get_transactions: Any
     investment_add_transaction: Any
@@ -3252,6 +3253,23 @@ def build_web_runtime() -> WebRuntime:
     def settings_page(section_name: str):
         return render_workspace_page("settings", section_name)
 
+    def age_page():
+        physiological_age = 21.7
+        calendar_age = 32.9
+        response = make_response(
+            render_template(
+                "age.html",
+                page_title="Age Snapshot",
+                version=app_meta.get("version", CODE_VERSION),
+                theme_light=theme_light,
+                theme_dark=theme_dark,
+                physiological_age=f"{physiological_age:.1f}",
+                calendar_age=f"{calendar_age:.1f}",
+                age_delta=f"{calendar_age - physiological_age:.1f}",
+            )
+        )
+        return apply_no_store_headers(response)
+
     def general_settings_action():
         notices: list[str] = []
         if "full_date_format" in request.form:
@@ -3968,6 +3986,7 @@ def build_web_runtime() -> WebRuntime:
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,
+        age_page=age_page,
         investment_page=investment_page,
         investment_get_transactions=investment_get_transactions,
         investment_add_transaction=investment_add_transactions,

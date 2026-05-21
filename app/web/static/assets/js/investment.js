@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.0
+ * Code version: v1.35.1
+ * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
  * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
  * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
  * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
@@ -3972,6 +3973,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const STOCK_DETAILS_MARKER_HEIGHT_PX = 11;
         const STOCK_DETAILS_MARKER_X_PADDING_PX = STOCK_DETAILS_MARKER_HALF_WIDTH_PX + 2;
         const STOCK_DETAILS_MARKER_Y_PADDING_PX = STOCK_DETAILS_MARKER_HEIGHT_PX + 2;
+        const getStockDetailsChartYScaleValues = () => ([
+            ...openValues,
+            ...highValues,
+            ...lowValues,
+            ...closeValues,
+            ...tradeMarkerPoints.buy.map((marker) => marker.y),
+            ...tradeMarkerPoints.sell.map((marker) => marker.y),
+        ]);
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
                 .filter((value) => value !== null && value !== undefined && value !== '')
@@ -4350,14 +4359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: {
                         ...buildPixelPaddedYScale(
                             canvas,
-                            [
-                                ...openValues,
-                                ...highValues,
-                                ...lowValues,
-                                ...closeValues,
-                                ...tradeMarkerPoints.buy.map((marker) => marker.y),
-                                ...tradeMarkerPoints.sell.map((marker) => marker.y),
-                            ],
+                            getStockDetailsChartYScaleValues(),
                             STOCK_DETAILS_MARKER_Y_PADDING_PX,
                         ),
                         bounds: 'ticks',
@@ -4487,11 +4489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartCanvas._layoutSyncRaf = 0;
                 const nextYScale = buildPixelPaddedYScale(
                     chartCanvas,
-                    [
-                        ...closeValues,
-                        ...tradeMarkerPoints.buy.map((marker) => marker.y),
-                        ...tradeMarkerPoints.sell.map((marker) => marker.y),
-                    ],
+                    getStockDetailsChartYScaleValues(),
                     STOCK_DETAILS_MARKER_Y_PADDING_PX,
                 );
                 if (Number.isFinite(nextYScale?.min) && Number.isFinite(nextYScale?.max)) {

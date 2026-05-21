@@ -1,0 +1,423 @@
+{# Code version: v0.1.0 #}
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('favicon_icon', v=version) }}">
+    <style>
+        :root {
+            color-scheme: light dark;
+            --theme-background: {{ theme_light.background }};
+            --theme-panel: {{ theme_light.panel }};
+            --theme-panel-strong: {{ theme_light.panel_strong }};
+            --theme-text: {{ theme_light.text }};
+            --theme-muted: {{ theme_light.muted }};
+            --theme-accent-primary: {{ theme_light.accent_primary }};
+            --theme-accent-secondary: {{ theme_light.accent_secondary }};
+            --theme-accent-positive: {{ theme_light.accent_positive }};
+            --theme-glass-highlight: {{ theme_light.glass_highlight }};
+            --theme-shadow-ambient: rgba(17, 24, 39, 0.12);
+            --theme-glass-surface-background: rgba(255, 255, 255, 0.62);
+            --theme-glass-surface-background-strong: rgba(255, 255, 255, 0.76);
+            --theme-glass-border: rgba(148, 163, 184, 0.22);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme-background: {{ theme_dark.background }};
+                --theme-panel: {{ theme_dark.panel }};
+                --theme-panel-strong: {{ theme_dark.panel_strong }};
+                --theme-text: {{ theme_dark.text }};
+                --theme-muted: {{ theme_dark.muted }};
+                --theme-accent-primary: {{ theme_dark.accent_primary }};
+                --theme-accent-secondary: {{ theme_dark.accent_secondary }};
+                --theme-accent-positive: {{ theme_dark.accent_positive }};
+                --theme-glass-highlight: {{ theme_dark.glass_highlight }};
+                --theme-shadow-ambient: rgba(15, 23, 42, 0.44);
+                --theme-glass-surface-background: rgba(15, 23, 42, 0.58);
+                --theme-glass-surface-background-strong: rgba(15, 23, 42, 0.78);
+                --theme-glass-border: rgba(148, 163, 184, 0.18);
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
+    <style>
+        body.age-page-body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top left, color-mix(in srgb, var(--theme-accent-primary) 18%, transparent), transparent 34%),
+                radial-gradient(circle at bottom right, color-mix(in srgb, var(--theme-accent-positive) 20%, transparent), transparent 30%),
+                linear-gradient(160deg, color-mix(in srgb, var(--theme-background) 92%, #ffffff 8%), var(--theme-background));
+            color: var(--theme-text);
+            font-family: "SF Pro Display", "Segoe UI", sans-serif;
+        }
+
+        .age-shot {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: clamp(20px, 4vw, 48px);
+            box-sizing: border-box;
+        }
+
+        .age-panel {
+            position: relative;
+            width: min(100%, 1080px);
+            padding: clamp(24px, 4vw, 42px);
+            border-radius: 32px;
+            overflow: hidden;
+            background:
+                linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-surface-background-strong) 82%, transparent), color-mix(in srgb, var(--theme-panel) 92%, transparent)),
+                var(--theme-panel);
+            border: 1px solid var(--theme-glass-border);
+            box-shadow: 0 28px 80px var(--theme-shadow-ambient);
+            backdrop-filter: blur(22px);
+        }
+
+        .age-panel::before,
+        .age-panel::after {
+            content: "";
+            position: absolute;
+            inset: auto;
+            border-radius: 999px;
+            pointer-events: none;
+            filter: blur(12px);
+            opacity: 0.9;
+        }
+
+        .age-panel::before {
+            top: -60px;
+            right: -40px;
+            width: 240px;
+            height: 240px;
+            background: color-mix(in srgb, var(--theme-accent-primary) 26%, transparent);
+        }
+
+        .age-panel::after {
+            bottom: -70px;
+            left: -30px;
+            width: 220px;
+            height: 220px;
+            background: color-mix(in srgb, var(--theme-accent-positive) 18%, transparent);
+        }
+
+        .age-stack {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            gap: clamp(20px, 3vw, 32px);
+        }
+
+        .age-header {
+            display: grid;
+            gap: 14px;
+        }
+
+        .age-eyebrow,
+        .age-summary-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            width: fit-content;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--theme-glass-surface-background) 88%, transparent);
+            border: 1px solid var(--theme-glass-border);
+            color: var(--theme-muted);
+            font-size: 0.92rem;
+            line-height: 1;
+            letter-spacing: 0.02em;
+        }
+
+        .age-eyebrow {
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .age-title {
+            margin: 0;
+            max-width: 10ch;
+            font-size: clamp(2.9rem, 7vw, 5.8rem);
+            line-height: 0.94;
+            letter-spacing: -0.07em;
+            font-weight: 700;
+        }
+
+        .age-subtitle {
+            margin: 0;
+            max-width: 54rem;
+            color: var(--theme-muted);
+            font-size: clamp(1rem, 2vw, 1.2rem);
+            line-height: 1.6;
+        }
+
+        .age-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: clamp(16px, 2.4vw, 22px);
+        }
+
+        .age-card {
+            position: relative;
+            display: grid;
+            gap: 18px;
+            min-height: 280px;
+            padding: clamp(22px, 3vw, 28px);
+            border-radius: 28px;
+            background:
+                linear-gradient(180deg, color-mix(in srgb, var(--theme-glass-surface-background) 92%, transparent), color-mix(in srgb, var(--theme-panel-strong) 94%, transparent)),
+                var(--theme-panel-strong);
+            border: 1px solid color-mix(in srgb, var(--theme-glass-border) 88%, transparent);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        }
+
+        .age-grid > .age-card:nth-child(1),
+        .age-grid > .age-card:nth-child(2) {
+            border-radius: 10px;
+        }
+
+        .age-card-header,
+        .age-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .age-card-label,
+        .age-card-caption {
+            margin: 0;
+            color: var(--theme-muted);
+        }
+
+        .age-card-label {
+            font-size: 0.88rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .age-card-caption {
+            font-size: 0.98rem;
+            line-height: 1.55;
+        }
+
+        .age-metric-wrap {
+            display: grid;
+            gap: 12px;
+            align-content: end;
+            min-height: 0;
+        }
+
+        .age-metric-value {
+            padding-bottom: 0;
+            font-size: clamp(4.2rem, 11vw, 7.6rem);
+            line-height: 0.92;
+            letter-spacing: -0.08em;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .age-grid > .age-card:nth-child(1) .age-metric-wrap > .trade-metric-value,
+        .age-grid > .age-card:nth-child(2) .age-metric-wrap > .trade-metric-value {
+            font-size: 64px;
+            font-weight: 400;
+        }
+
+        .age-metric-unit {
+            font-size: clamp(1rem, 2vw, 1.12rem);
+            color: var(--theme-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .age-summary {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+            gap: clamp(16px, 2.4vw, 22px);
+        }
+
+        .age-summary-card {
+            display: grid;
+            gap: 14px;
+            padding: clamp(20px, 3vw, 26px);
+            border-radius: 28px;
+            background: color-mix(in srgb, var(--theme-panel) 86%, transparent);
+            border: 1px solid color-mix(in srgb, var(--theme-glass-border) 88%, transparent);
+        }
+
+        .age-summary-title,
+        .age-summary-copy {
+            margin: 0;
+        }
+
+        .age-summary-title {
+            font-size: clamp(1.25rem, 2.2vw, 1.7rem);
+            line-height: 1.2;
+            letter-spacing: -0.04em;
+        }
+
+        .age-summary-copy {
+            color: var(--theme-muted);
+            line-height: 1.65;
+            font-size: 1rem;
+        }
+
+        .age-summary-value {
+            padding-bottom: 0;
+            font-size: clamp(2.4rem, 5vw, 4rem);
+            line-height: 0.95;
+            letter-spacing: -0.07em;
+            font-weight: 700;
+        }
+
+        .age-icon,
+        .age-card-icon {
+            display: inline-block;
+            flex: 0 0 auto;
+            background-color: currentColor;
+            mask: center / contain no-repeat;
+            -webkit-mask: center / contain no-repeat;
+        }
+
+        .age-icon {
+            width: 18px;
+            height: 18px;
+            color: var(--theme-accent-positive);
+            mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+            -webkit-mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+        }
+
+        .age-card-icon {
+            width: 22px;
+            height: 22px;
+            color: var(--theme-muted);
+        }
+
+        .age-card-icon-phys {
+            mask-image: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg");
+            -webkit-mask-image: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg");
+        }
+
+        .age-card-icon-calendar {
+            mask-image: url("/static/images/calendar.day.timeline.right.svg");
+            -webkit-mask-image: url("/static/images/calendar.day.timeline.right.svg");
+        }
+
+        .age-card-icon-result {
+            color: var(--theme-accent-positive);
+            mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+            -webkit-mask-image: url("/static/images/checkmark.circle.fill.green.svg");
+        }
+
+        @media (max-width: 900px) {
+            .age-grid,
+            .age-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .age-card {
+                min-height: 240px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .age-panel {
+                border-radius: 24px;
+                padding: 20px;
+            }
+
+            .age-title {
+                max-width: none;
+            }
+
+            .age-card,
+            .age-summary-card {
+                border-radius: 22px;
+            }
+
+            .age-card-header,
+            .age-card-footer {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+
+        .age-summary > .age-summary-card:nth-child(1),
+        .age-summary > .age-summary-card:nth-child(2) {
+            border-radius: 10px;
+        }
+
+        .age-summary > .age-summary-card:nth-child(2) > .trade-metric-value {
+            font-size: 50px;
+            font-weight: 400;
+        }
+    </style>
+</head>
+<body class="age-page-body">
+<main class="age-shot">
+    <section class="age-panel" aria-label="Age result snapshot">
+        <div class="age-stack">
+            <header class="age-header">
+                <div class="age-eyebrow">
+                    <span class="age-icon" aria-hidden="true"></span>
+                    <span>Age Snapshot</span>
+                </div>
+                <h1 class="age-title">Younger than the calendar says.</h1>
+                <p class="age-subtitle">A responsive screenshot-ready result view that highlights the gap between your physiological age and your calendar age.</p>
+            </header>
+
+            <section class="age-grid" aria-label="Primary age metrics">
+                <article class="age-card">
+                    <div class="age-card-header">
+                        <p class="age-card-label">Physiological Age</p>
+                        <span class="age-card-icon age-card-icon-phys" aria-hidden="true"></span>
+                    </div>
+                    <div class="age-metric-wrap">
+                        <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive age-metric-value">{{ physiological_age }}</span>
+                        <span class="age-metric-unit">Years</span>
+                    </div>
+                    <div class="age-card-footer">
+                        <p class="age-card-caption">A biomarker-weighted estimate of your current physiological state.</p>
+                    </div>
+                </article>
+
+                <article class="age-card">
+                    <div class="age-card-header">
+                        <p class="age-card-label">Calendar Age</p>
+                        <span class="age-card-icon age-card-icon-calendar" aria-hidden="true"></span>
+                    </div>
+                    <div class="age-metric-wrap">
+                        <span class="trade-metric-value investment-stock-details-metric-value age-metric-value">{{ calendar_age }}</span>
+                        <span class="age-metric-unit">Years</span>
+                    </div>
+                    <div class="age-card-footer">
+                        <p class="age-card-caption">Your chronological age based on the current date.</p>
+                    </div>
+                </article>
+            </section>
+
+            <section class="age-summary" aria-label="Outcome summary">
+                <article class="age-summary-card">
+                    <div class="age-summary-chip">
+                        <span class="age-card-icon age-card-icon-result" aria-hidden="true"></span>
+                        <span>Result Summary</span>
+                    </div>
+                    <h2 class="age-summary-title">Your physiological age trends meaningfully below your calendar age.</h2>
+                    <p class="age-summary-copy">This layout is optimized for screenshots on desktop and mobile, with the standard positive green treatment applied to the lead result.</p>
+                </article>
+
+                <article class="age-summary-card">
+                    <p class="age-card-label">Difference</p>
+                    <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive age-summary-value">{{ age_delta }} years</span>
+                    <p class="age-summary-copy">You currently score younger than your calendar age by this margin.</p>
+                </article>
+            </section>
+        </div>
+    </section>
+</main>
+</body>
+</html>
