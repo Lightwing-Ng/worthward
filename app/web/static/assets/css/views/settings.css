@@ -96,7 +96,8 @@
     --settings-shell-content-max-width: var(--settings-reading-guard-single-column-width);
 }
 
-.settings-shell-general {
+.settings-shell-general,
+.settings-shell-backtest {
     --settings-shell-content-max-width: calc(var(--settings-general-option-max-width) + (var(--settings-general-panel-pad) * 2));
 }
 
@@ -122,7 +123,8 @@
     max-width: 100%;
 }
 
-.settings-general-shell > .settings-general-panel {
+.settings-general-shell > .settings-general-panel,
+.settings-shell-backtest > .settings-general-panel {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }

@@ -1612,6 +1612,11 @@ footer {
     --settings-icon-surface: color-mix(in srgb, var(--theme-accent-secondary) 14%, transparent);
 }
 
+.settings-nav-item-backtest {
+    --settings-icon-tint: color-mix(in srgb, var(--theme-warning) 76%, var(--theme-accent-secondary) 24%);
+    --settings-icon-surface: color-mix(in srgb, var(--theme-warning) 14%, transparent);
+}
+
 .settings-nav-item-font-tokens {
     --settings-icon-tint: color-mix(in srgb, var(--theme-accent-positive) 70%, var(--theme-accent-primary) 30%);
     --settings-icon-surface: color-mix(in srgb, var(--theme-accent-positive) 14%, transparent);

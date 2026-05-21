@@ -127,8 +127,8 @@ LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
-                               "style-tokens"}
+SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
+                               "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"timing", "investment"}
 LEGACY_MORE_SECTION_ALIASES = {
     "invest": "investment",
@@ -169,6 +169,7 @@ class WebRuntime:
     settings_page: Any
     export_transactions_api: Any
     general_settings_action: Any
+    backtest_settings_action: Any
     email_smtp_action: Any
     broker_access_action: Any
     local_market_store_action: Any
@@ -2329,6 +2330,8 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = labels["network_self_check"]
             elif settings_section == "general":
                 settings_title = "General"
+            elif settings_section == "backtest":
+                settings_title = "Backtest"
             elif settings_section == "font-tokens":
                 settings_title = "Font tokens"
             elif settings_section == "material-tokens":
@@ -2705,7 +2708,7 @@ def build_web_runtime() -> WebRuntime:
         timing_error = ""
 
         if current_view == "settings":
-            if settings_section in {"general", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
+            if settings_section in {"general", "backtest", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
             settings_service_rows = build_network_service_rows(pending=settings_section == "network")
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
@@ -2950,7 +2953,7 @@ def build_web_runtime() -> WebRuntime:
             chart_heading=chart_heading,
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
-                           ("about", "general", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
+                           ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("timing", "investment")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
@@ -3274,14 +3277,18 @@ def build_web_runtime() -> WebRuntime:
                     "dd_mm_yyyy": "dd/mm/yyyy",
                 }
                 notices.append(f"Compact date format updated: {short_labels[selected_short]}.")
+        notice = " ".join(notices)
+        return _redirect_with_settings_feedback("general", notice=notice)
+
+    def backtest_settings_action():
+        notice = ""
         if "backtest_execution_mode" in request.form:
             current_mode = load_backtest_execution_mode()
             selected_mode = save_backtest_execution_mode(request.form.get("backtest_execution_mode", "next_open"))
             if selected_mode != current_mode:
                 selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
-                notices.append(f"Backtest execution model updated: {selected_label}.")
-        notice = " ".join(notices)
-        return _redirect_with_settings_feedback("general", notice=notice)
+                notice = f"Backtest execution model updated: {selected_label}."
+        return _redirect_with_settings_feedback("backtest", notice=notice)
 
     def email_smtp_action():
         action = request.form.get("action", "save").strip().lower()
@@ -3956,6 +3963,7 @@ def build_web_runtime() -> WebRuntime:
         settings_page=settings_page,
         export_transactions_api=export_transactions_api,
         general_settings_action=general_settings_action,
+        backtest_settings_action=backtest_settings_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,
         local_market_store_action=local_market_store_action,

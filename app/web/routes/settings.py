@@ -14,6 +14,7 @@ def register_settings_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/settings")(runtime.settings_root)
     app.get("/settings/<section_name>")(runtime.settings_page)
     app.post("/settings/general/action")(runtime.general_settings_action)
+    app.post("/settings/backtest/action")(runtime.backtest_settings_action)
     app.post("/settings/email-smtp/action")(runtime.email_smtp_action)
     app.post("/settings/broker-access/action")(runtime.broker_access_action)
     app.post("/settings/local-market-store/action")(runtime.local_market_store_action)

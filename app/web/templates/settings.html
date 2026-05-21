@@ -4,6 +4,7 @@
 {% set nav_sections = [
     'about',
     'general',
+    'backtest',
     'font-tokens',
     'material-tokens',
     'style-tokens',
@@ -28,6 +29,10 @@
     <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
         <span class="settings-nav-label">General</span>
+    </a>
+    <a href="{{ settings_urls.backtest }}" class="settings-nav-item settings-nav-item-backtest{% if settings_section == 'backtest' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-backtest"></span></span>
+        <span class="settings-nav-label">Backtest</span>
     </a>
     <a href="{{ settings_urls['font-tokens'] }}" class="settings-nav-item settings-nav-item-font-tokens{% if settings_section == 'font-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
@@ -210,12 +215,13 @@
             </div>
         </form>
     </section>
+    {% elif settings_section == "backtest" %}
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
             <p class="settings-general-kicker">Backtest execution model</p>
             <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
         </div>
-        <form class="settings-general-form" method="post" action="{{ settings_urls.general }}/action">
+        <form class="settings-general-form" method="post" action="{{ settings_urls.backtest }}/action">
             <label class="settings-general-option">
                 <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
                 <span class="settings-general-option-copy">
