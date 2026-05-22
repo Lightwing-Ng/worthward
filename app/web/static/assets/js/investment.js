@@ -2068,24 +2068,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        const holdingsHeaderRow = holdingsHeaderTable.querySelector('tr');
+        const holdingsHeaderRows = Array.from(holdingsHeaderTable.querySelectorAll('thead tr'));
         const holdingsBodyRows = Array.from(holdingsBodyTable.querySelectorAll('tbody tr'));
         const holdingsTable = document.createElement('table');
-        if (holdingsHeaderRow) {
+        if (holdingsHeaderRows.length) {
             const thead = document.createElement('thead');
-            thead.appendChild(holdingsHeaderRow.cloneNode(true));
+            holdingsHeaderRows.forEach((row) => thead.appendChild(row.cloneNode(true)));
             holdingsTable.appendChild(thead);
         }
         const holdingsTbody = document.createElement('tbody');
         holdingsBodyRows.forEach((row) => holdingsTbody.appendChild(row.cloneNode(true)));
         holdingsTable.appendChild(holdingsTbody);
 
-        const historyHeaderRow = historyHeaderTable.querySelector('tr');
+        const historyHeaderRows = Array.from(historyHeaderTable.querySelectorAll('thead tr'));
         const historyBodyRows = Array.from(historyBodyTable.querySelectorAll('tbody tr'));
         const historyTable = document.createElement('table');
-        if (historyHeaderRow) {
+        if (historyHeaderRows.length) {
             const thead = document.createElement('thead');
-            thead.appendChild(historyHeaderRow.cloneNode(true));
+            historyHeaderRows.forEach((row) => thead.appendChild(row.cloneNode(true)));
             historyTable.appendChild(thead);
         }
         const historyTbody = document.createElement('tbody');
@@ -3587,11 +3587,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             <th>Unrealized P&amp;L</th>
                             <th>%</th>
                         </tr>
+                        ${summaryRowHtml}
                     </thead>
                 </table>
                 <div class="trade-transactions-wrap scrollable-data-table-scroll investment-holdings-table-scroll">
                     <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table">
-                        <tbody>${summaryRowHtml}${rowsHtml}</tbody>
+                        <tbody>${rowsHtml}</tbody>
                     </table>
                 </div>
             </div>
