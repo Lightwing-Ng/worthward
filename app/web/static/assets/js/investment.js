@@ -4077,6 +4077,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 max: rawMax + dataPadding,
             };
         };
+        const getChartAxisTickDecimalPlaces = (value) => {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) return 0;
+            const normalizedString = numericValue
+                .toFixed(8)
+                .replace(/(?:\.0+|(\.\d*?[1-9]))0+$/, '$1');
+            const decimalPart = normalizedString.split('.')[1] || '';
+            return decimalPart.length;
+        };
+        const resolveStockDetailsYAxisFractionDigits = (ticks) => {
+            const tickItems = Array.isArray(ticks) ? ticks : [];
+            const visibleTickItems = tickItems.length > 2 ? tickItems.slice(1, -1) : tickItems;
+            const maxFractionDigits = visibleTickItems.reduce((maxDigits, tick) => {
+                const tickValue = Number(tick?.value ?? tick);
+                return Math.max(maxDigits, getChartAxisTickDecimalPlaces(tickValue));
+            }, 0);
+            return maxFractionDigits > 0 ? Math.max(1, maxFractionDigits) : 0;
+        };
+        const formatStockDetailsYAxisTickLabel = (value, ticks) => {
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) return '';
+            const fractionDigits = resolveStockDetailsYAxisFractionDigits(ticks);
+            return new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: fractionDigits,
+                maximumFractionDigits: fractionDigits,
+            }).format(numericValue);
+        };
         const xAxisLabelPlugin = {
             id: 'investmentStockDetailsXAxisLabelPlugin',
             afterDraw(chart) {
@@ -4444,7 +4471,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             padding: 0,
                             callback(value, index, ticks) {
                                 if (index === 0 || index === ticks.length - 1) return '';
-                                return typeof this.getLabelForValue === 'function' ? this.getLabelForValue(value) : String(value);
+                                return formatStockDetailsYAxisTickLabel(value, ticks);
                             },
                         },
                     },
