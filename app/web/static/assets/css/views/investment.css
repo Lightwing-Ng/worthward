@@ -477,6 +477,11 @@
     border: 1px solid var(--glass-surface-border);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
     isolation: isolate;
+    --investment-holdings-scrollbar-width: 0px;
+}
+
+.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
+    width: calc(100% - var(--investment-holdings-scrollbar-width));
 }
 
 .scrollable-data-table-scroll,

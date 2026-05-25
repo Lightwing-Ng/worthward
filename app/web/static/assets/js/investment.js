@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.1
+ * Code version: v1.35.2
+ * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
  * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
  * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
  * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
@@ -698,6 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsRangeMeasureRaf = 0;
     let investmentStockDetailsRangeControlAbortController = null;
     let investmentStockDetailsRangeControlResizeObserver = null;
+    let investmentHoldingsTableAlignmentCleanup = null;
     let investmentStockDetailsPriceChartRequestSerial = 0;
     const investmentStockDetailsIntradayCache = new Map();
     const investmentStockDetailsIntradayInflight = new Map();
@@ -2126,6 +2128,60 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             filename: `${title} ${dateRange.start} - ${dateRange.end}.md`,
             markdown,
+        };
+    }
+
+    function teardownHoldingsTableAlignmentSync() {
+        if (typeof investmentHoldingsTableAlignmentCleanup === 'function') {
+            investmentHoldingsTableAlignmentCleanup();
+            investmentHoldingsTableAlignmentCleanup = null;
+        }
+    }
+
+    function attachHoldingsTableAlignmentSync(holdingsPanel) {
+        teardownHoldingsTableAlignmentSync();
+        if (!(holdingsPanel instanceof HTMLElement)) return;
+        const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
+        const scrollContainer = holdingsPanel.querySelector('.investment-holdings-table-scroll');
+        if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return;
+
+        let frameId = 0;
+        let resizeObserver = null;
+
+        const syncAlignment = () => {
+            frameId = 0;
+            const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
+            tableShell.style.setProperty('--investment-holdings-scrollbar-width', `${scrollbarWidth}px`);
+        };
+
+        const scheduleAlignmentSync = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(syncAlignment);
+        };
+
+        scheduleAlignmentSync();
+        window.addEventListener('resize', scheduleAlignmentSync);
+
+        if (window.ResizeObserver) {
+            resizeObserver = new ResizeObserver(() => {
+                scheduleAlignmentSync();
+            });
+            resizeObserver.observe(tableShell);
+            resizeObserver.observe(scrollContainer);
+            const bodyTable = scrollContainer.querySelector('table');
+            if (bodyTable instanceof HTMLElement) {
+                resizeObserver.observe(bodyTable);
+            }
+        }
+
+        investmentHoldingsTableAlignmentCleanup = () => {
+            if (frameId) {
+                window.cancelAnimationFrame(frameId);
+                frameId = 0;
+            }
+            window.removeEventListener('resize', scheduleAlignmentSync);
+            resizeObserver?.disconnect();
+            tableShell.style.removeProperty('--investment-holdings-scrollbar-width');
         };
     }
 
@@ -5155,6 +5211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, TOTAL_EQUITY);
+        attachHoldingsTableAlignmentSync(holdingsPanel);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
         bindHoldingsStockDetailsLinks(holdingsPanel);
