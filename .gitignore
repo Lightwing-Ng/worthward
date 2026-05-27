@@ -4,7 +4,10 @@ __pycache__/
 .idea/
 .trae/rules/
 .trash/
-market_store/
+market_store/*
+!market_store/logos/
+market_store/logos/*
+!market_store/logos/EUV.png
 tests/
 settings_store/
 node_modules/
