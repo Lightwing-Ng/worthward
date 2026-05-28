@@ -249,7 +249,7 @@
     height: 0;
 }
 
-#investment_stock_details_panel {
+#stock_panel {
     display: block;
     height: auto;
     min-height: 0;

@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.3
+ * Code version: v1.35.4
+ * - Changed: Stock details share URLs now use the shorter `#stock_panel` hash while still recognizing the legacy long-form hash
  * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
  * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
  * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
@@ -551,7 +552,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentDummyChart = document.getElementById('investment_dummy_chart');
     const investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
     const investmentDummyDonut = document.getElementById('investment_dummy_donut');
-    const investmentStockDetailsPanel = document.getElementById('investment_stock_details_panel');
+    const INVESTMENT_STOCK_DETAILS_PANEL_ID = 'stock_panel';
+    const INVESTMENT_STOCK_DETAILS_HASH = '#stock_panel';
+    const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
+    const investmentStockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
@@ -1183,7 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nextUrl = new URL(window.location.href);
         if (nextView === 'stock_details') {
             const normalizedTicker = normalizeInvestmentTicker(ticker || selectedInvestmentStockTicker || '');
-            nextUrl.hash = '#investment_stock_details_panel';
+            nextUrl.hash = INVESTMENT_STOCK_DETAILS_HASH;
             if (normalizedTicker) nextUrl.searchParams.set('ticker', normalizedTicker);
             else nextUrl.searchParams.delete('ticker');
             return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
@@ -2590,7 +2594,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetInvestmentDashboard() {
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
-        const stockDetailsPanel = document.getElementById('investment_stock_details_panel');
+        const stockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
         const chartContainer = document.getElementById('investment_equity_chart');
 
         selectedInvestmentStockTicker = '';
@@ -4930,7 +4934,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncInvestmentViewFromLocationHash(fallbackView = 'chart') {
         const hash = String(window.location.hash || '').trim();
-        if (hash === '#investment_stock_details_panel') {
+        if (hash === INVESTMENT_STOCK_DETAILS_HASH || hash === LEGACY_INVESTMENT_STOCK_DETAILS_HASH) {
             const locationTicker = getInvestmentLocationTicker();
             if (locationTicker) {
                 selectedInvestmentStockTicker = locationTicker;
