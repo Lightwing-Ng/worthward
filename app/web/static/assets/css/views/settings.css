@@ -758,10 +758,44 @@ div.style-token-modal-demo {
     max-height: 156px;
 }
 
-.style-token-table-demo .investment-history-table th,
-.style-token-table-demo .investment-history-table td {
-    width: auto !important;
-    min-width: 0 !important;
+.style-token-scrollable-table {
+    min-width: 100%;
+}
+
+.style-token-scrollable-table th,
+.style-token-scrollable-table td {
+    width: auto;
+    min-width: 0;
+}
+
+.style-token-scrollable-table th:nth-child(1),
+.style-token-scrollable-table td:nth-child(1) {
+    width: 12%;
+    text-align: center;
+}
+
+.style-token-scrollable-table th:nth-child(2),
+.style-token-scrollable-table td:nth-child(2) {
+    width: 24%;
+    text-align: right;
+}
+
+.style-token-scrollable-table th:nth-child(3),
+.style-token-scrollable-table td:nth-child(3) {
+    width: 16%;
+    text-align: center;
+}
+
+.style-token-scrollable-table th:nth-child(4),
+.style-token-scrollable-table td:nth-child(4) {
+    width: 28%;
+    text-align: left;
+}
+
+.style-token-scrollable-table th:nth-child(5),
+.style-token-scrollable-table td:nth-child(5) {
+    width: 20%;
+    text-align: right;
 }
 
 .style-token-ticker-identity-demo {

@@ -1177,6 +1177,11 @@
     height: 100%;
     min-height: 0;
     transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    --investment-history-scrollbar-width: 0px;
+}
+
+.investment-history-table-shell > .investment-history-table[aria-hidden="true"] {
+    width: calc(100% - var(--investment-history-scrollbar-width));
 }
 
 .investment-history-table-scroll {

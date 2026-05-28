@@ -701,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsRangeControlAbortController = null;
     let investmentStockDetailsRangeControlResizeObserver = null;
     let investmentHoldingsTableAlignmentCleanup = null;
+    let investmentHistoryTableAlignmentCleanup = null;
     let investmentStockDetailsPriceChartRequestSerial = 0;
     const investmentStockDetailsIntradayCache = new Map();
     const investmentStockDetailsIntradayInflight = new Map();
@@ -2132,19 +2133,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function teardownHoldingsTableAlignmentSync() {
-        if (typeof investmentHoldingsTableAlignmentCleanup === 'function') {
-            investmentHoldingsTableAlignmentCleanup();
-            investmentHoldingsTableAlignmentCleanup = null;
-        }
-    }
-
-    function attachHoldingsTableAlignmentSync(holdingsPanel) {
-        teardownHoldingsTableAlignmentSync();
-        if (!(holdingsPanel instanceof HTMLElement)) return;
-        const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
-        const scrollContainer = holdingsPanel.querySelector('.investment-holdings-table-scroll');
-        if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return;
+    function buildTableAlignmentSync(tableShell, scrollContainer, scrollbarVariableName) {
+        if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return null;
 
         let frameId = 0;
         let resizeObserver = null;
@@ -2152,7 +2142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const syncAlignment = () => {
             frameId = 0;
             const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
-            tableShell.style.setProperty('--investment-holdings-scrollbar-width', `${scrollbarWidth}px`);
+            tableShell.style.setProperty(scrollbarVariableName, `${scrollbarWidth}px`);
         };
 
         const scheduleAlignmentSync = () => {
@@ -2175,15 +2165,57 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        investmentHoldingsTableAlignmentCleanup = () => {
+        return () => {
             if (frameId) {
                 window.cancelAnimationFrame(frameId);
                 frameId = 0;
             }
             window.removeEventListener('resize', scheduleAlignmentSync);
             resizeObserver?.disconnect();
-            tableShell.style.removeProperty('--investment-holdings-scrollbar-width');
+            tableShell.style.removeProperty(scrollbarVariableName);
         };
+    }
+
+    function teardownHoldingsTableAlignmentSync() {
+        if (typeof investmentHoldingsTableAlignmentCleanup === 'function') {
+            investmentHoldingsTableAlignmentCleanup();
+            investmentHoldingsTableAlignmentCleanup = null;
+        }
+    }
+
+    function attachHoldingsTableAlignmentSync(holdingsPanel) {
+        teardownHoldingsTableAlignmentSync();
+        if (!(holdingsPanel instanceof HTMLElement)) return;
+        const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
+        const scrollContainer = holdingsPanel.querySelector('.investment-holdings-table-scroll');
+        investmentHoldingsTableAlignmentCleanup = buildTableAlignmentSync(
+            tableShell,
+            scrollContainer,
+            '--investment-holdings-scrollbar-width'
+        );
+    }
+
+    function teardownHistoryTableAlignmentSync() {
+        if (typeof investmentHistoryTableAlignmentCleanup === 'function') {
+            investmentHistoryTableAlignmentCleanup();
+            investmentHistoryTableAlignmentCleanup = null;
+        }
+    }
+
+    function attachHistoryTableAlignmentSync(historyPanel) {
+        teardownHistoryTableAlignmentSync();
+        if (!(historyPanel instanceof HTMLElement)) return;
+        const tableShell = historyPanel.matches('.investment-history-table-shell')
+            ? historyPanel
+            : historyPanel.querySelector('.investment-history-table-shell');
+        const scrollContainer = historyPanel.matches('.investment-history-table-scroll')
+            ? historyPanel
+            : historyPanel.querySelector('.investment-history-table-scroll');
+        investmentHistoryTableAlignmentCleanup = buildTableAlignmentSync(
+            tableShell,
+            scrollContainer,
+            '--investment-history-scrollbar-width'
+        );
     }
 
     function bindInvestmentExportButton() {
@@ -4973,6 +5005,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 </tr>
             `;
+            attachHistoryTableAlignmentSync(historyTable);
             return { isDegraded: false, message: '' };
         }
 
@@ -5183,6 +5216,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
         bindInvestmentHistoryChartInteractions(tbody);
+        attachHistoryTableAlignmentSync(historyTable);
 
         // 4. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints);
