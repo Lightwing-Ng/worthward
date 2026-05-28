@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.2
+ * Code version: v1.35.3
+ * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
  * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
  * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
  * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
@@ -3666,7 +3667,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerNo = Number(historyRow?.dataset.investmentHistoryRow || 0);
                 syncHoldingsChartHoverState(ticker, ledgerNo);
                 if (!Number.isFinite(ledgerNo) || ledgerNo <= 0) return;
-                activateInvestmentHistoryRows([ledgerNo]);
+                activateInvestmentHistoryRows([ledgerNo], { behavior: 'auto', scroll: false });
             };
             const clearRelatedHistoryRow = () => {
                 syncHoldingsChartHoverState('', 0);
@@ -3722,7 +3723,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     historyLedgerNos: [ledgerNo],
                     stockDetailLedgerNos: [ledgerNo],
                     interactionLedgerNo: ledgerNo,
-                    historyBehavior: 'smooth',
+                    historyBehavior: 'auto',
                     historyScroll: true,
                     stockDetailBehavior: 'auto',
                     stockDetailScroll: false,
@@ -4384,9 +4385,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         stockDetailLedgerNos: [primaryLedgerNo],
                         interactionLedgerNo: primaryLedgerNo,
                         historyBehavior: 'auto',
-                        historyScroll: true,
+                    historyScroll: false,
                         stockDetailBehavior: 'auto',
-                        stockDetailScroll: true,
+                    stockDetailScroll: false,
                     });
                 } else {
                     clearInvestmentStockDetailHighlights();
@@ -4932,7 +4933,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     historyBehavior: 'auto',
                     historyScroll: false,
                     stockDetailBehavior: 'auto',
-                    stockDetailScroll: activeInvestmentView === 'stock_details',
+                    stockDetailScroll: stockDetailLedgerNo > 0,
                 };
                 setInvestmentHoverContainerPayload(hoverContainer, hoverPayload);
                 syncInvestmentHoverLinkedViews(hoverPayload);
@@ -5540,7 +5541,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ledgerNos = Array.isArray(pointRecord?.anchor_ledger_nos)
                     ? pointRecord.anchor_ledger_nos
                     : getHistoryRowsForLedgerDate(hoveredLedgerDate).map((row) => Number(row.dataset.investmentHistoryRow || 0));
-                activateInvestmentHistoryRows(ledgerNos, { behavior: "auto" });
+                activateInvestmentHistoryRows(ledgerNos, { behavior: "auto", scroll: false });
                 syncInvestmentStockDetailPreviewRows(ledgerNos, { behavior: 'auto', scroll: false });
                 activeChartHoverDate = hoveredLedgerDate;
             } else if (!hoveredLedgerDate && activeChartHoverDate) {
@@ -5870,7 +5871,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const jumpToContributionRow = () => {
                 const targetRowNo = Number(trigger.dataset.metricTargetRow);
                 if (!Number.isFinite(targetRowNo) || targetRowNo <= 0) return;
-                activateInvestmentHistoryRows([targetRowNo]);
+                activateInvestmentHistoryRows([targetRowNo], { behavior: 'auto', scroll: false });
             };
             const clearContributionRow = () => {
                 clearInvestmentHistoryHighlights();
