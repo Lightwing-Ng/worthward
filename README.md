@@ -1,12 +1,10 @@
-# antigravity
+# beingRich
 
 A local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and reviewing timing signals from a server-rendered workspace with locally persisted market data.
 
 ## Screenshot
 
-Backtest workspace captured on 28 Mar 2026:
-
-<img src="https://free.boltp.com/2026/04/09/69d754e3d81d8.webp" alt="Screenshot 2026-04-09 at 15.21.05" />
+![](Screenshot.png)
 
 ## Current scope
 
