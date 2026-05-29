@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p4 */
+/* Code version: v0.3.8-p5 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1268,17 +1268,23 @@
         entry.slider.value = String(normalized);
     };
 
-    const resolvePassivePortfolioEntry = (changedIndex, filledEntries) => {
-        const candidates = filledEntries.filter((entry) => entry.index !== changedIndex);
-        if (!candidates.length) return null;
-        return candidates.reduce((oldestEntry, entry) => {
-            const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
-            const entryStamp = getPortfolioWeightTouchStamp(entry.index);
-            if (entryStamp < oldestStamp) return entry;
-            if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
-            return oldestEntry;
-        });
+    const resolveOrderedPortfolioPeer = (referenceIndex, filledEntries, {preferPrevious = true} = {}) => {
+        const previousCandidates = filledEntries.filter((entry) => entry.index < referenceIndex);
+        const nextCandidates = filledEntries.filter((entry) => entry.index > referenceIndex);
+        if (preferPrevious && previousCandidates.length) {
+            return previousCandidates[previousCandidates.length - 1];
+        }
+        if (!preferPrevious && nextCandidates.length) {
+            return nextCandidates[0];
+        }
+        return preferPrevious
+            ? (nextCandidates[0] || null)
+            : (previousCandidates[previousCandidates.length - 1] || null);
     };
+
+    const resolvePassivePortfolioEntry = (changedIndex, filledEntries) => (
+        resolveOrderedPortfolioPeer(changedIndex, filledEntries, {preferPrevious: true})
+    );
 
     const computeActiveWeightBounds = (changedIndex, filledEntries) => {
         const passiveEntry = resolvePassivePortfolioEntry(changedIndex, filledEntries);
@@ -1352,14 +1358,14 @@
         if (shouldWarn) {
             showPortfolioWeightTooltip(
                 activeEntry,
-                `${passiveEntry.ticker} was the oldest editable weight available, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
+                `${passiveEntry.ticker} stayed paired by ticker order, so ${activeEntry.ticker} was limited to keep the total at 100%.`,
             );
         }
         markPortfolioWeightTouched(changedIndex);
         syncPortfolioWeightBounds();
     };
 
-    const rebalancePortfolioWeightsAfterRemoval = (removedWeight = 0) => {
+    const rebalancePortfolioWeightsAfterRemoval = (removedWeight = 0, removedIndex = -1) => {
         if (!isPortfolioView) return;
         ensurePortfolioWeightTouches();
         const filledEntries = getFilledWeightEntries();
@@ -1377,13 +1383,7 @@
             syncPortfolioWeightBounds();
             return;
         }
-        const passiveEntry = filledEntries.reduce((oldestEntry, entry) => {
-            const oldestStamp = getPortfolioWeightTouchStamp(oldestEntry.index);
-            const entryStamp = getPortfolioWeightTouchStamp(entry.index);
-            if (entryStamp < oldestStamp) return entry;
-            if (entryStamp === oldestStamp && entry.index > oldestEntry.index) return entry;
-            return oldestEntry;
-        });
+        const passiveEntry = filledEntries[Math.max(0, Math.min(removedIndex - 1, filledEntries.length - 1))] || filledEntries[0];
         const nextValue = (Number.parseInt(passiveEntry.number.value, 10) || 0) + targetAdjustment;
         syncPortfolioWeightPair(passiveEntry, Math.min(100, nextValue));
         markPortfolioWeightTouched(passiveEntry.index);
@@ -1438,6 +1438,46 @@
         delete tickerInput.dataset.retainedWeight;
     };
 
+    const handlePortfolioTickerValueChange = (tickerInput) => {
+        if (!isPortfolioView || !tickerInput) return;
+        const field = tickerInput.closest(".ticker-field");
+        const number = field?.querySelector(".portfolio-weight-input");
+        const slider = field?.querySelector(".portfolio-weight-slider");
+        const entry = getWeightFields().find((item) => item.tickerInput === tickerInput);
+        if (!number || !slider || !entry) return;
+
+        const previousTicker = tickerInput.dataset.lastTicker || "";
+        const ticker = sanitizeTicker(tickerInput.value.trim());
+        if (!ticker && previousTicker) {
+            const currentWeight = Number.parseInt(number.value, 10) || 0;
+            if (currentWeight > 0) {
+                tickerInput.dataset.retainedWeight = String(currentWeight);
+            }
+        }
+        if (ticker && !previousTicker) {
+            restoreRetainedPortfolioWeight(tickerInput);
+        }
+
+        syncPortfolioWeightDisabledState();
+        if (ticker && !getPortfolioWeightTouchStamp(entry.index)) {
+            markPortfolioWeightTouched(entry.index);
+        }
+        if (!ticker) {
+            dropPortfolioWeightTouch(entry.index);
+        }
+
+        const filledEntries = getFilledWeightEntries();
+        if (filledEntries.length && filledEntries.every((item) => (Number.parseInt(item.number.value, 10) || 0) === 0)) {
+            const defaults = buildDefaultWeights(filledEntries.length);
+            filledEntries.forEach((item, itemIndex) => syncPortfolioWeightPair(item, defaults[itemIndex] || 0));
+        }
+
+        syncPortfolioWeightBounds();
+        dispatchPortfolioPreviewUpdate();
+        validatePortfolioWeightInputs();
+        tickerInput.dataset.lastTicker = ticker;
+    };
+
     const attachPortfolioWeightHandlers = () => {
         if (!isPortfolioView) return;
         getWeightFields().forEach(({field, number, slider, tickerInput, index}) => {
@@ -1466,32 +1506,7 @@
             number.addEventListener("input", () => syncAndRefresh(number));
             slider.addEventListener("input", () => syncAndRefresh(slider));
             tickerInput?.addEventListener("input", () => {
-                const previousTicker = tickerInput.dataset.lastTicker || "";
-                const ticker = sanitizeTicker(tickerInput.value.trim());
-                if (!ticker && previousTicker) {
-                    const currentWeight = Number.parseInt(number.value, 10) || 0;
-                    if (currentWeight > 0) {
-                        tickerInput.dataset.retainedWeight = String(currentWeight);
-                    }
-                }
-                if (ticker && !previousTicker) {
-                    restoreRetainedPortfolioWeight(tickerInput);
-                }
-                syncPortfolioWeightDisabledState();
-                if (ticker && !getPortfolioWeightTouchStamp(index)) {
-                    markPortfolioWeightTouched(index);
-                }
-                if (!ticker) {
-                    dropPortfolioWeightTouch(index);
-                }
-                if (getFilledWeightEntries().length && getFilledWeightEntries().every((entry) => (Number.parseInt(entry.number.value, 10) || 0) === 0)) {
-                    const defaults = buildDefaultWeights(getFilledWeightEntries().length);
-                    getFilledWeightEntries().forEach((entry, entryIndex) => syncPortfolioWeightPair(entry, defaults[entryIndex] || 0));
-                }
-                syncPortfolioWeightBounds();
-                dispatchPortfolioPreviewUpdate();
-                validatePortfolioWeightInputs();
-                tickerInput.dataset.lastTicker = ticker;
+                handlePortfolioTickerValueChange(tickerInput);
             });
         });
     };
@@ -1673,9 +1688,9 @@
             tickerValidationCache.set(selectedSymbol, true);
             setTickerValidationPending(input, false);
             input.setCustomValidity("");
-            restoreRetainedPortfolioWeight(input);
             syncTickerInputDecoration(input, item);
             validateAllTickerInputs();
+            handlePortfolioTickerValueChange(input);
             closePanel();
             input.focus();
             syncDateConstraints();
@@ -1838,6 +1853,7 @@
                 input.dataset.symbol = "";
                 syncTickerInputDecoration(input);
                 validateAllTickerInputs();
+                handlePortfolioTickerValueChange(input);
                 syncDateConstraints();
                 if (isPortfolioView) requestWorkspaceChartTransition("ticker-clear");
                 scheduleAutoSubmit(120);
@@ -2107,6 +2123,7 @@
             button.addEventListener("click", () => {
                 const field = button.closest(".ticker-field");
                 const removedTicker = sanitizeTicker(field?.querySelector("[data-ticker-input]")?.value || "");
+                const removedIndex = Number.parseInt(field?.dataset.index || "0", 10) - 1;
                 if (isPortfolioView) requestWorkspaceChartTransition("ticker-remove");
                 else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
                 const removedWeight = isPortfolioView
@@ -2116,7 +2133,7 @@
                 reindexTickerFields();
                 removeTickerFromComparePreview(removedTicker);
                 if (isPortfolioView) {
-                    rebalancePortfolioWeightsAfterRemoval(removedWeight);
+                    rebalancePortfolioWeightsAfterRemoval(removedWeight, removedIndex);
                     ensurePortfolioWeightTouches();
                     syncPortfolioWeightBounds();
                     syncPortfolioWeightDisabledState();
