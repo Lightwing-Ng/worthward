@@ -3867,6 +3867,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return detailRows.reverse();
     }
 
+    // Code version: v0.2.0.2
+    function getStockDetailRealizedBreakdown(detailRows) {
+        let dividendIncome = 0;
+        let tradingSpreadIncome = 0;
+
+        (Array.isArray(detailRows) ? detailRows : []).forEach((txn) => {
+            const realizedPnl = Number(txn?.rowRealizedPnl);
+            if (!Number.isFinite(realizedPnl)) return;
+
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (['dividend', 'payment_in_lieu', 'foreign_tax_withholding'].includes(normalizedType)) {
+                dividendIncome += realizedPnl;
+                return;
+            }
+
+            tradingSpreadIncome += realizedPnl;
+        });
+
+        return {
+            dividendIncome,
+            tradingSpreadIncome,
+            realizedPnl: dividendIncome + tradingSpreadIncome,
+        };
+    }
+
     function destroyInvestmentStockDetailsPriceChart() {
         if (investmentStockDetailsVisibleLayoutTimer) {
             window.clearTimeout(investmentStockDetailsVisibleLayoutTimer);
@@ -4790,6 +4815,7 @@ document.addEventListener('DOMContentLoaded', () => {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(totalTradeCount);
+        const realizedBreakdown = getStockDetailRealizedBreakdown(detailRows);
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
@@ -4804,6 +4830,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 label: 'Realized P&L',
                 value: formatHoldingsMoney(tickerSummary.realizedPnl),
                 valueClass: realizedClass,
+                cardClass: 'investment-stock-details-metric-card-with-breakdown',
+                details: [
+                    {
+                        label: 'Dividend income',
+                        value: formatHoldingsMoney(realizedBreakdown.dividendIncome),
+                        valueClass: getSignedMetricClass(realizedBreakdown.dividendIncome),
+                    },
+                    {
+                        label: 'Trading spread income',
+                        value: formatHoldingsMoney(realizedBreakdown.tradingSpreadIncome),
+                        valueClass: getSignedMetricClass(realizedBreakdown.tradingSpreadIncome),
+                    },
+                ],
             },
             {
                 label: 'Total P&L',
@@ -4866,9 +4905,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
                     ${stockMetricCards.map((metric) => `
-                        <div class="trade-metric-card investment-stock-details-metric-card">
+                        <div class="trade-metric-card investment-stock-details-metric-card${metric.cardClass ? ` ${metric.cardClass}` : ''}">
                             <span class="trade-metric-label">${metric.label}</span>
                             <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
+                            ${Array.isArray(metric.details) && metric.details.length ? `
+                                <div class="investment-stock-details-metric-breakdown">
+                                    ${metric.details.map((detail) => `
+                                        <div class="investment-stock-details-metric-breakdown-row">
+                                            <span class="investment-stock-details-metric-breakdown-label">${detail.label}</span>
+                                            <span class="investment-stock-details-metric-breakdown-value${detail.valueClass ? ` ${detail.valueClass}` : ''}">${detail.value}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
                         </div>
                     `).join('')}
                 </div>

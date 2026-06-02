@@ -401,6 +401,51 @@
     align-content: start;
 }
 
+.investment-stock-details-metric-card-with-breakdown {
+    row-gap: 2px;
+}
+
+.investment-stock-details-metric-card-with-breakdown > .investment-stock-details-metric-value {
+    padding-bottom: 0;
+}
+
+.investment-stock-details-metric-breakdown {
+    display: grid;
+    row-gap: 2px;
+    min-width: 0;
+    width: 100%;
+    padding-top: 2px;
+}
+
+.investment-stock-details-metric-breakdown-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+}
+
+.investment-stock-details-metric-breakdown-label,
+.investment-stock-details-metric-breakdown-value {
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.investment-stock-details-metric-breakdown-label {
+    color: var(--muted);
+    justify-self: start;
+    text-align: left;
+}
+
+.investment-stock-details-metric-breakdown-value {
+    justify-self: end;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .investment-stock-details-donut-card {
     min-width: 0;
     display: flex;
