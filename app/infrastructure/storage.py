@@ -238,13 +238,18 @@ def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> di
     current_scope = _normalize_profile_scope(current.get("storage_scope"))
     incoming_scope = _normalize_profile_scope(incoming.get("storage_scope"))
     merged_scope = PROFILE_SCOPE_LOCAL if PROFILE_SCOPE_LOCAL in {current_scope, incoming_scope} else PROFILE_SCOPE_SEARCH
+    ticker = str(current.get("ticker") or incoming.get("ticker") or "").strip().upper()
 
     current_company = str(current.get("company_name") or "").strip()
     incoming_company = str(incoming.get("company_name") or "").strip()
     company_name = current_company
+    current_is_ticker_fallback = bool(current_company) and current_company.upper() == ticker
+    incoming_is_better_name = bool(incoming_company) and incoming_company.upper() != ticker
     if incoming_scope == PROFILE_SCOPE_LOCAL and incoming_company:
         company_name = incoming_company
-    elif not company_name or company_name == str(current.get("ticker") or ""):
+    elif current_is_ticker_fallback and incoming_is_better_name:
+        company_name = incoming_company
+    elif not company_name or current_is_ticker_fallback:
         company_name = incoming_company or company_name
 
     current_website = str(current.get("website") or "").strip()
@@ -261,7 +266,7 @@ def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> di
     incoming_exchange = _normalize_tradingview_exchange(incoming.get("tradingview_exchange"))
 
     return {
-        "ticker": str(current.get("ticker") or incoming.get("ticker") or "").strip().upper(),
+        "ticker": ticker,
         "company_name": company_name,
         "website": website,
         "storage_scope": merged_scope,

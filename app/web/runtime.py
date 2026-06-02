@@ -1730,7 +1730,8 @@ def build_web_runtime() -> WebRuntime:
         if not logo_url:
             return None
         company_name = str(profile_record.get("company_name") or "").strip()
-        if company_name:
+        normalized_ticker = str(ticker or "").strip().upper()
+        if company_name and company_name.upper() != normalized_ticker:
             return company_name, logo_url
         return None
 
@@ -1744,11 +1745,16 @@ def build_web_runtime() -> WebRuntime:
             return profile_snapshot
 
         profile_record = load_profile_record(ticker) or {}
-        company_name = str(profile_record.get("company_name") or ticker).strip() or ticker
+        normalized_ticker = str(ticker or "").strip().upper()
+        company_name = str(profile_record.get("company_name") or normalized_ticker).strip() or normalized_ticker
         logo_url = resolve_stored_logo_url(ticker)
-        if allow_remote_refresh and (not logo_url or company_name == ticker):
-            profile = fetch_quote_profile(ticker, force_refresh=False)
-            company_name = str(profile.company_name or company_name).strip() or ticker
+        if allow_remote_refresh and (not logo_url or company_name.upper() == normalized_ticker):
+            profile = fetch_quote_profile(ticker, force_refresh=True)
+            profile_company_name = str(profile.company_name or "").strip()
+            if profile_company_name and profile_company_name.upper() != normalized_ticker:
+                company_name = profile_company_name
+            else:
+                company_name = company_name or normalized_ticker
             logo_url = str(profile.logo_url or "").strip() or logo_url
         return company_name, logo_url
 

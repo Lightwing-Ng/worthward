@@ -345,7 +345,14 @@ def _fetch_quote_profile_for_scope(
     normalized_ticker = normalize_ticker_input(ticker)
     record = load_profile_record(normalized_ticker)
 
-    if record and (_record_is_fresh(record.get("updated_at")) or not has_remote_market_access() or not force_refresh):
+    record_company_name = str((record or {}).get("company_name") or "").strip()
+    ticker_name_fallback = record_company_name.upper() == normalized_ticker if record_company_name else False
+
+    if record and (
+            (not force_refresh and _record_is_fresh(record.get("updated_at")))
+            or not has_remote_market_access()
+            or (not force_refresh and not ticker_name_fallback)
+    ):
         return QuoteProfile(
             ticker=record["ticker"],
             company_name=record.get("company_name") or normalized_ticker,
