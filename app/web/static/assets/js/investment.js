@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.4
+ * Code version: v1.35.5
+ * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
  * - Changed: Stock details share URLs now use the shorter `#stock_panel` hash while still recognizing the legacy long-form hash
  * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
  * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
@@ -4092,10 +4093,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 .sort((left, right) => right - left);
             if (dateTxns.length) {
                 const latestTxn = dateTxns[dateTxns.length - 1];
-                const txnShares = Number(latestTxn?.holdings?.[normalizedTicker]);
-                if (Number.isFinite(txnShares)) {
-                    latestShares = txnShares;
-                }
+                const latestHoldings = latestTxn?.holdings && typeof latestTxn.holdings === 'object'
+                    ? latestTxn.holdings
+                    : null;
+                const hasTickerHolding = latestHoldings
+                    ? Object.prototype.hasOwnProperty.call(latestHoldings, normalizedTicker)
+                    : false;
+                const txnShares = hasTickerHolding ? Number(latestHoldings[normalizedTicker]) : 0;
+                latestShares = Number.isFinite(txnShares) ? txnShares : 0;
             }
             const close = Number(closeValues[index]);
             stockSnapshotsByDate.set(String(label), {
