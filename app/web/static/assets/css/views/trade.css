@@ -253,6 +253,7 @@
     }
 }
 
+/* Code version: v1.0.1-p1 */
 .trade-metric-card {
     --trade-metric-card-padding: 0;
     --trade-metric-card-radius: var(--workspace-metric-card-radius);
@@ -310,6 +311,17 @@
     padding-bottom: var(--trade-metric-value-padding-bottom);
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+.trade-metric-card--value-align-end {
+    justify-items: stretch;
+}
+
+.trade-metric-card--value-align-end .trade-metric-value {
+    display: flex;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    justify-self: stretch;
 }
 
 .trade-metric-value {

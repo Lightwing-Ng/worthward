@@ -1222,6 +1222,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_copy": "",
                 "sample_button": "",
                 "sample_button_class": "",
+                "sample_card_class": "trade-metric-card--value-align-end",
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
                 "sample_value": "67.01%",

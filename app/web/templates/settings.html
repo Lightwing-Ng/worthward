@@ -900,7 +900,7 @@
                     </div>
                     {% elif row.sample_kind == "metric-value" %}
                     <div class="style-token-metric-demo-shell">
-                        <div class="trade-metric-card style-token-metric-card-demo">
+                        <div class="trade-metric-card style-token-metric-card-demo{% if row.sample_card_class %} {{ row.sample_card_class }}{% endif %}">
                             <span class="trade-metric-label">{{ row.sample_title }}</span>
                             <span class="trade-metric-value style-token-metric-value-demo">{{ row.sample_value }}</span>
                         </div>

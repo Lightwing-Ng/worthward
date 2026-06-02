@@ -4910,7 +4910,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
                     ${stockMetricCards.map((metric) => `
-                        <div class="trade-metric-card investment-stock-details-metric-card${metric.cardClass ? ` ${metric.cardClass}` : ''}">
+                        <div class="trade-metric-card trade-metric-card--value-align-end investment-stock-details-metric-card${metric.cardClass ? ` ${metric.cardClass}` : ''}">
                             <span class="trade-metric-label">${metric.label}</span>
                             <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
                             ${Array.isArray(metric.details) && metric.details.length ? `
