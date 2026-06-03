@@ -362,20 +362,11 @@ def build_web_runtime() -> WebRuntime:
     def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
         ticker_profiles: dict[str, dict[str, str]] = {}
         for raw_ticker in collect_investment_display_tickers(transactions):
-            if is_configured_money_market_ticker(raw_ticker):
-                # Money market funds are intentionally excluded from remote market
-                # tracking, so their display identity must stay local-only.
-                company_name = raw_ticker
-                logo_url = ""
+            company_name, logo_url = resolve_ticker_identity_snapshot(raw_ticker)
+            if company_name == raw_ticker:
                 inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
                 if inferred_money_market_name:
                     company_name = inferred_money_market_name
-            else:
-                company_name, logo_url = resolve_ticker_identity_snapshot(raw_ticker)
-                if company_name == raw_ticker:
-                    inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
-                    if inferred_money_market_name:
-                        company_name = inferred_money_market_name
             ticker_profiles[raw_ticker] = {
                 "ticker": raw_ticker,
                 "company_name": company_name,

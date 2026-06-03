@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.5
+ * Code version: v1.35.6
+ * - Fixed: Stock details price-chart trade markers now wait for a stable visible chart box before first paint and resync again after the view-height animation settles, so hyperlink entry matches refresh rendering
  * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
  * - Changed: Stock details share URLs now use the shorter `#stock_panel` hash while still recognizing the legacy long-form hash
  * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
@@ -1378,6 +1379,79 @@ document.addEventListener('DOMContentLoaded', () => {
             const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
             chartCanvas?._scheduleLayoutSync?.();
         }, INVESTMENT_SURFACE_LAYOUT_SETTLE_MS);
+    }
+
+    function waitForInvestmentStableElementBox(element, {
+        minimumWidth = 120,
+        minimumHeight = 120,
+        stableFramesRequired = 3,
+        timeoutMs = INVESTMENT_SURFACE_LAYOUT_SETTLE_MS + 260,
+    } = {}) {
+        if (!(element instanceof HTMLElement)) return Promise.resolve(false);
+        const isElementReady = () => {
+            if (!element.isConnected) return false;
+            if (element.closest('[hidden]')) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width >= minimumWidth && rect.height >= minimumHeight;
+        };
+        if (isElementReady()) {
+            return new Promise((resolve) => {
+                let stableFrames = 0;
+                let lastWidth = Number.NaN;
+                let lastHeight = Number.NaN;
+                const startedAt = performance.now();
+                const step = () => {
+                    if (!element.isConnected) {
+                        resolve(false);
+                        return;
+                    }
+                    const rect = element.getBoundingClientRect();
+                    const width = Math.round(rect.width * 100) / 100;
+                    const height = Math.round(rect.height * 100) / 100;
+                    const isReady = width >= minimumWidth && height >= minimumHeight;
+                    const isStable = isReady
+                        && Math.abs(width - lastWidth) < 0.5
+                        && Math.abs(height - lastHeight) < 0.5;
+                    stableFrames = isStable ? (stableFrames + 1) : 0;
+                    lastWidth = width;
+                    lastHeight = height;
+                    if (stableFrames >= stableFramesRequired) {
+                        resolve(true);
+                        return;
+                    }
+                    if ((performance.now() - startedAt) >= timeoutMs) {
+                        resolve(isReady);
+                        return;
+                    }
+                    window.requestAnimationFrame(step);
+                };
+                window.requestAnimationFrame(step);
+            });
+        }
+        return new Promise((resolve) => {
+            const startedAt = performance.now();
+            const step = () => {
+                if (!element.isConnected) {
+                    resolve(false);
+                    return;
+                }
+                if (isElementReady()) {
+                    waitForInvestmentStableElementBox(element, {
+                        minimumWidth,
+                        minimumHeight,
+                        stableFramesRequired,
+                        timeoutMs: Math.max(120, timeoutMs - (performance.now() - startedAt)),
+                    }).then(resolve);
+                    return;
+                }
+                if ((performance.now() - startedAt) >= timeoutMs) {
+                    resolve(false);
+                    return;
+                }
+                window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
+        });
     }
 
     function setInvestmentView(nextView, { syncHash = true } = {}) {
@@ -3848,7 +3922,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowsHtml = summaries.map((summary, index) => {
             const profile = tickerProfiles?.[summary.ticker] || {};
             const companyName = String(profile.company_name || summary.ticker);
-            const logoUrl = String(profile.logo_url || '').trim();
+            const logoUrl = resolveInvestmentLogoUrl(profile, summary.ticker);
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
             const lastPriceDisplay = summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice);
             const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
@@ -4233,6 +4307,12 @@ document.addEventListener('DOMContentLoaded', () => {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
+
+        await waitForInvestmentStableElementBox(chartHost, {
+            minimumWidth: 160,
+            minimumHeight: 180,
+        });
+        if (renderRequestId !== investmentStockDetailsPriceChartRequestSerial) return;
 
         chartHost.innerHTML = '<canvas class="investment-stock-details-price-chart-canvas"></canvas>';
         const canvas = chartHost.querySelector('canvas');
@@ -4971,7 +5051,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartCanvas._layoutSyncTimer = window.setTimeout(() => {
                     chartCanvas._layoutSyncTimer = 0;
                     scheduleLayoutSync();
-                }, 260);
+                }, Math.max(260, INVESTMENT_SURFACE_LAYOUT_SETTLE_MS + 40));
             };
             chartCanvas._scheduleLayoutSync = () => {
                 scheduleLayoutSync();
@@ -5036,7 +5116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = tickerProfiles?.[activeTicker] || {};
         const companyName = String(profile.company_name || activeTicker);
-        const logoUrl = String(profile.logo_url || '').trim();
+        const logoUrl = resolveInvestmentLogoUrl(profile, activeTicker);
         const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
         const totalCommissionCurrency = detailRows
