@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.7
+ * Code version: v1.36.0
+ * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
  * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
  * - Fixed: Stock details price-chart trade markers now wait for a stable visible chart box before first paint and resync again after the view-height animation settles, so hyperlink entry matches refresh rendering
  * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
@@ -103,421 +104,15 @@
  * - Fixed: Investment view segmented pill now stays hidden until the active label is measured, preventing the loading-time stretched Charts highlight
  */
 
-// Helper to draw a multi-series line chart directly on a container
-window.drawMultipleLineChart = function(container, data, options) {
-    // Create canvas element
-    const canvas = document.createElement('canvas');
-    container.appendChild(canvas);
+import {
+    getPortfolioDonutOrbitMetrics,
+    registerInvestmentChartHelpers,
+    renderInvestmentDonutOrbitLogoPosition,
+    syncInvestmentDonutOrbitLogos,
+} from './investment/chart-orbit.js';
+import { createInvestmentDataUtils } from './investment/data-utils.js';
 
-    const theme = window.ANTIGRAVITY_APP.theme;
-    const themePrimaryColor = String(theme?.accent_primary || '').trim();
-    const themeSecondaryColor = String(theme?.accent_secondary || '').trim();
-    const themePositiveColor = String(theme?.accent_positive || '').trim();
-    const themeMutedColor = String(theme?.muted || '').trim();
-    const resolvedTheme = (() => {
-        const computed = getComputedStyle(document.body);
-        return {
-            text: computed.getPropertyValue("--theme-text").trim() || String(theme?.text || '').trim(),
-            muted: computed.getPropertyValue("--theme-muted").trim() || themeMutedColor,
-            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim() || themePrimaryColor,
-            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim() || themeSecondaryColor,
-        };
-    })();
-
-    const hexToRgba = (hex, alpha) => {
-        const raw = hex.replace("#", "");
-        const r = parseInt(raw.substring(0, 2), 16);
-        const g = parseInt(raw.substring(2, 4), 16);
-        const b = parseInt(raw.substring(4, 6), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    };
-
-    const allValues = data.series.flatMap(s => s.values);
-    const minValue = Math.min(...allValues);
-    const maxValue = Math.max(...allValues);
-    const padding = (maxValue - minValue) * 0.1 || 1;
-
-    // Create Gradient for the stroke
-    const ctx = canvas.getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-    gradient.addColorStop(0, resolvedTheme.accentPrimary);
-    gradient.addColorStop(1, resolvedTheme.accentSecondary);
-
-    const datasets = data.series.map((series, idx) => {
-        const color = series.color || (idx === 0 ? gradient : resolvedTheme.accentSecondary);
-        return {
-            label: series.name,
-            data: series.values,
-            borderColor: color,
-            backgroundColor: color,
-            borderWidth: 3,
-            pointRadius: 0,
-            pointHoverRadius: 6,
-            pointBackgroundColor: '#ffffff',
-            pointBorderColor: resolvedTheme.accentPrimary,
-            pointBorderWidth: 2,
-            fill: true,
-            tension: 0.4,
-            backgroundColor: (context) => {
-                const chart = context.chart;
-                const {ctx, chartArea} = chart;
-                if (!chartArea) return null;
-                const fillGradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-                fillGradient.addColorStop(0, hexToRgba(idx === 0 ? resolvedTheme.accentPrimary : resolvedTheme.accentSecondary, 0.15));
-                fillGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                return fillGradient;
-            },
-        };
-    });
-
-    const chart = new Chart(canvas, {
-        type: 'line',
-        data: {
-            labels: data.labels,
-            datasets: datasets,
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: { padding: { top: 8, right: 8, bottom: 22, left: 4 } },
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { 
-                    display: true, 
-                    position: 'top', 
-                    align: 'end',
-                    labels: { 
-                        color: resolvedTheme.muted, 
-                        boxWidth: 10, 
-                        usePointStyle: true,
-                        font: { family: "'Inter', sans-serif", size: 11, weight: '500' }
-                    } 
-                },
-                tooltip: {
-                    enabled: true,
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    titleColor: '#1e293b',
-                    bodyColor: '#1e293b',
-                    borderColor: 'rgba(0, 0, 0, 0.05)',
-                    borderWidth: 1,
-                    padding: 12,
-                    cornerRadius: 12,
-                    displayColors: true,
-                    boxPadding: 6,
-                    usePointStyle: true,
-                    callbacks: {
-                        label: (context) => {
-                            const value = context.parsed.y;
-                            return ` ${context.dataset.label}: ${options.tooltipFormatter ? options.tooltipFormatter(value) : value}`;
-                        },
-                    },
-                },
-            },
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: { 
-                        color: resolvedTheme.muted, 
-                        maxRotation: 0,
-                        font: { size: 10 }
-                    },
-                },
-                y: {
-                    min: minValue - padding,
-                    max: maxValue + padding,
-                    grid: { 
-                        display: true,
-                        color: 'rgba(148, 163, 184, 0.05)',
-                        drawBorder: false
-                    },
-                    ticks: {
-                        color: resolvedTheme.muted,
-                        font: { size: 10 },
-                        callback: (value) => options.yAxisFormatter ? options.yAxisFormatter(value) : value,
-                    },
-                },
-            },
-        },
-    });
-};
-
-const investmentDonutOrbitLayerState = new WeakMap();
-
-function normalizeOrbitAngle(angle) {
-    if (!Number.isFinite(angle)) return 0;
-    const normalized = angle % 360;
-    return normalized < 0 ? normalized + 360 : normalized;
-}
-
-function getShortestOrbitAngleDelta(fromAngle, toAngle) {
-    const start = normalizeOrbitAngle(fromAngle);
-    const end = normalizeOrbitAngle(toAngle);
-    let delta = end - start;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
-    return delta;
-}
-
-function easeInOutCubic(progress) {
-    if (progress <= 0) return 0;
-    if (progress >= 1) return 1;
-    return progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - (Math.pow(-2 * progress + 2, 3) / 2);
-}
-
-function getPortfolioDonutOrbitMetrics(orbitElement) {
-    if (!(orbitElement instanceof HTMLElement)) return null;
-    const computed = getComputedStyle(orbitElement);
-    const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
-        || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-size'))
-        || 120;
-    const logoSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-logo-size'))
-        || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-logo-size'))
-        || 20;
-    const satelliteRadius = (logoSize * Math.SQRT2) / 2;
-    const orbitRadius = (donutSize / 2) + satelliteRadius;
-    const centerX = orbitElement.clientWidth / 2;
-    const centerY = orbitElement.clientHeight / 2;
-    const centerSeparationAngle = orbitRadius > 1e-6
-        ? (2 * Math.asin(Math.min(1, satelliteRadius / orbitRadius)) * 180) / Math.PI
-        : 0;
-    return {
-        centerX,
-        centerY,
-        donutSize,
-        logoSize,
-        satelliteRadius,
-        orbitRadius,
-        minSeparationAngle: Math.max(centerSeparationAngle * 0.8, 6),
-    };
-}
-
-function renderInvestmentDonutOrbitLogoPosition(logoElement, angle, orbitMetrics, radiusScale = 1, opacity = 1) {
-    if (!(logoElement instanceof HTMLElement) || !orbitMetrics) return;
-    const radians = ((normalizeOrbitAngle(angle) - 90) * Math.PI) / 180;
-    const x = orbitMetrics.centerX + (Math.cos(radians) * orbitMetrics.orbitRadius * radiusScale);
-    const y = orbitMetrics.centerY + (Math.sin(radians) * orbitMetrics.orbitRadius * radiusScale);
-    logoElement.style.left = `${x.toFixed(2)}px`;
-    logoElement.style.top = `${y.toFixed(2)}px`;
-    logoElement.style.opacity = `${Math.max(0, Math.min(1, opacity))}`;
-}
-
-function resolveInvestmentDonutOrbitAngles(logoItems, orbitMetrics) {
-    if (!Array.isArray(logoItems) || !logoItems.length || !orbitMetrics) return [];
-    const minSeparationAngle = Math.max(orbitMetrics.minSeparationAngle || 0, 0);
-    const sortedItems = logoItems
-        .map((item, index) => ({
-            ...item,
-            originalIndex: index,
-            desiredAngle: normalizeOrbitAngle(item.midAngle),
-        }))
-        .sort((left, right) => left.desiredAngle - right.desiredAngle);
-    const resolvedAngles = new Array(sortedItems.length);
-    const desiredAngles = sortedItems.map((item) => item.desiredAngle);
-
-    sortedItems.forEach((item, index) => {
-        if (index === 0) {
-            resolvedAngles[index] = item.desiredAngle;
-            return;
-        }
-        resolvedAngles[index] = Math.max(item.desiredAngle, resolvedAngles[index - 1] + minSeparationAngle);
-    });
-
-    const wrapLimit = resolvedAngles[0] + 360 - minSeparationAngle;
-    let overflow = Math.max(0, resolvedAngles[resolvedAngles.length - 1] - wrapLimit);
-    if (overflow > 1e-6) {
-        for (let index = resolvedAngles.length - 1; index > 0 && overflow > 1e-6; index -= 1) {
-            const previousFloor = resolvedAngles[index - 1] + minSeparationAngle;
-            const shiftBudget = Math.max(0, resolvedAngles[index] - Math.max(desiredAngles[index], previousFloor));
-            if (shiftBudget <= 1e-6) continue;
-            const appliedShift = Math.min(shiftBudget, overflow);
-            resolvedAngles[index] -= appliedShift;
-            overflow -= appliedShift;
-        }
-    }
-
-    const result = new Array(sortedItems.length);
-    sortedItems.forEach((item, index) => {
-        result[item.originalIndex] = normalizeOrbitAngle(resolvedAngles[index]);
-    });
-    return result;
-}
-
-function ensureInvestmentDonutOrbitLayerState(logoLayer) {
-    let state = investmentDonutOrbitLayerState.get(logoLayer);
-    if (state) return state;
-    state = {
-        animationFrame: 0,
-        logos: new Map(),
-        orbitMetrics: null,
-    };
-    investmentDonutOrbitLayerState.set(logoLayer, state);
-    return state;
-}
-
-function stopInvestmentDonutOrbitLayerAnimation(layerState) {
-    if (!layerState?.animationFrame) return;
-    window.cancelAnimationFrame(layerState.animationFrame);
-    layerState.animationFrame = 0;
-}
-
-function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
-    if (!(logoLayer instanceof HTMLElement)) return;
-    const layerState = ensureInvestmentDonutOrbitLayerState(logoLayer);
-    if (layerState.animationFrame) return;
-    const step = (now) => {
-        const orbitMetrics = layerState.orbitMetrics
-            || getPortfolioDonutOrbitMetrics(logoLayer.closest('.portfolio-donut-orbit'));
-        if (orbitMetrics) layerState.orbitMetrics = orbitMetrics;
-        let hasActiveAnimation = false;
-        layerState.logos.forEach((entry) => {
-            const logoElement = entry.element;
-            if (!(logoElement instanceof HTMLImageElement) || !logoElement.isConnected || !orbitMetrics) return;
-            const animationStartTime = Number.isFinite(entry.animationStartTime) ? entry.animationStartTime : now;
-            const duration = Math.max(1, Number(entry.duration) || 1);
-            const progress = Math.max(0, Math.min(1, (now - animationStartTime) / duration));
-            const easedProgress = easeInOutCubic(progress);
-            const currentAngle = entry.startAngle + (entry.deltaAngle * easedProgress);
-            const currentRadiusScale = entry.startRadiusScale + ((entry.targetRadiusScale - entry.startRadiusScale) * easedProgress);
-            const currentOpacity = entry.startOpacity + ((entry.targetOpacity - entry.startOpacity) * easedProgress);
-            entry.currentAngle = normalizeOrbitAngle(currentAngle);
-            entry.currentRadiusScale = currentRadiusScale;
-            entry.currentOpacity = currentOpacity;
-            renderInvestmentDonutOrbitLogoPosition(
-                logoElement,
-                entry.currentAngle,
-                orbitMetrics,
-                currentRadiusScale,
-                currentOpacity
-            );
-            if (progress >= 1) {
-                entry.startAngle = entry.currentAngle;
-                entry.deltaAngle = 0;
-                entry.startRadiusScale = currentRadiusScale;
-                entry.targetRadiusScale = currentRadiusScale;
-                entry.startOpacity = currentOpacity;
-                entry.targetOpacity = currentOpacity;
-                entry.animationStartTime = now;
-                if (entry.isExiting) {
-                    logoElement.remove();
-                    layerState.logos.delete(entry.ticker);
-                }
-            } else {
-                hasActiveAnimation = true;
-            }
-        });
-        if (hasActiveAnimation) {
-            layerState.animationFrame = window.requestAnimationFrame(step);
-        } else {
-            stopInvestmentDonutOrbitLayerAnimation(layerState);
-        }
-    };
-    layerState.animationFrame = window.requestAnimationFrame(step);
-}
-
-function syncInvestmentDonutOrbitLogos(logoLayer, logoItems) {
-    if (!(logoLayer instanceof HTMLElement)) return;
-    const orbitElement = logoLayer.closest('.portfolio-donut-orbit');
-    const orbitMetrics = getPortfolioDonutOrbitMetrics(orbitElement);
-    if (!orbitMetrics) return;
-    const layerState = ensureInvestmentDonutOrbitLayerState(logoLayer);
-    layerState.orbitMetrics = orbitMetrics;
-    const existingLogos = new Map(
-        Array.from(logoLayer.querySelectorAll('.portfolio-donut-logo')).map((logo) => [logo.dataset.ticker || '', logo])
-    );
-    const nextTickers = new Set();
-    const resolvedAngles = resolveInvestmentDonutOrbitAngles(logoItems, orbitMetrics);
-
-    logoItems.forEach((item, index) => {
-        const ticker = item.ticker;
-        const targetAngle = Number.isFinite(resolvedAngles[index]) ? resolvedAngles[index] : normalizeOrbitAngle(item.midAngle);
-        nextTickers.add(ticker);
-        let logo = existingLogos.get(ticker);
-        if (!(logo instanceof HTMLImageElement)) {
-            logo = document.createElement('img');
-            logo.className = 'portfolio-donut-logo is-orbit-animated';
-            logo.dataset.ticker = ticker;
-            logo.alt = `${ticker} logo`;
-            logo.src = item.logoUrl;
-            logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
-            logoLayer.appendChild(logo);
-            renderInvestmentDonutOrbitLogoPosition(logo, targetAngle, orbitMetrics, 1.85, 0);
-        } else {
-            if (logo.src !== item.logoUrl) logo.src = item.logoUrl;
-            logo.classList.add('is-orbit-animated');
-            logo.dataset.styleTokenDonutAngle = targetAngle.toFixed(2);
-        }
-
-        let entry = layerState.logos.get(ticker);
-        if (!entry) {
-            entry = {
-                ticker,
-                element: logo,
-                currentAngle: targetAngle,
-                currentRadiusScale: 1.85,
-                currentOpacity: 0,
-                startAngle: targetAngle,
-                deltaAngle: 0,
-                startRadiusScale: 1.85,
-                targetRadiusScale: 1,
-                startOpacity: 0,
-                targetOpacity: 1,
-                animationStartTime: performance.now(),
-                duration: 620,
-                isExiting: false,
-            };
-            layerState.logos.set(ticker, entry);
-        } else {
-            entry.element = logo;
-            entry.ticker = ticker;
-            const angleDelta = getShortestOrbitAngleDelta(entry.currentAngle, targetAngle);
-            const shouldRetarget = entry.isExiting
-                || Math.abs(angleDelta) > 0.05
-                || Math.abs((entry.targetRadiusScale ?? 1) - 1) > 1e-3
-                || Math.abs((entry.targetOpacity ?? 1) - 1) > 1e-3;
-            entry.isExiting = false;
-            if (shouldRetarget) {
-                entry.startAngle = entry.currentAngle;
-                entry.deltaAngle = angleDelta;
-                entry.startRadiusScale = entry.currentRadiusScale;
-                entry.targetRadiusScale = 1;
-                entry.startOpacity = entry.currentOpacity;
-                entry.targetOpacity = 1;
-                entry.animationStartTime = performance.now();
-                entry.duration = 520;
-            }
-        }
-
-        if (item.className) {
-            logo.classList.add(...String(item.className).split(/\s+/).filter(Boolean));
-        }
-        logo.classList.remove('is-exiting');
-    });
-
-    existingLogos.forEach((logo, ticker) => {
-        if (nextTickers.has(ticker)) return;
-        const entry = layerState.logos.get(ticker);
-        logo.classList.add('is-exiting');
-        if (!entry) {
-            window.setTimeout(() => {
-                if (logo.classList.contains('is-exiting')) logo.remove();
-            }, 220);
-            return;
-        }
-        entry.isExiting = true;
-        entry.startAngle = entry.currentAngle;
-        entry.deltaAngle = 0;
-        entry.startRadiusScale = entry.currentRadiusScale;
-        entry.targetRadiusScale = 1.18;
-        entry.startOpacity = entry.currentOpacity;
-        entry.targetOpacity = 0;
-        entry.animationStartTime = performance.now();
-        entry.duration = 220;
-    });
-
-    scheduleInvestmentDonutOrbitLayerAnimation(logoLayer);
-}
+registerInvestmentChartHelpers(window);
 
 document.addEventListener('DOMContentLoaded', () => {
     const theme = window.ANTIGRAVITY_APP?.theme || {};
@@ -737,6 +332,50 @@ document.addEventListener('DOMContentLoaded', () => {
         { value: 'ytd', label: 'YTD' },
         { value: 'max', label: 'Max' },
     ];
+
+    const {
+        adjustTradePriceForRenderedSeries,
+        buildDailyEquityChartPoints,
+        buildTickerPriceIndex,
+        buildTickerSummaries,
+        buildValuationStatus,
+        escapeHtml,
+        formatAmountWithCurrency,
+        formatHoldingsMoney,
+        formatHoldingsPercent,
+        formatHoldingsPosition,
+        formatSignedHoldingsMoney,
+        formatTransactionCommissionDisplay,
+        formatTransactionCurrency,
+        formatTransactionDateDisplay,
+        formatTransactionDescription,
+        getIndexedClosePriceOnOrBefore,
+        getInvestmentEquityRangeLabels,
+        getInvestmentStartingCash,
+        getInvestmentStockDetailsRangeLabels,
+        getLatestDashboardEquity,
+        getMoneyMarketTickerSet,
+        getNormalizedTransactionType,
+        getTransactionAmount,
+        getTransactionCommission,
+        getTransactionEconomicAmount,
+        getTransactionEffectiveUnitPrice,
+        getTransactionPrice,
+        getTransactionQuantity,
+        isFlatPosition,
+        isForexPairTicker,
+        normalizeLedgerDate,
+        normalizePriceHistoryPayload,
+        shouldTrackHoldingTicker,
+    } = createInvestmentDataUtils({
+        noCommissionTransactionTypes: NO_COMMISSION_TRANSACTION_TYPES,
+        investmentCommonSplitFactors: INVESTMENT_COMMON_SPLIT_FACTORS,
+        parseInvestmentDateParts,
+        formatInvestmentShortDateParts,
+        normalizeInvestmentTicker,
+        normalizeInvestmentStockDetailsRange,
+        normalizeInvestmentEquityRange,
+    });
 
     function normalizeInvestmentView(value) {
         const normalized = String(value || '').trim().toLowerCase();
@@ -1226,6 +865,102 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateInvestmentEquityRangePill();
             });
         });
+    }
+
+    function renderInvestmentRangeControl({
+        inputName = 'investment_stock_details_range',
+        inputIdPrefix = 'investment_stock_details_range',
+        shellClassName = 'investment-stock-details-range-shell',
+        controlClassName = 'investment-stock-details-range-segmented',
+        dataAttributeName = 'data-investment-stock-details-range-segmented',
+        activeRange = 'max',
+        options = INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
+    } = {}) {
+        const activeIndex = Math.max(0, options.findIndex((option) => option.value === activeRange));
+        return `
+            <div class="${escapeHtml(shellClassName)}">
+                <div class="segmented-control ${escapeHtml(controlClassName)}"
+                     ${dataAttributeName}
+                     data-segmented-pill="measured"
+                     data-active="${escapeHtml(activeRange)}"
+                     data-option-count="${options.length}"
+                     style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
+                    ${options.map((option) => `
+                        <label class="segmented-control-option" for="${escapeHtml(inputIdPrefix)}_${option.value}">
+                            <input id="${escapeHtml(inputIdPrefix)}_${option.value}"
+                                   name="${escapeHtml(inputName)}"
+                                   type="radio"
+                                   value="${option.value}"
+                                   ${option.value === activeRange ? 'checked' : ''}>
+                            <span><span class="investment-stock-details-range-label">${option.label}</span></span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderInvestmentStockDetailsRangeControl() {
+        return renderInvestmentRangeControl({
+            inputName: 'investment_stock_details_range',
+            inputIdPrefix: 'investment_stock_details_range',
+            shellClassName: 'investment-stock-details-range-shell',
+            controlClassName: 'investment-stock-details-range-segmented',
+            dataAttributeName: 'data-investment-stock-details-range-segmented',
+            activeRange: normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange),
+            options: INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
+        });
+    }
+
+    function renderInvestmentEquityRangeControl() {
+        return renderInvestmentRangeControl({
+            inputName: 'investment_equity_range',
+            inputIdPrefix: 'investment_equity_range',
+            shellClassName: 'investment-stock-details-range-shell',
+            controlClassName: 'investment-stock-details-range-segmented',
+            dataAttributeName: 'data-investment-equity-range-segmented',
+            activeRange: normalizeInvestmentEquityRange(selectedInvestmentEquityRange),
+            options: INVESTMENT_EQUITY_RANGE_OPTIONS,
+        });
+    }
+
+    function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
+        clearInvestmentStockDetailsRangeControlBindings();
+        const rangeControl = getInvestmentStockDetailsRangeControl();
+        if (!rangeControl) return;
+
+        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange))}"]`);
+        if (checkedInput instanceof HTMLInputElement) {
+            checkedInput.checked = true;
+        }
+        rangeControl.dataset.active = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+
+        const abortController = new AbortController();
+        investmentStockDetailsRangeControlAbortController = abortController;
+        const { signal } = abortController;
+        rangeControl.addEventListener('change', (event) => {
+            const nextInput = event.target;
+            if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_stock_details_range') return;
+            const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
+            selectedInvestmentStockDetailsRange = nextRange;
+            rememberInvestmentPageState({ range: nextRange });
+            rangeControl.dataset.active = nextRange;
+            const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
+            rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
+            scheduleInvestmentStockDetailsRangePillUpdate();
+            renderInvestmentStockDetailsPriceChart(ticker, detailRows);
+        }, { signal });
+        window.addEventListener('resize', scheduleInvestmentStockDetailsRangePillUpdate, { signal });
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                scheduleInvestmentStockDetailsRangePillUpdate();
+            });
+            resizeObserver.observe(rangeControl);
+            const rangeShell = rangeControl.closest('.investment-stock-details-range-shell');
+            if (rangeShell instanceof HTMLElement) resizeObserver.observe(rangeShell);
+            investmentStockDetailsRangeControlResizeObserver = resizeObserver;
+        }
+        scheduleInvestmentStockDetailsRangePillUpdate();
     }
 
     function bindInvestmentEquityRangeControls(chartPoints = []) {
@@ -3032,816 +2767,6 @@ document.addEventListener('DOMContentLoaded', () => {
             setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
         });
 
-    function getNormalizedTransactionType(txn) {
-        return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
-    }
-
-    function getTransactionQuantity(txn) {
-        const quantity = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.position_quantity;
-        return quantity === undefined || quantity === null ? null : Number(quantity);
-    }
-
-    function getTransactionAmount(txn) {
-        if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) {
-            return Number(txn.normalized.net_amount);
-        }
-        if (txn.amount !== undefined && txn.amount !== null) {
-            return Number(txn.amount);
-        }
-        if (txn.cash !== undefined && txn.cash !== null) {
-            return Number(txn.cash);
-        }
-        return 0;
-    }
-
-    function getTransactionCommission(txn) {
-        const commission = txn?.normalized?.commission ?? txn?.commission ?? 0;
-        const numericCommission = Number(commission);
-        return Number.isFinite(numericCommission) ? numericCommission : 0;
-    }
-
-    function getInvestmentStartingCash() {
-        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.starting_cash;
-        if (rawValue === undefined || rawValue === null || rawValue === '') {
-            return 0;
-        }
-        const numericValue = Number(rawValue);
-        return Number.isFinite(numericValue) ? numericValue : 0;
-    }
-
-    function getTransactionEconomicAmount(txn) {
-        const amount = getTransactionAmount(txn);
-        if (Math.abs(amount) > 1e-9) return amount;
-
-        const normalizedType = getNormalizedTransactionType(txn);
-        const quantity = getTransactionQuantity(txn);
-        const price = getTransactionPrice(txn);
-        if (quantity === null || price === null || Number.isNaN(quantity) || Number.isNaN(price)) {
-            return amount;
-        }
-
-        if (['buy', 'sell', 'grant'].includes(normalizedType)) {
-            return quantity * price;
-        }
-
-        return amount;
-    }
-
-    function getTransactionPrice(txn) {
-        if (txn.normalized?.unit_price !== undefined && txn.normalized?.unit_price !== null) {
-            return Number(txn.normalized.unit_price);
-        }
-        if (txn.price !== undefined && txn.price !== null) {
-            return Number(txn.price);
-        }
-        return null;
-    }
-
-    function formatTransactionDateDisplay(txn) {
-        const rawDate = String(txn?.date || '').trim();
-        const dateParts = parseInvestmentDateParts(rawDate);
-        if (!dateParts) return rawDate;
-        const baseDate = formatInvestmentShortDateParts(dateParts);
-        if (!rawDate.includes(' ') || rawDate.endsWith('20:00:00')) {
-            return baseDate;
-        }
-        const timeText = rawDate.split(' ')[1] || '';
-        return timeText ? `${baseDate} ${timeText}` : baseDate;
-    }
-
-    function formatAmountWithCurrency(value, currency, { showUsdSymbol = true } = {}) {
-        if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
-        const numericValue = Number(value);
-        const sign = numericValue < 0 ? '-' : '';
-        const absDisplay = formatAmount(Math.abs(numericValue));
-        const normalizedCurrency = String(currency || '').trim().toUpperCase();
-        if (normalizedCurrency === 'USD') {
-            return showUsdSymbol ? `${sign}$${absDisplay}` : `${sign}${absDisplay}`;
-        }
-        if (normalizedCurrency) {
-            return `${sign}${normalizedCurrency} ${absDisplay}`;
-        }
-        return `${sign}${absDisplay}`;
-    }
-
-    function formatTransactionCommissionDisplay(txn, { includeCurrency = false } = {}) {
-        const normalizedType = getNormalizedTransactionType(txn);
-        const commission = getTransactionCommission(txn);
-        if ((!commission || Math.abs(commission) < 1e-9) && NO_COMMISSION_TRANSACTION_TYPES.has(normalizedType)) {
-            return '-';
-        }
-        const absoluteCommission = Math.abs(commission);
-        if (!includeCurrency) {
-            return formatAmount(absoluteCommission);
-        }
-        return formatAmountWithCurrency(absoluteCommission, formatTransactionCurrency(txn));
-    }
-
-    function formatTransactionCurrency(txn) {
-        const normalizedType = getNormalizedTransactionType(txn);
-        if (normalizedType === 'forex_trade_component') {
-            const forexPair = String(txn?.ticker || '').trim();
-            const [baseCurrency] = forexPair.split('.');
-            return baseCurrency || '';
-        }
-
-        const explicitCurrency = String(txn?.currency || '').trim();
-        if (explicitCurrency) return explicitCurrency;
-
-        return '';
-    }
-
-    function formatForexTradeComponentDescription(txn) {
-        const forexPair = String(txn?.ticker || '').trim();
-        const [baseCurrency, quoteCurrency] = forexPair.split('.');
-        const quantity = getTransactionQuantity(txn);
-        const rate = getTransactionPrice(txn);
-
-        if (!baseCurrency || !quoteCurrency || !Number.isFinite(quantity) || !Number.isFinite(rate)) {
-            return txn.description || '--';
-        }
-
-        const quantityText = Number.isInteger(quantity) ? `${quantity}` : String(txn.quantity_raw ?? txn.quantity_abs ?? txn.normalized?.display_quantity ?? quantity);
-        const rateText = String(txn.price_raw ?? txn.normalized?.unit_price ?? rate);
-        return `Bought ${quantityText} ${baseCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
-    }
-
-    function formatTransactionDescription(txn) {
-        let description;
-        let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
-        const price = txn.normalized?.unit_price ?? txn.price;
-        const normalizedTypeDesc = getNormalizedTransactionType(txn);
-
-        if (normalizedTypeDesc === 'forex_trade_component') {
-            return formatForexTradeComponentDescription(txn);
-        }
-
-        if (txn.ticker && qty) {
-            const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty, 10)) : qty;
-            if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
-                const cleanPrice = Number(price).toFixed(2);
-                description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
-            } else {
-                description = `${txn.ticker}@${cleanQty}`;
-            }
-        } else if (normalizedTypeDesc === 'deposit') {
-            description = '* Equivalent';
-        } else if (normalizedTypeDesc === 'withdrawal') {
-            description = '';
-        } else {
-            description = txn.description || '--';
-        }
-
-        return description;
-    }
-
-    function formatHoldingsMoney(value, {dashWhenZero = false} = {}) {
-        if (value === null || value === undefined || Number.isNaN(value)) return '-';
-        if (dashWhenZero && Math.abs(value) < 1e-9) return '-';
-        return new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(value);
-    }
-
-    function formatSignedHoldingsMoney(value) {
-        if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
-        const numericValue = Number(value);
-        if (Math.abs(numericValue) < 1e-9) return formatHoldingsMoney(0);
-        return `${numericValue > 0 ? '+' : '-'}${formatHoldingsMoney(Math.abs(numericValue))}`;
-    }
-
-    function formatHoldingsPercent(value) {
-        if (value === null || value === undefined || Number.isNaN(value)) return '-';
-        return `${new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(value)}%`;
-    }
-
-    function formatHoldingsUsd(value, {dashWhenNull = false} = {}) {
-        if (value === null || value === undefined || Number.isNaN(value)) {
-            return dashWhenNull ? '-' : '$0.00';
-        }
-        const sign = value < 0 ? '-' : '';
-        return `${sign}$${formatHoldingsMoney(Math.abs(value))}`;
-    }
-
-    function formatHoldingsPosition(quantity) {
-        if (quantity === null || quantity === undefined || Number.isNaN(quantity) || Math.abs(quantity) < 1e-9) {
-            return '-';
-        }
-        const hasFraction = Math.abs(quantity - Math.round(quantity)) > 1e-9;
-        return new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: hasFraction ? 2 : 0,
-            maximumFractionDigits: hasFraction ? 4 : 0,
-        }).format(quantity);
-    }
-
-    function escapeHtml(value) {
-        return String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
-    function shouldTrackHoldingTicker(txn) {
-        const ticker = String(txn?.ticker || '').trim();
-        if (!ticker) return false;
-        const normalizedType = getNormalizedTransactionType(txn);
-        if (['forex_trade', 'forex_trade_component', 'fx_translation_pnl'].includes(normalizedType)) return false;
-        return !isForexPairTicker(ticker);
-    }
-
-    function isForexPairTicker(ticker) {
-        return /^[A-Z]{3}\.[A-Z]{3}$/i.test(String(ticker || '').trim());
-    }
-
-    // Code version: v0.2.0.1
-    function isFlatPosition(value) {
-        return !Number.isFinite(value) || Math.abs(value) < 1e-9;
-    }
-
-    function createPositionState(ticker) {
-        return {
-            ticker,
-            shares: 0,
-            totalCost: 0,
-            realizedPnl: 0,
-        };
-    }
-
-    function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
-        const quantity = quantityOverride ?? getTransactionQuantity(txn);
-        if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
-            if (txn?.normalized?.net_amount !== undefined && txn?.normalized?.net_amount !== null) {
-                const normalizedAmount = Number(txn.normalized.net_amount);
-                if (Number.isFinite(normalizedAmount) && Math.abs(normalizedAmount) > 1e-9) {
-                    return Math.abs(normalizedAmount) / quantity;
-                }
-            }
-            const normalizedType = getNormalizedTransactionType(txn);
-            const economicAmount = getTransactionEconomicAmount(txn);
-            const commission = Math.abs(getTransactionCommission(txn));
-            if (Number.isFinite(economicAmount) && Math.abs(economicAmount) > 1e-9) {
-                if (normalizedType === 'buy') {
-                    return (Math.abs(economicAmount) + commission) / quantity;
-                }
-                if (normalizedType === 'sell') {
-                    return Math.max(0, Math.abs(economicAmount) - commission) / quantity;
-                }
-                return Math.abs(economicAmount) / quantity;
-            }
-        }
-        const price = getTransactionPrice(txn);
-        return Number.isFinite(price) ? price : 0;
-    }
-
-    function resetPositionState(state) {
-        state.shares = 0;
-        state.totalCost = 0;
-    }
-
-    function openPositionLots(state, side, quantity, unitPrice) {
-        if (!Number.isFinite(quantity) || quantity <= 0) return;
-        const signedQuantity = side === 'short' ? -quantity : quantity;
-        state.shares += signedQuantity;
-        state.totalCost += unitPrice * quantity;
-    }
-
-    function closePositionLots(state, quantity, unitPrice) {
-        if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return 0;
-
-        const averagePrice = state.totalCost / Math.abs(state.shares);
-        const isLongPosition = state.shares > 0;
-        let realizedDelta = 0;
-
-        if (isLongPosition) {
-            realizedDelta = (unitPrice - averagePrice) * quantity;
-            state.shares -= quantity;
-        } else {
-            realizedDelta = (averagePrice - unitPrice) * quantity;
-            state.shares += quantity;
-        }
-
-        state.realizedPnl += realizedDelta;
-        state.totalCost -= averagePrice * quantity;
-
-        if (isFlatPosition(state.shares) || isFlatPosition(state.totalCost)) {
-            resetPositionState(state);
-        }
-        return realizedDelta;
-    }
-
-    function applyDirectionalTrade(state, side, quantity, unitPrice) {
-        if (!Number.isFinite(quantity) || quantity <= 0) return 0;
-
-        if (isFlatPosition(state.shares)) {
-            openPositionLots(state, side, quantity, unitPrice);
-            return 0;
-        }
-
-        const currentSide = state.shares > 0 ? 'long' : 'short';
-        if (currentSide === side) {
-            openPositionLots(state, side, quantity, unitPrice);
-            return 0;
-        }
-
-        const closingQuantity = Math.min(Math.abs(state.shares), quantity);
-        const realizedDelta = closePositionLots(state, closingQuantity, unitPrice);
-
-        const openingQuantity = quantity - closingQuantity;
-        if (openingQuantity > 1e-9) {
-            resetPositionState(state);
-            openPositionLots(state, side, openingQuantity, unitPrice);
-        }
-        return realizedDelta;
-    }
-
-    function getMoneyMarketTickerSet() {
-        const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
-        return new Set(
-            configuredTickers
-                .map((ticker) => String(ticker || '').trim().toUpperCase())
-                .filter(Boolean)
-        );
-    }
-
-    function getLatestDashboardEquity(processedTransactions, chartPoints = []) {
-        const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length
-            ? chartPoints[chartPoints.length - 1]
-            : null;
-        const latestValuationEquity = Number(latestChartPoint?.total_equity);
-        if (Number.isFinite(latestValuationEquity)) {
-            return latestValuationEquity;
-        }
-
-        const latestRecord = Array.isArray(processedTransactions) && processedTransactions.length
-            ? processedTransactions[processedTransactions.length - 1]
-            : null;
-        const totalEquity = Number(latestRecord?.total_equity);
-        return Number.isFinite(totalEquity) ? totalEquity : 0;
-    }
-
-    function normalizeLedgerDate(value) {
-        const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})/);
-        return match ? match[1] : '';
-    }
-
-    function parseInvestmentChartDate(value) {
-        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!match) return null;
-        const year = Number(match[1]);
-        const monthIndex = Number(match[2]) - 1;
-        const day = Number(match[3]);
-        if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || !Number.isInteger(day)) return null;
-        return new Date(Date.UTC(year, monthIndex, day));
-    }
-
-    function getInvestmentStockDetailsRangeLabels(labels, range = 'max') {
-        const orderedLabels = Array.isArray(labels)
-            ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
-            : [];
-        if (!orderedLabels.length) return [];
-        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
-        if (normalizedRange === 'max') return orderedLabels;
-
-        const latestDate = parseInvestmentChartDate(orderedLabels[orderedLabels.length - 1]);
-        if (!(latestDate instanceof Date) || Number.isNaN(latestDate.getTime())) {
-            return orderedLabels;
-        }
-
-        if (normalizedRange === '3d') {
-            return orderedLabels.slice(-Math.min(3, orderedLabels.length));
-        }
-
-        let startDate = null;
-        if (normalizedRange === '1w') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCDate(startDate.getUTCDate() - 6);
-        } else if (normalizedRange === '3m') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCMonth(startDate.getUTCMonth() - 3);
-        } else if (normalizedRange === 'ytd') {
-            startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
-        }
-
-        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
-            return orderedLabels;
-        }
-
-        const filteredLabels = orderedLabels.filter((label) => {
-            const currentDate = parseInvestmentChartDate(label);
-            return currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) && currentDate >= startDate;
-        });
-        return filteredLabels.length ? filteredLabels : orderedLabels;
-    }
-
-    function getInvestmentEquityRangeLabels(labels, range = 'max') {
-        const orderedLabels = Array.isArray(labels)
-            ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
-            : [];
-        if (!orderedLabels.length) return [];
-        const normalizedRange = normalizeInvestmentEquityRange(range);
-        if (normalizedRange === 'max') return orderedLabels;
-
-        const latestDate = parseInvestmentChartDate(orderedLabels[orderedLabels.length - 1]);
-        if (!(latestDate instanceof Date) || Number.isNaN(latestDate.getTime())) {
-            return orderedLabels;
-        }
-
-        let startDate = null;
-        if (normalizedRange === '1w') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCDate(startDate.getUTCDate() - 6);
-        } else if (normalizedRange === '1m') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCMonth(startDate.getUTCMonth() - 1);
-        } else if (normalizedRange === '3m') {
-            startDate = new Date(latestDate.getTime());
-            startDate.setUTCMonth(startDate.getUTCMonth() - 3);
-        } else if (normalizedRange === 'ytd') {
-            startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
-        }
-
-        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
-            return orderedLabels;
-        }
-
-        const filteredLabels = orderedLabels.filter((label) => {
-            const currentDate = parseInvestmentChartDate(label);
-            return currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) && currentDate >= startDate;
-        });
-        return filteredLabels.length ? filteredLabels : orderedLabels;
-    }
-
-    function renderInvestmentRangeControl({
-        inputName = 'investment_stock_details_range',
-        inputIdPrefix = 'investment_stock_details_range',
-        shellClassName = 'investment-stock-details-range-shell',
-        controlClassName = 'investment-stock-details-range-segmented',
-        dataAttributeName = 'data-investment-stock-details-range-segmented',
-        activeRange = 'max',
-        options = INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
-    } = {}) {
-        const activeIndex = Math.max(0, options.findIndex((option) => option.value === activeRange));
-        return `
-            <div class="${escapeHtml(shellClassName)}">
-                <div class="segmented-control ${escapeHtml(controlClassName)}"
-                     ${dataAttributeName}
-                     data-segmented-pill="measured"
-                     data-active="${escapeHtml(activeRange)}"
-                     data-option-count="${options.length}"
-                     style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
-                    ${options.map((option) => `
-                        <label class="segmented-control-option" for="${escapeHtml(inputIdPrefix)}_${option.value}">
-                            <input id="${escapeHtml(inputIdPrefix)}_${option.value}"
-                                   name="${escapeHtml(inputName)}"
-                                   type="radio"
-                                   value="${option.value}"
-                                   ${option.value === activeRange ? 'checked' : ''}>
-                            <span><span class="investment-stock-details-range-label">${option.label}</span></span>
-                        </label>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    }
-
-    function renderInvestmentStockDetailsRangeControl() {
-        return renderInvestmentRangeControl({
-            inputName: 'investment_stock_details_range',
-            inputIdPrefix: 'investment_stock_details_range',
-            shellClassName: 'investment-stock-details-range-shell',
-            controlClassName: 'investment-stock-details-range-segmented',
-            dataAttributeName: 'data-investment-stock-details-range-segmented',
-            activeRange: normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange),
-            options: INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
-        });
-    }
-
-    function renderInvestmentEquityRangeControl() {
-        return renderInvestmentRangeControl({
-            inputName: 'investment_equity_range',
-            inputIdPrefix: 'investment_equity_range',
-            shellClassName: 'investment-stock-details-range-shell',
-            controlClassName: 'investment-stock-details-range-segmented',
-            dataAttributeName: 'data-investment-equity-range-segmented',
-            activeRange: normalizeInvestmentEquityRange(selectedInvestmentEquityRange),
-            options: INVESTMENT_EQUITY_RANGE_OPTIONS,
-        });
-    }
-
-    function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
-        clearInvestmentStockDetailsRangeControlBindings();
-        const rangeControl = getInvestmentStockDetailsRangeControl();
-        if (!rangeControl) return;
-
-        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange))}"]`);
-        if (checkedInput instanceof HTMLInputElement) {
-            checkedInput.checked = true;
-        }
-        rangeControl.dataset.active = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
-
-        const abortController = new AbortController();
-        investmentStockDetailsRangeControlAbortController = abortController;
-        const { signal } = abortController;
-        rangeControl.addEventListener('change', (event) => {
-            const nextInput = event.target;
-            if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_stock_details_range') return;
-            const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
-            selectedInvestmentStockDetailsRange = nextRange;
-            rememberInvestmentPageState({ range: nextRange });
-            rangeControl.dataset.active = nextRange;
-            const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
-            rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
-            scheduleInvestmentStockDetailsRangePillUpdate();
-            renderInvestmentStockDetailsPriceChart(ticker, detailRows);
-        }, { signal });
-        window.addEventListener('resize', scheduleInvestmentStockDetailsRangePillUpdate, { signal });
-        if (window.ResizeObserver) {
-            const resizeObserver = new ResizeObserver(() => {
-                scheduleInvestmentStockDetailsRangePillUpdate();
-            });
-            resizeObserver.observe(rangeControl);
-            const rangeShell = rangeControl.closest('.investment-stock-details-range-shell');
-            if (rangeShell instanceof HTMLElement) resizeObserver.observe(rangeShell);
-            investmentStockDetailsRangeControlResizeObserver = resizeObserver;
-        }
-        scheduleInvestmentStockDetailsRangePillUpdate();
-    }
-
-    function buildTickerPriceIndex(tickerClosePrices) {
-        const priceIndex = {};
-        Object.entries(tickerClosePrices || {}).forEach(([ticker, dateMap]) => {
-            const dates = Object.keys(dateMap || {}).sort();
-            priceIndex[ticker] = {
-                dates,
-                closes: { ...(dateMap || {}) },
-            };
-        });
-        return priceIndex;
-    }
-
-    function normalizePriceHistoryPayload(priceHistoryByTicker) {
-        const normalized = {};
-        Object.entries(priceHistoryByTicker || {}).forEach(([ticker, rows]) => {
-            const normalizedTicker = normalizeInvestmentTicker(ticker);
-            if (!normalizedTicker || !Array.isArray(rows)) return;
-            normalized[normalizedTicker] = {};
-            rows.forEach((row) => {
-                const date = normalizeLedgerDate(row?.date);
-                const close = Number(row?.close);
-                if (!date || !Number.isFinite(close)) return;
-                normalized[normalizedTicker][date] = close;
-            });
-        });
-        return normalized;
-    }
-
-    function getIndexedClosePriceOnOrBefore(priceEntry, targetDate) {
-        if (!priceEntry || !targetDate) return null;
-        const dates = Array.isArray(priceEntry.dates) ? priceEntry.dates : [];
-        for (let index = dates.length - 1; index >= 0; index -= 1) {
-            if (dates[index] <= targetDate) {
-                return Number(priceEntry.closes?.[dates[index]]);
-            }
-        }
-        return null;
-    }
-
-    function buildValuationStatus({ backendFailures = [], fallbackTickers = [], missingTickers = [] } = {}) {
-        const normalizedBackendFailures = Array.isArray(backendFailures) ? backendFailures : [];
-        const normalizedFallbackTickers = Array.from(new Set((Array.isArray(fallbackTickers) ? fallbackTickers : [])
-            .map((ticker) => normalizeInvestmentTicker(ticker))
-            .filter((ticker) => !isForexPairTicker(ticker))
-            .filter(Boolean)));
-        const normalizedMissingTickers = Array.from(new Set((Array.isArray(missingTickers) ? missingTickers : [])
-            .map((ticker) => normalizeInvestmentTicker(ticker))
-            .filter((ticker) => !isForexPairTicker(ticker))
-            .filter(Boolean)));
-        const filteredBackendFailures = normalizedBackendFailures.filter((entry) => {
-            const ticker = normalizeInvestmentTicker(entry?.ticker || '');
-            return ticker ? !isForexPairTicker(ticker) : true;
-        });
-        const hasBackendFailures = filteredBackendFailures.length > 0;
-        const isDegraded = hasBackendFailures || normalizedFallbackTickers.length > 0 || normalizedMissingTickers.length > 0;
-        if (!isDegraded) {
-            return {
-                isDegraded: false,
-                message: '',
-                backendFailures: filteredBackendFailures,
-                fallbackTickers: normalizedFallbackTickers,
-                missingTickers: normalizedMissingTickers,
-            };
-        }
-
-        const messageParts = [];
-        if (normalizedMissingTickers.length) {
-            messageParts.push(`Valuation is incomplete for ${normalizedMissingTickers.join(', ')} because no usable local close history was found.`);
-        }
-        if (normalizedFallbackTickers.length) {
-            messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.join(', ')} until local market history is refreshed.`);
-        }
-        if (hasBackendFailures) {
-            messageParts.push(filteredBackendFailures.map((entry) => entry?.message).filter(Boolean).join(' '));
-        }
-
-        return {
-            isDegraded: true,
-            message: messageParts.filter(Boolean).join(' '),
-            backendFailures: filteredBackendFailures,
-            fallbackTickers: normalizedFallbackTickers,
-            missingTickers: normalizedMissingTickers,
-        };
-    }
-
-    function adjustTradePriceForRenderedSeries(transactionPrice, renderedSeriesPrice) {
-        const rawTradePrice = Number(transactionPrice);
-        const referencePrice = Number(renderedSeriesPrice);
-        if (!Number.isFinite(rawTradePrice)) return null;
-        if (!Number.isFinite(referencePrice) || referencePrice <= 0 || rawTradePrice <= 0) {
-            return rawTradePrice;
-        }
-        const rawRatio = rawTradePrice / referencePrice;
-        if (!Number.isFinite(rawRatio) || rawRatio <= 0) return rawTradePrice;
-        const closeEnoughDistance = Math.log(1.35);
-        const rawDistance = Math.abs(Math.log(rawRatio));
-        if (rawDistance <= closeEnoughDistance) return rawTradePrice;
-
-        const splitFactorCandidates = Array.from(new Set([
-            ...INVESTMENT_COMMON_SPLIT_FACTORS,
-            ...INVESTMENT_COMMON_SPLIT_FACTORS
-                .filter((factor) => Number.isFinite(factor) && factor > 0 && factor !== 1)
-                .map((factor) => 1 / factor),
-        ])).sort((left, right) => left - right);
-
-        let bestFactor = 1;
-        let bestDistance = Number.POSITIVE_INFINITY;
-        splitFactorCandidates.forEach((factor) => {
-            if (!Number.isFinite(factor) || factor <= 0) return;
-            const ratioDistance = Math.abs(Math.log(rawRatio / factor));
-            if (ratioDistance < bestDistance) {
-                bestDistance = ratioDistance;
-                bestFactor = factor;
-            }
-        });
-
-        const materiallyDifferentFactor = Math.abs(Math.log(bestFactor)) >= Math.log(1.5);
-        const confidentlyMatchedFactor = bestDistance <= Math.log(1.12);
-        const meaningfullyImproved = bestDistance + 0.08 < rawDistance;
-        if (!materiallyDifferentFactor || !confidentlyMatchedFactor || !meaningfullyImproved) {
-            return rawTradePrice;
-        }
-
-        const adjustedPrice = rawTradePrice / bestFactor;
-        const adjustedRatio = adjustedPrice / referencePrice;
-        if (!Number.isFinite(adjustedPrice) || adjustedPrice <= 0 || !Number.isFinite(adjustedRatio) || adjustedRatio <= 0) {
-            return rawTradePrice;
-        }
-        return Math.abs(Math.log(adjustedRatio)) <= closeEnoughDistance ? adjustedPrice : rawTradePrice;
-    }
-
-    function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
-        if (!snapshot || !valuationDate) return { marketValue: 0, holdingsMarketValues: {} };
-        let marketValue = 0;
-        const holdingsMarketValues = {};
-
-        Object.entries(snapshot.holdings || {}).forEach(([ticker, quantity]) => {
-            const numericQuantity = Number(quantity);
-            if (!Number.isFinite(numericQuantity) || Math.abs(numericQuantity) < 1e-9) return;
-
-            let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[ticker], valuationDate);
-            const normalizedTicker = String(ticker).trim().toUpperCase();
-            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
-
-            if (isMoneyMarketTicker) {
-                const anchoredPrice = snapshot.money_market_anchors?.[ticker] ?? snapshot.money_market_anchors?.[normalizedTicker];
-                closePrice = anchoredPrice ?? closePrice;
-            }
-
-            if ((!Number.isFinite(closePrice) || closePrice === 0) && String(snapshot.ticker || '').trim().toUpperCase() === normalizedTicker) {
-                const fallbackPrice = Number(snapshot.price);
-                if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
-                    closePrice = fallbackPrice;
-                }
-            }
-
-            const safeClosePrice = Number.isFinite(closePrice) ? closePrice : 0;
-            const holdingMarketValue = numericQuantity * safeClosePrice;
-            marketValue += holdingMarketValue;
-            if (Math.abs(holdingMarketValue) > 1e-9) {
-                holdingsMarketValues[ticker] = holdingMarketValue;
-            }
-        });
-
-        return { marketValue, holdingsMarketValues };
-    }
-
-    function buildDailyEquityChartPoints(processedTransactions, tickerClosePrices, moneyMarketTickers) {
-        if (!Array.isArray(processedTransactions) || !processedTransactions.length) {
-            return [];
-        }
-
-        const firstLedgerDate = normalizeLedgerDate(processedTransactions[0]?.date);
-        if (!firstLedgerDate) return [];
-
-        const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
-        const tradingDateSet = new Set();
-        Object.values(tickerPriceIndex).forEach((entry) => {
-            (entry?.dates || []).forEach((date) => {
-                if (date >= firstLedgerDate) {
-                    tradingDateSet.add(date);
-                }
-            });
-        });
-
-        const ledgerDateMap = new Map();
-        processedTransactions.forEach((txn) => {
-            const ledgerDate = normalizeLedgerDate(txn?.date);
-            if (!ledgerDate) return;
-            if (!ledgerDateMap.has(ledgerDate)) {
-                ledgerDateMap.set(ledgerDate, {
-                    snapshot: txn,
-                    ledgerNos: [],
-                    cashInAmount: 0,
-                    cashOutAmount: 0,
-                    netTransferAmount: 0,
-                });
-            }
-            const entry = ledgerDateMap.get(ledgerDate);
-            entry.snapshot = txn;
-            entry.ledgerNos.push(Number(txn.ledger_no || 0));
-            const normalizedType = getNormalizedTransactionType(txn);
-            const transactionAmount = Math.abs(Number(getTransactionAmount(txn)));
-            if (!Number.isFinite(transactionAmount) || transactionAmount <= 1e-9) return;
-            if (normalizedType === 'deposit') {
-                entry.cashInAmount += transactionAmount;
-                entry.netTransferAmount += transactionAmount;
-            } else if (normalizedType === 'withdrawal') {
-                entry.cashOutAmount += transactionAmount;
-                entry.netTransferAmount -= transactionAmount;
-            }
-        });
-
-        const candidateDates = Array.from(new Set([
-            ...Array.from(tradingDateSet),
-            ...Array.from(ledgerDateMap.keys()),
-        ])).sort();
-
-        const points = [];
-        let processedCursor = 0;
-        let activeSnapshot = null;
-        let cumulativeNetTransferAmount = 0;
-        let previousTradingPointIndex = -1;
-
-        candidateDates.forEach((date) => {
-            while (processedCursor < processedTransactions.length) {
-                const nextSnapshot = processedTransactions[processedCursor];
-                const nextLedgerDate = normalizeLedgerDate(nextSnapshot?.date);
-                if (!nextLedgerDate || nextLedgerDate > date) break;
-                activeSnapshot = nextSnapshot;
-                processedCursor += 1;
-            }
-
-            if (!activeSnapshot) return;
-
-            const valuation = calculateSnapshotMarketValue(activeSnapshot, date, tickerPriceIndex, moneyMarketTickers);
-            const ledgerEntry = ledgerDateMap.get(date);
-            const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
-                ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
-                : [];
-            const cashInAmount = Number(ledgerEntry?.cashInAmount) || 0;
-            const cashOutAmount = Number(ledgerEntry?.cashOutAmount) || 0;
-            const netTransferAmount = Number(ledgerEntry?.netTransferAmount) || 0;
-            const isTradingDay = tradingDateSet.has(date);
-            cumulativeNetTransferAmount += netTransferAmount;
-
-            points.push({
-                date,
-                running_cash: Number(activeSnapshot.running_cash) || 0,
-                market_value: valuation.marketValue,
-                holdings_market_values: valuation.holdingsMarketValues,
-                total_equity: (Number(activeSnapshot.running_cash) || 0) + valuation.marketValue,
-                anchor_ledger_date: anchorLedgerNos.length ? date : '',
-                anchor_ledger_nos: anchorLedgerNos,
-                cash_in_amount: cashInAmount,
-                cash_out_amount: cashOutAmount,
-                net_transfer_amount: netTransferAmount,
-                cumulative_net_transfer_amount: cumulativeNetTransferAmount,
-                is_trading_day: isTradingDay,
-                previous_trading_point_index: previousTradingPointIndex,
-            });
-            if (isTradingDay) {
-                previousTradingPointIndex = points.length - 1;
-            }
-        });
-
-        return points;
-    }
-
     function setInvestmentSharedChartDateRange(chartPoints = []) {
         const normalizedDates = Array.isArray(chartPoints)
             ? chartPoints
@@ -3859,85 +2784,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ? fallbackDates.map((value) => normalizeLedgerDate(value)).filter(Boolean)
             : [];
         return Array.from(new Set(normalizedFallbackDates)).sort();
-    }
-
-    function buildTickerSummaries(transactions, latestPrices, TOTAL_EQUITY) {
-        const tickerMap = new Map();
-        const orderedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        orderedTransactions.forEach((txn) => {
-            if (!shouldTrackHoldingTicker(txn)) return;
-            const ticker = String(txn.ticker).trim().toUpperCase();
-            const normalizedType = getNormalizedTransactionType(txn);
-            const quantity = getTransactionQuantity(txn);
-            const amount = getTransactionAmount(txn);
-
-            if (!tickerMap.has(ticker)) {
-                tickerMap.set(ticker, createPositionState(ticker));
-            }
-
-            const summary = tickerMap.get(ticker);
-
-            if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                return;
-            }
-
-            if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                return;
-            }
-
-            // Dividend reinvestment adds shares that were funded by a separate
-            // dividend cash flow, so we should not count the reinvested amount
-            // as fresh cost basis again in realized P&L reporting.
-            if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                return;
-            }
-
-            if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                return;
-            }
-
-            if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
-                summary.realizedPnl += amount;
-            }
-        });
-
-        return Array.from(tickerMap.values()).map((summary) => {
-            const hasOpenPosition = !isFlatPosition(summary.shares);
-            const averagePrice = hasOpenPosition ? (summary.totalCost / Math.abs(summary.shares)) : null;
-            const lastPrice = latestPrices[summary.ticker] ?? null;
-            const marketValue = hasOpenPosition && lastPrice !== null ? summary.shares * lastPrice : 0;
-            const unrealizedPnl = hasOpenPosition && lastPrice !== null && averagePrice !== null
-                ? (summary.shares > 0
-                    ? (lastPrice - averagePrice) * summary.shares
-                    : (averagePrice - lastPrice) * Math.abs(summary.shares))
-                : null;
-            const positionWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9 && hasOpenPosition
-                ? (marketValue / TOTAL_EQUITY) * 100
-                : 0;
-
-            return {
-                ...summary,
-                averagePrice,
-                lastPrice,
-                marketValue,
-                unrealizedPnl,
-                positionWeight,
-                hasOpenPosition,
-            };
-        }).sort((left, right) => {
-            if (left.hasOpenPosition !== right.hasOpenPosition) {
-                return left.hasOpenPosition ? -1 : 1;
-            }
-            if (left.hasOpenPosition && right.hasOpenPosition) {
-                return Math.abs(right.marketValue) - Math.abs(left.marketValue);
-            }
-            return left.ticker.localeCompare(right.ticker);
-        });
     }
 
     function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY) {
