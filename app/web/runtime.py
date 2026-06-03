@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.14
+Code version: v0.3.15
 """
 
 from __future__ import annotations
@@ -75,6 +75,7 @@ from app.core.config import (
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
 from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
+    merge_investment_payloads,
     normalize_investment_payload_tickers,
 )
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
@@ -3737,7 +3738,7 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
     def investment_add_transactions():
-        """Import IBKR CSV files and rebuild the local investment store."""
+        """Import IBKR CSV files and incrementally merge them into the local investment store."""
         transactions_file = None
         positions_file = None
         try:
@@ -3757,9 +3758,13 @@ def build_web_runtime() -> WebRuntime:
                     "error": "Both CSV files must be non-empty.",
                 }), 400
 
-            investment_payload = build_investment_payload_from_ibkr_csvs(
+            imported_payload = build_investment_payload_from_ibkr_csvs(
                 transaction_csv_bytes=transactions_payload,
                 positions_csv_bytes=positions_payload,
+            )
+            investment_payload = merge_investment_payloads(
+                load_normalized_investment_payload(),
+                imported_payload,
             )
 
             freshness_refresh_failures = ensure_latest_daily_caches(
@@ -3782,7 +3787,8 @@ def build_web_runtime() -> WebRuntime:
             return jsonify({
                 "success": True,
                 "message": (
-                    "Import complete. The server does not store your original CSV files. "
+                    "Import complete. Matching records were merged incrementally into the local investment store "
+                    "without clearing older data first. The server does not store your original CSV files. "
                     "They were processed in memory and discarded after the import finished."
                 ),
                 "summary": investment_payload.get("summary", {}),
