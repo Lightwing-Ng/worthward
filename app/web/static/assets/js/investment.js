@@ -1100,6 +1100,23 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'max';
     }
 
+    function getInvestmentHistoryHeadingElement() {
+        const heading = document.querySelector('#investment_history_surface .investment-history-heading-row .chart-heading');
+        return heading instanceof HTMLElement ? heading : null;
+    }
+
+    function getInvestmentEquityRangeLabel(range = selectedInvestmentEquityRange) {
+        const normalizedRange = normalizeInvestmentEquityRange(range);
+        const matchedOption = INVESTMENT_EQUITY_RANGE_OPTIONS.find((option) => option.value === normalizedRange);
+        return matchedOption?.label || 'Max';
+    }
+
+    function syncInvestmentHistoryHeading(range = selectedInvestmentEquityRange) {
+        const heading = getInvestmentHistoryHeadingElement();
+        if (!heading) return;
+        heading.textContent = `Transaction history · ${getInvestmentEquityRangeLabel(range)}`;
+    }
+
     function clearInvestmentStockDetailsRangeControlBindings() {
         if (investmentStockDetailsRangeMeasureRaf) {
             window.cancelAnimationFrame(investmentStockDetailsRangeMeasureRaf);
@@ -1230,6 +1247,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextIndex = Math.max(0, INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
             scheduleInvestmentEquityRangePillUpdate();
+            syncInvestmentHistoryHeading(nextRange);
+            renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, chartPoints);
             renderEquityChartWithEquity(chartPoints);
         }, { signal });
         window.addEventListener('resize', scheduleInvestmentEquityRangePillUpdate, { signal });
@@ -5261,10 +5280,59 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
+        const normalizedTransactions = Array.isArray(processedTransactions) ? processedTransactions : [];
+        const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
+        const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
+            normalizedChartPoints.map((point) => point?.date),
+            selectedInvestmentEquityRange,
+        ));
+        if (!visibleRangeLabels.size) {
+            return normalizedTransactions;
+        }
+        return normalizedTransactions.filter((txn) => visibleRangeLabels.has(normalizeLedgerDate(txn?.date)));
+    }
+
+    function renderInvestmentHistoryTableRows(processedTransactions = [], chartPoints = []) {
+        const tbody = document.getElementById('investment_history');
+        if (!(tbody instanceof HTMLElement)) return;
+        clearInvestmentHistoryHighlights();
+        const visibleTransactions = getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints);
+        if (!visibleTransactions.length) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="investment-history-empty-cell">No transactions fall within the selected range.</td>
+                </tr>
+            `;
+            attachHistoryTableAlignmentSync(historyTable);
+            return;
+        }
+        tbody.innerHTML = [...visibleTransactions].reverse().map((txn) => {
+            const description = formatTransactionDescription(txn);
+            return `
+            <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
+                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
+                <td class="investment-history-cell investment-history-cell-left">${description}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.market_value)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.running_cash)}</td>
+                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(txn.total_equity)}</strong></td>
+            </tr>
+            `;
+        }).join('');
+        bindInvestmentHistoryChartInteractions(tbody);
+        attachHistoryTableAlignmentSync(historyTable);
+    }
+
     async function renderTransactionTable(transactions) {
         const tbody = document.getElementById('investment_history');
         if (!tbody) return { isDegraded: false, message: '' };
         clearInvestmentHistoryHighlights();
+        syncInvestmentHistoryHeading();
 
         if (!transactions.length) {
             setInvestmentExportButtonVisibility(false);
@@ -5473,27 +5541,8 @@ document.addEventListener('DOMContentLoaded', () => {
             missingTickers: Array.from(missingTickers),
         });
 
-        // 3. Render reverse chronological (newest first)
-        tbody.innerHTML = [...processed].reverse().map((txn, index) => {
-            const description = formatTransactionDescription(txn);
-
-            return `
-            <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
-                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
-                <td class="investment-history-cell investment-history-cell-left">${description}</td>
-                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.market_value)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.running_cash)}</td>
-                <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(txn.total_equity)}</strong></td>
-            </tr>
-            `;
-        }).join('');
-        bindInvestmentHistoryChartInteractions(tbody);
-        attachHistoryTableAlignmentSync(historyTable);
+        // 3. Render reverse chronological rows constrained by the active equity range
+        renderInvestmentHistoryTableRows(processed, chartPoints);
 
         // 4. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints);
