@@ -705,6 +705,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsRangeMeasureRaf = 0;
     let investmentStockDetailsRangeControlAbortController = null;
     let investmentStockDetailsRangeControlResizeObserver = null;
+    let investmentEquityRangeMeasureRaf = 0;
+    let investmentEquityRangeControlAbortController = null;
+    let investmentEquityRangeControlResizeObserver = null;
     let investmentHoldingsTableAlignmentCleanup = null;
     let investmentHistoryTableAlignmentCleanup = null;
     let investmentStockDetailsPriceChartRequestSerial = 0;
@@ -957,6 +960,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return control instanceof HTMLElement ? control : null;
     }
 
+    function getInvestmentEquityRangeControl() {
+        const chartContainer = document.getElementById('investment_equity_chart');
+        const control = chartContainer?.querySelector('[data-investment-equity-range-segmented]');
+        return control instanceof HTMLElement ? control : null;
+    }
+
     function isInvestmentStockDetailsIntradayRange(range) {
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
         return normalizedRange === '3d' || normalizedRange === '1w';
@@ -1086,6 +1095,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function clearInvestmentEquityRangeControlBindings() {
+        if (investmentEquityRangeMeasureRaf) {
+            window.cancelAnimationFrame(investmentEquityRangeMeasureRaf);
+            investmentEquityRangeMeasureRaf = 0;
+        }
+        if (investmentEquityRangeControlAbortController) {
+            investmentEquityRangeControlAbortController.abort();
+            investmentEquityRangeControlAbortController = null;
+        }
+        if (investmentEquityRangeControlResizeObserver) {
+            investmentEquityRangeControlResizeObserver.disconnect();
+            investmentEquityRangeControlResizeObserver = null;
+        }
+    }
+
     function updateInvestmentStockDetailsRangePill() {
         const rangeControl = getInvestmentStockDetailsRangeControl();
         if (!rangeControl) return;
@@ -1122,6 +1146,83 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateInvestmentStockDetailsRangePill();
             });
         });
+    }
+
+    function updateInvestmentEquityRangePill() {
+        const rangeControl = getInvestmentEquityRangeControl();
+        if (!rangeControl) return;
+        const activeLabel = rangeControl.querySelector('input[type="radio"]:checked + span');
+        if (!activeLabel) {
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(rangeControl, activeLabel, {
+            labelSelector: '.investment-stock-details-range-label',
+        });
+        if (!pillGeometry) {
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
+
+        rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
+        rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        rangeControl.classList.add('is-pill-ready');
+    }
+
+    function scheduleInvestmentEquityRangePillUpdate() {
+        const rangeControl = getInvestmentEquityRangeControl();
+        if (!rangeControl) return;
+        rangeControl.classList.remove('is-pill-ready');
+        if (investmentEquityRangeMeasureRaf) {
+            window.cancelAnimationFrame(investmentEquityRangeMeasureRaf);
+            investmentEquityRangeMeasureRaf = 0;
+        }
+        investmentEquityRangeMeasureRaf = window.requestAnimationFrame(() => {
+            investmentEquityRangeMeasureRaf = window.requestAnimationFrame(() => {
+                investmentEquityRangeMeasureRaf = 0;
+                updateInvestmentEquityRangePill();
+            });
+        });
+    }
+
+    function bindInvestmentEquityRangeControls(chartPoints = []) {
+        clearInvestmentEquityRangeControlBindings();
+        const rangeControl = getInvestmentEquityRangeControl();
+        if (!rangeControl) return;
+
+        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange))}"]`);
+        if (checkedInput instanceof HTMLInputElement) {
+            checkedInput.checked = true;
+        }
+        rangeControl.dataset.active = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+
+        const abortController = new AbortController();
+        investmentEquityRangeControlAbortController = abortController;
+        const { signal } = abortController;
+        rangeControl.addEventListener('change', (event) => {
+            const nextInput = event.target;
+            if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_equity_range') return;
+            const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
+            selectedInvestmentStockDetailsRange = nextRange;
+            rememberInvestmentPageState({ range: nextRange });
+            rangeControl.dataset.active = nextRange;
+            const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
+            rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
+            scheduleInvestmentEquityRangePillUpdate();
+            renderEquityChartWithEquity(chartPoints);
+        }, { signal });
+        window.addEventListener('resize', scheduleInvestmentEquityRangePillUpdate, { signal });
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                scheduleInvestmentEquityRangePillUpdate();
+            });
+            resizeObserver.observe(rangeControl);
+            const rangeShell = rangeControl.closest('.investment-stock-details-range-shell');
+            if (rangeShell instanceof HTMLElement) resizeObserver.observe(rangeShell);
+            investmentEquityRangeControlResizeObserver = resizeObserver;
+        }
+        scheduleInvestmentEquityRangePillUpdate();
     }
 
     function lockInvestmentSurfaceHeight() {
@@ -3221,21 +3322,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return filteredLabels.length ? filteredLabels : orderedLabels;
     }
 
-    function renderInvestmentStockDetailsRangeControl() {
+    function renderInvestmentRangeControl({
+        inputName = 'investment_stock_details_range',
+        inputIdPrefix = 'investment_stock_details_range',
+        shellClassName = 'investment-stock-details-range-shell',
+        controlClassName = 'investment-stock-details-range-segmented',
+        dataAttributeName = 'data-investment-stock-details-range-segmented',
+    } = {}) {
         const activeRange = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
         const activeIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === activeRange));
         return `
-            <div class="investment-stock-details-range-shell">
-                <div class="segmented-control investment-stock-details-range-segmented"
-                     data-investment-stock-details-range-segmented
+            <div class="${escapeHtml(shellClassName)}">
+                <div class="segmented-control ${escapeHtml(controlClassName)}"
+                     ${dataAttributeName}
                      data-segmented-pill="measured"
                      data-active="${escapeHtml(activeRange)}"
                      data-option-count="${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.length}"
                      style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
                     ${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.map((option) => `
-                        <label class="segmented-control-option" for="investment_stock_details_range_${option.value}">
-                            <input id="investment_stock_details_range_${option.value}"
-                                   name="investment_stock_details_range"
+                        <label class="segmented-control-option" for="${escapeHtml(inputIdPrefix)}_${option.value}">
+                            <input id="${escapeHtml(inputIdPrefix)}_${option.value}"
+                                   name="${escapeHtml(inputName)}"
                                    type="radio"
                                    value="${option.value}"
                                    ${option.value === activeRange ? 'checked' : ''}>
@@ -3245,6 +3352,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+    }
+
+    function renderInvestmentStockDetailsRangeControl() {
+        return renderInvestmentRangeControl({
+            inputName: 'investment_stock_details_range',
+            inputIdPrefix: 'investment_stock_details_range',
+            shellClassName: 'investment-stock-details-range-shell',
+            controlClassName: 'investment-stock-details-range-segmented',
+            dataAttributeName: 'data-investment-stock-details-range-segmented',
+        });
+    }
+
+    function renderInvestmentEquityRangeControl() {
+        return renderInvestmentRangeControl({
+            inputName: 'investment_equity_range',
+            inputIdPrefix: 'investment_equity_range',
+            shellClassName: 'investment-stock-details-range-shell',
+            controlClassName: 'investment-stock-details-range-segmented',
+            dataAttributeName: 'data-investment-equity-range-segmented',
+        });
     }
 
     function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
@@ -3433,11 +3560,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 ledgerDateMap.set(ledgerDate, {
                     snapshot: txn,
                     ledgerNos: [],
+                    cashInAmount: 0,
+                    cashOutAmount: 0,
+                    netTransferAmount: 0,
                 });
             }
             const entry = ledgerDateMap.get(ledgerDate);
             entry.snapshot = txn;
             entry.ledgerNos.push(Number(txn.ledger_no || 0));
+            const normalizedType = getNormalizedTransactionType(txn);
+            const transactionAmount = Math.abs(Number(getTransactionAmount(txn)));
+            if (!Number.isFinite(transactionAmount) || transactionAmount <= 1e-9) return;
+            if (normalizedType === 'deposit') {
+                entry.cashInAmount += transactionAmount;
+                entry.netTransferAmount += transactionAmount;
+            } else if (normalizedType === 'withdrawal') {
+                entry.cashOutAmount += transactionAmount;
+                entry.netTransferAmount -= transactionAmount;
+            }
         });
 
         const candidateDates = Array.from(new Set([
@@ -3448,6 +3588,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const points = [];
         let processedCursor = 0;
         let activeSnapshot = null;
+        let cumulativeNetTransferAmount = 0;
+        let previousTradingPointIndex = -1;
 
         candidateDates.forEach((date) => {
             while (processedCursor < processedTransactions.length) {
@@ -3465,6 +3607,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 : [];
+            const cashInAmount = Number(ledgerEntry?.cashInAmount) || 0;
+            const cashOutAmount = Number(ledgerEntry?.cashOutAmount) || 0;
+            const netTransferAmount = Number(ledgerEntry?.netTransferAmount) || 0;
+            const isTradingDay = tradingDateSet.has(date);
+            cumulativeNetTransferAmount += netTransferAmount;
 
             points.push({
                 date,
@@ -3474,7 +3621,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 total_equity: (Number(activeSnapshot.running_cash) || 0) + valuation.marketValue,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
                 anchor_ledger_nos: anchorLedgerNos,
+                cash_in_amount: cashInAmount,
+                cash_out_amount: cashOutAmount,
+                net_transfer_amount: netTransferAmount,
+                cumulative_net_transfer_amount: cumulativeNetTransferAmount,
+                is_trading_day: isTradingDay,
+                previous_trading_point_index: previousTradingPointIndex,
             });
+            if (isTradingDay) {
+                previousTradingPointIndex = points.length - 1;
+            }
         });
 
         return points;
@@ -5329,6 +5485,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reuse the same chart styling from the backtest page
     function renderEquityChartWithEquity(chartPoints) {
         if (!chartPoints.length || !window.Chart) {
+            clearInvestmentEquityRangeControlBindings();
             if (investmentEquityChartInstance) {
                 investmentEquityChartInstance.destroy();
                 investmentEquityChartInstance = null;
@@ -5340,6 +5497,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const container = document.getElementById('investment_equity_chart');
         if (!container) {
+            clearInvestmentEquityRangeControlBindings();
             if (investmentEquityChartInstance) {
                 investmentEquityChartInstance.destroy();
                 investmentEquityChartInstance = null;
@@ -5349,7 +5507,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        container.innerHTML = `<canvas id="investmentEquityChart"></canvas>`;
+        clearInvestmentEquityRangeControlBindings();
+        container.innerHTML = `${renderInvestmentEquityRangeControl()}<canvas id="investmentEquityChart"></canvas>`;
         const canvas = document.getElementById('investmentEquityChart');
         const existingChart = window.Chart.getChart?.(canvas);
         if (existingChart) existingChart.destroy();
@@ -5361,19 +5520,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
-        const rawDates = sortedChartPoints.map((point) => point.date);
-        const equity = sortedChartPoints.map((point) => point.total_equity);
-        const chartPointIndexByLedgerNo = new Map();
+        const fullChartPointIndexByLedgerNo = new Map();
         sortedChartPoints.forEach((point, index) => {
             const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
             ledgerNos.forEach((ledgerNo) => {
                 const normalizedLedgerNo = Number(ledgerNo);
                 if (!Number.isFinite(normalizedLedgerNo) || normalizedLedgerNo <= 0) return;
-                chartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
+                fullChartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
+            });
+        });
+        const visibleRangeLabels = new Set(getInvestmentStockDetailsRangeLabels(
+            sortedChartPoints.map((point) => point.date),
+            selectedInvestmentStockDetailsRange,
+        ));
+        const visibleChartPointEntries = sortedChartPoints
+            .map((point, sourceIndex) => ({ point, sourceIndex }))
+            .filter(({ point }) => (
+                !visibleRangeLabels.size
+                || visibleRangeLabels.has(normalizeLedgerDate(point?.date))
+            ));
+        const visiblePoints = visibleChartPointEntries.length
+            ? visibleChartPointEntries
+            : sortedChartPoints.map((point, sourceIndex) => ({ point, sourceIndex }));
+        const visibleChartPoints = visiblePoints.map(({ point }) => point);
+        const visiblePointSourceIndexes = visiblePoints.map(({ sourceIndex }) => sourceIndex);
+        const rawDates = visibleChartPoints.map((point) => point.date);
+        const equity = visibleChartPoints.map((point) => point.total_equity);
+        const visibleChartPointIndexByLedgerNo = new Map();
+        visibleChartPoints.forEach((point, index) => {
+            const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
+            ledgerNos.forEach((ledgerNo) => {
+                const normalizedLedgerNo = Number(ledgerNo);
+                if (!Number.isFinite(normalizedLedgerNo) || normalizedLedgerNo <= 0) return;
+                visibleChartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
             });
         });
         investmentChartPointsCache = sortedChartPoints;
-        investmentChartPointIndexByLedgerNo = chartPointIndexByLedgerNo;
+        investmentChartPointIndexByLedgerNo = fullChartPointIndexByLedgerNo;
         investmentLatestChartPoint = sortedChartPoints[sortedChartPoints.length - 1] || null;
         activeChartTooltipPointIndex = -1;
 
@@ -5530,7 +5713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     animateHoldingsMarkerToward(null, chartInstance);
                     return;
                 }
-                const pointIndex = chartPointIndexByLedgerNo.get(ledgerNo);
+                const pointIndex = visibleChartPointIndexByLedgerNo.get(ledgerNo);
                 if (!Number.isFinite(pointIndex)) return;
                 const dataset = chartInstance.data?.datasets?.[0];
                 const pointValue = Number(dataset?.data?.[pointIndex]);
@@ -5622,8 +5805,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const listEl = tooltipEl.querySelector(".chart-tooltip-list");
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
             const parsedDate = parseRawDate(rawDates[pointIndex]);
-            const pointRecord = sortedChartPoints[pointIndex];
-            activeChartTooltipPointIndex = Number.isFinite(pointIndex) && pointIndex >= 0 ? pointIndex : -1;
+            const pointRecord = visibleChartPoints[pointIndex];
+            const sourcePointIndex = Number.isFinite(pointIndex) && pointIndex >= 0
+                ? Number(visiblePointSourceIndexes[pointIndex])
+                : -1;
+            activeChartTooltipPointIndex = Number.isFinite(sourcePointIndex) && sourcePointIndex >= 0 ? sourcePointIndex : -1;
             scheduleInvestmentDummyDonutSync();
             syncInvestmentStockDetailsDonutFromInteraction();
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");
@@ -5644,25 +5830,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const tooltipRows = [];
             if (pointRecord) {
+                const previousTradingPointIndex = Number(pointRecord?.previous_trading_point_index);
+                const previousTradingPoint = Number.isFinite(previousTradingPointIndex) && previousTradingPointIndex >= 0
+                    ? sortedChartPoints[previousTradingPointIndex] || null
+                    : null;
+                const cumulativeTransferAmount = Number(pointRecord?.cumulative_net_transfer_amount) || 0;
+                const previousTradingCumulativeTransferAmount = Number(previousTradingPoint?.cumulative_net_transfer_amount) || 0;
+                const transferSincePreviousTradingDay = previousTradingPoint
+                    ? cumulativeTransferAmount - previousTradingCumulativeTransferAmount
+                    : 0;
+                const pnlVsPreviousTradingDay = previousTradingPoint
+                    ? (Number(pointRecord?.total_equity) || 0) - (Number(previousTradingPoint?.total_equity) || 0) - transferSincePreviousTradingDay
+                    : null;
+                const cashInAmount = Number(pointRecord?.cash_in_amount);
+                const cashOutAmount = Number(pointRecord?.cash_out_amount);
                 tooltipRows.push({
                     label: "Equity",
-                    value: pointRecord.total_equity,
+                    formattedValue: formatMoney(pointRecord.total_equity),
                     color: equitySeriesColor,
                 });
                 tooltipRows.push({
                     label: "Market value",
-                    value: pointRecord.market_value,
+                    formattedValue: formatMoney(pointRecord.market_value),
                     color: resolvedTheme.accentSecondary,
                 });
                 tooltipRows.push({
                     label: "Cash",
-                    value: pointRecord.running_cash,
+                    formattedValue: formatMoney(pointRecord.running_cash),
                     color: resolvedTheme.accentPositive,
                 });
+                if (Number.isFinite(pnlVsPreviousTradingDay)) {
+                    tooltipRows.push({
+                        label: "P&L",
+                        formattedValue: formatSignedHoldingsMoney(pnlVsPreviousTradingDay),
+                        color: pnlVsPreviousTradingDay >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary,
+                        valueClass: getSignedMetricClass(pnlVsPreviousTradingDay),
+                    });
+                }
+                if (Number.isFinite(cashInAmount) && cashInAmount > 1e-9) {
+                    tooltipRows.push({
+                        label: "Cash in",
+                        formattedValue: formatSignedHoldingsMoney(cashInAmount),
+                        color: resolvedTheme.accentPositive,
+                        valueClass: 'investment-holdings-value-positive',
+                    });
+                }
+                if (Number.isFinite(cashOutAmount) && cashOutAmount > 1e-9) {
+                    tooltipRows.push({
+                        label: "Cash out",
+                        formattedValue: formatSignedHoldingsMoney(-cashOutAmount),
+                        color: resolvedTheme.accentSecondary,
+                        valueClass: 'investment-holdings-value-negative',
+                    });
+                }
             } else {
                 tooltipRows.push({
                     label: "Equity",
-                    value: tooltip.dataPoints?.[0]?.parsed?.y ?? null,
+                    formattedValue: formatMoney(tooltip.dataPoints?.[0]?.parsed?.y ?? null),
                     color: equitySeriesColor,
                 });
             }
@@ -5672,7 +5896,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="chart-tooltip-dot" style="background:${row.color}"></span>
                     <span></span>
                     <span class="chart-tooltip-label">${row.label}</span>
-                    <span class="chart-tooltip-value">${formatMoney(row.value)}</span>
+                    <span class="chart-tooltip-value${row.valueClass ? ` ${row.valueClass}` : ''}">${row.formattedValue}</span>
                 </div>
             `).join("");
 
@@ -5719,6 +5943,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 padding: {
                     left: holdingsMarkerSafePadding,
                     right: holdingsMarkerSafePadding,
+                    top: 44,
                     bottom: 24,
                 },
             },
@@ -5796,6 +6021,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setInvestmentChartReady(true, canvas);
             });
         });
+        bindInvestmentEquityRangeControls(sortedChartPoints);
     }
 
     function formatEventType(type) {
