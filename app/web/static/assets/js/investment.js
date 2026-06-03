@@ -702,6 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentDummyDonutRenderSignature = '';
     let investmentStockDetailsVisibleLayoutTimer = 0;
     let selectedInvestmentStockDetailsRange = 'max';
+    let selectedInvestmentEquityRange = 'max';
     let investmentStockDetailsRangeMeasureRaf = 0;
     let investmentStockDetailsRangeControlAbortController = null;
     let investmentStockDetailsRangeControlResizeObserver = null;
@@ -720,6 +721,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
         { value: '3d', label: '3D' },
         { value: '1w', label: '1W' },
+        { value: '3m', label: '3M' },
+        { value: 'ytd', label: 'YTD' },
+        { value: 'max', label: 'Max' },
+    ];
+    const INVESTMENT_EQUITY_RANGE_OPTIONS = [
+        { value: '1w', label: '1W' },
+        { value: '1m', label: '1M' },
         { value: '3m', label: '3M' },
         { value: 'ytd', label: 'YTD' },
         { value: 'max', label: 'Max' },
@@ -752,10 +760,12 @@ document.addEventListener('DOMContentLoaded', () => {
         view = activeInvestmentView || 'chart',
         ticker = selectedInvestmentStockTicker || '',
         range = selectedInvestmentStockDetailsRange || 'max',
+        equityRange = selectedInvestmentEquityRange || 'max',
     } = {}) {
         const normalizedView = normalizeInvestmentView(view);
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
+        const normalizedEquityRange = normalizeInvestmentEquityRange(equityRange);
         const nextUrl = buildInvestmentViewUrl(normalizedView, normalizedTicker);
         const currentMemory = readInvestmentPageMemory();
         writeInvestmentPageMemory({
@@ -766,6 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
             last_view: normalizedView,
             last_stock_ticker: normalizedTicker,
             last_stock_details_range: normalizedRange,
+            last_equity_range: normalizedEquityRange,
             last_stock_details_url: normalizedView === 'stock_details' ? nextUrl : buildInvestmentViewUrl('stock_details', normalizedTicker),
         });
     }
@@ -774,10 +785,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const memory = readInvestmentPageMemory();
         const rememberedTicker = normalizeInvestmentTicker(memory.last_stock_ticker || '');
         const rememberedRange = normalizeInvestmentStockDetailsRange(memory.last_stock_details_range || 'max');
+        const rememberedEquityRange = normalizeInvestmentEquityRange(memory.last_equity_range || 'max');
         if (rememberedTicker) {
             selectedInvestmentStockTicker = rememberedTicker;
         }
         selectedInvestmentStockDetailsRange = rememberedRange;
+        selectedInvestmentEquityRange = rememberedEquityRange;
         return normalizeInvestmentView(memory.last_view || 'chart');
     }
 
@@ -1080,6 +1093,13 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'max';
     }
 
+    function normalizeInvestmentEquityRange(range) {
+        const normalizedRange = String(range || '').trim().toLowerCase();
+        return INVESTMENT_EQUITY_RANGE_OPTIONS.some((option) => option.value === normalizedRange)
+            ? normalizedRange
+            : 'max';
+    }
+
     function clearInvestmentStockDetailsRangeControlBindings() {
         if (investmentStockDetailsRangeMeasureRaf) {
             window.cancelAnimationFrame(investmentStockDetailsRangeMeasureRaf);
@@ -1191,11 +1211,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const rangeControl = getInvestmentEquityRangeControl();
         if (!rangeControl) return;
 
-        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange))}"]`);
+        const checkedInput = rangeControl.querySelector(`input[value="${CSS.escape(normalizeInvestmentEquityRange(selectedInvestmentEquityRange))}"]`);
         if (checkedInput instanceof HTMLInputElement) {
             checkedInput.checked = true;
         }
-        rangeControl.dataset.active = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
+        rangeControl.dataset.active = normalizeInvestmentEquityRange(selectedInvestmentEquityRange);
 
         const abortController = new AbortController();
         investmentEquityRangeControlAbortController = abortController;
@@ -1203,11 +1223,11 @@ document.addEventListener('DOMContentLoaded', () => {
         rangeControl.addEventListener('change', (event) => {
             const nextInput = event.target;
             if (!(nextInput instanceof HTMLInputElement) || nextInput.name !== 'investment_equity_range') return;
-            const nextRange = normalizeInvestmentStockDetailsRange(nextInput.value);
-            selectedInvestmentStockDetailsRange = nextRange;
-            rememberInvestmentPageState({ range: nextRange });
+            const nextRange = normalizeInvestmentEquityRange(nextInput.value);
+            selectedInvestmentEquityRange = nextRange;
+            rememberInvestmentPageState({ equityRange: nextRange });
             rangeControl.dataset.active = nextRange;
-            const nextIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
+            const nextIndex = Math.max(0, INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
             scheduleInvestmentEquityRangePillUpdate();
             renderEquityChartWithEquity(chartPoints);
@@ -3322,24 +3342,63 @@ document.addEventListener('DOMContentLoaded', () => {
         return filteredLabels.length ? filteredLabels : orderedLabels;
     }
 
+    function getInvestmentEquityRangeLabels(labels, range = 'max') {
+        const orderedLabels = Array.isArray(labels)
+            ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
+            : [];
+        if (!orderedLabels.length) return [];
+        const normalizedRange = normalizeInvestmentEquityRange(range);
+        if (normalizedRange === 'max') return orderedLabels;
+
+        const latestDate = parseInvestmentChartDate(orderedLabels[orderedLabels.length - 1]);
+        if (!(latestDate instanceof Date) || Number.isNaN(latestDate.getTime())) {
+            return orderedLabels;
+        }
+
+        let startDate = null;
+        if (normalizedRange === '1w') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCDate(startDate.getUTCDate() - 6);
+        } else if (normalizedRange === '1m') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCMonth(startDate.getUTCMonth() - 1);
+        } else if (normalizedRange === '3m') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCMonth(startDate.getUTCMonth() - 3);
+        } else if (normalizedRange === 'ytd') {
+            startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
+        }
+
+        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+            return orderedLabels;
+        }
+
+        const filteredLabels = orderedLabels.filter((label) => {
+            const currentDate = parseInvestmentChartDate(label);
+            return currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) && currentDate >= startDate;
+        });
+        return filteredLabels.length ? filteredLabels : orderedLabels;
+    }
+
     function renderInvestmentRangeControl({
         inputName = 'investment_stock_details_range',
         inputIdPrefix = 'investment_stock_details_range',
         shellClassName = 'investment-stock-details-range-shell',
         controlClassName = 'investment-stock-details-range-segmented',
         dataAttributeName = 'data-investment-stock-details-range-segmented',
+        activeRange = 'max',
+        options = INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
     } = {}) {
-        const activeRange = normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange);
-        const activeIndex = Math.max(0, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === activeRange));
+        const activeIndex = Math.max(0, options.findIndex((option) => option.value === activeRange));
         return `
             <div class="${escapeHtml(shellClassName)}">
                 <div class="segmented-control ${escapeHtml(controlClassName)}"
                      ${dataAttributeName}
                      data-segmented-pill="measured"
                      data-active="${escapeHtml(activeRange)}"
-                     data-option-count="${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.length}"
+                     data-option-count="${options.length}"
                      style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
-                    ${INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.map((option) => `
+                    ${options.map((option) => `
                         <label class="segmented-control-option" for="${escapeHtml(inputIdPrefix)}_${option.value}">
                             <input id="${escapeHtml(inputIdPrefix)}_${option.value}"
                                    name="${escapeHtml(inputName)}"
@@ -3361,6 +3420,8 @@ document.addEventListener('DOMContentLoaded', () => {
             shellClassName: 'investment-stock-details-range-shell',
             controlClassName: 'investment-stock-details-range-segmented',
             dataAttributeName: 'data-investment-stock-details-range-segmented',
+            activeRange: normalizeInvestmentStockDetailsRange(selectedInvestmentStockDetailsRange),
+            options: INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
         });
     }
 
@@ -3371,6 +3432,8 @@ document.addEventListener('DOMContentLoaded', () => {
             shellClassName: 'investment-stock-details-range-shell',
             controlClassName: 'investment-stock-details-range-segmented',
             dataAttributeName: 'data-investment-equity-range-segmented',
+            activeRange: normalizeInvestmentEquityRange(selectedInvestmentEquityRange),
+            options: INVESTMENT_EQUITY_RANGE_OPTIONS,
         });
     }
 
@@ -5529,9 +5592,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 fullChartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
             });
         });
-        const visibleRangeLabels = new Set(getInvestmentStockDetailsRangeLabels(
+        const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
             sortedChartPoints.map((point) => point.date),
-            selectedInvestmentStockDetailsRange,
+            selectedInvestmentEquityRange,
         ));
         const visibleChartPointEntries = sortedChartPoints
             .map((point, sourceIndex) => ({ point, sourceIndex }))
