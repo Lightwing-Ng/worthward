@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.35.6
+ * Code version: v1.35.7
+ * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
  * - Fixed: Stock details price-chart trade markers now wait for a stable visible chart box before first paint and resync again after the view-height animation settles, so hyperlink entry matches refresh rendering
  * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
  * - Changed: Stock details share URLs now use the shorter `#stock_panel` hash while still recognizing the legacy long-form hash
@@ -719,6 +720,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
     const INVESTMENT_SURFACE_LAYOUT_SETTLE_MS = 520;
+    const INVESTMENT_COMMON_SPLIT_FACTORS = [
+        1, 1.5, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 128, 160, 200, 256,
+    ];
     const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
         { value: '3d', label: '3D' },
         { value: '1w', label: '1W' },
@@ -3654,6 +3658,52 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function adjustTradePriceForRenderedSeries(transactionPrice, renderedSeriesPrice) {
+        const rawTradePrice = Number(transactionPrice);
+        const referencePrice = Number(renderedSeriesPrice);
+        if (!Number.isFinite(rawTradePrice)) return null;
+        if (!Number.isFinite(referencePrice) || referencePrice <= 0 || rawTradePrice <= 0) {
+            return rawTradePrice;
+        }
+        const rawRatio = rawTradePrice / referencePrice;
+        if (!Number.isFinite(rawRatio) || rawRatio <= 0) return rawTradePrice;
+        const closeEnoughDistance = Math.log(1.35);
+        const rawDistance = Math.abs(Math.log(rawRatio));
+        if (rawDistance <= closeEnoughDistance) return rawTradePrice;
+
+        const splitFactorCandidates = Array.from(new Set([
+            ...INVESTMENT_COMMON_SPLIT_FACTORS,
+            ...INVESTMENT_COMMON_SPLIT_FACTORS
+                .filter((factor) => Number.isFinite(factor) && factor > 0 && factor !== 1)
+                .map((factor) => 1 / factor),
+        ])).sort((left, right) => left - right);
+
+        let bestFactor = 1;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        splitFactorCandidates.forEach((factor) => {
+            if (!Number.isFinite(factor) || factor <= 0) return;
+            const ratioDistance = Math.abs(Math.log(rawRatio / factor));
+            if (ratioDistance < bestDistance) {
+                bestDistance = ratioDistance;
+                bestFactor = factor;
+            }
+        });
+
+        const materiallyDifferentFactor = Math.abs(Math.log(bestFactor)) >= Math.log(1.5);
+        const confidentlyMatchedFactor = bestDistance <= Math.log(1.12);
+        const meaningfullyImproved = bestDistance + 0.08 < rawDistance;
+        if (!materiallyDifferentFactor || !confidentlyMatchedFactor || !meaningfullyImproved) {
+            return rawTradePrice;
+        }
+
+        const adjustedPrice = rawTradePrice / bestFactor;
+        const adjustedRatio = adjustedPrice / referencePrice;
+        if (!Number.isFinite(adjustedPrice) || adjustedPrice <= 0 || !Number.isFinite(adjustedRatio) || adjustedRatio <= 0) {
+            return rawTradePrice;
+        }
+        return Math.abs(Math.log(adjustedRatio)) <= closeEnoughDistance ? adjustedPrice : rawTradePrice;
+    }
+
     function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
         if (!snapshot || !valuationDate) return { marketValue: 0, holdingsMarketValues: {} };
         let marketValue = 0;
@@ -4331,7 +4381,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalizedTransactionPrice = Number(transactionPrice);
             const normalizedClosePrice = Number(closeValues[markerIndex]);
             if (Number.isFinite(normalizedTransactionPrice)) {
-                return normalizedTransactionPrice;
+                return adjustTradePriceForRenderedSeries(normalizedTransactionPrice, normalizedClosePrice);
             }
             return Number.isFinite(normalizedClosePrice) ? normalizedClosePrice : null;
         };

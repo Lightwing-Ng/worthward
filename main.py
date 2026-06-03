@@ -12,7 +12,7 @@ from app.core.settings import get_settings
 from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context
 from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance
 
-LOG_PREFIX = "[antigravity]"
+LOG_PREFIX = "[compareStocks]"
 DEFAULT_DEBUG = True
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8688
