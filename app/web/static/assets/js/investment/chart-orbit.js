@@ -1,10 +1,15 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.36.0-p1
+ * Code version: v1.36.1-p1
  */
 
 const investmentDonutOrbitLayerState = new WeakMap();
+
+export function getInvestmentDonutOrbitAnimationState(logoLayer) {
+    if (!(logoLayer instanceof HTMLElement)) return null;
+    return investmentDonutOrbitLayerState.get(logoLayer) || null;
+}
 
 function normalizeOrbitAngle(angle) {
     if (!Number.isFinite(angle)) return 0;

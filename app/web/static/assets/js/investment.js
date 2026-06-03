@@ -1,8 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.36.0
+ * Code version: v1.36.1
  * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
+ * - Fixed: Restored missing cross-module orbit-state and position-state bindings after the split, so all investment view tabs render again without runtime ReferenceErrors
  * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
  * - Fixed: Stock details price-chart trade markers now wait for a stable visible chart box before first paint and resync again after the view-height animation settles, so hyperlink entry matches refresh rendering
  * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
@@ -105,6 +106,7 @@
  */
 
 import {
+    getInvestmentDonutOrbitAnimationState,
     getPortfolioDonutOrbitMetrics,
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
@@ -335,10 +337,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const {
         adjustTradePriceForRenderedSeries,
+        applyDirectionalTrade,
         buildDailyEquityChartPoints,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        createPositionState,
         escapeHtml,
         formatAmountWithCurrency,
         formatHoldingsMoney,
@@ -1673,7 +1677,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!orbitMetrics) return;
             const orbitLogoLayer = orbitElement.querySelector('.portfolio-donut-logo-layer');
             const orbitLayerState = orbitLogoLayer instanceof HTMLElement
-                ? investmentDonutOrbitLayerState.get(orbitLogoLayer)
+                ? getInvestmentDonutOrbitAnimationState(orbitLogoLayer)
                 : null;
             if (orbitLayerState) {
                 orbitLayerState.orbitMetrics = orbitMetrics;
@@ -1681,7 +1685,7 @@ document.addEventListener('DOMContentLoaded', () => {
             orbitElement.querySelectorAll('.portfolio-donut-logo[data-style-token-donut-angle]').forEach((logoElement) => {
                 if (!(logoElement instanceof HTMLImageElement)) return;
                 if (logoElement.classList.contains('is-orbit-animated')) {
-                    const layerState = investmentDonutOrbitLayerState.get(logoElement.parentElement);
+                    const layerState = getInvestmentDonutOrbitAnimationState(logoElement.parentElement);
                     const stateEntry = layerState?.logos?.get(logoElement.dataset.ticker || '');
                     if (stateEntry) {
                         renderInvestmentDonutOrbitLogoPosition(
