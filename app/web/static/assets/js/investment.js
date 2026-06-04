@@ -753,16 +753,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return heading instanceof HTMLElement ? heading : null;
     }
 
-    function getInvestmentEquityRangeLabel(range = selectedInvestmentEquityRange) {
-        const normalizedRange = normalizeInvestmentEquityRange(range);
-        const matchedOption = INVESTMENT_EQUITY_RANGE_OPTIONS.find((option) => option.value === normalizedRange);
-        return matchedOption?.label || 'Max';
+    function getInvestmentEquityActiveRangeLabel() {
+        const rangeControl = getInvestmentEquityRangeControl();
+        const activeLabel = rangeControl?.querySelector('input[type="radio"]:checked + span .investment-stock-details-range-label');
+        return activeLabel instanceof HTMLElement ? activeLabel.textContent.trim() : '';
     }
 
-    function syncInvestmentHistoryHeading(range = selectedInvestmentEquityRange) {
+    function syncInvestmentHistoryHeading() {
         const heading = getInvestmentHistoryHeadingElement();
         if (!heading) return;
-        heading.textContent = `Transaction history · ${getInvestmentEquityRangeLabel(range)}`;
+        const nextHeading = String(heading.dataset.baseHeading || heading.textContent || '')
+            .replace(/\s*·\s*.+$/, '')
+            .trim() || 'Transaction history';
+        heading.dataset.baseHeading = nextHeading;
+        heading.dataset.activeRangeLabel = getInvestmentEquityActiveRangeLabel();
+        heading.textContent = nextHeading;
     }
 
     function clearInvestmentStockDetailsRangeControlBindings() {
@@ -991,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextIndex = Math.max(0, INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
             scheduleInvestmentEquityRangePillUpdate();
-            syncInvestmentHistoryHeading(nextRange);
+            syncInvestmentHistoryHeading();
             renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, chartPoints);
             renderEquityChartWithEquity(chartPoints);
         }, { signal });
