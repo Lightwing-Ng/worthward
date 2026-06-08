@@ -299,6 +299,7 @@
 	padding-bottom: 0;
 }
 .trade-controls .ticker-field,
+.trade-controls .backtest-interval-field,
 .trade-controls .trade-capital-field,
 .trade-controls #period_panel,
 .trade-controls .field-checkbox.field-switch,
@@ -351,6 +352,7 @@
 	height: var(--trade-control-input-height);
 }
 .trade-controls .trade-capital-field > label,
+.trade-controls .backtest-interval-field > label,
 .trade-controls .field.range-panel > label,
 .trade-controls .field:has(.trade-strategy-select) > label,
 .trade-controls .field:has(.backtest-shared-select-trigger) > label,
@@ -363,6 +365,7 @@
 	align-items: flex-start;
 }
 .trade-controls .trade-capital-row,
+.trade-controls .backtest-interval-field > .backtest-interval-segmented,
 .trade-controls .field.range-panel > select,
 .trade-controls .date-picker-trigger,
 .trade-controls .trade-strategy-row,
@@ -398,6 +401,7 @@
 	align-self: start;
 }
 .trade-controls .trade-capital-row,
+.trade-controls .backtest-interval-field > .backtest-interval-segmented,
 .trade-controls .field.range-panel > select:not(.backtest-shared-select-native),
 .trade-controls .date-picker-field > button,
 .trade-controls .field:has(.trade-strategy-select) > select,
@@ -413,6 +417,8 @@
 	margin-top: 0;
 }
 .trade-controls .date-picker-field,
+.trade-controls .backtest-interval-field,
+.trade-controls .backtest-interval-segmented,
 .trade-controls .trade-capital-row,
 .trade-controls .field-switch,
 .trade-controls .field.range-panel,
@@ -427,6 +433,18 @@
 	left: 14px;
 	width: 22px;
 	height: 22px;
+}
+.trade-controls .backtest-interval-field > .backtest-interval-segmented {
+	justify-self: stretch;
+	margin-top: 0;
+}
+.trade-controls .backtest-interval-field {
+	height: auto !important;
+	min-height: calc(var(--trade-control-height) + 6px) !important;
+	max-height: none;
+	grid-template-rows: auto auto;
+	row-gap: 6px;
+	align-content: start;
 }
 .ticker-controls .ticker-field {
 	height: var(--trade-control-height);

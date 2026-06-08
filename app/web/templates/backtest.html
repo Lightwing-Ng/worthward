@@ -25,39 +25,30 @@
             </div>
         </div>
         {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact", true) }}
-        <div class="field backtest-interval-field backtest-shared-select-field">
-            <label for="backtest_interval">{{ labels.backtest_interval }}</label>
-            <div class="trade-strategy-row backtest-shared-select-row" data-shared-select-field
-                 data-shared-select-kind="interval">
-                <select id="backtest_interval" name="interval"
-                        class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true"
-                        tabindex="-1">
-                    {% for item in supported_intervals %}
-                        <option value="{{ item }}"
-                                {% if item == requested_interval %}selected{% endif %}>{{ item }}</option>
-                    {% endfor %}
-                </select>
-                <div class="trade-strategy-combobox backtest-shared-select-combobox">
-                    <button
-                            type="button"
-                            class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
-                            data-shared-select-trigger
-                            aria-haspopup="listbox"
-                            aria-expanded="false"
-                            aria-controls="backtest_interval_dropdown"
-                    >
-                        <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
-                    </button>
-                </div>
-                <div
-                        id="backtest_interval_dropdown"
-                        class="trade-strategy-dropdown backtest-shared-select-dropdown"
-                        data-shared-select-dropdown
-                        role="listbox"
-                        aria-label="{{ labels.backtest_interval }}"
-                        hidden
-                ></div>
-            </div>
+        <div class="field backtest-interval-field">
+            <label for="backtest_interval_1d">{{ labels.backtest_interval }}</label>
+            {{ render_segmented_control(
+                "segmented-control--compact backtest-interval-segmented",
+                "interval",
+                requested_interval,
+                [
+                    {
+                        "id": "backtest_interval_1d",
+                        "value": "1d",
+                        "label": "1d",
+                        "input_attrs": 'data-backtest-interval-input',
+                    },
+                    {
+                        "id": "backtest_interval_1m",
+                        "value": "1m",
+                        "label": "1m",
+                        "hidden": "1m" not in supported_intervals,
+                        "disabled": "1m" not in supported_intervals,
+                        "input_attrs": 'data-backtest-interval-input',
+                    },
+                ],
+                'id="backtest_interval_control" data-backtest-interval-shell data-active="' ~ requested_interval ~ '" data-option-count="' ~ (supported_intervals|length) ~ '" style="--segmented-option-count: ' ~ (supported_intervals|length) ~ '; --segmented-active-index: ' ~ (1 if requested_interval == "1m" else 0) ~ ';"'
+            ) }}
         </div>
         <div class="field trade-capital-field">
             <label for="trade_initial_capital">{{ labels.backtest_capital }}</label>

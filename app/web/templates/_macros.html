@@ -42,8 +42,8 @@
 {% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='') -%}
 <div class="segmented-control {{ shell_class }}"{% if shell_attrs %} {{ shell_attrs|safe }}{% endif %}>
     {% for option in options %}
-    <label class="segmented-control-option" for="{{ option.id }}">
-        <input id="{{ option.id }}" name="{{ name }}" type="radio" value="{{ option.value }}" {% if option.value == active_value %}checked{% endif %}>
+    <label class="segmented-control-option{% if option.class_name %} {{ option.class_name }}{% endif %}" for="{{ option.id }}"{% if option.hidden %} hidden{% endif %}{% if option.label_attrs %} {{ option.label_attrs|safe }}{% endif %}>
+        <input id="{{ option.id }}" name="{{ name }}" type="radio" value="{{ option.value }}" {% if option.value == active_value %}checked{% endif %}{% if option.disabled %} disabled{% endif %}{% if option.input_attrs %} {{ option.input_attrs|safe }}{% endif %}>
         <span>{{ option.label }}</span>
     </label>
     {% endfor %}

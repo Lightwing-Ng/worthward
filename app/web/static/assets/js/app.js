@@ -2437,6 +2437,51 @@
             refreshSharedSelectField(field);
         });
     };
+
+    const getBacktestIntervalShell = () => document.querySelector("[data-backtest-interval-shell]");
+    const getBacktestIntervalInputs = () => Array.from(document.querySelectorAll("[data-backtest-interval-input]"))
+        .filter((input) => input instanceof HTMLInputElement);
+    const getSelectedBacktestInterval = () => {
+        const selectedInput = getBacktestIntervalInputs().find((input) => input.checked && !input.disabled);
+        return selectedInput?.value || "1d";
+    };
+    const syncBacktestIntervalSegmentedControl = () => {
+        const shell = getBacktestIntervalShell();
+        if (!(shell instanceof HTMLElement)) return;
+        const options = Array.from(shell.querySelectorAll(".segmented-control-option"))
+            .filter((option) => option instanceof HTMLElement)
+            .filter((option) => {
+                const input = option.querySelector("input");
+                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
+            });
+        const activeIndex = Math.max(0, options.findIndex((option) => {
+            const input = option.querySelector("input");
+            return input instanceof HTMLInputElement && input.checked;
+        }));
+        shell.dataset.active = getSelectedBacktestInterval();
+        shell.dataset.optionCount = String(Math.max(options.length, 1));
+        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
+        shell.style.setProperty("--segmented-active-index", String(activeIndex));
+    };
+    const setBacktestIntervalAvailability = (has1m) => {
+        getBacktestIntervalInputs().forEach((input) => {
+            const option = input.closest(".segmented-control-option");
+            if (!(option instanceof HTMLElement)) return;
+            const isSupported = input.value !== "1m" || has1m;
+            input.disabled = !isSupported;
+            option.hidden = !isSupported;
+        });
+        syncBacktestIntervalSegmentedControl();
+    };
+    const setBacktestIntervalValue = (value) => {
+        const nextInput = getBacktestIntervalInputs().find((input) => input.value === value && !input.disabled);
+        if (!(nextInput instanceof HTMLInputElement)) return false;
+        if (!nextInput.checked) {
+            nextInput.checked = true;
+        }
+        syncBacktestIntervalSegmentedControl();
+        return true;
+    };
     const buildUtcDate = (yearValue, monthIndexValue, dayValue) => {
         const year = Number.parseInt(yearValue, 10);
         const monthIndex = Number.parseInt(monthIndexValue, 10);
@@ -3171,10 +3216,10 @@
         }
 
         if (isBacktestView) {
-            const intervalSelect = $("#backtest_interval");
             const strategySelect = $("#trade_strategy");
             const capitalValue = parseTradeCapitalValue(tradeCapitalInput?.value);
-            if (intervalSelect?.value) params.set("interval", intervalSelect.value);
+            const intervalValue = getSelectedBacktestInterval();
+            if (intervalValue) params.set("interval", intervalValue);
             if (strategySelect?.value) params.set("strategy", strategySelect.value);
             if (Number.isFinite(capitalValue)) params.set("capital", String(capitalValue));
             collectStrategyParamEntries().forEach(([key, value]) => {
@@ -3234,34 +3279,23 @@
                 state.backtestPeriodOptions = tickerPeriodOptions;
             }
 
-            const intervalSelect = document.getElementById("backtest_interval");
-            if (intervalSelect) {
-                const currentInterval = intervalSelect.value;
-                const options = ["1d"];
-                if (has1m) options.push("1m");
+            const intervalInputs = getBacktestIntervalInputs();
+            if (intervalInputs.length) {
+                const currentInterval = getSelectedBacktestInterval();
+                setBacktestIntervalAvailability(Boolean(has1m));
+                const nextInterval = currentInterval === "1m" && !has1m ? "1d" : currentInterval;
+                setBacktestIntervalValue(nextInterval);
 
-                // Keep current value if possible
-                intervalSelect.innerHTML = "";
-                // Order: 1d, 1m (if exists) or reverse? Let's use 1d, 1m.
-                options.forEach(opt => {
-                    const el = document.createElement("option");
-                    el.value = opt;
-                    el.textContent = opt;
-                    if (opt === currentInterval) el.selected = true;
-                    intervalSelect.appendChild(el);
-                });
-                refreshSharedSelectField(intervalSelect.closest("[data-shared-select-field]"));
-
-                const nextInterval = intervalSelect.value;
                 if (currentInterval === "1m" && !has1m) {
-                    intervalSelect.value = "1d";
                     replacePeriodOptions(
                         tickerPeriodOptions["1d"] || state.backtestPeriodOptions?.["1d"] || ["1d"],
                         "1d",
                     );
-                    intervalSelect.dispatchEvent(new Event("change"));
+                    const nextInput = getBacktestIntervalInputs().find((input) => input.value === "1d");
+                    nextInput?.dispatchEvent(new Event("change", {bubbles: true}));
                 } else if (currentInterval !== nextInterval) {
-                    intervalSelect.dispatchEvent(new Event("change"));
+                    const nextInput = getBacktestIntervalInputs().find((input) => input.value === nextInterval);
+                    nextInput?.dispatchEvent(new Event("change", {bubbles: true}));
                 } else {
                     replacePeriodOptions(
                         tickerPeriodOptions[nextInterval] || state.backtestPeriodOptions?.[nextInterval] || ["1d"],
@@ -3332,6 +3366,7 @@
     dispatchPortfolioPreviewUpdate();
     validatePortfolioWeightInputs();
     updateRangePanels();
+    syncBacktestIntervalSegmentedControl();
     syncDateConstraints();
     scheduleDockPosition();
 
@@ -3384,13 +3419,15 @@
         if (!isBacktestView) requestWorkspaceChartTransition("period");
         scheduleAutoSubmit();
     });
-    $("#backtest_interval")?.addEventListener("change", (event) => {
+    getBacktestIntervalInputs().forEach((input) => input.addEventListener("change", (event) => {
+        if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
         const interval = event.target.value;
+        syncBacktestIntervalSegmentedControl();
         const nextPeriods = state.backtestPeriodOptions?.[interval] || (interval === "1m" ? ["1d"] : ["1d"]);
         replacePeriodOptions(nextPeriods, interval === "1m" ? "1d" : "max");
         // Force full reload for interval change to refresh sidebar period options
         scheduleAutoSubmit(20);
-    });
+    }));
 
     if (isBacktestView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
         const scheduleTradeAutoSubmit = () => {
