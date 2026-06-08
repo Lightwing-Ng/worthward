@@ -2842,15 +2842,65 @@
         }
     };
 
-    const applyDatePickerValidationState = (picker) => {
-        const message = String(picker.validationMessage || "");
-        if (picker.textInput) {
-            picker.textInput.placeholder = getDateEntryHint();
-            picker.textInput.classList.toggle("is-invalid", Boolean(message));
-            picker.textInput.setAttribute("aria-invalid", message ? "true" : "false");
-            picker.textInput.setCustomValidity(message);
-            picker.textInput.value = picker.invalidDraft || (picker.input.value ? formatDisplayDate(picker.input.value) : "");
+    const normalizeDatePickerDraft = (rawValue) => String(rawValue || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const getDatePickerComparableIsoValue = (picker) => {
+        if (!picker) return "";
+        const rawDraft = normalizeDatePickerDraft(picker.draftText);
+        if (!rawDraft) return String(picker.input?.value || "");
+        const parsedDate = parseManualDateInput(rawDraft);
+        return parsedDate ? formatIsoDate(parsedDate) : String(picker.input?.value || "");
+    };
+
+    const getDatePickerWorkingState = (picker) => {
+        const rawDraft = normalizeDatePickerDraft(picker.draftText);
+        if (rawDraft) {
+            const parsedDate = parseManualDateInput(rawDraft);
+            if (!parsedDate) {
+                return {
+                    displayText: rawDraft,
+                    previewDate: null,
+                    previewIsoValue: "",
+                    validationMessage: `Enter a valid date like ${getDateEntryHint()}.`,
+                };
+            }
+            const previewIsoValue = formatIsoDate(parsedDate);
+            return {
+                displayText: rawDraft,
+                previewDate: parsedDate,
+                previewIsoValue,
+                validationMessage: getDatePickerValidationMessage(picker, previewIsoValue),
+            };
         }
+        const committedIsoValue = String(picker.input.value || "");
+        return {
+            displayText: committedIsoValue ? formatDisplayDate(committedIsoValue) : "",
+            previewDate: parseIsoDate(committedIsoValue),
+            previewIsoValue: committedIsoValue,
+            validationMessage: String(picker.validationMessage || ""),
+        };
+    };
+
+    const syncDatePickerEditorText = (picker, nextText, {force = false} = {}) => {
+        if (!picker.triggerValue) return;
+        const normalizedNextText = String(nextText || "");
+        picker.triggerValue.dataset.empty = normalizedNextText ? "0" : "1";
+        if (!force && document.activeElement === picker.triggerValue) return;
+        if (picker.triggerValue.textContent !== normalizedNextText) {
+            picker.triggerValue.textContent = normalizedNextText;
+        }
+    };
+
+    const applyDatePickerValidationState = (picker, workingState = getDatePickerWorkingState(picker)) => {
+        const message = String(workingState.validationMessage || "");
+        syncDatePickerEditorText(picker, workingState.displayText, {force: Boolean(picker.forceDisplaySync)});
+        picker.forceDisplaySync = false;
+        picker.trigger.classList.toggle("is-invalid", Boolean(message));
+        picker.triggerValue.classList.toggle("is-invalid", Boolean(message));
+        picker.triggerValue.setAttribute("aria-invalid", message ? "true" : "false");
         if (picker.feedback) picker.feedback.textContent = message;
     };
 
@@ -2867,7 +2917,7 @@
             return `Choose a date on or before ${formatDisplayDate(picker.input.max)}.`;
         }
         const peerPicker = getDatePickerPeer(picker);
-        const peerDate = parseIsoDate(peerPicker?.input?.value || "");
+        const peerDate = parseIsoDate(getDatePickerComparableIsoValue(peerPicker));
         if (picker.role === "start" && peerDate && selectedDate > peerDate) {
             return `${labels.start} must be on or before ${labels.to}.`;
         }
@@ -2881,31 +2931,32 @@
     };
 
     const updateDatePickerValue = (picker, isoValue, {emitChange = false, closePopover = false} = {}) => {
-        picker.invalidDraft = "";
+        picker.draftText = "";
         picker.validationMessage = "";
         picker.input.value = isoValue;
         picker.forceSyncMonth = true;
+        picker.forceDisplaySync = true;
         refreshDatePickers();
         if (closePopover) closeAllDatePickers();
         if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
     };
 
     const commitDatePickerTextInput = (picker, {emitChange = false, closePopover = false} = {}) => {
-        if (!picker.textInput) return;
-        const rawValue = String(picker.textInput.value || "").trim();
+        const rawValue = normalizeDatePickerDraft(picker.triggerValue.textContent);
         if (!rawValue) {
-            picker.invalidDraft = "";
+            picker.draftText = "";
             picker.validationMessage = "Enter a date.";
             picker.input.value = "";
             picker.forceSyncMonth = true;
+            picker.forceDisplaySync = true;
             refreshDatePickers();
             if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
             return;
         }
         const parsedDate = parseManualDateInput(rawValue);
         if (!parsedDate) {
-            picker.invalidDraft = rawValue;
-            picker.validationMessage = `Enter a valid date like ${getDateEntryHint()}.`;
+            picker.draftText = rawValue;
+            picker.validationMessage = "";
             picker.input.value = "";
             picker.forceSyncMonth = true;
             refreshDatePickers();
@@ -2915,8 +2966,8 @@
         const isoValue = formatIsoDate(parsedDate);
         const validationMessage = getDatePickerValidationMessage(picker, isoValue);
         if (validationMessage) {
-            picker.invalidDraft = rawValue;
-            picker.validationMessage = validationMessage;
+            picker.draftText = rawValue;
+            picker.validationMessage = "";
             picker.input.value = "";
             picker.forceSyncMonth = true;
             refreshDatePickers();
@@ -2927,15 +2978,16 @@
     };
 
     const syncDatePickerView = (picker) => {
-        picker.triggerValue.textContent = formatDisplayDate(picker.input.value);
-        applyDatePickerValidationState(picker);
-        const selectedDate = parseIsoDate(picker.input.value);
+        const workingState = getDatePickerWorkingState(picker);
+        applyDatePickerValidationState(picker, workingState);
+        const selectedDate = workingState.previewDate;
         const minDate = parseIsoDate(picker.input.min);
         const maxDate = parseIsoDate(picker.input.max);
         const peerPicker = getDatePickerPeer(picker);
-        const peerDate = parseIsoDate(peerPicker?.input?.value || "");
+        const peerDate = parseIsoDate(getDatePickerComparableIsoValue(peerPicker));
         const today = startOfMonthUtc(new Date());
-        const anchorDate = clampDateToBounds(selectedDate || minDate || maxDate || today, minDate, maxDate);
+        const anchorDate = selectedDate || clampDateToBounds(parseIsoDate(picker.input.value) || minDate || maxDate || today, minDate, maxDate);
+        const hasPreviewValidationMessage = Boolean(workingState.validationMessage && selectedDate);
         if (!picker.visibleMonth || picker.forceSyncMonth) {
             picker.visibleMonth = startOfMonthUtc(anchorDate);
             picker.forceSyncMonth = false;
@@ -2963,7 +3015,9 @@
             button.className = "date-picker-day";
             if (!isCurrentMonth) button.classList.add("is-muted");
             if (isBeforeMin || isAfterMax || !isTradingDay || violatesPeerRange) button.classList.add("is-disabled");
-            if (selectedDate && isSameUtcDay(cellDate, selectedDate)) button.classList.add("is-selected");
+            if (selectedDate && isSameUtcDay(cellDate, selectedDate)) {
+                button.classList.add(hasPreviewValidationMessage ? "is-preview-invalid" : "is-selected");
+            }
             if (isPeerBoundary) button.classList.add("is-peer-boundary");
             if (isSameUtcDay(cellDate, new Date())) button.classList.add("is-today");
             button.textContent = String(cellDate.getUTCDate());
@@ -2983,25 +3037,24 @@
             const trigger = wrapper.querySelector("[data-date-trigger]");
             const triggerValue = wrapper.querySelector("[data-date-trigger-value]");
             const popover = wrapper.querySelector("[data-date-popover]");
-            const textInput = wrapper.querySelector("[data-date-input]");
             const feedback = wrapper.querySelector("[data-date-feedback]");
             const monthLabel = wrapper.querySelector("[data-date-month]");
             const grid = wrapper.querySelector("[data-date-grid]");
-            if (!input || !trigger || !triggerValue || !popover || !textInput || !feedback || !monthLabel || !grid) return;
+            if (!input || !trigger || !triggerValue || !popover || !feedback || !monthLabel || !grid) return;
             const picker = {
                 wrapper,
                 input,
                 trigger,
                 triggerValue,
                 popover,
-                textInput,
                 feedback,
                 monthLabel,
                 grid,
                 role: wrapper.dataset.dateRole || "",
                 visibleMonth: null,
                 forceSyncMonth: true,
-                invalidDraft: "",
+                forceDisplaySync: true,
+                draftText: "",
                 validationMessage: "",
             };
             wrapper.dataset.bound = "1";
@@ -3025,43 +3078,54 @@
             }
             datePickerState.push(picker);
             syncDatePickerView(picker);
-            trigger.addEventListener("click", () => {
-                const willOpen = popover.hidden;
-                closeAllDatePickers();
-                if (!willOpen) return;
+            const openDatePicker = ({focusEditor = false} = {}) => {
+                if (popover.hidden) {
+                    closeAllDatePickers();
+                }
                 picker.forceSyncMonth = true;
                 syncDatePickerView(picker);
                 popover.hidden = false;
                 trigger.setAttribute("aria-expanded", "true");
                 syncDatePickerPeerHighlight();
                 positionDatePickerPopover(picker);
+                if (focusEditor) picker.triggerValue.focus();
+            };
+            trigger.addEventListener("click", () => {
+                openDatePicker();
             });
-            textInput.placeholder = getDateEntryHint();
-            textInput.addEventListener("input", () => {
-                picker.invalidDraft = textInput.value.trim() ? textInput.value : "";
+            triggerValue.addEventListener("focus", () => {
+                openDatePicker();
+            });
+            triggerValue.addEventListener("input", () => {
+                picker.draftText = normalizeDatePickerDraft(triggerValue.textContent);
                 picker.validationMessage = "";
-                applyDatePickerValidationState(picker);
+                triggerValue.dataset.empty = picker.draftText ? "0" : "1";
+                picker.forceSyncMonth = true;
+                refreshDatePickers();
             });
-            textInput.addEventListener("change", () => {
+            triggerValue.addEventListener("blur", (event) => {
+                if (isInsideDatePicker(picker, event.relatedTarget)) return;
                 commitDatePickerTextInput(picker, {emitChange: true});
             });
-            textInput.addEventListener("keydown", (event) => {
+            triggerValue.addEventListener("keydown", (event) => {
                 if (event.key === "Enter") {
                     event.preventDefault();
                     commitDatePickerTextInput(picker, {emitChange: true, closePopover: true});
                 }
                 if (event.key === "Escape") {
                     event.preventDefault();
-                    picker.invalidDraft = "";
+                    picker.draftText = "";
                     picker.validationMessage = "";
+                    picker.forceDisplaySync = true;
                     syncDatePickerView(picker);
                     closeAllDatePickers();
-                    trigger.focus();
+                    triggerValue.blur();
                 }
             });
             input.addEventListener("change", () => {
                 picker.forceSyncMonth = true;
-                picker.invalidDraft = "";
+                picker.forceDisplaySync = true;
+                picker.draftText = "";
                 picker.validationMessage = "";
                 syncDatePickerView(picker);
                 syncDatePickerPeerHighlight();
