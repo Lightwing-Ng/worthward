@@ -110,6 +110,20 @@
                 <span class="date-picker-trigger-value" data-date-trigger-value></span>
             </button>
             <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-manual-entry">
+                    <label class="sr-only" for="exact_start_manual">Type start date</label>
+                    <input
+                        id="exact_start_manual"
+                        type="text"
+                        class="date-picker-manual-input"
+                        data-date-input
+                        autocomplete="off"
+                        spellcheck="false"
+                        inputmode="text"
+                        aria-describedby="exact_start_feedback"
+                    >
+                    <p id="exact_start_feedback" class="date-picker-feedback" data-date-feedback aria-live="polite"></p>
+                </div>
                 <div class="date-picker-toolbar">
                     <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
                         <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -132,6 +146,20 @@
                 <span class="date-picker-trigger-value" data-date-trigger-value></span>
             </button>
             <div class="date-picker-popover" data-date-popover hidden>
+                <div class="date-picker-manual-entry">
+                    <label class="sr-only" for="exact_end_manual">Type end date</label>
+                    <input
+                        id="exact_end_manual"
+                        type="text"
+                        class="date-picker-manual-input"
+                        data-date-input
+                        autocomplete="off"
+                        spellcheck="false"
+                        inputmode="text"
+                        aria-describedby="exact_end_feedback"
+                    >
+                    <p id="exact_end_feedback" class="date-picker-feedback" data-date-feedback aria-live="polite"></p>
+                </div>
                 <div class="date-picker-toolbar">
                     <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
                         <span class="icon icon-page-prev" aria-hidden="true"></span>
