@@ -1,4 +1,4 @@
-/* Code version: v0.3.5 */
+/* Code version: v0.3.6 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -831,7 +831,7 @@
 						label: "Equity",
 						data: equitySeriesStart,
 						borderColor: resolvedTheme.accentPositive,
-						borderWidth: referenceLineWidth,
+						borderWidth: 2.0,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",

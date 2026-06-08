@@ -51,7 +51,9 @@
 {%- endmacro %}
 
 {% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', custom_period_dropdown=false) -%}
-<div class="field">
+{% set range_mode_label = labels.mode if labels.mode is defined else "Mode" %}
+<div class="field range-mode-field">
+    <label for="range_period">{{ range_mode_label }}</label>
     {{ render_segmented_control(
         "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
         "range",

@@ -2,6 +2,14 @@
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
+	--sidebar-form-field-min-height: 50px;
+	--sidebar-form-field-label-gap: 6px;
+	--sidebar-form-field-gap: 8px;
+	--sidebar-form-inline-gap: 8px;
+	--sidebar-form-control-min-height: 30px;
+	--sidebar-form-control-padding-inline: 10px;
+	--sidebar-form-control-padding-block: 0px;
+	--sidebar-form-popover-gap: 6px;
 	--bg: var(--theme-background);
 	--panel: var(--theme-panel);
 	--panel-strong: var(--theme-panel-strong);

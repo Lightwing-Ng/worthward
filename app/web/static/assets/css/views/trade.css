@@ -497,7 +497,7 @@
 
 .field-switch {
     display: grid;
-    gap: 8px;
+    gap: var(--sidebar-form-field-gap);
 }
 
 .field-switch .switch-row {
