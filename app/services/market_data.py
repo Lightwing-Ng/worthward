@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.3.9
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import math
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -41,6 +42,13 @@ INTRADAY_INTERVALS = {"1m"}
 YFINANCE_INTRADAY_FALLBACK_DAYS = 30
 YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
 YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS = 7
+COMMON_SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 25.0, 40.0, 50.0)
+SPLIT_FACTOR_CANDIDATES = tuple(
+    sorted({*COMMON_SPLIT_FACTORS, *(1.0 / factor for factor in COMMON_SPLIT_FACTORS)})
+)
+SPLIT_MATCH_TOLERANCE = math.log(1.12)
+SPLIT_MIN_EVENT_DISTANCE = math.log(1.5)
+SPLIT_MIN_IMPROVEMENT = 0.08
 LOGGER = logging.getLogger(__name__)
 
 
@@ -274,6 +282,65 @@ def _normalize_store_frame_for_compare(frame: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def _infer_split_factor(previous_close: float, current_prices: list[float]) -> float | None:
+    valid_prices = [float(value) for value in current_prices if pd.notna(value) and float(value) > 0]
+    if not math.isfinite(previous_close) or previous_close <= 0 or not valid_prices:
+        return None
+
+    observed_ratios = [previous_close / value for value in valid_prices if value > 0]
+    if not observed_ratios:
+        return None
+
+    observed_ratio = math.exp(sum(math.log(ratio) for ratio in observed_ratios) / len(observed_ratios))
+    raw_distance = abs(math.log(observed_ratio))
+    if raw_distance < SPLIT_MIN_EVENT_DISTANCE:
+        return None
+
+    best_factor = 1.0
+    best_distance = math.inf
+    for candidate in SPLIT_FACTOR_CANDIDATES:
+        distance = abs(math.log(observed_ratio / candidate))
+        if distance < best_distance:
+            best_distance = distance
+            best_factor = candidate
+
+    materially_different = abs(math.log(best_factor)) >= SPLIT_MIN_EVENT_DISTANCE
+    confidently_matched = best_distance <= SPLIT_MATCH_TOLERANCE
+    meaningfully_improved = best_distance + SPLIT_MIN_IMPROVEMENT < raw_distance
+    if not materially_different or not confidently_matched or not meaningfully_improved:
+        return None
+    return best_factor
+
+
+def _apply_inferred_split_adjustments(dataset: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardize raw broker bars onto a split-adjusted share basis when the
+    source does not provide an adjusted close column.
+    """
+    if dataset.empty or "Adj Close" in dataset.columns or "Close" not in dataset.columns or len(dataset) < 2:
+        return dataset
+
+    event_factors = [1.0] * len(dataset)
+    for index in range(1, len(dataset)):
+        previous_close = dataset.iloc[index - 1].get("Close")
+        current_open = dataset.iloc[index].get("Open")
+        current_close = dataset.iloc[index].get("Close")
+        factor = _infer_split_factor(float(previous_close), [current_open, current_close])
+        if factor is not None:
+            event_factors[index] = factor
+
+    if all(abs(factor - 1.0) < 1e-9 for factor in event_factors):
+        return dataset
+
+    adjusted = dataset.copy()
+    suffix_products = pd.Series(event_factors, dtype="float64").iloc[::-1].cumprod().iloc[::-1].tolist()
+    divisors = pd.Series([*suffix_products[1:], 1.0], index=adjusted.index, dtype="float64")
+    for column in ("Open", "High", "Low", "Close"):
+        if column in adjusted.columns:
+            adjusted[column] = pd.to_numeric(adjusted[column], errors="coerce") / divisors
+    return adjusted
+
+
 def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = "1d") -> pd.DataFrame:
     interval = normalize_market_interval(interval)
     if history.empty:
@@ -306,7 +373,8 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
     subset_for_drop = ["Date", "Close"]
     if "Adj Close" in dataset.columns:
         subset_for_drop.append("Adj Close")
-    return dataset.dropna(subset=subset_for_drop).sort_values("Date")
+    dataset = dataset.dropna(subset=subset_for_drop).sort_values("Date").reset_index(drop=True)
+    return _apply_inferred_split_adjustments(dataset)
 
 
 def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.DataFrame:
@@ -357,6 +425,8 @@ def fetch_history(
             if not normalized_intraday.equals(dataset):
                 normalized_intraday.to_parquet(path, index=False)
             dataset = normalized_intraday
+        else:
+            dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
         return select_price_series(dataset, include_dividends)
 
     if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
@@ -381,7 +451,7 @@ def refresh_history_store(ticker: str) -> Path:
     existing_df = None
     if path.exists():
         try:
-            existing_df = pd.read_parquet(path)
+            existing_df = normalize_history_frame(pd.read_parquet(path), normalized_ticker)
             if not existing_df.empty:
                 # Get the max date and go back 1 day to ensure overlap and consistency
                 max_date = pd.to_datetime(existing_df["Date"].max())
@@ -400,7 +470,7 @@ def refresh_history_store(ticker: str) -> Path:
             if not new_history.empty:
                 new_df = normalize_history_frame(new_history, normalized_ticker)
                 if existing_df is not None:
-                    existing_normalized = _normalize_store_frame_for_compare(existing_df)
+                    existing_normalized = existing_df.reset_index(drop=True)
                     existing_max_date = pd.to_datetime(existing_normalized["Date"].max(), errors="coerce")
                     new_max_date = pd.to_datetime(new_df["Date"].max(), errors="coerce")
                     if pd.notna(existing_max_date) and pd.notna(new_max_date) and new_max_date <= existing_max_date:

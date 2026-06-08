@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.36.1
+ * Code version: v1.36.2
  * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
  * - Fixed: Restored missing cross-module orbit-state and position-state bindings after the split, so all investment view tabs render again without runtime ReferenceErrors
  * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
@@ -4615,6 +4615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         setInvestmentChartReady(false, canvas);
 
+        const referenceLineWidth = 2.5;
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();
@@ -5085,7 +5086,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         label: "Equity",
                         data: equity,
                         borderColor: equitySeriesColor,
-                        borderWidth: 2.5,
+                        borderWidth: referenceLineWidth,
                         pointRadius: 0,
                         tension: 0,
                         borderJoinStyle: "round",

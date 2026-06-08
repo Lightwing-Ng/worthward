@@ -1,4 +1,4 @@
-/* Code version: v0.3.4 */
+/* Code version: v0.3.5 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -743,6 +743,7 @@
 		};
 
 		const refreshTransition = consumeBacktestRefreshTransition();
+		const referenceLineWidth = 2.5;
 		const priceSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.close, rawDates, close)
 			: close;
@@ -793,7 +794,7 @@
 						label: "Close",
 						data: priceSeriesStart,
 						borderColor: isCandlestick ? "transparent" : resolvedTheme.accentPrimary,
-						borderWidth: isCandlestick ? 0 : 2.5,
+						borderWidth: isCandlestick ? 0 : referenceLineWidth,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",
@@ -830,7 +831,7 @@
 						label: "Equity",
 						data: equitySeriesStart,
 						borderColor: resolvedTheme.accentPositive,
-						borderWidth: 2.5,
+						borderWidth: referenceLineWidth,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",

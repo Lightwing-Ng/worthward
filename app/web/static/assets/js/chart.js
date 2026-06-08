@@ -1,4 +1,4 @@
-/* Code version: v0.4.2 */
+/* Code version: v0.4.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -343,6 +343,7 @@
 		};
 
 		const referenceLineWidth = 2.5;
+		const referenceShadowBlur = 0;
 
 		const baseDatasetStyle = {
 			borderWidth: referenceLineWidth,
@@ -355,7 +356,7 @@
 			borderCapStyle: "round",
 			shadowOffsetX: 0,
 			shadowOffsetY: 0,
-			shadowBlur: chartConfig.shadow_blur,
+			shadowBlur: referenceShadowBlur,
 			fill: false,
 			backgroundColor: "transparent",
 		};
@@ -428,7 +429,7 @@
 					pointHoverBackgroundColor: item.color || resolvedTheme.accentPrimary || theme.accent_primary,
 					shadowColor: hexToRgba(item.color || resolvedTheme.accentPrimary || theme.accent_primary, 0.4),
 					glow: item.glow !== false,
-					shadowBlur: item.glow === false ? 0 : chartConfig.shadow_blur,
+					shadowBlur: referenceShadowBlur,
 				})),
 			},
 			options: {
@@ -443,13 +444,13 @@
 					chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
 						if (activeIndexes.size === 0) {
 							dataset.borderWidth = referenceLineWidth;
-							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur;
+							dataset.shadowBlur = referenceShadowBlur;
 						} else if (activeIndexes.has(datasetIndex)) {
 							dataset.borderWidth = referenceLineWidth;
-							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_active;
+							dataset.shadowBlur = referenceShadowBlur;
 						} else {
 							dataset.borderWidth = referenceLineWidth;
-							dataset.shadowBlur = dataset.glow === false ? 0 : chartConfig.shadow_blur_inactive;
+							dataset.shadowBlur = referenceShadowBlur;
 						}
 					});
 					chartInstance.update("none");

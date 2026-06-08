@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.3.6
+    Code version: v0.3.7
 """
 
 from __future__ import annotations
@@ -79,6 +79,14 @@ def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
     raise RuntimeError(
         "Longbridge OpenAPI is not installed. Add the official Python package before fetching 1-minute history."
     )
+
+
+def _resolve_longbridge_adjust_type(adjust_type_enum: Any) -> Any:
+    """
+    Prefer split-adjusted bars so reverse splits and ordinary splits do not
+    distort return calculations when Longbridge becomes the active data source.
+    """
+    return getattr(adjust_type_enum, "ForwardAdjust", adjust_type_enum.NoAdjust)
 
 
 def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
@@ -393,6 +401,7 @@ def fetch_longbridge_one_minute_history(
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
     _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
+    adjust_type = _resolve_longbridge_adjust_type(adjust_type_enum)
     quote_context = get_longbridge_quote_context(settings)
     symbol = _normalize_longbridge_symbol(ticker)
 
@@ -419,7 +428,7 @@ def fetch_longbridge_one_minute_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_enum.Min_1,
-                    adjust_type_enum.NoAdjust,
+                    adjust_type,
                     False,
                     ONE_MINUTE_CHUNK_SIZE,
                 )
@@ -427,7 +436,7 @@ def fetch_longbridge_one_minute_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_enum.Min_1,
-                    adjust_type_enum.NoAdjust,
+                    adjust_type,
                     False,
                     ONE_MINUTE_CHUNK_SIZE,
                     cursor,
@@ -482,6 +491,7 @@ def fetch_longbridge_daily_history(
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
     _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
+    adjust_type = _resolve_longbridge_adjust_type(adjust_type_enum)
     period_day = _resolve_daily_period(period_enum)
     quote_context = get_longbridge_quote_context(settings)
     symbol = _normalize_longbridge_symbol(ticker)
@@ -501,7 +511,7 @@ def fetch_longbridge_daily_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_day,
-                    adjust_type_enum.NoAdjust,
+                    adjust_type,
                     False,
                     DAILY_CHUNK_SIZE,
                 )
@@ -509,7 +519,7 @@ def fetch_longbridge_daily_history(
                 batch = quote_context.history_candlesticks_by_offset(
                     symbol,
                     period_day,
-                    adjust_type_enum.NoAdjust,
+                    adjust_type,
                     False,
                     DAILY_CHUNK_SIZE,
                     cursor,
