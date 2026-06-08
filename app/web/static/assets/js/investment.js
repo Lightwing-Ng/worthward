@@ -4615,7 +4615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         setInvestmentChartReady(false, canvas);
 
-        const referenceLineWidth = 2.5;
+        const referenceLineWidth = 1.0;
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();

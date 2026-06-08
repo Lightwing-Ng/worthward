@@ -743,7 +743,7 @@
 		};
 
 		const refreshTransition = consumeBacktestRefreshTransition();
-		const referenceLineWidth = 2.5;
+		const referenceLineWidth = 1.0;
 		const priceSeriesStart = refreshTransition
 			? buildAlignedSeries(refreshTransition.rawLabels, refreshTransition.close, rawDates, close)
 			: close;
@@ -850,7 +850,7 @@
 						label: "If all in",
 						data: allInSeriesStart,
 						borderColor: allInReferenceColor,
-						borderWidth: 2,
+						borderWidth: 1.0,
 						pointRadius: 0,
 						tension: 0,
 						borderJoinStyle: "round",

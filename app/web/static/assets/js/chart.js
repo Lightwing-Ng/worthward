@@ -342,7 +342,7 @@
 			tooltipEl.style.top = `${top}px`;
 		};
 
-		const referenceLineWidth = 2.5;
+		const referenceLineWidth = 1.0;
 		const referenceShadowBlur = 0;
 
 		const baseDatasetStyle = {
