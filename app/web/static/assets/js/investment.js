@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.36.2
+ * Code version: v1.36.3
+ * - Added: Stock details price chart now renders a muted gray Average price cost curve, replaying ticker transactions onto every visible chart point so the line and tooltip match the point-in-time cost basis
  * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
  * - Fixed: Restored missing cross-module orbit-state and position-state bindings after the split, so all investment view tabs render again without runtime ReferenceErrors
  * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
@@ -3294,56 +3295,116 @@ document.addEventListener('DOMContentLoaded', () => {
             if (normalizedType === 'sell') accumulator.sell.push(marker);
             return accumulator;
         }, { buy: [], sell: [] });
-        const transactionsByDate = chronologicalRows.reduce((accumulator, txn) => {
+        const resolveAveragePriceSnapshotIndex = (txn) => {
             const ledgerDate = normalizeLedgerDate(txn?.date);
-            if (!ledgerDate) return accumulator;
-            if (!accumulator.has(ledgerDate)) accumulator.set(ledgerDate, []);
-            accumulator.get(ledgerDate).push(txn);
+            if (!ledgerDate) return null;
+            if (useIntradayCandles) {
+                const exactMinuteIndex = dateIndex.get(normalizeInvestmentIntradayMinuteKey(txn?.date));
+                if (Number.isInteger(exactMinuteIndex)) return exactMinuteIndex;
+                const dayBoundary = intradayDayBoundaries.dayMap.get(ledgerDate);
+                const sessionType = getInvestmentTradeSessionType(txn?.date);
+                if (dayBoundary) {
+                    if (sessionType === 'post') {
+                        const nextDay = dayBoundary.ordinal < intradayDayBoundaries.orderedDays.length - 1
+                            ? intradayDayBoundaries.orderedDays[dayBoundary.ordinal + 1]
+                            : null;
+                        return nextDay ? nextDay.firstIndex : dayBoundary.lastIndex;
+                    }
+                    if (sessionType === 'pre' || sessionType === 'night') {
+                        return dayBoundary.firstIndex;
+                    }
+                }
+                const fallbackIndex = intradayDayFallbackIndex.get(ledgerDate);
+                return Number.isInteger(fallbackIndex) ? fallbackIndex : null;
+            }
+            const dailyIndex = dateIndex.get(ledgerDate);
+            return Number.isInteger(dailyIndex) ? dailyIndex : null;
+        };
+        const transactionsBySnapshotIndex = chronologicalRows.reduce((accumulator, txn) => {
+            const snapshotIndex = resolveAveragePriceSnapshotIndex(txn);
+            if (!Number.isInteger(snapshotIndex)) return accumulator;
+            if (!accumulator.has(snapshotIndex)) accumulator.set(snapshotIndex, []);
+            accumulator.get(snapshotIndex).push(txn);
             return accumulator;
         }, new Map());
         const stockSnapshotsByDate = new Map();
         const investmentPointByDate = new Map((Array.isArray(investmentChartPointsCache) ? investmentChartPointsCache : [])
             .map((point) => [normalizeLedgerDate(point?.date), point])
             .filter(([date]) => Boolean(date)));
-        let latestShares = 0;
+        const stockState = createPositionState(normalizedTicker);
+        const averagePriceSeries = [];
         labels.forEach((label, index) => {
-            const labelDateKey = normalizeLedgerDate(label);
-            const dateTxns = transactionsByDate.get(labelDateKey) || [];
-            const buySellLedgerNos = dateTxns
+            const snapshotTxns = transactionsBySnapshotIndex.get(index) || [];
+            let buyQuantity = 0;
+            let sellQuantity = 0;
+            snapshotTxns.forEach((txn) => {
+                const normalizedType = getNormalizedTransactionType(txn);
+                const quantity = Number(getTransactionQuantity(txn));
+                if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
+                    applyDirectionalTrade(stockState, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                    buyQuantity += quantity;
+                    return;
+                }
+                if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
+                    stockState.shares += quantity;
+                    return;
+                }
+                if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
+                    stockState.shares += quantity;
+                    return;
+                }
+                if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
+                    applyDirectionalTrade(stockState, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                    sellQuantity += quantity;
+                }
+            });
+            const buySellLedgerNos = snapshotTxns
                 .filter((txn) => ['buy', 'sell'].includes(getNormalizedTransactionType(txn)))
                 .map((txn) => Number(txn?.ledger_no))
                 .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 .sort((left, right) => right - left);
-            if (dateTxns.length) {
-                const latestTxn = dateTxns[dateTxns.length - 1];
-                const latestHoldings = latestTxn?.holdings && typeof latestTxn.holdings === 'object'
-                    ? latestTxn.holdings
-                    : null;
-                const hasTickerHolding = latestHoldings
-                    ? Object.prototype.hasOwnProperty.call(latestHoldings, normalizedTicker)
-                    : false;
-                const txnShares = hasTickerHolding ? Number(latestHoldings[normalizedTicker]) : 0;
-                latestShares = Number.isFinite(txnShares) ? txnShares : 0;
-            }
+            const averagePrice = !isFlatPosition(stockState.shares)
+                ? stockState.totalCost / Math.abs(stockState.shares)
+                : null;
             const close = Number(closeValues[index]);
+            averagePriceSeries.push(Number.isFinite(averagePrice) ? averagePrice : null);
             stockSnapshotsByDate.set(String(label), {
-                shares: latestShares,
+                shares: Number.isFinite(stockState.shares) ? stockState.shares : 0,
                 close: Number.isFinite(close) ? close : null,
-                buyQuantity: dateTxns.reduce((sum, txn) => {
-                    if (getNormalizedTransactionType(txn) !== 'buy') return sum;
-                    const quantity = Number(getTransactionQuantity(txn));
-                    return Number.isFinite(quantity) && quantity > 0 ? sum + quantity : sum;
-                }, 0),
-                sellQuantity: dateTxns.reduce((sum, txn) => {
-                    if (getNormalizedTransactionType(txn) !== 'sell') return sum;
-                    const quantity = Number(getTransactionQuantity(txn));
-                    return Number.isFinite(quantity) && quantity > 0 ? sum + quantity : sum;
-                }, 0),
+                averagePrice: Number.isFinite(averagePrice) ? averagePrice : null,
+                buyQuantity,
+                sellQuantity,
                 buySellLedgerNos,
             });
         });
 
         const resolvedTheme = resolveInvestmentTheme();
+        const applyCanvasAlpha = (color, alpha) => {
+            const normalizedColor = String(color || '').trim();
+            const normalizedAlpha = Number(alpha);
+            if (!normalizedColor) return normalizedColor;
+            if (!Number.isFinite(normalizedAlpha)) return normalizedColor;
+            const clampedAlpha = Math.min(1, Math.max(0, normalizedAlpha));
+            const hexMatch = normalizedColor.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+            if (hexMatch) {
+                const rawHex = hexMatch[1];
+                const expandedHex = rawHex.length === 3
+                    ? rawHex.split('').map((char) => `${char}${char}`).join('')
+                    : rawHex;
+                const red = parseInt(expandedHex.slice(0, 2), 16);
+                const green = parseInt(expandedHex.slice(2, 4), 16);
+                const blue = parseInt(expandedHex.slice(4, 6), 16);
+                return `rgba(${red}, ${green}, ${blue}, ${clampedAlpha})`;
+            }
+            const rgbMatch = normalizedColor.match(/^rgba?\(([^)]+)\)$/i);
+            if (rgbMatch) {
+                const channels = rgbMatch[1].split(',').slice(0, 3).map((value) => value.trim());
+                if (channels.length === 3) {
+                    return `rgba(${channels.join(', ')}, ${clampedAlpha})`;
+                }
+            }
+            return normalizedColor;
+        };
         const formatMoney = (value) => new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -3397,6 +3458,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ...highValues,
             ...lowValues,
             ...closeValues,
+            ...averagePriceSeries,
             ...tradeMarkerPoints.buy.map((marker) => marker.y),
             ...tradeMarkerPoints.sell.map((marker) => marker.y),
         ]);
@@ -3688,6 +3750,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
             const activeMarkerType = String(chart?._activeInvestmentStockDetailsMarkerType || '');
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
+            const averagePrice = Number(snapshot?.averagePrice);
             const tooltipRows = [
                 {
                     label: 'Position',
@@ -3699,6 +3762,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     label: 'Market value',
                     value: Number.isFinite(marketValue) ? formatMoney(marketValue) : '--',
                     color: resolvedTheme.accentSecondary,
+                    bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
+                },
+                {
+                    label: 'Average price',
+                    value: Number.isFinite(averagePrice) ? formatMoney(averagePrice) : '--',
+                    color: resolvedTheme.muted,
                     bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
             ];
@@ -3772,11 +3841,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         data: closeValues,
                         order: 0,
                         borderColor: useIntradayCandles ? 'transparent' : resolvedTheme.accentPrimary,
-                        borderWidth: useIntradayCandles ? 0 : 1.0,
+                        borderWidth: useIntradayCandles ? 0 : 1.5,
                         pointRadius: 0,
                         tension: 0,
                         borderJoinStyle: 'round',
                         borderCapStyle: 'round',
+                    },
+                    {
+                        label: `${normalizedTicker} average price`,
+                        data: averagePriceSeries,
+                        order: 1,
+                        borderColor: applyCanvasAlpha(resolvedTheme.muted, 0.5),
+                        borderWidth: 1.0,
+                        pointRadius: 0,
+                        tension: 0,
+                        borderJoinStyle: 'round',
+                        borderCapStyle: 'round',
+                        spanGaps: false,
                     },
                 ],
             },
