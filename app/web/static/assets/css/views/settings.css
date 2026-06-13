@@ -2084,6 +2084,11 @@ div.style-token-modal-demo::-webkit-scrollbar,
     min-width: min(100%, var(--settings-form-control-min-width));
 }
 
+.settings-form-row.settings-broker-row {
+    width: 100%;
+    min-width: 0;
+}
+
 .settings-form-grid .field.settings-field-span-full {
     width: 100%;
     max-width: var(--settings-form-control-max-width);
@@ -2106,6 +2111,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     color: var(--settings-text-input-color);
     font-size: var(--settings-text-input-font-size);
     box-shadow: none;
+}
+
+.settings-broker-row .settings-form-control {
+    max-width: none;
 }
 
 .settings-form-control:focus,

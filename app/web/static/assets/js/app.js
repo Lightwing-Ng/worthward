@@ -2553,7 +2553,7 @@
                 mediaElement.className = "trade-strategy-dropdown-media";
                 mediaElement.alt = String(option.dataset.iconAlt || "").trim()
                     || `${option.textContent?.trim() || option.value} logo`;
-                mediaElement.loading = "lazy";
+                mediaElement.loading = "eager";
                 mediaElement.decoding = "async";
                 mediaElement.hidden = true;
                 mediaElement.addEventListener("load", () => {

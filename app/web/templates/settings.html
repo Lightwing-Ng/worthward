@@ -622,7 +622,7 @@
             </div>
     </section>
     <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
-                <div class="settings-form-row">
+                <div class="settings-form-row settings-broker-row">
                     <label class="settings-form-label" for="selected_broker">Broker</label>
                     <select id="selected_broker" name="selected_broker" class="settings-form-control settings-form-select">
                         <option value="longbridge" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
