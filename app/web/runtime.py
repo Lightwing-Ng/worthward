@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.15
+Code version: v0.3.16
 """
 
 from __future__ import annotations
@@ -78,6 +78,11 @@ from app.services.investment_import import (
     merge_investment_payloads,
     normalize_investment_payload_tickers,
 )
+from app.services.live_trading import (
+    load_longbridge_account_label,
+    load_longbridge_stock_positions,
+    submit_longbridge_limit_order,
+)
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
@@ -130,9 +135,11 @@ LEGACY_VIEW_ALIASES = {
 SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
                                "clear-caches", "style-tokens"}
-SUPPORTED_MORE_SECTIONS = {"timing", "investment"}
+SUPPORTED_MORE_SECTIONS = {"timing", "investment", "live-trading"}
 LEGACY_MORE_SECTION_ALIASES = {
     "invest": "investment",
+    "live": "live-trading",
+    "live_trading": "live-trading",
 }
 LOCAL_STORE_PAGE_SIZE = 10
 SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
@@ -189,6 +196,8 @@ class WebRuntime:
     investment_get_latest_price: Any
     investment_get_parquet: Any
     investment_get_intraday_history: Any
+    live_trading_get_positions: Any
+    live_trading_submit_order: Any
 
 
 def extract_first_non_null_value(raw_value: object) -> object | None:
@@ -2362,6 +2371,9 @@ def build_web_runtime() -> WebRuntime:
             if more_section == "investment":
                 page_title = "Investment"
                 settings_title = "Investment"
+            elif more_section == "live-trading":
+                page_title = "Live trading"
+                settings_title = "Live trading"
 
         supported_periods = (
             list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals else list(ADAPTIVE_PERIODS_1D)
@@ -2714,6 +2726,7 @@ def build_web_runtime() -> WebRuntime:
         timing_summary = []
         timing_market = {}
         timing_error = ""
+        live_trading_account_label = "Integrated A/C (Unavailable)"
 
         if current_view == "settings":
             if settings_section in {"general", "backtest", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
@@ -2881,6 +2894,8 @@ def build_web_runtime() -> WebRuntime:
                     )
                 except Exception as exc:
                     timing_error = str(exc)
+            elif more_section == "live-trading":
+                live_trading_account_label = load_longbridge_account_label(load_broker_settings())
 
         if current_view == "backtest":
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
@@ -2897,7 +2912,13 @@ def build_web_runtime() -> WebRuntime:
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
             "backtest": "backtest.html",
-            "more": "investment.html" if more_section == "investment" else "more.html",
+            "more": (
+                "investment.html"
+                if more_section == "investment"
+                else "live_trading.html"
+                if more_section == "live-trading"
+                else "more.html"
+            ),
             "settings": "settings.html",
         }[current_view]
 
@@ -2949,6 +2970,7 @@ def build_web_runtime() -> WebRuntime:
             broker_test_status=broker_test_status,
             broker_test_message=broker_test_message,
             broker_test_checked_at=broker_test_checked_at,
+            live_trading_account_label=live_trading_account_label,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
             local_store_page_size=LOCAL_STORE_PAGE_SIZE,
@@ -2963,7 +2985,7 @@ def build_web_runtime() -> WebRuntime:
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("timing", "investment")},
+            more_urls={section_name: build_more_url(section_name) for section_name in ("timing", "investment", "live-trading")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -2992,6 +3014,9 @@ def build_web_runtime() -> WebRuntime:
                 "settingsNetworkStatus": "/api/settings/network-status",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
+                "investmentIntraday": "/api/investment/intraday",
+                "liveTradingPositions": "/api/live-trading/positions",
+                "liveTradingOrder": "/api/live-trading/orders",
             },
         ))
         if current_view == "settings":
@@ -3923,7 +3948,10 @@ def build_web_runtime() -> WebRuntime:
                 return apply_no_store_headers(response)
 
             latest_timestamp = intraday["Date"].max()
-            if requested_range == "3d":
+            if requested_range == "current-day":
+                latest_day = latest_timestamp.strftime("%Y-%m-%d")
+                intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d") == latest_day].copy()
+            elif requested_range == "3d":
                 trading_days = intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
                 selected_days = set(trading_days[-3:])
                 if selected_days:
@@ -3964,6 +3992,73 @@ def build_web_runtime() -> WebRuntime:
             response.status_code = 500
             return apply_no_store_headers(response)
 
+    def live_trading_get_positions():
+        """Load current Longbridge stock positions for the Live trading workspace."""
+        try:
+            positions = load_longbridge_stock_positions(load_broker_settings())
+            response = jsonify({
+                "success": True,
+                "positions": [
+                    {
+                        "symbol": item.symbol,
+                        "symbol_name": item.symbol_name,
+                        "quantity": item.quantity,
+                        "available_quantity": item.available_quantity,
+                        "cost_price": item.cost_price,
+                        "currency": item.currency,
+                        "market": item.market,
+                        "account_channel": item.account_channel,
+                    }
+                    for item in positions
+                ],
+            })
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
+    def live_trading_submit_order():
+        """Submit a Longbridge live limit order from the Live trading workspace."""
+        payload = request.get_json(silent=True) or {}
+        try:
+            order = submit_longbridge_limit_order(
+                load_broker_settings(),
+                ticker=str(payload.get("ticker", "")).strip(),
+                side=str(payload.get("side", "")).strip(),
+                price=str(payload.get("price", "")).strip(),
+                quantity=str(payload.get("quantity", "")).strip(),
+                remark=str(payload.get("remark", "")).strip(),
+            )
+            response = jsonify({
+                "success": True,
+                "message": f"{order.side.title()} order submitted for {order.symbol}.",
+                "order": {
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "price": order.price,
+                    "quantity": order.quantity,
+                    "order_type": order.order_type,
+                    "time_in_force": order.time_in_force,
+                    "status": order.status,
+                    "remark": order.remark,
+                },
+            })
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
     return WebRuntime(
         root=root,
         compare_page=compare_page,
@@ -3995,4 +4090,6 @@ def build_web_runtime() -> WebRuntime:
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,
+        live_trading_get_positions=live_trading_get_positions,
+        live_trading_submit_order=live_trading_submit_order,
     )

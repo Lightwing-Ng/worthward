@@ -2260,12 +2260,16 @@
         if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
             return null;
         }
+        const triggerLogo = trigger.querySelector("[data-shared-select-trigger-logo]");
+        const triggerPlaceholder = trigger.querySelector("[data-shared-select-trigger-placeholder]");
         return {
             field,
             select,
             trigger,
             triggerLabel,
             dropdown,
+            triggerLogo: triggerLogo instanceof HTMLImageElement ? triggerLogo : null,
+            triggerPlaceholder: triggerPlaceholder instanceof HTMLElement ? triggerPlaceholder : null,
         };
     };
 
@@ -2283,6 +2287,37 @@
             }
         });
         select.value = normalizedValue;
+    };
+
+    const syncSharedSelectTriggerMedia = (parts, selectedOption) => {
+        if (!parts?.triggerLogo) return;
+        const iconUrl = String(selectedOption?.dataset.iconUrl || "").trim();
+        const iconAlt = String(selectedOption?.dataset.iconAlt || "").trim()
+            || `${selectedOption?.textContent?.trim() || selectedOption?.value || "Selected"} logo`;
+        if (!iconUrl) {
+            parts.triggerLogo.hidden = true;
+            parts.triggerLogo.alt = "";
+            parts.triggerLogo.removeAttribute("src");
+            if (parts.triggerPlaceholder) {
+                parts.triggerPlaceholder.hidden = false;
+            }
+            return;
+        }
+        parts.triggerLogo.alt = iconAlt;
+        parts.triggerLogo.hidden = false;
+        if (parts.triggerLogo.getAttribute("src") !== iconUrl) {
+            parts.triggerLogo.src = iconUrl;
+        }
+        if (parts.triggerPlaceholder) {
+            parts.triggerPlaceholder.hidden = true;
+        }
+        parts.triggerLogo.onerror = () => {
+            parts.triggerLogo.hidden = true;
+            parts.triggerLogo.removeAttribute("src");
+            if (parts.triggerPlaceholder) {
+                parts.triggerPlaceholder.hidden = false;
+            }
+        };
     };
 
     const SIDEBAR_OVERLAY_GAP_PX = 4;
@@ -2358,6 +2393,7 @@
         if (!parts) return;
         const selectedOption = Array.from(parts.select.options).find((option) => option.value === parts.select.value);
         parts.triggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+        syncSharedSelectTriggerMedia(parts, selectedOption);
     };
 
     const renderSharedSelectDropdown = (field) => {
@@ -2380,6 +2416,11 @@
             checkElement.className = "trade-strategy-dropdown-check";
             checkElement.setAttribute("aria-hidden", "true");
 
+            const iconUrl = String(option.dataset.iconUrl || "").trim();
+            if (iconUrl) {
+                optionButton.classList.add("is-with-icon");
+            }
+
             const copyElement = document.createElement("span");
             copyElement.className = "trade-strategy-dropdown-copy";
 
@@ -2398,6 +2439,40 @@
             }
 
             optionButton.appendChild(checkElement);
+            if (iconUrl) {
+                const mediaSlot = document.createElement("span");
+                mediaSlot.className = "trade-strategy-dropdown-media-slot";
+                mediaSlot.setAttribute("aria-hidden", "true");
+
+                const mediaPlaceholder = document.createElement("span");
+                mediaPlaceholder.className = "trade-strategy-dropdown-media-placeholder";
+
+                const mediaElement = document.createElement("img");
+                mediaElement.className = "trade-strategy-dropdown-media";
+                mediaElement.alt = String(option.dataset.iconAlt || "").trim()
+                    || `${option.textContent?.trim() || option.value} logo`;
+                mediaElement.loading = "lazy";
+                mediaElement.decoding = "async";
+                mediaElement.hidden = true;
+                mediaElement.addEventListener("load", () => {
+                    mediaElement.hidden = false;
+                    mediaPlaceholder.hidden = true;
+                });
+                mediaElement.addEventListener("error", () => {
+                    mediaElement.hidden = true;
+                    mediaElement.removeAttribute("src");
+                    mediaPlaceholder.hidden = false;
+                });
+                mediaElement.src = iconUrl;
+                if (mediaElement.complete && mediaElement.naturalWidth > 0 && mediaElement.naturalHeight > 0) {
+                    mediaElement.hidden = false;
+                    mediaPlaceholder.hidden = true;
+                }
+
+                mediaSlot.appendChild(mediaPlaceholder);
+                mediaSlot.appendChild(mediaElement);
+                optionButton.appendChild(mediaSlot);
+            }
             optionButton.appendChild(copyElement);
             optionButton.addEventListener("click", () => {
                 if (parts.select.value === option.value) {

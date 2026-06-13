@@ -845,6 +845,9 @@
 	line-height: 1.2;
 	font-weight: var(--font-weight-regular);
 }
+.trade-strategy-dropdown-option.is-with-icon {
+	grid-template-columns: 16px 20px minmax(0, 1fr);
+}
 .trade-strategy-dropdown-option:hover,
 .trade-strategy-dropdown-option:focus-visible {
 	background: var(--control-liquid-background-hover);
@@ -864,6 +867,39 @@
 }
 .trade-strategy-dropdown-option.is-selected .trade-strategy-dropdown-check {
 	opacity: 1;
+}
+.trade-strategy-dropdown-media-slot {
+	position: relative;
+	width: 20px;
+	height: 20px;
+	border-radius: var(--radius-soft);
+	overflow: hidden;
+}
+.trade-strategy-dropdown-media-placeholder,
+.trade-strategy-dropdown-media {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+}
+.trade-strategy-dropdown-media-placeholder {
+	display: block;
+	border-radius: inherit;
+	background: var(--control-liquid-background);
+	box-shadow: var(--control-liquid-shadow), inset 0 0 0 1px var(--theme-glass-border);
+	backdrop-filter: var(--control-liquid-blur);
+	-webkit-backdrop-filter: var(--control-liquid-blur);
+}
+.trade-strategy-dropdown-media {
+	display: block;
+	border-radius: inherit;
+	object-fit: contain;
+	object-position: center;
+	background: transparent;
+	box-shadow: none;
+}
+.trade-strategy-dropdown-media[hidden] {
+	display: none;
 }
 .trade-strategy-dropdown-copy {
 	min-width: 0;

@@ -1,4 +1,4 @@
-/* Code version: v1.6.0 */
+/* Code version: v1.7.3 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -27,6 +27,290 @@
 
 .investment-nav-icon {
     --settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);
+}
+
+.live-trading-card {
+    max-height: none;
+    overflow: visible;
+}
+
+.live-trading-grid {
+    --live-trading-swipe-inset: 6px;
+    --live-trading-swipe-progress: 0px;
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+}
+
+.live-trading-surface {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--panel-strong);
+    overflow: hidden;
+}
+
+.live-trading-order-article {
+    gap: 12px;
+}
+
+.live-trading-broker-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.live-trading-field-label {
+    display: flex;
+    align-items: flex-start;
+    min-height: var(--trade-control-label-height);
+    margin: 0;
+    font-size: var(--font-form-label);
+    line-height: 1.2;
+    font-weight: var(--font-weight-bold);
+    color: var(--text);
+}
+
+.live-trading-broker-row {
+    display: block;
+}
+
+.live-trading-broker-trigger {
+    position: relative;
+    min-height: var(--sidebar-form-control-min-height);
+    padding-left: 46px;
+}
+
+.live-trading-broker-trigger-slot {
+    left: 14px;
+    width: 22px;
+    height: 22px;
+}
+
+.live-trading-broker-trigger-label {
+    min-width: 0;
+}
+
+.live-trading-broker-dropdown .trade-strategy-dropdown-option.is-with-icon {
+    grid-template-columns: 16px 22px minmax(0, 1fr);
+}
+
+.live-trading-section-header-chart {
+    align-items: flex-end;
+}
+
+.live-trading-heading {
+    margin: 0;
+}
+
+.live-trading-bars-meta {
+    margin-top: 4px;
+    color: var(--theme-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.live-trading-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.live-trading-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.live-trading-ticker-field {
+    margin: 0;
+}
+
+.live-trading-side-field,
+.live-trading-number-field {
+    margin: 0;
+}
+
+.live-trading-number-field .trade-capital-row {
+    margin-top: 6px;
+}
+
+.live-trading-number-input {
+    width: 100%;
+}
+
+.live-trading-form .field-tooltip-invalid {
+    margin-top: 6px;
+}
+
+.live-trading-action-package-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.live-trading-swipe-submit {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 6px;
+    border-radius: 999px;
+    background: var(--glass-popover-background);
+    box-shadow: var(--glass-popover-shadow);
+    backdrop-filter: var(--glass-popover-blur);
+    -webkit-backdrop-filter: var(--glass-popover-blur);
+    border: var(--glass-popover-border);
+    isolation: isolate;
+    user-select: none;
+    touch-action: pan-y;
+    overflow: hidden;
+}
+
+.live-trading-swipe-submit::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border-radius: inherit;
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.live-trading-swipe-submit[data-side="sell"]::after {
+    background: transparent;
+}
+
+.live-trading-swipe-submit[data-state="dragging"] {
+    border-color: color-mix(in srgb, var(--theme-accent-primary) 40%, var(--theme-border));
+}
+
+.live-trading-swipe-submit[data-state="pending"] {
+    opacity: 0.78;
+}
+
+.live-trading-swipe-label {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    padding: 0 68px 0 72px;
+    text-align: center;
+    color: var(--theme-text);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.live-trading-swipe-thumb {
+    position: absolute;
+    left: var(--live-trading-swipe-inset);
+    top: var(--live-trading-swipe-inset);
+    bottom: var(--live-trading-swipe-inset);
+    z-index: 2;
+    width: auto;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 999px;
+    transform: translateX(var(--live-trading-swipe-progress, 0px));
+    background: color-mix(in srgb, var(--theme-accent-primary) 14%, var(--color-white-adaptive));
+    color: var(--theme-accent-primary);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--theme-shadow-ambient) 75%, transparent);
+    cursor: grab;
+}
+
+.live-trading-swipe-submit[data-side="sell"] .live-trading-swipe-thumb {
+    background: color-mix(in srgb, var(--theme-accent-secondary) 14%, var(--color-white-adaptive));
+    color: var(--theme-accent-secondary);
+}
+
+.live-trading-swipe-thumb:active {
+    cursor: grabbing;
+}
+
+.live-trading-swipe-thumb:hover,
+.live-trading-swipe-thumb:focus-visible,
+.live-trading-swipe-thumb:active {
+    transform: translateX(var(--live-trading-swipe-progress, 0px));
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--theme-shadow-ambient) 75%, transparent);
+}
+
+.live-trading-swipe-thumb-icon {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.live-trading-bars-surface {
+    gap: 8px;
+    padding-bottom: 0;
+}
+
+.live-trading-range-field {
+    min-width: 214px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.live-trading-range-segmented {
+    width: 100%;
+}
+
+.live-trading-range-segmented > .segmented-control-option > span,
+.live-trading-side-segmented > .segmented-control-option > span {
+    color: var(--theme-muted) !important;
+}
+
+.live-trading-range-segmented .segmented-control-option input:checked + span,
+.live-trading-side-segmented .segmented-control-option input:checked + span {
+    color: var(--color-white-adaptive) !important;
+}
+
+.live-trading-chart-shell {
+    position: relative;
+    min-height: 360px;
+    height: 100%;
+    flex: 1 1 auto;
+    margin: 0 -14px -14px;
+    border-radius: 0 0 12px 12px;
+    background: transparent;
+    overflow: hidden;
+}
+
+.live-trading-chart-shell[data-state="empty"] .live-trading-chart-canvas {
+    opacity: 0.24;
+}
+
+.live-trading-chart-canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
+
+.live-trading-chart-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    color: var(--theme-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.live-trading-chart-shell[data-state="ready"] .live-trading-chart-empty {
+    display: none;
 }
 
 .investment-report-card {
@@ -1554,6 +1838,20 @@
     .investment-form-grid-secondary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .live-trading-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .live-trading-range-field {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .live-trading-section-header-chart {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 
 @media (max-width: 767px) {
@@ -1581,6 +1879,14 @@
     .investment-import-action-package {
         width: 100%;
         max-width: none;
+    }
+
+    .live-trading-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .live-trading-chart-shell {
+        min-height: 300px;
     }
 
     #transaction_form_container {
@@ -1634,5 +1940,23 @@
     .investment-stock-details-price-chart-shell,
     .investment-stock-details-price-chart-empty {
         min-height: 200px;
+    }
+
+    .live-trading-surface {
+        padding: 12px;
+    }
+
+    .live-trading-chart-shell {
+        margin: 0 -12px -12px;
+    }
+
+    .live-trading-swipe-label {
+        padding: 0 48px 0 60px;
+        font-size: 12px;
+    }
+
+    .live-trading-swipe-thumb {
+        width: auto;
+        height: auto;
     }
 }

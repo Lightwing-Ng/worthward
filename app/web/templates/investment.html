@@ -10,6 +10,12 @@
                     class="icon icon-more-investment investment-nav-icon" aria-hidden="true"></span></span>
             <span class="settings-nav-label">Investment</span>
         </a>
+        <a href="{{ more_urls['live-trading'] }}"
+           class="settings-nav-item{% if current_view == 'more' and more_section == 'live-trading' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
+                    class="icon icon-more-live-trading investment-nav-icon" aria-hidden="true"></span></span>
+            <span class="settings-nav-label">Live trading</span>
+        </a>
         <a href="{{ more_urls.timing }}"
            class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
             <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>

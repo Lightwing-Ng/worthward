@@ -1,0 +1,233 @@
+{# Code version: v1.7.2 #}
+{% extends "base.html" %}
+{% from "_macros.html" import render_segmented_control with context %}
+
+{% block sidebar_content %}
+    <nav class="settings-nav" aria-label="More sections">
+        <a href="{{ more_urls.investment }}"
+           class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
+                    class="icon icon-more-investment investment-nav-icon" aria-hidden="true"></span></span>
+            <span class="settings-nav-label">Investment</span>
+        </a>
+        <a href="{{ more_urls['live-trading'] }}"
+           class="settings-nav-item{% if current_view == 'more' and more_section == 'live-trading' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
+                    class="icon icon-more-live-trading investment-nav-icon" aria-hidden="true"></span></span>
+            <span class="settings-nav-label">Live trading</span>
+        </a>
+        <a href="{{ more_urls.timing }}"
+           class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
+            <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
+            <span class="settings-nav-label">{{ labels.more_timing }}</span>
+        </a>
+    </nav>
+{% endblock %}
+
+{% block workspace_content %}
+    <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
+        <article class="report-card workspace-article-card workspace-summary-card">
+            <div class="report-heading-row">
+                <p class="report-heading">Live trading</p>
+            </div>
+        </article>
+
+        <article class="report-card workspace-content-card investment-report-card live-trading-card">
+            <div class="live-trading-grid">
+                <article class="chart-surface live-trading-surface live-trading-order-article">
+                    <div class="field live-trading-broker-strip backtest-shared-select-field"
+                         data-shared-select-field
+                         data-shared-select-kind="live-trading-broker">
+                        <label class="settings-form-label live-trading-field-label" for="live_trading_broker">Broker</label>
+                        <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
+                            <select id="live_trading_broker"
+                                    name="broker"
+                                    class="trade-strategy-native-select backtest-shared-select-native"
+                                    hidden
+                                    aria-hidden="true"
+                                    tabindex="-1">
+                                <option value="longbridge"
+                                        data-icon-url="{{ url_for('market_store_logo', filename='Longbridge.png') }}"
+                                        data-icon-alt="Longbridge logo"
+                                        selected>Longbridge</option>
+                                <option value="ibkr"
+                                        data-icon-url="{{ url_for('market_store_logo', filename='IBKR.png') }}"
+                                        data-icon-alt="IBKR logo">IBKR</option>
+                            </select>
+                            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                <button type="button"
+                                        class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger"
+                                        data-shared-select-trigger
+                                        aria-haspopup="listbox"
+                                        aria-expanded="false"
+                                        aria-controls="live_trading_broker_dropdown">
+                                    <span class="ticker-leading-slot live-trading-broker-trigger-slot" aria-hidden="true">
+                                        <span class="ticker-logo-placeholder"
+                                              data-shared-select-trigger-placeholder></span>
+                                        <img class="ticker-input-logo live-trading-broker-trigger-logo"
+                                             data-shared-select-trigger-logo
+                                             alt=""
+                                             hidden>
+                                    </span>
+                                    <span class="trade-strategy-trigger-label live-trading-broker-trigger-label"
+                                          data-shared-select-trigger-label></span>
+                                </button>
+                            </div>
+                            <div id="live_trading_broker_dropdown"
+                                 class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown"
+                                 data-shared-select-dropdown
+                                 role="listbox"
+                                 aria-label="Broker"
+                                 hidden></div>
+                        </div>
+                    </div>
+                    <div id="live_trading_feedback"
+                         class="notice notice-floating notice-floating-banner notice-floating-banner-global investment-import-feedback-banner"
+                         data-dismissible-notice
+                         role="status"
+                         aria-live="polite"
+                         aria-atomic="true"
+                         hidden>
+                        <button type="button" class="dismiss-button notice-close" aria-label="Dismiss trading feedback">
+                            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+                        </button>
+                        <span id="live_trading_feedback_icon"
+                              class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
+                              aria-hidden="true"></span>
+                        <span class="workspace-modal-title notice-floating-banner-title"
+                              id="live_trading_feedback_message"></span>
+                    </div>
+                    <form id="live_trading_form" class="controls trade-controls live-trading-form">
+                        <div class="live-trading-form-grid">
+                            <div class="field live-trading-ticker-field">
+                                <div class="ticker-input-row">
+                                    <div class="ticker-input-main">
+                                        <label class="settings-form-label" for="live_trading_ticker">Ticker</label>
+                                        <div class="ticker-input-control">
+                                            <span class="ticker-leading-slot" aria-hidden="true">
+                                                <span class="ticker-logo-placeholder"></span>
+                                                <img class="ticker-input-logo" alt="" hidden>
+                                            </span>
+                                            <input id="live_trading_ticker"
+                                                   name="ticker"
+                                                   data-ticker-input
+                                                   class="settings-form-control live-trading-ticker-input"
+                                                   autocomplete="off"
+                                                   autocapitalize="characters"
+                                                   spellcheck="false"
+                                                   inputmode="latin"
+                                                   title="Use a valid ticker such as NVDA or MSFT."
+                                                   required>
+                                            <button type="button" class="ticker-clear" aria-label="Clear ticker">
+                                                <span class="icon icon-remove-muted" aria-hidden="true"></span>
+                                            </button>
+                                        </div>
+                                        <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                                        <div class="suggestions" id="live_trading_ticker_suggestions"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="field backtest-interval-field live-trading-side-field">
+                                <label for="live_trading_side_buy">Side</label>
+                                {{ render_segmented_control(
+                                    "segmented-control--compact backtest-interval-segmented live-trading-side-segmented",
+                                    "side",
+                                    "buy",
+                                    [
+                                        {"id": "live_trading_side_buy", "value": "buy", "label": "Buy"},
+                                        {"id": "live_trading_side_sell", "value": "sell", "label": "Sell"},
+                                    ],
+                                    'id="live_trading_side_control" data-active="buy" data-option-count="2"'
+                                ) }}
+                            </div>
+
+                            <div class="field trade-capital-field live-trading-number-field">
+                                <label for="live_trading_price">Price</label>
+                                <div class="trade-capital-row">
+                                    <input id="live_trading_price"
+                                           name="price"
+                                           class="trade-capital-input live-trading-number-input"
+                                           type="text"
+                                           value=""
+                                           placeholder="Awaiting valid ticker price"
+                                           inputmode="decimal"
+                                           autocomplete="off"
+                                           required>
+                                </div>
+                            </div>
+
+                            <div class="field trade-capital-field live-trading-number-field">
+                                <label for="live_trading_quantity">Quantity</label>
+                                <div class="trade-capital-row">
+                                    <input id="live_trading_quantity"
+                                           name="quantity"
+                                           class="trade-capital-input live-trading-number-input"
+                                           type="text"
+                                           value=""
+                                           inputmode="decimal"
+                                           autocomplete="off"
+                                           required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="live-trading-action-package-form">
+                            <div class="live-trading-swipe-submit"
+                                 id="live_trading_swipe_submit"
+                                 data-side="buy"
+                                 data-state="idle"
+                                 aria-label="Slide to submit live order">
+                                <span class="live-trading-swipe-label"
+                                      id="live_trading_swipe_label">Slide to buy</span>
+                                <button type="button"
+                                        class="live-trading-swipe-thumb"
+                                        id="live_trading_swipe_thumb"
+                                        aria-label="Slide right to submit order">
+                                    <span class="live-trading-swipe-thumb-icon" aria-hidden="true">&gt;</span>
+                                </button>
+                            </div>
+                            <button type="submit"
+                                    class="settings-inline-button settings-inline-button-primary"
+                                    id="live_trading_submit_button"
+                                    data-default-label="Submit order"
+                                    data-pending-label="Submitting"
+                                    hidden
+                                    aria-hidden="true"
+                                    tabindex="-1">Submit order
+                            </button>
+                        </div>
+                    </form>
+                </article>
+                <article class="chart-surface live-trading-surface live-trading-bars-surface">
+                    <div class="live-trading-section-header live-trading-section-header-chart">
+                        <div class="field live-trading-range-field">
+                            {{ render_segmented_control(
+                                "segmented-control--compact live-trading-range-segmented",
+                                "live_trading_range",
+                                "current-day",
+                                [
+                                    {"id": "live_trading_range_day", "value": "current-day", "label": "Current day"},
+                                    {"id": "live_trading_range_3d", "value": "3d", "label": "3D"},
+                                ],
+                                'id="live_trading_range_control" data-active="current-day" data-option-count="2" aria-label="Range"'
+                            ) }}
+                        </div>
+                    </div>
+                    <div class="live-trading-chart-shell" id="live_trading_bars_shell">
+                        <canvas class="live-trading-chart-canvas investment-stock-details-price-chart-canvas"
+                                id="live_trading_bars_canvas"
+                                aria-label="Recent intraday candlestick chart"></canvas>
+                        <div class="live-trading-chart-empty" id="live_trading_bars_empty">
+                            Select a valid ticker to load the latest 1-minute candlesticks.
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </article>
+    </section>
+{% endblock %}
+
+{% block page_scripts %}
+    <script type="module" src="{{ url_for('static', filename='assets/js/live-trading.js', v=version) }}"></script>
+{% endblock %}
