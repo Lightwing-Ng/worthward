@@ -29,7 +29,8 @@
     --settings-icon-tint: color-mix(in srgb, var(--theme-accent-secondary) 72%, var(--theme-accent-primary) 28%);
 }
 
-.live-trading-card {
+.live-trading-card,
+.investment-report-card.live-trading-card {
     max-height: none;
     overflow: visible;
 }
@@ -45,10 +46,12 @@
 }
 
 .live-trading-layout-row {
+    --live-trading-aligned-height: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--live-trading-panel-width);
     gap: 12px;
-    align-items: start;
+    min-height: var(--live-trading-aligned-height);
+    align-items: stretch;
 }
 
 .live-trading-layout-row.is-list-collapsed {
@@ -64,12 +67,15 @@
     display: grid;
     grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
     gap: 12px;
+    min-height: 0;
     align-items: stretch;
+    align-self: stretch;
 }
 
 .live-trading-surface {
     min-width: 0;
     min-height: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
     padding: 14px;
@@ -83,7 +89,11 @@
 }
 
 .live-trading-list-shell {
-    padding-top: 44px;
+    --live-trading-list-offset: 44px;
+    padding-top: var(--live-trading-list-offset);
+    min-height: 0;
+    height: 100%;
+    align-self: stretch;
 }
 
 .live-trading-list-toggle {
@@ -102,7 +112,7 @@
     position: relative;
     top: auto;
     width: var(--sidebar-width);
-    height: 70vh;
+    height: 100%;
     margin-left: auto;
     border-radius: var(--theme-timing-list-panel-radius);
     box-sizing: border-box;
@@ -462,7 +472,7 @@
     min-height: 360px;
     height: 100%;
     flex: 1 1 auto;
-    margin: 0 -14px -14px;
+    margin: 0 -14px 0;
     border-radius: 0 0 12px 12px;
     background: transparent;
     overflow: hidden;
@@ -2023,6 +2033,8 @@
     .live-trading-layout-row,
     .live-trading-layout-row.is-list-collapsed {
         grid-template-columns: 1fr;
+        min-height: 0;
+        align-items: start;
     }
 
     .live-trading-grid {
@@ -2030,7 +2042,9 @@
     }
 
     .live-trading-list-shell {
+        --live-trading-list-offset: 0px;
         padding-top: 0;
+        height: auto;
     }
 
     .live-trading-suggestions-panel {
@@ -2144,7 +2158,7 @@
     }
 
     .live-trading-chart-shell {
-        margin: 0 -12px -12px;
+        margin: 0 -12px 0;
     }
 
     .live-trading-swipe-label {

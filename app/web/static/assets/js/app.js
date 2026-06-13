@@ -492,7 +492,6 @@
             window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
-            window.ANTIGRAVITY_BOOTSTRAP?.initMoreWorkspace?.();
             if (state.currentView === "portfolio") {
                 dispatchPortfolioPreviewUpdate();
             }

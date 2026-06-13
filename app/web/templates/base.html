@@ -168,7 +168,7 @@
         ></button>
         <aside class="panel sidebar" id="app_sidebar">
             <section class="hero">
-                <h1>{{ page_title }}</h1>
+                <h1>{{ sidebar_title or page_title }}</h1>
             </section>
             {% block sidebar_content %}{% endblock %}
         </aside>

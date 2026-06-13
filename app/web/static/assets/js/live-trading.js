@@ -50,6 +50,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const intradayInflight = new Map();
     const sessionOrderMarkers = [];
     let barsRefreshTimer = 0;
+    let barsResizeTimer = 0;
+    let barsResizeFrame = 0;
     let barsRequestSerial = 0;
     let activeBarsChart = null;
     let activeChartSignature = "";
@@ -778,23 +780,60 @@ document.addEventListener("DOMContentLoaded", () => {
                         : "Switch broker to Longbridge";
         }
     };
-    const syncTopRowSurfaceHeight = () => {
-        if (!(tradingGrid instanceof HTMLElement) || topRowSurfaces.length < 2) {
-            return;
+    const resizeActiveBarsChart = () => {
+        if (activeBarsChart && typeof activeBarsChart.resize === "function") {
+            activeBarsChart.resize();
         }
-        if (!(sidebar instanceof HTMLElement) || window.innerWidth < 981) {
+    };
+    const scheduleBarsChartResize = ({ settleDelay = 0 } = {}) => {
+        if (barsResizeFrame) {
+            window.cancelAnimationFrame(barsResizeFrame);
+        }
+        barsResizeFrame = window.requestAnimationFrame(() => {
+            barsResizeFrame = 0;
+            window.requestAnimationFrame(() => {
+                resizeActiveBarsChart();
+            });
+        });
+        if (barsResizeTimer) {
+            window.clearTimeout(barsResizeTimer);
+            barsResizeTimer = 0;
+        }
+        if (settleDelay > 0) {
+            barsResizeTimer = window.setTimeout(() => {
+                barsResizeTimer = 0;
+                resizeActiveBarsChart();
+            }, settleDelay);
+        }
+    };
+    const resetTopRowAlignedHeight = () => {
+        if (liveTradingLayoutRow instanceof HTMLElement) {
+            liveTradingLayoutRow.style.setProperty("--live-trading-aligned-height", "auto");
+        }
+        if (tradingGrid instanceof HTMLElement) {
             tradingGrid.style.setProperty("--live-trading-top-row-height", "auto");
+        }
+    };
+    const syncTopRowSurfaceHeight = () => {
+        if (!(liveTradingLayoutRow instanceof HTMLElement && tradingGrid instanceof HTMLElement) || topRowSurfaces.length < 2) {
             return;
         }
-        const firstSurface = topRowSurfaces[0];
+        if (!(sidebar instanceof HTMLElement) || window.matchMedia("(max-width: 1080px)").matches) {
+            resetTopRowAlignedHeight();
+            scheduleBarsChartResize({ settleDelay: 80 });
+            return;
+        }
         const sidebarRect = sidebar.getBoundingClientRect();
-        const surfaceRect = firstSurface.getBoundingClientRect();
-        const alignedHeight = Math.floor(sidebarRect.bottom - surfaceRect.top);
-        if (alignedHeight > 240) {
+        const layoutRect = liveTradingLayoutRow.getBoundingClientRect();
+        const alignedHeight = Math.floor(sidebarRect.bottom - layoutRect.top);
+        if (alignedHeight > 360) {
+            liveTradingLayoutRow.style.setProperty("--live-trading-aligned-height", `${alignedHeight}px`);
             tradingGrid.style.setProperty("--live-trading-top-row-height", `${alignedHeight}px`);
+            scheduleBarsChartResize({ settleDelay: 80 });
             return;
         }
-        tradingGrid.style.setProperty("--live-trading-top-row-height", "auto");
+        resetTopRowAlignedHeight();
+        scheduleBarsChartResize({ settleDelay: 80 });
     };
     const syncPositionsPanelState = () => {
         if (!(positionsListShell instanceof HTMLElement && positionsListToggle instanceof HTMLButtonElement && positionsPanel instanceof HTMLElement)) {
@@ -814,6 +853,7 @@ document.addEventListener("DOMContentLoaded", () => {
             positionsToggleIcon.classList.toggle("icon-timing-toggle-left", !isPositionsPanelOpen);
         }
         syncTopRowSurfaceHeight();
+        scheduleBarsChartResize({ settleDelay: 640 });
     };
     const renderAccountBalances = (balances) => {
         if (!(balanceGrid instanceof HTMLElement)) {
@@ -2175,6 +2215,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         window.addEventListener("resize", () => {
             syncTopRowSurfaceHeight();
+            scheduleBarsChartResize({ settleDelay: 120 });
             if (!swipePending) {
                 resetSwipeSubmit();
             }
@@ -2192,6 +2233,15 @@ document.addEventListener("DOMContentLoaded", () => {
             if (surface instanceof HTMLElement) {
                 topRowLayoutObserver.observe(surface);
             }
+        }
+        if (liveTradingLayoutRow instanceof HTMLElement) {
+            topRowLayoutObserver.observe(liveTradingLayoutRow);
+        }
+        if (barsShell instanceof HTMLElement) {
+            const barsShellObserver = new ResizeObserver(() => {
+                scheduleBarsChartResize({ settleDelay: 120 });
+            });
+            barsShellObserver.observe(barsShell);
         }
     }
 
@@ -2211,6 +2261,7 @@ document.addEventListener("DOMContentLoaded", () => {
     syncTopRowSurfaceHeight();
     window.requestAnimationFrame(() => {
         syncTopRowSurfaceHeight();
+        scheduleBarsChartResize({ settleDelay: 120 });
     });
     setBarsEmptyState(
         getIdleBarsMeta(),

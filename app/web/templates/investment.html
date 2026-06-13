@@ -1,6 +1,7 @@
 {# Code version: v1.0.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control with context %}
+{% set sidebar_title = "More" %}
 
 {% block sidebar_content %}
     <nav class="settings-nav" aria-label="More sections">
@@ -15,11 +16,6 @@
             <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
                     class="icon icon-more-live-trading investment-nav-icon" aria-hidden="true"></span></span>
             <span class="settings-nav-label">Live trading</span>
-        </a>
-        <a href="{{ more_urls.timing }}"
-           class="settings-nav-item settings-nav-item-more-timing{% if more_section == 'timing' %} is-active{% endif %}">
-            <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-more-timing"></span></span>
-            <span class="settings-nav-label">{{ labels.more_timing }}</span>
         </a>
     </nav>
 {% endblock %}
