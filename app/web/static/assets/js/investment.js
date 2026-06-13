@@ -1406,9 +1406,82 @@ document.addEventListener('DOMContentLoaded', () => {
         return `/market-store/logos/${encodeURIComponent(normalizedTicker || 'stock')}.png`;
     }
 
+    function normalizeInvestmentLogoUrlList(logoUrl) {
+        const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
+        return Array.from(new Set(values
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)));
+    }
+
     function resolveInvestmentLogoUrl(profile, ticker) {
         const logoUrl = String(profile?.logo_url || '').trim();
         return logoUrl || buildMarketStoreLogoUrl(ticker);
+    }
+
+    function resolveInvestmentLogoUrls(profile, ticker) {
+        return normalizeInvestmentLogoUrlList([
+            String(profile?.logo_url || '').trim(),
+            buildMarketStoreLogoUrl(ticker),
+        ]);
+    }
+
+    function setInvestmentTickerLogoVisibility(logo, placeholder, isLoaded) {
+        if (logo instanceof HTMLImageElement) {
+            logo.hidden = !isLoaded;
+            logo.dataset.loaded = isLoaded ? '1' : '0';
+        }
+        if (placeholder instanceof HTMLElement) {
+            placeholder.hidden = isLoaded;
+        }
+    }
+
+    function syncInvestmentTickerLogoAsset(logo, placeholder, logoUrl, altText = '') {
+        const normalizedUrls = normalizeInvestmentLogoUrlList(logoUrl);
+        if (!(logo instanceof HTMLImageElement)) {
+            if (placeholder instanceof HTMLElement) {
+                placeholder.hidden = normalizedUrls.length > 0;
+            }
+            return;
+        }
+        logo.onload = null;
+        logo.onerror = null;
+        if (!normalizedUrls.length) {
+            delete logo.dataset.requestedSrc;
+            logo.removeAttribute('src');
+            logo.alt = '';
+            setInvestmentTickerLogoVisibility(logo, placeholder, false);
+            return;
+        }
+        logo.alt = altText;
+        logo.loading = 'eager';
+        const tryLoadAtIndex = (index) => {
+            const nextUrl = normalizedUrls[index];
+            if (!nextUrl) {
+                delete logo.dataset.requestedSrc;
+                logo.removeAttribute('src');
+                setInvestmentTickerLogoVisibility(logo, placeholder, false);
+                return;
+            }
+            logo.dataset.requestedSrc = nextUrl;
+            setInvestmentTickerLogoVisibility(logo, placeholder, false);
+            const finalize = (isLoaded) => {
+                if (logo.dataset.requestedSrc !== nextUrl) return;
+                if (!isLoaded) {
+                    tryLoadAtIndex(index + 1);
+                    return;
+                }
+                setInvestmentTickerLogoVisibility(logo, placeholder, true);
+            };
+            logo.onload = () => finalize(true);
+            logo.onerror = () => finalize(false);
+            if (logo.getAttribute('src') !== nextUrl) {
+                logo.src = nextUrl;
+            }
+            if (logo.complete) {
+                finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
+            }
+        };
+        tryLoadAtIndex(0);
     }
 
     function getActiveInvestmentInteractionPoint() {
@@ -2201,9 +2274,22 @@ document.addEventListener('DOMContentLoaded', () => {
         container.querySelectorAll('[data-investment-logo-image]').forEach((logo) => {
             if (logo.dataset.logoFallbackBound === '1') return;
             logo.dataset.logoFallbackBound = '1';
-            logo.addEventListener('error', () => {
-                logo.remove();
-            }, { once: true });
+            const row = logo.closest('.ticker-identity-row');
+            const placeholder = row?.querySelector('.ticker-identity-logo-placeholder');
+            const logoUrls = (() => {
+                try {
+                    return JSON.parse(logo.dataset.logoUrl || '[]');
+                } catch {
+                    return logo.dataset.logoUrl || '';
+                }
+            })();
+            const ticker = logo.dataset.ticker || '';
+            syncInvestmentTickerLogoAsset(
+                logo instanceof HTMLImageElement ? logo : null,
+                placeholder instanceof HTMLElement ? placeholder : null,
+                logoUrls,
+                ticker ? `${ticker} logo` : '',
+            );
         });
     }
 
@@ -2828,7 +2914,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowsHtml = summaries.map((summary, index) => {
             const profile = tickerProfiles?.[summary.ticker] || {};
             const companyName = String(profile.company_name || summary.ticker);
-            const logoUrl = resolveInvestmentLogoUrl(profile, summary.ticker);
+            const logoUrls = resolveInvestmentLogoUrls(profile, summary.ticker);
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
             const lastPriceDisplay = summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice);
             const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
@@ -2850,7 +2936,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <a class="investment-holdings-ticker-anchor" href="${escapeHtml(buildInvestmentStockDetailsHref(summary.ticker))}" data-investment-stock-link data-investment-stock-ticker="${escapeHtml(summary.ticker)}">
                             <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
                                 <div class="ticker-identity-row">
-                                    ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                                    <img class="ticker-identity-logo"
+                                         alt=""
+                                         hidden
+                                         loading="lazy"
+                                         decoding="async"
+                                         data-investment-logo-image
+                                         data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
+                                         data-ticker="${escapeHtml(summary.ticker)}">
+                                    <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                                     <span class="ticker-identity-copy">
                                         <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(summary.ticker)}</span>
                                         <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
@@ -4102,7 +4196,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = tickerProfiles?.[activeTicker] || {};
         const companyName = String(profile.company_name || activeTicker);
-        const logoUrl = resolveInvestmentLogoUrl(profile, activeTicker);
+        const logoUrls = resolveInvestmentLogoUrls(profile, activeTicker);
         const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
         const totalCommissionCurrency = detailRows
@@ -4205,7 +4299,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="investment-stock-details-overview">
                 <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
                     <div class="ticker-identity-row">
-                        ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" class="ticker-identity-logo" loading="lazy" decoding="async" data-investment-logo-image>` : ``}
+                        <img class="ticker-identity-logo"
+                             alt=""
+                             hidden
+                             loading="lazy"
+                             decoding="async"
+                             data-investment-logo-image
+                             data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
+                             data-ticker="${escapeHtml(activeTicker)}">
+                        <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                         <span class="ticker-identity-copy">
                             <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(activeTicker)}</span>
                             <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>

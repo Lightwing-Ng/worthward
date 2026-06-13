@@ -1,4 +1,4 @@
-/* Code version: v1.7.3 */
+/* Code version: v1.9.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -34,9 +34,33 @@
     overflow: visible;
 }
 
+.live-trading-shell {
+    --live-trading-panel-width: var(--sidebar-width);
+    display: grid;
+    row-gap: 12px;
+}
+
+.live-trading-shell.is-list-collapsed {
+    --live-trading-panel-width: 36px;
+}
+
+.live-trading-layout-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--live-trading-panel-width);
+    gap: 12px;
+    align-items: start;
+}
+
+.live-trading-layout-row.is-list-collapsed {
+    grid-template-columns: minmax(0, 1fr) 36px;
+}
+
 .live-trading-grid {
     --live-trading-swipe-inset: 6px;
     --live-trading-swipe-progress: 0px;
+    --live-trading-buy-accent: #0055cc;
+    --live-trading-sell-accent: #ff2f92;
+    --live-trading-side-accent: var(--live-trading-buy-accent);
     display: grid;
     grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
     gap: 12px;
@@ -56,6 +80,134 @@
 
 .live-trading-order-article {
     gap: 12px;
+}
+
+.live-trading-list-shell {
+    padding-top: 44px;
+}
+
+.live-trading-list-toggle {
+    top: 0;
+    left: auto;
+    right: 0;
+}
+
+.live-trading-list-shell.is-collapsed .live-trading-suggestions-panel {
+    opacity: 0;
+    transform: translateX(28px) scale(0.96);
+    pointer-events: none;
+}
+
+.live-trading-suggestions-panel {
+    position: relative;
+    top: auto;
+    width: var(--sidebar-width);
+    height: 70vh;
+    margin-left: auto;
+    border-radius: var(--theme-timing-list-panel-radius);
+    box-sizing: border-box;
+    overflow-y: auto;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 12px;
+}
+
+.live-trading-panel-copy {
+    display: grid;
+    gap: 4px;
+}
+
+.live-trading-balance-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.live-trading-balance-card {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--ticker-identity-background);
+    border: 1px solid var(--glass-surface-border);
+}
+
+.live-trading-balance-card-header,
+.live-trading-balance-row,
+.live-trading-position-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.live-trading-balance-currency,
+.live-trading-balance-risk,
+.live-trading-position-meta-label {
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.live-trading-balance-currency {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.live-trading-balance-risk,
+.live-trading-position-meta-label {
+    color: var(--muted);
+}
+
+.live-trading-balance-value,
+.live-trading-position-meta-value {
+    text-align: right;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.live-trading-position-section {
+    display: grid;
+    gap: 8px;
+}
+
+.live-trading-position-list {
+    display: grid;
+    gap: 0;
+}
+
+.live-trading-position-item {
+    cursor: pointer;
+    display: grid;
+    gap: 6px;
+}
+
+.suggestion-item.ticker-identity-item.live-trading-position-item:hover,
+.suggestion-item.ticker-identity-item.live-trading-position-item:focus-visible,
+.suggestion-item.ticker-identity-item.live-trading-position-item.is-active {
+    background: color-mix(in srgb, var(--control-liquid-background-hover) 82%, var(--accent-surface-soft));
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 40%, transparent);
+    transform: none;
+}
+
+.live-trading-position-item .ticker-identity-copy {
+    display: block;
+}
+
+.live-trading-position-meta {
+    display: grid;
+    gap: 4px;
+    padding-left: calc(var(--ticker-identity-logo-max-width) + var(--ticker-identity-gap));
+}
+
+.live-trading-panel-empty {
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--ticker-identity-background);
+    color: var(--theme-muted);
+    text-align: left;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .live-trading-broker-strip {
@@ -187,12 +339,25 @@
     background: transparent;
 }
 
+.live-trading-swipe-submit[data-side="sell"] {
+    --live-trading-side-accent: var(--live-trading-sell-accent);
+}
+
 .live-trading-swipe-submit[data-state="dragging"] {
-    border-color: color-mix(in srgb, var(--theme-accent-primary) 40%, var(--theme-border));
+    border-color: color-mix(in srgb, var(--live-trading-side-accent, var(--live-trading-buy-accent)) 40%, var(--theme-border));
 }
 
 .live-trading-swipe-submit[data-state="pending"] {
     opacity: 0.78;
+}
+
+.live-trading-swipe-submit[data-enabled="0"] {
+    opacity: 0.68;
+    pointer-events: none;
+}
+
+.live-trading-swipe-submit[data-enabled="0"] .live-trading-swipe-label {
+    color: var(--theme-muted);
 }
 
 .live-trading-swipe-label {
@@ -222,15 +387,23 @@
     border: 0;
     border-radius: 999px;
     transform: translateX(var(--live-trading-swipe-progress, 0px));
-    background: color-mix(in srgb, var(--theme-accent-primary) 14%, var(--color-white-adaptive));
-    color: var(--theme-accent-primary);
+    background: color-mix(in srgb, var(--live-trading-buy-accent) 14%, var(--color-white-adaptive));
+    color: var(--live-trading-buy-accent);
     box-shadow: 0 10px 24px color-mix(in srgb, var(--theme-shadow-ambient) 75%, transparent);
     cursor: grab;
 }
 
 .live-trading-swipe-submit[data-side="sell"] .live-trading-swipe-thumb {
-    background: color-mix(in srgb, var(--theme-accent-secondary) 14%, var(--color-white-adaptive));
-    color: var(--theme-accent-secondary);
+    background: color-mix(in srgb, var(--live-trading-sell-accent) 14%, var(--color-white-adaptive));
+    color: var(--live-trading-sell-accent);
+}
+
+.live-trading-swipe-submit[data-enabled="0"] .live-trading-swipe-thumb,
+.live-trading-swipe-submit .live-trading-swipe-thumb:disabled {
+    background: color-mix(in srgb, var(--theme-muted) 16%, var(--color-white-adaptive));
+    color: var(--theme-muted);
+    box-shadow: none;
+    cursor: not-allowed;
 }
 
 .live-trading-swipe-thumb:active {
@@ -269,6 +442,14 @@
 .live-trading-range-segmented > .segmented-control-option > span,
 .live-trading-side-segmented > .segmented-control-option > span {
     color: var(--theme-muted) !important;
+}
+
+.live-trading-side-segmented[data-active="buy"]::before {
+    background: #0055cc;
+}
+
+.live-trading-side-segmented[data-active="sell"]::before {
+    background: #ff2f92;
 }
 
 .live-trading-range-segmented .segmented-control-option input:checked + span,
@@ -1839,8 +2020,24 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .live-trading-layout-row,
+    .live-trading-layout-row.is-list-collapsed {
+        grid-template-columns: 1fr;
+    }
+
     .live-trading-grid {
         grid-template-columns: 1fr;
+    }
+
+    .live-trading-list-shell {
+        padding-top: 0;
+    }
+
+    .live-trading-suggestions-panel {
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        margin-left: 0;
     }
 
     .live-trading-range-field {

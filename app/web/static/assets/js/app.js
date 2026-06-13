@@ -1078,6 +1078,7 @@
         }
         logo.dataset.requestedSrc = normalizedUrl;
         logo.alt = altText;
+        logo.loading = "eager";
         setTickerLogoVisibility(logo, placeholder, false);
         const finalize = (isLoaded) => {
             if (logo.dataset.requestedSrc !== normalizedUrl) return;

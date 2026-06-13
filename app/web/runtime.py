@@ -79,6 +79,7 @@ from app.services.investment_import import (
     normalize_investment_payload_tickers,
 )
 from app.services.live_trading import (
+    load_longbridge_account_balances,
     load_longbridge_account_label,
     load_longbridge_stock_positions,
     submit_longbridge_limit_order,
@@ -3995,9 +3996,44 @@ def build_web_runtime() -> WebRuntime:
     def live_trading_get_positions():
         """Load current Longbridge stock positions for the Live trading workspace."""
         try:
-            positions = load_longbridge_stock_positions(load_broker_settings())
+            settings = load_broker_settings()
+            account_balances = load_longbridge_account_balances(settings)
+            positions = load_longbridge_stock_positions(settings)
             response = jsonify({
                 "success": True,
+                "account_balances": [
+                    {
+                        "total_cash": item.total_cash,
+                        "max_finance_amount": item.max_finance_amount,
+                        "remaining_finance_amount": item.remaining_finance_amount,
+                        "risk_level": item.risk_level,
+                        "margin_call": item.margin_call,
+                        "currency": item.currency,
+                        "market": item.market,
+                        "net_assets": item.net_assets,
+                        "init_margin": item.init_margin,
+                        "maintenance_margin": item.maintenance_margin,
+                        "buy_power": item.buy_power,
+                        "cash_infos": [
+                            {
+                                "withdraw_cash": cash_item.withdraw_cash,
+                                "available_cash": cash_item.available_cash,
+                                "frozen_cash": cash_item.frozen_cash,
+                                "settling_cash": cash_item.settling_cash,
+                                "currency": cash_item.currency,
+                            }
+                            for cash_item in item.cash_infos
+                        ],
+                        "frozen_transaction_fees": [
+                            {
+                                "currency": fee_item.currency,
+                                "frozen_transaction_fee": fee_item.frozen_transaction_fee,
+                            }
+                            for fee_item in item.frozen_transaction_fees
+                        ],
+                    }
+                    for item in account_balances
+                ],
                 "positions": [
                     {
                         "symbol": item.symbol,

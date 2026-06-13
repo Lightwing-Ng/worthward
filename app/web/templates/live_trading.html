@@ -1,4 +1,4 @@
-{# Code version: v1.7.2 #}
+{# Code version: v1.7.3 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control with context %}
 
@@ -33,8 +33,10 @@
         </article>
 
         <article class="report-card workspace-content-card investment-report-card live-trading-card">
-            <div class="live-trading-grid">
-                <article class="chart-surface live-trading-surface live-trading-order-article">
+            <div class="live-trading-shell" id="live_trading_shell">
+                <div class="live-trading-layout-row is-list-collapsed" id="live_trading_layout_row">
+                    <div class="live-trading-grid">
+                        <article class="chart-surface live-trading-surface live-trading-order-article">
                     <div class="field live-trading-broker-strip backtest-shared-select-field"
                          data-shared-select-field
                          data-shared-select-kind="live-trading-broker">
@@ -177,12 +179,15 @@
                                  id="live_trading_swipe_submit"
                                  data-side="buy"
                                  data-state="idle"
-                                 aria-label="Slide to submit live order">
+                                 data-enabled="0"
+                                 aria-disabled="true"
+                                 aria-label="Complete ticker, price, and quantity to enable live order submission">
                                 <span class="live-trading-swipe-label"
                                       id="live_trading_swipe_label">Slide to buy</span>
                                 <button type="button"
                                         class="live-trading-swipe-thumb"
                                         id="live_trading_swipe_thumb"
+                                        disabled
                                         aria-label="Slide right to submit order">
                                     <span class="live-trading-swipe-thumb-icon" aria-hidden="true">&gt;</span>
                                 </button>
@@ -198,31 +203,57 @@
                             </button>
                         </div>
                     </form>
-                </article>
-                <article class="chart-surface live-trading-surface live-trading-bars-surface">
-                    <div class="live-trading-section-header live-trading-section-header-chart">
-                        <div class="field live-trading-range-field">
-                            {{ render_segmented_control(
-                                "segmented-control--compact live-trading-range-segmented",
-                                "live_trading_range",
-                                "current-day",
-                                [
-                                    {"id": "live_trading_range_day", "value": "current-day", "label": "Current day"},
-                                    {"id": "live_trading_range_3d", "value": "3d", "label": "3D"},
-                                ],
-                                'id="live_trading_range_control" data-active="current-day" data-option-count="2" aria-label="Range"'
-                            ) }}
+                        </article>
+                        <article class="chart-surface live-trading-surface live-trading-bars-surface">
+                            <div class="live-trading-section-header live-trading-section-header-chart">
+                                <div class="field live-trading-range-field">
+                                    {{ render_segmented_control(
+                                        "segmented-control--compact live-trading-range-segmented",
+                                        "live_trading_range",
+                                        "current-day",
+                                        [
+                                            {"id": "live_trading_range_day", "value": "current-day", "label": "Current day"},
+                                            {"id": "live_trading_range_3d", "value": "3d", "label": "3D"},
+                                        ],
+                                        'id="live_trading_range_control" data-active="current-day" data-option-count="2" aria-label="Range"'
+                                    ) }}
+                                </div>
+                            </div>
+                            <div class="live-trading-chart-shell" id="live_trading_bars_shell">
+                                <canvas class="live-trading-chart-canvas investment-stock-details-price-chart-canvas"
+                                        id="live_trading_bars_canvas"
+                                        aria-label="Recent intraday candlestick chart"></canvas>
+                                <div class="live-trading-chart-empty" id="live_trading_bars_empty">
+                                    Select a valid ticker to load the latest 1-minute candlesticks.
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                    <div class="timing-list-shell live-trading-list-shell is-collapsed" id="live_trading_list_shell">
+                        <button type="button"
+                                class="sidebar-toggle timing-list-toggle live-trading-list-toggle"
+                                id="live_trading_list_toggle"
+                                aria-label="Toggle current holdings"
+                                aria-expanded="false">
+                            <span class="icon icon-timing-toggle icon-timing-toggle-left" aria-hidden="true"></span>
+                        </button>
+                        <div class="suggestions timing-suggestions-panel live-trading-suggestions-panel"
+                             id="live_trading_suggestions_panel"
+                             aria-hidden="true">
+                            <div class="live-trading-panel-copy">
+                                <h2 class="timing-metrics-title">{{ live_trading_account_label }}</h2>
+                            </div>
+                            <div class="live-trading-balance-grid" id="live_trading_balance_grid">
+                                <div class="live-trading-panel-empty">Loading account balances...</div>
+                            </div>
+                            <div class="live-trading-position-section">
+                                <div class="live-trading-position-list" id="live_trading_position_list">
+                                    <div class="live-trading-panel-empty">Loading current positions...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="live-trading-chart-shell" id="live_trading_bars_shell">
-                        <canvas class="live-trading-chart-canvas investment-stock-details-price-chart-canvas"
-                                id="live_trading_bars_canvas"
-                                aria-label="Recent intraday candlestick chart"></canvas>
-                        <div class="live-trading-chart-empty" id="live_trading_bars_empty">
-                            Select a valid ticker to load the latest 1-minute candlesticks.
-                        </div>
-                    </div>
-                </article>
+                </div>
             </div>
         </article>
     </section>

@@ -1,13 +1,14 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.7.4
+ * Code version: v1.9.0
  */
 
 document.addEventListener("DOMContentLoaded", () => {
     const state = window.ANTIGRAVITY_APP || {};
     const endpoints = state.endpoints || {};
     const orderEndpoint = endpoints.liveTradingOrder || "/api/live-trading/orders";
+    const positionsEndpoint = endpoints.liveTradingPositions || "/api/live-trading/positions";
     const intradayEndpoint = endpoints.investmentIntraday || "/api/investment/intraday";
     const symbolSearchEndpoint = endpoints.symbolSearch || "/api/symbol-search";
     const form = document.getElementById("live_trading_form");
@@ -28,6 +29,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const barsCanvas = document.getElementById("live_trading_bars_canvas");
     const barsEmpty = document.getElementById("live_trading_bars_empty");
     const priceInput = document.getElementById("live_trading_price");
+    const quantityInput = document.getElementById("live_trading_quantity");
+    const liveTradingShell = document.getElementById("live_trading_shell");
+    const liveTradingLayoutRow = document.getElementById("live_trading_layout_row");
+    const positionsListShell = document.getElementById("live_trading_list_shell");
+    const positionsListToggle = document.getElementById("live_trading_list_toggle");
+    const positionsToggleIcon = positionsListToggle?.querySelector(".icon-timing-toggle") || null;
+    const positionsPanel = document.getElementById("live_trading_suggestions_panel");
+    const positionsMeta = document.getElementById("live_trading_positions_meta");
+    const balanceGrid = document.getElementById("live_trading_balance_grid");
+    const positionList = document.getElementById("live_trading_position_list");
     const barsTimeZone = "America/New_York";
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const PRICE_PLACEHOLDER_AWAITING_TICKER = "Awaiting valid ticker price";
@@ -48,6 +59,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let swipeProgress = 0;
     let swipePending = false;
     let pendingOrderContext = null;
+    let isPositionsPanelOpen = false;
+    let positionsRequestSerial = 0;
 
     if (!form) {
         return;
@@ -66,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const brokerInput = form?.querySelector('input[name="broker"]:checked');
         return String(brokerInput?.value || "longbridge").trim().toLowerCase() === "ibkr" ? "ibkr" : "longbridge";
     };
+    const getQuantityInput = () => quantityInput || form?.querySelector('input[name="quantity"]');
     const normalizeTicker = (value) => String(value || "").trim().toUpperCase();
     const sanitizeTicker = (value) => normalizeTicker(value).replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
     const normalizePositiveNumber = (value) => {
@@ -86,6 +100,62 @@ document.addEventListener("DOMContentLoaded", () => {
         '"': "&quot;",
         "'": "&#39;",
     })[char] || char);
+    const numberFormatterCache = new Map();
+    const getNumberFormatter = (minimumFractionDigits, maximumFractionDigits) => {
+        const formatterKey = `${minimumFractionDigits}:${maximumFractionDigits}`;
+        if (!numberFormatterCache.has(formatterKey)) {
+            numberFormatterCache.set(formatterKey, new Intl.NumberFormat("en-US", {
+                minimumFractionDigits,
+                maximumFractionDigits,
+            }));
+        }
+        return numberFormatterCache.get(formatterKey);
+    };
+    const toFiniteNumber = (value) => {
+        const numeric = Number(String(value ?? "").replace(/,/g, "").trim());
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+    const formatNumericValue = (value, { minimumFractionDigits = 0, maximumFractionDigits = 2 } = {}) => {
+        const numeric = toFiniteNumber(value);
+        if (numeric === null) {
+            const fallback = String(value ?? "").trim();
+            return fallback || "--";
+        }
+        return getNumberFormatter(minimumFractionDigits, maximumFractionDigits).format(numeric);
+    };
+    const sumNumericValues = (values) => values.reduce((total, value) => {
+        const numeric = toFiniteNumber(value);
+        return total + (numeric ?? 0);
+    }, 0);
+    const formatMoneyValue = (value, currency, { minimumFractionDigits = 2, maximumFractionDigits = 2 } = {}) => {
+        const formattedValue = formatNumericValue(value, { minimumFractionDigits, maximumFractionDigits });
+        const normalizedCurrency = String(currency || "").trim();
+        return normalizedCurrency ? `${formattedValue} ${normalizedCurrency}` : formattedValue;
+    };
+    const formatRiskLevelLabel = (value) => ({
+        0: "Safe",
+        1: "Medium risk",
+        2: "Warning",
+        3: "Danger",
+    }[Number(value)] || "Unknown");
+    const buildPanelEmptyMarkup = (message) => `<div class="live-trading-panel-empty">${escapeHtml(message)}</div>`;
+    const resolvePositionInputTicker = (position) => {
+        const symbol = normalizeTicker(position?.symbol);
+        if (symbol.endsWith(".US")) {
+            return symbol.slice(0, -3);
+        }
+        return symbol;
+    };
+    const buildMarketStoreLogoUrl = (ticker) => {
+        const normalizedTicker = normalizeTicker(ticker);
+        return normalizedTicker ? `/market-store/logos/${encodeURIComponent(normalizedTicker)}.png` : "";
+    };
+    const normalizeLogoUrlList = (logoUrl) => {
+        const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
+        return Array.from(new Set(values
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)));
+    };
     const readThemeToken = (computed, tokenName, fallback = "") => {
         const value = computed.getPropertyValue(tokenName).trim();
         return value || fallback;
@@ -135,44 +205,55 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
     const syncTickerLogoAsset = (logo, placeholder, logoUrl, altText = "") => {
+        const normalizedUrls = normalizeLogoUrlList(logoUrl);
         if (!(logo instanceof HTMLImageElement)) {
             if (placeholder instanceof HTMLElement) {
-                placeholder.hidden = Boolean(logoUrl);
+                placeholder.hidden = normalizedUrls.length > 0;
             }
             return;
         }
-        const normalizedUrl = String(logoUrl || "").trim();
         logo.onload = null;
         logo.onerror = null;
-        if (!normalizedUrl) {
+        if (!normalizedUrls.length) {
             delete logo.dataset.requestedSrc;
             logo.removeAttribute("src");
             logo.alt = "";
             setTickerLogoVisibility(logo, placeholder, false);
             return;
         }
-        logo.dataset.requestedSrc = normalizedUrl;
         logo.alt = altText;
-        setTickerLogoVisibility(logo, placeholder, false);
-        const finalize = (isLoaded) => {
-            if (logo.dataset.requestedSrc !== normalizedUrl) {
-                return;
-            }
-            if (!isLoaded) {
+        logo.loading = "eager";
+        const tryLoadAtIndex = (index) => {
+            const nextUrl = normalizedUrls[index];
+            if (!nextUrl) {
+                delete logo.dataset.requestedSrc;
                 logo.removeAttribute("src");
                 setTickerLogoVisibility(logo, placeholder, false);
                 return;
             }
-            setTickerLogoVisibility(logo, placeholder, true);
+            logo.dataset.requestedSrc = nextUrl;
+            setTickerLogoVisibility(logo, placeholder, false);
+            const finalize = (isLoaded) => {
+                if (logo.dataset.requestedSrc !== nextUrl) {
+                    return;
+                }
+                if (!isLoaded) {
+                    tryLoadAtIndex(index + 1);
+                    return;
+                }
+                setTickerLogoVisibility(logo, placeholder, true);
+            };
+            logo.onload = () => finalize(true);
+            logo.onerror = () => finalize(false);
+            if (logo.getAttribute("src") !== nextUrl) {
+                logo.src = nextUrl;
+            }
+            if (logo.complete) {
+                finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
+                return;
+            }
         };
-        logo.onload = () => finalize(true);
-        logo.onerror = () => finalize(false);
-        if (logo.getAttribute("src") !== normalizedUrl) {
-            logo.src = normalizedUrl;
-        }
-        if (logo.complete) {
-            finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
-        }
+        tryLoadAtIndex(0);
     };
     const syncTickerInputDecoration = (input, suggestion = null) => {
         const control = input?.closest(".ticker-input-control");
@@ -333,6 +414,7 @@ document.addEventListener("DOMContentLoaded", () => {
             input.setCustomValidity("");
         }
         syncPriceInputPlaceholder(input, value);
+        syncSwipeSubmitAvailability();
         if (!input.validationMessage) {
             hideTickerValidationTooltip(input);
         }
@@ -513,6 +595,7 @@ document.addEventListener("DOMContentLoaded", () => {
         input.value = formattedValue;
         input.dataset.autoFilledTicker = normalizeTicker(ticker);
         input.dataset.autoFilledValue = formattedValue;
+        syncSwipeSubmitAvailability();
         return true;
     };
     const clearAutoFilledPrice = ({ force = false } = {}) => {
@@ -526,6 +609,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         priceInput.dataset.autoFilledTicker = "";
         priceInput.dataset.autoFilledValue = "";
+        syncSwipeSubmitAvailability();
     };
     const syncSuggestedPriceForTicker = async (ticker, { force = false } = {}) => {
         if (!(priceInput instanceof HTMLInputElement)) {
@@ -639,15 +723,59 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         setSwipeProgress(0);
     };
+    function getLiveOrderFormState() {
+        const broker = getSelectedBroker();
+        const tickerInput = getTickerInput();
+        const validatedTicker = resolveValidatedTicker();
+        const price = normalizePositiveNumber(priceInput?.value);
+        const quantity = normalizePositiveNumber(getQuantityInput()?.value);
+        if (swipePending) {
+            return { ready: false, reason: "pending" };
+        }
+        if (broker !== "longbridge") {
+            return { ready: false, reason: "broker" };
+        }
+        if (!(tickerInput instanceof HTMLInputElement) || !validatedTicker) {
+            return { ready: false, reason: "ticker" };
+        }
+        if (!price) {
+            return { ready: false, reason: "price" };
+        }
+        if (!quantity) {
+            return { ready: false, reason: "quantity" };
+        }
+        return { ready: true, reason: "ready" };
+    }
+    function syncSwipeSubmitAvailability() {
+        const formState = getLiveOrderFormState();
+        if (swipeSubmit) {
+            swipeSubmit.dataset.enabled = formState.ready ? "1" : "0";
+            swipeSubmit.setAttribute("aria-disabled", String(!formState.ready));
+        }
+        if (swipeSubmitThumb instanceof HTMLButtonElement) {
+            swipeSubmitThumb.disabled = !formState.ready;
+        }
+    }
     const syncSwipeSubmitTheme = () => {
         const side = getSelectedSide();
+        const formState = getLiveOrderFormState();
         if (swipeSubmit) {
             swipeSubmit.dataset.side = side;
+            swipeSubmit.setAttribute(
+                "aria-label",
+                formState.ready
+                    ? `Slide to submit a ${side} order`
+                    : "Complete ticker, price, and quantity to enable live order submission",
+            );
         }
         if (swipeSubmitLabel) {
             swipeSubmitLabel.textContent = swipePending
                 ? `Submitting ${side} order...`
-                : `Slide to ${side}`;
+                : formState.ready
+                    ? `Slide to ${side}`
+                    : getSelectedBroker() === "longbridge"
+                        ? "Complete ticker, price, and quantity"
+                        : "Switch broker to Longbridge";
         }
     };
     const syncTopRowSurfaceHeight = () => {
@@ -667,6 +795,177 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         tradingGrid.style.setProperty("--live-trading-top-row-height", "auto");
+    };
+    const syncPositionsPanelState = () => {
+        if (!(positionsListShell instanceof HTMLElement && positionsListToggle instanceof HTMLButtonElement && positionsPanel instanceof HTMLElement)) {
+            return;
+        }
+        positionsListToggle.setAttribute("aria-expanded", String(isPositionsPanelOpen));
+        positionsListShell.classList.toggle("is-open", isPositionsPanelOpen);
+        positionsListShell.classList.toggle("is-collapsed", !isPositionsPanelOpen);
+        liveTradingShell?.classList.toggle("is-list-collapsed", !isPositionsPanelOpen);
+        liveTradingLayoutRow?.classList.toggle("is-list-collapsed", !isPositionsPanelOpen);
+        positionsPanel.setAttribute("aria-hidden", String(!isPositionsPanelOpen));
+        if ("inert" in positionsPanel) {
+            positionsPanel.inert = !isPositionsPanelOpen;
+        }
+        if (positionsToggleIcon) {
+            positionsToggleIcon.classList.toggle("icon-timing-toggle-right", isPositionsPanelOpen);
+            positionsToggleIcon.classList.toggle("icon-timing-toggle-left", !isPositionsPanelOpen);
+        }
+        syncTopRowSurfaceHeight();
+    };
+    const renderAccountBalances = (balances) => {
+        if (!(balanceGrid instanceof HTMLElement)) {
+            return;
+        }
+        if (!Array.isArray(balances) || !balances.length) {
+            balanceGrid.innerHTML = buildPanelEmptyMarkup("No Longbridge account balances are available.");
+            return;
+        }
+        balanceGrid.innerHTML = balances.map((item) => {
+            const cashInfos = Array.isArray(item?.cash_infos) ? item.cash_infos : [];
+            const availableCash = sumNumericValues(cashInfos.map((cashItem) => cashItem?.available_cash));
+            const withdrawCash = sumNumericValues(cashInfos.map((cashItem) => cashItem?.withdraw_cash));
+            const frozenCash = sumNumericValues(cashInfos.map((cashItem) => cashItem?.frozen_cash));
+            const riskLabel = formatRiskLevelLabel(item?.risk_level);
+            const currency = String(item?.currency || "").trim();
+            return `
+                <section class="live-trading-balance-card">
+                    <div class="live-trading-balance-card-header">
+                        <span class="live-trading-balance-currency">${escapeHtml(currency || "Account")}</span>
+                        <span class="live-trading-balance-risk">${escapeHtml(riskLabel)}</span>
+                    </div>
+                    <div class="live-trading-balance-row">
+                        <span class="live-trading-position-meta-label">Net assets</span>
+                        <strong class="live-trading-balance-value">${escapeHtml(formatMoneyValue(item?.net_assets, currency))}</strong>
+                    </div>
+                    <div class="live-trading-balance-row">
+                        <span class="live-trading-position-meta-label">Buying power</span>
+                        <strong class="live-trading-balance-value">${escapeHtml(formatMoneyValue(item?.buy_power, currency))}</strong>
+                    </div>
+                    <div class="live-trading-balance-row">
+                        <span class="live-trading-position-meta-label">Available cash</span>
+                        <strong class="live-trading-balance-value">${escapeHtml(formatMoneyValue(availableCash, currency))}</strong>
+                    </div>
+                    <div class="live-trading-balance-row">
+                        <span class="live-trading-position-meta-label">Withdrawable</span>
+                        <strong class="live-trading-balance-value">${escapeHtml(formatMoneyValue(withdrawCash, currency))}</strong>
+                    </div>
+                    <div class="live-trading-balance-row">
+                        <span class="live-trading-position-meta-label">Frozen cash</span>
+                        <strong class="live-trading-balance-value">${escapeHtml(formatMoneyValue(frozenCash, currency))}</strong>
+                    </div>
+                </section>
+            `;
+        }).join("");
+    };
+    const renderPositions = (positions) => {
+        if (!(positionList instanceof HTMLElement)) {
+            return;
+        }
+        if (!Array.isArray(positions) || !positions.length) {
+            positionList.innerHTML = buildPanelEmptyMarkup("No open Longbridge stock positions are available.");
+            return;
+        }
+        positionList.innerHTML = positions.map((item) => {
+            const rawTicker = normalizeTicker(item?.symbol);
+            const displayTicker = resolvePositionInputTicker(item) || "--";
+            const companyName = item?.symbol_name || item?.symbol || displayTicker;
+            const logoUrls = [
+                buildMarketStoreLogoUrl(rawTicker),
+                rawTicker !== displayTicker ? buildMarketStoreLogoUrl(displayTicker) : "",
+            ].filter(Boolean);
+            return `
+                <button type="button"
+                        class="suggestion-item timing-suggestion-item ticker-identity-item live-trading-position-item"
+                        data-ticker-input-value="${escapeHtml(displayTicker)}"
+                        data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
+                        data-display-ticker="${escapeHtml(displayTicker)}">
+                    <div class="ticker-identity-row">
+                        <img class="ticker-identity-logo" alt="" hidden loading="lazy" decoding="async">
+                        <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                        <span class="ticker-identity-copy">
+                            <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(displayTicker)}</span>
+                            <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                        </span>
+                    </div>
+                    <span class="live-trading-position-meta">
+                        <span class="live-trading-position-meta-row">
+                            <span class="live-trading-position-meta-label">Position</span>
+                            <span class="live-trading-position-meta-value">${escapeHtml(formatNumericValue(item?.quantity, { minimumFractionDigits: 0, maximumFractionDigits: 4 }))}</span>
+                        </span>
+                    </span>
+                </button>
+            `;
+        }).join("");
+        positionList.querySelectorAll(".live-trading-position-item").forEach((button) => {
+            if (!(button instanceof HTMLElement)) {
+                return;
+            }
+            const logo = button.querySelector("img.ticker-identity-logo");
+            const placeholder = button.querySelector(".ticker-identity-logo-placeholder");
+            const logoUrl = (() => {
+                try {
+                    return JSON.parse(button.dataset.logoUrl || "[]");
+                } catch {
+                    return button.dataset.logoUrl || "";
+                }
+            })();
+            const displayTicker = button.dataset.displayTicker || "";
+            syncTickerLogoAsset(
+                logo instanceof HTMLImageElement ? logo : null,
+                placeholder instanceof HTMLElement ? placeholder : null,
+                logoUrl,
+                logoUrl ? `${displayTicker} logo` : "",
+            );
+        });
+    };
+    const loadPortfolioSnapshot = async () => {
+        if (!(balanceGrid instanceof HTMLElement && positionList instanceof HTMLElement)) {
+            return;
+        }
+        const requestId = ++positionsRequestSerial;
+        if (positionsMeta) {
+            positionsMeta.textContent = "Loading Longbridge balances and positions...";
+        }
+        balanceGrid.innerHTML = buildPanelEmptyMarkup("Loading account balances...");
+        positionList.innerHTML = buildPanelEmptyMarkup("Loading current positions...");
+        try {
+            const response = await fetch(positionsEndpoint, {
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: {
+                    "Cache-Control": "no-cache",
+                },
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.error || `Unable to load Longbridge holdings: ${response.status}`);
+            }
+            if (requestId !== positionsRequestSerial) {
+                return;
+            }
+            const accountBalances = Array.isArray(payload?.account_balances) ? payload.account_balances : [];
+            const positions = Array.isArray(payload?.positions) ? payload.positions : [];
+            renderAccountBalances(accountBalances);
+            renderPositions(positions);
+            if (positionsMeta) {
+                const balanceLabel = `${accountBalances.length} balance${accountBalances.length === 1 ? "" : "s"}`;
+                const positionLabel = `${positions.length} position${positions.length === 1 ? "" : "s"}`;
+                positionsMeta.textContent = `Longbridge · ${balanceLabel} · ${positionLabel}`;
+            }
+        } catch (error) {
+            if (requestId !== positionsRequestSerial) {
+                return;
+            }
+            const message = error instanceof Error ? error.message : "Unable to load Longbridge holdings.";
+            if (positionsMeta) {
+                positionsMeta.textContent = "Longbridge holdings unavailable";
+            }
+            balanceGrid.innerHTML = buildPanelEmptyMarkup(message);
+            positionList.innerHTML = buildPanelEmptyMarkup("Retry after Longbridge account access becomes available.");
+        }
     };
 
     const destroyBarsChart = () => {
@@ -1606,6 +1905,7 @@ document.addEventListener("DOMContentLoaded", () => {
         submitButton.disabled = Boolean(isPending);
         submitButton.textContent = isPending ? pendingLabel : defaultLabel;
         swipePending = Boolean(isPending);
+        syncSwipeSubmitAvailability();
         syncSwipeSubmitTheme();
         resetSwipeSubmit();
     };
@@ -1624,13 +1924,50 @@ document.addEventListener("DOMContentLoaded", () => {
         tickerInput.addEventListener("change", () => {
             intradayCache.delete(`${normalizeTicker(tickerInput.value)}::current-day`);
             intradayCache.delete(`${normalizeTicker(tickerInput.value)}::3d`);
+            syncSwipeSubmitAvailability();
             scheduleIntradayBarsRefresh();
         });
         tickerInput.addEventListener("blur", () => {
+            syncSwipeSubmitAvailability();
             scheduleIntradayBarsRefresh(120);
         });
     };
     bindTickerInputEvents();
+    if (positionsListToggle instanceof HTMLButtonElement && positionsListToggle.dataset.bound !== "1") {
+        positionsListToggle.dataset.bound = "1";
+        positionsListToggle.addEventListener("click", () => {
+            isPositionsPanelOpen = !isPositionsPanelOpen;
+            syncPositionsPanelState();
+        });
+    }
+    if (positionList instanceof HTMLElement && positionList.dataset.bound !== "1") {
+        positionList.dataset.bound = "1";
+        positionList.addEventListener("click", (event) => {
+            const trigger = event.target instanceof Element
+                ? event.target.closest("[data-ticker-input-value]")
+                : null;
+            if (!(trigger instanceof HTMLElement)) {
+                return;
+            }
+            const nextTicker = sanitizeTicker(trigger.dataset.tickerInputValue || "");
+            const tickerInput = getTickerInput();
+            if (!(tickerInput instanceof HTMLInputElement) || !nextTicker) {
+                return;
+            }
+            tickerInput.value = nextTicker;
+            tickerInput.dataset.unknown = "";
+            tickerInput.dataset.logoUrl = "";
+            tickerInput.dataset.symbol = "";
+            tickerInput.dataset.companyName = "";
+            rememberValidatedTicker(tickerInput, "", false);
+            setTickerValidationPending(tickerInput, false);
+            validateTickerInput(tickerInput);
+            hideTickerValidationTooltip(tickerInput);
+            tickerInput.focus();
+            void validateTickerExistence(tickerInput, { preferFresh: true });
+            scheduleIntradayBarsRefresh(80);
+        });
+    }
     form.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLInputElement && target.name === "side") {
@@ -1640,6 +1977,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if ((target instanceof HTMLInputElement || target instanceof HTMLSelectElement) && target.name === "broker") {
             clearFeedback();
+            syncSwipeSubmitAvailability();
+            syncSwipeSubmitTheme();
             return;
         }
         if (target instanceof HTMLInputElement && target.name === "live_trading_range") {
@@ -1730,6 +2069,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 minuteKey: toMinuteKeyInChartTimeZone(new Date()),
             });
             setFeedback(result.message || "Live order submitted.", "success");
+            void loadPortfolioSnapshot();
             if (activeChartSignature && activeChartSignature.startsWith(`${resolveValidatedTicker() || ticker}::`) && intradayCache.has(activeChartSignature)) {
                 renderIntradayChart(resolveValidatedTicker() || ticker, intradayCache.get(activeChartSignature));
             } else {
@@ -1755,6 +2095,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (currentValue !== String(priceInput.dataset.autoFilledValue || "").trim()) {
                 priceInput.dataset.autoFilledTicker = normalizeTicker(resolveValidatedTicker());
             }
+            syncSwipeSubmitAvailability();
+        });
+    }
+    if (quantityInput instanceof HTMLInputElement && quantityInput.dataset.liveTradingBound !== "1") {
+        quantityInput.dataset.liveTradingBound = "1";
+        quantityInput.addEventListener("input", () => {
+            syncSwipeSubmitAvailability();
         });
     }
     const clearButton = form.querySelector(".ticker-clear");
@@ -1808,7 +2155,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await finishSwipeGesture();
         };
         swipeSubmitThumb.addEventListener("pointerdown", (event) => {
-            if (swipePending) {
+            if (swipePending || !getLiveOrderFormState().ready) {
                 return;
             }
             swipePointerId = event.pointerId;
@@ -1857,8 +2204,10 @@ document.addEventListener("DOMContentLoaded", () => {
     syncRangeSegmentedControl();
     bindSegmentedControlSync(sideControl, syncSideSegmentedControl);
     bindSegmentedControlSync(rangeControl, syncRangeSegmentedControl);
+    syncSwipeSubmitAvailability();
     syncSwipeSubmitTheme();
     resetSwipeSubmit();
+    syncPositionsPanelState();
     syncTopRowSurfaceHeight();
     window.requestAnimationFrame(() => {
         syncTopRowSurfaceHeight();
@@ -1867,5 +2216,6 @@ document.addEventListener("DOMContentLoaded", () => {
         getIdleBarsMeta(),
         `Select a valid ticker to load ${formatRangeLabel(getSelectedRange())} 1-minute candlesticks.`,
     );
+    void loadPortfolioSnapshot();
     scheduleIntradayBarsRefresh();
 });

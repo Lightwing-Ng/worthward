@@ -1,7 +1,7 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -43,6 +43,38 @@ class LivePositionResult:
     currency: str
     market: str
     account_channel: str
+
+
+@dataclass(frozen=True)
+class LiveCashInfoResult:
+    withdraw_cash: str
+    available_cash: str
+    frozen_cash: str
+    settling_cash: str
+    currency: str
+
+
+@dataclass(frozen=True)
+class LiveFrozenTransactionFeeResult:
+    currency: str
+    frozen_transaction_fee: str
+
+
+@dataclass(frozen=True)
+class LiveAccountBalanceResult:
+    total_cash: str
+    max_finance_amount: str
+    remaining_finance_amount: str
+    risk_level: str
+    margin_call: str
+    currency: str
+    market: str
+    net_assets: str
+    init_margin: str
+    maintenance_margin: str
+    buy_power: str
+    cash_infos: list[LiveCashInfoResult]
+    frozen_transaction_fees: list[LiveFrozenTransactionFeeResult]
 
 
 def _first_non_empty_string(candidates: list[object]) -> str | None:
@@ -200,6 +232,12 @@ def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
     return config_cls(app_key, app_secret, access_token)
 
 
+def _build_longbridge_trade_context(settings: BrokerSettings) -> Any:
+    config_cls, trade_context_cls, _, _, _ = _load_longbridge_trade_api()
+    config = _build_longbridge_config(config_cls, settings)
+    return trade_context_cls(config)
+
+
 def normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
@@ -293,59 +331,127 @@ def load_longbridge_account_label(settings: BrokerSettings) -> str:
         return "Integrated A/C (Unavailable)"
 
     try:
-        account_payload = _call_longbridge_asset_api(settings, "/v1/asset/account")
-        balances = _coerce_sequence(_get_mapping_or_attr(account_payload, "list"))
+        balances = load_longbridge_account_balances(settings)
         primary_currency = None
         if balances:
-            primary_currency = _first_non_empty_string([
-                _get_mapping_or_attr(balances[0], "currency"),
-                _get_mapping_or_attr(balances[0], "base_currency"),
-            ])
+            primary_currency = _first_non_empty_string([balances[0].currency])
         return f"Integrated A/C ({primary_currency or 'Connected'})"
     except Exception:
         return "Integrated A/C (Unavailable)"
+
+
+def load_longbridge_account_balances(settings: BrokerSettings) -> list[LiveAccountBalanceResult]:
+    if not has_longbridge_credentials(settings):
+        raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+
+    trade_context = _build_longbridge_trade_context(settings)
+    try:
+        response = trade_context.account_balance()
+        balance_items = _coerce_sequence(_get_mapping_or_attr(response, "list"))
+        if not balance_items:
+            response_data = _get_mapping_or_attr(response, "data")
+            balance_items = _coerce_sequence(_get_mapping_or_attr(response_data, "list"))
+
+        balances: list[LiveAccountBalanceResult] = []
+        for item in balance_items:
+            balance_currency = _extract_position_value(item, ["currency", "base_currency"], "--")
+            cash_infos: list[LiveCashInfoResult] = []
+            for cash_item in _coerce_sequence(_get_mapping_or_attr(item, "cash_infos")):
+                cash_infos.append(LiveCashInfoResult(
+                    withdraw_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "withdraw_cash")),
+                    available_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "available_cash")),
+                    frozen_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "frozen_cash")),
+                    settling_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "settling_cash")),
+                    currency=_extract_position_value(cash_item, ["currency"], balance_currency),
+                ))
+
+            frozen_transaction_fees: list[LiveFrozenTransactionFeeResult] = []
+            for fee_item in _coerce_sequence(_get_mapping_or_attr(item, "frozen_transaction_fees")):
+                frozen_transaction_fees.append(LiveFrozenTransactionFeeResult(
+                    currency=_extract_position_value(fee_item, ["currency"], balance_currency),
+                    frozen_transaction_fee=_stringify_decimal_like(
+                        _get_mapping_or_attr(fee_item, "frozen_transaction_fee"),
+                    ),
+                ))
+
+            balances.append(LiveAccountBalanceResult(
+                total_cash=_stringify_decimal_like(_get_mapping_or_attr(item, "total_cash")),
+                max_finance_amount=_stringify_decimal_like(_get_mapping_or_attr(item, "max_finance_amount")),
+                remaining_finance_amount=_stringify_decimal_like(
+                    _get_mapping_or_attr(item, "remaining_finance_amount"),
+                ),
+                risk_level=_stringify_decimal_like(_get_mapping_or_attr(item, "risk_level")),
+                margin_call=_stringify_decimal_like(_get_mapping_or_attr(item, "margin_call")),
+                currency=balance_currency,
+                market=_extract_position_value(item, ["market"], ""),
+                net_assets=_stringify_decimal_like(_get_mapping_or_attr(item, "net_assets")),
+                init_margin=_stringify_decimal_like(_get_mapping_or_attr(item, "init_margin")),
+                maintenance_margin=_stringify_decimal_like(_get_mapping_or_attr(item, "maintenance_margin")),
+                buy_power=_stringify_decimal_like(_get_mapping_or_attr(item, "buy_power")),
+                cash_infos=cash_infos,
+                frozen_transaction_fees=frozen_transaction_fees,
+            ))
+
+        balances.sort(key=lambda item: item.currency)
+        return balances
+    finally:
+        close_handler = getattr(trade_context, "close", None)
+        if callable(close_handler):
+            try:
+                close_handler()
+            except Exception:
+                pass
 
 
 def load_longbridge_stock_positions(settings: BrokerSettings) -> list[LivePositionResult]:
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
-    response = _call_longbridge_asset_api(settings, "/v1/asset/stock")
-    channels = _extract_position_channels(response)
+    trade_context = _build_longbridge_trade_context(settings)
+    try:
+        response = trade_context.stock_positions()
+        channels = _extract_position_channels(response)
 
-    positions: list[LivePositionResult] = []
-    for channel in channels:
-        account_channel = _extract_position_value(
-            channel,
-            ["account_channel", "channel", "account_no", "account_number", "account"],
-            "Connected",
-        )
-        stock_items = getattr(channel, "stock_info", None)
-        if stock_items is None:
-            stock_items = _get_mapping_or_attr(channel, "stock_info")
-        if stock_items is None:
-            stock_items = _get_mapping_or_attr(channel, "positions")
-        if stock_items is None:
-            continue
-        for item in stock_items:
-            symbol = _extract_position_value(item, ["symbol", "stock_code"])
-            if not symbol:
+        positions: list[LivePositionResult] = []
+        for channel in channels:
+            account_channel = _extract_position_value(
+                channel,
+                ["account_channel", "channel", "account_no", "account_number", "account"],
+                "Connected",
+            )
+            stock_items = getattr(channel, "stock_info", None)
+            if stock_items is None:
+                stock_items = _get_mapping_or_attr(channel, "stock_info")
+            if stock_items is None:
+                stock_items = _get_mapping_or_attr(channel, "positions")
+            if stock_items is None:
                 continue
-            positions.append(LivePositionResult(
-                symbol=symbol,
-                symbol_name=_extract_position_value(item, ["symbol_name", "name"], symbol),
-                quantity=_stringify_decimal_like(_get_mapping_or_attr(item, "quantity")),
-                available_quantity=_stringify_decimal_like(
-                    _first_non_empty_string([
-                        _get_mapping_or_attr(item, "available_quantity"),
-                        _get_mapping_or_attr(item, "enable_quantity"),
-                    ]),
-                ),
-                cost_price=_stringify_decimal_like(_get_mapping_or_attr(item, "cost_price")),
-                currency=_extract_position_value(item, ["currency"], "--"),
-                market=_extract_position_value(item, ["market"], "--"),
-                account_channel=account_channel,
-            ))
+            for item in stock_items:
+                symbol = _extract_position_value(item, ["symbol", "stock_code"])
+                if not symbol:
+                    continue
+                positions.append(LivePositionResult(
+                    symbol=symbol,
+                    symbol_name=_extract_position_value(item, ["symbol_name", "name"], symbol),
+                    quantity=_stringify_decimal_like(_get_mapping_or_attr(item, "quantity")),
+                    available_quantity=_stringify_decimal_like(
+                        _first_non_empty_string([
+                            _get_mapping_or_attr(item, "available_quantity"),
+                            _get_mapping_or_attr(item, "enable_quantity"),
+                        ]),
+                    ),
+                    cost_price=_stringify_decimal_like(_get_mapping_or_attr(item, "cost_price")),
+                    currency=_extract_position_value(item, ["currency"], "--"),
+                    market=_extract_position_value(item, ["market"], "--"),
+                    account_channel=account_channel,
+                ))
 
-    positions.sort(key=lambda item: item.symbol)
-    return positions
+        positions.sort(key=lambda item: item.symbol)
+        return positions
+    finally:
+        close_handler = getattr(trade_context, "close", None)
+        if callable(close_handler):
+            try:
+                close_handler()
+            except Exception:
+                pass
