@@ -126,6 +126,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
 </head>
 <body>
+{% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
     try {
         if (window.sessionStorage.getItem("antigravity:sidebar-open") === "false") {
@@ -177,17 +178,9 @@
         </section>
     </div>
     <nav class="sidebar-dock" aria-label="Workspace modes">
-        <a href="{{ dock_urls.tickers }}" class="sidebar-dock-item{% if current_view == 'tickers' %} is-active{% endif %}" aria-current="{% if current_view == 'tickers' %}page{% endif %}" aria-label="{{ labels.dock_tickers }}" data-tooltip="{{ labels.dock_tickers }}">
-            <span class="icon icon-dock-compare" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_tickers }}</span>
-        </a>
-        <a href="{{ dock_urls.portfolio }}" class="sidebar-dock-item{% if current_view == 'portfolio' %} is-active{% endif %}" aria-current="{% if current_view == 'portfolio' %}page{% endif %}" aria-label="{{ labels.dock_portfolio }}" data-tooltip="{{ labels.dock_portfolio }}">
-            <span class="icon icon-dock-portfolio" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_portfolio }}</span>
-        </a>
-        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view == 'backtest' %} is-active{% endif %}" aria-current="{% if current_view == 'backtest' %}page{% endif %}" aria-label="{{ labels.dock_backtest }}" data-tooltip="{{ labels.dock_backtest }}">
+        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'portfolio', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'portfolio', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_backtest }}</span>
+            <span class="sr-only">{{ dock_workspace_label }}</span>
         </a>
         <a href="{{ dock_urls.more }}" class="sidebar-dock-item sidebar-dock-item-more{% if current_view == 'more' %} is-active{% endif %}" aria-current="{% if current_view == 'more' %}page{% endif %}" aria-label="{{ labels.dock_more }}" data-tooltip="{{ labels.dock_more }}">
             <span class="icon icon-dock-more" aria-hidden="true"></span>

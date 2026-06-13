@@ -22,6 +22,7 @@
     const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+    const WORKSPACE_VIEWS = new Set(["tickers", "portfolio", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -42,6 +43,7 @@
     let compareOverlayTimer = null;
     let activeWorkspaceHydration = null;
     let activeWorkspaceSummaryMorphCleanup = null;
+    let activeWorkspaceModeLayoutCleanup = null;
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
     let pendingWorkspaceChartTransition = null;
@@ -472,12 +474,87 @@
         };
     };
 
+    const attachWorkspaceModeLayout = () => {
+        if (typeof activeWorkspaceModeLayoutCleanup === "function") {
+            activeWorkspaceModeLayoutCleanup();
+            activeWorkspaceModeLayoutCleanup = null;
+        }
+        const sidebar = document.getElementById("app_sidebar");
+        const layout = document.querySelector(".workspace-mode-layout");
+        const resultsStack = document.querySelector(".workspace-mode-results-stack");
+        if (!(sidebar instanceof HTMLElement) || !(layout instanceof HTMLElement) || !(resultsStack instanceof HTMLElement)) {
+            return;
+        }
+        const desktopMedia = window.matchMedia("(max-width: 1080px)");
+        let frameId = 0;
+        let resizeObserver = null;
+        const resetLayoutHeight = () => {
+            layout.style.setProperty("--workspace-mode-aligned-height", "auto");
+        };
+        const syncLayoutHeight = () => {
+            if (desktopMedia.matches) {
+                resetLayoutHeight();
+                return;
+            }
+            const sidebarRect = sidebar.getBoundingClientRect();
+            const layoutRect = layout.getBoundingClientRect();
+            const alignedHeight = Math.floor(sidebarRect.bottom - layoutRect.top);
+            if (alignedHeight > 360) {
+                layout.style.setProperty("--workspace-mode-aligned-height", `${alignedHeight}px`);
+                return;
+            }
+            resetLayoutHeight();
+        };
+        const scheduleLayoutSync = () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+            frameId = window.requestAnimationFrame(() => {
+                frameId = 0;
+                syncLayoutHeight();
+            });
+        };
+        scheduleLayoutSync();
+        window.addEventListener("resize", scheduleLayoutSync);
+        window.addEventListener("orientationchange", scheduleLayoutSync);
+        window.addEventListener("pageshow", scheduleLayoutSync);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", scheduleLayoutSync);
+        }
+        if (typeof desktopMedia.addEventListener === "function") {
+            desktopMedia.addEventListener("change", scheduleLayoutSync);
+        } else if (typeof desktopMedia.addListener === "function") {
+            desktopMedia.addListener(scheduleLayoutSync);
+        }
+        if (typeof ResizeObserver === "function") {
+            resizeObserver = new ResizeObserver(scheduleLayoutSync);
+            resizeObserver.observe(sidebar);
+            resizeObserver.observe(layout);
+            resizeObserver.observe(resultsStack);
+        }
+        activeWorkspaceModeLayoutCleanup = () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+            window.removeEventListener("resize", scheduleLayoutSync);
+            window.removeEventListener("orientationchange", scheduleLayoutSync);
+            window.removeEventListener("pageshow", scheduleLayoutSync);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener("resize", scheduleLayoutSync);
+            }
+            if (typeof desktopMedia.removeEventListener === "function") {
+                desktopMedia.removeEventListener("change", scheduleLayoutSync);
+            } else if (typeof desktopMedia.removeListener === "function") {
+                desktopMedia.removeListener(scheduleLayoutSync);
+            }
+            resizeObserver?.disconnect();
+            resetLayoutHeight();
+        };
+    };
+
     const initializeWorkspaceEnhancements = () => {
         initMobilePageBottomPadding();
         attachNoticeHandlers();
         attachTradeDetailTabs();
         attachExportButtonHandler();
         attachWorkspaceSummaryMorph();
+        attachWorkspaceModeLayout();
         bootstrap.initSettingsWorkspace?.({
             state,
             endpoints,
@@ -827,16 +904,21 @@
     const rememberCurrentViewUrl = (url = window.location.pathname + window.location.search) => {
         if (!state.currentView) return;
         const memory = readViewMemory();
-        memory[state.currentView] = sanitizeRememberedUrl(url);
+        const sanitizedUrl = sanitizeRememberedUrl(url);
+        memory[state.currentView] = sanitizedUrl;
+        if (WORKSPACE_VIEWS.has(state.currentView)) {
+            memory.workspace = sanitizedUrl;
+        }
         writeViewMemory(memory);
     };
 
     const attachDockMemory = () => {
-        const viewByDockIndex = ["tickers", "portfolio", "backtest", "more", "settings"];
+        const dockGroupByIndex = ["workspace", "more", "settings"];
         const dockLinks = $$(".sidebar-dock-item");
-        const setDockPreviewTarget = (targetView) => {
+        const resolveDockGroupFromView = (view) => (WORKSPACE_VIEWS.has(view) ? "workspace" : view);
+        const setDockPreviewTarget = (targetDockGroup) => {
             dockLinks.forEach((link, index) => {
-                const isTarget = viewByDockIndex[index] === targetView;
+                const isTarget = dockGroupByIndex[index] === targetDockGroup;
                 link.classList.toggle("is-active", isTarget);
                 if (isTarget) {
                     link.setAttribute("aria-current", "page");
@@ -874,9 +956,24 @@
             try {
                 const parsedUrl = new URL(url, window.location.origin);
                 const path = parsedUrl.pathname.toLowerCase();
-                if (path === "/compare" || path.startsWith("/compare/")) return "tickers";
-                if (path === "/portfolio" || path.startsWith("/portfolio/")) return "portfolio";
-                if (path === "/backtest" || path.startsWith("/backtest/")) return "backtest";
+                if (
+                    path === "/compare"
+                    || path.startsWith("/compare/")
+                    || path === "/workspaces/compare"
+                    || path.startsWith("/workspaces/compare/")
+                ) return "tickers";
+                if (
+                    path === "/portfolio"
+                    || path.startsWith("/portfolio/")
+                    || path === "/workspaces/portfolio"
+                    || path.startsWith("/workspaces/portfolio/")
+                ) return "portfolio";
+                if (
+                    path === "/backtest"
+                    || path.startsWith("/backtest/")
+                    || path === "/workspaces/backtest"
+                    || path.startsWith("/workspaces/backtest/")
+                ) return "backtest";
                 if (path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "more";
                 if (path === "/settings" || path.startsWith("/settings/")) return "settings";
                 return null;
@@ -885,22 +982,26 @@
             }
         };
         $$(".sidebar-dock-item").forEach((link, index) => {
-            const targetView = viewByDockIndex[index];
-            if (!targetView || link.dataset.boundDockMemory === "1") return;
+            const targetDockGroup = dockGroupByIndex[index];
+            if (!targetDockGroup || link.dataset.boundDockMemory === "1") return;
             link.dataset.boundDockMemory = "1";
             link.addEventListener("click", async (event) => {
                 rememberCurrentViewUrl();
                 const memory = readViewMemory();
-                const rememberedUrl = memory[targetView];
+                const rememberedUrl = targetDockGroup === "workspace"
+                    ? (memory.workspace || memory.backtest || memory.portfolio || memory.tickers)
+                    : memory[targetDockGroup];
                 const fallbackUrl = link.getAttribute("href") || "";
                 event.preventDefault();
                 const rememberedView = rememberedUrl ? resolveViewFromUrl(rememberedUrl) : null;
-                const nextUrl = rememberedView === targetView ? rememberedUrl : fallbackUrl;
+                const rememberedDockGroup = rememberedView ? resolveDockGroupFromView(rememberedView) : null;
+                const nextUrl = rememberedDockGroup === targetDockGroup ? rememberedUrl : fallbackUrl;
                 if (!nextUrl) return;
-                if (targetView === state.currentView && nextUrl === (window.location.pathname + window.location.search)) {
+                const currentDockGroup = resolveDockGroupFromView(state.currentView);
+                if (targetDockGroup === currentDockGroup && nextUrl === (window.location.pathname + window.location.search)) {
                     return;
                 }
-                setDockPreviewTarget(targetView);
+                setDockPreviewTarget(targetDockGroup);
                 document.body.classList.add("is-workspace-switching");
                 try {
                     const responseText = await prefetchDockDestination(nextUrl);
@@ -912,10 +1013,11 @@
                         const nextToggle = newAppShell.querySelector("#sidebar_toggle");
                         applySidebarState(readSidebarMemory(), newAppShell, nextSidebar, nextToggle);
                         document.querySelector(".app-shell").replaceWith(newAppShell);
-                        const targetSettingsSection = targetView === "settings"
+                        const destinationView = resolveViewFromUrl(nextUrl);
+                        const targetSettingsSection = destinationView === "settings"
                             ? resolveSettingsSectionFromUrl(nextUrl)
                             : null;
-                        const nextSelectors = getProgressiveMaskSelectors(targetView, targetSettingsSection);
+                        const nextSelectors = getProgressiveMaskSelectors(destinationView, targetSettingsSection);
                         document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
                             node.classList.remove("is-masked-during-switch");
                         });

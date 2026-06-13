@@ -1,0 +1,20 @@
+<nav class="settings-nav workspace-mode-nav" aria-label="Workspace sections">
+    <a href="{{ dock_urls.tickers }}"
+       class="settings-nav-item workspace-nav-item-compare{% if current_view == 'tickers' %} is-active{% endif %}"
+       {% if current_view == 'tickers' %}aria-current="page"{% endif %}>
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-compare"></span></span>
+        <span class="settings-nav-label">{{ labels.dock_tickers }}</span>
+    </a>
+    <a href="{{ dock_urls.portfolio }}"
+       class="settings-nav-item workspace-nav-item-portfolio{% if current_view == 'portfolio' %} is-active{% endif %}"
+       {% if current_view == 'portfolio' %}aria-current="page"{% endif %}>
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-portfolio"></span></span>
+        <span class="settings-nav-label">{{ labels.dock_portfolio }}</span>
+    </a>
+    <a href="{{ dock_urls.backtest }}"
+       class="settings-nav-item workspace-nav-item-backtest{% if current_view == 'backtest' %} is-active{% endif %}"
+       {% if current_view == 'backtest' %}aria-current="page"{% endif %}>
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-backtest"></span></span>
+        <span class="settings-nav-label">{{ labels.dock_backtest }}</span>
+    </a>
+</nav>

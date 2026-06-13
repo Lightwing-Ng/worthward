@@ -33,6 +33,7 @@
 .investment-report-card.live-trading-card {
     max-height: none;
     overflow: visible;
+    padding-inline-start: 0;
 }
 
 .live-trading-shell {
@@ -65,7 +66,7 @@
     --live-trading-sell-accent: #ff2f92;
     --live-trading-side-accent: var(--live-trading-buy-accent);
     display: grid;
-    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     gap: 12px;
     min-height: 0;
     align-items: stretch;

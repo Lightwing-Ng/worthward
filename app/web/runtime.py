@@ -149,9 +149,9 @@ STRATEGY_CATEGORY_LABELS = {
     "all": "All",
 }
 VIEW_PATHS = {
-    "tickers": "/compare",
-    "portfolio": "/portfolio",
-    "backtest": "/backtest",
+    "tickers": "/workspaces/compare",
+    "portfolio": "/workspaces/portfolio",
+    "backtest": "/workspaces/backtest",
     "more": "/more/investment",
     "settings": "/settings/about",
 }
@@ -168,8 +168,11 @@ class WebRuntime:
 
     root: Any
     compare_page: Any
+    legacy_compare_page: Any
     portfolio_page: Any
+    legacy_portfolio_page: Any
     backtest_page: Any
+    legacy_backtest_page: Any
     legacy_trade_messages_page: Any
     more_root: Any
     more_page: Any
@@ -735,6 +738,11 @@ def build_web_runtime() -> WebRuntime:
 
     def build_view_url(view_name: str) -> str:
         return build_view_path(view_name)
+
+    def build_legacy_workspace_redirect(view_name: str):
+        query_string = request.query_string.decode().strip()
+        target_path = build_view_path(view_name)
+        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def resolve_settings_section() -> str:
         requested_section = request.args.get("section", "about").strip().lower()
@@ -3113,16 +3121,23 @@ def build_web_runtime() -> WebRuntime:
     def compare_page():
         return render_workspace_page("tickers")
 
+    def legacy_compare_page():
+        return build_legacy_workspace_redirect("tickers")
+
     def portfolio_page():
         return render_workspace_page("portfolio")
+
+    def legacy_portfolio_page():
+        return build_legacy_workspace_redirect("portfolio")
 
     def backtest_page():
         return render_workspace_page("backtest")
 
+    def legacy_backtest_page():
+        return build_legacy_workspace_redirect("backtest")
+
     def legacy_trade_messages_page():
-        query_string = request.query_string.decode().strip()
-        target_path = build_view_path("backtest")
-        return redirect(f"{target_path}?{query_string}" if query_string else target_path)
+        return build_legacy_workspace_redirect("backtest")
 
     def more_root():
         return redirect(build_more_path("investment"))
@@ -3948,8 +3963,11 @@ def build_web_runtime() -> WebRuntime:
     return WebRuntime(
         root=root,
         compare_page=compare_page,
+        legacy_compare_page=legacy_compare_page,
         portfolio_page=portfolio_page,
+        legacy_portfolio_page=legacy_portfolio_page,
         backtest_page=backtest_page,
+        legacy_backtest_page=legacy_backtest_page,
         legacy_trade_messages_page=legacy_trade_messages_page,
         more_root=more_root,
         more_page=more_page,
