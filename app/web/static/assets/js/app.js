@@ -2351,7 +2351,8 @@
     const tradeCapitalField = $(".trade-capital-field");
     const tradeCapitalInput = $("#trade_initial_capital");
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
-    const sharedSelectFields = Array.from(document.querySelectorAll("[data-shared-select-field]"));
+    const getSharedSelectFields = () => Array.from(document.querySelectorAll("[data-shared-select-field]"))
+        .filter((field) => field instanceof HTMLElement);
 
     const getSharedSelectParts = (field) => {
         if (!(field instanceof HTMLElement)) return null;
@@ -2484,7 +2485,7 @@
     };
 
     const closeSharedSelectDropdowns = (exceptField = null) => {
-        sharedSelectFields.forEach((field) => {
+        getSharedSelectFields().forEach((field) => {
             if (exceptField && field === exceptField) return;
             setSharedSelectDropdownOpen(field, false);
         });
@@ -2494,7 +2495,21 @@
         const parts = getSharedSelectParts(field);
         if (!parts) return;
         const selectedOption = Array.from(parts.select.options).find((option) => option.value === parts.select.value);
-        parts.triggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+        const nextLabel = selectedOption?.textContent?.trim()
+            || parts.triggerLabel.dataset.fallbackLabel
+            || parts.trigger.getAttribute("title")
+            || parts.trigger.textContent?.trim()
+            || parts.select.options[0]?.textContent?.trim()
+            || "";
+        parts.triggerLabel.textContent = nextLabel;
+        parts.triggerLabel.dataset.fallbackLabel = nextLabel;
+        parts.trigger.title = nextLabel;
+        const fieldLabel = field.closest(".field")?.querySelector("label")?.textContent?.trim() || "";
+        if (fieldLabel) {
+            parts.trigger.setAttribute("aria-label", `${fieldLabel}: ${nextLabel}`);
+        }
+        parts.trigger.dataset.empty = nextLabel ? "0" : "1";
+        parts.field.classList.add("backtest-shared-select-field");
         syncSharedSelectTriggerMedia(parts, selectedOption);
     };
 
@@ -2598,9 +2613,9 @@
 
     const initializeSharedSelectField = (field) => {
         const parts = getSharedSelectParts(field);
+        refreshSharedSelectField(field);
         if (!parts || parts.field.dataset.sharedSelectBound === "1") return;
         parts.field.dataset.sharedSelectBound = "1";
-        refreshSharedSelectField(field);
         parts.trigger.addEventListener("click", () => {
             const shouldOpen = parts.dropdown.hidden;
             closeSharedSelectDropdowns(field);
@@ -3646,13 +3661,24 @@
         tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
     }
 
-    const tradeStrategyField = document.querySelector("[data-trade-strategy-field]");
-    const tradeStrategySelect = $("#trade_strategy");
-    const tradeStrategyTrigger = document.querySelector("[data-trade-strategy-trigger]");
-    const tradeStrategyTriggerLabel = document.querySelector("[data-trade-strategy-trigger-label]");
-    const tradeStrategyDropdown = document.querySelector("[data-trade-strategy-dropdown]");
-    const tradeStrategyTuneButton = document.querySelector("[data-trade-strategy-tune-button]");
-    const tradeStrategyPanel = document.querySelector("[data-trade-strategy-panel]");
+    const getTradeStrategyRefs = () => {
+        const field = document.querySelector("[data-trade-strategy-field]");
+        const select = $("#trade_strategy");
+        const trigger = document.querySelector("[data-trade-strategy-trigger]");
+        const triggerLabel = document.querySelector("[data-trade-strategy-trigger-label]");
+        const dropdown = document.querySelector("[data-trade-strategy-dropdown]");
+        const tuneButton = document.querySelector("[data-trade-strategy-tune-button]");
+        const panel = document.querySelector("[data-trade-strategy-panel]");
+        return {
+            field,
+            select,
+            trigger,
+            triggerLabel,
+            dropdown,
+            tuneButton,
+            panel,
+        };
+    };
     let strategySwitchAnimationTimer = null;
     let strategyFieldsRequestToken = 0;
     let strategyScrollbarIdleTimer = 0;
@@ -3663,8 +3689,9 @@
     };
 
     const collectStrategyParamEntries = () => {
-        if (!(tradeStrategyField instanceof HTMLElement)) return [];
-        const controls = Array.from(tradeStrategyField.querySelectorAll("[data-strategy-param-input][name]"));
+        const {field} = getTradeStrategyRefs();
+        if (!(field instanceof HTMLElement)) return [];
+        const controls = Array.from(field.querySelectorAll("[data-strategy-param-input][name]"));
         return controls.flatMap((control) => {
             if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement)) {
                 return [];
@@ -3677,14 +3704,15 @@
     };
 
     const positionTradeStrategyPanel = () => {
-        if (!(tradeStrategyPanel instanceof HTMLElement) || tradeStrategyPanel.hidden) return;
-        if (!(tradeStrategyField instanceof HTMLElement)) return;
-        const panelStyles = getComputedStyle(tradeStrategyPanel);
-        const panelAnchor = tradeStrategyField.querySelector(".trade-strategy-row");
-        const anchorRect = panelAnchor instanceof HTMLElement ? panelAnchor.getBoundingClientRect() : tradeStrategyField.getBoundingClientRect();
+        const {field, panel} = getTradeStrategyRefs();
+        if (!(panel instanceof HTMLElement) || panel.hidden) return;
+        if (!(field instanceof HTMLElement)) return;
+        const panelStyles = getComputedStyle(panel);
+        const panelAnchor = field.querySelector(".trade-strategy-row");
+        const anchorRect = panelAnchor instanceof HTMLElement ? panelAnchor.getBoundingClientRect() : field.getBoundingClientRect();
         const overlayMetrics = getSidebarOverlayMetrics(anchorRect, 160);
         const availableHeight = overlayMetrics ? overlayMetrics.availableHeight : 160;
-        const panelGrid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+        const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
         if (panelGrid instanceof HTMLElement) {
             const verticalChrome = (Number.parseFloat(panelStyles.paddingTop) || 0)
                 + (Number.parseFloat(panelStyles.paddingBottom) || 0);
@@ -3701,17 +3729,18 @@
                 }
             }
             const desiredPanelHeight = Math.min(availableHeight, contentHeight + verticalChrome);
-            tradeStrategyPanel.style.height = `${Math.round(desiredPanelHeight)}px`;
-            tradeStrategyPanel.style.maxHeight = `${Math.round(availableHeight)}px`;
+            panel.style.height = `${Math.round(desiredPanelHeight)}px`;
+            panel.style.maxHeight = `${Math.round(availableHeight)}px`;
             return;
         }
-        tradeStrategyPanel.style.height = "";
-        tradeStrategyPanel.style.maxHeight = `${Math.round(availableHeight)}px`;
+        panel.style.height = "";
+        panel.style.maxHeight = `${Math.round(availableHeight)}px`;
     };
 
     const setStrategyPanelScrollingState = () => {
-        if (!(tradeStrategyPanel instanceof HTMLElement)) return;
-        const grid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+        const {panel} = getTradeStrategyRefs();
+        if (!(panel instanceof HTMLElement)) return;
+        const grid = panel.querySelector("[data-trade-strategy-params-grid]");
         if (!(grid instanceof HTMLElement)) return;
         if (!grid.classList.contains("is-scrollable")) return;
         grid.classList.add("is-scrolling");
@@ -3723,23 +3752,24 @@
     };
 
     const setTradeStrategyPanelOpen = (isOpen) => {
-        if (!(tradeStrategyPanel instanceof HTMLElement) || !(tradeStrategyTuneButton instanceof HTMLButtonElement)) return;
-        const shouldOpen = isOpen && !tradeStrategyTuneButton.classList.contains("is-hidden");
-        tradeStrategyPanel.hidden = !shouldOpen;
-        tradeStrategyTuneButton.classList.toggle("is-active", shouldOpen);
-        tradeStrategyTuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
-        if (tradeStrategySelect instanceof HTMLSelectElement) {
-            tradeStrategySelect.disabled = shouldOpen;
+        const {field, select, tuneButton, panel} = getTradeStrategyRefs();
+        if (!(panel instanceof HTMLElement) || !(tuneButton instanceof HTMLButtonElement)) return;
+        const shouldOpen = isOpen && !tuneButton.classList.contains("is-hidden");
+        panel.hidden = !shouldOpen;
+        tuneButton.classList.toggle("is-active", shouldOpen);
+        tuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
+        if (select instanceof HTMLSelectElement) {
+            select.disabled = shouldOpen;
         }
-        if (tradeStrategyField instanceof HTMLElement) {
-            tradeStrategyField.classList.toggle("is-open", shouldOpen);
+        if (field instanceof HTMLElement) {
+            field.classList.toggle("is-open", shouldOpen);
         }
         if (shouldOpen) {
             positionTradeStrategyPanel();
         } else {
-            tradeStrategyPanel.style.maxHeight = "";
-            tradeStrategyPanel.style.height = "";
-            const panelGrid = tradeStrategyPanel.querySelector("[data-trade-strategy-params-grid]");
+            panel.style.maxHeight = "";
+            panel.style.height = "";
+            const panelGrid = panel.querySelector("[data-trade-strategy-params-grid]");
             if (panelGrid instanceof HTMLElement) {
                 panelGrid.style.maxHeight = "";
                 panelGrid.classList.remove("is-scrollable", "is-scrolling");
@@ -3844,50 +3874,66 @@
     };
 
     const syncTradeStrategyTuningAvailability = () => {
-        if (!(tradeStrategyTuneButton instanceof HTMLButtonElement) || !(tradeStrategyPanel instanceof HTMLElement)) return;
-        const hasFields = Boolean(tradeStrategyPanel.querySelector("[data-strategy-param-key]"));
-        tradeStrategyTuneButton.classList.toggle("is-hidden", !hasFields);
-        tradeStrategyTuneButton.disabled = !hasFields;
-        tradeStrategyTuneButton.setAttribute("aria-hidden", hasFields ? "false" : "true");
-        tradeStrategyTuneButton.tabIndex = hasFields ? 0 : -1;
+        const {tuneButton, panel} = getTradeStrategyRefs();
+        if (!(tuneButton instanceof HTMLButtonElement) || !(panel instanceof HTMLElement)) return;
+        const hasFields = Boolean(panel.querySelector("[data-strategy-param-key]"));
+        tuneButton.classList.toggle("is-hidden", !hasFields);
+        tuneButton.disabled = !hasFields;
+        tuneButton.setAttribute("aria-hidden", hasFields ? "false" : "true");
+        tuneButton.tabIndex = hasFields ? 0 : -1;
         if (!hasFields) setTradeStrategyPanelOpen(false);
     };
 
     const setTradeStrategyDropdownOpen = (isOpen) => {
-        if (!(tradeStrategyDropdown instanceof HTMLElement) || !(tradeStrategyTrigger instanceof HTMLButtonElement)) return;
-        tradeStrategyDropdown.hidden = !isOpen;
-        tradeStrategyTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
-        if (tradeStrategyField instanceof HTMLElement) {
-            tradeStrategyField.classList.toggle("is-open", isOpen || (!(tradeStrategyPanel instanceof HTMLElement) ? false : !tradeStrategyPanel.hidden));
+        const {field, trigger, dropdown, panel} = getTradeStrategyRefs();
+        if (!(dropdown instanceof HTMLElement) || !(trigger instanceof HTMLButtonElement)) return;
+        dropdown.hidden = !isOpen;
+        trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        if (field instanceof HTMLElement) {
+            field.classList.toggle("is-open", isOpen || (!(panel instanceof HTMLElement) ? false : !panel.hidden));
         }
         if (isOpen) {
             positionTradeStrategyDropdown();
         } else {
-            resetSidebarDropdownPosition(tradeStrategyDropdown);
+            resetSidebarDropdownPosition(dropdown);
         }
     };
 
     const syncTradeStrategyTriggerLabel = () => {
-        if (!(tradeStrategySelect instanceof HTMLSelectElement) || !(tradeStrategyTriggerLabel instanceof HTMLElement)) return;
-        const selectedOption = Array.from(tradeStrategySelect.options).find((option) => option.value === tradeStrategySelect.value);
-        tradeStrategyTriggerLabel.textContent = selectedOption?.textContent?.trim() || "";
+        const {field, select, trigger, triggerLabel} = getTradeStrategyRefs();
+        if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement)) return;
+        const selectedOption = Array.from(select.options).find((option) => option.value === select.value);
+        const nextLabel = selectedOption?.textContent?.trim()
+            || triggerLabel.dataset.fallbackLabel
+            || trigger.getAttribute("title")
+            || select.options[0]?.textContent?.trim()
+            || "";
+        triggerLabel.textContent = nextLabel;
+        triggerLabel.dataset.fallbackLabel = nextLabel;
+        trigger.title = nextLabel;
+        const fieldLabel = field?.querySelector("label")?.textContent?.trim() || "";
+        if (fieldLabel) {
+            trigger.setAttribute("aria-label", `${fieldLabel}: ${nextLabel}`);
+        }
     };
 
     const positionTradeStrategyDropdown = () => {
-        if (!(tradeStrategyDropdown instanceof HTMLElement) || tradeStrategyDropdown.hidden) return;
-        const container = tradeStrategyDropdown.parentElement;
+        const {field, trigger, dropdown} = getTradeStrategyRefs();
+        if (!(dropdown instanceof HTMLElement) || dropdown.hidden) return;
+        const container = dropdown.parentElement;
         positionSidebarDropdownFromTrigger(
-            tradeStrategyTrigger,
-            tradeStrategyDropdown,
-            container instanceof HTMLElement ? container : tradeStrategyField,
+            trigger,
+            dropdown,
+            container instanceof HTMLElement ? container : field,
         );
     };
 
     const renderTradeStrategyDropdown = () => {
-        if (!(tradeStrategySelect instanceof HTMLSelectElement) || !(tradeStrategyDropdown instanceof HTMLElement)) return;
-        const currentSelection = String(tradeStrategySelect.value || "");
-        const groups = Array.from(tradeStrategySelect.querySelectorAll("optgroup"));
-        tradeStrategyDropdown.innerHTML = "";
+        const {select, dropdown} = getTradeStrategyRefs();
+        if (!(select instanceof HTMLSelectElement) || !(dropdown instanceof HTMLElement)) return;
+        const currentSelection = String(select.value || "");
+        const groups = Array.from(select.querySelectorAll("optgroup"));
+        dropdown.innerHTML = "";
         groups.forEach((group) => {
             const groupElement = document.createElement("section");
             groupElement.className = "trade-strategy-dropdown-group";
@@ -3919,47 +3965,51 @@
                 optionButton.appendChild(checkElement);
                 optionButton.appendChild(textElement);
                 optionButton.addEventListener("click", () => {
-                    if (!(tradeStrategySelect instanceof HTMLSelectElement)) return;
-                    if (tradeStrategySelect.value === option.value) {
+                    const {select: currentSelect} = getTradeStrategyRefs();
+                    if (!(currentSelect instanceof HTMLSelectElement)) return;
+                    if (currentSelect.value === option.value) {
                         setTradeStrategyDropdownOpen(false);
                         return;
                     }
-                    tradeStrategySelect.value = option.value;
-                    syncStrategyOptionSelection(tradeStrategySelect, option.value);
+                    currentSelect.value = option.value;
+                    syncStrategyOptionSelection(currentSelect, option.value);
                     syncTradeStrategyTriggerLabel();
                     renderTradeStrategyDropdown();
                     setTradeStrategyDropdownOpen(false);
-                    tradeStrategySelect.dispatchEvent(new Event("change", {bubbles: true}));
+                    currentSelect.dispatchEvent(new Event("change", {bubbles: true}));
                 });
                 groupElement.appendChild(optionButton);
             });
 
-            tradeStrategyDropdown.appendChild(groupElement);
+            dropdown.appendChild(groupElement);
         });
     };
 
     const pulseStrategySwitch = () => {
-        if (!(tradeStrategySelect instanceof HTMLSelectElement)) return;
-        tradeStrategySelect.classList.remove("is-switching");
-        if (tradeStrategyPanel instanceof HTMLElement) {
-            tradeStrategyPanel.classList.remove("is-switching");
+        const {select, panel} = getTradeStrategyRefs();
+        if (!(select instanceof HTMLSelectElement)) return;
+        select.classList.remove("is-switching");
+        if (panel instanceof HTMLElement) {
+            panel.classList.remove("is-switching");
         }
-        void tradeStrategySelect.offsetWidth;
-        tradeStrategySelect.classList.add("is-switching");
-        if (tradeStrategyPanel instanceof HTMLElement && !tradeStrategyPanel.hidden) {
-            tradeStrategyPanel.classList.add("is-switching");
+        void select.offsetWidth;
+        select.classList.add("is-switching");
+        if (panel instanceof HTMLElement && !panel.hidden) {
+            panel.classList.add("is-switching");
         }
         if (strategySwitchAnimationTimer) window.clearTimeout(strategySwitchAnimationTimer);
         strategySwitchAnimationTimer = window.setTimeout(() => {
-            tradeStrategySelect.classList.remove("is-switching", "is-pressing");
-            if (tradeStrategyPanel instanceof HTMLElement) {
-                tradeStrategyPanel.classList.remove("is-switching");
+            const {select: currentSelect, panel: currentPanel} = getTradeStrategyRefs();
+            currentSelect?.classList.remove("is-switching", "is-pressing");
+            if (currentPanel instanceof HTMLElement) {
+                currentPanel.classList.remove("is-switching");
             }
         }, 380);
     };
 
     const refreshTradeStrategyFields = async (strategyId) => {
-        if (!(tradeStrategyPanel instanceof HTMLElement) || !endpoints.strategyFields || !strategyId) return;
+        const {panel} = getTradeStrategyRefs();
+        if (!(panel instanceof HTMLElement) || !endpoints.strategyFields || !strategyId) return;
         const requestToken = ++strategyFieldsRequestToken;
         try {
             const response = await fetch(`${endpoints.strategyFields}?strategy=${encodeURIComponent(strategyId)}`, {
@@ -3968,65 +4018,82 @@
             if (!response.ok) return;
             const payload = await response.json();
             if (requestToken !== strategyFieldsRequestToken) return;
-            tradeStrategyPanel.innerHTML = payload.html || "";
-            initStrategyParamControls(tradeStrategyPanel);
+            panel.innerHTML = payload.html || "";
+            initStrategyParamControls(panel);
             syncTradeStrategyTuningAvailability();
             if (!payload.is_tunable) {
                 setTradeStrategyPanelOpen(false);
-            } else if (!tradeStrategyPanel.hidden) {
+            } else if (!panel.hidden) {
                 positionTradeStrategyPanel();
             }
         } catch (_error) {
         }
     };
 
+    const initializeTradeStrategyField = () => {
+        const refs = getTradeStrategyRefs();
+        if (!(refs.field instanceof HTMLElement)) return;
+        initStrategyParamControls(refs.field);
+        syncTradeStrategyTuningAvailability();
+        syncTradeStrategyTriggerLabel();
+        renderTradeStrategyDropdown();
+        if (refs.field.dataset.tradeStrategyBound === "1") return;
+        refs.field.dataset.tradeStrategyBound = "1";
+        if (refs.tuneButton instanceof HTMLButtonElement) {
+            refs.tuneButton.addEventListener("click", () => {
+                const {panel} = getTradeStrategyRefs();
+                setTradeStrategyDropdownOpen(false);
+                setTradeStrategyPanelOpen(panel instanceof HTMLElement ? panel.hidden : false);
+            });
+        }
+        if (refs.trigger instanceof HTMLButtonElement) {
+            refs.trigger.addEventListener("click", () => {
+                const {dropdown} = getTradeStrategyRefs();
+                const shouldOpen = dropdown instanceof HTMLElement ? dropdown.hidden : false;
+                closeSharedSelectDropdowns();
+                setTradeStrategyPanelOpen(false);
+                renderTradeStrategyDropdown();
+                setTradeStrategyDropdownOpen(shouldOpen);
+            });
+        }
+        if (refs.select instanceof HTMLSelectElement) {
+            refs.select.addEventListener("change", async () => {
+                const {select} = getTradeStrategyRefs();
+                if (!(select instanceof HTMLSelectElement)) return;
+                syncStrategyOptionSelection(select, select.value);
+                syncTradeStrategyTriggerLabel();
+                renderTradeStrategyDropdown();
+                pulseStrategySwitch();
+                await refreshTradeStrategyFields(select.value);
+                if (!form) return;
+                window.setTimeout(() => form.requestSubmit(), 72);
+            });
+        }
+    };
+
+    const repairSidebarControlBindings = () => {
+        getSharedSelectFields().forEach((field) => initializeSharedSelectField(field));
+        initializeTradeStrategyField();
+        syncBacktestIntervalSegmentedControl();
+    };
+
     seedTickerValidationState();
-    initStrategyParamControls(tradeStrategyField || document);
-    syncTradeStrategyTuningAvailability();
-    sharedSelectFields.forEach((field) => initializeSharedSelectField(field));
-
-    if (tradeStrategyTuneButton instanceof HTMLButtonElement) {
-        tradeStrategyTuneButton.addEventListener("click", () => {
-            setTradeStrategyDropdownOpen(false);
-            setTradeStrategyPanelOpen(tradeStrategyPanel instanceof HTMLElement ? tradeStrategyPanel.hidden : false);
-        });
-    }
-
-    if (tradeStrategyTrigger instanceof HTMLButtonElement) {
-        tradeStrategyTrigger.addEventListener("click", () => {
-            const shouldOpen = tradeStrategyDropdown instanceof HTMLElement ? tradeStrategyDropdown.hidden : false;
-            closeSharedSelectDropdowns();
-            setTradeStrategyPanelOpen(false);
-            renderTradeStrategyDropdown();
-            setTradeStrategyDropdownOpen(shouldOpen);
-        });
-    }
-
-    if (tradeStrategySelect instanceof HTMLSelectElement) {
-        tradeStrategySelect.addEventListener("change", async () => {
-            syncStrategyOptionSelection(tradeStrategySelect, tradeStrategySelect.value);
-            syncTradeStrategyTriggerLabel();
-            renderTradeStrategyDropdown();
-            pulseStrategySwitch();
-            await refreshTradeStrategyFields(tradeStrategySelect.value);
-            if (!form) return;
-            window.setTimeout(() => form.requestSubmit(), 72);
-        });
-    }
+    repairSidebarControlBindings();
 
     window.addEventListener("resize", () => {
-        sharedSelectFields.forEach((field) => positionSharedSelectDropdown(field));
+        getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));
         positionTradeStrategyDropdown();
         positionTradeStrategyPanel();
     });
     document.addEventListener("scroll", () => {
-        sharedSelectFields.forEach((field) => positionSharedSelectDropdown(field));
+        getSharedSelectFields().forEach((field) => positionSharedSelectDropdown(field));
         positionTradeStrategyDropdown();
         positionTradeStrategyPanel();
     }, true);
     document.addEventListener("click", (event) => {
-        const clickedInsideStrategyField = tradeStrategyField instanceof HTMLElement && tradeStrategyField.contains(event.target);
-        const clickedInsideSharedField = sharedSelectFields.some((field) => field.contains(event.target));
+        const {field} = getTradeStrategyRefs();
+        const clickedInsideStrategyField = field instanceof HTMLElement && field.contains(event.target);
+        const clickedInsideSharedField = getSharedSelectFields().some((sharedField) => sharedField.contains(event.target));
         if (!clickedInsideStrategyField) {
             setTradeStrategyDropdownOpen(false);
         }
@@ -4034,6 +4101,17 @@
             closeSharedSelectDropdowns();
         }
     });
+    if (typeof MutationObserver === "function") {
+        const sidebarControlObserver = new MutationObserver(() => {
+            window.requestAnimationFrame(() => {
+                repairSidebarControlBindings();
+            });
+        });
+        sidebarControlObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    }
 
     if (form) {
         form.noValidate = true;

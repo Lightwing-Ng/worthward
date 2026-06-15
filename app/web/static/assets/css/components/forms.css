@@ -754,6 +754,14 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.trade-strategy-trigger-label:empty::after {
+	content: attr(data-fallback-label);
+	display: inline-block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 .trade-strategy-dropdown {
 	position: absolute;
 	top: calc(100% + var(--sidebar-form-popover-gap));

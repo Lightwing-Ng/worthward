@@ -1,4 +1,12 @@
 {% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
+{% for group in strategy_option_groups %}
+    {% for strategy in group['items'] %}
+        {% if strategy.id == selected_strategy_id %}
+            {% set selected_strategy_label.value = strategy.name %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
 <form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}">
     <div class="field ticker-field" data-index="1">
         <div class="ticker-input-row">
@@ -90,8 +98,10 @@
                         aria-haspopup="listbox"
                         aria-expanded="false"
                         aria-controls="trade_strategy_dropdown"
+                        aria-label="{{ labels.backtest_strategy }}: {{ selected_strategy_label.value }}"
+                        title="{{ selected_strategy_label.value }}"
                 >
-                    <span class="trade-strategy-trigger-label" data-trade-strategy-trigger-label></span>
+                    <span class="trade-strategy-trigger-label" data-trade-strategy-trigger-label data-fallback-label="{{ selected_strategy_label.value }}">{{ selected_strategy_label.value }}</span>
                 </button>
             </div>
             <button
