@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p6 */
+/* Code version: v0.3.8-p7 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -485,14 +485,14 @@
         if (!(sidebar instanceof HTMLElement) || !(layout instanceof HTMLElement) || !(resultsStack instanceof HTMLElement)) {
             return;
         }
-        const desktopMedia = window.matchMedia("(max-width: 1080px)");
+        const stackedWorkspaceMedia = window.matchMedia("(max-width: 767px)");
         let frameId = 0;
         let resizeObserver = null;
         const resetLayoutHeight = () => {
             layout.style.setProperty("--workspace-mode-aligned-height", "auto");
         };
         const syncLayoutHeight = () => {
-            if (desktopMedia.matches) {
+            if (stackedWorkspaceMedia.matches) {
                 resetLayoutHeight();
                 return;
             }
@@ -519,10 +519,10 @@
         if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", scheduleLayoutSync);
         }
-        if (typeof desktopMedia.addEventListener === "function") {
-            desktopMedia.addEventListener("change", scheduleLayoutSync);
-        } else if (typeof desktopMedia.addListener === "function") {
-            desktopMedia.addListener(scheduleLayoutSync);
+        if (typeof stackedWorkspaceMedia.addEventListener === "function") {
+            stackedWorkspaceMedia.addEventListener("change", scheduleLayoutSync);
+        } else if (typeof stackedWorkspaceMedia.addListener === "function") {
+            stackedWorkspaceMedia.addListener(scheduleLayoutSync);
         }
         if (typeof ResizeObserver === "function") {
             resizeObserver = new ResizeObserver(scheduleLayoutSync);
@@ -538,10 +538,10 @@
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener("resize", scheduleLayoutSync);
             }
-            if (typeof desktopMedia.removeEventListener === "function") {
-                desktopMedia.removeEventListener("change", scheduleLayoutSync);
-            } else if (typeof desktopMedia.removeListener === "function") {
-                desktopMedia.removeListener(scheduleLayoutSync);
+            if (typeof stackedWorkspaceMedia.removeEventListener === "function") {
+                stackedWorkspaceMedia.removeEventListener("change", scheduleLayoutSync);
+            } else if (typeof stackedWorkspaceMedia.removeListener === "function") {
+                stackedWorkspaceMedia.removeListener(scheduleLayoutSync);
             }
             resizeObserver?.disconnect();
             resetLayoutHeight();
