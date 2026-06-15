@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.9.0
+ * Code version: v1.9.1
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -818,7 +818,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(liveTradingLayoutRow instanceof HTMLElement && tradingGrid instanceof HTMLElement) || topRowSurfaces.length < 2) {
             return;
         }
-        if (!(sidebar instanceof HTMLElement) || window.matchMedia("(max-width: 1080px)").matches) {
+        if (!(sidebar instanceof HTMLElement) || window.matchMedia("(max-width: 767px)").matches) {
             resetTopRowAlignedHeight();
             scheduleBarsChartResize({ settleDelay: 80 });
             return;

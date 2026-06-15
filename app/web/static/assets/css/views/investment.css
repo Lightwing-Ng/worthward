@@ -91,6 +91,7 @@
 
 .live-trading-list-shell {
     --live-trading-list-offset: 44px;
+    --live-trading-list-toggle-x: 0px;
     padding-top: var(--live-trading-list-offset);
     min-height: 0;
     height: 100%;
@@ -101,11 +102,34 @@
     top: 0;
     left: auto;
     right: 0;
+    transform: translate3d(var(--live-trading-list-toggle-x), 0, 0);
+    transition:
+        transform 460ms var(--motion-inertial),
+        background 220ms var(--motion-standard),
+        box-shadow 220ms var(--motion-standard),
+        color 220ms var(--motion-standard);
+}
+
+.live-trading-list-toggle:hover {
+    transform: translate3d(var(--live-trading-list-toggle-x), -1px, 0);
+}
+
+.live-trading-list-toggle:active {
+    transform: translate3d(var(--live-trading-list-toggle-x), 1px, 0);
+}
+
+.live-trading-list-shell.is-open {
+    --live-trading-list-toggle-x: calc(-1 * (var(--sidebar-width) - 44px));
+}
+
+.live-trading-list-shell.is-collapsed {
+    --live-trading-list-toggle-x: 0px;
 }
 
 .live-trading-list-shell.is-collapsed .live-trading-suggestions-panel {
     opacity: 0;
-    transform: translateX(28px) scale(0.96);
+    transform: translate3d(24px, 0, 0) scale(0.94);
+    filter: saturate(0.88) blur(6px);
     pointer-events: none;
 }
 
@@ -122,6 +146,16 @@
     align-content: start;
     gap: 12px;
     padding: 12px;
+    transform-origin: right center;
+    filter: saturate(1) blur(0);
+    transition:
+        opacity 220ms var(--motion-standard),
+        transform 620ms var(--motion-inertial),
+        filter 620ms var(--motion-inertial),
+        background 220ms var(--motion-standard),
+        box-shadow 220ms var(--motion-standard),
+        border-color 220ms var(--motion-standard);
+    will-change: transform, opacity, filter;
 }
 
 .live-trading-panel-copy {
@@ -2030,6 +2064,38 @@
     .investment-form-grid-secondary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+@media (max-width: 767px) {
+    .investment-workspace-header {
+        flex: 0 0 auto;
+        min-height: auto;
+        display: block;
+    }
+
+    .investment-history-surface {
+        flex: 0 0 auto;
+        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
+    }
+
+    .investment-form-grid-primary,
+    .investment-form-grid-secondary {
+        grid-template-columns: 1fr;
+    }
+
+    .investment-import-field-group {
+        grid-template-columns: 1fr;
+    }
+
+    .investment-import-stack,
+    .investment-import-action-package {
+        width: 100%;
+        max-width: none;
+    }
+
+    .live-trading-form-grid {
+        grid-template-columns: 1fr;
+    }
 
     .live-trading-layout-row,
     .live-trading-layout-row.is-list-collapsed {
@@ -2063,38 +2129,6 @@
     .live-trading-section-header-chart {
         flex-direction: column;
         align-items: stretch;
-    }
-}
-
-@media (max-width: 767px) {
-    .investment-workspace-header {
-        flex: 0 0 auto;
-        min-height: auto;
-        display: block;
-    }
-
-    .investment-history-surface {
-        flex: 0 0 auto;
-        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
-    }
-
-    .investment-form-grid-primary,
-    .investment-form-grid-secondary {
-        grid-template-columns: 1fr;
-    }
-
-    .investment-import-field-group {
-        grid-template-columns: 1fr;
-    }
-
-    .investment-import-stack,
-    .investment-import-action-package {
-        width: 100%;
-        max-width: none;
-    }
-
-    .live-trading-form-grid {
-        grid-template-columns: 1fr;
     }
 
     .live-trading-chart-shell {
