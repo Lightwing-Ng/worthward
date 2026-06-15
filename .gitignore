@@ -13,3 +13,4 @@ settings_store/
 node_modules/
 .vercel/
 .vercelignore
+.lb-home/
