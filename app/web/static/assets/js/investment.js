@@ -2818,10 +2818,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         clearImportFeedback();
         formContainer.style.display = 'block';
+        formContainer.scrollTop = 0;
         syncInvestmentFormLayout();
         setTimeout(() => {
             formContainer.style.opacity = '1';
             formContainer.style.transform = 'scale(1)';
+            formContainer.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
         }, 50);
         toggleIcon.classList.add('is-minus');
         toggleBtn.setAttribute('aria-label', 'Hide broker CSV import form');

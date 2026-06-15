@@ -1477,6 +1477,12 @@
     border: 1px solid var(--theme-glass-highlight);
     border-radius: 10px;
     box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
+    max-height: min(680px, calc(100dvh - 140px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding: 16px;
 }
 
 .investment-form {
@@ -1505,11 +1511,12 @@
     display: grid;
     gap: 10px;
     width: 100%;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .investment-import-broker-field {
     width: 100%;
+    grid-column: 1 / -1;
 }
 
 .investment-import-field {
@@ -1691,6 +1698,7 @@
 .investment-import-action-package {
     width: min(100%, var(--settings-action-package-max-width));
     max-width: var(--settings-action-package-max-width);
+    margin-top: 4px;
 }
 
 .investment-import-action-icon {
@@ -2115,10 +2123,18 @@
         grid-template-columns: 1fr;
     }
 
+    .investment-import-broker-field {
+        grid-column: auto;
+    }
+
     .investment-import-stack,
     .investment-import-action-package {
         width: 100%;
         max-width: none;
+    }
+
+    #transaction_form_container {
+        max-height: calc(100dvh - 96px);
     }
 
     .live-trading-form-grid {
