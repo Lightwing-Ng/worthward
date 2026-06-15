@@ -106,15 +106,67 @@
                 <p class="chart-heading">Transaction history</p>
             </div>
             <button type="button" class="settings-round-icon-button" id="toggle_form_button"
-                    aria-label="Import IBKR CSV files">
+                    aria-label="Import broker CSV files">
                 <span class="icon investment-toggle-form-icon" id="toggle_form_icon"></span>
             </button>
             <section id="transaction_form_container" class="investment-form-container">
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
                       enctype="multipart/form-data">
                     <div class="investment-import-stack">
-                        <p class="investment-import-title">Import IBKR CSV files.</p>
+                        <p class="investment-import-title">Import broker CSV files.</p>
                         <div class="investment-import-field-group">
+                            <div class="field live-trading-broker-strip backtest-shared-select-field investment-import-broker-field"
+                                 data-shared-select-field
+                                 data-shared-select-kind="investment-import-broker">
+                                <label class="settings-form-label live-trading-field-label" for="investment_import_broker">Broker</label>
+                                <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
+                                    <select id="investment_import_broker"
+                                            name="broker"
+                                            class="trade-strategy-native-select backtest-shared-select-native"
+                                            hidden
+                                            aria-hidden="true"
+                                            tabindex="-1">
+                                        <option value="ibkr"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='IBKR.png') }}"
+                                                data-icon-alt="IBKR logo"
+                                                data-description="Supported now for CSV import."
+                                                selected>IBKR</option>
+                                        <option value="longbridge"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='Longbridge.png') }}"
+                                                data-icon-alt="Longbridge logo"
+                                                data-description="Reserved for future adapter integration.">Longbridge</option>
+                                        <option value="hsbc"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='HSBC.png') }}"
+                                                data-icon-alt="HSBC logo"
+                                                data-description="Reserved for future adapter integration.">HSBC</option>
+                                    </select>
+                                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                        <button type="button"
+                                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger"
+                                                data-shared-select-trigger
+                                                aria-haspopup="listbox"
+                                                aria-expanded="false"
+                                                aria-controls="investment_import_broker_dropdown">
+                                            <span class="ticker-leading-slot live-trading-broker-trigger-slot" aria-hidden="true">
+                                                <span class="ticker-logo-placeholder"
+                                                      data-shared-select-trigger-placeholder></span>
+                                                <img class="ticker-input-logo live-trading-broker-trigger-logo"
+                                                     data-shared-select-trigger-logo
+                                                     alt=""
+                                                     hidden>
+                                            </span>
+                                            <span class="trade-strategy-trigger-label live-trading-broker-trigger-label"
+                                                  data-shared-select-trigger-label></span>
+                                        </button>
+                                    </div>
+                                    <div id="investment_import_broker_dropdown"
+                                         class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown"
+                                         data-shared-select-dropdown
+                                         role="listbox"
+                                         aria-label="Broker"
+                                         hidden></div>
+                                </div>
+                            </div>
                             <div class="investment-import-field" data-import-field="transactions">
                                 <label class="trade-strategy-param-label" for="transactions_csv">
                                 <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
@@ -188,10 +240,11 @@
             <div id="investment_stock_details_table_host" class="investment-stock-details-table-host" hidden></div>
 
             <div class="scrollable-data-table-shell investment-history-table-shell" id="history_table_wrap">
-                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table"
+                <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-ledger-table"
                        aria-hidden="true">
                     <thead>
                     <tr>
+                        <th aria-label="Broker"></th>
                         <th>No.</th>
                         <th>Time</th>
                         <th>Type</th>
@@ -206,7 +259,7 @@
                     </thead>
                 </table>
                 <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll">
-                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table"
+                    <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-ledger-table"
                            id="transactionTable">
                         <tbody id="investment_history" class="investment-history-table-body">
                         </tbody>

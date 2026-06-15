@@ -3629,12 +3629,21 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
     def investment_add_transactions():
-        """Import IBKR CSV files and incrementally merge them into the local investment store."""
+        """Import broker CSV files and incrementally merge them into the local investment store."""
         transactions_file = None
         positions_file = None
         try:
+            broker = str(request.form.get("broker", "ibkr")).strip().lower() or "ibkr"
             transactions_file = request.files.get("transactions_csv")
             positions_file = request.files.get("positions_csv")
+            if broker != "ibkr":
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        f"{broker.upper()} import is reserved for the future broker adapter layer. "
+                        "Please keep IBKR selected for now."
+                    ),
+                }), 400
             if transactions_file is None or positions_file is None:
                 return jsonify({
                     "success": False,

@@ -146,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const importFeedbackIcon = document.getElementById('investment_import_feedback_icon');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
+    const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
     const importSubmitButton = document.getElementById('investment_import_submit_button');
@@ -337,6 +338,27 @@ document.addEventListener('DOMContentLoaded', () => {
         { value: 'ytd', label: 'YTD' },
         { value: 'max', label: 'Max' },
     ];
+    const INVESTMENT_BROKER_META = {
+        ibkr: {
+            code: 'ibkr',
+            label: 'IBKR',
+            logoUrl: '/market-store/logos/IBKR.png',
+            logoAlt: 'IBKR logo',
+        },
+        longbridge: {
+            code: 'longbridge',
+            label: 'Longbridge',
+            logoUrl: '/market-store/logos/Longbridge.png',
+            logoAlt: 'Longbridge logo',
+        },
+        hsbc: {
+            code: 'hsbc',
+            label: 'HSBC',
+            logoUrl: '/market-store/logos/HSBC.png',
+            logoAlt: 'HSBC logo',
+        },
+    };
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -1892,6 +1914,46 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(ticker || '').trim().toUpperCase();
     }
 
+    function normalizeInvestmentBroker(broker) {
+        const normalizedBroker = String(broker || '').trim().toLowerCase();
+        return normalizedBroker || 'ibkr';
+    }
+
+    function getInvestmentBrokerMeta(broker) {
+        const normalizedBroker = normalizeInvestmentBroker(broker);
+        return INVESTMENT_BROKER_META[normalizedBroker] || INVESTMENT_BROKER_META.ibkr;
+    }
+
+    function getSelectedInvestmentImportBroker() {
+        return normalizeInvestmentBroker(investmentImportBrokerSelect?.value || 'ibkr');
+    }
+
+    function getTransactionBrokerCode(txn) {
+        return normalizeInvestmentBroker(
+            txn?.broker
+            || txn?.source?.broker
+            || window.ANTIGRAVITY_INVESTMENT_DATA?.broker
+            || 'ibkr'
+        );
+    }
+
+    function renderInvestmentBrokerCell(txn) {
+        const brokerMeta = getInvestmentBrokerMeta(getTransactionBrokerCode(txn));
+        return `
+            <td class="investment-history-cell investment-history-cell-center investment-history-broker-cell">
+                <span class="ticker-leading-slot investment-history-broker-slot" aria-hidden="true">
+                    <span class="ticker-logo-placeholder investment-history-broker-placeholder"></span>
+                    <img class="ticker-input-logo investment-history-broker-logo"
+                         src="${escapeHtml(brokerMeta.logoUrl)}"
+                         alt="${escapeHtml(brokerMeta.logoAlt)}"
+                         loading="lazy"
+                         decoding="async">
+                </span>
+                <span class="sr-only">${escapeHtml(brokerMeta.label)}</span>
+            </td>
+        `;
+    }
+
     function syncHoldingsChartHoverState(ticker, ledgerNo) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedLedgerNo = Number.isFinite(Number(ledgerNo)) && Number(ledgerNo) > 0
@@ -2732,9 +2794,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncImportValidationState() {
         const transactionFile = transactionsCsvInput?.files?.[0];
         const positionsFile = positionsCsvInput?.files?.[0];
+        const selectedBroker = getSelectedInvestmentImportBroker();
         const transactionReady = isLikelyTransactionHistoryFile(transactionFile);
         const positionsReady = isLikelyPositionsFile(positionsFile);
-        const importReady = transactionReady && positionsReady;
+        const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
+        const importReady = brokerReady && transactionReady && positionsReady;
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
@@ -2760,7 +2824,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formContainer.style.transform = 'scale(1)';
         }, 50);
         toggleIcon.classList.add('is-minus');
-        toggleBtn.setAttribute('aria-label', 'Hide IBKR CSV import form');
+        toggleBtn.setAttribute('aria-label', 'Hide broker CSV import form');
     }
 
     function closeInvestmentImportForm() {
@@ -2777,7 +2841,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentFormHideTimer = null;
         }, 400);
         toggleIcon.classList.remove('is-minus');
-        toggleBtn.setAttribute('aria-label', 'Import IBKR CSV files');
+        toggleBtn.setAttribute('aria-label', 'Import broker CSV files');
     }
 
     function buildInvestmentRequestOptions(overrides = {}) {
@@ -2809,7 +2873,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initInvestmentDummyDonut();
     bindInvestmentExportButton();
     syncImportValidationState();
-    [transactionsCsvInput, positionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, investmentImportBrokerSelect].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -2856,8 +2920,14 @@ document.addEventListener('DOMContentLoaded', () => {
             clearImportFeedback();
             const transactionsCsv = document.getElementById('transactions_csv');
             const positionsCsv = document.getElementById('positions_csv');
+            const selectedBroker = getSelectedInvestmentImportBroker();
             const transactionsFile = transactionsCsv?.files?.[0];
             const positionsFile = positionsCsv?.files?.[0];
+            if (!SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker)) {
+                const pendingBroker = getInvestmentBrokerMeta(selectedBroker);
+                setImportFeedback(`${pendingBroker.label} import adapter is reserved but not implemented yet. Please keep IBKR selected for now.`, 'warning');
+                return;
+            }
             if (!transactionsFile || !positionsFile) {
                 setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                 return;
@@ -2868,6 +2938,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const formData = new FormData();
+            formData.append('broker', selectedBroker);
             formData.append('transactions_csv', transactionsFile);
             formData.append('positions_csv', positionsFile);
 
@@ -4538,7 +4609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!visibleTransactions.length) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10" class="investment-history-empty-cell">No transactions fall within the selected range.</td>
+                    <td colspan="11" class="investment-history-empty-cell">No transactions fall within the selected range.</td>
                 </tr>
             `;
             attachHistoryTableAlignmentSync(historyTable);
@@ -4548,6 +4619,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const description = formatTransactionDescription(txn);
             return `
             <tr id="investment_history_row_${txn.ledger_no}" data-investment-history-row="${txn.ledger_no}" data-investment-history-date="${escapeHtml(String(txn.date || '').slice(0, 10))}" data-investment-history-ticker="${escapeHtml(String(txn.ticker || '').trim().toUpperCase())}">
+                ${renderInvestmentBrokerCell(txn)}
                 <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
@@ -4577,12 +4649,12 @@ document.addEventListener('DOMContentLoaded', () => {
             resetInvestmentDashboard();
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10" class="investment-history-empty-cell">
+                    <td colspan="11" class="investment-history-empty-cell">
                         <div class="investment-history-empty-state" role="status" aria-live="polite">
-                            <p class="investment-history-empty-title"><strong>Import your IBKR files to begin.</strong></p>
+                            <p class="investment-history-empty-title"><strong>Import your broker files to begin.</strong></p>
                             <p class="investment-history-empty-step">➊ Click <span class="investment-inline-plus-icon" aria-hidden="true"></span> above to open the import panel.</p>
-                            <p class="investment-history-empty-step">➋ Upload your Transaction History CSV and Realized Summary CSV.</p>
-                            <p class="investment-history-empty-step">➌ Click Import now to rebuild this ledger and load the latest view.</p>
+                            <p class="investment-history-empty-step">➋ Select a broker, then upload the Transaction History CSV and Realized Summary CSV.</p>
+                            <p class="investment-history-empty-step">➌ IBKR is supported now; Longbridge and HSBC are reserved for later adapter rollout.</p>
                         </div>
                     </td>
                 </tr>
@@ -4701,6 +4773,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return {
                 ...txn,
+                broker: getTransactionBrokerCode(txn),
                 ledger_no: processedIndex + 1,
                 running_cash: runningCash,
                 display_amount: getTransactionEconomicAmount(txn),

@@ -1508,6 +1508,10 @@
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
+.investment-import-broker-field {
+    width: 100%;
+}
+
 .investment-import-field {
     display: grid;
     gap: 6px;
@@ -1744,19 +1748,21 @@
 }
 
 .investment-history-table {
-    --investment-col-no-width: 8%;
+    --investment-col-broker-width: 6%;
+    --investment-col-broker-min-width: 32px;
+    --investment-col-no-width: 6%;
     --investment-col-no-min-width: 32px;
     --investment-col-time-width: 10%;
     --investment-col-time-min-width: 36px;
     --investment-col-type-width: 10%;
     --investment-col-type-min-width: 36px;
-    --investment-col-description-width: 18%;
+    --investment-col-description-width: 20%;
     --investment-col-description-min-width: 72px;
-    --investment-col-currency-width: 8%;
+    --investment-col-currency-width: 6%;
     --investment-col-currency-min-width: 32px;
-    --investment-col-amount-width: 8%;
+    --investment-col-amount-width: 6%;
     --investment-col-amount-min-width: 32px;
-    --investment-col-commission-width: 8%;
+    --investment-col-commission-width: 6%;
     --investment-col-commission-min-width: 32px;
     --investment-stock-col-realized-width: 14%;
     width: 100%;
@@ -1808,74 +1814,96 @@
     background: color-mix(in srgb, var(--theme-accent-primary) 8%, transparent);
 }
 
-.investment-history-table th:nth-child(1),
-.investment-history-table td:nth-child(1) {
+.investment-ledger-table th:nth-child(1),
+.investment-ledger-table td:nth-child(1) {
+    width: var(--investment-col-broker-width);
+    min-width: var(--investment-col-broker-min-width);
+    text-align: center;
+}
+
+.investment-ledger-table th:nth-child(2),
+.investment-ledger-table td:nth-child(2) {
     width: var(--investment-col-no-width);
     min-width: var(--investment-col-no-min-width);
     text-align: center;
 }
 
-.investment-history-table th:nth-child(2),
-.investment-history-table td:nth-child(2) {
+.investment-ledger-table th:nth-child(3),
+.investment-ledger-table td:nth-child(3) {
     width: var(--investment-col-time-width);
     min-width: var(--investment-col-time-min-width);
     text-align: right;
 }
 
-.investment-history-table th:nth-child(3),
-.investment-history-table td:nth-child(3) {
+.investment-ledger-table th:nth-child(4),
+.investment-ledger-table td:nth-child(4) {
     width: var(--investment-col-type-width);
     min-width: var(--investment-col-type-min-width);
     text-align: center;
 }
 
-.investment-history-table th:nth-child(4),
-.investment-history-table td:nth-child(4) {
+.investment-ledger-table th:nth-child(5),
+.investment-ledger-table td:nth-child(5) {
     width: var(--investment-col-description-width);
     min-width: var(--investment-col-description-min-width);
     text-align: left;
 }
 
-.investment-history-table th:nth-child(5),
-.investment-history-table td:nth-child(5) {
+.investment-ledger-table th:nth-child(6),
+.investment-ledger-table td:nth-child(6) {
     width: var(--investment-col-currency-width);
     min-width: var(--investment-col-currency-min-width);
     text-align: center;
 }
 
-.investment-history-table th:nth-child(6),
-.investment-history-table td:nth-child(6) {
+.investment-ledger-table th:nth-child(7),
+.investment-ledger-table td:nth-child(7) {
     width: var(--investment-col-amount-width);
     min-width: var(--investment-col-amount-min-width);
     text-align: right;
 }
 
-.investment-history-table th:nth-child(7),
-.investment-history-table td:nth-child(7) {
+.investment-ledger-table th:nth-child(8),
+.investment-ledger-table td:nth-child(8) {
     width: var(--investment-col-commission-width);
     min-width: var(--investment-col-commission-min-width);
     text-align: right;
 }
 
-.investment-history-table th:nth-child(8),
-.investment-history-table td:nth-child(8) {
+.investment-ledger-table th:nth-child(9),
+.investment-ledger-table td:nth-child(9) {
     width: 10%;
     min-width: 36px;
     text-align: right;
 }
 
-.investment-history-table th:nth-child(9),
-.investment-history-table td:nth-child(9) {
+.investment-ledger-table th:nth-child(10),
+.investment-ledger-table td:nth-child(10) {
     width: 10%;
     min-width: 36px;
     text-align: right;
 }
 
-.investment-history-table th:nth-child(10),
-.investment-history-table td:nth-child(10) {
+.investment-ledger-table th:nth-child(11),
+.investment-ledger-table td:nth-child(11) {
     width: 10%;
     min-width: 36px;
     text-align: right;
+}
+
+.investment-history-broker-cell {
+    position: relative;
+}
+
+.investment-history-broker-slot {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
 }
 
 .investment-stock-details-table {
