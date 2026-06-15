@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.36.3
+ * Code version: v1.36.5
+ * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
+ * - Fixed: Stock details Markdown export now scopes the transaction-history section and metric snapshot to the currently selected ticker instead of reusing the full portfolio history table
  * - Added: Stock details price chart now renders a muted gray Average price cost curve, replaying ticker transactions onto every visible chart point so the line and tooltip match the point-in-time cost basis
  * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
  * - Fixed: Restored missing cross-module orbit-state and position-state bindings after the split, so all investment view tabs render again without runtime ReferenceErrors
@@ -2103,39 +2105,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 0);
     }
 
+    function cloneRenderedTable(headerTable, bodyTable) {
+        if (!headerTable || !bodyTable) return null;
+        const headerRows = Array.from(headerTable.querySelectorAll('thead tr'));
+        const bodyRows = Array.from(bodyTable.querySelectorAll('tbody tr'));
+        const table = document.createElement('table');
+        if (headerRows.length) {
+            const thead = document.createElement('thead');
+            headerRows.forEach((row) => thead.appendChild(row.cloneNode(true)));
+            table.appendChild(thead);
+        }
+        const tbody = document.createElement('tbody');
+        bodyRows.forEach((row) => tbody.appendChild(row.cloneNode(true)));
+        table.appendChild(tbody);
+        return table;
+    }
+
     function buildInvestmentMarkdownExport() {
+        const latestEquityDate = String(investmentLatestChartPoint?.date || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+        if (activeInvestmentView === 'stock_details') {
+            const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || getInvestmentLocationTicker());
+            const metricsPanel = investmentStockDetailsPanel?.querySelector('.investment-stock-details-metrics');
+            const historyHeaderTable = investmentStockDetailsTableHost?.querySelector('.investment-stock-details-table[aria-hidden="true"]');
+            const historyBodyTable = investmentStockDetailsTableHost?.querySelector('.investment-stock-details-table-scroll table');
+            const historyTable = cloneRenderedTable(historyHeaderTable, historyBodyTable);
+            const historyMarkdown = extractMarkdownTable(historyTable);
+            if (!metricsPanel || !historyMarkdown) {
+                return null;
+            }
+
+            const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
+                ? investmentProcessedTransactionsCache
+                : [];
+            const tickerTransactions = processedTransactions.filter((txn) => normalizeInvestmentTicker(txn?.ticker) === activeTicker);
+            const dateRange = buildExportDateRange(tickerTransactions, latestEquityDate);
+            if (!dateRange) {
+                return null;
+            }
+
+            const metricsMarkdown = buildInvestmentMetricsMarkdown(metricsPanel);
+            const companyName = investmentStockDetailsPanel?.querySelector('.ticker-identity-name')?.textContent?.trim() || '';
+            const title = activeTicker
+                ? `${activeTicker} Stock Details Transaction History`
+                : 'Investment Stock Details Transaction History';
+            const formattedRange = `${formatInvestmentExportDate(dateRange.start)} - ${formatInvestmentExportDate(dateRange.end)}`;
+            const markdown = [
+                `# ${title}`,
+                '',
+                activeTicker ? `**Ticker:** ${activeTicker}` : '',
+                companyName ? `**Company:** ${companyName}` : '',
+                `**Range:** ${formattedRange}`,
+                '',
+                '## Metrics',
+                '',
+                metricsMarkdown,
+                '',
+                '## Transaction history',
+                '',
+                historyMarkdown,
+                '',
+            ].filter((line, index, lines) => (
+                line !== ''
+                || index === 0
+                || lines[index - 1] !== ''
+            )).join('\n');
+
+            return {
+                filename: `${title} ${dateRange.start} - ${dateRange.end}.md`,
+                markdown,
+            };
+        }
+
         const holdingsHeaderTable = document.querySelector('#investment_holdings_panel .investment-holdings-table[aria-hidden="true"]');
         const holdingsBodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
         const metricsPanel = document.getElementById('investment_metrics_panel');
         const historyHeaderTable = document.querySelector('#history_table_wrap table[aria-hidden="true"]');
         const historyBodyTable = document.querySelector('#history_table_wrap .investment-history-table-scroll table');
-        if (!holdingsHeaderTable || !holdingsBodyTable || !metricsPanel || !historyHeaderTable || !historyBodyTable) {
+        const holdingsTable = cloneRenderedTable(holdingsHeaderTable, holdingsBodyTable);
+        const historyTable = cloneRenderedTable(historyHeaderTable, historyBodyTable);
+        if (!metricsPanel || !holdingsTable || !historyTable) {
             return null;
         }
-
-        const holdingsHeaderRows = Array.from(holdingsHeaderTable.querySelectorAll('thead tr'));
-        const holdingsBodyRows = Array.from(holdingsBodyTable.querySelectorAll('tbody tr'));
-        const holdingsTable = document.createElement('table');
-        if (holdingsHeaderRows.length) {
-            const thead = document.createElement('thead');
-            holdingsHeaderRows.forEach((row) => thead.appendChild(row.cloneNode(true)));
-            holdingsTable.appendChild(thead);
-        }
-        const holdingsTbody = document.createElement('tbody');
-        holdingsBodyRows.forEach((row) => holdingsTbody.appendChild(row.cloneNode(true)));
-        holdingsTable.appendChild(holdingsTbody);
-
-        const historyHeaderRows = Array.from(historyHeaderTable.querySelectorAll('thead tr'));
-        const historyBodyRows = Array.from(historyBodyTable.querySelectorAll('tbody tr'));
-        const historyTable = document.createElement('table');
-        if (historyHeaderRows.length) {
-            const thead = document.createElement('thead');
-            historyHeaderRows.forEach((row) => thead.appendChild(row.cloneNode(true)));
-            historyTable.appendChild(thead);
-        }
-        const historyTbody = document.createElement('tbody');
-        historyBodyRows.forEach((row) => historyTbody.appendChild(row.cloneNode(true)));
-        historyTable.appendChild(historyTbody);
 
         const holdingsMarkdown = extractMarkdownTable(holdingsTable);
         const historyMarkdown = extractMarkdownTable(historyTable);
@@ -2144,8 +2194,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const transactions = window.ANTIGRAVITY_INVESTMENT_DATA?.transactions || [];
-        const latestEquityDate = String(investmentLatestChartPoint?.date || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
         const dateRange = buildExportDateRange(transactions, latestEquityDate);
+        if (!dateRange) {
+            return null;
+        }
         const title = guessInvestmentExportDescription(transactions, holdingsMarkdown);
         const metricsMarkdown = buildInvestmentMetricsMarkdown(metricsPanel);
         const formattedRange = `${formatInvestmentExportDate(dateRange.start)} - ${formatInvestmentExportDate(dateRange.end)}`;
@@ -3426,6 +3478,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .map((point) => [normalizeLedgerDate(point?.date), point])
             .filter(([date]) => Boolean(date)));
         const stockState = createPositionState(normalizedTicker);
+        const renderedStockState = createPositionState(normalizedTicker);
         const averagePriceSeries = [];
         labels.forEach((label, index) => {
             const snapshotTxns = transactionsBySnapshotIndex.get(index) || [];
@@ -3434,21 +3487,37 @@ document.addEventListener('DOMContentLoaded', () => {
             snapshotTxns.forEach((txn) => {
                 const normalizedType = getNormalizedTransactionType(txn);
                 const quantity = Number(getTransactionQuantity(txn));
+                const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
+                const renderedEffectiveUnitPrice = resolveTradeMarkerPrice(index, effectiveUnitPrice);
                 if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
-                    applyDirectionalTrade(stockState, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                    applyDirectionalTrade(stockState, 'long', quantity, effectiveUnitPrice);
+                    applyDirectionalTrade(
+                        renderedStockState,
+                        'long',
+                        quantity,
+                        Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
+                    );
                     buyQuantity += quantity;
                     return;
                 }
                 if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
                     stockState.shares += quantity;
+                    renderedStockState.shares += quantity;
                     return;
                 }
                 if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
                     stockState.shares += quantity;
+                    renderedStockState.shares += quantity;
                     return;
                 }
                 if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
-                    applyDirectionalTrade(stockState, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                    applyDirectionalTrade(stockState, 'short', quantity, effectiveUnitPrice);
+                    applyDirectionalTrade(
+                        renderedStockState,
+                        'short',
+                        quantity,
+                        Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
+                    );
                     sellQuantity += quantity;
                 }
             });
@@ -3457,8 +3526,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map((txn) => Number(txn?.ledger_no))
                 .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 .sort((left, right) => right - left);
-            const averagePrice = !isFlatPosition(stockState.shares)
-                ? stockState.totalCost / Math.abs(stockState.shares)
+            const averagePrice = !isFlatPosition(renderedStockState.shares)
+                ? renderedStockState.totalCost / Math.abs(renderedStockState.shares)
                 : null;
             const close = Number(closeValues[index]);
             averagePriceSeries.push(Number.isFinite(averagePrice) ? averagePrice : null);
