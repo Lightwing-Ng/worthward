@@ -32,11 +32,13 @@ from app.infrastructure.broker_market_data import (
     one_minute_lookback_start,
     test_broker_connection,
 )
+from app.infrastructure.longbridge_cli import authenticate_longbridge_cli_with_auth_code
 from app.core.broker_settings import (
     BrokerSettings,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
+    uses_longbridge_cli_oauth,
 )
 from app.services.comparisons import build_series_payload, slice_dataset_for_period
 from app.core.email_settings import (
@@ -3251,8 +3253,17 @@ def build_web_runtime() -> WebRuntime:
         selected_broker = str(
             request.form.get("selected_broker", current_settings.selected_broker)
         ).strip().lower() or "longbridge"
+        longbridge_auth_code = str(request.form.get("longbridge_auth_code", "")).strip()
+        longbridge_auth_mode = str(
+            request.form.get("longbridge_auth_mode", current_settings.longbridge_auth_mode)
+        ).strip().lower() or current_settings.longbridge_auth_mode
+        if selected_broker == "longbridge" and longbridge_auth_code:
+            longbridge_auth_mode = "cli_oauth"
         updated_settings = BrokerSettings(
             selected_broker=selected_broker,
+            longbridge_auth_mode=longbridge_auth_mode,
+            longbridge_cli_path=str(request.form.get("longbridge_cli_path", "")).strip() or current_settings.longbridge_cli_path,
+            longbridge_cli_home=str(request.form.get("longbridge_cli_home", "")).strip() or current_settings.longbridge_cli_home,
             longbridge_app_key=str(request.form.get("longbridge_app_key", "")).strip() or current_settings.longbridge_app_key,
             longbridge_app_secret=str(request.form.get("longbridge_app_secret", "")).strip() or current_settings.longbridge_app_secret,
             longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
@@ -3260,6 +3271,24 @@ def build_web_runtime() -> WebRuntime:
         save_broker_settings(updated_settings)
         action = request.form.get("action", "save")
         if action == "test":
+            if uses_longbridge_cli_oauth(updated_settings) and longbridge_auth_code:
+                login_success, login_message = authenticate_longbridge_cli_with_auth_code(
+                    updated_settings,
+                    longbridge_auth_code,
+                )
+                if not login_success:
+                    checked_at = datetime.now().astimezone()
+                    checked_at_label = format_display_datetime(
+                        checked_at,
+                        include_seconds=True,
+                        timezone_suffix=checked_at.strftime("%Z"),
+                    )
+                    return _redirect_with_settings_feedback(
+                        "broker-access",
+                        broker_test_status="error",
+                        broker_test_message=login_message,
+                        broker_test_checked_at=checked_at_label,
+                    )
             success, message = test_broker_connection(updated_settings)
             checked_at = datetime.now().astimezone()
             checked_at_label = format_display_datetime(
@@ -3275,7 +3304,7 @@ def build_web_runtime() -> WebRuntime:
             )
         else:
             notice = (
-                "Broker credentials were saved only on this device. "
+                "Broker settings were saved only on this device. "
                 "This project is open source, and the developer cannot retrieve your local secrets."
             )
             return _redirect_with_settings_feedback("broker-access", notice=notice)

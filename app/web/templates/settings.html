@@ -632,17 +632,32 @@
 
                 <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
                     <div class="settings-form-row">
+                        <label class="settings-form-label" for="longbridge_auth_mode">Auth method</label>
+                        <select id="longbridge_auth_mode" name="longbridge_auth_mode" class="settings-form-control settings-form-select">
+                            <option value="cli_oauth" {% if broker_settings.longbridge_auth_mode == 'cli_oauth' %}selected{% endif %}>CLI OAuth (Recommended)</option>
+                            <option value="legacy_apikey" {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}selected{% endif %}>Legacy API Key</option>
+                        </select>
+                    </div>
+                    <div data-longbridge-auth-fields="cli_oauth" {% if broker_settings.longbridge_auth_mode != 'cli_oauth' %}hidden{% endif %}>
+                        <div class="settings-form-row">
+                            <label class="settings-form-label" for="longbridge_auth_code">Authorization code</label>
+                            <input type="password" id="longbridge_auth_code" name="longbridge_auth_code" class="settings-form-control settings-form-control-secret">
+                        </div>
+                    </div>
+                    <div data-longbridge-auth-fields="legacy_apikey" {% if broker_settings.longbridge_auth_mode != 'legacy_apikey' %}hidden{% endif %}>
+                        <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_app_key">App Key</label>
                         <input type="password" id="longbridge_app_key" name="longbridge_app_key" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_key %}••••••••••••{% else %}Enter your App Key{% endif %}">
-                    </div>
-                    <div class="settings-form-row">
+                        </div>
+                        <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_app_secret">App Secret</label>
                         <input type="password" id="longbridge_app_secret" name="longbridge_app_secret" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_secret %}••••••••••••{% else %}Enter your App Secret{% endif %}">
-                    </div>
-                    <div class="settings-form-row">
+                        </div>
+                        <div class="settings-form-row">
                         <label class="settings-form-label" for="longbridge_access_token">Access Token</label>
                         <input type="password" id="longbridge_access_token" name="longbridge_access_token" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_access_token %}••••••••••••{% else %}Enter your Access Token{% endif %}">
                         <p class="settings-service-note">Paste the raw Access Token only. Do not include the <code>Bearer </code> prefix.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -654,7 +669,7 @@
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-note">Try the current broker credentials against the selected service and report whether they work. This only verifies connectivity and does not place any order.</p>
+                            <p class="settings-service-note">Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.</p>
                             {% if broker_test_status and broker_test_message %}
                             <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite">
                                 {% if broker_test_status == 'success' %}
@@ -666,15 +681,6 @@
                         </div>
                         <div class="settings-action-package-form">
                             <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">Test connection</button>
-                        </div>
-                    </section>
-                    <section class="settings-action-package settings-callout-card-primary">
-                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
-                        <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-note">Store the current broker credentials only on this device so the app can reuse them later. This does not submit any trade and will not trigger any market action.</p>
-                        </div>
-                        <div class="settings-action-package-form">
-                            <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">Save credentials</button>
                         </div>
                     </section>
                 </div>

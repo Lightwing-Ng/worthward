@@ -7,7 +7,11 @@ Code version: v0.4.2
 from json import JSONDecodeError
 import os
 
-from app.core.broker_settings import has_longbridge_credentials, load_broker_settings
+from app.core.broker_settings import (
+    has_longbridge_credentials,
+    load_broker_settings,
+    uses_longbridge_cli_oauth,
+)
 from app.core.settings import get_settings
 from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context
 from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance
@@ -26,6 +30,8 @@ def _should_manage_longbridge_as_long_lived() -> bool:
     try:
         broker_settings = load_broker_settings()
     except (OSError, JSONDecodeError):
+        return False
+    if uses_longbridge_cli_oauth(broker_settings):
         return False
     return (
         broker_settings.selected_broker == "longbridge"

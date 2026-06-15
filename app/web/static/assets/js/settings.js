@@ -99,13 +99,29 @@
         const brokerSelect = document.getElementById("selected_broker");
         if (!(brokerSelect instanceof HTMLSelectElement) || brokerSelect.dataset.bound === "1") return;
         brokerSelect.dataset.bound = "1";
+        const syncLongbridgeAuthFields = () => {
+            const authSelect = document.getElementById("longbridge_auth_mode");
+            if (!(authSelect instanceof HTMLSelectElement)) return;
+            const selectedAuthMode = authSelect.value;
+            document.querySelectorAll("[data-longbridge-auth-fields]").forEach((element) => {
+                if (!(element instanceof HTMLElement)) return;
+                element.hidden = element.dataset.longbridgeAuthFields !== selectedAuthMode;
+            });
+        };
         brokerSelect.addEventListener("change", () => {
             const selected = brokerSelect.value;
             document.querySelectorAll("[data-broker-fields]").forEach((element) => {
                 if (!(element instanceof HTMLElement)) return;
                 element.hidden = element.dataset.brokerFields !== selected;
             });
+            syncLongbridgeAuthFields();
         });
+        const authSelect = document.getElementById("longbridge_auth_mode");
+        if (authSelect instanceof HTMLSelectElement && authSelect.dataset.bound !== "1") {
+            authSelect.dataset.bound = "1";
+            authSelect.addEventListener("change", syncLongbridgeAuthFields);
+            syncLongbridgeAuthFields();
+        }
     };
 
     const applyTemplateInlineStyles = () => {

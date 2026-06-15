@@ -17,7 +17,7 @@ from threading import Lock
 import pandas as pd
 import yfinance as yf
 
-from app.core.broker_settings import has_longbridge_credentials, load_broker_settings
+from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
 from app.infrastructure.broker_market_data import (
     NEW_YORK_TIMEZONE,
     fetch_longbridge_daily_history,
@@ -113,7 +113,7 @@ def _download_daily_history_with_yfinance(
 
 def _load_longbridge_market_settings():
     settings = load_broker_settings()
-    if not has_longbridge_credentials(settings):
+    if not has_longbridge_market_data_source(settings):
         return None
     return settings
 
@@ -125,7 +125,7 @@ def _download_one_minute_history_with_longbridge(
     if settings is None:
         raise ValueError(
             f"Unable to fetch 1-minute market data for {ticker}. "
-            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
+            "Configure Longbridge CLI OAuth or Longbridge legacy credentials in Settings > Broker Access first."
         )
     return fetch_longbridge_one_minute_history(ticker, settings, since=None)
 

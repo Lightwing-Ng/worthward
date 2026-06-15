@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.3.8
+    Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -20,10 +20,13 @@ import pandas as pd
 
 from app.core.broker_settings import (
     BrokerSettings,
+    has_longbridge_market_data_source,
     has_longbridge_credentials,
     load_broker_settings,
     normalize_longbridge_access_token,
+    uses_longbridge_cli_oauth,
 )
+from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 from app.services.date_constraints import latest_completed_nyse_trading_day
 
@@ -147,6 +150,8 @@ def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) 
 
 def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
     if settings.selected_broker == "longbridge":
+        if uses_longbridge_cli_oauth(settings):
+            return test_longbridge_cli_connection(settings)
         if not has_longbridge_credentials(settings):
             return False, "Longbridge credentials (App Key, App Secret, Access Token) are required."
         try:
@@ -343,6 +348,8 @@ def prewarm_longbridge_quote_context() -> tuple[bool, str]:
     settings = load_broker_settings()
     if settings.selected_broker != "longbridge":
         return False, "Skipped Longbridge prewarm because selected broker is not longbridge."
+    if uses_longbridge_cli_oauth(settings):
+        return False, "Skipped Longbridge prewarm because CLI OAuth does not use a long-lived SDK quote context."
     if not has_longbridge_credentials(settings):
         return False, "Skipped Longbridge prewarm because credentials are missing."
     context = get_longbridge_quote_context(settings)
@@ -546,30 +553,104 @@ def _daily_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for candle in candlesticks:
+        raw_ts = candle.get("time")
+        if raw_ts is None:
+            continue
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        if not _is_regular_new_york_session(ts_nyt):
+            continue
+        rows.append(
+            {
+                "Date": ts_nyt.tz_localize(None),
+                "Open": float(candle.get("open", 0)),
+                "High": float(candle.get("high", 0)),
+                "Low": float(candle.get("low", 0)),
+                "Close": float(candle.get("close", 0)),
+                "Volume": float(candle.get("volume", 0)),
+                "Turnover": float(candle.get("turnover", 0)),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
+    return pd.DataFrame(rows)
+
+
+def _cli_daily_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for candle in candlesticks:
+        raw_ts = candle.get("time")
+        if raw_ts is None:
+            continue
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        rows.append(
+            {
+                "Date": pd.Timestamp(ts_nyt.date()),
+                "Open": float(candle.get("open", 0)),
+                "High": float(candle.get("high", 0)),
+                "Low": float(candle.get("low", 0)),
+                "Close": float(candle.get("close", 0)),
+                "Volume": float(candle.get("volume", 0)),
+                "Turnover": float(candle.get("turnover", 0)),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
+    return pd.DataFrame(rows)
+
+
 def fetch_longbridge_one_minute_history(
         ticker: str,
         settings: BrokerSettings,
         since: datetime | None = None
 ) -> pd.DataFrame:
-    if not has_longbridge_credentials(settings):
-        raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+    if not has_longbridge_market_data_source(settings):
+        raise ValueError(
+            "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
+        )
+
+    symbol = _normalize_longbridge_symbol(ticker)
+    end_at = datetime.now(timezone.utc)
+    global_start_at = one_minute_lookback_start(end_at)
+    global_start_nyt = _normalize_to_new_york_naive(global_start_at)
+    effective_start_nyt = global_start_nyt
+    if since is not None:
+        effective_start_nyt = max(global_start_nyt, _normalize_to_new_york_naive(since) - timedelta(hours=2))
+
+    if uses_longbridge_cli_oauth(settings):
+        payload = run_longbridge_cli_json(
+            settings,
+            [
+                "kline",
+                "history",
+                symbol,
+                "--period",
+                "1m",
+                "--adjust",
+                "forward",
+                "--start",
+                effective_start_nyt.date().isoformat(),
+                "--end",
+                _coerce_to_new_york(end_at).date().isoformat(),
+                "--format",
+                "json",
+            ],
+            timeout_seconds=90,
+        )
+        frame = _cli_candlestick_rows_to_frame(payload if isinstance(payload, list) else [])
+        if frame.empty:
+            raise ValueError(f"No 1-minute market data returned for {ticker}.")
+        dataset = frame.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
+        dataset = dataset.loc[dataset["Date"] >= global_start_nyt].copy()
+        if dataset.empty:
+            raise ValueError(f"No 1-minute market data returned for {ticker}.")
+        return dataset.reset_index(drop=True)
 
     _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
     adjust_type = _resolve_longbridge_adjust_type(adjust_type_enum)
     quote_context = get_longbridge_quote_context(settings)
-    symbol = _normalize_longbridge_symbol(ticker)
-
-    # We fetch backwards from current time
-    end_at = datetime.now(timezone.utc)
-    # The absolute lookback limit (6 months)
-    global_start_at = one_minute_lookback_start(end_at)
-    global_start_nyt = _normalize_to_new_york_naive(global_start_at)
-
-    # The incremental lookback limit (if provided)
-    # We add 2 hours overlap to ensure no gaps or partial bars at the boundary
-    effective_start_nyt = global_start_nyt
-    if since is not None:
-        effective_start_nyt = max(global_start_nyt, _normalize_to_new_york_naive(since) - timedelta(hours=2))
 
     frames: list[pd.DataFrame] = []
     cursor: datetime | None = None
@@ -641,18 +722,57 @@ def fetch_longbridge_daily_history(
         settings: BrokerSettings,
         since: datetime | None = None,
 ) -> pd.DataFrame:
-    if not has_longbridge_credentials(settings):
-        raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
+    if not has_longbridge_market_data_source(settings):
+        raise ValueError(
+            "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
+        )
+
+    symbol = _normalize_longbridge_symbol(ticker)
+    effective_start_nyt: pd.Timestamp | None = None
+    if since is not None:
+        effective_start_nyt = _normalize_to_new_york_naive(since) - timedelta(days=2)
+
+    if uses_longbridge_cli_oauth(settings):
+        now_nyt = pd.Timestamp.now(tz=UTC_TIMEZONE).tz_convert(NEW_YORK_TIMEZONE)
+        start_date = (
+            effective_start_nyt.date().isoformat()
+            if effective_start_nyt is not None
+            else (now_nyt - timedelta(days=400)).date().isoformat()
+        )
+        payload = run_longbridge_cli_json(
+            settings,
+            [
+                "kline",
+                "history",
+                symbol,
+                "--period",
+                "day",
+                "--adjust",
+                "forward",
+                "--start",
+                start_date,
+                "--end",
+                now_nyt.date().isoformat(),
+                "--format",
+                "json",
+            ],
+            timeout_seconds=60,
+        )
+        frame = _cli_daily_candlestick_rows_to_frame(payload if isinstance(payload, list) else [])
+        if frame.empty:
+            raise ValueError(f"No daily market data returned for {ticker}.")
+        dataset = frame.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
+        if effective_start_nyt is not None:
+            start_filter = pd.Timestamp(effective_start_nyt.date())
+            dataset = dataset.loc[dataset["Date"] >= start_filter].copy()
+        if dataset.empty:
+            raise ValueError(f"No daily market data returned for {ticker}.")
+        return dataset.reset_index(drop=True)
 
     _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
     adjust_type = _resolve_longbridge_adjust_type(adjust_type_enum)
     period_day = _resolve_daily_period(period_enum)
     quote_context = get_longbridge_quote_context(settings)
-    symbol = _normalize_longbridge_symbol(ticker)
-
-    effective_start_nyt: pd.Timestamp | None = None
-    if since is not None:
-        effective_start_nyt = _normalize_to_new_york_naive(since) - timedelta(days=2)
 
     frames: list[pd.DataFrame] = []
     cursor: datetime | None = None
