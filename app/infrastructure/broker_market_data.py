@@ -1,20 +1,29 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.3.7
+    Code version: v0.3.8
 """
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version as package_version
+import json
 from threading import Event, Lock, Thread
 from typing import Any
+import urllib.request
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.core.broker_settings import BrokerSettings, has_longbridge_credentials, load_broker_settings
+from app.core.broker_settings import (
+    BrokerSettings,
+    has_longbridge_credentials,
+    load_broker_settings,
+    normalize_longbridge_access_token,
+)
 from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 from app.services.date_constraints import latest_completed_nyse_trading_day
 
@@ -37,6 +46,96 @@ _LONGBRIDGE_KEEPALIVE_THREAD: Thread | None = None
 _LONGBRIDGE_KEEPALIVE_STOP_EVENT: Event | None = None
 
 
+# #region debug-point shared:reporter
+def _read_longbridge_debug_env() -> tuple[str, str]:
+    debug_server_url = "http://127.0.0.1:7777/event"
+    debug_session_id = "longbridge-token-invalid"
+    try:
+        with open(".dbg/longbridge-token-invalid.env", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_server_url = line.split("=", 1)[1].strip() or debug_server_url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    debug_session_id = line.split("=", 1)[1].strip() or debug_session_id
+    except Exception:
+        pass
+    return debug_server_url, debug_session_id
+
+
+def _report_longbridge_debug_event(
+        hypothesis_id: str,
+        location: str,
+        message: str,
+        data: dict[str, Any],
+        run_id: str = "pre-fix",
+) -> None:
+    debug_server_url, debug_session_id = _read_longbridge_debug_env()
+    payload = {
+        "sessionId": debug_session_id,
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": f"[DEBUG] {message}",
+        "data": data,
+        "ts": int(datetime.now(timezone.utc).timestamp() * 1000),
+    }
+    try:
+        request = urllib.request.Request(
+            debug_server_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=1.5):
+            pass
+    except Exception:
+        pass
+
+
+def _safe_longbridge_token_snapshot(value: str) -> dict[str, Any]:
+    stripped = str(value or "")
+    normalized = normalize_longbridge_access_token(stripped)
+    return {
+        "raw_length": len(stripped),
+        "normalized_length": len(normalized),
+        "has_leading_or_trailing_whitespace": stripped != stripped.strip(),
+        "had_bearer_prefix": stripped.strip().lower().startswith("bearer "),
+        "wrapped_in_quotes": stripped.strip()[:1] in {"'", '"'} and stripped.strip()[-1:] == stripped.strip()[:1],
+        "segment_count": normalized.count(".") + 1 if normalized else 0,
+        "looks_like_jwt": normalized.count(".") == 2,
+        "starts_with_m_": normalized.startswith("m_"),
+        "starts_with_ey": normalized.startswith("ey"),
+    }
+
+
+def _decode_longbridge_token_metadata(value: str) -> dict[str, Any]:
+    normalized = normalize_longbridge_access_token(value)
+    token_body = normalized[2:] if normalized.startswith("m_") else normalized
+    parts = token_body.split(".")
+    if len(parts) != 3:
+        return {"parseable": False, "reason": "non-jwt-shape"}
+
+    def _decode_part(part: str) -> dict[str, Any] | None:
+        padding = "=" * ((4 - len(part) % 4) % 4)
+        try:
+            return json.loads(base64.urlsafe_b64decode(f"{part}{padding}").decode("utf-8"))
+        except Exception:
+            return None
+
+    header = _decode_part(parts[0]) or {}
+    payload = _decode_part(parts[1]) or {}
+    return {
+        "parseable": bool(header or payload),
+        "header_alg": header.get("alg"),
+        "header_kid": header.get("kid"),
+        "payload_exp": payload.get("exp"),
+        "payload_iat": payload.get("iat"),
+        "payload_token_type": payload.get("token_type"),
+        "payload_iss": payload.get("iss"),
+    }
+# #endregion
+
+
 def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) -> pd.Timestamp:
     anchor = pd.Timestamp.now(tz="UTC") if reference is None else pd.Timestamp(reference)
     if anchor.tzinfo is None:
@@ -51,7 +150,29 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
         if not has_longbridge_credentials(settings):
             return False, "Longbridge credentials (App Key, App Secret, Access Token) are required."
         try:
+            # #region debug-point A:input-shape
+            _report_longbridge_debug_event(
+                "A",
+                "broker_market_data.py:test_broker_connection:entry",
+                "Inspecting normalized Longbridge credential shapes before SDK call.",
+                {
+                    "selected_broker": settings.selected_broker,
+                    "app_key_length": len(settings.longbridge_app_key),
+                    "app_secret_length": len(settings.longbridge_app_secret),
+                    "token_shape": _safe_longbridge_token_snapshot(settings.longbridge_access_token),
+                    "token_meta": _decode_longbridge_token_metadata(settings.longbridge_access_token),
+                },
+            )
+            # #endregion
             context = get_longbridge_quote_context(settings)
+            # #region debug-point D:context-created
+            _report_longbridge_debug_event(
+                "D",
+                "broker_market_data.py:test_broker_connection:context",
+                "Longbridge quote context was created successfully.",
+                {"context_type": type(context).__name__},
+            )
+            # #endregion
             # Try to fetch a single quote for a common symbol to test connection
             quote = context.quote(["AAPL.US"])
             if quote:
@@ -59,8 +180,28 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             return False, "Connected but no data returned. Check your permissions."
         except Exception as e:
             message = str(e)
+            # #region debug-point D:sdk-error
+            _report_longbridge_debug_event(
+                "D",
+                "broker_market_data.py:test_broker_connection:exception",
+                "Longbridge SDK raised an exception during connectivity test.",
+                {
+                    "exception_type": type(e).__name__,
+                    "message": message,
+                    "args": [str(item) for item in getattr(e, "args", ())],
+                },
+            )
+            # #endregion
             if "timeout" in message.lower():
                 return False, "Connection timeout. Please check your network or try again."
+            if "401004" in message or "token invalid" in message.lower():
+                return (
+                    False,
+                    "Connection failed: Longbridge rejected the Access Token. "
+                    "Paste only the raw token without the `Bearer ` prefix, "
+                    "then regenerate the token in Longbridge Developers if it still fails. "
+                    f"Original error: {message}",
+                )
             return False, f"Connection failed: {message}"
 
     if settings.selected_broker == "ibkr":
@@ -73,6 +214,19 @@ def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
     for module_name in ("longbridge.openapi", "longport.openapi"):
         try:
             module = import_module(module_name)
+            # #region debug-point C:sdk-module
+            package_name = module_name.split(".", 1)[0]
+            try:
+                sdk_version = package_version(package_name)
+            except PackageNotFoundError:
+                sdk_version = "unknown"
+            _report_longbridge_debug_event(
+                "C",
+                "broker_market_data.py:_load_longbridge_openapi",
+                "Resolved Longbridge SDK module for broker connectivity test.",
+                {"module_name": module_name, "package_name": package_name, "package_version": sdk_version},
+            )
+            # #endregion
             return module.Config, module.QuoteContext, module.Period, module.AdjustType
         except ImportError:
             continue
@@ -92,7 +246,7 @@ def _resolve_longbridge_adjust_type(adjust_type_enum: Any) -> Any:
 def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
     app_key = settings.longbridge_app_key.strip()
     app_secret = settings.longbridge_app_secret.strip()
-    access_token = settings.longbridge_access_token.strip()
+    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
     factory = getattr(config_cls, "from_apikey", None)
     if callable(factory):
         return factory(app_key, app_secret, access_token)
@@ -103,7 +257,7 @@ def _longbridge_settings_signature(settings: BrokerSettings) -> tuple[str, str, 
     return (
         settings.longbridge_app_key.strip(),
         settings.longbridge_app_secret.strip(),
-        settings.longbridge_access_token.strip(),
+        normalize_longbridge_access_token(settings.longbridge_access_token),
     )
 
 

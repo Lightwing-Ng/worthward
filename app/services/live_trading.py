@@ -1,7 +1,7 @@
 """
 Longbridge live trading helpers.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -14,7 +14,11 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from app.core.broker_settings import BrokerSettings, has_longbridge_credentials
+from app.core.broker_settings import (
+    BrokerSettings,
+    has_longbridge_credentials,
+    normalize_longbridge_access_token,
+)
 
 LONGBRIDGE_OPENAPI_BASE_URL = "https://openapi.longbridge.com"
 LONGBRIDGE_OPENAPI_TIMEOUT_SECONDS = 8
@@ -162,7 +166,7 @@ def _call_longbridge_asset_api(
     settings: BrokerSettings,
     path: str,
 ) -> dict[str, Any]:
-    access_token = settings.longbridge_access_token.strip()
+    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
     if not access_token:
         raise ValueError("Save your Longbridge Access Token first.")
 
@@ -225,7 +229,7 @@ def _load_longbridge_trade_api() -> tuple[Any, Any, Any, Any, Any]:
 def _build_longbridge_config(config_cls: Any, settings: BrokerSettings) -> Any:
     app_key = settings.longbridge_app_key.strip()
     app_secret = settings.longbridge_app_secret.strip()
-    access_token = settings.longbridge_access_token.strip()
+    access_token = normalize_longbridge_access_token(settings.longbridge_access_token)
     factory = getattr(config_cls, "from_apikey", None)
     if callable(factory):
         return factory(app_key, app_secret, access_token)

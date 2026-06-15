@@ -1,7 +1,7 @@
 """
 Broker credential persistence for local integrations.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -24,6 +24,12 @@ class BrokerSettings:
     longbridge_app_secret: str = ""
     longbridge_access_token: str = ""
 
+    def __post_init__(self) -> None:
+        self.selected_broker = _normalize_selected_broker(self.selected_broker)
+        self.longbridge_app_key = str(self.longbridge_app_key or "").strip()
+        self.longbridge_app_secret = str(self.longbridge_app_secret or "").strip()
+        self.longbridge_access_token = normalize_longbridge_access_token(self.longbridge_access_token)
+
 
 def ensure_settings_store_dir() -> None:
     SETTINGS_STORE_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,6 +40,19 @@ def _normalize_selected_broker(value: str | None) -> str:
     if normalized in SUPPORTED_BROKERS:
         return normalized
     return "longbridge"
+
+
+def _strip_matching_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1].strip()
+    return value
+
+
+def normalize_longbridge_access_token(value: str | None) -> str:
+    normalized = _strip_matching_quotes(str(value or "").strip())
+    if normalized.lower().startswith("bearer "):
+        normalized = _strip_matching_quotes(normalized[7:].strip())
+    return normalized
 
 
 def load_broker_settings() -> BrokerSettings:
