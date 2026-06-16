@@ -6,8 +6,10 @@ Code version: v0.3.3
 
 from __future__ import annotations
 
+import contextlib
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from http.client import RemoteDisconnected
+import io
 import json
 from time import monotonic, time
 from urllib.error import HTTPError, URLError
@@ -40,9 +42,6 @@ _remote_market_access_cache: tuple[float, float, bool] | None = None
 _remote_logo_access_cache: tuple[float, float, bool] | None = None
 _google_hk_access_cache: tuple[float, float, bool] | None = None
 _chatgpt_access_cache: tuple[float, float, bool] | None = None
-_tradingview_ta_cache: tuple[float, float, bool] | None = None
-TRADINGVIEW_TA_SUCCESS_TTL_SECONDS = 86400
-TRADINGVIEW_TA_FAILURE_TTL_SECONDS = 300
 
 
 def _cached_connectivity_value(
@@ -90,7 +89,10 @@ def _probe_yahoo_chart_endpoint() -> bool:
 
 
 def _probe_yfinance_history() -> bool:
-    probe = yf.download("AAPL", period="5d", interval="1d", progress=False, threads=False, timeout=6)
+    stderr_buffer = io.StringIO()
+    stdout_buffer = io.StringIO()
+    with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
+        probe = yf.download("AAPL", period="5d", interval="1d", progress=False, threads=False, timeout=6)
     return not probe.empty and "Close" in probe.columns
 
 
@@ -198,27 +200,6 @@ def has_chatgpt_access() -> bool:
     return is_available
 
 
-def has_tradingview_ta_available() -> bool:
-    """Check if the tradingview-ta library is installed and importable."""
-    global _tradingview_ta_cache
-
-    cached_value = _cached_connectivity_value(
-        _tradingview_ta_cache,
-        success_ttl=TRADINGVIEW_TA_SUCCESS_TTL_SECONDS,
-        failure_ttl=TRADINGVIEW_TA_FAILURE_TTL_SECONDS,
-    )
-    if cached_value is not None:
-        return cached_value
-
-    try:
-        __import__("tradingview_ta")
-        _tradingview_ta_cache = _cache_result(True)
-        return True
-    except ImportError:
-        _tradingview_ta_cache = _cache_result(False)
-        return False
-
-
 def _normalize_tradingview_section(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
@@ -275,12 +256,11 @@ def fetch_tradingview_metrics(
 
 def reset_connectivity_caches() -> None:
     global _remote_market_access_cache, _remote_logo_access_cache
-    global _google_hk_access_cache, _chatgpt_access_cache, _tradingview_ta_cache
+    global _google_hk_access_cache, _chatgpt_access_cache
     _remote_market_access_cache = None
     _remote_logo_access_cache = None
     _google_hk_access_cache = None
     _chatgpt_access_cache = None
-    _tradingview_ta_cache = None
 
 
 def last_remote_market_check_at() -> float | None:
@@ -293,7 +273,3 @@ def last_remote_logo_check_at() -> float | None:
 
 def last_google_hk_check_at() -> float | None:
     return _cache_checked_at(_google_hk_access_cache)
-
-
-def last_tradingview_ta_check_at() -> float | None:
-    return _cache_checked_at(_tradingview_ta_cache)

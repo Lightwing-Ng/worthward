@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import io
 import logging
 import math
+import contextlib
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -95,20 +97,27 @@ def _download_daily_history_with_yfinance(
     """
     Serialize yfinance downloads because yfinance 1.2.0 mutates module-level
     shared state during each request and is not safe under concurrent calls.
+
+    yfinance may also emit noisy diagnostics directly to stderr when it cannot
+    resolve symbols like `MSFT.US`. We silence that low-level output here and
+    let the caller decide whether to fall back to Longbridge.
     """
     with YFINANCE_DOWNLOAD_LOCK:
-        return yf.download(
-            tickers=ticker,
-            start=start,
-            end=end,
-            period=period,
-            interval=interval,
-            auto_adjust=False,
-            progress=False,
-            multi_level_index=False,
-            threads=False,
-            timeout=12,
-        )
+        stderr_buffer = io.StringIO()
+        stdout_buffer = io.StringIO()
+        with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
+            return yf.download(
+                tickers=ticker,
+                start=start,
+                end=end,
+                period=period,
+                interval=interval,
+                auto_adjust=False,
+                progress=False,
+                multi_level_index=False,
+                threads=False,
+                timeout=12,
+            )
 
 
 def _load_longbridge_market_settings():
@@ -244,12 +253,15 @@ def _download_daily_history_with_fallback(
         period: str | None = None,
 ) -> pd.DataFrame:
     try:
-        return _download_daily_history_with_yfinance(
+        dataset = _download_daily_history_with_yfinance(
             ticker,
             start=start,
             period=period,
             interval="1d",
         )
+        if dataset is None or dataset.empty:
+            raise ValueError(f"No 1-day market data returned for {ticker} via yfinance.")
+        return dataset
     except Exception as exc:
         yfinance_error = exc
 

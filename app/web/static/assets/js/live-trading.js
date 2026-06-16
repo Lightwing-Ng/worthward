@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.9.1
+ * Code version: v1.9.2
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -911,7 +911,7 @@ document.addEventListener("DOMContentLoaded", () => {
         positionList.innerHTML = positions.map((item) => {
             const rawTicker = normalizeTicker(item?.symbol);
             const displayTicker = resolvePositionInputTicker(item) || "--";
-            const companyName = item?.symbol_name || item?.symbol || displayTicker;
+            const companyName = item?.symbol_name || displayTicker || item?.symbol || "--";
             const logoUrls = [
                 buildMarketStoreLogoUrl(rawTicker),
                 rawTicker !== displayTicker ? buildMarketStoreLogoUrl(displayTicker) : "",

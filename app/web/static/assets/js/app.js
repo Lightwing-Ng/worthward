@@ -2608,7 +2608,6 @@
 
     const refreshSharedSelectField = (field) => {
         syncSharedSelectTriggerLabel(field);
-        renderSharedSelectDropdown(field);
     };
 
     const initializeSharedSelectField = (field) => {

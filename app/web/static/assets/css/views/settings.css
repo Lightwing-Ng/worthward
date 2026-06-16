@@ -1682,8 +1682,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     position: absolute;
     left: 0;
     top: 0;
-    width: var(--local-store-pagination-slot-size);
-    height: var(--local-store-pagination-slot-size);
+    inline-size: var(--local-store-pagination-slot-size);
+    block-size: var(--local-store-pagination-slot-size);
+    min-width: var(--local-store-pagination-slot-size);
+    min-height: var(--local-store-pagination-slot-size);
+    max-width: var(--local-store-pagination-slot-size);
+    max-height: var(--local-store-pagination-slot-size);
+    aspect-ratio: 1 / 1;
     border-radius: var(--local-store-pagination-indicator-radius);
     background: var(--local-store-pagination-indicator-background);
     box-shadow: var(--local-store-pagination-indicator-shadow);
@@ -1709,8 +1714,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .local-store-page-button {
     position: relative;
     z-index: var(--layer-surface-content);
-    width: var(--local-store-pagination-slot-size);
-    height: var(--local-store-pagination-slot-size);
+    inline-size: var(--local-store-pagination-slot-size);
+    block-size: var(--local-store-pagination-slot-size);
+    min-width: var(--local-store-pagination-slot-size);
+    min-height: var(--local-store-pagination-slot-size);
+    max-width: var(--local-store-pagination-slot-size);
+    max-height: var(--local-store-pagination-slot-size);
+    aspect-ratio: 1 / 1;
     flex-shrink: 0;
     padding: 0;
     border-radius: var(--local-store-pagination-button-radius);

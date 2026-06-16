@@ -58,11 +58,9 @@ from app.infrastructure.connectivity import (
     has_google_hk_access,
     has_remote_logo_access,
     has_remote_market_access,
-    has_tradingview_ta_available,
     last_google_hk_check_at,
     last_remote_logo_check_at,
     last_remote_market_check_at,
-    last_tradingview_ta_check_at,
     reset_connectivity_caches,
 )
 from app.core.config import (
@@ -76,6 +74,7 @@ from app.core.config import (
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
 from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
+    build_investment_payload_from_longbridge,
     merge_investment_payloads,
     normalize_investment_payload_tickers,
 )
@@ -1859,26 +1858,14 @@ def build_web_runtime() -> WebRuntime:
                     "is_available": False,
                     "is_pending": True,
                 },
-                {
-                    "key": "tradingview-ta",
-                    "name": "tradingview-ta",
-                    "status": "Checking...",
-                    "note": "Checking if the tradingview-ta library is installed.",
-                    "checked_at_text": "Last checked: Checking...",
-                    "logo_url": service_logo_url("TradingView-Logo.svg"),
-                    "is_available": False,
-                    "is_pending": True,
-                },
             ]
 
         remote_market_access = has_remote_market_access()
         remote_logo_access = has_remote_logo_access()
         google_hk_access = has_google_hk_access()
-        tradingview_ta_available = has_tradingview_ta_available()
         remote_market_access = bool(remote_market_access)
         remote_logo_access = bool(remote_logo_access)
         google_hk_access = bool(google_hk_access)
-        tradingview_ta_available = bool(tradingview_ta_available)
         return [
             {
                 "key": "market",
@@ -1920,20 +1907,6 @@ def build_web_runtime() -> WebRuntime:
                 "checked_at_text": format_checked_at(last_google_hk_check_at()),
                 "logo_url": service_logo_url("Google__G__logo.svg"),
                 "is_available": google_hk_access,
-                "is_pending": False,
-            },
-            {
-                "key": "tradingview-ta",
-                "name": "tradingview-ta",
-                "status": labels["service_ok"] if tradingview_ta_available else labels["service_down"],
-                "note": (
-                    "The tradingview-ta library is installed, so TradingView technical analysis indicators can be used."
-                    if tradingview_ta_available
-                    else "The tradingview-ta library is not installed, so features requiring it will be unavailable."
-                ),
-                "checked_at_text": format_checked_at(last_tradingview_ta_check_at()),
-                "logo_url": service_logo_url("TradingView-Logo.svg"),
-                "is_available": tradingview_ta_available,
                 "is_pending": False,
             },
         ]
@@ -3658,39 +3631,54 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
     def investment_add_transactions():
-        """Import broker CSV files and incrementally merge them into the local investment store."""
+        """Import or sync broker activity into the local investment store."""
         transactions_file = None
         positions_file = None
         try:
             broker = str(request.form.get("broker", "ibkr")).strip().lower() or "ibkr"
             transactions_file = request.files.get("transactions_csv")
             positions_file = request.files.get("positions_csv")
-            if broker != "ibkr":
+            if broker == "ibkr":
+                if transactions_file is None or positions_file is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Please upload both the Transaction History CSV and the Realized Summary CSV.",
+                    }), 400
+
+                transactions_payload = transactions_file.read()
+                positions_payload = positions_file.read()
+                if not transactions_payload or not positions_payload:
+                    return jsonify({
+                        "success": False,
+                        "error": "Both CSV files must be non-empty.",
+                    }), 400
+
+                imported_payload = build_investment_payload_from_ibkr_csvs(
+                    transaction_csv_bytes=transactions_payload,
+                    positions_csv_bytes=positions_payload,
+                )
+                success_message = (
+                    "IBKR import complete. Matching records were merged incrementally into the local investment store "
+                    "without clearing older data first. The server does not store your original CSV files. "
+                    "They were processed in memory and discarded after the import finished."
+                )
+            elif broker == "longbridge":
+                imported_payload = build_investment_payload_from_longbridge(
+                    load_broker_settings(),
+                    start_date=str(request.form.get("longbridge_start_date", "")).strip(),
+                    end_date=str(request.form.get("longbridge_end_date", "")).strip(),
+                )
+                success_message = (
+                    "Longbridge sync complete. Historical orders and cash-flow records were pulled through the configured "
+                    "Longbridge authentication session, then merged incrementally into the local investment store "
+                    "without clearing older data first."
+                )
+            else:
                 return jsonify({
                     "success": False,
-                    "error": (
-                        f"{broker.upper()} import is reserved for the future broker adapter layer. "
-                        "Please keep IBKR selected for now."
-                    ),
-                }), 400
-            if transactions_file is None or positions_file is None:
-                return jsonify({
-                    "success": False,
-                    "error": "Please upload both the Transaction History CSV and the Realized Summary CSV.",
+                    "error": f"{broker.upper()} investment import is not implemented yet.",
                 }), 400
 
-            transactions_payload = transactions_file.read()
-            positions_payload = positions_file.read()
-            if not transactions_payload or not positions_payload:
-                return jsonify({
-                    "success": False,
-                    "error": "Both CSV files must be non-empty.",
-                }), 400
-
-            imported_payload = build_investment_payload_from_ibkr_csvs(
-                transaction_csv_bytes=transactions_payload,
-                positions_csv_bytes=positions_payload,
-            )
             investment_payload = merge_investment_payloads(
                 load_normalized_investment_payload(),
                 imported_payload,
@@ -3715,11 +3703,7 @@ def build_web_runtime() -> WebRuntime:
 
             return jsonify({
                 "success": True,
-                "message": (
-                    "Import complete. Matching records were merged incrementally into the local investment store "
-                    "without clearing older data first. The server does not store your original CSV files. "
-                    "They were processed in memory and discarded after the import finished."
-                ),
+                "message": success_message,
                 "summary": investment_payload.get("summary", {}),
                 "freshness_refresh_failures": freshness_refresh_failures,
                 "transactions": investment_payload.get("transactions", []),

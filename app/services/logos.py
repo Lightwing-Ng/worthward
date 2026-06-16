@@ -6,9 +6,12 @@ Code version: v0.3.2
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, timezone
+import io
 import logging
 import re
+from threading import Lock
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -41,6 +44,7 @@ TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
 LOGGER = logging.getLogger(__name__)
+YFINANCE_LOOKUP_LOCK = Lock()
 
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
@@ -57,6 +61,32 @@ ISSUER_WEBSITE_HINTS = {
     "SCHWAB": "https://www.schwabassetmanagement.com",
     "SPDR": "https://www.ssga.com",
 }
+
+
+def _run_yfinance_silently(callback):
+    stderr_buffer = io.StringIO()
+    stdout_buffer = io.StringIO()
+    with YFINANCE_LOOKUP_LOCK:
+        with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
+            return callback()
+
+
+def _search_yfinance_quotes(query: str) -> list[dict[str, object]]:
+    search = _run_yfinance_silently(lambda: yf.Search(
+        query,
+        max_results=20,
+        news_count=0,
+        lists_count=0,
+        recommended=0,
+        raise_errors=False,
+    ))
+    quotes = getattr(search, "quotes", [])
+    return quotes if isinstance(quotes, list) else []
+
+
+def _load_yfinance_ticker_info(ticker: str) -> dict[str, object]:
+    info = _run_yfinance_silently(lambda: yf.Ticker(ticker).info)
+    return info if isinstance(info, dict) else {}
 
 
 def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None) -> str:
@@ -105,14 +135,7 @@ def is_known_ticker(ticker: str) -> bool:
         return False
 
     try:
-        results = yf.Search(
-            normalized_ticker,
-            max_results=20,
-            news_count=0,
-            lists_count=0,
-            recommended=0,
-            raise_errors=False,
-        ).quotes
+        results = _search_yfinance_quotes(normalized_ticker)
         for item in results:
             symbol = str(item.get("symbol", "")).upper()
             quote_type = str(item.get("quoteType", "")).upper()
@@ -122,7 +145,7 @@ def is_known_ticker(ticker: str) -> bool:
         LOGGER.warning("Ticker search validation failed for %s: %s", normalized_ticker, exc)
 
     try:
-        info = yf.Ticker(normalized_ticker).info
+        info = _load_yfinance_ticker_info(normalized_ticker)
     except Exception as exc:
         LOGGER.warning("Ticker info validation failed for %s: %s", normalized_ticker, exc)
         return False
@@ -226,7 +249,7 @@ def resolve_website(ticker: str, company_name: str, website: str | None) -> str 
 
 def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
     try:
-        info = yf.Ticker(ticker).info
+        info = _load_yfinance_ticker_info(ticker)
     except Exception as exc:
         LOGGER.warning("Quote profile remote lookup failed for %s: %s", ticker, exc)
         info = {}
@@ -515,15 +538,7 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         remote_items = []
     else:
         try:
-            search = yf.Search(
-                normalized_query,
-                max_results=20,
-                news_count=0,
-                lists_count=0,
-                recommended=0,
-                raise_errors=False,
-            )
-            results = search.quotes
+            results = _search_yfinance_quotes(normalized_query)
         except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
             LOGGER.warning("Ticker search remote lookup failed for %s: %s", normalized_query, exc)
             results = []

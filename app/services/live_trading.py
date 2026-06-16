@@ -18,7 +18,9 @@ from app.core.broker_settings import (
     BrokerSettings,
     has_longbridge_credentials,
     normalize_longbridge_access_token,
+    uses_longbridge_cli_oauth,
 )
+from app.infrastructure.longbridge_cli import run_longbridge_cli_json
 
 LONGBRIDGE_OPENAPI_BASE_URL = "https://openapi.longbridge.com"
 LONGBRIDGE_OPENAPI_TIMEOUT_SECONDS = 8
@@ -242,6 +244,85 @@ def _build_longbridge_trade_context(settings: BrokerSettings) -> Any:
     return trade_context_cls(config)
 
 
+def _load_longbridge_account_balances_via_cli(settings: BrokerSettings) -> list[LiveAccountBalanceResult]:
+    payload = run_longbridge_cli_json(settings, ["assets", "--format", "json"], timeout_seconds=20)
+    balance_items = payload if isinstance(payload, list) else []
+
+    balances: list[LiveAccountBalanceResult] = []
+    for item in balance_items:
+        if not isinstance(item, dict):
+            continue
+        balance_currency = _extract_position_value(item, ["currency", "base_currency"], "--")
+        cash_infos: list[LiveCashInfoResult] = []
+        for cash_item in _coerce_sequence(item.get("cash_infos")):
+            cash_infos.append(LiveCashInfoResult(
+                withdraw_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "withdraw_cash")),
+                available_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "available_cash")),
+                frozen_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "frozen_cash")),
+                settling_cash=_stringify_decimal_like(_get_mapping_or_attr(cash_item, "settling_cash")),
+                currency=_extract_position_value(cash_item, ["currency"], balance_currency),
+            ))
+
+        frozen_transaction_fees: list[LiveFrozenTransactionFeeResult] = []
+        for fee_item in _coerce_sequence(item.get("frozen_transaction_fees")):
+            frozen_transaction_fees.append(LiveFrozenTransactionFeeResult(
+                currency=_extract_position_value(fee_item, ["currency"], balance_currency),
+                frozen_transaction_fee=_stringify_decimal_like(
+                    _get_mapping_or_attr(fee_item, "frozen_transaction_fee"),
+                ),
+            ))
+
+        balances.append(LiveAccountBalanceResult(
+            total_cash=_stringify_decimal_like(item.get("total_cash")),
+            max_finance_amount=_stringify_decimal_like(item.get("max_finance_amount")),
+            remaining_finance_amount=_stringify_decimal_like(item.get("remaining_finance_amount")),
+            risk_level=_stringify_decimal_like(item.get("risk_level")),
+            margin_call=_stringify_decimal_like(item.get("margin_call")),
+            currency=balance_currency,
+            market=_extract_position_value(item, ["market"], ""),
+            net_assets=_stringify_decimal_like(item.get("net_assets")),
+            init_margin=_stringify_decimal_like(item.get("init_margin")),
+            maintenance_margin=_stringify_decimal_like(item.get("maintenance_margin")),
+            buy_power=_stringify_decimal_like(item.get("buy_power")),
+            cash_infos=cash_infos,
+            frozen_transaction_fees=frozen_transaction_fees,
+        ))
+
+    balances.sort(key=lambda item: item.currency)
+    return balances
+
+
+def _load_longbridge_stock_positions_via_cli(settings: BrokerSettings) -> list[LivePositionResult]:
+    payload = run_longbridge_cli_json(settings, ["positions", "--format", "json"], timeout_seconds=20)
+    raw_positions = payload if isinstance(payload, list) else []
+
+    positions: list[LivePositionResult] = []
+    for item in raw_positions:
+        if not isinstance(item, dict):
+            continue
+        symbol = _extract_position_value(item, ["symbol", "stock_code"])
+        if not symbol:
+            continue
+        positions.append(LivePositionResult(
+            symbol=symbol,
+            symbol_name=_extract_position_value(item, ["symbol_name", "name"], symbol),
+            quantity=_stringify_decimal_like(item.get("quantity")),
+            available_quantity=_stringify_decimal_like(
+                _first_non_empty_string([
+                    item.get("available_quantity"),
+                    item.get("enable_quantity"),
+                ]),
+            ),
+            cost_price=_stringify_decimal_like(item.get("cost_price")),
+            currency=_extract_position_value(item, ["currency"], "--"),
+            market=_extract_position_value(item, ["market"], "--"),
+            account_channel=_extract_position_value(item, ["account_channel"], "Connected"),
+        ))
+
+    positions.sort(key=lambda item: item.symbol)
+    return positions
+
+
 def normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
@@ -345,6 +426,9 @@ def load_longbridge_account_label(settings: BrokerSettings) -> str:
 
 
 def load_longbridge_account_balances(settings: BrokerSettings) -> list[LiveAccountBalanceResult]:
+    if uses_longbridge_cli_oauth(settings):
+        return _load_longbridge_account_balances_via_cli(settings)
+
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 
@@ -408,6 +492,9 @@ def load_longbridge_account_balances(settings: BrokerSettings) -> list[LiveAccou
 
 
 def load_longbridge_stock_positions(settings: BrokerSettings) -> list[LivePositionResult]:
+    if uses_longbridge_cli_oauth(settings):
+        return _load_longbridge_stock_positions_via_cli(settings)
+
     if not has_longbridge_credentials(settings):
         raise ValueError("Save your Longbridge App Key, App Secret, and Access Token first.")
 

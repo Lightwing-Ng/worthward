@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.36.0-p2
+ * Code version: v1.36.2
  */
 
 export function createInvestmentDataUtils({
@@ -253,6 +253,44 @@ export function createInvestmentDataUtils({
         };
     }
 
+    function compareInvestmentTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftDatetime = String(leftTxn?.datetime || leftTxn?.date || '');
+        const rightDatetime = String(rightTxn?.datetime || rightTxn?.date || '');
+        if (leftDatetime !== rightDatetime) {
+            return leftDatetime.localeCompare(rightDatetime);
+        }
+        const leftDate = String(leftTxn?.date || '');
+        const rightDate = String(rightTxn?.date || '');
+        if (leftDate !== rightDate) {
+            return leftDate.localeCompare(rightDate);
+        }
+        const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
+        const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);
+        return leftRow - rightRow;
+    }
+
+    function getAuthoritativePositionSnapshot() {
+        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
+            return null;
+        }
+        const rawSnapshot = window.ANTIGRAVITY_INVESTMENT_DATA?.position_snapshot;
+        if (!rawSnapshot || typeof rawSnapshot !== 'object') {
+            return {};
+        }
+        const normalizedSnapshot = {};
+        Object.entries(rawSnapshot).forEach(([ticker, snapshot]) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            if (!normalizedTicker || !snapshot || typeof snapshot !== 'object') return;
+            const quantity = Number(snapshot.quantity);
+            const costPrice = Number(snapshot.cost_price);
+            normalizedSnapshot[normalizedTicker] = {
+                quantity: Number.isFinite(quantity) ? quantity : 0,
+                costPrice: Number.isFinite(costPrice) ? costPrice : null,
+            };
+        });
+        return normalizedSnapshot;
+    }
+
     function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
         if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
@@ -277,6 +315,30 @@ export function createInvestmentDataUtils({
         }
         const price = getTransactionPrice(txn);
         return Number.isFinite(price) ? price : 0;
+    }
+
+    function getTransactionRenderedSplitFactor(txn, tickerPriceIndex) {
+        if (!shouldTrackHoldingTicker(txn)) return 1;
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (!['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)) return 1;
+        const ticker = normalizeInvestmentTicker(txn?.ticker);
+        const rawPrice = getTransactionPrice(txn);
+        if (!ticker || !Number.isFinite(rawPrice) || rawPrice <= 0) return 1;
+        const valuationDate = normalizeLedgerDate(txn?.date);
+        const renderedClose = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[ticker], valuationDate);
+        const adjustedPrice = adjustTradePriceForRenderedSeries(rawPrice, renderedClose);
+        if (!Number.isFinite(adjustedPrice) || adjustedPrice <= 0) return 1;
+        const factor = rawPrice / adjustedPrice;
+        if (!Number.isFinite(factor) || factor <= 0) return 1;
+        const roundedFactor = Math.round(factor);
+        return Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2 ? roundedFactor : factor;
+    }
+
+    function getTransactionValuationQuantity(txn, tickerPriceIndex) {
+        const quantity = getTransactionQuantity(txn);
+        if (!Number.isFinite(quantity)) return quantity;
+        const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
+        return quantity * (Number.isFinite(factor) && factor > 0 ? factor : 1);
     }
 
     function resetPositionState(state) {
@@ -498,6 +560,10 @@ export function createInvestmentDataUtils({
 
     function buildValuationStatus({ backendFailures = [], fallbackTickers = [], missingTickers = [] } = {}) {
         const normalizedBackendFailures = Array.isArray(backendFailures) ? backendFailures : [];
+        const formatDisplayTicker = (ticker) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            return normalizedTicker.endsWith('.US') ? normalizedTicker.slice(0, -3) : normalizedTicker;
+        };
         const normalizedFallbackTickers = Array.from(new Set((Array.isArray(fallbackTickers) ? fallbackTickers : [])
             .map((ticker) => normalizeInvestmentTicker(ticker))
             .filter((ticker) => !isForexPairTicker(ticker))
@@ -524,13 +590,17 @@ export function createInvestmentDataUtils({
 
         const messageParts = [];
         if (normalizedMissingTickers.length) {
-            messageParts.push(`Valuation is incomplete for ${normalizedMissingTickers.join(', ')} because no usable local close history was found.`);
+            messageParts.push(`Valuation is incomplete for ${normalizedMissingTickers.map((ticker) => formatDisplayTicker(ticker)).join(', ')} because no usable local close history was found.`);
         }
         if (normalizedFallbackTickers.length) {
-            messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.join(', ')} until local market history is refreshed.`);
+            messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.map((ticker) => formatDisplayTicker(ticker)).join(', ')} until local market history is refreshed.`);
         }
         if (hasBackendFailures) {
-            messageParts.push(filteredBackendFailures.map((entry) => entry?.message).filter(Boolean).join(' '));
+            messageParts.push(filteredBackendFailures.map((entry) => {
+                const message = String(entry?.message || '');
+                const ticker = normalizeInvestmentTicker(entry?.ticker || '');
+                return ticker ? message.replaceAll(ticker, formatDisplayTicker(ticker)) : message;
+            }).filter(Boolean).join(' '));
         }
 
         return {
@@ -726,15 +796,18 @@ export function createInvestmentDataUtils({
         return points;
     }
 
-    function buildTickerSummaries(transactions, latestPrices, totalEquity) {
+    function buildTickerSummaries(transactions, latestPrices, totalEquity, tickerClosePrices = {}) {
         const tickerMap = new Map();
-        const orderedTransactions = [...transactions].sort((left, right) => new Date(left.date) - new Date(right.date));
+        const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
+        const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
 
         orderedTransactions.forEach((txn) => {
             if (!shouldTrackHoldingTicker(txn)) return;
             const ticker = String(txn.ticker).trim().toUpperCase();
             const normalizedType = getNormalizedTransactionType(txn);
-            const quantity = getTransactionQuantity(txn);
+            const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
             const amount = getTransactionAmount(txn);
 
             if (!tickerMap.has(ticker)) {
@@ -771,15 +844,36 @@ export function createInvestmentDataUtils({
             }
         });
 
+        if (useAuthoritativePositionSnapshot) {
+            Object.keys(authoritativePositionSnapshot).forEach((ticker) => {
+                if (!tickerMap.has(ticker)) {
+                    tickerMap.set(ticker, createPositionState(ticker));
+                }
+            });
+        }
+
         return Array.from(tickerMap.values()).map((summary) => {
-            const hasOpenPosition = !isFlatPosition(summary.shares);
-            const averagePrice = hasOpenPosition ? (summary.totalCost / Math.abs(summary.shares)) : null;
+            const snapshotEntry = useAuthoritativePositionSnapshot
+                ? authoritativePositionSnapshot[summary.ticker] ?? null
+                : null;
+            const shares = useAuthoritativePositionSnapshot
+                ? Number(snapshotEntry?.quantity) || 0
+                : summary.shares;
+            const totalCost = useAuthoritativePositionSnapshot && snapshotEntry
+                ? Math.abs(shares) * (Number(snapshotEntry.costPrice) || 0)
+                : summary.totalCost;
+            const hasOpenPosition = !isFlatPosition(shares);
+            const averagePrice = hasOpenPosition
+                ? (snapshotEntry && Number.isFinite(snapshotEntry.costPrice)
+                    ? snapshotEntry.costPrice
+                    : (totalCost / Math.abs(shares)))
+                : null;
             const lastPrice = latestPrices[summary.ticker] ?? null;
-            const marketValue = hasOpenPosition && lastPrice !== null ? summary.shares * lastPrice : 0;
+            const marketValue = hasOpenPosition && lastPrice !== null ? shares * lastPrice : 0;
             const unrealizedPnl = hasOpenPosition && lastPrice !== null && averagePrice !== null
-                ? (summary.shares > 0
-                    ? (lastPrice - averagePrice) * summary.shares
-                    : (averagePrice - lastPrice) * Math.abs(summary.shares))
+                ? (shares > 0
+                    ? (lastPrice - averagePrice) * shares
+                    : (averagePrice - lastPrice) * Math.abs(shares))
                 : null;
             const positionWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > 1e-9 && hasOpenPosition
                 ? (marketValue / totalEquity) * 100
@@ -787,6 +881,8 @@ export function createInvestmentDataUtils({
 
             return {
                 ...summary,
+                shares,
+                totalCost,
                 averagePrice,
                 lastPrice,
                 marketValue,
@@ -819,6 +915,7 @@ export function createInvestmentDataUtils({
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        compareInvestmentTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
         createPositionState,
@@ -839,12 +936,15 @@ export function createInvestmentDataUtils({
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
+        getAuthoritativePositionSnapshot,
         getMoneyMarketTickerSet,
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
         getTransactionEconomicAmount,
         getTransactionEffectiveUnitPrice,
+        getTransactionRenderedSplitFactor,
+        getTransactionValuationQuantity,
         getTransactionPrice,
         getTransactionQuantity,
         isFlatPosition,
