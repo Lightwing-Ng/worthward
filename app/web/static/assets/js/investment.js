@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.37.4
+ * Code version: v1.37.5
+ * - Changed: Investment equity canvas now plots only ledger-anchored history dates and rounds plotted values to the same 2-decimal precision used by the history table, so the curve starts at the first rendered total-equity value without hidden intermediate market-only micro-moves
  * - Added: Transaction history now uses the shared Local store pagination shell so large ledgers render a smaller DOM slice per page and switch faster
  * - Fixed: Stock detail and ticker identity displays now normalize Longbridge `.US` symbols to the short display ticker when rendering UI labels and fallback names
  * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
@@ -5493,19 +5494,35 @@ document.addEventListener('DOMContentLoaded', () => {
             sortedChartPoints.map((point) => point.date),
             selectedInvestmentEquityRange,
         ));
+        const hasRenderableHistoryAnchor = (point) => (
+            Array.isArray(point?.anchor_ledger_nos)
+            && point.anchor_ledger_nos.some((ledgerNo) => {
+                const normalizedLedgerNo = Number(ledgerNo);
+                return Number.isFinite(normalizedLedgerNo) && normalizedLedgerNo > 0;
+            })
+        );
         const visibleChartPointEntries = sortedChartPoints
             .map((point, sourceIndex) => ({ point, sourceIndex }))
             .filter(({ point }) => (
                 !visibleRangeLabels.size
                 || visibleRangeLabels.has(normalizeLedgerDate(point?.date))
             ));
-        const visiblePoints = visibleChartPointEntries.length
-            ? visibleChartPointEntries
-            : sortedChartPoints.map((point, sourceIndex) => ({ point, sourceIndex }));
+        const renderableVisiblePointEntries = visibleChartPointEntries.filter(({ point }) => hasRenderableHistoryAnchor(point));
+        const renderableAllPointEntries = sortedChartPoints
+            .map((point, sourceIndex) => ({ point, sourceIndex }))
+            .filter(({ point }) => hasRenderableHistoryAnchor(point));
+        const visiblePoints = visibleRangeLabels.size
+            ? renderableVisiblePointEntries
+            : renderableAllPointEntries;
         const visibleChartPoints = visiblePoints.map(({ point }) => point);
         const visiblePointSourceIndexes = visiblePoints.map(({ sourceIndex }) => sourceIndex);
+        const roundChartCurrencyValue = (value) => {
+            const normalizedValue = Number(value);
+            if (!Number.isFinite(normalizedValue)) return null;
+            return Math.round(normalizedValue * 100) / 100;
+        };
         const rawDates = visibleChartPoints.map((point) => point.date);
-        const equity = visibleChartPoints.map((point) => point.total_equity);
+        const equity = visibleChartPoints.map((point) => roundChartCurrencyValue(point.total_equity));
         const visibleChartPointIndexByLedgerNo = new Map();
         visibleChartPoints.forEach((point, index) => {
             const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
