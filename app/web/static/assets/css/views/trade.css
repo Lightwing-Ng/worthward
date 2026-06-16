@@ -373,6 +373,14 @@
     min-height: 0;
 }
 
+.dca-transactions-shell {
+    --dca-transactions-scrollbar-width: 0px;
+}
+
+.dca-transactions-shell > .trade-transactions-table[aria-hidden="true"] {
+    width: calc(100% - var(--dca-transactions-scrollbar-width));
+}
+
 .trade-transactions-table {
     width: 100%;
     min-width: 352px;
@@ -453,6 +461,12 @@
 .trade-transactions-number.equity {
     min-width: 0;
     vertical-align: top;
+}
+
+.dca-transactions-shell .trade-transactions-index,
+.dca-transactions-shell .trade-transactions-date,
+.dca-transactions-shell .trade-transactions-number {
+    width: auto;
 }
 
 .dca-transactions-shell .dca-transactions-col-index {

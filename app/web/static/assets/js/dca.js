@@ -1,4 +1,4 @@
-/* Code version: v0.1.5 */
+/* Code version: v0.1.6 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -18,6 +18,49 @@
         const media = window.matchMedia("(prefers-color-scheme: dark)");
         media.addEventListener?.("change", callback);
         return () => media.removeEventListener?.("change", callback);
+    };
+
+    const buildTableAlignmentSync = (tableShell, scrollContainer, scrollbarVariableName) => {
+        if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return null;
+
+        let frameId = 0;
+        let resizeObserver = null;
+
+        const syncAlignment = () => {
+            frameId = 0;
+            const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
+            tableShell.style.setProperty(scrollbarVariableName, `${scrollbarWidth}px`);
+        };
+
+        const scheduleAlignmentSync = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(syncAlignment);
+        };
+
+        scheduleAlignmentSync();
+        window.addEventListener("resize", scheduleAlignmentSync);
+
+        if (window.ResizeObserver) {
+            resizeObserver = new ResizeObserver(() => {
+                scheduleAlignmentSync();
+            });
+            resizeObserver.observe(tableShell);
+            resizeObserver.observe(scrollContainer);
+            const bodyTable = scrollContainer.querySelector("table");
+            if (bodyTable instanceof HTMLElement) {
+                resizeObserver.observe(bodyTable);
+            }
+        }
+
+        return () => {
+            if (frameId) {
+                window.cancelAnimationFrame(frameId);
+                frameId = 0;
+            }
+            window.removeEventListener("resize", scheduleAlignmentSync);
+            resizeObserver?.disconnect();
+            tableShell.style.removeProperty(scrollbarVariableName);
+        };
     };
 
     const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
@@ -45,6 +88,10 @@
     const initDcaWorkspace = () => {
         const state = window.ANTIGRAVITY_APP;
         if (!state || state.currentView !== "dca" || !window.Chart || !state.dcaResult) return;
+        if (typeof bootstrap.dcaTableAlignmentCleanup === "function") {
+            bootstrap.dcaTableAlignmentCleanup();
+            bootstrap.dcaTableAlignmentCleanup = null;
+        }
 
         const priceCanvas = document.getElementById("tradePriceChart");
         const equityCanvas = document.getElementById("tradeEquityChart");
@@ -452,6 +499,11 @@
         attachHover(priceCanvas, priceChart);
         attachHover(equityCanvas, equityChart);
         renderContributionTable();
+        bootstrap.dcaTableAlignmentCleanup = buildTableAlignmentSync(
+            document.querySelector(".dca-transactions-shell"),
+            document.querySelector(".dca-transactions-shell .trade-transactions-wrap"),
+            "--dca-transactions-scrollbar-width"
+        );
         bindColorSchemeRefresh(() => {
             const nextTheme = readThemeTokens();
             priceChart.data.datasets[0].borderColor = nextTheme.accentPrimary;

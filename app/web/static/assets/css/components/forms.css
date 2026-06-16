@@ -779,9 +779,10 @@
 	overflow-x: hidden;
 	overflow-y: auto;
 	overscroll-behavior: contain;
-	scrollbar-gutter: stable;
+	scrollbar-gutter: auto;
 	scrollbar-width: thin;
 	scrollbar-color: var(--theme-muted-translucent) transparent;
+	background-clip: padding-box;
 }
 .backtest-shared-select-field {
 	overflow: visible;
@@ -823,7 +824,13 @@
 }
 .trade-strategy-dropdown::-webkit-scrollbar { width: 8px; }
 .trade-strategy-dropdown::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
-.trade-strategy-dropdown::-webkit-scrollbar-thumb { background: var(--theme-muted-translucent); border-radius: var(--radius-pill); }
+.trade-strategy-dropdown::-webkit-scrollbar-thumb {
+	background: var(--theme-muted-translucent);
+	border: 2px solid transparent;
+	border-radius: var(--radius-pill);
+	background-clip: padding-box;
+}
+.trade-strategy-dropdown::-webkit-scrollbar-corner { background: transparent; }
 .trade-strategy-dropdown-group + .trade-strategy-dropdown-group {
 	margin-top: 10px;
 	padding-top: 10px;
