@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.16
+Code version: v0.3.18
 """
 
 from __future__ import annotations
@@ -387,6 +387,28 @@ def build_web_runtime() -> WebRuntime:
             }
         return ticker_profiles
 
+    def iter_investment_store_ticker_aliases(ticker: str) -> list[str]:
+        normalized_ticker = normalize_ticker_input(ticker)
+        if not normalized_ticker:
+            return []
+        aliases: list[str] = [normalized_ticker]
+        if normalized_ticker.endswith(".US"):
+            base_ticker = normalized_ticker[:-3].strip()
+            if base_ticker and base_ticker not in aliases:
+                aliases.append(base_ticker)
+        return aliases
+
+    def resolve_investment_history_store_path(
+            ticker: str,
+            *,
+            interval: str = "1d",
+    ) -> Path | None:
+        for candidate in iter_investment_store_ticker_aliases(ticker):
+            path = intraday_history_store_path_for(candidate, interval) if interval == "1m" else history_store_path_for(candidate)
+            if path.exists() and path.stat().st_size > 0:
+                return path
+        return None
+
     def load_price_history_series(path: Path) -> list[dict[str, Any]]:
         dataset = pd.read_parquet(path, columns=["Date", "Close"]).sort_values("Date")
         prices: list[dict[str, Any]] = []
@@ -411,8 +433,14 @@ def build_web_runtime() -> WebRuntime:
             if is_configured_money_market_ticker(ticker):
                 continue
             try:
-                path = history_store_path_for(ticker)
-                if not path.exists():
+                path = resolve_investment_history_store_path(ticker)
+                if path is None or classify_daily_store_status(ticker) != "fresh":
+                    try:
+                        refresh_history_store(ticker)
+                    except Exception:
+                        pass
+                    path = resolve_investment_history_store_path(ticker)
+                if path is None:
                     failures.append({
                         "ticker": ticker,
                         "reason": "missing_store",
@@ -1735,16 +1763,20 @@ def build_web_runtime() -> WebRuntime:
         ]
 
     def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
-        profile_record = load_profile_record(ticker)
-        if profile_record is None:
+        normalized_ticker = normalize_ticker_input(ticker)
+        for candidate in iter_investment_store_ticker_aliases(ticker):
+            profile_record = load_profile_record(candidate)
+            if profile_record is None:
+                continue
+            logo_url = resolve_stored_logo_url(candidate)
+            if not logo_url:
+                continue
+            company_name = str(profile_record.get("company_name") or "").strip()
+            candidate_upper = str(candidate or "").strip().upper()
+            if company_name and company_name.upper() != candidate_upper:
+                return company_name, logo_url
+        if normalized_ticker:
             return None
-        logo_url = resolve_stored_logo_url(ticker)
-        if not logo_url:
-            return None
-        company_name = str(profile_record.get("company_name") or "").strip()
-        normalized_ticker = str(ticker or "").strip().upper()
-        if company_name and company_name.upper() != normalized_ticker:
-            return company_name, logo_url
         return None
 
     def resolve_ticker_identity_snapshot(
@@ -1756,18 +1788,32 @@ def build_web_runtime() -> WebRuntime:
         if profile_snapshot is not None:
             return profile_snapshot
 
-        profile_record = load_profile_record(ticker) or {}
-        normalized_ticker = str(ticker or "").strip().upper()
-        company_name = str(profile_record.get("company_name") or normalized_ticker).strip() or normalized_ticker
-        logo_url = resolve_stored_logo_url(ticker)
+        normalized_ticker = normalize_ticker_input(ticker)
+        company_name = normalized_ticker
+        logo_url = ""
+        for candidate in iter_investment_store_ticker_aliases(ticker):
+            profile_record = load_profile_record(candidate) or {}
+            candidate_company_name = str(profile_record.get("company_name") or "").strip()
+            candidate_logo_url = resolve_stored_logo_url(candidate)
+            candidate_upper = str(candidate or "").strip().upper()
+            if candidate_company_name and candidate_company_name.upper() != candidate_upper:
+                company_name = candidate_company_name
+            elif not company_name:
+                company_name = candidate_company_name or normalized_ticker
+            if candidate_logo_url and not logo_url:
+                logo_url = candidate_logo_url
+            if logo_url and company_name and company_name.upper() != normalized_ticker:
+                break
+
         if allow_remote_refresh and (not logo_url or company_name.upper() == normalized_ticker):
-            profile = fetch_quote_profile(ticker, force_refresh=True)
-            profile_company_name = str(profile.company_name or "").strip()
-            if profile_company_name and profile_company_name.upper() != normalized_ticker:
-                company_name = profile_company_name
-            else:
-                company_name = company_name or normalized_ticker
-            logo_url = str(profile.logo_url or "").strip() or logo_url
+            for candidate in iter_investment_store_ticker_aliases(ticker):
+                profile = fetch_quote_profile(candidate, force_refresh=True)
+                profile_company_name = str(profile.company_name or "").strip()
+                if profile_company_name and profile_company_name.upper() != str(candidate).upper():
+                    company_name = profile_company_name
+                logo_url = str(profile.logo_url or "").strip() or logo_url
+                if logo_url and company_name and company_name.upper() != normalized_ticker:
+                    break
         return company_name, logo_url
 
     def build_local_market_rows_for_tickers(
@@ -3728,8 +3774,8 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
         try:
-            path = history_store_path_for(ticker)
-            if not path.exists():
+            path = resolve_investment_history_store_path(ticker)
+            if path is None:
                 response = jsonify({"success": False, "error": f"No local data for {ticker}"})
                 response.status_code = 404
                 return apply_no_store_headers(response)
@@ -3766,16 +3812,16 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
         try:
-            path = history_store_path_for(ticker)
+            path = resolve_investment_history_store_path(ticker)
             freshness_scope = request.args.get("freshness_scope", "").strip().lower()
             section_freshness = None
-            if not path.exists():
+            if path is None:
                 if ticker in configured_money_market_tickers:
                     response = jsonify({"success": False, "error": f"No local data for {ticker}"})
                     response.status_code = 404
                     return apply_no_store_headers(response)
                 fetch_history(ticker, include_dividends=False)
-                path = history_store_path_for(ticker)
+                path = resolve_investment_history_store_path(ticker)
             else:
                 if ticker not in configured_money_market_tickers:
                     should_refresh_ticker = True
@@ -3784,7 +3830,12 @@ def build_web_runtime() -> WebRuntime:
                         should_refresh_ticker = ticker in set(section_freshness["open_tickers"])
                     if should_refresh_ticker:
                         ensure_latest_daily_caches([ticker])
+                        path = resolve_investment_history_store_path(ticker) or path
 
+            if path is None:
+                response = jsonify({"success": False, "error": f"No local data for {ticker}"})
+                response.status_code = 404
+                return apply_no_store_headers(response)
             prices = load_price_history_series(path)
             if not prices:
                 response = jsonify({"success": False, "error": f"No price/date data for {ticker}"})
@@ -3818,10 +3869,15 @@ def build_web_runtime() -> WebRuntime:
         try:
             normalized_ticker = validate_ticker_or_raise(ticker)
             refresh_result = None
-            if ensure_store and not has_recent_one_minute_store(normalized_ticker):
+            intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
+            if ensure_store and not has_recent_one_minute_store(normalized_ticker) and intraday_path is None:
                 refresh_result = refresh_one_minute_store(normalized_ticker)
+                intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
 
-            dataset = fetch_history(normalized_ticker, include_dividends=False, interval="1m")
+            if intraday_path is not None:
+                dataset = pd.read_parquet(intraday_path)
+            else:
+                dataset = fetch_history(normalized_ticker, include_dividends=False, interval="1m")
             if dataset.empty:
                 response = jsonify({"success": False, "error": f"No 1-minute market data for {normalized_ticker}"})
                 response.status_code = 404

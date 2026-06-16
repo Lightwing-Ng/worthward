@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.37.1
+ * Code version: v1.37.2
  * - Added: Transaction history now uses the shared Local store pagination shell so large ledgers render a smaller DOM slice per page and switch faster
  * - Fixed: Stock detail and ticker identity displays now normalize Longbridge `.US` symbols to the short display ticker when rendering UI labels and fallback names
  * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
@@ -1446,6 +1446,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return `/market-store/logos/${encodeURIComponent(normalizedTicker || 'stock')}.png`;
     }
 
+    function getInvestmentMarketStoreTickerCandidates(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return [];
+        const candidates = [normalizedTicker];
+        if (normalizedTicker.endsWith('.US')) {
+            const baseTicker = normalizedTicker.slice(0, -3).trim();
+            if (baseTicker && !candidates.includes(baseTicker)) {
+                candidates.push(baseTicker);
+            }
+        }
+        return candidates;
+    }
+
+    function buildMarketStoreLogoUrls(ticker) {
+        return getInvestmentMarketStoreTickerCandidates(ticker).map((candidate) => (
+            `/market-store/logos/${encodeURIComponent(candidate || 'stock')}.png`
+        ));
+    }
+
     function normalizeInvestmentLogoUrlList(logoUrl) {
         const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
         return Array.from(new Set(values
@@ -1455,13 +1474,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resolveInvestmentLogoUrl(profile, ticker) {
         const logoUrl = String(profile?.logo_url || '').trim();
-        return logoUrl || buildMarketStoreLogoUrl(ticker);
+        return logoUrl || buildMarketStoreLogoUrls(ticker)[0] || buildMarketStoreLogoUrl(ticker);
     }
 
     function resolveInvestmentLogoUrls(profile, ticker) {
         return normalizeInvestmentLogoUrlList([
             String(profile?.logo_url || '').trim(),
-            buildMarketStoreLogoUrl(ticker),
+            ...buildMarketStoreLogoUrls(ticker),
         ]);
     }
 
@@ -3146,7 +3165,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectedBroker = getSelectedInvestmentImportBroker();
             const transactionsFile = transactionsCsv?.files?.[0];
             const positionsFile = positionsCsv?.files?.[0];
-
             const formData = new FormData();
             formData.append('broker', selectedBroker);
             if (!SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker)) {
@@ -3630,7 +3648,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
-        const tickerPriceMap = priceHistoryByTicker[normalizedTicker] || {};
+        const tickerPriceMap = getInvestmentMarketStoreTickerCandidates(normalizedTicker).reduce((selectedMap, candidate) => {
+            if (selectedMap && Object.keys(selectedMap).length) return selectedMap;
+            const candidateMap = priceHistoryByTicker[candidate];
+            return candidateMap && typeof candidateMap === 'object' ? candidateMap : selectedMap;
+        }, null) || {};
         const tickerLabels = Object.keys(tickerPriceMap).sort();
         const sharedLabels = getInvestmentSharedChartDateRange(tickerLabels);
         const fullLabels = sharedLabels.length ? sharedLabels : tickerLabels;

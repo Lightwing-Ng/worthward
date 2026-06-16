@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.36.2
+ * Code version: v1.36.3
  */
 
 export function createInvestmentDataUtils({
@@ -108,7 +108,13 @@ export function createInvestmentDataUtils({
     function formatTransactionCommissionDisplay(txn, { includeCurrency = false } = {}) {
         const normalizedType = getNormalizedTransactionType(txn);
         const commission = getTransactionCommission(txn);
+        const feeRowNumbers = Array.isArray(txn?.source?.cash_flow_fee_row_numbers)
+            ? txn.source.cash_flow_fee_row_numbers.filter((value) => Number.isFinite(Number(value)))
+            : [];
         if ((!commission || Math.abs(commission) < 1e-9) && noCommissionTransactionTypes.has(normalizedType)) {
+            return '-';
+        }
+        if ((!commission || Math.abs(commission) < 1e-9) && ['buy', 'sell'].includes(normalizedType) && !feeRowNumbers.length) {
             return '-';
         }
         const absoluteCommission = Math.abs(commission);
