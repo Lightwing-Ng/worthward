@@ -1802,9 +1802,21 @@
     --investment-col-amount-min-width: 32px;
     --investment-col-commission-width: 6%;
     --investment-col-commission-min-width: 32px;
-    --investment-stock-col-realized-width: 14%;
+    --investment-col-market-value-width: 10%;
+    --investment-col-market-value-min-width: 36px;
+    --investment-col-cash-width: 10%;
+    --investment-col-cash-min-width: 36px;
+    --investment-col-equity-width: 10%;
+    --investment-col-equity-min-width: 36px;
+    --investment-stock-col-realized-width: 20%;
+    --investment-stock-col-realized-min-width: 72px;
     width: 100%;
     min-width: 100%;
+}
+
+.investment-ledger-table,
+.investment-stock-details-table {
+    table-layout: fixed;
 }
 
 .investment-history-table thead th {
@@ -1910,22 +1922,22 @@
 
 .investment-ledger-table th:nth-child(9),
 .investment-ledger-table td:nth-child(9) {
-    width: 10%;
-    min-width: 36px;
+    width: var(--investment-col-market-value-width);
+    min-width: var(--investment-col-market-value-min-width);
     text-align: right;
 }
 
 .investment-ledger-table th:nth-child(10),
 .investment-ledger-table td:nth-child(10) {
-    width: 10%;
-    min-width: 36px;
+    width: var(--investment-col-cash-width);
+    min-width: var(--investment-col-cash-min-width);
     text-align: right;
 }
 
 .investment-ledger-table th:nth-child(11),
 .investment-ledger-table td:nth-child(11) {
-    width: 10%;
-    min-width: 36px;
+    width: var(--investment-col-equity-width);
+    min-width: var(--investment-col-equity-min-width);
     text-align: right;
 }
 
@@ -1950,64 +1962,71 @@
 
 .investment-stock-details-table th:nth-child(1),
 .investment-stock-details-table td:nth-child(1) {
-    width: var(--investment-col-no-width);
-    min-width: 0;
+    width: var(--investment-col-broker-width);
+    min-width: var(--investment-col-broker-min-width);
     text-align: center;
 }
 
 .investment-stock-details-table th:nth-child(2),
 .investment-stock-details-table td:nth-child(2) {
-    width: var(--investment-col-time-width);
-    min-width: 0;
-    text-align: right;
+    width: var(--investment-col-no-width);
+    min-width: var(--investment-col-no-min-width);
+    text-align: center;
 }
 
 .investment-stock-details-table th:nth-child(3),
 .investment-stock-details-table td:nth-child(3) {
-    width: var(--investment-col-type-width);
-    min-width: 0;
-    text-align: center;
+    width: var(--investment-col-time-width);
+    min-width: var(--investment-col-time-min-width);
+    text-align: right;
 }
 
 .investment-stock-details-table th:nth-child(4),
 .investment-stock-details-table td:nth-child(4) {
-    width: var(--investment-col-description-width);
-    min-width: 0;
-    text-align: left;
+    width: var(--investment-col-type-width);
+    min-width: var(--investment-col-type-min-width);
+    text-align: center;
 }
 
 .investment-stock-details-table th:nth-child(5),
 .investment-stock-details-table td:nth-child(5) {
-    width: var(--investment-col-currency-width);
-    min-width: 0;
-    text-align: center;
+    width: var(--investment-col-description-width);
+    min-width: var(--investment-col-description-min-width);
+    text-align: left;
 }
 
 .investment-stock-details-table th:nth-child(6),
 .investment-stock-details-table td:nth-child(6) {
-    width: var(--investment-col-amount-width);
-    min-width: 0;
-    text-align: right;
+    width: var(--investment-col-currency-width);
+    min-width: var(--investment-col-currency-min-width);
+    text-align: center;
 }
 
 .investment-stock-details-table th:nth-child(7),
 .investment-stock-details-table td:nth-child(7) {
-    width: var(--investment-col-commission-width);
-    min-width: 0;
+    width: var(--investment-col-amount-width);
+    min-width: var(--investment-col-amount-min-width);
     text-align: right;
 }
 
 .investment-stock-details-table th:nth-child(8),
 .investment-stock-details-table td:nth-child(8) {
-    width: 10%;
-    min-width: 36px;
+    width: var(--investment-col-commission-width);
+    min-width: var(--investment-col-commission-min-width);
     text-align: right;
 }
 
 .investment-stock-details-table th:nth-child(9),
 .investment-stock-details-table td:nth-child(9) {
-    width: calc(100% - var(--investment-col-no-width) - var(--investment-col-time-width) - var(--investment-col-type-width) - var(--investment-col-description-width) - var(--investment-col-currency-width) - var(--investment-col-amount-width) - var(--investment-col-commission-width) - 10%);
-    min-width: 0;
+    width: var(--investment-col-market-value-width);
+    min-width: var(--investment-col-market-value-min-width);
+    text-align: right;
+}
+
+.investment-stock-details-table th:nth-child(10),
+.investment-stock-details-table td:nth-child(10) {
+    width: var(--investment-stock-col-realized-width);
+    min-width: var(--investment-stock-col-realized-min-width);
     text-align: right;
 }
 

@@ -2049,6 +2049,23 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    function renderInvestmentStockDetailsColgroup() {
+        return `
+            <colgroup>
+                <col style="width: var(--investment-col-broker-width);">
+                <col style="width: var(--investment-col-no-width);">
+                <col style="width: var(--investment-col-time-width);">
+                <col style="width: var(--investment-col-type-width);">
+                <col style="width: var(--investment-col-description-width);">
+                <col style="width: var(--investment-col-currency-width);">
+                <col style="width: var(--investment-col-amount-width);">
+                <col style="width: var(--investment-col-commission-width);">
+                <col style="width: var(--investment-col-market-value-width);">
+                <col style="width: var(--investment-stock-col-realized-width);">
+            </colgroup>
+        `;
+    }
+
     function syncHoldingsChartHoverState(ticker, ledgerNo) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedLedgerNo = Number.isFinite(Number(ledgerNo)) && Number(ledgerNo) > 0
@@ -4643,6 +4660,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
         const rowsHtml = detailRows.length ? detailRows.map((txn) => `
             <tr data-investment-stock-detail-ledger="${txn.ledger_no}">
+                ${renderInvestmentBrokerCell(txn)}
                 <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
@@ -4655,7 +4673,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
         `).join('') : `
             <tr>
-                <td colspan="9" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
+                <td colspan="10" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
             </tr>
         `;
         investmentStockDetailsPanel.innerHTML = `
@@ -4708,8 +4726,10 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentStockDetailsTableHost.innerHTML = `
                 <div class="scrollable-data-table-shell investment-history-table-shell investment-stock-details-table-shell">
                     <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table" aria-hidden="true">
+                        ${renderInvestmentStockDetailsColgroup()}
                         <thead>
                         <tr>
+                            <th aria-label="Broker"></th>
                             <th>No.</th>
                             <th>Time</th>
                             <th>Type</th>
@@ -4724,6 +4744,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </table>
                     <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll investment-stock-details-table-scroll">
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-stock-details-table">
+                            ${renderInvestmentStockDetailsColgroup()}
                             <tbody>${rowsHtml}</tbody>
                         </table>
                     </div>
