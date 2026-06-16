@@ -756,6 +756,12 @@
     -webkit-mask: url("/static/images/lines.measurement.vertical.svg") center/contain no-repeat;
 }
 
+.icon-dock-dca {
+    background-color: currentColor;
+    mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
+}
+
 .icon-dock-backtest {
     background-color: currentColor;
     mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat;

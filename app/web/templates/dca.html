@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_segmented_control with context %}
+{% set sidebar_title = "Workspaces" %}
+
+{% block sidebar_content %}
+{% include "_workspace_mode_nav.html" %}
+{% endblock %}
+
+{% block workspace_content %}
+    <section class="workspace-mode-shell">
+        <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
+            <div class="report-heading-row">
+                <p class="report-heading">{{ labels.dock_dca }}</p>
+            </div>
+        </article>
+        <div class="workspace-mode-layout">
+            <article class="chart-surface workspace-mode-controls-surface">
+                {% include "_dca_form.html" %}
+            </article>
+            <article class="workspace-mode-main">
+                <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
+                    <article class="report-card workspace-article-card workspace-summary-card">
+                        <div class="report-heading-row">
+                            <p class="report-heading">{{ report_heading }}</p>
+                        </div>
+                    </article>
+                    <article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
+                        {% if dca_result %}
+                            <div class="trade-detail-tabs">
+                                <div class="trade-detail-toolbar">
+                                    {{ render_segmented_control(
+                                        "range-mode-shell segmented-control--compact trade-detail-shell",
+                                        "trade_detail_tab",
+                                        "metrics",
+                                        [
+                                            {"id": "trade_detail_metrics", "value": "metrics", "label": labels.dca_metrics_tab},
+                                            {"id": "trade_detail_transactions", "value": "transactions", "label": labels.dca_transactions_tab},
+                                        ],
+                                        'data-trade-detail-shell data-active="metrics"'
+                                    ) }}
+                                </div>
+                                <div class="trade-detail-panel" data-trade-detail-panel="metrics">
+                                    <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid"
+                                         id="backtest_metrics_panel">
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Amount per period</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.amount_per_period) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Total invested</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.total_invested) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Final equity</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.final_equity) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Net return</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "%.2f"|format(dca_result.summary.net_return_pct) }}%</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Total buys</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ dca_result.summary.contribution_count }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Total shares</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.4f}".format(dca_result.summary.total_shares) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">Average cost</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.4f}".format(dca_result.summary.average_cost) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">If all in</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric">{{ "{:,.2f}".format(dca_result.summary.all_in_equity) }}</span>
+                                        </div>
+                                        <div class="trade-metric-card"><span class="trade-metric-label">vs all in</span><span
+                                                class="trade-metric-value"
+                                                data-workspace-mask="trade-metric"
+                                                style="color: {{ 'var(--theme-accent-positive)' if dca_result.summary.all_in_alpha >= 0 else 'var(--theme-accent-secondary)' }};">
+                                            {{ "+" if dca_result.summary.all_in_alpha >= 0 else "-" }}{{ "{:,.2f}".format(dca_result.summary.all_in_alpha|abs) }}
+                                        </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
+                                    <div class="scrollable-data-table-shell trade-transactions-shell">
+                                        <table class="settings-table trade-transactions-table scrollable-data-table"
+                                               aria-hidden="true">
+                                            <thead>
+                                            <tr>
+                                                <th>No.</th>
+                                                <th>Date</th>
+                                                <th class="trade-transactions-number">Price</th>
+                                                <th class="trade-transactions-number">Amount</th>
+                                                <th class="trade-transactions-number">Shares</th>
+                                                <th class="trade-transactions-number">Cum. shares</th>
+                                                <th class="trade-transactions-number">Invested</th>
+                                                <th class="trade-transactions-number">Equity</th>
+                                            </tr>
+                                            </thead>
+                                        </table>
+                                        <div class="trade-transactions-wrap scrollable-data-table-scroll">
+                                            <table id="tradeTransactionsTable"
+                                                   class="settings-table trade-transactions-table scrollable-data-table">
+                                                <tbody>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <nav class="settings-pagination local-store-pagination trade-transactions-pagination"
+                                         id="tradeTransactionsPagination" aria-label="Contribution pages" hidden></nav>
+                                </div>
+                            </div>
+                        {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.dca_no_result }}</p>
+                        {% endif %}
+                    </article>
+                    <article class="chart-surface backtest-surface">
+                        <div class="chart-heading-row">
+                            <p class="chart-heading">{{ chart_heading }}</p>
+                        </div>
+                        {% if dca_result %}
+                            <div class="trade-chart-stack">
+                                <div class="trade-chart-panel">
+                                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-price-chart">
+                                        <canvas id="tradePriceChart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="trade-chart-panel trade-chart-panel-equity">
+                                    <div class="trade-chart-canvas-wrap" data-workspace-mask="trade-equity-chart">
+                                        <canvas id="tradeEquityChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        {% else %}
+                            <p class="trade-pane-placeholder">{{ labels.dca_detail_placeholder }}</p>
+                        {% endif %}
+                    </article>
+                </article>
+            </article>
+        </div>
+    </section>
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version) }}"></script>
+{% endblock %}

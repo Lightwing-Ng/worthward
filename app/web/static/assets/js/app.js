@@ -3,6 +3,24 @@
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    const FETCH_ABORT_DEBUG_URL = "http://127.0.0.1:7777/event";
+    const reportFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = "post-fix") => {
+        // #region debug-point A:frontend-fetch-abort
+        fetch(FETCH_ABORT_DEBUG_URL, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                sessionId: "frontend-fetch-aborts",
+                runId,
+                hypothesisId,
+                location,
+                msg: `[DEBUG] ${msg}`,
+                data,
+                ts: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
+    };
 
     const {defaults, labels, endpoints, constraints, theme} = state;
     const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -15,14 +33,15 @@
     const THEME_MODE_STORAGE_KEY = "antigravity:theme-mode";
     const isPortfolioView = state.currentView === "portfolio";
     const isBacktestView = state.currentView === "backtest";
+    const isDcaView = state.currentView === "dca";
     const MIN_TICKERS = constraints?.minTickers || 2;
     const MAX_TICKERS = constraints?.maxTickers || 5;
-    const minimumRequiredTickers = isBacktestView ? 1 : MIN_TICKERS;
+    const minimumRequiredTickers = (isBacktestView || isDcaView) ? 1 : MIN_TICKERS;
     const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
     const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-    const WORKSPACE_VIEWS = new Set(["tickers", "portfolio", "backtest"]);
+    const WORKSPACE_VIEWS = new Set(["tickers", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -31,7 +50,9 @@
     const STRATEGY_MEMORY_KEY = "antigravity:recent-strategies";
     let hasInitialResult = isBacktestView
         ? Boolean(state.backtestResult)
-        : Boolean(state.chart?.series?.length);
+        : isDcaView
+            ? Boolean(state.dcaResult)
+            : Boolean(state.chart?.series?.length);
     let autoSubmitTimer = null;
     let dockFrame = 0;
     let mobilePagePaddingFrame = 0;
@@ -75,6 +96,13 @@
                 '[data-workspace-mask="portfolio-donut-start"]',
                 '[data-workspace-mask="portfolio-donut-end"]',
                 '[data-workspace-mask="chart-area"]',
+            ],
+        },
+        dca: {
+            masks: [
+                '[data-workspace-mask="trade-metric"]',
+                '[data-workspace-mask="trade-price-chart"]',
+                '[data-workspace-mask="trade-equity-chart"]',
             ],
         },
         "backtest": {
@@ -568,6 +596,7 @@
         window.requestAnimationFrame(() => {
             window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
+            window.ANTIGRAVITY_BOOTSTRAP?.initDcaWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
             if (state.currentView === "portfolio") {
                 dispatchPortfolioPreviewUpdate();
@@ -633,6 +662,48 @@
 								<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-chart"></div>
 								<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-chart"></div>
 							</div>
+					</article>
+				</section>
+			`;
+        }
+        if (state.currentView === "dca") {
+            const dcaMetricLabels = [
+                "Amount per period",
+                "Total invested",
+                "Final equity",
+                "Net return",
+                "Total buys",
+                "Total shares",
+                "Average cost",
+                "If all in",
+                "vs all in",
+            ];
+            return `
+				<section class="workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
+					<article class="report-card workspace-article-card workspace-summary-card">
+						<div class="report-heading-row"><p class="report-heading">${reportHeading}</p></div>
+					</article>
+					<article class="report-card workspace-content-card trade-performance-card backtest-trade-performance-card">
+						<div class="trade-detail-tabs">
+							<div class="trade-detail-toolbar">
+								<div class="range-mode-shell segmented-control--compact trade-detail-shell" data-active="metrics">
+									<span class="segmented-control-option"><span>${labels.dca_metrics_tab}</span></span>
+									<span class="segmented-control-option"><span>${labels.dca_transactions_tab}</span></span>
+								</div>
+							</div>
+							<div class="trade-detail-panel">
+								<div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid" id="backtest_metrics_panel">
+									${dcaMetricLabels.map((label) => `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`).join("")}
+								</div>
+							</div>
+						</div>
+					</article>
+					<article class="chart-surface backtest-surface">
+						<div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div>
+						<div class="trade-chart-stack">
+							<div class="trade-chart-panel is-pending-value" data-workspace-mask="trade-price-chart"></div>
+							<div class="trade-chart-panel trade-chart-panel-equity is-pending-value" data-workspace-mask="trade-equity-chart"></div>
+						</div>
 					</article>
 				</section>
 			`;
@@ -813,16 +884,44 @@
     };
 
     const hydrateWorkspaceFromUrl = async (nextUrl) => {
+        if (activeWorkspaceHydration) {
+            reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "aborting previous workspace hydration", {
+                nextUrl,
+                currentPath: window.location.pathname + window.location.search,
+            });
+        }
         abortActiveWorkspaceHydration();
         const token = ++workspaceHydrationToken;
         const controller = new AbortController();
         activeWorkspaceHydration = controller;
-        const response = await fetch(nextUrl, {
-            headers: {
-                "X-Requested-With": "workspace-hydrate",
-            },
-            credentials: "same-origin",
-            signal: controller.signal,
+        reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "starting workspace hydration", {
+            nextUrl,
+            token,
+        });
+        let response;
+        try {
+            response = await fetch(nextUrl, {
+                headers: {
+                    "X-Requested-With": "workspace-hydrate",
+                },
+                credentials: "same-origin",
+                signal: controller.signal,
+            });
+        } catch (error) {
+            reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "workspace hydration fetch failed", {
+                nextUrl,
+                token,
+                errorName: error?.name || "",
+                errorMessage: error?.message || "",
+                aborted: controller.signal.aborted,
+            });
+            throw error;
+        }
+        reportFetchAbortDebug("B", "app.js:hydrateWorkspaceFromUrl", "workspace hydration response received", {
+            nextUrl,
+            token,
+            status: response.status,
+            aborted: controller.signal.aborted,
         });
         if (!response.ok) throw new Error(`Workspace refresh failed: ${response.status}`);
         const html = await response.text();
@@ -927,22 +1026,6 @@
                 }
             });
         };
-        const prefetchDockDestination = async (url) => {
-            if (!url) return null;
-            if (dockPrefetchCache.has(url)) return dockPrefetchCache.get(url);
-            const fetchPromise = fetch(url, {
-                credentials: "same-origin",
-                headers: {
-                    "X-Requested-With": "dock-prefetch",
-                },
-                cache: "force-cache",
-            }).then(async (response) => {
-                if (!response.ok) throw new Error(`Dock prefetch failed: ${response.status}`);
-                return response.text();
-            });
-            dockPrefetchCache.set(url, fetchPromise);
-            return fetchPromise;
-        };
         const resolveSettingsSectionFromUrl = (url) => {
             try {
                 const parsedUrl = new URL(url, window.location.origin);
@@ -969,6 +1052,12 @@
                     || path.startsWith("/workspaces/portfolio/")
                 ) return "portfolio";
                 if (
+                    path === "/dca"
+                    || path.startsWith("/dca/")
+                    || path === "/workspaces/dca"
+                    || path.startsWith("/workspaces/dca/")
+                ) return "dca";
+                if (
                     path === "/backtest"
                     || path.startsWith("/backtest/")
                     || path === "/workspaces/backtest"
@@ -985,7 +1074,7 @@
             const targetDockGroup = dockGroupByIndex[index];
             if (!targetDockGroup || link.dataset.boundDockMemory === "1") return;
             link.dataset.boundDockMemory = "1";
-            link.addEventListener("click", async (event) => {
+            link.addEventListener("click", (event) => {
                 rememberCurrentViewUrl();
                 const memory = readViewMemory();
                 const rememberedUrl = targetDockGroup === "workspace"
@@ -1003,32 +1092,6 @@
                 }
                 setDockPreviewTarget(targetDockGroup);
                 document.body.classList.add("is-workspace-switching");
-                try {
-                    const responseText = await prefetchDockDestination(nextUrl);
-                    const parser = new DOMParser();
-                    const newDoc = parser.parseFromString(responseText, "text/html");
-                    const newAppShell = newDoc.querySelector(".app-shell");
-                    if (newAppShell) {
-                        const nextSidebar = newAppShell.querySelector("#app_sidebar");
-                        const nextToggle = newAppShell.querySelector("#sidebar_toggle");
-                        applySidebarState(readSidebarMemory(), newAppShell, nextSidebar, nextToggle);
-                        document.querySelector(".app-shell").replaceWith(newAppShell);
-                        const destinationView = resolveViewFromUrl(nextUrl);
-                        const targetSettingsSection = destinationView === "settings"
-                            ? resolveSettingsSectionFromUrl(nextUrl)
-                            : null;
-                        const nextSelectors = getProgressiveMaskSelectors(destinationView, targetSettingsSection);
-                        document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
-                            node.classList.remove("is-masked-during-switch");
-                        });
-                        nextSelectors.forEach((selector) => {
-                            document.querySelectorAll(selector).forEach((node) => {
-                                node.classList.add("is-masked-during-switch");
-                            });
-                        });
-                    }
-                } catch (_error) {
-                }
                 window.requestAnimationFrame(() => {
                     window.location.assign(nextUrl);
                 });
@@ -1317,7 +1380,7 @@
             const suggestions = field.querySelector(".suggestions");
             if (label) {
                 label.setAttribute("for", `ticker_${index}`);
-                label.textContent = isBacktestView ? labels.backtest_ticker : `Ticker ${index}`;
+                label.textContent = (isBacktestView || isDcaView) ? labels.backtest_ticker : `Ticker ${index}`;
             }
             if (input) {
                 input.id = `ticker_${index}`;
@@ -1753,7 +1816,8 @@
     const setupAutocomplete = (input) => {
         if (!input || input.dataset.autocompleteReady === "1") return;
         input.dataset.autocompleteReady = "1";
-        let controller = null;
+        let autocompleteRequestSequence = 0;
+        let autocompleteTimer = 0;
         let activeIndex = -1;
 
         const getPanel = () => document.getElementById(`${input.id}_suggestions`);
@@ -1860,7 +1924,7 @@
 
         input.addEventListener("input", async () => {
             if (isPortfolioView) requestWorkspaceChartTransition("ticker-edit");
-            else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+            else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
             hideTickerValidationTooltip(input);
             input.dataset.logoUrl = "";
             input.dataset.symbol = "";
@@ -1868,29 +1932,63 @@
             const rawQuery = input.value.trim();
             const query = validateTickerInput(input);
             if (!rawQuery) {
+                autocompleteRequestSequence += 1;
+                if (autocompleteTimer) {
+                    window.clearTimeout(autocompleteTimer);
+                    autocompleteTimer = 0;
+                }
                 setUnknown(false);
                 await showRecentItems();
                 return;
             }
-            if (controller) controller.abort();
-            controller = new AbortController();
-            try {
-                const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(rawQuery)}`, {signal: controller.signal});
-                if (!response.ok) return closePanel();
-                const payload = await response.json();
-                if (!payload.length) {
-                    setUnknown(true);
-                    closePanel();
-                    return;
-                }
-                const exactMatch = Boolean(applyExactTickerMatch(input, payload, query));
-                if (query) tickerValidationCache.set(query, exactMatch);
-                input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
-                validateTickerInput(input);
-                renderItems(payload);
-            } catch (error) {
-                if (error.name !== "AbortError") closePanel();
+            if (autocompleteTimer) {
+                window.clearTimeout(autocompleteTimer);
+                autocompleteTimer = 0;
             }
+            const requestId = ++autocompleteRequestSequence;
+            autocompleteTimer = window.setTimeout(async () => {
+                autocompleteTimer = 0;
+                try {
+                    reportFetchAbortDebug("A", "app.js:setupAutocomplete", "starting symbol search request", {
+                        rawQuery,
+                        query,
+                        inputId: input.id || "",
+                        requestId,
+                    });
+                    const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(rawQuery)}`);
+                    reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search response received", {
+                        rawQuery,
+                        query,
+                        inputId: input.id || "",
+                        status: response.status,
+                        requestId,
+                    });
+                    if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
+                    if (!response.ok) return closePanel();
+                    const payload = await response.json();
+                    if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
+                    if (!payload.length) {
+                        setUnknown(true);
+                        closePanel();
+                        return;
+                    }
+                    const exactMatch = Boolean(applyExactTickerMatch(input, payload, query));
+                    if (query) tickerValidationCache.set(query, exactMatch);
+                    input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
+                    validateTickerInput(input);
+                    renderItems(payload);
+                } catch (error) {
+                    reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search request failed", {
+                        rawQuery,
+                        query,
+                        inputId: input.id || "",
+                        requestId,
+                        errorName: error?.name || "",
+                        errorMessage: error?.message || "",
+                    });
+                    if (requestId === autocompleteRequestSequence) closePanel();
+                }
+            }, 120);
         });
         input.addEventListener("focus", async () => {
             hideTickerValidationTooltip(input);
@@ -1935,7 +2033,7 @@
         });
         input.addEventListener("change", () => {
             if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
-            else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+            else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
             validateAllTickerInputs();
             void validateTickerExistence(input, {preferFresh: true});
             syncDateConstraints();
@@ -2232,7 +2330,7 @@
                 const removedTicker = sanitizeTicker(field?.querySelector("[data-ticker-input]")?.value || "");
                 const removedIndex = Number.parseInt(field?.dataset.index || "0", 10) - 1;
                 if (isPortfolioView) requestWorkspaceChartTransition("ticker-remove");
-                else if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+                else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
                 const removedWeight = isPortfolioView
                     ? Number.parseInt(field?.querySelector(".portfolio-weight-input")?.value || "0", 10) || 0
                     : 0;
@@ -2632,6 +2730,56 @@
     const getBacktestIntervalShell = () => document.querySelector("[data-backtest-interval-shell]");
     const getBacktestIntervalInputs = () => Array.from(document.querySelectorAll("[data-backtest-interval-input]"))
         .filter((input) => input instanceof HTMLInputElement);
+    const getDcaFrequencyShell = () => document.querySelector("[data-dca-frequency-shell]");
+    const getDcaFrequencyInputs = () => Array.from(document.querySelectorAll("[data-dca-frequency-input]"))
+        .filter((input) => input instanceof HTMLInputElement);
+    const getSelectedDcaFrequency = () => {
+        const selectedInput = getDcaFrequencyInputs().find((input) => input.checked && !input.disabled);
+        return selectedInput?.value === "weekly" ? "weekly" : "monthly";
+    };
+    const syncDcaFrequencySegmentedControl = () => {
+        const shell = getDcaFrequencyShell();
+        if (!(shell instanceof HTMLElement)) return;
+        const options = Array.from(shell.querySelectorAll(".segmented-control-option"))
+            .filter((option) => option instanceof HTMLElement)
+            .filter((option) => {
+                const input = option.querySelector("input");
+                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
+            });
+        const activeIndex = Math.max(0, options.findIndex((option) => {
+            const input = option.querySelector("input");
+            return input instanceof HTMLInputElement && input.checked;
+        }));
+        shell.dataset.active = getSelectedDcaFrequency();
+        shell.dataset.optionCount = String(Math.max(options.length, 1));
+        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
+        shell.style.setProperty("--segmented-active-index", String(activeIndex));
+    };
+    const updateDcaSchedulePanels = () => {
+        const frequency = getSelectedDcaFrequency();
+        const weeklyPanel = document.getElementById("dca_weekly_panel");
+        const monthlyPanel = document.getElementById("dca_monthly_panel");
+        if (weeklyPanel) {
+            const isWeekly = frequency === "weekly";
+            weeklyPanel.hidden = !isWeekly;
+            weeklyPanel.setAttribute("aria-hidden", String(!isWeekly));
+            weeklyPanel.style.display = isWeekly ? "" : "none";
+            if (!isWeekly) {
+                closeSharedSelectDropdowns(weeklyPanel.querySelector("[data-shared-select-field]"));
+                setSharedSelectDropdownOpen(weeklyPanel.querySelector("[data-shared-select-field]"), false);
+            }
+        }
+        if (monthlyPanel) {
+            const isMonthly = frequency === "monthly";
+            monthlyPanel.hidden = !isMonthly;
+            monthlyPanel.setAttribute("aria-hidden", String(!isMonthly));
+            monthlyPanel.style.display = isMonthly ? "" : "none";
+            if (!isMonthly) {
+                closeSharedSelectDropdowns(monthlyPanel.querySelector("[data-shared-select-field]"));
+                setSharedSelectDropdownOpen(monthlyPanel.querySelector("[data-shared-select-field]"), false);
+            }
+        }
+    };
     const getSelectedBacktestInterval = () => {
         const selectedInput = getBacktestIntervalInputs().find((input) => input.checked && !input.disabled);
         return selectedInput?.value || "1d";
@@ -2881,6 +3029,15 @@
                 };
             }
         }
+        if (isDcaView) {
+            const dates = state.dcaResult?.chart?.dates;
+            if (Array.isArray(dates) && dates.length) {
+                return {
+                    start: String(dates[0]),
+                    end: String(dates[dates.length - 1]),
+                };
+            }
+        }
         const firstSeriesDates = state.chart?.series?.[0]?.dates;
         if (Array.isArray(firstSeriesDates) && firstSeriesDates.length) {
             return {
@@ -2978,6 +3135,37 @@
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(clampTradeCapital(value));
+    const formatEditableTradeCapitalValue = (value) => {
+        const normalized = clampTradeCapital(value);
+        if (Math.abs(normalized - Math.round(normalized)) < 0.000001) {
+            return String(Math.round(normalized));
+        }
+        return normalized.toFixed(2).replace(/\.?0+$/, "");
+    };
+    const formatTradeCapitalTypingValue = (rawValue) => {
+        const normalized = String(rawValue || "").replace(/,/g, "").replace(/[^\d.]/g, "");
+        const hasDecimalPoint = normalized.includes(".");
+        const wholeCandidate = (normalized.split(".")[0] || "").replace(/\D/g, "");
+        const decimalCandidate = (normalized.split(".")[1] || "").replace(/\D/g, "").slice(0, 2);
+        const numericSource = `${wholeCandidate || "0"}${hasDecimalPoint ? `.${decimalCandidate}` : ""}`;
+        const numericValue = clampTradeCapital(Number.parseFloat(numericSource) || 0);
+        const [wholePart] = formatTradeCapitalValue(numericValue).split(".");
+        if (hasDecimalPoint) return `${wholePart}.${decimalCandidate}`;
+        return wholePart;
+    };
+    const countTradeCapitalCharsBeforeCaret = (value, caretPosition) => (
+        String(value || "").slice(0, Math.max(0, caretPosition || 0)).replace(/,/g, "").length
+    );
+    const resolveTradeCapitalCaretPosition = (value, significantChars) => {
+        if (significantChars <= 0) return 0;
+        let seenChars = 0;
+        for (let index = 0; index < value.length; index += 1) {
+            if (value[index] === ",") continue;
+            seenChars += 1;
+            if (seenChars >= significantChars) return index + 1;
+        }
+        return value.length;
+    };
 
     const updateRangePanels = () => {
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
@@ -3005,7 +3193,7 @@
 
     const canAutoSubmit = () => {
         if (!form) return false;
-        if (!hasInitialResult && !isBacktestView) return false;
+        if (!hasInitialResult && !(isBacktestView || isDcaView)) return false;
         const values = getFilledTickers();
         if (values.length < minimumRequiredTickers) return false;
         if (new Set(values).size !== values.length) return false;
@@ -3416,6 +3604,15 @@
             collectStrategyParamEntries().forEach(([key, value]) => {
                 if (key) params.set(key, value);
             });
+        } else if (isDcaView) {
+            const amountValue = parseTradeCapitalValue(tradeCapitalInput?.value);
+            const frequencyValue = getSelectedDcaFrequency();
+            const weekdayValue = document.getElementById("dca_weekday")?.value || "0";
+            const monthDayValue = document.getElementById("dca_month_day")?.value || "15";
+            if (Number.isFinite(amountValue)) params.set("amount", String(amountValue));
+            params.set("frequency", frequencyValue);
+            if (frequencyValue === "weekly") params.set("weekday", weekdayValue);
+            if (frequencyValue === "monthly") params.set("month_day", monthDayValue);
         }
 
         const queryString = params.toString();
@@ -3558,11 +3755,13 @@
     validatePortfolioWeightInputs();
     updateRangePanels();
     syncBacktestIntervalSegmentedControl();
+    syncDcaFrequencySegmentedControl();
+    updateDcaSchedulePanels();
     syncDateConstraints();
     scheduleDockPosition();
 
     $("#add_ticker")?.addEventListener("click", () => {
-        if (!isBacktestView) clearWorkspaceChartTransitionRequest();
+        if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
         addTickerField();
     });
     rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
@@ -3586,7 +3785,7 @@
         updateRangePanels();
         syncDateConstraints();
         lastRangeMode = nextRangeMode;
-        if (!isBacktestView && shouldAutoSubmit) requestWorkspaceChartTransition("range-mode");
+        if (!(isBacktestView || isDcaView) && shouldAutoSubmit) requestWorkspaceChartTransition("range-mode");
         if (shouldAutoSubmit) {
             scheduleAutoSubmit();
         }
@@ -3595,20 +3794,33 @@
         if (!input) return;
         input.addEventListener("change", () => {
             syncDateConstraints();
-            if (!isBacktestView) requestWorkspaceChartTransition("range-controls");
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("range-controls");
             scheduleAutoSubmit();
         });
     });
     if (includeDividendsInput && form) {
         includeDividendsInput.addEventListener("change", () => {
-            if (!isBacktestView) requestWorkspaceChartTransition("dividends");
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("dividends");
             scheduleAutoSubmit(80);
         });
     }
     $("#period")?.addEventListener("change", () => {
         refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
-        if (!isBacktestView) requestWorkspaceChartTransition("period");
+        if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
         scheduleAutoSubmit();
+    });
+    getDcaFrequencyInputs().forEach((input) => input.addEventListener("change", (event) => {
+        if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
+        syncDcaFrequencySegmentedControl();
+        updateDcaSchedulePanels();
+        scheduleAutoSubmit(20);
+    }));
+    ["dca_weekday", "dca_month_day"].forEach((id) => {
+        const select = document.getElementById(id);
+        if (!(select instanceof HTMLSelectElement)) return;
+        select.addEventListener("change", () => {
+            scheduleAutoSubmit(20);
+        });
     });
     getBacktestIntervalInputs().forEach((input) => input.addEventListener("change", (event) => {
         if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
@@ -3620,8 +3832,11 @@
         scheduleAutoSubmit(20);
     }));
 
-    if (isBacktestView && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
-        const scheduleTradeAutoSubmit = () => {
+    if ((isBacktestView || isDcaView) && tradeCapitalField && tradeCapitalInput && tradeCapitalSlider) {
+        const scheduleTradeInputAutoSubmit = () => {
+            scheduleAutoSubmit(720);
+        };
+        const scheduleTradeSliderAutoSubmit = () => {
             scheduleAutoSubmit(180);
         };
         const openTradeCapitalSlider = () => tradeCapitalField.classList.add("is-open");
@@ -3629,35 +3844,164 @@
             if (tradeCapitalField.matches(":focus-within")) return;
             tradeCapitalField.classList.remove("is-open");
             tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
-            scheduleTradeAutoSubmit();
+            scheduleTradeSliderAutoSubmit();
         }, 80);
-        const syncTradeCapitalControls = (value) => {
+        const syncTradeCapitalControls = (value, formattedValue = null) => {
             const normalized = clampTradeCapital(value);
-            tradeCapitalInput.value = String(normalized);
+            tradeCapitalField.dataset.lastValidAmount = String(normalized);
+            tradeCapitalInput.value = formattedValue ?? formatTradeCapitalValue(normalized);
             tradeCapitalSlider.value = String(Math.round(normalized));
         };
+        const sanitizeTradeCapitalDraft = (value) => String(value || "")
+            .replace(/,/g, "")
+            .replace(/[^\d.]/g, "");
+        const normalizeTradeCapitalDraft = (draftValue) => {
+            const sanitized = sanitizeTradeCapitalDraft(draftValue);
+            if (!sanitized) return "";
+            const [wholePartRaw, ...decimalParts] = sanitized.split(".");
+            const wholePart = wholePartRaw.replace(/\D/g, "");
+            const decimalPart = decimalParts.join("").replace(/\D/g, "").slice(0, 2);
+            if (decimalParts.length) return `${wholePart}.${decimalPart}`;
+            return wholePart;
+        };
+        const deriveTradeCapitalReplacementDraft = (rawValue) => {
+            const currentDraft = normalizeTradeCapitalDraft(rawValue);
+            const focusDraft = normalizeTradeCapitalDraft(tradeCapitalInput.dataset.focusDraft || "");
+            if (!focusDraft || !currentDraft || currentDraft === focusDraft) return currentDraft;
+            if (currentDraft.endsWith(focusDraft)) {
+                return currentDraft.slice(0, -focusDraft.length) || currentDraft;
+            }
+            if (currentDraft.startsWith(focusDraft)) {
+                return currentDraft.slice(focusDraft.length) || currentDraft;
+            }
+            return currentDraft;
+        };
+        const applyTradeCapitalDraft = (draftValue, significantChars) => {
+            const nextDraft = normalizeTradeCapitalDraft(draftValue);
+            if (!nextDraft) {
+                tradeCapitalInput.value = "";
+                return false;
+            }
+            const formattedValue = formatTradeCapitalTypingValue(nextDraft);
+            const normalizedValue = parseTradeCapitalValue(formattedValue);
+            syncTradeCapitalControls(normalizedValue, formattedValue);
+            const nextCaret = resolveTradeCapitalCaretPosition(formattedValue, significantChars);
+            tradeCapitalInput.setSelectionRange(nextCaret, nextCaret);
+            return true;
+        };
+        const syncTradeCapitalControlsFromTyping = () => {
+            const rawValue = tradeCapitalInput.value;
+            if (!String(rawValue || "").replace(/,/g, "").trim()) {
+                tradeCapitalInput.value = "";
+                return false;
+            }
+            const significantChars = countTradeCapitalCharsBeforeCaret(rawValue, tradeCapitalInput.selectionStart);
+            const formattedValue = formatTradeCapitalTypingValue(rawValue);
+            const normalizedValue = parseTradeCapitalValue(formattedValue);
+            syncTradeCapitalControls(normalizedValue, formattedValue);
+            const nextCaret = resolveTradeCapitalCaretPosition(formattedValue, significantChars);
+            tradeCapitalInput.setSelectionRange(nextCaret, nextCaret);
+            return true;
+        };
+        const restoreTradeCapitalControls = () => {
+            const fallbackValue = parseTradeCapitalValue(
+                tradeCapitalField.dataset.lastValidAmount || tradeCapitalSlider.value || tradeCapitalInput.value
+            );
+            syncTradeCapitalControls(fallbackValue);
+        };
+        const selectTradeCapitalInputValue = () => {
+            window.requestAnimationFrame(() => {
+                const valueLength = tradeCapitalInput.value.length;
+                tradeCapitalInput.setSelectionRange(0, valueLength);
+            });
+        };
         tradeCapitalInput.addEventListener("focus", () => {
-            tradeCapitalInput.value = String(parseTradeCapitalValue(tradeCapitalInput.value));
+            const normalized = parseTradeCapitalValue(tradeCapitalInput.value);
+            tradeCapitalField.dataset.lastValidAmount = String(normalized);
+            const focusDraft = formatEditableTradeCapitalValue(normalized);
+            tradeCapitalInput.dataset.focusDraft = focusDraft;
+            tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput = "1";
+            tradeCapitalInput.value = focusDraft;
             openTradeCapitalSlider();
+            selectTradeCapitalInputValue();
         });
-        tradeCapitalInput.addEventListener("click", openTradeCapitalSlider);
+        tradeCapitalInput.addEventListener("click", () => {
+            openTradeCapitalSlider();
+            selectTradeCapitalInputValue();
+        });
+        tradeCapitalInput.addEventListener("mouseup", (event) => {
+            if (tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput !== "1") return;
+            event.preventDefault();
+            selectTradeCapitalInputValue();
+        });
+        tradeCapitalInput.addEventListener("beforeinput", (event) => {
+            if (!(event instanceof InputEvent)) return;
+            const supportedInputTypes = new Set([
+                "insertText",
+                "insertFromPaste",
+                "deleteContentBackward",
+                "deleteContentForward",
+            ]);
+            if (!supportedInputTypes.has(event.inputType)) return;
+            event.preventDefault();
+            const currentValue = tradeCapitalInput.value;
+            const selectionStart = tradeCapitalInput.selectionStart ?? currentValue.length;
+            const selectionEnd = tradeCapitalInput.selectionEnd ?? currentValue.length;
+            const isReplacementInsert = tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput === "1"
+                && event.inputType.startsWith("insert");
+            const currentDraft = isReplacementInsert ? "" : normalizeTradeCapitalDraft(currentValue);
+            const startChars = countTradeCapitalCharsBeforeCaret(currentValue, selectionStart);
+            const endChars = countTradeCapitalCharsBeforeCaret(currentValue, selectionEnd);
+            let nextDraft = currentDraft;
+            let nextCaretChars = isReplacementInsert ? 0 : startChars;
+            if (event.inputType === "deleteContentBackward") {
+                const deleteStart = startChars === endChars ? Math.max(0, startChars - 1) : startChars;
+                nextDraft = `${currentDraft.slice(0, deleteStart)}${currentDraft.slice(endChars)}`;
+                nextCaretChars = deleteStart;
+            } else if (event.inputType === "deleteContentForward") {
+                const deleteEnd = startChars === endChars ? endChars + 1 : endChars;
+                nextDraft = `${currentDraft.slice(0, startChars)}${currentDraft.slice(deleteEnd)}`;
+                nextCaretChars = startChars;
+            } else {
+                const insertedValue = normalizeTradeCapitalDraft(event.data || "");
+                nextDraft = `${currentDraft.slice(0, startChars)}${insertedValue}${currentDraft.slice(endChars)}`;
+                nextCaretChars = (isReplacementInsert ? 0 : startChars) + insertedValue.length;
+            }
+            delete tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput;
+            tradeCapitalInput.dataset.skipNextTradeCapitalInput = "1";
+            if (!applyTradeCapitalDraft(nextDraft, nextCaretChars)) return;
+            scheduleTradeInputAutoSubmit();
+        });
         tradeCapitalInput.addEventListener("input", () => {
-            syncTradeCapitalControls(parseTradeCapitalValue(tradeCapitalInput.value));
-            scheduleTradeAutoSubmit();
+            if (tradeCapitalInput.dataset.skipNextTradeCapitalInput === "1") {
+                delete tradeCapitalInput.dataset.skipNextTradeCapitalInput;
+                return;
+            }
+            if (tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput === "1") {
+                const replacementDraft = deriveTradeCapitalReplacementDraft(tradeCapitalInput.value);
+                delete tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput;
+                if (!applyTradeCapitalDraft(replacementDraft, replacementDraft.length)) return;
+                scheduleTradeInputAutoSubmit();
+                return;
+            }
+            if (!syncTradeCapitalControlsFromTyping()) return;
+            scheduleTradeInputAutoSubmit();
         });
         tradeCapitalInput.addEventListener("blur", () => {
-            tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
-            scheduleTradeAutoSubmit();
+            delete tradeCapitalInput.dataset.focusDraft;
+            delete tradeCapitalInput.dataset.replaceOnNextTradeCapitalInput;
+            if (!tradeCapitalInput.value.trim()) restoreTradeCapitalControls();
+            else syncTradeCapitalControls(parseTradeCapitalValue(tradeCapitalInput.value));
+            scheduleTradeSliderAutoSubmit();
         });
         tradeCapitalSlider.addEventListener("focus", openTradeCapitalSlider);
         tradeCapitalSlider.addEventListener("input", () => {
             const value = clampTradeCapital(Number.parseFloat(tradeCapitalSlider.value) || 0);
-            tradeCapitalInput.value = formatTradeCapitalValue(value);
-            scheduleTradeAutoSubmit();
+            syncTradeCapitalControls(value);
+            scheduleTradeSliderAutoSubmit();
         });
         tradeCapitalField.addEventListener("focusout", closeTradeCapitalSlider);
-        tradeCapitalInput.value = formatTradeCapitalValue(parseTradeCapitalValue(tradeCapitalInput.value));
-        tradeCapitalSlider.value = String(Math.round(parseTradeCapitalValue(tradeCapitalInput.value)));
+        syncTradeCapitalControls(parseTradeCapitalValue(tradeCapitalInput.value));
     }
 
     const getTradeStrategyRefs = () => {
@@ -4211,6 +4555,13 @@
                 } else {
                     delete bootstrap.backtestRefreshTransition;
                 }
+            } else if (state.currentView === "dca") {
+                showWorkspaceModal({
+                    title: "Running DCA simulation",
+                    copy: "Calculating recurring buy dates, cumulative shares, and the if-all-in comparison curve for the selected range.",
+                    iconClass: "icon-hourglass",
+                });
+                delete bootstrap.chartWorkspaceRefreshTransition;
             } else if (pendingWorkspaceChartTransition?.view === state.currentView) {
                 // Same logic: only capture line chart transition if x-axis hasn't changed
                 const currentParams = new URLSearchParams(currentUrlObj.search);

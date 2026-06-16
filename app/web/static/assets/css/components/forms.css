@@ -1347,9 +1347,9 @@
 }
 .segmented-control::after,
 .range-mode-shell::after { display: none; }
-.segmented-control[data-active="exact"]::before,
-.range-mode-shell[data-active="exact"]::before { transform: translateX(calc(100% + 3px)); }
-.segmented-control[data-active="transactions"]::before { transform: translateX(calc(100% + 3px)); }
+.segmented-control[data-active="exact"]:not([data-option-count])::before,
+.range-mode-shell[data-active="exact"]:not([data-option-count])::before { transform: translateX(calc(100% + 3px)); }
+.segmented-control[data-active="transactions"]:not([data-option-count])::before { transform: translateX(calc(100% + 3px)); }
 .segmented-control-option,
 .range-mode-option { position: relative; z-index: var(--layer-surface-content); flex: 1 1 0; display: flex; align-items: stretch; margin-bottom: 0; }
 .segmented-control-option input,

@@ -63,7 +63,7 @@
             {"id": "range_period", "value": "period", "label": labels.range_mode_period},
             {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
         ],
-        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '"'
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
     ) }}
 </div>
 <div class="field range-panel" id="period_panel">

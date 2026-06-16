@@ -123,6 +123,24 @@ registerInvestmentChartHelpers(window);
 
 document.addEventListener('DOMContentLoaded', () => {
     const theme = window.ANTIGRAVITY_APP?.theme || {};
+    const FETCH_ABORT_DEBUG_URL = 'http://127.0.0.1:7777/event';
+    const reportInvestmentFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = 'post-fix') => {
+        // #region debug-point C:investment-fetch-abort
+        fetch(FETCH_ABORT_DEBUG_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: 'frontend-fetch-aborts',
+                runId,
+                hypothesisId,
+                location,
+                msg: `[DEBUG] ${msg}`,
+                data,
+                ts: Date.now(),
+            }),
+        }).catch(() => {});
+        // #endregion
+    };
     const resolveInvestmentTheme = () => {
         const computed = getComputedStyle(document.body);
         const themeTextColor = String(theme?.text || '').trim();
@@ -157,6 +175,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentImportIbkrFields = document.getElementById('investment_import_ibkr_fields');
     const investmentImportLongbridgeFields = document.getElementById('investment_import_longbridge_fields');
     const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
+    let investmentBootstrapTimer = 0;
+    let investmentPageDisposed = false;
+    const isLifecycleInterruptedFetch = (error) => (
+        investmentPageDisposed
+        || document.visibilityState === 'hidden'
+        || error?.name === 'AbortError'
+    );
+    const markInvestmentPageDisposed = () => {
+        investmentPageDisposed = true;
+        if (investmentBootstrapTimer) {
+            window.clearTimeout(investmentBootstrapTimer);
+            investmentBootstrapTimer = 0;
+        }
+    };
+    window.addEventListener('pagehide', markInvestmentPageDisposed, { once: true });
+    window.addEventListener('beforeunload', markInvestmentPageDisposed, { once: true });
     const longbridgeEndDateInput = document.getElementById('longbridge_end_date');
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
@@ -3099,11 +3133,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchInvestmentData() {
-        const response = await fetch('/api/investment/transactions', buildInvestmentRequestOptions());
+        reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'starting transactions fetch', {
+            pathname: window.location.pathname,
+            search: window.location.search,
+            visibilityState: document.visibilityState,
+        });
+        let response;
+        try {
+            response = await fetch('/api/investment/transactions', buildInvestmentRequestOptions());
+        } catch (error) {
+            reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions fetch failed before response', {
+                pathname: window.location.pathname,
+                search: window.location.search,
+                visibilityState: document.visibilityState,
+                errorName: error?.name || '',
+                errorMessage: error?.message || '',
+            });
+            throw error;
+        }
+        reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions response received', {
+            status: response.status,
+            ok: response.ok,
+            visibilityState: document.visibilityState,
+        });
         const data = await response.json();
         if (!response.ok || data.success === false) {
+            reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload reported failure', {
+                status: response.status,
+                ok: response.ok,
+                success: data.success,
+                error: data.error || '',
+            });
             throw new Error(data.error || `Failed to load investment data: ${response.status}`);
         }
+        reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload rendered successfully', {
+            transactionCount: Array.isArray(data.transactions) ? data.transactions.length : -1,
+            success: data.success,
+        });
         window.ANTIGRAVITY_INVESTMENT_DATA = data;
         const valuationStatus = await renderTransactionTable(data.transactions || []);
         scheduleInvestmentSegmentedPillUpdate();
@@ -3208,17 +3274,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
             investmentImportInFlight = true;
             syncImportValidationState();
+            reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'starting transactions import', {
+                broker: selectedBroker,
+                hasTransactionsFile: Boolean(transactionsFile),
+                hasPositionsFile: Boolean(positionsFile),
+            });
             fetch('/api/investment/transactions', {
                 method: 'POST',
                 body: formData,
             })
-            .then(response => response.json())
+            .then(response => {
+                reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'transactions import response received', {
+                    broker: selectedBroker,
+                    status: response.status,
+                    ok: response.ok,
+                });
+                return response.json();
+            })
             .then(async result => {
+                reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'transactions import payload received', {
+                    broker: selectedBroker,
+                    success: result.success,
+                    error: result.error || '',
+                });
                 if (result.success) {
                     const refreshNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
                         ? ` Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.map((ticker) => formatInvestmentTickerForDisplay(ticker)).join(', ')}.`
                         : '';
-                    const { valuationStatus } = await fetchInvestmentData();
+                    let valuationStatus = null;
+                    try {
+                        ({ valuationStatus } = await fetchInvestmentData());
+                    } catch (error) {
+                        if (isLifecycleInterruptedFetch(error)) return;
+                        throw error;
+                    }
                     const valuationNotice = valuationStatus?.isDegraded ? ` ${valuationStatus.message}` : '';
                     const feedbackVariant = valuationStatus?.isDegraded ? 'warning' : 'success';
                     setImportFeedback(`${result.message || 'Import complete.'}${refreshNotice}${valuationNotice}`, feedbackVariant);
@@ -3228,6 +3317,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             })
             .catch(err => {
+                reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'transactions import failed', {
+                    broker: selectedBroker,
+                    errorName: err?.name || '',
+                    errorMessage: err?.message || '',
+                });
                 setImportFeedback(`Network error: ${err.message}`, 'error');
             })
             .finally(() => {
@@ -3238,16 +3332,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Load and render transactions
-    fetchInvestmentData()
-        .then(({ valuationStatus }) => {
-            if (valuationStatus?.isDegraded) {
-                setImportFeedback(valuationStatus.message, 'warning');
-            }
-        })
-        .catch(err => {
-            console.error('Failed to load transactions:', err);
-            setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
-        });
+    investmentBootstrapTimer = window.setTimeout(() => {
+        investmentBootstrapTimer = 0;
+        if (investmentPageDisposed || document.visibilityState === 'hidden') return;
+        fetchInvestmentData()
+            .then(({ valuationStatus }) => {
+                if (valuationStatus?.isDegraded) {
+                    setImportFeedback(valuationStatus.message, 'warning');
+                }
+            })
+            .catch(err => {
+                if (isLifecycleInterruptedFetch(err)) return;
+                console.error('Failed to load transactions:', err);
+                setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
+            });
+    }, 150);
 
     function setInvestmentSharedChartDateRange(chartPoints = []) {
         const normalizedDates = Array.isArray(chartPoints)

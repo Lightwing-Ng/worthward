@@ -1,0 +1,141 @@
+{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{% set weekly_label = namespace(value=labels.dca_frequency_weekly) %}
+{% if dca_weekday == 0 %}{% set weekly_label.value = "Monday" %}{% endif %}
+{% if dca_weekday == 1 %}{% set weekly_label.value = "Tuesday" %}{% endif %}
+{% if dca_weekday == 2 %}{% set weekly_label.value = "Wednesday" %}{% endif %}
+{% if dca_weekday == 3 %}{% set weekly_label.value = "Thursday" %}{% endif %}
+{% if dca_weekday == 4 %}{% set weekly_label.value = "Friday" %}{% endif %}
+<form class="controls sidebar-form ticker-controls trade-controls" method="get" action="{{ current_path }}">
+    <div class="field ticker-field" data-index="1">
+        <div class="ticker-input-row">
+            <div class="ticker-input-main">
+                <label for="ticker_1">{{ labels.backtest_ticker }}</label>
+                <div class="ticker-input-control">
+                    <span class="ticker-leading-slot" aria-hidden="true">
+                        <span class="ticker-logo-placeholder"></span>
+                        <img class="ticker-input-logo" alt="" hidden>
+                    </span>
+                    <input id="ticker_1" name="ticker" data-ticker-input
+                           value="{{ ticker_slots[0] if ticker_slots else '' }}" placeholder="" autocomplete="off"
+                           autocapitalize="characters" spellcheck="false" inputmode="latin"
+                           title="Use a valid ticker such as NVDA or MSFT." required>
+                    <button type="button" class="ticker-clear" aria-label="Clear ticker"><span
+                            class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                </div>
+                <div class="field-tooltip field-tooltip-invalid" hidden>Unknown or unsupported ticker.</div>
+                <div class="suggestions" id="ticker_1_suggestions"></div>
+            </div>
+        </div>
+    </div>
+    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact", true) }}
+    <div class="field trade-capital-field">
+        <label for="trade_initial_capital">{{ labels.dca_amount }}</label>
+        <div class="trade-capital-row">
+            <input id="trade_initial_capital" name="amount" class="trade-capital-input" type="text"
+                   value="{{ "{:,.2f}".format(dca_amount) }}" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="trade-capital-slider-shell" aria-hidden="true">
+            <input id="trade_initial_capital_slider" class="trade-capital-slider" type="range" min="10"
+                   max="10000" step="10" value="{{ dca_amount|int }}">
+        </div>
+    </div>
+    <div class="field-checkbox field-switch">
+        <label class="switch-row" for="include_dividends">
+            <span class="switch-label">{{ labels.include_dividends }}</span>
+            <span class="ios-switch-shell">
+                <input id="include_dividends" name="dividends" type="checkbox" value="1"
+                       {% if include_dividends %}checked{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field dca-frequency-field">
+        <label for="dca_frequency_weekly">{{ labels.dca_frequency }}</label>
+        {{ render_segmented_control(
+            "segmented-control--compact backtest-interval-segmented",
+            "frequency",
+            dca_frequency,
+            [
+                {
+                    "id": "dca_frequency_weekly",
+                    "value": "weekly",
+                    "label": labels.dca_frequency_weekly,
+                    "input_attrs": 'data-dca-frequency-input',
+                },
+                {
+                    "id": "dca_frequency_monthly",
+                    "value": "monthly",
+                    "label": labels.dca_frequency_monthly,
+                    "input_attrs": 'data-dca-frequency-input',
+                },
+            ],
+            'id="dca_frequency_control" data-dca-frequency-shell data-active="' ~ dca_frequency ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if dca_frequency == "monthly" else 0) ~ ';"'
+        ) }}
+    </div>
+    <div class="field range-panel dca-schedule-panel" id="dca_weekly_panel" {% if dca_frequency != 'weekly' %}hidden{% endif %}>
+        <label for="dca_weekday">{{ labels.dca_weekday }}</label>
+        <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="dca-weekday">
+            <select id="dca_weekday" name="weekday" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                <option value="0" {% if dca_weekday == 0 %}selected{% endif %}>Monday</option>
+                <option value="1" {% if dca_weekday == 1 %}selected{% endif %}>Tuesday</option>
+                <option value="2" {% if dca_weekday == 2 %}selected{% endif %}>Wednesday</option>
+                <option value="3" {% if dca_weekday == 3 %}selected{% endif %}>Thursday</option>
+                <option value="4" {% if dca_weekday == 4 %}selected{% endif %}>Friday</option>
+            </select>
+            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                <button
+                    type="button"
+                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                    data-shared-select-trigger
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="dca_weekday_dropdown"
+                    aria-label="{{ labels.dca_weekday }}: {{ weekly_label.value }}"
+                    title="{{ weekly_label.value }}"
+                >
+                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ weekly_label.value }}">{{ weekly_label.value }}</span>
+                </button>
+            </div>
+            <div
+                id="dca_weekday_dropdown"
+                class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                data-shared-select-dropdown
+                role="listbox"
+                aria-label="{{ labels.dca_weekday }}"
+                hidden
+            ></div>
+        </div>
+    </div>
+    <div class="field range-panel dca-schedule-panel" id="dca_monthly_panel" {% if dca_frequency != 'monthly' %}hidden{% endif %}>
+        <label for="dca_month_day">Buy on (calendar day)</label>
+        <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="dca-month-day">
+            <select id="dca_month_day" name="month_day" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                {% for day in range(1, 29) %}
+                <option value="{{ day }}" {% if dca_month_day == day %}selected{% endif %}>{{ day }}</option>
+                {% endfor %}
+            </select>
+            <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                <button
+                    type="button"
+                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                    data-shared-select-trigger
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="dca_month_day_dropdown"
+                    aria-label="Buy on (calendar day): {{ dca_month_day }}"
+                    title="{{ dca_month_day }}"
+                >
+                    <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ dca_month_day }}">{{ dca_month_day }}</span>
+                </button>
+            </div>
+            <div
+                id="dca_month_day_dropdown"
+                class="trade-strategy-dropdown backtest-shared-select-dropdown"
+                data-shared-select-dropdown
+                role="listbox"
+                aria-label="Buy on (calendar day)"
+                hidden
+            ></div>
+        </div>
+    </div>
+</form>

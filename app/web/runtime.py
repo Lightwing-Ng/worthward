@@ -15,6 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 import hashlib
 import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
@@ -72,12 +73,46 @@ from app.core.config import (
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
+from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_longbridge,
     merge_investment_payloads,
     normalize_investment_payload_tickers,
 )
+
+
+def report_fetch_abort_debug_event(
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict[str, Any] | None = None,
+    run_id: str = "post-fix",
+) -> None:
+    # #region debug-point E:backend-fetch-abort
+    try:
+        payload = json.dumps(
+            {
+                "sessionId": "frontend-fetch-aborts",
+                "runId": run_id,
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "msg": f"[DEBUG] {msg}",
+                "data": data or {},
+            }
+        ).encode("utf-8")
+        urlopen(
+            Request(
+                "http://127.0.0.1:7777/event",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=0.5,
+        ).read()
+    except Exception:
+        pass
+    # #endregion
 from app.services.live_trading import (
     load_longbridge_account_balances,
     load_longbridge_account_label,
@@ -132,7 +167,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
-SUPPORTED_VIEWS = {"tickers", "portfolio", "backtest", "more", "settings"}
+SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
                                "clear-caches", "style-tokens"}
 SUPPORTED_MORE_SECTIONS = {"investment", "live-trading"}
@@ -152,6 +187,7 @@ STRATEGY_CATEGORY_LABELS = {
 VIEW_PATHS = {
     "tickers": "/workspaces/compare",
     "portfolio": "/workspaces/portfolio",
+    "dca": "/workspaces/dca",
     "backtest": "/workspaces/backtest",
     "more": "/more/investment",
     "settings": "/settings/about",
@@ -172,6 +208,8 @@ class WebRuntime:
     legacy_compare_page: Any
     portfolio_page: Any
     legacy_portfolio_page: Any
+    dca_page: Any
+    legacy_dca_page: Any
     backtest_page: Any
     legacy_backtest_page: Any
     legacy_trade_messages_page: Any
@@ -2042,6 +2080,22 @@ def build_web_runtime() -> WebRuntime:
         if capital_value:
             pairs.append(("capital", capital_value))
 
+        amount_value = request.args.get("amount", "").strip()
+        if amount_value:
+            pairs.append(("amount", amount_value))
+
+        frequency_value = request.args.get("frequency", "").strip().lower()
+        if frequency_value:
+            pairs.append(("frequency", frequency_value))
+
+        weekday_value = request.args.get("weekday", "").strip()
+        if weekday_value:
+            pairs.append(("weekday", weekday_value))
+
+        month_day_value = request.args.get("month_day", "").strip()
+        if month_day_value:
+            pairs.append(("month_day", month_day_value))
+
         page_value = request.args.get("page", request.args.get("local_page", "")).strip()
         if page_value:
             pairs.append(("page", page_value))
@@ -2062,6 +2116,10 @@ def build_web_runtime() -> WebRuntime:
             "strategy",
             "capital",
             "initial_capital",
+            "amount",
+            "frequency",
+            "weekday",
+            "month_day",
             "page",
             "local_page",
             "view",
@@ -2212,8 +2270,6 @@ def build_web_runtime() -> WebRuntime:
         date_display_settings = load_date_display_settings()
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
-        if current_view == "backtest" and not requested_tickers:
-            requested_tickers = [normalize_ticker_input(str(defaults.get("backtest_ticker", DEFAULT_TICKERS[0])))]
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         include_dividends = parse_bool_flag("dividends", "include_dividends")
 
@@ -2236,6 +2292,12 @@ def build_web_runtime() -> WebRuntime:
             )
             requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
             include_dividends = bool(defaults.get("backtest_include_dividends", True))
+        elif current_view == "dca" and not requested_tickers:
+            default_trade_ticker = normalize_ticker_input(
+                defaults.get("dca_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
+            )
+            requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
+            include_dividends = bool(defaults.get("dca_include_dividends", True))
 
         settings_feedback = _read_settings_feedback() if current_view == "settings" else {}
         error = (
@@ -2298,6 +2360,20 @@ def build_web_runtime() -> WebRuntime:
             ),
             1.0,
         )
+        dca_amount = max(
+            parse_float_value(
+                request.args.get("amount"),
+                1000.0,
+            ),
+            1.0,
+        )
+        dca_frequency = (
+            "weekly"
+            if request.args.get("frequency", str(defaults.get("dca_frequency", "monthly"))).strip().lower() == "weekly"
+            else "monthly"
+        )
+        dca_weekday = min(max(parse_int_value(request.args.get("weekday"), parse_int_value(defaults.get("dca_weekday"), 0)), 0), 4)
+        dca_month_day = min(max(parse_int_value(request.args.get("month_day"), parse_int_value(defaults.get("dca_month_day"), 15)), 1), 28)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         supported_intervals = ["1d"]
         if current_view == "backtest" and requested_tickers:
@@ -2313,8 +2389,12 @@ def build_web_runtime() -> WebRuntime:
 
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
+        if current_view == "dca":
+            requested_interval = "1d"
+            supported_intervals = ["1d"]
 
         backtest_result = None
+        dca_result = None
         backtest_market_refresh: dict[str, str | bool | None] | None = None
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
@@ -2360,6 +2440,10 @@ def build_web_runtime() -> WebRuntime:
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
             chart_heading = labels["portfolio_chart"]
+        elif current_view == "dca":
+            page_title = labels["dca_title"]
+            report_heading = labels["dca_metrics"]
+            chart_heading = labels["dca_chart"]
         elif current_view == "backtest":
             page_title = labels["backtest_title"]
         elif current_view == "settings":
@@ -2500,6 +2584,73 @@ def build_web_runtime() -> WebRuntime:
                 else:
                     period_label = format_period_label(period)
                 display_range = f"{format_display_date(trade_dataset['Date'].min())} - {format_display_date(trade_dataset['Date'].max())}"
+            elif current_view == "dca":
+                if requested_tickers:
+                    dca_ticker = validate_ticker_or_raise(requested_tickers[0])
+                    dca_refresh_failures = ensure_latest_daily_caches([dca_ticker])
+                else:
+                    raise ValueError("No ticker selected for recurring investment.")
+
+                try:
+                    dca_dataset = fetch_history(dca_ticker, include_dividends)
+                except ValueError:
+                    dca_dataset = handle_fetch_history_failure(dca_ticker, include_dividends)
+
+                date_constraints = build_date_constraint_payload(
+                    dca_dataset,
+                    requested_start=exact_start or None,
+                    requested_end=exact_end or None,
+                )
+                if range_mode == "exact":
+                    if not date_constraints.trading_dates:
+                        raise ValueError("The selected exact range does not contain trading dates.")
+                    dca_dataset = slice_dataset_to_exact_range(
+                        dca_dataset,
+                        date_constraints.adjusted_start,
+                        date_constraints.adjusted_end,
+                    )
+                else:
+                    supported_periods = build_supported_periods_from_dates(dca_dataset["Date"], interval="1d")
+                    period, period_notice = resolve_requested_period_from_supported(
+                        period,
+                        supported_periods,
+                        earliest_available=dca_dataset["Date"].min() if not dca_dataset.empty else None,
+                    )
+                    if period_notice and notice is None:
+                        notice = period_notice
+                    elif period_notice:
+                        notice += " " + period_notice
+                    dca_dataset = slice_dataset_for_period(dca_dataset, period, dca_dataset["Date"].max())
+
+                if dca_dataset.empty:
+                    raise ValueError(f"No market data available for {dca_ticker} in the selected range.")
+
+                range_start = pd.Timestamp(dca_dataset["Date"].min()).strftime("%Y-%m-%d")
+                range_end = pd.Timestamp(dca_dataset["Date"].max()).strftime("%Y-%m-%d")
+                dca_result = simulate_recurring_investment(
+                    dca_ticker,
+                    dca_dataset,
+                    amount_per_period=dca_amount,
+                    frequency=dca_frequency,
+                    weekday=dca_weekday,
+                    month_day=dca_month_day,
+                )
+                profiles = [fetch_quote_profile(dca_ticker, False)]
+                ticker_slots = [dca_ticker]
+                exact_start_value = range_start
+                exact_end_value = range_end
+                period_label = "Exact range" if range_mode == "exact" else format_period_label(period)
+                display_range = f"{format_display_date(dca_dataset['Date'].min())} - {format_display_date(dca_dataset['Date'].max())}"
+                if dca_refresh_failures:
+                    failed_preview = ", ".join(dca_refresh_failures)
+                    refresh_notice = (
+                        f"Could not refresh the latest trading-day cache for {failed_preview}. "
+                        "Using the newest local daily data currently available."
+                    )
+                    if notice is None:
+                        notice = refresh_notice
+                    else:
+                        notice += " " + refresh_notice
             elif current_view in {"tickers", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
@@ -2776,7 +2927,7 @@ def build_web_runtime() -> WebRuntime:
             if more_section == "live-trading":
                 live_trading_account_label = load_longbridge_account_label(load_broker_settings())
 
-        if current_view == "backtest":
+        if current_view in {"backtest", "dca"}:
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
         else:
             while len(ticker_slots) < MIN_TICKERS:
@@ -2790,6 +2941,7 @@ def build_web_runtime() -> WebRuntime:
         template_name = {
             "tickers": "compare.html",
             "portfolio": "portfolio.html",
+            "dca": "dca.html",
             "backtest": "backtest.html",
             "more": (
                 "investment.html"
@@ -2817,6 +2969,11 @@ def build_web_runtime() -> WebRuntime:
             portfolio_items=portfolio_items,
             portfolio_weights=portfolio_weights,
             portfolio_total_return=portfolio_total_return,
+            dca_result=dca_result,
+            dca_amount=dca_amount,
+            dca_frequency=dca_frequency,
+            dca_weekday=dca_weekday,
+            dca_month_day=dca_month_day,
             ticker_slots=ticker_slots,
             max_tickers=MAX_TICKERS,
             min_tickers=MIN_TICKERS,
@@ -2861,7 +3018,7 @@ def build_web_runtime() -> WebRuntime:
             sidebar_title=labels["more_title"] if current_view == "more" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "backtest", "more", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens")},
@@ -3151,6 +3308,12 @@ def build_web_runtime() -> WebRuntime:
     def legacy_portfolio_page():
         return build_legacy_workspace_redirect("portfolio")
 
+    def dca_page():
+        return render_workspace_page("dca")
+
+    def legacy_dca_page():
+        return build_legacy_workspace_redirect("dca")
+
     def backtest_page():
         return render_workspace_page("backtest")
 
@@ -3173,6 +3336,16 @@ def build_web_runtime() -> WebRuntime:
         return redirect(build_settings_path("about"))
 
     def settings_page(section_name: str):
+        report_fetch_abort_debug_event(
+            "E",
+            "runtime.py:settings_page",
+            "settings page request received",
+            {
+                "section_name": section_name,
+                "path": request.path,
+                "query_string": request.query_string.decode(),
+            },
+        )
         return render_workspace_page("settings", section_name)
 
     def general_settings_action():
@@ -3527,6 +3700,16 @@ def build_web_runtime() -> WebRuntime:
     def symbol_search():
         query = normalize_ticker_input(request.args.get("q", ""))
         limit = min(max(parse_int_value(request.args.get("limit"), 5), 1), 5)
+        report_fetch_abort_debug_event(
+            "E",
+            "runtime.py:symbol_search",
+            "symbol search request received",
+            {
+                "query": query,
+                "limit": limit,
+                "path": request.path,
+            },
+        )
         if not query:
             return jsonify(search_tickers("", limit=limit))
         return jsonify([] if not has_valid_ticker_format(query) else search_tickers(query, limit=limit))
@@ -3535,7 +3718,7 @@ def build_web_runtime() -> WebRuntime:
         requested_tickers = parse_requested_tickers()
         requested_view = request.args.get("view", request.args.get("mode", "tickers")).strip().lower()
         requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
-        minimum_required = 1 if requested_view == "backtest" else MIN_TICKERS
+        minimum_required = 1 if requested_view in {"backtest", "dca"} else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
             return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
@@ -3545,7 +3728,7 @@ def build_web_runtime() -> WebRuntime:
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
         freshness_refresh_failures: list[str] = []
-        if requested_view in {"tickers", "portfolio"}:
+        if requested_view in {"tickers", "portfolio", "dca"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [fetch_history(ticker, include_dividends_flag) for ticker in validated_tickers]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
@@ -3645,6 +3828,15 @@ def build_web_runtime() -> WebRuntime:
 
     def investment_get_transactions():
         """Get all saved investment transactions from local storage."""
+        report_fetch_abort_debug_event(
+            "E",
+            "runtime.py:investment_get_transactions",
+            "investment transactions request received",
+            {
+                "path": request.path,
+                "store_exists": INVESTMENT_STORE_PATH.exists(),
+            },
+        )
         if not INVESTMENT_STORE_PATH.exists():
             response = jsonify({
                 "transactions": [],
@@ -3655,6 +3847,15 @@ def build_web_runtime() -> WebRuntime:
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
             })
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_get_transactions",
+                "investment transactions returned empty store payload",
+                {
+                    "status": 200,
+                    "transaction_count": 0,
+                },
+            )
             return apply_no_store_headers(response)
         try:
             data = load_normalized_investment_payload()
@@ -3670,10 +3871,30 @@ def build_web_runtime() -> WebRuntime:
             data["section_freshness"] = section_freshness
             data["success"] = True
             response = jsonify(data)
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_get_transactions",
+                "investment transactions returned success payload",
+                {
+                    "status": 200,
+                    "transaction_count": len(transactions),
+                    "freshness_refresh_failure_count": len(freshness_refresh_failures),
+                    "price_history_failure_count": len(price_history_failures),
+                },
+            )
             return apply_no_store_headers(response)
         except Exception as exc:
             response = jsonify({"success": False, "error": str(exc)})
             response.status_code = 500
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_get_transactions",
+                "investment transactions failed",
+                {
+                    "status": 500,
+                    "error": str(exc),
+                },
+            )
             return apply_no_store_headers(response)
 
     def investment_add_transactions():
@@ -3682,6 +3903,15 @@ def build_web_runtime() -> WebRuntime:
         positions_file = None
         try:
             broker = str(request.form.get("broker", "ibkr")).strip().lower() or "ibkr"
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_add_transactions",
+                "investment import request received",
+                {
+                    "broker": broker,
+                    "path": request.path,
+                },
+            )
             transactions_file = request.files.get("transactions_csv")
             positions_file = request.files.get("positions_csv")
             if broker == "ibkr":
@@ -3756,8 +3986,26 @@ def build_web_runtime() -> WebRuntime:
                 "investment": investment_payload,
             })
         except ValueError as exc:
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_add_transactions",
+                "investment import rejected with value error",
+                {
+                    "status": 400,
+                    "error": str(exc),
+                },
+            )
             return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
+            report_fetch_abort_debug_event(
+                "E",
+                "runtime.py:investment_add_transactions",
+                "investment import failed",
+                {
+                    "status": 500,
+                    "error": str(exc),
+                },
+            )
             return jsonify({"success": False, "error": str(exc)}), 500
         finally:
             if transactions_file is not None:
@@ -4044,6 +4292,8 @@ def build_web_runtime() -> WebRuntime:
         legacy_compare_page=legacy_compare_page,
         portfolio_page=portfolio_page,
         legacy_portfolio_page=legacy_portfolio_page,
+        dca_page=dca_page,
+        legacy_dca_page=legacy_dca_page,
         backtest_page=backtest_page,
         legacy_backtest_page=legacy_backtest_page,
         legacy_trade_messages_page=legacy_trade_messages_page,
