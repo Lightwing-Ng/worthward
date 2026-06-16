@@ -622,21 +622,60 @@
             </div>
     </section>
     <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
-                <div class="settings-form-row settings-broker-row">
+                <div class="field settings-form-row settings-broker-row backtest-shared-select-field settings-broker-shared-select" data-shared-select-field data-shared-select-kind="settings-broker">
                     <label class="settings-form-label" for="selected_broker">Broker</label>
-                    <select id="selected_broker" name="selected_broker" class="settings-form-control settings-form-select">
-                        <option value="longbridge" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
-                        <option value="ibkr" {% if broker_settings.selected_broker == 'ibkr' %}selected{% endif %}>IBKR (TWS/Gateway)</option>
-                    </select>
+                    <div class="trade-strategy-row backtest-shared-select-row settings-broker-select-row">
+                        <select id="selected_broker" name="selected_broker" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                            <option value="longbridge" data-icon-url="{{ url_for('market_store_logo', filename='Longbridge.png') }}" data-icon-alt="Longbridge logo" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
+                            <option value="ibkr" data-icon-url="{{ url_for('market_store_logo', filename='IBKR.png') }}" data-icon-alt="IBKR logo" {% if broker_settings.selected_broker == 'ibkr' %}selected{% endif %}>IBKR</option>
+                        </select>
+                        <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                            <button
+                                type="button"
+                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger settings-broker-select-trigger"
+                                data-shared-select-trigger
+                                aria-haspopup="listbox"
+                                aria-expanded="false"
+                                aria-controls="selected_broker_dropdown"
+                            >
+                                <span class="ticker-leading-slot settings-broker-select-trigger-slot" aria-hidden="true">
+                                    <span class="ticker-logo-placeholder" data-shared-select-trigger-placeholder></span>
+                                    <img class="ticker-input-logo settings-broker-select-trigger-logo" data-shared-select-trigger-logo alt="" hidden>
+                                </span>
+                                <span class="trade-strategy-trigger-label settings-broker-select-trigger-label" data-shared-select-trigger-label></span>
+                            </button>
+                        </div>
+                        <div
+                            id="selected_broker_dropdown"
+                            class="trade-strategy-dropdown backtest-shared-select-dropdown settings-broker-select-dropdown"
+                            data-shared-select-dropdown
+                            role="listbox"
+                            aria-label="Broker"
+                            hidden
+                        ></div>
+                    </div>
                 </div>
 
                 <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
-                    <div class="settings-form-row">
-                        <label class="settings-form-label" for="longbridge_auth_mode">Auth method</label>
-                        <select id="longbridge_auth_mode" name="longbridge_auth_mode" class="settings-form-control settings-form-select">
-                            <option value="cli_oauth" {% if broker_settings.longbridge_auth_mode == 'cli_oauth' %}selected{% endif %}>CLI OAuth (Recommended)</option>
-                            <option value="legacy_apikey" {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}selected{% endif %}>Legacy API Key</option>
-                        </select>
+                    <div class="settings-form-row settings-broker-auth-row">
+                        <label class="settings-form-label" id="longbridge_auth_mode_label" for="longbridge_auth_mode_cli_oauth">Auth method</label>
+                        <div
+                            id="longbridge_auth_mode"
+                            class="segmented-control settings-broker-auth-switch"
+                            data-option-count="2"
+                            role="radiogroup"
+                            aria-labelledby="longbridge_auth_mode_label"
+                            style="--segmented-option-count: 2; --segmented-active-index: {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}1{% else %}0{% endif %};"
+                        >
+                            <label class="segmented-control-option" for="longbridge_auth_mode_cli_oauth">
+                                <input id="longbridge_auth_mode_cli_oauth" name="longbridge_auth_mode" type="radio" value="cli_oauth" {% if broker_settings.longbridge_auth_mode == 'cli_oauth' %}checked{% endif %}>
+                                <span>CLI OAuth</span>
+                            </label>
+                            <label class="segmented-control-option" for="longbridge_auth_mode_legacy_apikey">
+                                <input id="longbridge_auth_mode_legacy_apikey" name="longbridge_auth_mode" type="radio" value="legacy_apikey" {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}checked{% endif %}>
+                                <span>API Key</span>
+                            </label>
+                        </div>
                     </div>
                     <div data-longbridge-auth-fields="cli_oauth" {% if broker_settings.longbridge_auth_mode != 'cli_oauth' %}hidden{% endif %}>
                         <div class="settings-form-row">

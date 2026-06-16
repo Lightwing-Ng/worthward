@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.37.2
+ * Code version: v1.37.4
  * - Added: Transaction history now uses the shared Local store pagination shell so large ledgers render a smaller DOM slice per page and switch faster
  * - Fixed: Stock detail and ticker identity displays now normalize Longbridge `.US` symbols to the short display ticker when rendering UI labels and fallback names
  * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
@@ -375,11 +375,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const {
         adjustTradePriceForRenderedSeries,
+        addCashLedgerDelta,
         applyDirectionalTrade,
         buildDailyEquityChartPoints,
+        buildInvestmentFxRateTimeline,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        cloneCashLedgerBalances,
+        convertAmountToBaseCurrency,
+        createCashLedger,
         compareInvestmentTransactions,
         createPositionState,
         escapeHtml,
@@ -404,14 +409,17 @@ document.addEventListener('DOMContentLoaded', () => {
         getTransactionCommission,
         getTransactionEconomicAmount,
         getTransactionEffectiveUnitPrice,
+        getInvestmentBaseCurrency,
         getTransactionPrice,
         getTransactionQuantity,
         getTransactionValuationQuantity,
+        getTickerQuoteCurrency,
         isFlatPosition,
         isForexPairTicker,
         normalizeLedgerDate,
         normalizePriceHistoryPayload,
         shouldTrackHoldingTicker,
+        sumCashLedgerInBaseCurrency,
     } = createInvestmentDataUtils({
         noCommissionTransactionTypes: NO_COMMISSION_TRANSACTION_TYPES,
         investmentCommonSplitFactors: INVESTMENT_COMMON_SPLIT_FACTORS,
@@ -3260,6 +3268,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(new Set(normalizedFallbackDates)).sort();
     }
 
+    function constrainTickerDatesToSharedRange(tickerDates = []) {
+        const normalizedTickerDates = Array.isArray(tickerDates)
+            ? tickerDates.map((value) => normalizeLedgerDate(value)).filter(Boolean)
+            : [];
+        if (!normalizedTickerDates.length) return [];
+        const sharedDates = getInvestmentSharedChartDateRange(normalizedTickerDates);
+        if (!sharedDates.length) return normalizedTickerDates;
+        const sharedStart = sharedDates[0];
+        const sharedEnd = sharedDates[sharedDates.length - 1];
+        const boundedDates = normalizedTickerDates.filter((date) => date >= sharedStart && date <= sharedEnd);
+        return boundedDates.length ? boundedDates : normalizedTickerDates;
+    }
+
     function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY) {
         if (!summaries.length) {
             return `
@@ -3654,8 +3675,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return candidateMap && typeof candidateMap === 'object' ? candidateMap : selectedMap;
         }, null) || {};
         const tickerLabels = Object.keys(tickerPriceMap).sort();
-        const sharedLabels = getInvestmentSharedChartDateRange(tickerLabels);
-        const fullLabels = sharedLabels.length ? sharedLabels : tickerLabels;
+        const fullLabels = constrainTickerDatesToSharedRange(tickerLabels);
         const useIntradayCandles = Array.isArray(intradayRows) && intradayRows.length > 0;
         const labels = useIntradayCandles
             ? intradayRows.map((row) => String(row?.date || ''))
@@ -5056,6 +5076,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Sort by date ascending to calculate running cash and holdings
         // Read starting_cash from top-level JSON if available, otherwise default to 0
+        const baseCurrency = getInvestmentBaseCurrency();
+        let cashBalances = createCashLedger(getInvestmentStartingCash(), baseCurrency);
         let runningCash = getInvestmentStartingCash();
         const holdings = {}; // {ticker: quantity}
         const moneyMarketTickers = getMoneyMarketTickerSet();
@@ -5067,6 +5089,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastKnownTickerPrices = {};
 
         const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -5127,29 +5150,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Calculate cash impact based on transaction type
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            const transactionCurrency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
+            let cashDelta = 0;
 
             // For IBKR imported format (txn.normalized exists), net_amount already includes commission
             // and is already correctly signed: -ve = cash out, +ve = cash in. Just add directly.
             if (txn.normalized !== undefined) {
-                runningCash += amount;
+                cashDelta += amount;
             } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
                 // Adjustment can be any direction - use the amount sign directly
-                runningCash += amount;
+                cashDelta += amount;
             } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend' || 
                 normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
                 // Cash in: these transactions add cash to your account
                 // For manually added transactions where commission is separate
                 if (normalizedType === 'sell' && amount && commission) {
-                    runningCash += (amount - commission);
+                    cashDelta += (amount - commission);
                 } else {
-                    runningCash += amount;
+                    cashDelta += amount;
                 }
             } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment' || 
                        normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
                 // Cash out: these transactions remove cash from your account
                 // For manually added transactions
                 if (amount !== 0) {
-                    runningCash += amount;
+                    cashDelta += amount;
                 }
             }
 
@@ -5159,13 +5185,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Only subtract commission for manually added transactions where commission is separate
             const isImported = txn.normalized !== undefined;
             if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
-                runningCash -= Math.abs(commission);
+                cashDelta -= Math.abs(commission);
             }
+            addCashLedgerDelta(cashBalances, transactionCurrency, cashDelta, baseCurrency);
+            runningCash = sumCashLedgerInBaseCurrency(cashBalances, ledgerDate, fxTimeline, baseCurrency);
             return {
                 ...txn,
                 broker: getTransactionBrokerCode(txn),
                 ledger_no: processedIndex + 1,
                 running_cash: runningCash,
+                cash_by_currency: cloneCashLedgerBalances(cashBalances),
                 display_amount: getTransactionEconomicAmount(txn),
                 holdings: { ...holdings },
                 money_market_anchors: { ...moneyMarketAnchors },
@@ -5228,7 +5257,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         missingTickers.add(normalizedTicker);
                     }
                 }
-                marketValue += quantity * closePrice;
+                const quoteCurrency = getTickerQuoteCurrency(ticker);
+                marketValue += convertAmountToBaseCurrency(
+                    quantity * closePrice,
+                    quoteCurrency,
+                    valuationDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
             });
             txn.market_value = marketValue;
             txn.total_equity = txn.running_cash + marketValue;

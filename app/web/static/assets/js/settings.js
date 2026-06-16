@@ -1,4 +1,4 @@
-/* Code version: v0.3.2-p1 */
+/* Code version: v0.3.2-p2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -100,9 +100,16 @@
         if (!(brokerSelect instanceof HTMLSelectElement) || brokerSelect.dataset.bound === "1") return;
         brokerSelect.dataset.bound = "1";
         const syncLongbridgeAuthFields = () => {
-            const authSelect = document.getElementById("longbridge_auth_mode");
-            if (!(authSelect instanceof HTMLSelectElement)) return;
-            const selectedAuthMode = authSelect.value;
+            const authModeShell = document.getElementById("longbridge_auth_mode");
+            const authInputs = Array.from(document.querySelectorAll('input[name="longbridge_auth_mode"]'))
+                .filter((input) => input instanceof HTMLInputElement);
+            const selectedAuthInput = authInputs.find((input) => input.checked);
+            const selectedAuthMode = selectedAuthInput instanceof HTMLInputElement ? selectedAuthInput.value : "cli_oauth";
+            if (authModeShell instanceof HTMLElement) {
+                const activeIndex = Math.max(authInputs.findIndex((input) => input.value === selectedAuthMode), 0);
+                authModeShell.style.setProperty("--segmented-option-count", String(Math.max(authInputs.length, 1)));
+                authModeShell.style.setProperty("--segmented-active-index", String(activeIndex));
+            }
             document.querySelectorAll("[data-longbridge-auth-fields]").forEach((element) => {
                 if (!(element instanceof HTMLElement)) return;
                 element.hidden = element.dataset.longbridgeAuthFields !== selectedAuthMode;
@@ -116,10 +123,13 @@
             });
             syncLongbridgeAuthFields();
         });
-        const authSelect = document.getElementById("longbridge_auth_mode");
-        if (authSelect instanceof HTMLSelectElement && authSelect.dataset.bound !== "1") {
-            authSelect.dataset.bound = "1";
-            authSelect.addEventListener("change", syncLongbridgeAuthFields);
+        const authModeShell = document.getElementById("longbridge_auth_mode");
+        if (authModeShell instanceof HTMLElement && authModeShell.dataset.bound !== "1") {
+            authModeShell.dataset.bound = "1";
+            authModeShell.querySelectorAll('input[name="longbridge_auth_mode"]').forEach((input) => {
+                if (!(input instanceof HTMLInputElement)) return;
+                input.addEventListener("change", syncLongbridgeAuthFields);
+            });
             syncLongbridgeAuthFields();
         }
     };

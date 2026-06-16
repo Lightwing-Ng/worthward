@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.36.3
+ * Code version: v1.37.0
  */
 
 export function createInvestmentDataUtils({
@@ -13,6 +13,15 @@ export function createInvestmentDataUtils({
     normalizeInvestmentStockDetailsRange,
     normalizeInvestmentEquityRange,
 }) {
+    const INVESTMENT_BASE_CURRENCY = 'USD';
+    const INVESTMENT_MARKET_CURRENCY_BY_SUFFIX = {
+        US: 'USD',
+        HK: 'HKD',
+        SH: 'CNY',
+        SZ: 'CNY',
+        SG: 'SGD',
+    };
+
     function getNormalizedTransactionType(txn) {
         return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
     }
@@ -48,6 +57,183 @@ export function createInvestmentDataUtils({
         }
         const numericValue = Number(rawValue);
         return Number.isFinite(numericValue) ? numericValue : 0;
+    }
+
+    function normalizeCurrencyCode(value) {
+        return String(value || '').trim().toUpperCase();
+    }
+
+    function getInvestmentBaseCurrency() {
+        return INVESTMENT_BASE_CURRENCY;
+    }
+
+    function getTickerQuoteCurrency(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
+        if (isForexPairTicker(normalizedTicker)) {
+            const [baseCurrency] = normalizedTicker.split('.');
+            return normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        }
+        const suffix = normalizedTicker.includes('.')
+            ? normalizedTicker.split('.').pop()
+            : '';
+        return INVESTMENT_MARKET_CURRENCY_BY_SUFFIX[normalizeCurrencyCode(suffix)] || INVESTMENT_BASE_CURRENCY;
+    }
+
+    function createCashLedger(startingCash = 0, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const balances = {};
+        const numericStartingCash = Number(startingCash);
+        if (Number.isFinite(numericStartingCash) && Math.abs(numericStartingCash) > 1e-9) {
+            balances[normalizedBaseCurrency] = numericStartingCash;
+        }
+        return balances;
+    }
+
+    function cloneCashLedgerBalances(balances) {
+        return Object.entries(balances || {}).reduce((snapshot, [currency, value]) => {
+            const normalizedCurrency = normalizeCurrencyCode(currency);
+            const numericValue = Number(value);
+            if (!normalizedCurrency || !Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) {
+                return snapshot;
+            }
+            snapshot[normalizedCurrency] = numericValue;
+            return snapshot;
+        }, {});
+    }
+
+    function addCashLedgerDelta(balances, currency, amount, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return;
+        const normalizedCurrency = normalizeCurrencyCode(currency) || normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        balances[normalizedCurrency] = (Number(balances[normalizedCurrency]) || 0) + numericAmount;
+        if (Math.abs(balances[normalizedCurrency]) < 1e-9) {
+            delete balances[normalizedCurrency];
+        }
+    }
+
+    function isCurrencyConversionCashFlow(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (!['deposit', 'withdrawal'].includes(normalizedType)) return false;
+        return /^Currency Conversion \((Credit|Debit)\)$/i.test(String(txn?.description || '').trim());
+    }
+
+    function recordFxRateForDate(dateRates, currency, date, rate) {
+        const normalizedCurrency = normalizeCurrencyCode(currency);
+        const normalizedDate = normalizeLedgerDate(date);
+        const numericRate = Number(rate);
+        if (!normalizedCurrency || !normalizedDate || !Number.isFinite(numericRate) || numericRate <= 0) return;
+        if (!dateRates[normalizedCurrency]) {
+            dateRates[normalizedCurrency] = {};
+        }
+        dateRates[normalizedCurrency][normalizedDate] = numericRate;
+    }
+
+    function buildInvestmentFxRateTimeline(transactions, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const groupedRows = new Map();
+        (Array.isArray(transactions) ? transactions : []).forEach((txn, index) => {
+            if (!isCurrencyConversionCashFlow(txn)) return;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (!ledgerDate) return;
+            const groupKey = `${String(txn?.datetime || txn?.date || '').trim()}|${ledgerDate}`;
+            if (!groupedRows.has(groupKey)) {
+                groupedRows.set(groupKey, []);
+            }
+            groupedRows.get(groupKey).push({
+                txn,
+                index,
+                amount: getTransactionAmount(txn),
+                currency: normalizeCurrencyCode(formatTransactionCurrency(txn)),
+                ledgerDate,
+            });
+        });
+
+        const dateRates = {};
+        groupedRows.forEach((entries) => {
+            const baseEntries = entries.filter((entry) => (
+                entry.currency === normalizedBaseCurrency
+                && Number.isFinite(entry.amount)
+                && Math.abs(entry.amount) > 1e-9
+            ));
+            if (!baseEntries.length) return;
+
+            entries.forEach((entry) => {
+                if (entry.currency === normalizedBaseCurrency) return;
+                if (!Number.isFinite(entry.amount) || Math.abs(entry.amount) <= 1e-9) return;
+
+                const matchedBaseEntry = baseEntries.find((baseEntry) => (
+                    Math.sign(baseEntry.amount) !== Math.sign(entry.amount)
+                ));
+                if (!matchedBaseEntry) return;
+
+                const inferredRate = Math.abs(entry.amount) / Math.abs(matchedBaseEntry.amount);
+                recordFxRateForDate(dateRates, entry.currency, entry.ledgerDate, inferredRate);
+            });
+        });
+
+        const timeline = {
+            baseCurrency: normalizedBaseCurrency,
+            ratesByCurrency: {
+                [normalizedBaseCurrency]: {
+                    dates: [],
+                    values: {},
+                },
+            },
+        };
+
+        Object.entries(dateRates).forEach(([currency, dateMap]) => {
+            const dates = Object.keys(dateMap).sort();
+            timeline.ratesByCurrency[currency] = {
+                dates,
+                values: { ...dateMap },
+            };
+        });
+        return timeline;
+    }
+
+    function getFxRateForDate(fxTimeline, currency, targetDate) {
+        const normalizedCurrency = normalizeCurrencyCode(currency);
+        const baseCurrency = normalizeCurrencyCode(fxTimeline?.baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        if (!normalizedCurrency || normalizedCurrency === baseCurrency) return 1;
+        const normalizedDate = normalizeLedgerDate(targetDate);
+        const entry = fxTimeline?.ratesByCurrency?.[normalizedCurrency];
+        if (!normalizedDate || !entry) return null;
+        const dates = Array.isArray(entry.dates) ? entry.dates : [];
+        for (let index = dates.length - 1; index >= 0; index -= 1) {
+            if (dates[index] <= normalizedDate) {
+                const rate = Number(entry.values?.[dates[index]]);
+                return Number.isFinite(rate) && rate > 0 ? rate : null;
+            }
+        }
+        for (let index = 0; index < dates.length; index += 1) {
+            if (dates[index] >= normalizedDate) {
+                const rate = Number(entry.values?.[dates[index]]);
+                return Number.isFinite(rate) && rate > 0 ? rate : null;
+            }
+        }
+        return null;
+    }
+
+    function convertAmountToBaseCurrency(amount, currency, targetDate, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return 0;
+        const normalizedCurrency = normalizeCurrencyCode(currency) || normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        if (normalizedCurrency === normalizedBaseCurrency) {
+            return numericAmount;
+        }
+        const rate = getFxRateForDate(fxTimeline, normalizedCurrency, targetDate);
+        if (Number.isFinite(rate) && rate > 0) {
+            return numericAmount / rate;
+        }
+        return numericAmount;
+    }
+
+    function sumCashLedgerInBaseCurrency(balances, targetDate, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        return Object.entries(balances || {}).reduce((total, [currency, value]) => (
+            total + convertAmountToBaseCurrency(value, currency, targetDate, fxTimeline, baseCurrency)
+        ), 0);
     }
 
     function getTransactionPrice(txn) {
@@ -448,6 +634,17 @@ export function createInvestmentDataUtils({
         return new Date(Date.UTC(year, monthIndex, day));
     }
 
+    function shiftLedgerDate(value, dayOffset) {
+        const parsedDate = parseInvestmentChartDate(value);
+        if (!(parsedDate instanceof Date) || Number.isNaN(parsedDate.getTime())) return '';
+        const shiftedDate = new Date(parsedDate.getTime());
+        shiftedDate.setUTCDate(shiftedDate.getUTCDate() + Number(dayOffset || 0));
+        const year = shiftedDate.getUTCFullYear();
+        const month = String(shiftedDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(shiftedDate.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
     function getInvestmentStockDetailsRangeLabels(labels, range = 'max') {
         const orderedLabels = Array.isArray(labels)
             ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
@@ -664,7 +861,14 @@ export function createInvestmentDataUtils({
         return Math.abs(Math.log(adjustedRatio)) <= closeEnoughDistance ? adjustedPrice : rawTradePrice;
     }
 
-    function calculateSnapshotMarketValue(snapshot, valuationDate, tickerPriceIndex, moneyMarketTickers) {
+    function calculateSnapshotMarketValue(
+        snapshot,
+        valuationDate,
+        tickerPriceIndex,
+        moneyMarketTickers,
+        fxTimeline = null,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
         if (!snapshot || !valuationDate) return { marketValue: 0, holdingsMarketValues: {} };
         let marketValue = 0;
         const holdingsMarketValues = {};
@@ -691,9 +895,17 @@ export function createInvestmentDataUtils({
 
             const safeClosePrice = Number.isFinite(closePrice) ? closePrice : 0;
             const holdingMarketValue = numericQuantity * safeClosePrice;
-            marketValue += holdingMarketValue;
-            if (Math.abs(holdingMarketValue) > 1e-9) {
-                holdingsMarketValues[ticker] = holdingMarketValue;
+            const quoteCurrency = getTickerQuoteCurrency(ticker);
+            const holdingMarketValueBase = convertAmountToBaseCurrency(
+                holdingMarketValue,
+                quoteCurrency,
+                valuationDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            marketValue += holdingMarketValueBase;
+            if (Math.abs(holdingMarketValueBase) > 1e-9) {
+                holdingsMarketValues[ticker] = holdingMarketValueBase;
             }
         });
 
@@ -709,6 +921,8 @@ export function createInvestmentDataUtils({
         if (!firstLedgerDate) return [];
 
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(processedTransactions, baseCurrency);
         const tradingDateSet = new Set();
         Object.values(tickerPriceIndex).forEach((entry) => {
             (entry?.dates || []).forEach((date) => {
@@ -726,9 +940,10 @@ export function createInvestmentDataUtils({
                 ledgerDateMap.set(ledgerDate, {
                     snapshot: txn,
                     ledgerNos: [],
-                    cashInAmount: 0,
-                    cashOutAmount: 0,
+                    cashInAmountBase: 0,
+                    cashOutAmountBase: 0,
                     netTransferAmount: 0,
+                    netTransferAmountsInBase: 0,
                 });
             }
             const entry = ledgerDateMap.get(ledgerDate);
@@ -736,13 +951,23 @@ export function createInvestmentDataUtils({
             entry.ledgerNos.push(Number(txn.ledger_no || 0));
             const normalizedType = getNormalizedTransactionType(txn);
             const transactionAmount = Math.abs(Number(getTransactionAmount(txn)));
+            const transactionCurrency = normalizeCurrencyCode(formatTransactionCurrency(txn)) || baseCurrency;
+            const transactionAmountBase = convertAmountToBaseCurrency(
+                transactionAmount,
+                transactionCurrency,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
             if (!Number.isFinite(transactionAmount) || transactionAmount <= 1e-9) return;
             if (normalizedType === 'deposit') {
-                entry.cashInAmount += transactionAmount;
+                entry.cashInAmountBase += transactionAmountBase;
                 entry.netTransferAmount += transactionAmount;
+                entry.netTransferAmountsInBase += transactionAmountBase;
             } else if (normalizedType === 'withdrawal') {
-                entry.cashOutAmount += transactionAmount;
+                entry.cashOutAmountBase += transactionAmountBase;
                 entry.netTransferAmount -= transactionAmount;
+                entry.netTransferAmountsInBase -= transactionAmountBase;
             }
         });
 
@@ -756,6 +981,26 @@ export function createInvestmentDataUtils({
         let activeSnapshot = null;
         let cumulativeNetTransferAmount = 0;
         let previousTradingPointIndex = -1;
+        const anchorDate = shiftLedgerDate(firstLedgerDate, -1);
+        const startingCash = getInvestmentStartingCash();
+
+        if (anchorDate) {
+            points.push({
+                date: anchorDate,
+                running_cash: startingCash,
+                market_value: 0,
+                holdings_market_values: {},
+                total_equity: startingCash,
+                anchor_ledger_date: '',
+                anchor_ledger_nos: [],
+                cash_in_amount: 0,
+                cash_out_amount: 0,
+                net_transfer_amount: 0,
+                cumulative_net_transfer_amount: 0,
+                is_trading_day: false,
+                previous_trading_point_index: -1,
+            });
+        }
 
         candidateDates.forEach((date) => {
             while (processedCursor < processedTransactions.length) {
@@ -768,14 +1013,21 @@ export function createInvestmentDataUtils({
 
             if (!activeSnapshot) return;
 
-            const valuation = calculateSnapshotMarketValue(activeSnapshot, date, tickerPriceIndex, moneyMarketTickers);
+            const valuation = calculateSnapshotMarketValue(
+                activeSnapshot,
+                date,
+                tickerPriceIndex,
+                moneyMarketTickers,
+                fxTimeline,
+                baseCurrency,
+            );
             const ledgerEntry = ledgerDateMap.get(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
                 : [];
-            const cashInAmount = Number(ledgerEntry?.cashInAmount) || 0;
-            const cashOutAmount = Number(ledgerEntry?.cashOutAmount) || 0;
-            const netTransferAmount = Number(ledgerEntry?.netTransferAmount) || 0;
+            const cashInAmount = Number(ledgerEntry?.cashInAmountBase) || 0;
+            const cashOutAmount = Number(ledgerEntry?.cashOutAmountBase) || 0;
+            const netTransferAmount = (Number(ledgerEntry?.netTransferAmountsInBase) || 0);
             const isTradingDay = tradingDateSet.has(date);
             cumulativeNetTransferAmount += netTransferAmount;
 
@@ -806,6 +1058,8 @@ export function createInvestmentDataUtils({
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
 
@@ -821,9 +1075,22 @@ export function createInvestmentDataUtils({
             }
 
             const summary = tickerMap.get(ticker);
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            const quoteCurrency = getTickerQuoteCurrency(ticker);
 
             if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
+                const realizedBefore = summary.realizedPnl;
                 applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                const realizedDelta = summary.realizedPnl - realizedBefore;
+                if (Math.abs(realizedDelta) > 1e-9) {
+                    summary.realizedPnl = realizedBefore + convertAmountToBaseCurrency(
+                        realizedDelta,
+                        quoteCurrency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                }
                 return;
             }
 
@@ -841,12 +1108,29 @@ export function createInvestmentDataUtils({
             }
 
             if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
+                const realizedBefore = summary.realizedPnl;
                 applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                const realizedDelta = summary.realizedPnl - realizedBefore;
+                if (Math.abs(realizedDelta) > 1e-9) {
+                    summary.realizedPnl = realizedBefore + convertAmountToBaseCurrency(
+                        realizedDelta,
+                        quoteCurrency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                }
                 return;
             }
 
             if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
-                summary.realizedPnl += amount;
+                summary.realizedPnl += convertAmountToBaseCurrency(
+                    amount,
+                    normalizeCurrencyCode(formatTransactionCurrency(txn)) || quoteCurrency,
+                    ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
             }
         });
 
@@ -875,12 +1159,30 @@ export function createInvestmentDataUtils({
                     : (totalCost / Math.abs(shares)))
                 : null;
             const lastPrice = latestPrices[summary.ticker] ?? null;
-            const marketValue = hasOpenPosition && lastPrice !== null ? shares * lastPrice : 0;
-            const unrealizedPnl = hasOpenPosition && lastPrice !== null && averagePrice !== null
+            const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
+            const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
+            const marketValueLocal = hasOpenPosition && lastPrice !== null ? shares * lastPrice : 0;
+            const marketValue = convertAmountToBaseCurrency(
+                marketValueLocal,
+                quoteCurrency,
+                lastLedgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            const unrealizedPnlLocal = hasOpenPosition && lastPrice !== null && averagePrice !== null
                 ? (shares > 0
                     ? (lastPrice - averagePrice) * shares
                     : (averagePrice - lastPrice) * Math.abs(shares))
                 : null;
+            const unrealizedPnl = unrealizedPnlLocal === null
+                ? null
+                : convertAmountToBaseCurrency(
+                    unrealizedPnlLocal,
+                    quoteCurrency,
+                    lastLedgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
             const positionWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > 1e-9 && hasOpenPosition
                 ? (marketValue / totalEquity) * 100
                 : 0;
@@ -918,9 +1220,13 @@ export function createInvestmentDataUtils({
         adjustTradePriceForRenderedSeries,
         applyDirectionalTrade,
         buildDailyEquityChartPoints,
+        buildInvestmentFxRateTimeline,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        cloneCashLedgerBalances,
+        convertAmountToBaseCurrency,
+        createCashLedger,
         compareInvestmentTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
@@ -943,6 +1249,8 @@ export function createInvestmentDataUtils({
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         getAuthoritativePositionSnapshot,
+        getFxRateForDate,
+        getInvestmentBaseCurrency,
         getMoneyMarketTickerSet,
         getNormalizedTransactionType,
         getTransactionAmount,
@@ -955,10 +1263,14 @@ export function createInvestmentDataUtils({
         getTransactionQuantity,
         isFlatPosition,
         isForexPairTicker,
+        getTickerQuoteCurrency,
         normalizeLedgerDate,
         normalizePriceHistoryPayload,
         parseInvestmentChartDate,
         resetPositionState,
+        shiftLedgerDate,
         shouldTrackHoldingTicker,
+        sumCashLedgerInBaseCurrency,
+        addCashLedgerDelta,
     };
 }

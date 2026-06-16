@@ -1,4 +1,4 @@
-/* Code version: v0.4.3-p5 */
+/* Code version: v0.4.3-p7 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -2095,8 +2095,37 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-form-row.settings-broker-row {
-    width: 100%;
+    width: min(100%, var(--settings-form-control-max-width));
+    min-width: min(100%, var(--settings-form-control-min-width));
+}
+
+.settings-form-row.settings-broker-auth-row {
+    width: min(100%, var(--settings-form-control-max-width));
+    min-width: min(100%, var(--settings-form-control-min-width));
+}
+
+.settings-broker-select-row {
+    display: block;
+}
+
+.settings-broker-select-trigger {
+    position: relative;
+    min-height: var(--sidebar-form-control-min-height);
+    padding-left: 46px;
+}
+
+.settings-broker-select-trigger-slot {
+    left: 14px;
+    width: 22px;
+    height: 22px;
+}
+
+.settings-broker-select-trigger-label {
     min-width: 0;
+}
+
+.settings-broker-select-dropdown .trade-strategy-dropdown-option.is-with-icon {
+    grid-template-columns: 16px 22px minmax(0, 1fr);
 }
 
 .settings-form-grid .field.settings-field-span-full {
@@ -2152,6 +2181,17 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-form-control-secret {
     font-family: inherit;
     letter-spacing: 0.01em;
+}
+
+.settings-broker-auth-switch {
+    width: 100%;
+    max-width: var(--settings-form-control-max-width);
+    margin-inline: 0;
+}
+
+.settings-broker-auth-switch:focus-within {
+    outline: none;
+    box-shadow: 0 0 0 4px var(--accent-focus-ring), 0 0 18px var(--accent-focus-glow);
 }
 
 .settings-form-select {
