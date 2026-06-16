@@ -84,15 +84,39 @@
                                     </div>
                                 </div>
                                 <div class="trade-detail-panel" data-trade-detail-panel="transactions" hidden>
-                                    <div class="scrollable-data-table-shell trade-transactions-shell">
+                                    <div class="scrollable-data-table-shell trade-transactions-shell dca-transactions-shell"
+                                         style="
+                                             --dca-col-index-width: 5%;
+                                             --dca-col-index-min-width: 44px;
+                                             --dca-col-date-width: 25%;
+                                             --dca-col-date-min-width: 96px;
+                                             --dca-col-price-width: 10%;
+                                             --dca-col-price-min-width: 72px;
+                                             --dca-col-shares-width: 10%;
+                                             --dca-col-shares-min-width: 88px;
+                                             --dca-col-cumulative-width: 10%;
+                                             --dca-col-cumulative-min-width: 96px;
+                                             --dca-col-invested-width: 20%;
+                                             --dca-col-invested-min-width: 100px;
+                                             --dca-col-equity-width: 20%;
+                                             --dca-col-equity-min-width: 100px;
+                                         ">
                                         <table class="settings-table trade-transactions-table scrollable-data-table"
                                                aria-hidden="true">
+                                            <colgroup>
+                                                <col class="dca-transactions-col dca-transactions-col-index">
+                                                <col class="dca-transactions-col dca-transactions-col-date">
+                                                <col class="dca-transactions-col dca-transactions-col-price">
+                                                <col class="dca-transactions-col dca-transactions-col-shares">
+                                                <col class="dca-transactions-col dca-transactions-col-cumulative">
+                                                <col class="dca-transactions-col dca-transactions-col-invested">
+                                                <col class="dca-transactions-col dca-transactions-col-equity">
+                                            </colgroup>
                                             <thead>
                                             <tr>
                                                 <th>No.</th>
                                                 <th>Date</th>
                                                 <th class="trade-transactions-number">Price</th>
-                                                <th class="trade-transactions-number">Amount</th>
                                                 <th class="trade-transactions-number">Shares</th>
                                                 <th class="trade-transactions-number">Cum. shares</th>
                                                 <th class="trade-transactions-number">Invested</th>
@@ -103,6 +127,15 @@
                                         <div class="trade-transactions-wrap scrollable-data-table-scroll">
                                             <table id="tradeTransactionsTable"
                                                    class="settings-table trade-transactions-table scrollable-data-table">
+                                                <colgroup>
+                                                    <col class="dca-transactions-col dca-transactions-col-index">
+                                                    <col class="dca-transactions-col dca-transactions-col-date">
+                                                    <col class="dca-transactions-col dca-transactions-col-price">
+                                                    <col class="dca-transactions-col dca-transactions-col-shares">
+                                                    <col class="dca-transactions-col dca-transactions-col-cumulative">
+                                                    <col class="dca-transactions-col dca-transactions-col-invested">
+                                                    <col class="dca-transactions-col dca-transactions-col-equity">
+                                                </colgroup>
                                                 <tbody>
                                                 </tbody>
                                             </table>

@@ -1,7 +1,7 @@
 """
 Recurring investment simulator.
 
-Code version: v0.1.1
+Code version: v0.1.4
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from app.services.presentation import format_display_date
+from app.services.presentation import format_display_date, format_short_display_date
 
 WEEKDAY_LABELS = {
     0: "Monday",
@@ -25,7 +25,7 @@ WEEKDAY_LABELS = {
 
 def _format_trade_date(value: pd.Timestamp | str) -> str:
     timestamp = pd.Timestamp(value)
-    return f"{timestamp.year}/{timestamp.month:02d}/{timestamp.day:02d}"
+    return format_short_display_date(timestamp)
 
 
 def _normalize_frequency(raw_value: str | None) -> str:
@@ -139,10 +139,8 @@ def simulate_recurring_investment(
 
     schedule_counter = Counter(pd.Timestamp(value).normalize() for value in schedule_dates)
     total_planned_amount = periodic_amount * len(schedule_dates)
-    first_trade_date = min(schedule_dates)
-    first_trade_row = merged.loc[merged["Date"].dt.normalize() == first_trade_date]
-    first_trade_price = float(first_trade_row["Close"].iloc[0]) if not first_trade_row.empty else 0.0
-    all_in_shares = (total_planned_amount / first_trade_price) if first_trade_price > 0 else 0.0
+    first_bar_price = float(merged["Close"].iloc[0]) if not merged.empty else 0.0
+    all_in_shares = (total_planned_amount / first_bar_price) if first_bar_price > 0 else 0.0
     target_shares = 0.0
     total_invested = 0.0
     target_equity_series: list[float] = []
@@ -160,9 +158,11 @@ def simulate_recurring_investment(
             target_buy_shares = contribution_amount / target_close
             target_shares += target_buy_shares
             total_invested += contribution_amount
-            target_equity_after_buy = target_shares * target_close
+            remaining_cash = max(total_planned_amount - total_invested, 0.0)
+            target_equity_after_buy = (target_shares * target_close) + remaining_cash
             trades.append({
                 "date": _format_trade_date(trade_date),
+                "raw_date": trade_date.strftime("%Y-%m-%d"),
                 "ticker": ticker,
                 "price": round(target_close, 4),
                 "amount": round(contribution_amount, 4),
@@ -173,18 +173,17 @@ def simulate_recurring_investment(
                 "events": event_count,
             })
 
-        target_equity = target_shares * target_close
-        all_in_equity = (all_in_shares * target_close) if trade_date >= first_trade_date and all_in_shares > 0 else None
+        remaining_cash = max(total_planned_amount - total_invested, 0.0)
+        target_equity = (target_shares * target_close) + remaining_cash
+        all_in_equity = (all_in_shares * target_close) if all_in_shares > 0 else 0.0
         target_equity_series.append(round(target_equity, 4))
-        all_in_equity_series.append(round(all_in_equity, 4) if all_in_equity is not None else None)
+        all_in_equity_series.append(round(all_in_equity, 4))
         contribution_markers.append(event_count > 0)
 
     final_equity = float(target_equity_series[-1] if target_equity_series else 0.0)
     all_in_final_equity = 0.0
     if all_in_equity_series:
-        finite_all_in_values = [value for value in all_in_equity_series if value is not None]
-        if finite_all_in_values:
-            all_in_final_equity = float(finite_all_in_values[-1])
+        all_in_final_equity = float(all_in_equity_series[-1])
     total_return_pct = ((final_equity / total_invested) - 1.0) * 100.0 if total_invested > 0 else 0.0
     all_in_return_pct = ((all_in_final_equity / total_planned_amount) - 1.0) * 100.0 if total_planned_amount > 0 else 0.0
     average_cost = (total_invested / target_shares) if target_shares > 0 else 0.0
@@ -203,6 +202,7 @@ def simulate_recurring_investment(
                 if normalized_frequency == "weekly"
                 else f"Calendar day {normalized_month_day} of each month"
             ),
+            "planned_capital": round(total_planned_amount, 2),
             "total_invested": round(total_invested, 2),
             "final_equity": round(final_equity, 2),
             "net_gain": round(final_equity - total_invested, 2),

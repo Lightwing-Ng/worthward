@@ -455,44 +455,32 @@
     vertical-align: top;
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(1) {
-    width: 10%;
-    min-width: 36px;
+.dca-transactions-shell .dca-transactions-col-index {
+    width: max(var(--dca-col-index-width, 8%), var(--dca-col-index-min-width, 44px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(2) {
-    width: 15%;
-    min-width: 52px;
+.dca-transactions-shell .dca-transactions-col-date {
+    width: max(var(--dca-col-date-width, 16%), var(--dca-col-date-min-width, 96px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(3) {
-    width: 10%;
-    min-width: 36px;
+.dca-transactions-shell .dca-transactions-col-price {
+    width: max(var(--dca-col-price-width, 12%), var(--dca-col-price-min-width, 72px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(4) {
-    width: 10%;
-    min-width: 36px;
+.dca-transactions-shell .dca-transactions-col-shares {
+    width: max(var(--dca-col-shares-width, 14%), var(--dca-col-shares-min-width, 88px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(5) {
-    width: 10%;
-    min-width: 36px;
+.dca-transactions-shell .dca-transactions-col-cumulative {
+    width: max(var(--dca-col-cumulative-width, 16%), var(--dca-col-cumulative-min-width, 96px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(6) {
-    width: 15%;
-    min-width: 52px;
+.dca-transactions-shell .dca-transactions-col-invested {
+    width: max(var(--dca-col-invested-width, 17%), var(--dca-col-invested-min-width, 100px));
 }
 
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(7) {
-    width: 15%;
-    min-width: 52px;
-}
-
-.trade-transactions-shell .trade-transactions-table tr > :nth-child(8) {
-    width: 15%;
-    min-width: 52px;
+.dca-transactions-shell .dca-transactions-col-equity {
+    width: max(var(--dca-col-equity-width, 17%), var(--dca-col-equity-min-width, 100px));
 }
 
 .field-switch {

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v3.0.0`
+Documentation version: `v3.0.1`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -130,9 +130,9 @@ The current `Settings` navigation includes:
 
 - `market_store/profiles/profiles.parquet` stores cached company profiles
 - `market_store/logos/` stores cached ticker logos
-- `market_store/search/search_cache.parquet` stores search-result caches
-- `market_store/search/ticker_usage.json` stores ticker usage frequency
-- `market_store/search/strategy_usage.json` stores strategy usage frequency
+- `settings_store/search/search_cache.parquet` stores search-result caches
+- `settings_store/search/ticker_usage.json` stores ticker usage frequency
+- `settings_store/search/strategy_usage.json` stores strategy usage frequency
 
 ### Runtime-only local settings
 
@@ -142,6 +142,7 @@ The current `Settings` navigation includes:
 - `settings_store/smtp.json`
 - `settings_store/date_display.json`
 - `settings_store/investment.json`
+- `settings_store/search/`
 
 ## Investment ledger notes
 
@@ -200,8 +201,8 @@ app/web/runtime.py              -> Web runtime assembly and request handling
 app/web/templates/              -> Server-rendered HTML templates
 app/web/static/                 -> CSS, JavaScript, and image assets
 strategies/                     -> Strategy framework, loader, backtest engine, and algorithms
-market_store/                   -> Local parquet, profile, logo, and search caches
-settings_store/                 -> Runtime-generated local settings and investment ledger files
+market_store/                   -> Local market history, profile, and logo caches
+settings_store/                 -> Runtime-generated local settings, investment ledger, and search caches
 ```
 
 ## Versioning note

@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p7 */
+/* Code version: v0.3.8-p12 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1106,6 +1106,30 @@
         input.dataset.validationPending = isPending ? "1" : "";
         input.classList.toggle("is-pending", isPending);
     };
+    const syncTickerIdentityState = (input, nextTicker = sanitizeTicker(input?.value?.trim?.() || "")) => {
+        if (!input) return "";
+        const currentTicker = sanitizeTicker(nextTicker);
+        const selectedTicker = sanitizeTicker(input.dataset.symbol || "");
+        const validatedTicker = sanitizeTicker(input.dataset.validatedTicker || "");
+        const pendingTicker = sanitizeTicker(input.dataset.validationTicker || "");
+        if (!currentTicker || (selectedTicker && selectedTicker !== currentTicker)) {
+            input.dataset.logoUrl = "";
+            input.dataset.symbol = "";
+            input.dataset.companyName = "";
+        }
+        if (!currentTicker || (validatedTicker && validatedTicker !== currentTicker)) {
+            input.dataset.validatedTicker = "";
+            input.dataset.validatedKnown = "";
+        }
+        if (!currentTicker || (pendingTicker && pendingTicker !== currentTicker)) {
+            input.dataset.validationTicker = "";
+        }
+        if (!currentTicker) {
+            input.dataset.unknown = "";
+            setTickerValidationPending(input, false);
+        }
+        return currentTicker;
+    };
 
     const rememberValidatedTicker = (input, ticker, isKnown) => {
         if (!input) return;
@@ -1128,7 +1152,7 @@
 
     const validateTickerExistence = async (input, {preferFresh = false} = {}) => {
         if (!input) return false;
-        const value = sanitizeTicker(input.value.trim());
+        const value = syncTickerIdentityState(input, sanitizeTicker(input.value.trim()));
         input.value = value;
         validateTickerInput(input);
         if (!value) {
@@ -1216,6 +1240,16 @@
         if (!clearButton || !input) return;
         clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
     };
+    const buildMarketStoreLogoUrl = (ticker) => {
+        const normalizedTicker = sanitizeTicker(ticker);
+        return normalizedTicker ? `/market-store/logos/${encodeURIComponent(normalizedTicker)}.png` : "";
+    };
+    const normalizeLogoUrlList = (logoUrl) => {
+        const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
+        return Array.from(new Set(values
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)));
+    };
 
     const setTickerLogoVisibility = (logo, placeholder, isLoaded) => {
         if (logo instanceof HTMLImageElement) {
@@ -1226,41 +1260,50 @@
     };
 
     const syncTickerLogoAsset = (logo, placeholder, logoUrl, altText = "") => {
+        const normalizedUrls = normalizeLogoUrlList(logoUrl);
         if (!(logo instanceof HTMLImageElement)) {
-            if (placeholder) placeholder.hidden = Boolean(logoUrl);
+            if (placeholder) placeholder.hidden = normalizedUrls.length > 0;
             return;
         }
-        const normalizedUrl = String(logoUrl || "").trim();
         logo.onload = null;
         logo.onerror = null;
-        if (!normalizedUrl) {
+        if (!normalizedUrls.length) {
             delete logo.dataset.requestedSrc;
             logo.removeAttribute("src");
             logo.alt = "";
             setTickerLogoVisibility(logo, placeholder, false);
             return;
         }
-        logo.dataset.requestedSrc = normalizedUrl;
         logo.alt = altText;
         logo.loading = "eager";
-        setTickerLogoVisibility(logo, placeholder, false);
-        const finalize = (isLoaded) => {
-            if (logo.dataset.requestedSrc !== normalizedUrl) return;
-            if (!isLoaded) {
+        const tryLoadAtIndex = (index) => {
+            const nextUrl = normalizedUrls[index];
+            if (!nextUrl) {
+                delete logo.dataset.requestedSrc;
                 logo.removeAttribute("src");
                 setTickerLogoVisibility(logo, placeholder, false);
                 return;
             }
-            setTickerLogoVisibility(logo, placeholder, true);
+            logo.dataset.requestedSrc = nextUrl;
+            setTickerLogoVisibility(logo, placeholder, false);
+            const finalize = (isLoaded) => {
+                if (logo.dataset.requestedSrc !== nextUrl) return;
+                if (!isLoaded) {
+                    tryLoadAtIndex(index + 1);
+                    return;
+                }
+                setTickerLogoVisibility(logo, placeholder, true);
+            };
+            logo.onload = () => finalize(true);
+            logo.onerror = () => finalize(false);
+            if (logo.getAttribute("src") !== nextUrl) {
+                logo.src = nextUrl;
+            }
+            if (logo.complete) {
+                finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
+            }
         };
-        logo.onload = () => finalize(true);
-        logo.onerror = () => finalize(false);
-        if (logo.getAttribute("src") !== normalizedUrl) {
-            logo.src = normalizedUrl;
-        }
-        if (logo.complete) {
-            finalize(Boolean(logo.naturalWidth && logo.naturalHeight));
-        }
+        tryLoadAtIndex(0);
     };
 
     const syncTickerInputDecoration = (input, suggestion = null) => {
@@ -1270,16 +1313,41 @@
         const placeholder = control.querySelector(".ticker-logo-placeholder");
         const value = input.value.trim();
         const hasTickerLikeValue = Boolean(value);
-        const tickerValue = suggestion?.symbol || input.dataset.symbol || value.toUpperCase();
+        const selectedTicker = sanitizeTicker(input.dataset.symbol || "");
+        const validatedTicker = sanitizeTicker(input.dataset.validatedTicker || "");
+        const suggestedTicker = sanitizeTicker(suggestion?.symbol || "");
+        const tickerValue = suggestedTicker || sanitizeTicker(value) || selectedTicker;
         const profileLogoUrl = state.chart?.profiles?.find((item) => item.ticker === tickerValue)?.logo_url || "";
-        const logoUrl = suggestion?.logo_url || input.dataset.logoUrl || profileLogoUrl || "";
+        const storedLogoUrl = selectedTicker && selectedTicker === tickerValue ? (input.dataset.logoUrl || "") : "";
+        const existingLogoUrl = logo instanceof HTMLImageElement
+            ? (sanitizeTicker((logo.alt || "").replace(/\s+logo$/i, "")) === tickerValue
+                ? (logo.dataset.requestedSrc || logo.getAttribute("src") || "")
+                : "")
+            : "";
+        const hasConfirmedTicker = Boolean(
+            (suggestedTicker && suggestedTicker === tickerValue)
+            || (selectedTicker && selectedTicker === tickerValue)
+            || (validatedTicker && validatedTicker === tickerValue)
+            || existingLogoUrl
+            || profileLogoUrl
+        );
+        const fallbackLogoUrl = hasConfirmedTicker ? buildMarketStoreLogoUrl(tickerValue) : "";
+        const logoUrls = normalizeLogoUrlList([
+            suggestion?.logo_url,
+            storedLogoUrl,
+            profileLogoUrl,
+            existingLogoUrl,
+            fallbackLogoUrl,
+        ]);
         control.classList.toggle("has-value", hasTickerLikeValue);
-        control.classList.toggle("has-logo", Boolean(logoUrl));
-        syncTickerLogoAsset(logo, placeholder, logoUrl, logoUrl ? `${tickerValue} logo` : "");
+        control.classList.toggle("has-logo", logoUrls.length > 0);
+        syncTickerLogoAsset(logo, placeholder, logoUrls, logoUrls.length ? `${tickerValue} logo` : "");
         if (suggestion) {
-            input.dataset.logoUrl = suggestion.logo_url || "";
-            input.dataset.symbol = suggestion.symbol || "";
+            input.dataset.logoUrl = suggestion.logo_url || profileLogoUrl || fallbackLogoUrl || "";
+            input.dataset.symbol = suggestion.symbol || tickerValue;
             input.dataset.companyName = suggestion.name || suggestion.symbol || "";
+        } else if (hasTickerLikeValue && selectedTicker && selectedTicker === tickerValue && !input.dataset.logoUrl && logoUrls.length) {
+            input.dataset.logoUrl = logoUrls[0];
         }
         if (!hasTickerLikeValue) {
             input.dataset.logoUrl = "";
@@ -1683,7 +1751,7 @@
 
     const validateTickerInput = (input) => {
         const rawValue = input.value.trim();
-        const value = sanitizeTicker(rawValue);
+        const value = syncTickerIdentityState(input, sanitizeTicker(rawValue));
         input.value = value;
         const duplicateTooltip = input.parentElement.querySelector(".field-tooltip-duplicate");
         const unknownTooltip = input.parentElement.querySelector(".field-tooltip-invalid");
@@ -1822,6 +1890,33 @@
 
         const getPanel = () => document.getElementById(`${input.id}_suggestions`);
         const getButtons = () => Array.from(getPanel()?.querySelectorAll(".suggestion-item") || []);
+        const querySuggestions = async (rawValue, {limit = 5, preserveUnknown = false} = {}) => {
+            const queryValue = sanitizeTicker(String(rawValue || "").trim());
+            if (!queryValue) {
+                if (!preserveUnknown) setUnknown(false);
+                await showRecentItems();
+                return;
+            }
+            try {
+                const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(queryValue)}&limit=${limit}`);
+                if (!response.ok) return closePanel();
+                const payload = await response.json();
+                if (!Array.isArray(payload) || !payload.length) {
+                    if (!preserveUnknown) setUnknown(true);
+                    closePanel();
+                    return;
+                }
+                if (!preserveUnknown) {
+                    const exactMatch = Boolean(applyExactTickerMatch(input, payload, queryValue));
+                    tickerValidationCache.set(queryValue, exactMatch);
+                    input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
+                    validateTickerInput(input);
+                }
+                renderItems(payload);
+            } catch (_error) {
+                closePanel();
+            }
+        };
         const setUnknown = (flag) => {
             input.dataset.unknown = flag ? "1" : "";
             if (flag && input.value.trim()) tickerValidationCache.set(sanitizeTicker(input.value.trim()), false);
@@ -1926,8 +2021,7 @@
             if (isPortfolioView) requestWorkspaceChartTransition("ticker-edit");
             else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
             hideTickerValidationTooltip(input);
-            input.dataset.logoUrl = "";
-            input.dataset.symbol = "";
+            syncTickerIdentityState(input, sanitizeTicker(input.value.trim()));
             syncTickerInputDecoration(input);
             const rawQuery = input.value.trim();
             const query = validateTickerInput(input);
@@ -1976,6 +2070,13 @@
                     if (query) tickerValidationCache.set(query, exactMatch);
                     input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
                     validateTickerInput(input);
+                    if (exactMatch) {
+                        handlePortfolioTickerValueChange(input);
+                        syncDateConstraints();
+                        if (isBacktestView) syncBacktestIntervals();
+                        if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
+                        scheduleAutoSubmit(120);
+                    }
                     renderItems(payload);
                 } catch (error) {
                     reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search request failed", {
@@ -1992,14 +2093,22 @@
         });
         input.addEventListener("focus", async () => {
             hideTickerValidationTooltip(input);
-            if (input.value.trim()) return;
+            if (input.value.trim()) {
+                input.select();
+                await querySuggestions(input.value.trim(), {preserveUnknown: true});
+                return;
+            }
             setUnknown(false);
             await showRecentItems();
         });
         input.addEventListener("click", async () => {
             hideTickerValidationTooltip(input);
-            if (input.value.trim()) return;
             if (getPanel()?.classList.contains("is-open")) return;
+            if (input.value.trim()) {
+                input.select();
+                await querySuggestions(input.value.trim(), {preserveUnknown: true});
+                return;
+            }
             setUnknown(false);
             await showRecentItems();
         });
@@ -2054,8 +2163,7 @@
                 if (!input) return;
                 input.value = "";
                 input.dataset.unknown = "";
-                input.dataset.logoUrl = "";
-                input.dataset.symbol = "";
+                syncTickerIdentityState(input, "");
                 syncTickerInputDecoration(input);
                 validateAllTickerInputs();
                 handlePortfolioTickerValueChange(input);
@@ -2711,8 +2819,8 @@
     const initializeSharedSelectField = (field) => {
         const parts = getSharedSelectParts(field);
         refreshSharedSelectField(field);
-        if (!parts || parts.field.dataset.sharedSelectBound === "1") return;
-        parts.field.dataset.sharedSelectBound = "1";
+        if (!parts || parts.field.dataset.sharedSelectJsBound === "1") return;
+        parts.field.dataset.sharedSelectJsBound = "1";
         parts.trigger.addEventListener("click", () => {
             const shouldOpen = parts.dropdown.hidden;
             closeSharedSelectDropdowns(field);
@@ -2736,6 +2844,26 @@
     const getSelectedDcaFrequency = () => {
         const selectedInput = getDcaFrequencyInputs().find((input) => input.checked && !input.disabled);
         return selectedInput?.value === "weekly" ? "weekly" : "monthly";
+    };
+    const syncRangeModeSegmentedControl = () => {
+        const shell = $(".range-mode-shell");
+        if (!(shell instanceof HTMLElement)) return;
+        const options = Array.from(shell.querySelectorAll(".segmented-control-option, .range-mode-option"))
+            .filter((option) => option instanceof HTMLElement)
+            .filter((option) => {
+                const input = option.querySelector("input");
+                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
+            });
+        const activeInput = rangeModeInputs.find((input) => input.checked && !input.disabled);
+        const activeValue = activeInput?.value || defaults.range_mode || "period";
+        const activeIndex = Math.max(0, options.findIndex((option) => {
+            const input = option.querySelector("input");
+            return input instanceof HTMLInputElement && input.checked;
+        }));
+        shell.dataset.active = activeValue;
+        shell.dataset.optionCount = String(Math.max(options.length, 1));
+        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
+        shell.style.setProperty("--segmented-active-index", String(activeIndex));
     };
     const syncDcaFrequencySegmentedControl = () => {
         const shell = getDcaFrequencyShell();
@@ -3169,10 +3297,7 @@
 
     const updateRangePanels = () => {
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
-        const rangeShell = $(".range-mode-shell");
-        if (rangeShell) {
-            rangeShell.dataset.active = rangeMode;
-        }
+        syncRangeModeSegmentedControl();
         const isPeriodMode = rangeMode === "period";
         if (periodPanel) {
             periodPanel.hidden = !isPeriodMode;
@@ -3804,10 +3929,17 @@
             scheduleAutoSubmit(80);
         });
     }
-    $("#period")?.addEventListener("change", () => {
-        refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
-        if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
-        scheduleAutoSubmit();
+    form?.addEventListener("change", (event) => {
+        const target = event.target;
+        if (target instanceof HTMLSelectElement && target.id === "period") {
+            refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
+            scheduleAutoSubmit();
+            return;
+        }
+        if (target instanceof HTMLSelectElement && (target.id === "dca_weekday" || target.id === "dca_month_day")) {
+            scheduleAutoSubmit(20);
+        }
     });
     getDcaFrequencyInputs().forEach((input) => input.addEventListener("change", (event) => {
         if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
@@ -3815,13 +3947,6 @@
         updateDcaSchedulePanels();
         scheduleAutoSubmit(20);
     }));
-    ["dca_weekday", "dca_month_day"].forEach((id) => {
-        const select = document.getElementById(id);
-        if (!(select instanceof HTMLSelectElement)) return;
-        select.addEventListener("change", () => {
-            scheduleAutoSubmit(20);
-        });
-    });
     getBacktestIntervalInputs().forEach((input) => input.addEventListener("change", (event) => {
         if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
         const interval = event.target.value;

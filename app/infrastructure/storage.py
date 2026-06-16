@@ -1,13 +1,14 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.3
+Code version: v0.3.4
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +35,8 @@ HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
 PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"
 LOGOS_STORE_DIR = MARKET_STORE_DIR / "logos"
-SEARCH_STORE_DIR = MARKET_STORE_DIR / "search"
+LEGACY_SEARCH_STORE_DIR = MARKET_STORE_DIR / "search"
+SEARCH_STORE_DIR = SETTINGS_STORE_DIR / "search"
 SEARCH_CACHE_PARQUET_PATH = SEARCH_STORE_DIR / "search_cache.parquet"
 TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.json"
 
@@ -68,12 +70,14 @@ def ensure_market_store_dir() -> None:
 def _ensure_market_store_directories() -> None:
     for path in (
             MARKET_STORE_DIR,
+            SETTINGS_STORE_DIR,
             HISTORICAL_STORE_DIR,
             PROFILES_STORE_DIR,
             LOGOS_STORE_DIR,
             SEARCH_STORE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
+    _migrate_legacy_search_store()
     _migrate_legacy_store_filenames()
 
 
@@ -115,6 +119,21 @@ def _migrate_legacy_store_filenames() -> None:
             _MIGRATION_COMPLETED = True
         finally:
             _MIGRATION_RUNNING = False
+
+
+def _migrate_legacy_search_store() -> None:
+    if not LEGACY_SEARCH_STORE_DIR.exists() or LEGACY_SEARCH_STORE_DIR == SEARCH_STORE_DIR:
+        return
+    SEARCH_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    for path in LEGACY_SEARCH_STORE_DIR.iterdir():
+        target = SEARCH_STORE_DIR / path.name
+        if target.exists():
+            continue
+        shutil.move(str(path), str(target))
+    try:
+        LEGACY_SEARCH_STORE_DIR.rmdir()
+    except OSError:
+        return
 
 
 def normalize_ticker(ticker: str) -> str:

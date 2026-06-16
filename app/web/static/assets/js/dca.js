@@ -1,4 +1,4 @@
-/* Code version: v0.1.1 */
+/* Code version: v0.1.5 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -61,6 +61,7 @@
         const rawDates = Array.isArray(dcaResult.chart?.raw_dates) ? dcaResult.chart.raw_dates : [];
         const close = Array.isArray(dcaResult.chart?.close) ? dcaResult.chart.close.map((value) => Number(value || 0)) : [];
         const equity = Array.isArray(dcaResult.chart?.equity) ? dcaResult.chart.equity.map((value) => Number(value || 0)) : [];
+        const plannedCapital = Number(dcaResult.summary?.planned_capital || 0);
         const allInEquity = Array.isArray(dcaResult.chart?.all_in_equity)
             ? dcaResult.chart.all_in_equity.map((value) => (Number.isFinite(Number(value)) ? Number(value) : null))
             : [];
@@ -72,8 +73,6 @@
         const chartYPaddingPx = 5;
         const fixedYAxisWidth = 52;
         const contributionByIndex = new Map();
-        const investedByIndex = new Array(labels.length).fill(0);
-        let runningInvested = 0;
         const indexByDate = new Map();
         rawDates.forEach((value, index) => {
             indexByDate.set(String(value), index);
@@ -81,7 +80,10 @@
             indexByDate.set(normalized, index);
         });
         trades.forEach((trade) => {
-            const index = indexByDate.get(String(trade.date || ""));
+            const rawTradeDate = String(trade.raw_date || "");
+            const index = indexByDate.get(rawTradeDate)
+                ?? indexByDate.get(rawTradeDate.replace(/-/g, "/"))
+                ?? indexByDate.get(String(trade.date || ""));
             if (!Number.isInteger(index)) return;
             const amount = Number(trade.amount || 0);
             contributionByIndex.set(index, {
@@ -89,11 +91,6 @@
                 amount,
             });
         });
-        for (let index = 0; index < labels.length; index += 1) {
-            const contribution = contributionByIndex.get(index);
-            if (contribution) runningInvested += Number(contribution.amount || 0);
-            investedByIndex[index] = runningInvested;
-        }
 
         const svgMarkerViewBox = {width: 20.3027, height: 20.5176};
         const svgMarkerTip = {x: 9.9707, y: 0.00976562};
@@ -352,11 +349,10 @@
             hoverLine.style.left = `${hoverLinePosition.x}px`;
             hoverLine.classList.add("is-visible");
 
-            const invested = Number(investedByIndex[index] || 0);
             const equityValue = Number(equity[index] || 0);
             const allInValue = Number(allInEquity[index] || 0);
             const vsAllIn = equityValue - allInValue;
-            const netReturn = invested > 0 ? ((equityValue / invested) - 1) * 100 : 0;
+            const netReturn = plannedCapital > 0 ? ((equityValue / plannedCapital) - 1) * 100 : 0;
             tooltip.querySelector(".chart-tooltip-date").textContent = parseRawDate(rawDates[index]) || labels[index];
             tooltip.querySelector('[data-role="close"]').textContent = formatMoney(Number(close[index] || 0), 4);
             tooltip.querySelector('[data-role="return"]').textContent = formatReturn(netReturn);
@@ -429,14 +425,17 @@
             if (!tbody) return;
             tbody.innerHTML = "";
             trades.forEach((trade, index) => {
-                const chartIndex = indexByDate.get(String(trade.date || "")) ?? "";
+                const rawTradeDate = String(trade.raw_date || "");
+                const chartIndex = indexByDate.get(rawTradeDate)
+                    ?? indexByDate.get(rawTradeDate.replace(/-/g, "/"))
+                    ?? indexByDate.get(String(trade.date || ""))
+                    ?? "";
                 const row = document.createElement("tr");
                 row.dataset.chartIndex = String(chartIndex);
                 row.innerHTML = `
                     <td class="trade-transactions-index">${index + 1}</td>
                     <td class="trade-transactions-date">${trade.date || ""}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.price || 0), 4)}</td>
-                    <td class="trade-transactions-number">${formatMoney(Number(trade.amount || 0))}</td>
+                    <td class="trade-transactions-number">${formatMoney(Number(trade.price || 0), 2)}</td>
                     <td class="trade-transactions-number">${formatMoney(Number(trade.shares || 0), 4)}</td>
                     <td class="trade-transactions-number">${formatMoney(Number(trade.cumulative_shares || 0), 4)}</td>
                     <td class="trade-transactions-number">${formatMoney(Number(trade.invested || 0))}</td>
