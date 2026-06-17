@@ -193,6 +193,7 @@
 	--workspace-metric-value-line-height: 1;
 	--workspace-metric-value-letter-spacing: -0.04em;
 	--workspace-metric-value-font-weight: var(--font-weight-regular);
+	--workspace-metric-decimal-scale: 0.76;
 	--workspace-metric-card-padding: 6px 8px 8px;
 	--workspace-metric-card-row-gap: 4px;
 	--workspace-metric-card-radius: var(--radius-panel);

@@ -1,4 +1,4 @@
-/* Code version: v1.1.1-p6 */
+/* Code version: v1.1.2 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -1241,6 +1241,86 @@
 
 .notice {
     color: var(--accent-text);
+}
+
+.workspace-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--layer-modal-overlay);
+    display: grid;
+    place-items: center;
+    background: var(--glass-surface-background-soft);
+}
+
+.workspace-modal-overlay[hidden] {
+    display: none;
+}
+
+.workspace-modal-dialog {
+    position: relative;
+    isolation: isolate;
+    z-index: var(--layer-modal-dialog);
+    display: grid;
+    grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
+    column-gap: var(--workspace-modal-column-gap);
+    row-gap: var(--workspace-modal-row-gap);
+    align-items: start;
+    width: min(420px, calc(100vw - 32px));
+    padding: var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline) 16px;
+    pointer-events: auto;
+    opacity: 1;
+    border-radius: var(--workspace-modal-radius);
+    background: var(--liquid-glass-background);
+    box-shadow: var(--liquid-glass-shadow);
+    backdrop-filter: var(--liquid-glass-blur);
+    -webkit-backdrop-filter: var(--liquid-glass-blur);
+    border: var(--liquid-glass-border);
+    overflow: hidden;
+}
+
+.workspace-modal-dialog::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--liquid-glass-highlight);
+    pointer-events: none;
+}
+
+.workspace-modal-icon {
+    grid-column: 1;
+    grid-row: 1;
+    width: var(--workspace-modal-icon-size);
+    height: var(--workspace-modal-icon-size);
+    align-self: center;
+}
+
+.workspace-modal-close {
+    position: absolute;
+    top: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
+    right: calc(var(--workspace-modal-close-center-offset) - (var(--workspace-modal-close-size) / 2));
+}
+
+.workspace-modal-title {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0 var(--workspace-modal-title-margin-end) 0 0;
+    align-self: center;
+    text-align: left;
+    font-size: var(--font-ui-lg);
+    line-height: 1.2;
+    font-weight: var(--font-weight-bold);
+    color: var(--text);
+}
+
+.workspace-modal-copy {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
+    text-align: left;
+    font-size: var(--font-form-label);
+    line-height: 1.45;
+    color: var(--muted);
 }
 
 .notice[data-dismissible-notice],

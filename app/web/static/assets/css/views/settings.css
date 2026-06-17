@@ -1,4 +1,4 @@
-/* Code version: v0.4.3-p7 */
+/* Code version: v0.4.3-p8 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1888,6 +1888,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .about-meta {
     grid-template-columns: 110px 1fr;
     gap: 4px 10px;
+}
+
+.about-meta dt,
+.about-meta dd {
+    font-size: var(--font-form-label);
+    line-height: 1.5;
+    color: var(--text);
 }
 
 .about-meta dt {

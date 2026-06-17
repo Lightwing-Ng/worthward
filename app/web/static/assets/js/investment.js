@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.43.1
+ * Code version: v1.43.3
  * - Changed: Investment page initial bootstrap now reuses the shared workspace modal dialog overlay instead of the floating import-feedback banner while data is loading
  * - Added: Stock details range segmented control now restores the 1Y option and adds an Auto window that keeps all buy and sell markers visible while trimming unrelated post-exit price history
  * - Refined: Stock details segmented control continues to reuse the shared nested range-label span markup while expanding to fit seven measured pill options
@@ -4606,6 +4606,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Code version: v0.2.0.2
     function getStockDetailRealizedBreakdown(detailRows) {
         let dividendIncome = 0;
+        let paymentInLieuIncome = 0;
+        let dividendWithholding = 0;
         let tradingSpreadIncome = 0;
 
         (Array.isArray(detailRows) ? detailRows : []).forEach((txn) => {
@@ -4613,8 +4615,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!Number.isFinite(realizedPnl)) return;
 
             const normalizedType = getNormalizedTransactionType(txn);
-            if (['dividend', 'payment_in_lieu', 'foreign_tax_withholding'].includes(normalizedType)) {
+            if (normalizedType === 'dividend') {
                 dividendIncome += realizedPnl;
+                return;
+            }
+            if (normalizedType === 'payment_in_lieu') {
+                paymentInLieuIncome += realizedPnl;
+                return;
+            }
+            if (normalizedType === 'foreign_tax_withholding') {
+                dividendWithholding += realizedPnl;
                 return;
             }
 
@@ -4623,9 +4633,116 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return {
             dividendIncome,
+            paymentInLieuIncome,
+            dividendWithholding,
             tradingSpreadIncome,
-            realizedPnl: dividendIncome + tradingSpreadIncome,
+            realizedPnl: dividendIncome + paymentInLieuIncome + dividendWithholding + tradingSpreadIncome,
         };
+    }
+
+    function buildInvestmentStockDetailBrokerMetrics(detailRows, ticker, lastPrice) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
+        if (!normalizedTicker || !orderedRows.length) return [];
+        const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
+        const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
+        const baseCurrency = getInvestmentBaseCurrency();
+        const quoteCurrency = getTickerQuoteCurrency(normalizedTicker) || baseCurrency;
+        const orderedTransactions = [...(Array.isArray(investmentProcessedTransactionsCache) ? investmentProcessedTransactionsCache : [])]
+            .sort((left, right) => compareInvestmentTransactions(left, right));
+        const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
+        const valuationDate = normalizeLedgerDate(
+            orderedRows[orderedRows.length - 1]?.date
+            || orderedRows[0]?.date
+            || '',
+        );
+        const brokerMetrics = new Map();
+
+        orderedRows.forEach((txn) => {
+            const brokerCode = getTransactionBrokerCode(txn);
+            if (!brokerMetrics.has(brokerCode)) {
+                brokerMetrics.set(brokerCode, {
+                    brokerCode,
+                    positionState: createPositionState(normalizedTicker),
+                    totalCommission: 0,
+                    totalTrades: 0,
+                    currencyCounts: new Map(),
+                });
+            }
+            const metric = brokerMetrics.get(brokerCode);
+            const normalizedType = getNormalizedTransactionType(txn);
+            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
+            const transactionCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+            if (transactionCurrency) {
+                metric.currencyCounts.set(
+                    transactionCurrency,
+                    Number(metric.currencyCounts.get(transactionCurrency) || 0) + 1,
+                );
+            }
+            metric.totalCommission += Math.abs(getTransactionCommission(txn));
+            if (normalizedType === 'buy' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                applyDirectionalTrade(
+                    metric.positionState,
+                    'long',
+                    valuationQuantity,
+                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
+                );
+                metric.totalTrades += 1;
+                return;
+            }
+            if (normalizedType === 'grant' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                metric.positionState.shares += valuationQuantity;
+                return;
+            }
+            if (normalizedType === 'dividend_reinvestment' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                metric.positionState.shares += valuationQuantity;
+                return;
+            }
+            if (normalizedType === 'sell' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                applyDirectionalTrade(
+                    metric.positionState,
+                    'short',
+                    valuationQuantity,
+                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
+                );
+                metric.totalTrades += 1;
+            }
+        });
+
+        return Array.from(brokerMetrics.values()).map((metric) => {
+            const currency = Array.from(metric.currencyCounts.entries())
+                .sort((left, right) => right[1] - left[1])[0]?.[0] || quoteCurrency;
+            const shares = Number(metric.positionState.shares) || 0;
+            const marketValue = !isFlatPosition(shares) && Number.isFinite(lastPrice)
+                ? convertAmountToBaseCurrency(
+                    shares * lastPrice,
+                    quoteCurrency,
+                    valuationDate,
+                    fxTimeline,
+                    baseCurrency,
+                )
+                : null;
+            return {
+                brokerCode: metric.brokerCode,
+                brokerLabel: getInvestmentBrokerMeta(metric.brokerCode).label,
+                positionDisplay: formatHoldingsPosition(shares),
+                marketValue,
+                marketValueDisplay: marketValue === null ? '-' : formatHoldingsMoney(marketValue),
+                totalTrades: metric.totalTrades,
+                totalTradesDisplay: new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                }).format(metric.totalTrades),
+                totalCommission: metric.totalCommission,
+                totalCommissionDisplay: currency
+                    ? formatMetricLossAmountWithCurrency(metric.totalCommission, currency)
+                    : formatMetricLossAmount(metric.totalCommission),
+            };
+        }).sort((left, right) => {
+            const leftMarketValue = Number(left.marketValue) || 0;
+            const rightMarketValue = Number(right.marketValue) || 0;
+            return Math.abs(rightMarketValue) - Math.abs(leftMarketValue);
+        });
     }
 
     function destroyInvestmentStockDetailsPriceChart() {
@@ -4841,9 +4958,31 @@ document.addEventListener('DOMContentLoaded', () => {
             const dailyIndex = dateIndex.get(ledgerDate);
             return Number.isInteger(dailyIndex) ? dailyIndex : null;
         };
+        const isTransactionBeforeVisibleRange = (txn) => {
+            if (!labels.length) return false;
+            const firstVisibleLabel = String(labels[0] || '');
+            const firstVisibleLedgerDate = normalizeLedgerDate(firstVisibleLabel);
+            const transactionLedgerDate = normalizeLedgerDate(txn?.date);
+            if (!firstVisibleLedgerDate || !transactionLedgerDate) return false;
+            if (!useIntradayCandles) {
+                return transactionLedgerDate < firstVisibleLedgerDate;
+            }
+            const firstVisibleMinuteKey = normalizeInvestmentIntradayMinuteKey(firstVisibleLabel);
+            const transactionMinuteKey = normalizeInvestmentIntradayMinuteKey(txn?.date);
+            if (firstVisibleMinuteKey && transactionMinuteKey) {
+                return transactionMinuteKey < firstVisibleMinuteKey;
+            }
+            return transactionLedgerDate < firstVisibleLedgerDate;
+        };
+        const preRangeTransactions = [];
         const transactionsBySnapshotIndex = chronologicalRows.reduce((accumulator, txn) => {
             const snapshotIndex = resolveAveragePriceSnapshotIndex(txn);
-            if (!Number.isInteger(snapshotIndex)) return accumulator;
+            if (!Number.isInteger(snapshotIndex)) {
+                if (isTransactionBeforeVisibleRange(txn)) {
+                    preRangeTransactions.push(txn);
+                }
+                return accumulator;
+            }
             if (!accumulator.has(snapshotIndex)) accumulator.set(snapshotIndex, []);
             accumulator.get(snapshotIndex).push(txn);
             return accumulator;
@@ -4855,46 +4994,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const stockState = createPositionState(normalizedTicker);
         const renderedStockState = createPositionState(normalizedTicker);
         const averagePriceSeries = [];
+        const applyStockDetailsTransactionToStates = (txn, renderIndex = null) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+            const quantity = Number(getTransactionQuantity(txn));
+            const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
+            const renderedEffectiveUnitPrice = Number.isInteger(renderIndex)
+                ? resolveTradeMarkerPrice(renderIndex, effectiveUnitPrice)
+                : effectiveUnitPrice;
+            if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
+                applyDirectionalTrade(stockState, 'long', quantity, effectiveUnitPrice);
+                applyDirectionalTrade(
+                    renderedStockState,
+                    'long',
+                    quantity,
+                    Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
+                );
+                return { buyQuantity: quantity, sellQuantity: 0 };
+            }
+            if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares += quantity;
+                renderedStockState.shares += quantity;
+                return { buyQuantity: 0, sellQuantity: 0 };
+            }
+            if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares += quantity;
+                renderedStockState.shares += quantity;
+                return { buyQuantity: 0, sellQuantity: 0 };
+            }
+            if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
+                applyDirectionalTrade(stockState, 'short', quantity, effectiveUnitPrice);
+                applyDirectionalTrade(
+                    renderedStockState,
+                    'short',
+                    quantity,
+                    Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
+                );
+                return { buyQuantity: 0, sellQuantity: quantity };
+            }
+            return { buyQuantity: 0, sellQuantity: 0 };
+        };
+        preRangeTransactions.forEach((txn) => {
+            applyStockDetailsTransactionToStates(txn);
+        });
         labels.forEach((label, index) => {
             const snapshotTxns = transactionsBySnapshotIndex.get(index) || [];
             let buyQuantity = 0;
             let sellQuantity = 0;
             snapshotTxns.forEach((txn) => {
-                const normalizedType = getNormalizedTransactionType(txn);
-                const quantity = Number(getTransactionQuantity(txn));
-                const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
-                const renderedEffectiveUnitPrice = resolveTradeMarkerPrice(index, effectiveUnitPrice);
-                if (normalizedType === 'buy' && Number.isFinite(quantity) && quantity > 0) {
-                    applyDirectionalTrade(stockState, 'long', quantity, effectiveUnitPrice);
-                    applyDirectionalTrade(
-                        renderedStockState,
-                        'long',
-                        quantity,
-                        Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
-                    );
-                    buyQuantity += quantity;
-                    return;
-                }
-                if (normalizedType === 'grant' && Number.isFinite(quantity) && quantity > 0) {
-                    stockState.shares += quantity;
-                    renderedStockState.shares += quantity;
-                    return;
-                }
-                if (normalizedType === 'dividend_reinvestment' && Number.isFinite(quantity) && quantity > 0) {
-                    stockState.shares += quantity;
-                    renderedStockState.shares += quantity;
-                    return;
-                }
-                if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
-                    applyDirectionalTrade(stockState, 'short', quantity, effectiveUnitPrice);
-                    applyDirectionalTrade(
-                        renderedStockState,
-                        'short',
-                        quantity,
-                        Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
-                    );
-                    sellQuantity += quantity;
-                }
+                const deltas = applyStockDetailsTransactionToStates(txn, index);
+                buyQuantity += deltas.buyQuantity;
+                sellQuantity += deltas.sellQuantity;
             });
             const buySellLedgerNos = snapshotTxns
                 .filter((txn) => ['buy', 'sell'].includes(getNormalizedTransactionType(txn)))
@@ -5618,6 +5767,29 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    function renderWorkspaceMetricValueContent(value) {
+        const rawValue = String(value ?? '').trim() || '--';
+        const numericMatch = rawValue.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(?:\.(\d+))(%?)$/);
+        if (!numericMatch) {
+            return `<span class="workspace-metric-value-major">${escapeHtml(rawValue)}</span>`;
+        }
+        const [, prefix, integerPart, decimalPart = '', suffix = ''] = numericMatch;
+        return [
+            `<span class="workspace-metric-value-major">${escapeHtml(`${prefix}${integerPart}.`)}</span>`,
+            `<span class="workspace-metric-value-minor">${escapeHtml(decimalPart)}</span>`,
+            suffix ? `<span class="workspace-metric-value-suffix">${escapeHtml(suffix)}</span>` : '',
+        ].join('');
+    }
+
+    function renderInvestmentStockDetailsMetricValueSpan(value, valueClass = '') {
+        const className = [
+            'trade-metric-value',
+            'investment-stock-details-metric-value',
+            valueClass,
+        ].filter(Boolean).join(' ');
+        return `<span class="${className}">${renderWorkspaceMetricValueContent(value)}</span>`;
+    }
+
     function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
         const activeTicker = ensureSelectedInvestmentStockTicker();
@@ -5664,10 +5836,14 @@ document.addEventListener('DOMContentLoaded', () => {
             maximumFractionDigits: 0,
         }).format(totalTradeCount);
         const realizedBreakdown = getStockDetailRealizedBreakdown(detailRows);
+        const brokerMetricDetails = buildInvestmentStockDetailBrokerMetrics(detailRows, activeTicker, tickerSummary.lastPrice);
+        const hasBrokerMetricBreakdown = brokerMetricDetails.length > 1;
         const totalPnl = (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const unrealizedClass = (Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
+        const lastPriceDisplay = tickerSummary.lastPrice === null ? '-' : formatHoldingsMoney(tickerSummary.lastPrice);
+        const weightDisplay = tickerSummary.hasOpenPosition ? formatHoldingsPercent(tickerSummary.positionWeight) : '-';
         const stockMetricCards = [
             {
                 label: 'Unrealized P&L',
@@ -5686,6 +5862,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         valueClass: getSignedMetricClass(realizedBreakdown.dividendIncome),
                     },
                     {
+                        label: 'Payment in lieu',
+                        value: formatHoldingsMoney(realizedBreakdown.paymentInLieuIncome),
+                        valueClass: getSignedMetricClass(realizedBreakdown.paymentInLieuIncome),
+                    },
+                    {
+                        label: 'Foreign tax withholding',
+                        value: formatHoldingsMoney(realizedBreakdown.dividendWithholding),
+                        valueClass: getSignedMetricClass(realizedBreakdown.dividendWithholding),
+                    },
+                    {
                         label: 'Trading spread income',
                         value: formatHoldingsMoney(realizedBreakdown.tradingSpreadIncome),
                         valueClass: getSignedMetricClass(realizedBreakdown.tradingSpreadIncome),
@@ -5701,11 +5887,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 label: 'Position',
                 value: formatHoldingsPosition(tickerSummary.shares),
                 valueClass: '',
+                details: hasBrokerMetricBreakdown
+                    ? brokerMetricDetails.map((metric) => ({
+                        label: metric.brokerLabel,
+                        value: metric.positionDisplay,
+                        valueClass: '',
+                    }))
+                    : [],
             },
             {
                 label: 'Market value',
                 value: tickerSummary.hasOpenPosition ? formatHoldingsMoney(tickerSummary.marketValue) : '-',
                 valueClass: '',
+                details: hasBrokerMetricBreakdown
+                    ? brokerMetricDetails.map((metric) => ({
+                        label: metric.brokerLabel,
+                        value: metric.marketValueDisplay,
+                        valueClass: '',
+                    }))
+                    : [],
             },
             {
                 label: 'Average price',
@@ -5713,14 +5913,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 valueClass: '',
             },
             {
+                label: 'Last price',
+                value: lastPriceDisplay,
+                valueClass: '',
+            },
+            {
+                label: 'Portfolio weight',
+                value: weightDisplay,
+                valueClass: '',
+            },
+            {
                 label: 'Total trades',
                 value: totalTradeCountDisplay,
                 valueClass: '',
+                details: hasBrokerMetricBreakdown
+                    ? brokerMetricDetails.map((metric) => ({
+                        label: metric.brokerLabel,
+                        value: metric.totalTradesDisplay,
+                        valueClass: '',
+                    }))
+                    : [],
             },
             {
                 label: 'Total commission',
                 value: totalCommissionDisplay,
                 valueClass: totalCommissionClass,
+                details: hasBrokerMetricBreakdown
+                    ? brokerMetricDetails.map((metric) => ({
+                        label: metric.brokerLabel,
+                        value: metric.totalCommissionDisplay,
+                        valueClass: getNegativeMetricClass(metric.totalCommission),
+                    }))
+                    : [],
             },
         ];
         const rowsHtml = detailRows.length ? detailRows.map((txn) => `
@@ -5764,13 +5988,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${stockMetricCards.map((metric) => `
                         <div class="trade-metric-card trade-metric-card--value-align-end investment-stock-details-metric-card${metric.cardClass ? ` ${metric.cardClass}` : ''}">
                             <span class="trade-metric-label">${metric.label}</span>
-                            <span class="trade-metric-value investment-stock-details-metric-value${metric.valueClass ? ` ${metric.valueClass}` : ''}">${metric.value}</span>
+                            ${renderInvestmentStockDetailsMetricValueSpan(metric.value, metric.valueClass)}
                             ${Array.isArray(metric.details) && metric.details.length ? `
                                 <div class="investment-stock-details-metric-breakdown">
                                     ${metric.details.map((detail) => `
                                         <div class="investment-stock-details-metric-breakdown-row">
                                             <span class="investment-stock-details-metric-breakdown-label">${detail.label}</span>
-                                            <span class="investment-stock-details-metric-breakdown-value${detail.valueClass ? ` ${detail.valueClass}` : ''}">${detail.value}</span>
+                                            <span class="investment-stock-details-metric-breakdown-value${detail.valueClass ? ` ${detail.valueClass}` : ''}">${renderWorkspaceMetricValueContent(detail.value)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -7187,7 +7411,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return `
             <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
-                <span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${metric?.value || '--'}</span>
+                <span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${renderWorkspaceMetricValueContent(metric?.value || '--')}</span>
                 <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
                     <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
                     ${rowListHtml}

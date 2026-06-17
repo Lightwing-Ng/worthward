@@ -1,4 +1,4 @@
-/* Code version: v1.12.0 */
+/* Code version: v1.12.7 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -760,8 +760,15 @@
 }
 
 #stock_panel {
-    display: block;
-    height: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#stock_panel > * {
+    flex: 1 1 auto;
     min-height: 0;
 }
 
@@ -787,6 +794,7 @@
 .investment-stock-details-empty-shell {
     display: flex;
     flex: 1 1 auto;
+    height: 100%;
     align-items: center;
     justify-content: center;
     min-height: 0;
@@ -800,11 +808,17 @@
 .investment-stock-details-overview {
     display: grid;
     grid-template-columns: minmax(0, 30fr) minmax(0, 50fr) minmax(0, 20fr);
+    grid-template-rows: auto minmax(0, 1fr);
     align-items: stretch;
+    align-content: stretch;
     column-gap: 10px;
     row-gap: 6px;
+    width: 100%;
+    height: 100%;
+    flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 .investment-stock-details-identity,
@@ -821,15 +835,20 @@
 .investment-stock-details-price-chart-card {
     min-width: 0;
     display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
     align-items: stretch;
     padding: 10px 4px 6px 4px;
     position: relative;
+    overflow: hidden;
 }
 
 .investment-stock-details-price-chart-shell {
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 220px;
+    min-height: 0;
+    height: 100%;
     position: relative;
 }
 
@@ -888,7 +907,8 @@
 
 .investment-stock-details-price-chart-empty {
     width: 100%;
-    min-height: 220px;
+    min-height: 0;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -905,7 +925,7 @@
 
 .investment-stock-details-metrics {
     min-width: 0;
-    height: auto;
+    height: 100%;
     min-height: 0;
     margin: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -967,6 +987,7 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
 .investment-stock-details-donut-card {
@@ -974,18 +995,24 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    height: 100%;
+    min-height: 0;
     padding: 12px 4px;
     --investment-donut-orbit-extra-width: calc(var(--portfolio-donut-orbit-logo-size, 20px) * 2.82842712475);
     --portfolio-donut-size: clamp(72px, calc(100% - var(--investment-donut-orbit-extra-width)), 240px);
+    overflow: hidden;
 }
 
 .investment-stock-details-donut-card .investment-stock-details-donut-shell {
-    width: 100%;
+    width: auto;
     max-width: 100%;
-    aspect-ratio: 1 / 1;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    aspect-ratio: 1 / 1;
 }
 
 .investment-stock-details-donut-card .investment-stock-details-donut-orbit {
@@ -2085,13 +2112,14 @@
 }
 
 .investment-transfer-link-shell {
-    --investment-transfer-link-gap: var(--settings-text-input-pad-block);
-    --investment-transfer-link-pad-block: var(--settings-text-input-pad-block);
-    --investment-transfer-link-pad-inline: var(--settings-text-input-pad-inline);
-    --investment-transfer-link-compact-pad-block: calc(var(--settings-text-input-pad-block) / 2);
-    --investment-transfer-link-line-height: var(--investment-import-label-line-height);
-    display: flex;
-    flex-direction: column;
+    --investment-transfer-link-gap: 1px;
+    --investment-transfer-link-pad-block: 1px;
+    --investment-transfer-link-pad-inline: 6px;
+    --investment-transfer-link-compact-pad-block: 0px;
+    --investment-transfer-link-line-height: 1.2;
+    display: grid;
+    grid-auto-rows: min-content;
+    align-content: start;
     gap: var(--investment-transfer-link-gap);
     min-width: 0;
 }
@@ -2099,7 +2127,7 @@
 .investment-transfer-link-shell.is-unresolved {
     padding: var(--investment-transfer-link-pad-block) var(--investment-transfer-link-pad-inline);
     border: 1px solid #ff2f92;
-    border-radius: 12px;
+    border-radius: 10px;
     background: color-mix(in srgb, #ff2f92 10%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, #ff2f92 22%, transparent);
 }
@@ -2122,9 +2150,17 @@
 .investment-transfer-link-select {
     width: 100%;
     min-width: 0;
+    min-height: 22px;
+    height: 22px;
     font-size: var(--font-table-body);
     line-height: var(--investment-transfer-link-line-height);
-    padding: var(--investment-transfer-link-pad-block) var(--investment-transfer-link-pad-inline);
+    padding:
+        0
+        24px
+        0
+        var(--investment-transfer-link-pad-inline);
+    background-position: calc(100% - 10px) 50%;
+    background-size: 11px 7px;
 }
 
 .investment-transfer-link-select.trade-strategy-select {
@@ -2150,6 +2186,11 @@
 .investment-transfer-link-select:focus-visible {
     outline: 2px solid color-mix(in srgb, #ff2f92 55%, white);
     outline-offset: 2px;
+}
+
+.investment-history-cell-left:has(.investment-transfer-link-shell) {
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .investment-history-table-body {
@@ -2372,6 +2413,7 @@
 
 .investment-metric-tooltip-value-copy {
     display: inline;
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
 .investment-metric-tooltip {
@@ -2562,6 +2604,9 @@
 
     .investment-stock-details-overview {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        height: auto;
+        overflow: visible;
     }
 
     .investment-stock-details-donut-card {
@@ -2588,6 +2633,7 @@
     .investment-stock-details-price-chart-shell,
     .investment-stock-details-price-chart-empty {
         min-height: 200px;
+        height: auto;
     }
 
     .live-trading-surface {
