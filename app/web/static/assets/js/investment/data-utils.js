@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.39.0
+ * Code version: v1.42.1
+ * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
 
 export function createInvestmentDataUtils({
@@ -348,11 +349,23 @@ export function createInvestmentDataUtils({
         return `Bought ${quantityText} ${baseCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
     }
 
+    function normalizeTransactionDescriptionWhitespace(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getTransactionDescriptionText(txn, fallback = '--', { normalizeWhitespace = false } = {}) {
+        const rawDescription = normalizeWhitespace
+            ? normalizeTransactionDescriptionWhitespace(txn?.description)
+            : String(txn?.description || '').trim();
+        return rawDescription || fallback;
+    }
+
     function formatTransactionDescription(txn) {
         let description;
         let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
         const price = txn.normalized?.unit_price ?? txn.price;
         const normalizedTypeDesc = getNormalizedTransactionType(txn);
+        const brokerCode = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
 
         if (normalizedTypeDesc === 'forex_trade_component') {
             return formatForexTradeComponentDescription(txn);
@@ -366,12 +379,18 @@ export function createInvestmentDataUtils({
             } else {
                 description = `${txn.ticker}@${cleanQty}`;
             }
+        } else if (brokerCode === 'hsbc' && ['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
+            description = getTransactionDescriptionText(
+                txn,
+                normalizedTypeDesc === 'deposit' ? '* Equivalent' : '--',
+                { normalizeWhitespace: true }
+            );
         } else if (normalizedTypeDesc === 'deposit') {
             description = '* Equivalent';
         } else if (normalizedTypeDesc === 'withdrawal') {
             description = '';
         } else {
-            description = txn.description || '--';
+            description = getTransactionDescriptionText(txn);
         }
 
         return description;
@@ -620,7 +639,7 @@ export function createInvestmentDataUtils({
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length
             ? chartPoints[chartPoints.length - 1]
             : null;
-        const latestValuationEquity = Number(latestChartPoint?.total_equity);
+        const latestValuationEquity = Number(latestChartPoint?.aggregate_total_equity ?? latestChartPoint?.total_equity);
         if (Number.isFinite(latestValuationEquity)) {
             return latestValuationEquity;
         }
@@ -628,7 +647,7 @@ export function createInvestmentDataUtils({
         const latestRecord = Array.isArray(processedTransactions) && processedTransactions.length
             ? processedTransactions[processedTransactions.length - 1]
             : null;
-        const totalEquity = Number(latestRecord?.total_equity);
+        const totalEquity = Number(latestRecord?.aggregate_total_equity ?? latestRecord?.total_equity);
         return Number.isFinite(totalEquity) ? totalEquity : 0;
     }
 
@@ -684,6 +703,9 @@ export function createInvestmentDataUtils({
             startDate.setUTCMonth(startDate.getUTCMonth() - 3);
         } else if (normalizedRange === 'ytd') {
             startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
+        } else if (normalizedRange === '1y') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
         }
 
         if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
@@ -722,6 +744,9 @@ export function createInvestmentDataUtils({
             startDate.setUTCMonth(startDate.getUTCMonth() - 3);
         } else if (normalizedRange === 'ytd') {
             startDate = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
+        } else if (normalizedRange === '1y') {
+            startDate = new Date(latestDate.getTime());
+            startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
         }
 
         if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
@@ -973,6 +998,7 @@ export function createInvestmentDataUtils({
                 baseCurrency,
             );
             if (!Number.isFinite(transactionAmount) || transactionAmount <= 1e-9) return;
+            if (txn?.manual_internal_transfer_external_flow_excluded === true) return;
             if (normalizedType === 'deposit') {
                 entry.cashInAmountBase += transactionAmountBase;
                 entry.netTransferAmount += transactionAmount;
@@ -1001,9 +1027,13 @@ export function createInvestmentDataUtils({
             points.push({
                 date: anchorDate,
                 running_cash: startingCash,
+                aggregate_running_cash: startingCash,
                 market_value: 0,
+                aggregate_market_value: 0,
                 holdings_market_values: {},
+                aggregate_holdings_market_values: {},
                 total_equity: startingCash,
+                aggregate_total_equity: startingCash,
                 anchor_ledger_date: '',
                 anchor_ledger_nos: [],
                 cash_in_amount: 0,
@@ -1026,14 +1056,22 @@ export function createInvestmentDataUtils({
 
             if (!activeSnapshot) return;
 
+            const aggregateSnapshot = {
+                ...activeSnapshot,
+                holdings: activeSnapshot?.aggregate_holdings || activeSnapshot?.holdings || {},
+                money_market_anchors: activeSnapshot?.aggregate_money_market_anchors || activeSnapshot?.money_market_anchors || {},
+            };
             const valuation = calculateSnapshotMarketValue(
-                activeSnapshot,
+                aggregateSnapshot,
                 date,
                 tickerPriceIndex,
                 moneyMarketTickers,
                 fxTimeline,
                 baseCurrency,
             );
+            const aggregateRunningCash = Number(activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash) || 0;
+            const aggregateMarketValue = valuation.marketValue;
+            const aggregateTotalEquity = aggregateRunningCash + aggregateMarketValue;
             const ledgerEntry = ledgerDateMap.get(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
@@ -1046,10 +1084,14 @@ export function createInvestmentDataUtils({
 
             points.push({
                 date,
-                running_cash: Number(activeSnapshot.running_cash) || 0,
-                market_value: valuation.marketValue,
+                running_cash: aggregateRunningCash,
+                aggregate_running_cash: aggregateRunningCash,
+                market_value: aggregateMarketValue,
+                aggregate_market_value: aggregateMarketValue,
                 holdings_market_values: valuation.holdingsMarketValues,
-                total_equity: (Number(activeSnapshot.running_cash) || 0) + valuation.marketValue,
+                aggregate_holdings_market_values: valuation.holdingsMarketValues,
+                total_equity: aggregateTotalEquity,
+                aggregate_total_equity: aggregateTotalEquity,
                 anchor_ledger_date: anchorLedgerNos.length ? date : '',
                 anchor_ledger_nos: anchorLedgerNos,
                 cash_in_amount: cashInAmount,
