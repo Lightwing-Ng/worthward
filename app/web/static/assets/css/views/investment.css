@@ -1,4 +1,4 @@
-/* Code version: v1.9.2 */
+/* Code version: v1.10.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -1484,8 +1484,11 @@
     border-radius: 10px;
     box-shadow: var(--glass-surface-shadow);
     max-height: calc(100dvh - 32px);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     scrollbar-gutter: stable;
     scroll-padding: 16px;
 }
@@ -1514,13 +1517,6 @@
     padding-right: 4px;
 }
 
-.investment-import-title {
-    margin: 0;
-    color: var(--text);
-    font-size: var(--font-ui-md);
-    font-weight: var(--font-weight-semibold);
-}
-
 .investment-import-field-group {
     display: grid;
     gap: 10px;
@@ -1538,56 +1534,229 @@
     grid-column: 1 / -1;
 }
 
+#investment_import_hsbc_fields {
+    grid-column: 1 / -1;
+}
+
 .investment-import-field {
+    --investment-import-field-pad-block: 8px;
+    --investment-import-field-pad-inline: 12px;
     display: grid;
-    gap: 6px;
+    gap: 4px;
     align-content: start;
     min-width: 0;
-    padding: 10px 12px;
+    padding: var(--investment-import-field-pad-block) var(--investment-import-field-pad-inline);
     border-radius: 12px;
     background: var(--glass-surface-background-soft);
     border: 1px solid var(--glass-surface-border);
+}
+
+.investment-import-bridge-field {
+    --investment-import-field-pad-block: 10px;
+    --investment-import-step-gap: 8px;
+    --investment-import-step-track-width: 1.25em;
+    --investment-import-label-font-size: var(--font-table-body);
+    --investment-import-label-line-height: 1.45;
+    --investment-import-label-row-height: calc(var(--investment-import-label-font-size) * var(--investment-import-label-line-height));
+    grid-column: 1 / -1;
+    position: relative;
+    background: var(--panel-strong);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent);
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--color-white-adaptive) 16%, transparent),
+        0 10px 24px color-mix(in srgb, var(--theme-shadow-ambient) 42%, transparent);
+    isolation: isolate;
+}
+
+.investment-import-bridge-summary {
+    width: 100%;
+    max-width: none;
+}
+
+.investment-import-plain-field .investment-import-label-trigger {
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) 14px;
+}
+
+.investment-import-plain-control-row {
+    display: block;
+    padding-left: calc(var(--investment-import-step-track-width) + var(--investment-import-step-gap));
+    margin-top: 0;
+}
+
+.investment-import-plain-field .date-picker-trigger,
+.investment-import-plain-field .investment-import-file-input {
+    width: 100%;
+    max-width: none;
+}
+
+.investment-import-collector-header {
+    width: 100%;
+    max-width: none;
+    margin-bottom: 8px;
+}
+
+.investment-import-collector-header .settings-action-package-form {
+    align-self: center;
+}
+
+.investment-import-bridge-intro {
+    gap: 4px;
+}
+
+.investment-import-bridge-title {
+    margin: 0;
+    color: var(--text);
+    font-size: var(--font-ui-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.investment-import-bridge-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.investment-import-textarea {
+    min-height: 132px;
+    resize: vertical;
+    font: inherit;
+    border-radius: 10px;
+}
+
+.investment-import-paste-row {
+    display: grid;
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--settings-round-icon-button-size);
+    column-gap: var(--investment-import-step-gap);
+    align-items: center;
+    margin-top: 0;
+}
+
+.investment-import-paste-row::before {
+    content: "";
+    grid-column: 1;
+}
+
+.investment-import-paste-shell {
+    position: static;
+    width: 100%;
+    grid-column: 2;
+}
+
+.investment-import-paste-display {
+    width: 100%;
+    min-width: 0;
+    padding-right: var(--settings-text-input-pad-inline);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    font-size: var(--font-table-body);
+    line-height: 1.35;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.investment-import-paste-display[readonly] {
+    cursor: default;
+}
+
+.investment-import-paste-button {
+    position: static;
+    grid-column: 3;
+    justify-self: center;
+    align-self: center;
+    min-width: var(--settings-round-icon-button-size);
+    min-height: var(--settings-round-icon-button-size);
+    max-width: var(--settings-round-icon-button-size);
+    max-height: var(--settings-round-icon-button-size);
+    transform: none;
+}
+
+.investment-import-paste-button:hover,
+.investment-import-paste-button:focus-visible,
+.investment-import-paste-button.is-pasted {
+    background: var(--settings-round-icon-button-background-hover);
+    color: var(--settings-round-icon-button-color-hover);
+    box-shadow: var(--settings-round-icon-button-shadow-hover);
+}
+
+.investment-import-paste-button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-accent-primary) 55%, white);
+    outline-offset: 2px;
+}
+
+.investment-import-paste-button-icon {
+    background-color: currentColor;
+    mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/arrow.up.page.on.clipboard.svg") center/contain no-repeat;
+}
+
+.investment-import-code-textarea {
+    min-height: 196px;
+    font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
 }
 
 .investment-import-field .trade-strategy-param-label {
     display: flex;
     align-items: center;
     min-width: 0;
-    min-height: 24px;
-    max-height: 50px;
+    min-height: 0;
+    max-height: none;
     overflow: visible;
+    padding-right: 0;
 }
 
 .investment-import-label-trigger {
+    display: grid;
     position: relative;
-    gap: 8px;
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--settings-round-icon-button-size);
+    column-gap: var(--investment-import-step-gap);
     align-items: center;
     flex-wrap: nowrap;
-    white-space: nowrap;
+    white-space: normal;
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    min-height: 24px;
+    min-height: var(--investment-import-label-row-height);
     max-height: 50px;
     overflow: visible;
 }
 
-.investment-import-label-trigger>span:not(.field-tooltip) {
+.investment-import-label-step {
+    display: inline-flex;
+    grid-column: 1;
     flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--investment-import-step-track-width);
+    font-size: var(--investment-import-label-font-size);
+    line-height: var(--investment-import-label-line-height);
+    color: var(--text);
+    text-align: center;
 }
 
 .investment-import-label-text {
+    grid-column: 2;
     flex: 1 1 auto !important;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.45;
 }
 
 .investment-import-status-icon {
     display: inline-block;
+    grid-column: 3;
+    justify-self: center;
     width: 14px;
     height: 14px;
     flex: 0 0 auto;
+    align-self: center;
     opacity: 0;
     background-color: var(--theme-accent-positive);
     mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
@@ -1596,6 +1765,10 @@
 
 .investment-import-status-icon.is-visible {
     opacity: 1;
+}
+
+.investment-import-plain-field .investment-import-status-icon {
+    justify-self: center;
 }
 
 .investment-import-help {
@@ -2172,6 +2345,10 @@
         grid-template-columns: 1fr;
     }
 
+    .investment-import-field-group.date-picker-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .investment-import-broker-field {
         grid-column: auto;
     }
@@ -2297,5 +2474,11 @@
     .live-trading-swipe-thumb {
         width: auto;
         height: auto;
+    }
+}
+
+@media (max-width: 560px) {
+    .investment-import-field-group.date-picker-grid {
+        grid-template-columns: 1fr;
     }
 }

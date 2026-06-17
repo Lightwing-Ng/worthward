@@ -1,4 +1,4 @@
-{# Code version: v1.0.2 #}
+{# Code version: v1.1.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control with context %}
 {% set sidebar_title = "More" %}
@@ -113,7 +113,6 @@
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
                       enctype="multipart/form-data">
                     <div class="investment-import-stack">
-                        <p class="investment-import-title" id="investment_import_title">Import broker CSV files.</p>
                         <div class="investment-import-field-group">
                             <div class="field live-trading-broker-strip backtest-shared-select-field investment-import-broker-field"
                                  data-shared-select-field
@@ -127,18 +126,18 @@
                                             aria-hidden="true"
                                             tabindex="-1">
                                         <option value="ibkr"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='IBKR.png') }}"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/IBKR.png') }}"
                                                 data-icon-alt="IBKR logo"
                                                 data-description="Supported now for CSV import."
                                                 selected>IBKR</option>
                                         <option value="longbridge"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='Longbridge.png') }}"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/Longbridge.png') }}"
                                                 data-icon-alt="Longbridge logo"
                                                 data-description="Uses the configured authentication session to pull historical orders and cash flow.">Longbridge</option>
-                                        <option value="hsbc"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='HSBC.png') }}"
+                                            <option value="hsbc"
+                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/HSBC.png') }}"
                                                 data-icon-alt="HSBC logo"
-                                                data-description="Reserved for future adapter integration.">HSBC</option>
+                                                data-description="Paste plain text from HSBC Order Status and the USD cash account.">HSBC</option>
                                     </select>
                                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                                         <button type="button"
@@ -167,11 +166,12 @@
                                          hidden></div>
                                 </div>
                             </div>
-                            <div class="investment-import-field-group" id="investment_import_ibkr_fields">
-                            <div class="investment-import-field" data-import-field="transactions">
+                            <div class="investment-import-field-group" id="investment_import_ibkr_fields" hidden>
+                            <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="transactions">
                                 <label class="trade-strategy-param-label" for="transactions_csv">
                                 <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
                                       tabindex="0">
+                                    <span class="investment-import-label-step" aria-hidden="true">➊</span>
                                     <span class="investment-import-label-text">Transaction History CSV</span>
                                     <span class="investment-import-status-icon" id="transactions_csv_status"
                                           aria-hidden="true"></span>
@@ -187,13 +187,16 @@
                                     </span>
                                 </span>
                                 </label>
-                                <input id="transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv"
-                                       class="settings-form-control investment-import-file-input" required>
+                                <div class="investment-import-plain-control-row">
+                                    <input id="transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv"
+                                           class="settings-form-control investment-import-file-input" required>
+                                </div>
                             </div>
-                            <div class="investment-import-field" data-import-field="positions">
+                            <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="positions">
                                 <label class="trade-strategy-param-label" for="positions_csv">
                                 <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
                                       tabindex="0">
+                                    <span class="investment-import-label-step" aria-hidden="true">➋</span>
                                     <span class="investment-import-label-text">Realized Summary CSV</span>
                                     <span class="investment-import-status-icon" id="positions_csv_status"
                                           aria-hidden="true"></span>
@@ -210,15 +213,24 @@
                                     </span>
                                 </span>
                                 </label>
-                                <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
-                                       class="settings-form-control investment-import-file-input" required>
+                                <div class="investment-import-plain-control-row">
+                                    <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
+                                           class="settings-form-control investment-import-file-input" required>
+                                </div>
                             </div>
                             </div>
-                            <div class="investment-import-field-group date-picker-grid" id="investment_import_longbridge_fields" hidden>
-                                <div class="investment-import-field date-picker-field" data-date-picker data-date-role="start">
-                                    <label for="longbridge_start_date">Longbridge start date</label>
+                            <div class="investment-import-field-group" id="investment_import_longbridge_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field date-picker-field" data-date-picker data-date-role="start">
+                                    <label class="trade-strategy-param-label" for="longbridge_start_date" id="investment_import_range_start_label">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">Longbridge start date</span>
+                                            <span class="investment-import-status-icon" id="longbridge_start_date_status" aria-hidden="true"></span>
+                                        </span>
+                                    </label>
                                     <input id="longbridge_start_date" name="longbridge_start_date" type="hidden" value="">
-                                    <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                                    <div class="investment-import-plain-control-row">
+                                        <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
                                         <span
                                             class="date-picker-trigger-value"
                                             data-date-trigger-value
@@ -232,6 +244,7 @@
                                             data-empty="1"
                                             spellcheck="false"
                                         ></span>
+                                        </div>
                                     </div>
                                     <div class="date-picker-popover" data-date-popover hidden>
                                         <p id="longbridge_start_date_feedback" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
@@ -250,10 +263,17 @@
                                         <div class="date-picker-days" data-date-grid></div>
                                     </div>
                                 </div>
-                                <div class="investment-import-field date-picker-field" data-date-picker data-date-role="end">
-                                    <label for="longbridge_end_date">Longbridge end date</label>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field date-picker-field" data-date-picker data-date-role="end">
+                                    <label class="trade-strategy-param-label" for="longbridge_end_date" id="investment_import_range_end_label">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                            <span class="investment-import-label-text">Longbridge end date</span>
+                                            <span class="investment-import-status-icon" id="longbridge_end_date_status" aria-hidden="true"></span>
+                                        </span>
+                                    </label>
                                     <input id="longbridge_end_date" name="longbridge_end_date" type="hidden" value="">
-                                    <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+                                    <div class="investment-import-plain-control-row">
+                                        <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
                                         <span
                                             class="date-picker-trigger-value"
                                             data-date-trigger-value
@@ -267,6 +287,7 @@
                                             data-empty="1"
                                             spellcheck="false"
                                         ></span>
+                                        </div>
                                     </div>
                                     <div class="date-picker-popover" data-date-popover hidden>
                                         <p id="longbridge_end_date_feedback" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
@@ -284,6 +305,95 @@
                                         </div>
                                         <div class="date-picker-days" data-date-grid></div>
                                     </div>
+                                </div>
+                            </div>
+                            <div class="investment-import-field-group" id="investment_import_hsbc_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field">
+                                    <label class="trade-strategy-param-label" for="hsbc_cash_account_display">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">USD Savings plain text</span>
+                                            <span class="investment-import-status-icon" id="hsbc_cash_account_text_status" aria-hidden="true"></span>
+                                        </span>
+                                    </label>
+                                    <div class="trade-capital-row investment-import-paste-row">
+                                        <div class="investment-import-paste-shell">
+                                            <input id="hsbc_cash_account_display"
+                                                   class="settings-form-control investment-import-paste-display"
+                                                   type="text"
+                                                   value=""
+                                                   readonly>
+                                        </div>
+                                        <button type="button"
+                                                class="settings-round-icon-button investment-import-paste-button"
+                                                id="hsbc_cash_account_paste_button"
+                                                aria-label="Paste HSBC USD Savings page text from clipboard"
+                                                title="Paste from clipboard">
+                                            <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
+                                    <textarea id="hsbc_cash_account_text"
+                                              name="hsbc_cash_account_text"
+                                              hidden
+                                              spellcheck="false"></textarea>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field">
+                                    <label class="trade-strategy-param-label" for="hsbc_portfolio_text_display">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                            <span class="investment-import-label-text">Portfolio plain text</span>
+                                            <span class="investment-import-status-icon" id="hsbc_portfolio_text_status" aria-hidden="true"></span>
+                                        </span>
+                                    </label>
+                                    <div class="trade-capital-row investment-import-paste-row">
+                                        <div class="investment-import-paste-shell">
+                                            <input id="hsbc_portfolio_text_display"
+                                                   class="settings-form-control investment-import-paste-display"
+                                                   type="text"
+                                                   value=""
+                                                   readonly>
+                                        </div>
+                                        <button type="button"
+                                                class="settings-round-icon-button investment-import-paste-button"
+                                                id="hsbc_portfolio_text_paste_button"
+                                                aria-label="Paste HSBC Portfolio page text from clipboard"
+                                                title="Paste from clipboard">
+                                            <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
+                                    <textarea id="hsbc_portfolio_text"
+                                              name="hsbc_portfolio_text"
+                                              hidden
+                                              spellcheck="false"></textarea>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field">
+                                    <label class="trade-strategy-param-label" for="hsbc_order_status_display">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➌</span>
+                                            <span class="investment-import-label-text">Order Status plain text</span>
+                                            <span class="investment-import-status-icon" id="hsbc_order_status_text_status" aria-hidden="true"></span>
+                                        </span>
+                                    </label>
+                                    <div class="trade-capital-row investment-import-paste-row">
+                                        <div class="investment-import-paste-shell">
+                                            <input id="hsbc_order_status_display"
+                                                   class="settings-form-control investment-import-paste-display"
+                                                   type="text"
+                                                   value=""
+                                                   readonly>
+                                        </div>
+                                        <button type="button"
+                                                class="settings-round-icon-button investment-import-paste-button"
+                                                id="hsbc_order_status_paste_button"
+                                                aria-label="Paste HSBC Order Status page text from clipboard"
+                                                title="Paste from clipboard">
+                                            <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
+                                    <textarea id="hsbc_order_status_text"
+                                              name="hsbc_order_status_text"
+                                              hidden
+                                              spellcheck="false"></textarea>
                                 </div>
                             </div>
                         </div>

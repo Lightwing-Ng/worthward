@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.18
+Code version: v0.3.19
 """
 
 from __future__ import annotations
@@ -75,6 +75,7 @@ from app.core.config import (
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
 from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
+    build_investment_payload_from_hsbc_pasted_text,
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_longbridge,
     merge_investment_payloads,
@@ -3948,6 +3949,23 @@ def build_web_runtime() -> WebRuntime:
                     "Longbridge sync complete. Historical orders and cash-flow records were pulled through the configured "
                     "Longbridge authentication session, then merged incrementally into the local investment store "
                     "without clearing older data first."
+                )
+            elif broker == "hsbc":
+                imported_payload = build_investment_payload_from_hsbc_pasted_text(
+                    portfolio_text=str(
+                        request.form.get("hsbc_portfolio_text", "")
+                    ).strip(),
+                    order_status_text=str(
+                        request.form.get("hsbc_order_status_text", "")
+                    ).strip(),
+                    cash_account_text=str(
+                        request.form.get("hsbc_cash_account_text", "")
+                    ).strip(),
+                )
+                success_message = (
+                    "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
+                    "merged incrementally into the local investment store without "
+                    "clearing older data first."
                 )
             else:
                 return jsonify({

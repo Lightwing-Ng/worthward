@@ -1,8 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.37.5
- * - Changed: Investment equity canvas now plots only ledger-anchored history dates and rounds plotted values to the same 2-decimal precision used by the history table, so the curve starts at the first rendered total-equity value without hidden intermediate market-only micro-moves
+ * Code version: v1.40.0
+ * - Added: HSBC controlled browser bridge now includes an Edge-run dashboard collector that treats the HSBC Online Banking dashboard as the unified source for USD deposit and withdrawal records
+ * - Fixed: Investment equity canvas now skips the synthetic pre-ledger starting-cash anchor, so the curve begins at the first real transaction row instead of the assumed 0.02 opening point while still extending forward across later valuation-only trading days
+ * - Added: HSBC controlled browser bridge now closes blocking dialogs, opens Quick Trade in read-only mode, and captures cash-account buying power as authoritative cash without ever previewing or submitting an order
+ * - Added: HSBC Order Status capture now proactively closes blocking dialogs before reading filters and pagination
+ * - Changed: Authoritative broker position snapshots can now flow broker-supplied market values, last prices, and ending cash into the latest dashboard valuation
+ * - Fixed: Investment equity canvas now keeps post-trade valuation dates in the rendered series, so the line extends from the last transaction day through the latest yfinance-backed trading day while holdings-linked hover anchors still target real ledger rows
+ * - Changed: Investment equity canvas now rounds plotted values to the same 2-decimal precision used by the history table, so the curve starts at the first rendered total-equity value without hidden intermediate market-only micro-moves
  * - Added: Transaction history now uses the shared Local store pagination shell so large ledgers render a smaller DOM slice per page and switch faster
  * - Fixed: Stock detail and ticker identity displays now normalize Longbridge `.US` symbols to the short display ticker when rendering UI labels and fallback names
  * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
@@ -171,11 +177,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
     const importSubmitButton = document.getElementById('investment_import_submit_button');
-    const investmentImportTitle = document.getElementById('investment_import_title');
     const investmentImportNote = document.getElementById('investment_import_note');
     const investmentImportIbkrFields = document.getElementById('investment_import_ibkr_fields');
     const investmentImportLongbridgeFields = document.getElementById('investment_import_longbridge_fields');
+    const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
     const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
+    const longbridgeStartDateStatus = document.getElementById('longbridge_start_date_status');
+    const hsbcPortfolioTextInput = document.getElementById('hsbc_portfolio_text');
+    const hsbcOrderStatusTextInput = document.getElementById('hsbc_order_status_text');
+    const hsbcCashAccountTextInput = document.getElementById('hsbc_cash_account_text');
+    const longbridgeEndDateStatus = document.getElementById('longbridge_end_date_status');
+    const hsbcPortfolioTextDisplay = document.getElementById('hsbc_portfolio_text_display');
+    const hsbcOrderStatusDisplay = document.getElementById('hsbc_order_status_display');
+    const hsbcCashAccountDisplay = document.getElementById('hsbc_cash_account_display');
+    const hsbcPortfolioTextPasteButton = document.getElementById('hsbc_portfolio_text_paste_button');
+    const hsbcOrderStatusPasteButton = document.getElementById('hsbc_order_status_paste_button');
+    const hsbcCashAccountPasteButton = document.getElementById('hsbc_cash_account_paste_button');
+    const hsbcPortfolioTextStatus = document.getElementById('hsbc_portfolio_text_status');
+    const hsbcOrderStatusTextStatus = document.getElementById('hsbc_order_status_text_status');
+    const hsbcCashAccountTextStatus = document.getElementById('hsbc_cash_account_text_status');
+    const HSBC_EXPECTED_ACCOUNT_NUMBER = '103-555700-329';
+    const HSBC_ACCOUNT_NUMBER_PATTERN = /\d{3}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{6}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{3}/g;
+    const HSBC_PASTE_CHUNK_MARKER = '===== HSBC PASTE CHUNK =====';
+    const hsbcPasteButtonFlashTimers = new WeakMap();
     let investmentBootstrapTimer = 0;
     let investmentPageDisposed = false;
     const isLifecycleInterruptedFetch = (error) => (
@@ -390,23 +414,23 @@ document.addEventListener('DOMContentLoaded', () => {
         ibkr: {
             code: 'ibkr',
             label: 'IBKR',
-            logoUrl: '/market-store/logos/IBKR.png',
+            logoUrl: '/market-store/logos/brokers/IBKR.png',
             logoAlt: 'IBKR logo',
         },
         longbridge: {
             code: 'longbridge',
             label: 'Longbridge',
-            logoUrl: '/market-store/logos/Longbridge.png',
+            logoUrl: '/market-store/logos/brokers/Longbridge.png',
             logoAlt: 'Longbridge logo',
         },
         hsbc: {
             code: 'hsbc',
             label: 'HSBC',
-            logoUrl: '/market-store/logos/HSBC.png',
+            logoUrl: '/market-store/logos/brokers/HSBC.png',
             logoAlt: 'HSBC logo',
         },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge', 'hsbc']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -435,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getIndexedClosePriceOnOrBefore,
         getAuthoritativePositionSnapshot,
         getInvestmentEquityRangeLabels,
+        getInvestmentEndingCash,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
@@ -2021,6 +2046,224 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${year}-${month}-${day}`;
     }
 
+    function normalizeClipboardText(rawText) {
+        return String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    }
+
+    function countClipboardLines(text) {
+        const normalized = normalizeClipboardText(text);
+        return normalized ? normalized.split('\n').length : 0;
+    }
+
+    function splitHsbcPastedTextChunks(rawText) {
+        const normalized = normalizeClipboardText(rawText);
+        if (!normalized) {
+            return [];
+        }
+        const parts = normalized.split(new RegExp(`\\n+\\s*${HSBC_PASTE_CHUNK_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\n+`, 'g'));
+        const chunks = [];
+        const seen = new Set();
+        parts.forEach((part) => {
+            const chunk = normalizeClipboardText(part);
+            if (!chunk) {
+                return;
+            }
+            const chunkKey = chunk.replace(/\s+/g, ' ').trim();
+            if (!chunkKey || seen.has(chunkKey)) {
+                return;
+            }
+            seen.add(chunkKey);
+            chunks.push(chunk);
+        });
+        return chunks;
+    }
+
+    function mergeHsbcPastedText(existingRawText, incomingRawText) {
+        const incomingText = normalizeClipboardText(incomingRawText);
+        if (!incomingText) {
+            return { mergedText: '', addedChunkCount: 0, duplicate: false };
+        }
+        const chunks = splitHsbcPastedTextChunks(existingRawText);
+        const existingKeys = new Set(chunks.map((chunk) => chunk.replace(/\s+/g, ' ').trim()));
+        const incomingKey = incomingText.replace(/\s+/g, ' ').trim();
+        if (existingKeys.has(incomingKey)) {
+            return {
+                mergedText: chunks.join(`\n\n${HSBC_PASTE_CHUNK_MARKER}\n\n`),
+                addedChunkCount: 0,
+                duplicate: true,
+            };
+        }
+        const mergedChunks = [...chunks, incomingText];
+        return {
+            mergedText: mergedChunks.join(`\n\n${HSBC_PASTE_CHUNK_MARKER}\n\n`),
+            addedChunkCount: 1,
+            duplicate: false,
+        };
+    }
+
+    function normalizeHsbcAccountNumber(value) {
+        return String(value || '')
+            .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
+            .replace(/\s+/g, '')
+            .trim();
+    }
+
+    function extractHsbcAccountNumber(text) {
+        const candidates = Array.from(String(text || '').matchAll(HSBC_ACCOUNT_NUMBER_PATTERN))
+            .map((match) => normalizeHsbcAccountNumber(match[0]))
+            .filter(Boolean);
+        if (!candidates.length) {
+            return '';
+        }
+        const expectedAccount = normalizeHsbcAccountNumber(HSBC_EXPECTED_ACCOUNT_NUMBER);
+        return candidates.find((candidate) => candidate === expectedAccount) || candidates[0];
+    }
+
+    function hsbcTextBelongsToExpectedAccount(rawText) {
+        return extractHsbcAccountNumber(rawText) === normalizeHsbcAccountNumber(HSBC_EXPECTED_ACCOUNT_NUMBER);
+    }
+
+    function summarizeHsbcPastedText(kind, rawText, isValid) {
+        const normalized = normalizeClipboardText(rawText);
+        if (!normalized) {
+            return '';
+        }
+        const chunkCount = splitHsbcPastedTextChunks(normalized).length || 1;
+        const lineCount = countClipboardLines(normalized);
+        const charCount = normalized.length.toLocaleString('en-US');
+        const label = kind === 'cash'
+            ? 'USD Savings'
+            : (kind === 'portfolio' ? 'Portfolio' : 'Order Status');
+        const chunkLabel = chunkCount === 1 ? '1 clip' : `${chunkCount.toLocaleString('en-US')} clips`;
+        return `${label} clipboard pasted · ${chunkLabel} · ${lineCount} lines · ${charCount} chars${isValid ? ' · Ready' : ' · Check format'}`;
+    }
+
+    function isLikelyHsbcCashAccountText(rawText) {
+        const text = normalizeClipboardText(rawText);
+        return Boolean(
+            text
+            && hsbcTextBelongsToExpectedAccount(text)
+            && /USD Savings/i.test(text)
+            && /Available balance/i.test(text)
+            && /Post date/i.test(text)
+            && text.length >= 400
+        );
+    }
+
+    function isLikelyHsbcPortfolioText(rawText) {
+        const text = normalizeClipboardText(rawText);
+        return Boolean(
+            text
+            && hsbcTextBelongsToExpectedAccount(text)
+            && /Portfolio/i.test(text)
+            && /Market value/i.test(text)
+            && /Average purchase price/i.test(text)
+            && text.length >= 300
+        );
+    }
+
+    function isLikelyHsbcOrderStatusText(rawText) {
+        const text = normalizeClipboardText(rawText);
+        return Boolean(
+            text
+            && hsbcTextBelongsToExpectedAccount(text)
+            && /Order Status/i.test(text)
+            && /P-\d+/i.test(text)
+            && text.length >= 400
+        );
+    }
+
+    function getHsbcPasteButton(kind) {
+        if (kind === 'cash') return hsbcCashAccountPasteButton;
+        if (kind === 'portfolio') return hsbcPortfolioTextPasteButton;
+        if (kind === 'order') return hsbcOrderStatusPasteButton;
+        return null;
+    }
+
+    function flashHsbcPasteButton(kind) {
+        const button = getHsbcPasteButton(kind);
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+        const priorTimer = hsbcPasteButtonFlashTimers.get(button);
+        if (priorTimer) {
+            window.clearTimeout(priorTimer);
+        }
+        button.classList.add('is-pasted');
+        const timerId = window.setTimeout(() => {
+            button.classList.remove('is-pasted');
+            hsbcPasteButtonFlashTimers.delete(button);
+        }, 1200);
+        hsbcPasteButtonFlashTimers.set(button, timerId);
+    }
+
+    function updateHsbcPasteFieldDisplay(displayInput, summaryText, rawText) {
+        if (!(displayInput instanceof HTMLInputElement)) {
+            return;
+        }
+        displayInput.value = summaryText;
+        displayInput.title = normalizeClipboardText(rawText);
+    }
+
+    function syncHsbcPasteDisplaySummaries() {
+        const cashText = String(hsbcCashAccountTextInput?.value || '');
+        const portfolioText = String(hsbcPortfolioTextInput?.value || '');
+        const orderText = String(hsbcOrderStatusTextInput?.value || '');
+        updateHsbcPasteFieldDisplay(
+            hsbcCashAccountDisplay,
+            summarizeHsbcPastedText('cash', cashText, isLikelyHsbcCashAccountText(cashText)),
+            cashText,
+        );
+        updateHsbcPasteFieldDisplay(
+            hsbcPortfolioTextDisplay,
+            summarizeHsbcPastedText('portfolio', portfolioText, isLikelyHsbcPortfolioText(portfolioText)),
+            portfolioText,
+        );
+        updateHsbcPasteFieldDisplay(
+            hsbcOrderStatusDisplay,
+            summarizeHsbcPastedText('order', orderText, isLikelyHsbcOrderStatusText(orderText)),
+            orderText,
+        );
+    }
+
+    async function pasteHsbcClipboardIntoField(kind) {
+        if (!navigator.clipboard?.readText) {
+            setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
+            return;
+        }
+        try {
+            const rawText = await navigator.clipboard.readText();
+            const normalizedText = normalizeClipboardText(rawText);
+            if (!normalizedText) {
+                setImportFeedback('Clipboard is empty.', 'error');
+                return;
+            }
+            let mergeResult = null;
+            if (kind === 'cash' && hsbcCashAccountTextInput instanceof HTMLTextAreaElement) {
+                mergeResult = mergeHsbcPastedText(hsbcCashAccountTextInput.value, normalizedText);
+                hsbcCashAccountTextInput.value = mergeResult.mergedText;
+            } else if (kind === 'portfolio' && hsbcPortfolioTextInput instanceof HTMLTextAreaElement) {
+                mergeResult = mergeHsbcPastedText(hsbcPortfolioTextInput.value, normalizedText);
+                hsbcPortfolioTextInput.value = mergeResult.mergedText;
+            } else if (kind === 'order' && hsbcOrderStatusTextInput instanceof HTMLTextAreaElement) {
+                mergeResult = mergeHsbcPastedText(hsbcOrderStatusTextInput.value, normalizedText);
+                hsbcOrderStatusTextInput.value = mergeResult.mergedText;
+            }
+            if (mergeResult?.duplicate) {
+                setImportFeedback('That HSBC clipboard capture is already present. Existing pasted content was kept.', 'warning');
+            } else if (mergeResult?.addedChunkCount) {
+                setImportFeedback('Added a supplementary HSBC clipboard capture to this field.', 'success');
+            } else {
+                clearImportFeedback();
+            }
+            syncHsbcPasteDisplaySummaries();
+            syncImportValidationState();
+            flashHsbcPasteButton(kind);
+        } catch (_error) {
+            setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
+        }
+    }
+
     function seedLongbridgeImportDateRange() {
         if (!(longbridgeStartDateInput instanceof HTMLInputElement) || !(longbridgeEndDateInput instanceof HTMLInputElement)) {
             return;
@@ -2049,12 +2292,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
         const isLongbridge = selectedBroker === 'longbridge';
+        const isHsbc = selectedBroker === 'hsbc';
+        const usesSyncAction = isLongbridge || isHsbc;
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
         }
         if (investmentImportLongbridgeFields instanceof HTMLElement) {
             investmentImportLongbridgeFields.hidden = !isLongbridge;
+        }
+        if (investmentImportHsbcFields instanceof HTMLElement) {
+            investmentImportHsbcFields.hidden = !isHsbc;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
             transactionsCsvInput.required = isIbkr;
@@ -2068,19 +2316,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (longbridgeEndDateInput instanceof HTMLInputElement) {
             longbridgeEndDateInput.required = isLongbridge;
         }
-        if (investmentImportTitle instanceof HTMLElement) {
-            investmentImportTitle.textContent = isLongbridge
-                ? 'Sync Longbridge activity through the configured authentication session.'
-                : 'Import broker CSV files.';
-        }
         if (investmentImportNote instanceof HTMLElement) {
-            investmentImportNote.innerHTML = isLongbridge
-                ? 'Syncs Longbridge activity into <code>settings_store/investment.json</code> without clearing existing records.'
-                : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.';
+            investmentImportNote.innerHTML = isHsbc
+                ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
+                : (isLongbridge
+                    ? 'Syncs Longbridge activity into <code>settings_store/investment.json</code> without clearing existing records.'
+                    : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.');
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
-            importSubmitButton.dataset.defaultLabel = isLongbridge ? 'Sync now' : 'Import now';
-            importSubmitButton.dataset.pendingLabel = isLongbridge ? 'Syncing' : 'Importing';
+            importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
+            importSubmitButton.dataset.pendingLabel = usesSyncAction ? 'Syncing' : 'Importing';
         }
         seedLongbridgeImportDateRange();
     }
@@ -3015,20 +3260,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
         const isLongbridge = selectedBroker === 'longbridge';
+        const isHsbc = selectedBroker === 'hsbc';
         const transactionReady = isIbkr ? isLikelyTransactionHistoryFile(transactionFile) : false;
         const positionsReady = isIbkr ? isLikelyPositionsFile(positionsFile) : false;
-        const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
-        const longbridgeRangeReady = isLongbridge
+        const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
+        const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
+        const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
+        const sharedRangeReady = isLongbridge
             && String(longbridgeStartDateInput?.value || '').trim()
             && String(longbridgeEndDateInput?.value || '').trim()
             && String(longbridgeStartDateInput?.value || '') <= String(longbridgeEndDateInput?.value || '');
+        const hsbcPortfolioReady = isHsbc && isLikelyHsbcPortfolioText(hsbcPortfolioText);
+        const hsbcOrderStatusReady = isHsbc && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
+        const hsbcCashAccountReady = isHsbc && isLikelyHsbcCashAccountText(hsbcCashAccountText);
+        const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkr && transactionReady && positionsReady)
-            || Boolean(longbridgeRangeReady)
+            || (isLongbridge && Boolean(sharedRangeReady))
+            || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
         );
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
+        setImportStatusIcon(longbridgeStartDateStatus, Boolean(isLongbridge && String(longbridgeStartDateInput?.value || '').trim()));
+        setImportStatusIcon(longbridgeEndDateStatus, Boolean(isLongbridge && String(longbridgeEndDateInput?.value || '').trim()));
+        setImportStatusIcon(hsbcPortfolioTextStatus, Boolean(hsbcPortfolioReady));
+        setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
+        setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         syncActionButtonState(submitButton, {
@@ -3182,6 +3440,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bindInvestmentHistoryPagination();
     bindInvestmentExportButton();
     syncInvestmentImportMode();
+    syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
     [transactionsCsvInput, positionsCsvInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
         if (input) {
@@ -3194,6 +3453,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncInvestmentImportContainerHeight();
             });
         }
+    });
+    [hsbcCashAccountTextInput, hsbcPortfolioTextInput, hsbcOrderStatusTextInput].forEach((input) => {
+        if (!input) return;
+        input.addEventListener('input', () => {
+            clearImportFeedback();
+            syncHsbcPasteDisplaySummaries();
+            syncImportValidationState();
+        });
+    });
+    [
+        ['cash', hsbcCashAccountPasteButton],
+        ['portfolio', hsbcPortfolioTextPasteButton],
+        ['order', hsbcOrderStatusPasteButton],
+    ].forEach(([kind, button]) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.addEventListener('click', () => {
+            pasteHsbcClipboardIntoField(kind);
+        });
     });
     window.addEventListener('resize', syncInvestmentImportContainerHeight);
     window.visualViewport?.addEventListener('resize', syncInvestmentImportContainerHeight);
@@ -3271,6 +3548,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 formData.append('longbridge_start_date', startDate);
                 formData.append('longbridge_end_date', endDate);
+            } else if (selectedBroker === 'hsbc') {
+                const portfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
+                const orderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
+                const cashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
+                if (!cashAccountText) {
+                    setImportFeedback('Please paste the HSBC USD Savings page text before syncing.', 'error');
+                    return;
+                }
+                if (!portfolioText) {
+                    setImportFeedback('Please paste the HSBC Portfolio page text before syncing.', 'error');
+                    return;
+                }
+                if (!orderStatusText) {
+                    setImportFeedback('Please paste the HSBC Order Status page text before syncing.', 'error');
+                    return;
+                }
+                if (!isLikelyHsbcCashAccountText(cashAccountText)) {
+                    setImportFeedback('The HSBC USD Savings page text is missing required details or belongs to the wrong account.', 'error');
+                    return;
+                }
+                if (!isLikelyHsbcPortfolioText(portfolioText)) {
+                    setImportFeedback('The HSBC Portfolio page text is missing required details or belongs to the wrong account.', 'error');
+                    return;
+                }
+                if (!isLikelyHsbcOrderStatusText(orderStatusText)) {
+                    setImportFeedback('The HSBC Order Status page text is missing required details or belongs to the wrong account.', 'error');
+                    return;
+                }
+                formData.append('hsbc_portfolio_text', portfolioText);
+                formData.append('hsbc_order_status_text', orderStatusText);
+                formData.append('hsbc_cash_account_text', cashAccountText);
             }
 
             investmentImportInFlight = true;
@@ -5159,10 +5467,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr>
                     <td colspan="11" class="investment-history-empty-cell">
                         <div class="investment-history-empty-state" role="status" aria-live="polite">
-                            <p class="investment-history-empty-title"><strong>Import your broker files to begin.</strong></p>
+                            <p class="investment-history-empty-title"><strong>Import or sync broker activity to begin.</strong></p>
                             <p class="investment-history-empty-step">➊ Click <span class="investment-inline-plus-icon" aria-hidden="true"></span> above to open the import panel.</p>
-                            <p class="investment-history-empty-step">➋ Select a broker, then upload the Transaction History CSV and Realized Summary CSV.</p>
-                            <p class="investment-history-empty-step">➌ IBKR is supported now; Longbridge and HSBC are reserved for later adapter rollout.</p>
+                            <p class="investment-history-empty-step">➋ Select a broker, then upload IBKR CSV files or paste the HSBC USD Savings, Portfolio, and Order Status page text.</p>
+                            <p class="investment-history-empty-step">➌ IBKR, Longbridge, and HSBC are available through their current import adapters.</p>
                         </div>
                     </td>
                 </tr>
@@ -5326,6 +5634,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 latestPrices[ticker] = price;
             }
         });
+        if (authoritativePositionSnapshot !== null) {
+            Object.entries(authoritativePositionSnapshot).forEach(([ticker, snapshot]) => {
+                const snapshotLastPrice = Number(snapshot?.lastPrice);
+                if (Number.isFinite(snapshotLastPrice) && snapshotLastPrice > 0) {
+                    latestPrices[ticker] = snapshotLastPrice;
+                }
+            });
+        }
 
         // 2. For each transaction, get the closest available close price on or before the transaction date
         //    and calculate total equity = cash + sum(holdings * historical close price)
@@ -5369,6 +5685,21 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.market_value = marketValue;
             txn.total_equity = txn.running_cash + marketValue;
         });
+        if (authoritativePositionSnapshot !== null && processed.length) {
+            const latestProcessed = processed[processed.length - 1];
+            const authoritativeEndingCash = getInvestmentEndingCash();
+            const authoritativeMarketValue = Object.values(authoritativePositionSnapshot).reduce((sum, snapshot) => {
+                const marketValue = Number(snapshot?.marketValue);
+                return Number.isFinite(marketValue) ? (sum + marketValue) : sum;
+            }, 0);
+            if (authoritativeEndingCash !== null) {
+                latestProcessed.running_cash = authoritativeEndingCash;
+            }
+            if (Number.isFinite(authoritativeMarketValue) && authoritativeMarketValue > 0) {
+                latestProcessed.market_value = authoritativeMarketValue;
+            }
+            latestProcessed.total_equity = latestProcessed.running_cash + latestProcessed.market_value;
+        }
 
         Object.keys(latestPrices).forEach((ticker) => {
             if (moneyMarketTickers.has(String(ticker).trim().toUpperCase())) {
@@ -5494,28 +5825,29 @@ document.addEventListener('DOMContentLoaded', () => {
             sortedChartPoints.map((point) => point.date),
             selectedInvestmentEquityRange,
         ));
-        const hasRenderableHistoryAnchor = (point) => (
-            Array.isArray(point?.anchor_ledger_nos)
-            && point.anchor_ledger_nos.some((ledgerNo) => {
-                const normalizedLedgerNo = Number(ledgerNo);
-                return Number.isFinite(normalizedLedgerNo) && normalizedLedgerNo > 0;
-            })
-        );
         const visibleChartPointEntries = sortedChartPoints
             .map((point, sourceIndex) => ({ point, sourceIndex }))
             .filter(({ point }) => (
                 !visibleRangeLabels.size
                 || visibleRangeLabels.has(normalizeLedgerDate(point?.date))
             ));
-        const renderableVisiblePointEntries = visibleChartPointEntries.filter(({ point }) => hasRenderableHistoryAnchor(point));
-        const renderableAllPointEntries = sortedChartPoints
-            .map((point, sourceIndex) => ({ point, sourceIndex }))
-            .filter(({ point }) => hasRenderableHistoryAnchor(point));
+        const allPointEntries = sortedChartPoints.map((point, sourceIndex) => ({ point, sourceIndex }));
+        const firstLedgerAnchoredPointSourceIndex = allPointEntries.findIndex(({ point }) => (
+            Array.isArray(point?.anchor_ledger_nos)
+            && point.anchor_ledger_nos.some((ledgerNo) => {
+                const normalizedLedgerNo = Number(ledgerNo);
+                return Number.isFinite(normalizedLedgerNo) && normalizedLedgerNo > 0;
+            })
+        ));
         const visiblePoints = visibleRangeLabels.size
-            ? renderableVisiblePointEntries
-            : renderableAllPointEntries;
-        const visibleChartPoints = visiblePoints.map(({ point }) => point);
-        const visiblePointSourceIndexes = visiblePoints.map(({ sourceIndex }) => sourceIndex);
+            ? visibleChartPointEntries
+            : allPointEntries;
+        const renderableVisiblePoints = visiblePoints.filter(({ sourceIndex }) => (
+            firstLedgerAnchoredPointSourceIndex < 0
+            || sourceIndex >= firstLedgerAnchoredPointSourceIndex
+        ));
+        const visibleChartPoints = renderableVisiblePoints.map(({ point }) => point);
+        const visiblePointSourceIndexes = renderableVisiblePoints.map(({ sourceIndex }) => sourceIndex);
         const roundChartCurrencyValue = (value) => {
             const normalizedValue = Number(value);
             if (!Number.isFinite(normalizedValue)) return null;

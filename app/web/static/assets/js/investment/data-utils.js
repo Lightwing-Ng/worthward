@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.37.0
+ * Code version: v1.39.0
  */
 
 export function createInvestmentDataUtils({
@@ -57,6 +57,15 @@ export function createInvestmentDataUtils({
         }
         const numericValue = Number(rawValue);
         return Number.isFinite(numericValue) ? numericValue : 0;
+    }
+
+    function getInvestmentEndingCash() {
+        const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash;
+        if (rawValue === undefined || rawValue === null || rawValue === '') {
+            return null;
+        }
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
     }
 
     function normalizeCurrencyCode(value) {
@@ -475,9 +484,13 @@ export function createInvestmentDataUtils({
             if (!normalizedTicker || !snapshot || typeof snapshot !== 'object') return;
             const quantity = Number(snapshot.quantity);
             const costPrice = Number(snapshot.cost_price);
+            const marketValue = Number(snapshot.market_value);
+            const lastPrice = Number(snapshot.last_price);
             normalizedSnapshot[normalizedTicker] = {
                 quantity: Number.isFinite(quantity) ? quantity : 0,
                 costPrice: Number.isFinite(costPrice) ? costPrice : null,
+                marketValue: Number.isFinite(marketValue) ? marketValue : null,
+                lastPrice: Number.isFinite(lastPrice) ? lastPrice : null,
             };
         });
         return normalizedSnapshot;
@@ -1158,10 +1171,27 @@ export function createInvestmentDataUtils({
                     ? snapshotEntry.costPrice
                     : (totalCost / Math.abs(shares)))
                 : null;
-            const lastPrice = latestPrices[summary.ticker] ?? null;
+            const marketValueFromSnapshot = snapshotEntry && Number.isFinite(snapshotEntry.marketValue)
+                ? snapshotEntry.marketValue
+                : null;
+            const snapshotLastPrice = snapshotEntry && Number.isFinite(snapshotEntry.lastPrice)
+                ? snapshotEntry.lastPrice
+                : null;
+            const computedLastPrice = latestPrices[summary.ticker] ?? null;
+            const lastPrice = snapshotLastPrice !== null
+                ? snapshotLastPrice
+                : (computedLastPrice !== null
+                    ? computedLastPrice
+                    : (marketValueFromSnapshot !== null && Math.abs(shares) > 1e-9
+                        ? marketValueFromSnapshot / shares
+                        : null));
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
-            const marketValueLocal = hasOpenPosition && lastPrice !== null ? shares * lastPrice : 0;
+            const marketValueLocal = hasOpenPosition
+                ? (marketValueFromSnapshot !== null
+                    ? marketValueFromSnapshot
+                    : (lastPrice !== null ? shares * lastPrice : 0))
+                : 0;
             const marketValue = convertAmountToBaseCurrency(
                 marketValueLocal,
                 quoteCurrency,
@@ -1245,6 +1275,7 @@ export function createInvestmentDataUtils({
         formatTransactionDescription,
         getIndexedClosePriceOnOrBefore,
         getInvestmentEquityRangeLabels,
+        getInvestmentEndingCash,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
