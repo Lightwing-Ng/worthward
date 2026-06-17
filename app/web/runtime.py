@@ -79,6 +79,7 @@ from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_longbridge,
     merge_investment_payloads,
+    normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
 )
 
@@ -357,6 +358,19 @@ def build_web_runtime() -> WebRuntime:
             return {}
         with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
             return normalize_investment_payload_tickers(json.load(f))
+
+    def write_investment_payload(payload: dict[str, Any]) -> None:
+        normalized_payload = normalize_investment_payload_tickers(payload)
+        INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        INVESTMENT_STORE_PATH.write_text(
+            json.dumps(
+                cast(dict[str, Any], normalized_payload),
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -3984,16 +3998,7 @@ def build_web_runtime() -> WebRuntime:
                 )
             )
 
-            INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            INVESTMENT_STORE_PATH.write_text(
-                json.dumps(
-                    cast(dict[str, Any], investment_payload),
-                    indent=2,
-                    ensure_ascii=False,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
+            write_investment_payload(investment_payload)
 
             return jsonify({
                 "success": True,
@@ -4024,6 +4029,43 @@ def build_web_runtime() -> WebRuntime:
                     "error": str(exc),
                 },
             )
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    def investment_update_internal_transfer_binding():
+        """Persist a manual internal-transfer binding into the local investment store."""
+        try:
+            payload = request.get_json(silent=True) or {}
+            source_key = str(payload.get("source_key", "")).strip()
+            target_key = str(payload.get("target_key", "")).strip()
+            if not source_key:
+                return jsonify({
+                    "success": False,
+                    "error": "A source transfer key is required.",
+                }), 400
+            if not INVESTMENT_STORE_PATH.exists():
+                return jsonify({
+                    "success": False,
+                    "error": "No local investment store exists yet.",
+                }), 400
+
+            investment_payload = load_normalized_investment_payload()
+            next_bindings = normalize_investment_internal_transfer_bindings(
+                investment_payload.get("manual_internal_transfer_bindings")
+            )
+            if target_key:
+                for existing_source_key, existing_target_key in list(next_bindings.items()):
+                    if existing_source_key != source_key and existing_target_key == target_key:
+                        del next_bindings[existing_source_key]
+                next_bindings[source_key] = target_key
+            else:
+                next_bindings.pop(source_key, None)
+            investment_payload["manual_internal_transfer_bindings"] = next_bindings
+            write_investment_payload(investment_payload)
+            return jsonify({
+                "success": True,
+                "manual_internal_transfer_bindings": next_bindings,
+            })
+        except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
         finally:
             if transactions_file is not None:

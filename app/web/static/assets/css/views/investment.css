@@ -1983,9 +1983,9 @@
 }
 
 .investment-history-table {
-    --investment-col-broker-width: 6%;
+    --investment-col-broker-width: 5%;
     --investment-col-broker-min-width: 32px;
-    --investment-col-no-width: 6%;
+    --investment-col-no-width: 5%;
     --investment-col-no-min-width: 32px;
     --investment-col-time-width: 10%;
     --investment-col-time-min-width: 36px;
@@ -1993,11 +1993,11 @@
     --investment-col-type-min-width: 36px;
     --investment-col-description-width: 20%;
     --investment-col-description-min-width: 72px;
-    --investment-col-currency-width: 6%;
+    --investment-col-currency-width: 5%;
     --investment-col-currency-min-width: 32px;
-    --investment-col-amount-width: 6%;
+    --investment-col-amount-width: 10%;
     --investment-col-amount-min-width: 32px;
-    --investment-col-commission-width: 6%;
+    --investment-col-commission-width: 5%;
     --investment-col-commission-min-width: 32px;
     --investment-col-market-value-width: 10%;
     --investment-col-market-value-min-width: 36px;
