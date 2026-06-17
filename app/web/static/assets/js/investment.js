@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.42.6
+ * Code version: v1.43.1
+ * - Changed: Investment page initial bootstrap now reuses the shared workspace modal dialog overlay instead of the floating import-feedback banner while data is loading
+ * - Added: Stock details range segmented control now restores the 1Y option and adds an Auto window that keeps all buy and sell markers visible while trimming unrelated post-exit price history
+ * - Refined: Stock details segmented control continues to reuse the shared nested range-label span markup while expanding to fit seven measured pill options
  * - Added: Initial investment page boot now shows the shared floating banner while transactions load, then clears it automatically once rendering finishes
  * - Refined: Internal-transfer link select now reuses the shared form-select styling, and the reference text matches the history table body size
  * - Added: Investment equity range segmented control now exposes a 1Y option between YTD and Max
@@ -176,10 +179,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleBtn = document.getElementById('toggle_form_button');
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
+    const investmentHistorySurface = document.getElementById('investment_history_surface');
     const investmentForm = document.getElementById('investment_form');
     const importFeedback = document.getElementById('investment_import_feedback');
     const importFeedbackMessage = document.getElementById('investment_import_feedback_message');
     const importFeedbackIcon = document.getElementById('investment_import_feedback_icon');
+    const workspaceModalOverlay = document.getElementById('workspace_modal_overlay');
+    const workspaceModalOverlayTitle = workspaceModalOverlay?.querySelector('.workspace-modal-title');
+    const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector('.workspace-modal-copy');
+    const workspaceModalOverlayIcon = document.getElementById('workspace_modal_overlay_icon');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
@@ -209,7 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const HSBC_ACCOUNT_NUMBER_PATTERN = /\d{3}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{6}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{3}/g;
     const HSBC_PASTE_CHUNK_MARKER = '===== HSBC PASTE CHUNK =====';
     const hsbcPasteButtonFlashTimers = new WeakMap();
-    const INVESTMENT_LOADING_FEEDBACK_MESSAGE = 'Loading investment data...';
+    const INVESTMENT_LOADING_MODAL_TITLE = 'Loading investment data';
+    const INVESTMENT_LOADING_MODAL_COPY = 'We are reading the locally stored broker activity and rebuilding the holdings, charts, metrics, and transaction history for this page. Please keep this tab open while loading finishes.';
+    const INVESTMENT_LOADING_MODAL_ICON_CLASS = 'icon-hourglass';
+    const WORKSPACE_MODAL_DEFAULT_TITLE = String(workspaceModalOverlayTitle?.textContent || '').trim();
+    const WORKSPACE_MODAL_DEFAULT_COPY = String(workspaceModalOverlayCopy?.textContent || '').trim();
+    const WORKSPACE_MODAL_DEFAULT_ICON_CLASS = String(workspaceModalOverlayIcon?.className || '').trim();
     let investmentBootstrapTimer = 0;
     let investmentPageDisposed = false;
     const isLifecycleInterruptedFetch = (error) => (
@@ -223,6 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clearTimeout(investmentBootstrapTimer);
             investmentBootstrapTimer = 0;
         }
+        hideInvestmentLoadingModal({ resetContent: true });
     };
     window.addEventListener('pagehide', markInvestmentPageDisposed, { once: true });
     window.addEventListener('beforeunload', markInvestmentPageDisposed, { once: true });
@@ -396,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentEquityRangeControlResizeObserver = null;
     let investmentHoldingsTableAlignmentCleanup = null;
     let investmentHistoryTableAlignmentCleanup = null;
+    let investmentStockDetailsTableAlignmentCleanup = null;
     let investmentHistoryCurrentPage = 1;
     let investmentHistoryVisibleTransactionsCache = [];
     let investmentRawTransactionsCache = [];
@@ -412,11 +427,12 @@ document.addEventListener('DOMContentLoaded', () => {
         1, 1.5, 2, 3, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 128, 160, 200, 256,
     ];
     const INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS = [
-        { value: '3d', label: '3D' },
         { value: '1w', label: '1W' },
         { value: '3m', label: '3M' },
         { value: 'ytd', label: 'YTD' },
+        { value: '1y', label: '1Y' },
         { value: 'max', label: 'Max' },
+        { value: 'auto', label: 'Auto' },
     ];
     const INVESTMENT_EQUITY_RANGE_OPTIONS = [
         { value: '1w', label: '1W' },
@@ -1111,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function isInvestmentStockDetailsIntradayRange(range) {
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
-        return normalizedRange === '3d' || normalizedRange === '1w';
+        return normalizedRange === '1w';
     }
 
     function parseInvestmentIntradayTimestamp(value) {
@@ -1584,7 +1600,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(investmentStockDetailsTableHost instanceof HTMLElement)) return;
         const hasContent = investmentStockDetailsTableHost.childElementCount > 0
             || Boolean(investmentStockDetailsTableHost.textContent.trim());
-        investmentStockDetailsTableHost.hidden = activeInvestmentView !== 'stock_details' || !hasContent;
+        const isVisible = activeInvestmentView === 'stock_details' && hasContent;
+        investmentStockDetailsTableHost.hidden = !isVisible;
+        investmentHistorySurface?.classList.toggle('is-stock-details-table-visible', isVisible);
+        if (isVisible) {
+            attachStockDetailsTableAlignmentSync(investmentStockDetailsTableHost);
+            return;
+        }
+        teardownStockDetailsTableAlignmentSync();
     }
 
     function scheduleInvestmentStockDetailsVisibleLayoutSync() {
@@ -2400,6 +2423,35 @@ document.addEventListener('DOMContentLoaded', () => {
             importFeedbackIcon.classList.remove('investment-import-feedback-banner-icon-error');
             importFeedbackIcon.classList.remove('investment-import-feedback-banner-icon-success');
             importFeedbackIcon.classList.add('icon-modal-dialog-banner-default');
+        }
+    }
+
+    function showInvestmentLoadingModal() {
+        if (!workspaceModalOverlay) return;
+        if (workspaceModalOverlayTitle) {
+            workspaceModalOverlayTitle.textContent = INVESTMENT_LOADING_MODAL_TITLE;
+        }
+        if (workspaceModalOverlayCopy) {
+            workspaceModalOverlayCopy.textContent = INVESTMENT_LOADING_MODAL_COPY;
+        }
+        if (workspaceModalOverlayIcon) {
+            workspaceModalOverlayIcon.className = `icon ${INVESTMENT_LOADING_MODAL_ICON_CLASS} workspace-modal-icon`;
+        }
+        workspaceModalOverlay.hidden = false;
+    }
+
+    function hideInvestmentLoadingModal({ resetContent = false } = {}) {
+        if (!workspaceModalOverlay) return;
+        workspaceModalOverlay.hidden = true;
+        if (!resetContent) return;
+        if (workspaceModalOverlayTitle && WORKSPACE_MODAL_DEFAULT_TITLE) {
+            workspaceModalOverlayTitle.textContent = WORKSPACE_MODAL_DEFAULT_TITLE;
+        }
+        if (workspaceModalOverlayCopy && WORKSPACE_MODAL_DEFAULT_COPY) {
+            workspaceModalOverlayCopy.textContent = WORKSPACE_MODAL_DEFAULT_COPY;
+        }
+        if (workspaceModalOverlayIcon && WORKSPACE_MODAL_DEFAULT_ICON_CLASS) {
+            workspaceModalOverlayIcon.className = WORKSPACE_MODAL_DEFAULT_ICON_CLASS;
         }
     }
 
@@ -3305,6 +3357,29 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function teardownStockDetailsTableAlignmentSync() {
+        if (typeof investmentStockDetailsTableAlignmentCleanup === 'function') {
+            investmentStockDetailsTableAlignmentCleanup();
+            investmentStockDetailsTableAlignmentCleanup = null;
+        }
+    }
+
+    function attachStockDetailsTableAlignmentSync(stockDetailsPanel) {
+        teardownStockDetailsTableAlignmentSync();
+        if (!(stockDetailsPanel instanceof HTMLElement)) return;
+        const tableShell = stockDetailsPanel.matches('.investment-stock-details-table-shell')
+            ? stockDetailsPanel
+            : stockDetailsPanel.querySelector('.investment-stock-details-table-shell');
+        const scrollContainer = stockDetailsPanel.matches('.investment-stock-details-table-scroll')
+            ? stockDetailsPanel
+            : stockDetailsPanel.querySelector('.investment-stock-details-table-scroll');
+        investmentStockDetailsTableAlignmentCleanup = buildTableAlignmentSync(
+            tableShell,
+            scrollContainer,
+            '--investment-stock-details-scrollbar-width'
+        );
+    }
+
     function bindInvestmentExportButton() {
         if (!exportTransactionsButton || exportTransactionsButton.dataset.bound === '1') return;
         exportTransactionsButton.dataset.bound = '1';
@@ -4137,9 +4212,10 @@ document.addEventListener('DOMContentLoaded', () => {
     investmentBootstrapTimer = window.setTimeout(() => {
         investmentBootstrapTimer = 0;
         if (investmentPageDisposed || document.visibilityState === 'hidden') return;
-        setImportFeedback(INVESTMENT_LOADING_FEEDBACK_MESSAGE, 'loading');
+        showInvestmentLoadingModal();
         fetchInvestmentData()
             .then(({ valuationStatus }) => {
+                hideInvestmentLoadingModal({ resetContent: true });
                 if (valuationStatus?.isDegraded) {
                     setImportFeedback(valuationStatus.message, 'warning');
                     return;
@@ -4147,6 +4223,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearImportFeedback();
             })
             .catch(err => {
+                hideInvestmentLoadingModal({ resetContent: true });
                 if (isLifecycleInterruptedFetch(err)) return;
                 console.error('Failed to load transactions:', err);
                 setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
@@ -4485,6 +4562,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return detailRows.reverse();
     }
 
+    function getInvestmentStockDetailsAutoRangeContext(ticker, detailRows = []) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) {
+            return {
+                tradeDates: [],
+                isOpenPosition: null,
+            };
+        }
+        const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
+        const tradeDates = [];
+        let fallbackShares = 0;
+        orderedRows.forEach((txn) => {
+            if (normalizeInvestmentTicker(txn?.ticker) !== normalizedTicker) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (ledgerDate && ['buy', 'sell'].includes(normalizedType)) {
+                tradeDates.push(ledgerDate);
+            }
+            const quantity = Number(getTransactionQuantity(txn));
+            if (!Number.isFinite(quantity) || quantity <= 0) return;
+            if (normalizedType === 'buy' || normalizedType === 'grant' || normalizedType === 'dividend_reinvestment') {
+                fallbackShares += quantity;
+                return;
+            }
+            if (normalizedType === 'sell') {
+                fallbackShares -= quantity;
+            }
+        });
+        const latestHoldingQuantity = Number(
+            Array.isArray(detailRows) && detailRows.length
+                ? detailRows[0]?.holdings?.[normalizedTicker]
+                : Number.NaN,
+        );
+        return {
+            tradeDates: Array.from(new Set(tradeDates)).sort(),
+            isOpenPosition: Number.isFinite(latestHoldingQuantity)
+                ? !isFlatPosition(latestHoldingQuantity)
+                : !isFlatPosition(fallbackShares),
+        };
+    }
+
     // Code version: v0.2.0.2
     function getStockDetailRealizedBreakdown(detailRows) {
         let dividendIncome = 0;
@@ -4581,9 +4699,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerLabels = Object.keys(tickerPriceMap).sort();
         const fullLabels = constrainTickerDatesToSharedRange(tickerLabels);
         const useIntradayCandles = Array.isArray(intradayRows) && intradayRows.length > 0;
+        const stockDetailsAutoRangeContext = getInvestmentStockDetailsAutoRangeContext(normalizedTicker, detailRows);
         const labels = useIntradayCandles
             ? intradayRows.map((row) => String(row?.date || ''))
-            : getInvestmentStockDetailsRangeLabels(fullLabels, normalizedRange);
+            : getInvestmentStockDetailsRangeLabels(fullLabels, normalizedRange, stockDetailsAutoRangeContext);
         const closeValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const close = Number(intradayRows[index]?.close);
@@ -5696,6 +5815,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
             `;
+            attachStockDetailsTableAlignmentSync(investmentStockDetailsTableHost);
             bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
             syncInvestmentStockDetailsTableVisibility();
         }

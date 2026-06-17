@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.42.1
+ * Code version: v1.43.0
+ * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
 
@@ -677,7 +678,7 @@ export function createInvestmentDataUtils({
         return `${year}-${month}-${day}`;
     }
 
-    function getInvestmentStockDetailsRangeLabels(labels, range = 'max') {
+    function getInvestmentStockDetailsRangeLabels(labels, range = 'max', options = {}) {
         const orderedLabels = Array.isArray(labels)
             ? labels.map((value) => normalizeLedgerDate(value)).filter(Boolean)
             : [];
@@ -695,6 +696,7 @@ export function createInvestmentDataUtils({
         }
 
         let startDate = null;
+        let endDate = latestDate;
         if (normalizedRange === '1w') {
             startDate = new Date(latestDate.getTime());
             startDate.setUTCDate(startDate.getUTCDate() - 6);
@@ -706,6 +708,30 @@ export function createInvestmentDataUtils({
         } else if (normalizedRange === '1y') {
             startDate = new Date(latestDate.getTime());
             startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+        } else if (normalizedRange === 'auto') {
+            const tradeDates = Array.isArray(options?.tradeDates)
+                ? options.tradeDates.map((value) => normalizeLedgerDate(value)).filter(Boolean)
+                : [];
+            if (!tradeDates.length) return orderedLabels;
+            const firstTradeDate = parseInvestmentChartDate(tradeDates[0]);
+            const lastTradeDate = parseInvestmentChartDate(tradeDates[tradeDates.length - 1]);
+            if (
+                !(firstTradeDate instanceof Date)
+                || Number.isNaN(firstTradeDate.getTime())
+                || !(lastTradeDate instanceof Date)
+                || Number.isNaN(lastTradeDate.getTime())
+            ) {
+                return orderedLabels;
+            }
+            startDate = new Date(firstTradeDate.getTime());
+            startDate.setUTCDate(startDate.getUTCDate() - 7);
+            if (options?.isOpenPosition === false) {
+                endDate = new Date(lastTradeDate.getTime());
+                endDate.setUTCDate(endDate.getUTCDate() + 7);
+                if (endDate > latestDate) {
+                    endDate = latestDate;
+                }
+            }
         }
 
         if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
@@ -714,7 +740,12 @@ export function createInvestmentDataUtils({
 
         const filteredLabels = orderedLabels.filter((label) => {
             const currentDate = parseInvestmentChartDate(label);
-            return currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) && currentDate >= startDate;
+            return (
+                currentDate instanceof Date
+                && !Number.isNaN(currentDate.getTime())
+                && currentDate >= startDate
+                && currentDate <= endDate
+            );
         });
         return filteredLabels.length ? filteredLabels : orderedLabels;
     }
