@@ -8,6 +8,10 @@ market_store/*
 !market_store/logos/
 market_store/logos/*
 !market_store/logos/EUV.png
+!market_store/logos/brokers/
+!market_store/logos/brokers/HSBC.png
+!market_store/logos/brokers/IBKR.png
+!market_store/logos/brokers/Longbridge.png
 debug-frontend-fetch-aborts.md
 Longbridge_OpenAPI_Complete_Asset_Inspection_Manual_for_Agents.md
 tests/
