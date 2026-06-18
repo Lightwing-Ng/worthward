@@ -407,7 +407,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeHoldingsHoverLedgerNo = 0;
     let investmentChartPointsCache = [];
     let investmentBaseChartPointsCache = [];
-    let investmentTickerClosePricesCache = {};
     let investmentLatestPricesCache = {};
     let investmentSharedChartDateRange = [];
     let investmentChartPointIndexByLedgerNo = new Map();
@@ -422,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let animatedHoldingsMarkerTarget = null;
     let animatedHoldingsMarkerFrame = 0;
     let animatedHoldingsMarkerStartTime = 0;
-    let investmentRealtimeMarkerFrame = 0;
+    let investmentEquityChartRuntimeState = null;
     let stockDetailsDonutAnimationFrame = 0;
     let stockDetailsDonutAnimationStartTime = 0;
     let stockDetailsDonutAnimatedState = null;
@@ -712,14 +711,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
         investmentChartPointsCache = liveChartPoints;
         renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, liveChartPoints, { resetPage: false, scrollToTop: false });
-        updateDashboardWithEquity(
-            investmentProcessedTransactionsCache,
-            investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1],
-            investmentLatestPricesCache,
-            investmentRawTransactionsCache,
-            liveChartPoints,
-            investmentTickerClosePricesCache,
-        );
+        syncInvestmentEquityChartRealtime(liveChartPoints);
+        const latestLiveChartPoint = liveChartPoints[liveChartPoints.length - 1] || null;
+        if (latestLiveChartPoint) {
+            renderInvestmentDummyPortfolioDonut(latestLiveChartPoint, investmentDummyTickerProfiles);
+            syncInvestmentDummyDonutFromInteraction();
+        }
     }
 
     function scheduleInvestmentRealtimeQuotePolling() {
@@ -6384,7 +6381,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const latestSnapshot = processed[processed.length - 1];
         const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
-        investmentTickerClosePricesCache = tickerClosePrices && typeof tickerClosePrices === 'object' ? tickerClosePrices : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,
@@ -6449,43 +6445,13 @@ document.addEventListener('DOMContentLoaded', () => {
         syncInvestmentStockDetailsDonutFromInteraction();
     }
 
-    // Reuse the same chart styling from the backtest page
-    function renderEquityChartWithEquity(chartPoints) {
-        if (!chartPoints.length || !window.Chart) {
-            clearInvestmentEquityRangeControlBindings();
-            if (investmentEquityChartInstance) {
-                investmentEquityChartInstance.destroy();
-                investmentEquityChartInstance = null;
-            }
-            setInvestmentChartReady(false);
-            console.warn('Chart.js not available');
-            return;
-        }
+    function roundInvestmentChartCurrencyValue(value) {
+        const normalizedValue = Number(value);
+        if (!Number.isFinite(normalizedValue)) return null;
+        return Math.round(normalizedValue * 100) / 100;
+    }
 
-        const container = document.getElementById('investment_equity_chart');
-        if (!container) {
-            clearInvestmentEquityRangeControlBindings();
-            if (investmentEquityChartInstance) {
-                investmentEquityChartInstance.destroy();
-                investmentEquityChartInstance = null;
-            }
-            setInvestmentChartReady(false);
-            console.warn('Chart container not found');
-            return;
-        }
-
-        clearInvestmentEquityRangeControlBindings();
-        container.innerHTML = `${renderInvestmentEquityRangeControl()}<canvas id="investmentEquityChart"></canvas>`;
-        const canvas = document.getElementById('investmentEquityChart');
-        const existingChart = window.Chart.getChart?.(canvas);
-        if (existingChart) existingChart.destroy();
-        if (investmentEquityChartInstance) {
-            investmentEquityChartInstance.destroy();
-            investmentEquityChartInstance = null;
-        }
-        setInvestmentChartReady(false, canvas);
-
-        const referenceLineWidth = 2.0;
+    function buildInvestmentEquityChartRenderState(chartPoints = []) {
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();
@@ -6524,13 +6490,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ));
         const visibleChartPoints = renderableVisiblePoints.map(({ point }) => point);
         const visiblePointSourceIndexes = renderableVisiblePoints.map(({ sourceIndex }) => sourceIndex);
-        const roundChartCurrencyValue = (value) => {
-            const normalizedValue = Number(value);
-            if (!Number.isFinite(normalizedValue)) return null;
-            return Math.round(normalizedValue * 100) / 100;
-        };
         const rawDates = visibleChartPoints.map((point) => point.date);
-        const equity = visibleChartPoints.map((point) => roundChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
+        const equity = visibleChartPoints.map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
+        const historicalEquity = visibleChartPoints
+            .filter((point) => point?.is_realtime !== true)
+            .map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity))
+            .filter((value) => Number.isFinite(value));
         const visibleChartPointIndexByLedgerNo = new Map();
         visibleChartPoints.forEach((point, index) => {
             const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
@@ -6540,18 +6505,148 @@ document.addEventListener('DOMContentLoaded', () => {
                 visibleChartPointIndexByLedgerNo.set(normalizedLedgerNo, index);
             });
         });
-        investmentChartPointsCache = sortedChartPoints;
-        investmentChartPointIndexByLedgerNo = fullChartPointIndexByLedgerNo;
-        investmentLatestChartPoint = sortedChartPoints[sortedChartPoints.length - 1] || null;
+        return {
+            sortedChartPoints,
+            fullChartPointIndexByLedgerNo,
+            visibleChartPoints,
+            visiblePointSourceIndexes,
+            visibleChartPointIndexByLedgerNo,
+            rawDates,
+            labels: [...rawDates],
+            equity,
+            historicalEquity,
+            latestChartPoint: sortedChartPoints[sortedChartPoints.length - 1] || null,
+        };
+    }
+
+    function syncInvestmentEquityChartCaches(chartState) {
+        investmentChartPointsCache = Array.isArray(chartState?.sortedChartPoints) ? chartState.sortedChartPoints : [];
+        investmentChartPointIndexByLedgerNo = chartState?.fullChartPointIndexByLedgerNo instanceof Map
+            ? chartState.fullChartPointIndexByLedgerNo
+            : new Map();
+        investmentLatestChartPoint = chartState?.latestChartPoint || null;
         activeChartTooltipPointIndex = -1;
+    }
+
+    function syncInvestmentEquityChartRealtime(chartPoints = []) {
+        if (!investmentEquityChartInstance || !window.Chart) {
+            renderEquityChartWithEquity(chartPoints);
+            return;
+        }
+        const canvas = investmentEquityChartInstance.canvas;
+        if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected) {
+            renderEquityChartWithEquity(chartPoints);
+            return;
+        }
+        const previousRuntimeState = investmentEquityChartRuntimeState || {};
+        const nextChartState = buildInvestmentEquityChartRenderState(chartPoints);
+        const chartYPaddingPx = 5;
+        const nextYScale = previousRuntimeState.frozenYScale
+            || buildPixelPaddedInvestmentEquityYScale(
+                canvas,
+                nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+                chartYPaddingPx,
+            );
+        investmentEquityChartRuntimeState = {
+            ...nextChartState,
+            frozenYScale: nextYScale,
+            realtimeMarkerElement: previousRuntimeState.realtimeMarkerElement || null,
+        };
+        syncInvestmentEquityChartCaches(investmentEquityChartRuntimeState);
+        investmentEquityChartInstance.data.labels = [...investmentEquityChartRuntimeState.labels];
+        investmentEquityChartInstance.data.rawLabels = [...investmentEquityChartRuntimeState.rawDates];
+        if (Array.isArray(investmentEquityChartInstance.data.datasets) && investmentEquityChartInstance.data.datasets[0]) {
+            investmentEquityChartInstance.data.datasets[0].data = [...investmentEquityChartRuntimeState.equity];
+        }
+        const yScale = investmentEquityChartInstance.options?.scales?.y;
+        if (yScale) {
+            yScale.min = nextYScale.min;
+            yScale.max = nextYScale.max;
+        }
+        investmentEquityChartInstance.update('none');
+    }
+
+    function buildPixelPaddedInvestmentEquityYScale(canvas, dataset = [], paddingPx = 0) {
+        const values = (Array.isArray(dataset) ? dataset : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value));
+        if (!values.length) return {};
+        const rawMin = Math.min(...values);
+        const rawMax = Math.max(...values);
+        if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) return {};
+        if (rawMin === rawMax) {
+            const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
+            return {
+                min: rawMin - fallbackPadding,
+                max: rawMax + fallbackPadding,
+                rawMin,
+                rawMax,
+            };
+        }
+        const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
+        const safePaddingPx = Math.max(0, paddingPx);
+        const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
+        const dataRange = rawMax - rawMin;
+        const dataPadding = dataRange * (safePaddingPx / usableHeight);
+        return {
+            min: rawMin - dataPadding,
+            max: rawMax + dataPadding,
+            rawMin,
+            rawMax,
+        };
+    }
+
+    // Reuse the same chart styling from the backtest page
+    function renderEquityChartWithEquity(chartPoints) {
+        if (!chartPoints.length || !window.Chart) {
+            clearInvestmentEquityRangeControlBindings();
+            if (investmentEquityChartInstance) {
+                investmentEquityChartInstance.destroy();
+                investmentEquityChartInstance = null;
+            }
+            investmentEquityChartRuntimeState = null;
+            setInvestmentChartReady(false);
+            console.warn('Chart.js not available');
+            return;
+        }
+
+        const container = document.getElementById('investment_equity_chart');
+        if (!container) {
+            clearInvestmentEquityRangeControlBindings();
+            if (investmentEquityChartInstance) {
+                investmentEquityChartInstance.destroy();
+                investmentEquityChartInstance = null;
+            }
+            investmentEquityChartRuntimeState = null;
+            setInvestmentChartReady(false);
+            console.warn('Chart container not found');
+            return;
+        }
+
+        clearInvestmentEquityRangeControlBindings();
+        container.innerHTML = `${renderInvestmentEquityRangeControl()}<div class="investment-equity-chart-stage"><canvas id="investmentEquityChart"></canvas><div class="investment-equity-live-marker" data-investment-equity-live-marker hidden aria-hidden="true"><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-outer"></span><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-inner"></span><span class="investment-equity-live-marker-core"></span></div></div>`;
+        const canvas = document.getElementById('investmentEquityChart');
+        const realtimeMarkerElement = container.querySelector('[data-investment-equity-live-marker]');
+        const existingChart = window.Chart.getChart?.(canvas);
+        if (existingChart) existingChart.destroy();
+        if (investmentEquityChartInstance) {
+            investmentEquityChartInstance.destroy();
+            investmentEquityChartInstance = null;
+        }
+        investmentEquityChartRuntimeState = null;
+        setInvestmentChartReady(false, canvas);
+
+        const referenceLineWidth = 2.0;
+        const chartState = buildInvestmentEquityChartRenderState(chartPoints);
+        syncInvestmentEquityChartCaches(chartState);
 
         // Read theme tokens
         const resolvedTheme = resolveInvestmentTheme();
         const equitySeriesColor = resolvedTheme.accentPrimary;
 
-        const labels = [...rawDates];
         const fixedYAxisWidth = 52;
         let activeChartHoverDate = "";
+        const getRuntimeState = () => investmentEquityChartRuntimeState || chartState;
 
         const formatMoney = (value) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
@@ -6564,13 +6659,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 monthIndex: Number(match[2]) - 1,
                 day: Number(match[3]),
             };
-        };
-
-        const formatRawDate = (date) => {
-            const year = date.getFullYear();
-            const month = `${date.getMonth() + 1}`.padStart(2, "0");
-            const day = `${date.getDate()}`.padStart(2, "0");
-            return `${year}-${month}-${day}`;
         };
 
         const formatChartDateLines = (dateParts) => formatInvestmentFullDateLines(dateParts, { allowWrap: true });
@@ -6588,41 +6676,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 Math.round(((count - 1) * 2) / 3),
                 count - 1,
             ]);
-        };
-
-        const collectFiniteValues = (datasets) => {
-            if (!Array.isArray(datasets)) return [];
-            return datasets.flatMap((dataset) => (Array.isArray(dataset) ? dataset : []))
-                .map((value) => Number(value))
-                .filter((value) => Number.isFinite(value));
-        };
-
-        const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
-            const values = collectFiniteValues(datasets);
-            if (!values.length) return {};
-            const rawMin = Math.min(...values);
-            const rawMax = Math.max(...values);
-            if (!Number.isFinite(rawMin) || !Number.isFinite(rawMax)) return {};
-            if (rawMin === rawMax) {
-                const fallbackPadding = Math.abs(rawMin || 1) * 0.02 || 1;
-                return {
-                    min: rawMin - fallbackPadding,
-                    max: rawMax + fallbackPadding,
-                    rawMin,
-                    rawMax,
-                };
-            }
-            const canvasHeight = Math.max(canvas?.clientHeight || 0, 80);
-            const safePaddingPx = Math.max(0, paddingPx);
-            const usableHeight = Math.max(canvasHeight - (safePaddingPx * 2), 1);
-            const dataRange = rawMax - rawMin;
-            const dataPadding = dataRange * (safePaddingPx / usableHeight);
-            return {
-                min: rawMin - dataPadding,
-                max: rawMax + dataPadding,
-                rawMin,
-                rawMax,
-            };
         };
 
         const hoverGuidePlugin = {
@@ -6698,7 +6751,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     animateHoldingsMarkerToward(null, chartInstance);
                     return;
                 }
-                const pointIndex = visibleChartPointIndexByLedgerNo.get(ledgerNo);
+                const runtimeState = getRuntimeState();
+                const pointIndex = runtimeState.visibleChartPointIndexByLedgerNo.get(ledgerNo);
                 if (!Number.isFinite(pointIndex)) return;
                 const dataset = chartInstance.data?.datasets?.[0];
                 const pointValue = Number(dataset?.data?.[pointIndex]);
@@ -6730,64 +6784,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const realtimeEndMarkerPlugin = {
             id: "investmentRealtimeEndMarkerPlugin",
             afterDatasetsDraw(chartInstance) {
-                const realtimeIndex = visibleChartPoints.findIndex((point) => point?.is_realtime === true);
-                if (realtimeIndex < 0) return;
+                const runtimeState = getRuntimeState();
+                const markerElement = runtimeState?.realtimeMarkerElement;
+                if (!(markerElement instanceof HTMLElement)) return;
+                const realtimeIndex = runtimeState.visibleChartPoints.findIndex((point) => point?.is_realtime === true);
+                if (realtimeIndex < 0) {
+                    markerElement.hidden = true;
+                    return;
+                }
                 const dataset = chartInstance.data?.datasets?.[0];
                 const pointValue = Number(dataset?.data?.[realtimeIndex]);
-                if (!Number.isFinite(pointValue)) return;
-                const { ctx, scales, chartArea } = chartInstance;
+                if (!Number.isFinite(pointValue)) {
+                    markerElement.hidden = true;
+                    return;
+                }
+                const { scales, chartArea } = chartInstance;
                 const xScale = scales?.x;
                 const yScale = scales?.y;
-                if (!ctx || !xScale || !yScale || !chartArea) return;
+                if (!xScale || !yScale || !chartArea) {
+                    markerElement.hidden = true;
+                    return;
+                }
                 const x = xScale.getPixelForValue(realtimeIndex);
                 const y = yScale.getPixelForValue(pointValue);
-                if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-                if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
-
-                const progress = (performance.now() % 1800) / 1800;
-                const contraction = (Math.sin((progress * Math.PI * 2) - (Math.PI / 2)) + 1) / 2;
-                const coreRadius = 2.0 + (Math.pow(contraction, 1.45) * 1.75);
-                const drawMicrowaveRing = (phaseOffset, maxRadius, alphaScale, lineWidth) => {
-                    const ringProgress = (progress + phaseOffset) % 1;
-                    const easedProgress = 1 - Math.pow(1 - ringProgress, 2.4);
-                    const radius = coreRadius + 1 + (easedProgress * maxRadius);
-                    const alpha = alphaScale * Math.pow(1 - ringProgress, 1.9);
-                    if (alpha <= 0.01) return;
-                    ctx.beginPath();
-                    ctx.arc(x, y, radius, 0, Math.PI * 2);
-                    ctx.lineWidth = lineWidth;
-                    ctx.globalAlpha = alpha;
-                    ctx.strokeStyle = markerColor;
-                    ctx.shadowColor = markerColor;
-                    ctx.shadowBlur = 7 + (ringProgress * 6);
-                    ctx.stroke();
-                };
-                const markerColor = resolvedTheme.accentPositive || "#16a34a";
-                ctx.save();
-                drawMicrowaveRing(0, 11.5, 0.46, 1.8);
-                drawMicrowaveRing(0.5, 7.5, 0.24, 1.15);
-                ctx.globalAlpha = 0.14 + (0.22 * (1 - contraction));
-                ctx.beginPath();
-                ctx.arc(x, y, coreRadius + 2, 0, Math.PI * 2);
-                ctx.fillStyle = markerColor;
-                ctx.shadowColor = markerColor;
-                ctx.shadowBlur = 8;
-                ctx.fill();
-                ctx.globalAlpha = 1;
-                ctx.beginPath();
-                ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
-                ctx.fillStyle = markerColor;
-                ctx.shadowBlur = 4;
-                ctx.fill();
-                ctx.restore();
-
-                if (!investmentRealtimeMarkerFrame) {
-                    investmentRealtimeMarkerFrame = window.requestAnimationFrame(() => {
-                        investmentRealtimeMarkerFrame = 0;
-                        if (!chartInstance.canvas?.isConnected) return;
-                        chartInstance.draw();
-                    });
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                    markerElement.hidden = true;
+                    return;
                 }
+                if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) {
+                    markerElement.hidden = true;
+                    return;
+                }
+                markerElement.style.left = `${x}px`;
+                markerElement.style.top = `${y}px`;
+                markerElement.hidden = false;
             },
         };
 
@@ -6796,6 +6826,9 @@ document.addEventListener('DOMContentLoaded', () => {
             afterDraw(chart) {
                 const { ctx, chartArea, scales } = chart;
                 const xScale = scales?.x;
+                const runtimeState = getRuntimeState();
+                const labels = Array.isArray(runtimeState.labels) ? runtimeState.labels : [];
+                const rawDates = Array.isArray(runtimeState.rawDates) ? runtimeState.rawDates : [];
                 if (!chartArea || !xScale || !labels.length) return;
                 const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
                 const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
@@ -6822,8 +6855,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const chartYPaddingPx = 5;
-        const equityYScale = buildPixelPaddedYScale(canvas, [equity], chartYPaddingPx);
-        const getOrCreateTooltip = (chart) => {
+        const equityYScale = buildPixelPaddedInvestmentEquityYScale(
+            canvas,
+            chartState.historicalEquity.length ? chartState.historicalEquity : chartState.equity,
+            chartYPaddingPx,
+        );
+        const getOrCreateTooltip = () => {
             let tooltip = document.querySelector('[data-investment-chart-tooltip="1"]');
             if (tooltip) return tooltip;
             tooltip = document.createElement("div");
@@ -6838,7 +6875,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const formatTooltipDate = (dateParts) => formatInvestmentFullDateParts(dateParts);
 
         const externalTooltipHandler = ({ chart, tooltip }) => {
-            const tooltipEl = getOrCreateTooltip(chart);
+            const tooltipEl = getOrCreateTooltip();
+            const runtimeState = getRuntimeState();
+            const rawDates = Array.isArray(runtimeState.rawDates) ? runtimeState.rawDates : [];
+            const visibleChartPoints = Array.isArray(runtimeState.visibleChartPoints) ? runtimeState.visibleChartPoints : [];
+            const visiblePointSourceIndexes = Array.isArray(runtimeState.visiblePointSourceIndexes) ? runtimeState.visiblePointSourceIndexes : [];
+            const sortedChartPoints = Array.isArray(runtimeState.sortedChartPoints) ? runtimeState.sortedChartPoints : [];
             if (tooltip.opacity === 0) {
                 tooltipEl.classList.remove("is-visible");
                 activeChartHoverDate = "";
@@ -6990,6 +7032,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const holdingsMarkerSafePadding = Math.ceil(holdingsMarkerRadius + holdingsMarkerStrokeWidth + 2);
         const realtimeMarkerSafePadding = 32;
 
+        investmentEquityChartRuntimeState = {
+            ...chartState,
+            frozenYScale: equityYScale,
+            realtimeMarkerElement: realtimeMarkerElement instanceof HTMLElement ? realtimeMarkerElement : null,
+        };
+
         const commonOptions = {
             responsive: true,
             maintainAspectRatio: false,
@@ -7035,12 +7083,12 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentEquityChartInstance = new Chart(canvas, {
             type: "line",
             data: {
-                labels,
-                rawLabels: rawDates,
+                labels: [...chartState.labels],
+                rawLabels: [...chartState.rawDates],
                 datasets: [
                     {
                         label: "Equity",
-                        data: equity,
+                        data: [...chartState.equity],
                         borderColor: equitySeriesColor,
                         borderWidth: referenceLineWidth,
                         pointRadius: 0,
@@ -7075,7 +7123,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setInvestmentChartReady(true, canvas);
             });
         });
-        bindInvestmentEquityRangeControls(sortedChartPoints);
+        bindInvestmentEquityRangeControls(chartState.sortedChartPoints);
     }
 
     function formatEventType(type) {

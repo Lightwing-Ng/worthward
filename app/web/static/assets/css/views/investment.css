@@ -1134,8 +1134,90 @@
     height: 100%;
     min-width: 0;
     flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
     position: relative;
     overflow: visible;
+}
+
+.investment-equity-chart-stage {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+.investment-equity-live-marker {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+.investment-equity-live-marker[hidden] {
+    display: none;
+}
+
+.investment-equity-live-marker-ring,
+.investment-equity-live-marker-core {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: var(--theme-positive, #16a34a);
+}
+
+.investment-equity-live-marker-ring {
+    border: 1.6px solid color-mix(in srgb, var(--theme-positive, #16a34a) 72%, transparent);
+    background: transparent;
+    opacity: 0.46;
+}
+
+.investment-equity-live-marker-ring-outer {
+    width: 20px;
+    height: 20px;
+    animation: investment-live-marker-breath-outer 1.8s ease-out infinite;
+}
+
+.investment-equity-live-marker-ring-inner {
+    width: 14px;
+    height: 14px;
+    opacity: 0.28;
+    animation: investment-live-marker-breath-inner 1.8s ease-out infinite 0.9s;
+}
+
+.investment-equity-live-marker-core {
+    width: 6px;
+    height: 6px;
+    box-shadow:
+        0 0 0 4px color-mix(in srgb, var(--theme-positive, #16a34a) 18%, transparent),
+        0 0 10px color-mix(in srgb, var(--theme-positive, #16a34a) 42%, transparent);
+}
+
+@keyframes investment-live-marker-breath-outer {
+    0% {
+        opacity: 0.44;
+        transform: translate(-50%, -50%) scale(0.36);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+@keyframes investment-live-marker-breath-inner {
+    0% {
+        opacity: 0.26;
+        transform: translate(-50%, -50%) scale(0.48);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+    }
 }
 
 .investment-chart-stack {
