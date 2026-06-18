@@ -218,7 +218,10 @@
     "backtestPeriodOptions": backtest_periods_by_interval,
     "dateDisplay": {"full": date_display_full_format, "short": date_display_short_format},
     "currentView": current_view_name,
-    "settingsSection": settings_section
+    "settingsSection": settings_section,
+    "debug": {
+        "fetchAbort": fetch_abort_debug_config,
+    }
 }|tojson }}</script>
 <script>
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);

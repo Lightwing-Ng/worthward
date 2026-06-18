@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v3.0.1`
+Documentation version: `v3.0.2`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -180,7 +180,7 @@ The current `Settings` navigation includes:
 
 - Strategy implementations live under `strategies/algorithms/`
 - Runtime strategy discovery is dynamic and is handled by `strategies/loader.py`
-- `strategies/registry.json` is retained only as a deprecated migration marker and is not the runtime source of truth
+- Runtime strategy metadata is derived directly from strategy classes and no longer relies on `strategies/registry.json`
 - Backtest execution logic lives in `strategies/backtest.py`
 
 ## Project layout

@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.43.3
+ * Code version: v1.43.6
+ * - Fixed: HSBC orders that carry matched bank settlement balances now reuse those authoritative post-trade cash snapshots, preventing impossible negative cash rows in the no-margin HSBC ledger
+ * - Fixed: HSBC mirrored same-day settlement cash rows now stay in ledger replay but are hidden from Transaction history and Markdown export so trade-funding shadow deposits no longer masquerade as standalone events
+ * - Refined: Investment fetch-abort debug reporting now uses the shared optional backend-provided config instead of a hard-coded localhost endpoint
  * - Changed: Investment page initial bootstrap now reuses the shared workspace modal dialog overlay instead of the floating import-feedback banner while data is loading
  * - Added: Stock details range segmented control now restores the 1Y option and adds an Auto window that keeps all buy and sell markers visible while trimming unrelated post-exit price history
  * - Refined: Stock details segmented control continues to reuse the shared nested range-label span markup while expanding to fit seven measured pill options
@@ -142,14 +145,15 @@ registerInvestmentChartHelpers(window);
 
 document.addEventListener('DOMContentLoaded', () => {
     const theme = window.ANTIGRAVITY_APP?.theme || {};
-    const FETCH_ABORT_DEBUG_URL = 'http://127.0.0.1:7777/event';
+    const fetchAbortDebugConfig = window.ANTIGRAVITY_APP?.debug?.fetchAbort || null;
     const reportInvestmentFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = 'post-fix') => {
         // #region debug-point C:investment-fetch-abort
-        fetch(FETCH_ABORT_DEBUG_URL, {
+        if (!fetchAbortDebugConfig?.url) return;
+        fetch(fetchAbortDebugConfig.url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                sessionId: 'frontend-fetch-aborts',
+                sessionId: fetchAbortDebugConfig.sessionId || 'frontend-fetch-aborts',
                 runId,
                 hypothesisId,
                 location,
@@ -6122,8 +6126,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function isInvestmentHistoryDisplayHidden(txn) {
+        return txn?.presentation_hidden === true;
+    }
+
     function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
-        const normalizedTransactions = Array.isArray(processedTransactions) ? processedTransactions : [];
+        const normalizedTransactions = Array.isArray(processedTransactions)
+            ? processedTransactions.filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
+            : [];
         const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
         const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
             normalizedChartPoints.map((point) => point?.date),
@@ -6412,6 +6422,31 @@ document.addEventListener('DOMContentLoaded', () => {
             state.runningCash = sumCashLedgerInBaseCurrency(state.cashBalances, ledgerDate, fxTimeline, baseCurrency);
         }
 
+        function applyAuthoritativeCashBalance(state, authoritativeCash) {
+            const normalizedCash = Number(authoritativeCash);
+            if (!Number.isFinite(normalizedCash)) return;
+            state.cashBalances = createCashLedger(normalizedCash, baseCurrency);
+            state.runningCash = normalizedCash;
+        }
+
+        function rebuildAggregateCashState(ledgerDate) {
+            const mergedBalances = {};
+            brokerLedgerStates.forEach((state) => {
+                Object.entries(state?.cashBalances || {}).forEach(([currency, value]) => {
+                    const numericValue = Number(value);
+                    if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return;
+                    mergedBalances[currency] = (Number(mergedBalances[currency]) || 0) + numericValue;
+                });
+            });
+            aggregateLedgerState.cashBalances = mergedBalances;
+            aggregateLedgerState.runningCash = sumCashLedgerInBaseCurrency(
+                mergedBalances,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+        }
+
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -6486,6 +6521,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
+            const authoritativeHsbcCashAfter = Number(txn?.source?.cash_settlement_balance_after_raw);
+            if (
+                normalizeInvestmentBroker(brokerCode) === 'hsbc'
+                && Number.isFinite(authoritativeHsbcCashAfter)
+                && authoritativeHsbcCashAfter >= -1e-9
+            ) {
+                applyAuthoritativeCashBalance(brokerLedgerState, Math.max(0, authoritativeHsbcCashAfter));
+                if (isSingleBrokerPortfolio) {
+                    applyAuthoritativeCashBalance(aggregateLedgerState, Math.max(0, authoritativeHsbcCashAfter));
+                } else {
+                    rebuildAggregateCashState(ledgerDate);
+                }
+            }
             const aggregateCashByCurrency = cloneCashLedgerBalances(aggregateLedgerState.cashBalances);
             const brokerCashByCurrency = cloneCashLedgerBalances(brokerLedgerState.cashBalances);
             return {

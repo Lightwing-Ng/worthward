@@ -1,7 +1,0 @@
-{
-  "version": "v2.0.0-deprecated",
-  "deprecated": true,
-  "source_of_truth": "Python strategy classes under strategies/algorithms/*.py",
-  "note": "This file is retained only as a migration marker. Runtime strategy discovery now happens in strategies.loader.load_strategy_registry().",
-  "strategies": []
-}

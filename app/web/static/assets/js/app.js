@@ -1,16 +1,17 @@
-/* Code version: v0.3.8-p12 */
+/* Code version: v0.3.8-p13 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
-    const FETCH_ABORT_DEBUG_URL = "http://127.0.0.1:7777/event";
+    const fetchAbortDebugConfig = state.debug?.fetchAbort || null;
     const reportFetchAbortDebug = (hypothesisId, location, msg, data = {}, runId = "post-fix") => {
         // #region debug-point A:frontend-fetch-abort
-        fetch(FETCH_ABORT_DEBUG_URL, {
+        if (!fetchAbortDebugConfig?.url) return;
+        fetch(fetchAbortDebugConfig.url, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
-                sessionId: "frontend-fetch-aborts",
+                sessionId: fetchAbortDebugConfig.sessionId || "frontend-fetch-aborts",
                 runId,
                 hypothesisId,
                 location,

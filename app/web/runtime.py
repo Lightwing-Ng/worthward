@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.19
+Code version: v0.3.20
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 import hashlib
 import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
+from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.date_display_settings import (
     load_date_display_settings,
     save_full_date_display_format,
@@ -83,6 +83,11 @@ from app.services.investment_import import (
     normalize_investment_payload_tickers,
 )
 
+FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
+    "frontend-fetch-aborts.env",
+    "frontend-fetch-aborts",
+)
+
 
 def report_fetch_abort_debug_event(
     hypothesis_id: str,
@@ -92,28 +97,15 @@ def report_fetch_abort_debug_event(
     run_id: str = "post-fix",
 ) -> None:
     # #region debug-point E:backend-fetch-abort
-    try:
-        payload = json.dumps(
-            {
-                "sessionId": "frontend-fetch-aborts",
-                "runId": run_id,
-                "hypothesisId": hypothesis_id,
-                "location": location,
-                "msg": f"[DEBUG] {msg}",
-                "data": data or {},
-            }
-        ).encode("utf-8")
-        urlopen(
-            Request(
-                "http://127.0.0.1:7777/event",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            ),
-            timeout=0.5,
-        ).read()
-    except Exception:
-        pass
+    post_debug_event(
+        FETCH_ABORT_DEBUG_CONFIG,
+        hypothesis_id=hypothesis_id,
+        location=location,
+        msg=msg,
+        data=data,
+        run_id=run_id,
+        timeout_seconds=0.5,
+    )
     # #endregion
 from app.services.live_trading import (
     load_longbridge_account_balances,
@@ -3059,6 +3051,7 @@ def build_web_runtime() -> WebRuntime:
             requested_interval=requested_interval,
             current_view_name=current_view,
             current_path=request.path,
+            fetch_abort_debug_config=FETCH_ABORT_DEBUG_CONFIG,
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",

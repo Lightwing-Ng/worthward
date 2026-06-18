@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.43.0
+ * Code version: v1.43.4
+ * - Changed: HSBC same-day history now sorts funding cash rows ahead of trade executions, while executions still follow ascending reference codes and can reuse hidden settlement rows only as internal cash-after calibration
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
@@ -276,6 +277,32 @@ export function createInvestmentDataUtils({
     }
 
     function formatTransactionDateDisplay(txn) {
+        const hsbcTradeDateDisplay = String(txn?.source?.captured_order_date_display || '').trim();
+        if (hsbcTradeDateDisplay && String(txn?.broker || '').trim().toLowerCase() === 'hsbc') {
+            const match = hsbcTradeDateDisplay.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
+            if (match) {
+                const monthMap = {
+                    Jan: '01',
+                    Feb: '02',
+                    Mar: '03',
+                    Apr: '04',
+                    May: '05',
+                    Jun: '06',
+                    Jul: '07',
+                    Aug: '08',
+                    Sep: '09',
+                    Oct: '10',
+                    Nov: '11',
+                    Dec: '12',
+                };
+                const day = String(match[1]).padStart(2, '0');
+                const month = monthMap[String(match[2]).slice(0, 1).toUpperCase() + String(match[2]).slice(1, 3).toLowerCase()] || '';
+                if (month) {
+                    return `${day}/${month}/${match[3]}`;
+                }
+            }
+            return hsbcTradeDateDisplay.replace(/\s+U\.S\.\s+ET$/i, '').trim();
+        }
         const rawDate = String(txn?.date || '').trim();
         const dateParts = parseInvestmentDateParts(rawDate);
         if (!dateParts) return rawDate;
@@ -361,6 +388,35 @@ export function createInvestmentDataUtils({
         return rawDescription || fallback;
     }
 
+    function getHsbcReferenceCodeSummary(txn) {
+        const rawCodes = [
+            String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim(),
+            String(txn?.source?.cash_settlement_reference || '').replace(/\s+/g, ' ').trim(),
+        ].filter(Boolean);
+        if (!rawCodes.length) return '';
+        return Array.from(new Set(rawCodes)).join(', ');
+    }
+
+    function getHsbcOrderSequenceNumber(txn) {
+        const rawReference = String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim().toUpperCase();
+        const match = rawReference.match(/^[PS]-(\d+)$/);
+        return match ? Number(match[1]) : Number.NaN;
+    }
+
+    function getHsbcSortCategory(txn) {
+        const fileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (fileKind === 'hsbc_usd_account_text') {
+            if (['deposit', 'credit_interest'].includes(normalizedType)) return 0;
+            if (['withdrawal', 'debit_interest'].includes(normalizedType)) return 2;
+            return 3;
+        }
+        if (fileKind === 'hsbc_order_status_text' || fileKind === 'hsbc_order_status_capture') {
+            return 1;
+        }
+        return 9;
+    }
+
     function formatTransactionDescription(txn) {
         let description;
         let qty = txn.quantity ?? txn.quantity_abs ?? txn.normalized?.display_quantity;
@@ -392,6 +448,13 @@ export function createInvestmentDataUtils({
             description = '';
         } else {
             description = getTransactionDescriptionText(txn);
+        }
+
+        if (brokerCode === 'hsbc' && ['buy', 'sell'].includes(normalizedTypeDesc)) {
+            const referenceSummary = getHsbcReferenceCodeSummary(txn);
+            if (referenceSummary) {
+                return `${description} · ${referenceSummary}`;
+            }
         }
 
         return description;
@@ -484,6 +547,20 @@ export function createInvestmentDataUtils({
         const rightDate = String(rightTxn?.date || '');
         if (leftDate !== rightDate) {
             return leftDate.localeCompare(rightDate);
+        }
+        const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
+        const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
+        if (leftBroker === 'hsbc' && rightBroker === 'hsbc') {
+            const leftCategory = getHsbcSortCategory(leftTxn);
+            const rightCategory = getHsbcSortCategory(rightTxn);
+            if (leftCategory !== rightCategory) {
+                return leftCategory - rightCategory;
+            }
+            const leftSequence = getHsbcOrderSequenceNumber(leftTxn);
+            const rightSequence = getHsbcOrderSequenceNumber(rightTxn);
+            if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
+                return leftSequence - rightSequence;
+            }
         }
         const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
         const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);

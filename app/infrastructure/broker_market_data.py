@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.4.0
+    Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from importlib.metadata import PackageNotFoundError, version as package_version
 import json
 from threading import Event, Lock, Thread
 from typing import Any
-import urllib.request
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -26,6 +25,7 @@ from app.core.broker_settings import (
     normalize_longbridge_access_token,
     uses_longbridge_cli_oauth,
 )
+from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
 from app.services.date_constraints import latest_completed_nyse_trading_day
@@ -50,20 +50,10 @@ _LONGBRIDGE_KEEPALIVE_STOP_EVENT: Event | None = None
 
 
 # #region debug-point shared:reporter
-def _read_longbridge_debug_env() -> tuple[str, str]:
-    debug_server_url = "http://127.0.0.1:7777/event"
-    debug_session_id = "longbridge-token-invalid"
-    try:
-        with open(".dbg/longbridge-token-invalid.env", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if line.startswith("DEBUG_SERVER_URL="):
-                    debug_server_url = line.split("=", 1)[1].strip() or debug_server_url
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    debug_session_id = line.split("=", 1)[1].strip() or debug_session_id
-    except Exception:
-        pass
-    return debug_server_url, debug_session_id
+LONGBRIDGE_DEBUG_CONFIG = load_optional_debug_endpoint(
+    "longbridge-token-invalid.env",
+    "longbridge-token-invalid",
+)
 
 
 def _report_longbridge_debug_event(
@@ -73,26 +63,18 @@ def _report_longbridge_debug_event(
         data: dict[str, Any],
         run_id: str = "pre-fix",
 ) -> None:
-    debug_server_url, debug_session_id = _read_longbridge_debug_env()
-    payload = {
-        "sessionId": debug_session_id,
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": f"[DEBUG] {message}",
-        "data": data,
-        "ts": int(datetime.now(timezone.utc).timestamp() * 1000),
-    }
-    try:
-        request = urllib.request.Request(
-            debug_server_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=1.5):
-            pass
-    except Exception:
-        pass
+    post_debug_event(
+        LONGBRIDGE_DEBUG_CONFIG,
+        hypothesis_id=hypothesis_id,
+        location=location,
+        msg=message,
+        data={
+            **data,
+            "ts": int(datetime.now(timezone.utc).timestamp() * 1000),
+        },
+        run_id=run_id,
+        timeout_seconds=1.5,
+    )
 
 
 def _safe_longbridge_token_snapshot(value: str) -> dict[str, Any]:
