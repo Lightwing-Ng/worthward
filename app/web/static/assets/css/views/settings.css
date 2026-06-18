@@ -1,4 +1,4 @@
-/* Code version: v0.4.3-p8 */
+/* Code version: v0.4.5 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1120,6 +1120,179 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .style-token-demo[data-style-token-density="tight"] .range-mode-shell {
     min-height: auto;
+}
+
+.style-token-investment-share-preview-demo {
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+}
+
+.style-token-investment-share-preview-toolbar {
+    width: min(100%, calc(var(--investment-community-share-shell-width, 540px) * var(--style-token-investment-share-preview-scale, 0.45)));
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+}
+
+.style-token-investment-share-preview-status {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    justify-items: center;
+    text-align: center;
+}
+
+.style-token-investment-share-preview-kicker,
+.style-token-investment-share-preview-view {
+    margin: 0;
+}
+
+.style-token-investment-share-preview-kicker {
+    font-size: var(--font-tooltip);
+    line-height: 1.1;
+    font-weight: var(--font-weight-semibold);
+    color: var(--theme-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.style-token-investment-share-preview-view {
+    font-size: var(--font-form-control);
+    line-height: 1.1;
+    font-weight: var(--font-weight-bold);
+    color: var(--text);
+}
+
+.style-token-investment-share-preview-shell {
+    --style-token-investment-share-preview-scale: 0.45;
+    width: calc(var(--investment-community-share-shell-width, 540px) * var(--style-token-investment-share-preview-scale));
+    height: calc(var(--investment-community-share-shell-height, 856px) * var(--style-token-investment-share-preview-scale));
+    display: block;
+    max-width: 100%;
+    overflow: visible;
+}
+
+.style-token-investment-share-preview-shell > .investment-community-share-card {
+    width: var(--investment-community-share-shell-width, 540px);
+    height: var(--investment-community-share-shell-height, 856px);
+    transform: scale(var(--style-token-investment-share-preview-scale));
+    transform-origin: top left;
+}
+
+.style-token-investment-share-chart-shell {
+    padding: 0;
+}
+
+.style-token-investment-share-chart-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: transparent;
+}
+
+.style-token-demo .investment-community-share-card .investment-community-share-overview-donut .style-token-portfolio-donut-shell {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    transform: none;
+}
+
+.style-token-demo .investment-community-share-footer-qr svg {
+    display: block;
+    width: 64px;
+    height: 64px;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-header > div.investment-community-share-heading > p.investment-community-share-title {
+    font-size: 36px;
+    font-weight: 400;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-copy > div.investment-community-share-footer-timestamp {
+    font-size: 23px;
+    font-weight: 500;
+    font-family: Arial, sans-serif;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer {
+    padding: 16px;
+    align-items: end;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > img.investment-community-share-footer-brand-icon,
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr {
+    align-self: end;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr {
+    position: relative;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr > svg {
+    position: absolute;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(1) > div.investment-community-share-chart-shell > canvas.style-token-investment-share-chart-canvas {
+    font-size: 32px;
+    font-weight: 300;
+    height: 360px;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body {
+    grid-template-rows: 360px minmax(256px, 1fr);
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2) > div.investment-community-share-overview-donut > div.style-token-portfolio-donut-shell > div.portfolio-donut-orbit {
+    --portfolio-donut-orbit-donut-size: 188px;
+    --portfolio-donut-orbit-ring-width: 16px;
+    --portfolio-donut-orbit-logo-size: 28px;
+    width: 100%;
+    height: 100%;
+    max-width: 256px;
+    max-height: 256px;
+    margin: 0 auto;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2) > div.investment-community-share-overview-donut > div.style-token-portfolio-donut-shell > div.portfolio-donut-orbit > div.portfolio-donut {
+    width: var(--portfolio-donut-size);
+    height: var(--portfolio-donut-size);
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2),
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2) > div.investment-community-share-overview-donut {
+    height: 100%;
+    min-height: 256px;
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2) > div.investment-community-share-overview-donut {
+    display: flex;
+    align-items: stretch;
+}
+
+.style-token-investment-share-stock-identity {
+    display: flex;
+    align-items: center;
+    min-height: 0;
+}
+
+.style-token-investment-share-stock-identity .ticker-identity-row {
+    width: 100%;
+}
+
+.style-token-investment-share-demo-note {
+    margin: 0;
+    font-size: var(--font-tooltip);
+    line-height: 1.2;
+    color: var(--theme-muted);
+}
+
+section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card[data-share-view="holdings"] > div.investment-community-share-body > section.investment-community-share-section > div.investment-holdings-table-shell {
+    font-size: 26px;
 }
 
 @keyframes style-token-linked-pulse {

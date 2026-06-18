@@ -1,7 +1,15 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.43.6
+ * Code version: v1.44.7
+ * - Fixed: Share mask controls now stay expanded while masking is active so reveal/mask toggles remain clickable during repeated switching
+ * - Added: Share masking now hides Investment overview y-axis numbers on the live chart and exported images without changing chart layout or point coordinates
+ * - Refined: Investment overview realtime pulse now uses a calmer 1.8-second brokerage-style cadence with softer microwave opacity and glow
+ * - Fixed: Investment overview realtime pulse now reserves enough chart padding so the right-side microwave rings are not clipped by the canvas edge
+ * - Refined: Investment overview realtime marker now uses a strict 1-second pulse with a smaller solid-green contraction point and faster staggered microwave rings
+ * - Added: Investment overview equity now appends a live yfinance 1-minute pre-market, regular-session, or post-market valuation point, polling every 10 seconds and marking the line end with a pulsing green ring
+ * - Changed: Masked Holdings share cards now omit the `Shares` and `P&L` columns entirely instead of visually redacting stale table cells
+ * - Added: Investment share actions now fan out to the right of the export button, let users mask stock-detail metric values as `***`, and save the currently visible panel as a local PNG screenshot
  * - Fixed: HSBC orders that carry matched bank settlement balances now reuse those authoritative post-trade cash snapshots, preventing impossible negative cash rows in the no-margin HSBC ledger
  * - Fixed: HSBC mirrored same-day settlement cash rows now stay in ledger replay but are hidden from Transaction history and Markdown export so trade-funding shadow deposits no longer masquerade as standalone events
  * - Refined: Investment fetch-abort debug reporting now uses the shared optional backend-provided config instead of a hard-coded localhost endpoint
@@ -193,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const workspaceModalOverlayTitle = workspaceModalOverlay?.querySelector('.workspace-modal-title');
     const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector('.workspace-modal-copy');
     const workspaceModalOverlayIcon = document.getElementById('workspace_modal_overlay_icon');
+    const workspaceModalOverlayClose = document.getElementById('workspace_modal_overlay_close');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
@@ -225,6 +234,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_LOADING_MODAL_TITLE = 'Loading investment data';
     const INVESTMENT_LOADING_MODAL_COPY = 'We are reading the locally stored broker activity and rebuilding the holdings, charts, metrics, and transaction history for this page. Please keep this tab open while loading finishes.';
     const INVESTMENT_LOADING_MODAL_ICON_CLASS = 'icon-hourglass';
+    const INVESTMENT_SHARE_RENDER_MODAL_TITLE = 'Rendering share image';
+    const INVESTMENT_SHARE_RENDER_MODAL_COPY = 'We are rendering the community share card and encoding the PNG export. Please wait until the image finishes saving.';
+    const INVESTMENT_SHARE_RENDER_MODAL_ICON_CLASS = 'icon-hourglass';
     const WORKSPACE_MODAL_DEFAULT_TITLE = String(workspaceModalOverlayTitle?.textContent || '').trim();
     const WORKSPACE_MODAL_DEFAULT_COPY = String(workspaceModalOverlayCopy?.textContent || '').trim();
     const WORKSPACE_MODAL_DEFAULT_ICON_CLASS = String(workspaceModalOverlayIcon?.className || '').trim();
@@ -241,6 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clearTimeout(investmentBootstrapTimer);
             investmentBootstrapTimer = 0;
         }
+        stopInvestmentRealtimeQuotePolling();
         hideInvestmentLoadingModal({ resetContent: true });
     };
     window.addEventListener('pagehide', markInvestmentPageDisposed, { once: true });
@@ -257,9 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
     const INVESTMENT_HISTORY_PAGE_SIZE = 50;
     const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
+    const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
     const investmentStockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
+    const investmentShareActions = document.getElementById('investment_share_actions');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
+    const shareCaptureButton = document.getElementById('share_capture_button');
+    const shareMaskButton = document.getElementById('share_mask_button');
     const investmentHistoryPagination = document.getElementById('investment_history_pagination');
     const investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
     const INVESTMENT_VIEW_ORDER = ['chart', 'holdings', 'stock_details', 'metrics'];
@@ -381,11 +398,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     let investmentChartReady = false;
     let investmentHasExportableTransactions = false;
+    let investmentShareMaskEnabled = false;
+    let investmentScreenshotLibraryPromise = null;
+    let investmentQrCodeLibraryPromise = null;
     let investmentEquityChartInstance = null;
     let investmentStockDetailsPriceChartInstance = null;
     let activeHoldingsHoverTicker = '';
     let activeHoldingsHoverLedgerNo = 0;
     let investmentChartPointsCache = [];
+    let investmentBaseChartPointsCache = [];
+    let investmentTickerClosePricesCache = {};
+    let investmentLatestPricesCache = {};
     let investmentSharedChartDateRange = [];
     let investmentChartPointIndexByLedgerNo = new Map();
     let investmentLatestChartPoint = null;
@@ -399,6 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let animatedHoldingsMarkerTarget = null;
     let animatedHoldingsMarkerFrame = 0;
     let animatedHoldingsMarkerStartTime = 0;
+    let investmentRealtimeMarkerFrame = 0;
     let stockDetailsDonutAnimationFrame = 0;
     let stockDetailsDonutAnimationStartTime = 0;
     let stockDetailsDonutAnimatedState = null;
@@ -424,6 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsPriceChartRequestSerial = 0;
     const investmentStockDetailsIntradayCache = new Map();
     const investmentStockDetailsIntradayInflight = new Map();
+    let investmentRealtimeQuoteTimer = 0;
+    let investmentRealtimeQuoteAbortController = null;
+    let investmentRealtimeQuoteInflight = false;
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
@@ -530,6 +557,214 @@ document.addEventListener('DOMContentLoaded', () => {
     function normalizeInvestmentView(value) {
         const normalized = String(value || '').trim().toLowerCase();
         return INVESTMENT_VIEW_ORDER.includes(normalized) ? normalized : 'chart';
+    }
+
+    function stopInvestmentRealtimeQuotePolling() {
+        if (investmentRealtimeQuoteTimer) {
+            window.clearTimeout(investmentRealtimeQuoteTimer);
+            investmentRealtimeQuoteTimer = 0;
+        }
+        if (investmentRealtimeQuoteAbortController) {
+            investmentRealtimeQuoteAbortController.abort();
+            investmentRealtimeQuoteAbortController = null;
+        }
+        investmentRealtimeQuoteInflight = false;
+    }
+
+    function getInvestmentRealtimeQuoteEndpoint() {
+        return window.ANTIGRAVITY_APP?.endpoints?.investmentRealtimeQuotes || '/api/investment/realtime-quotes';
+    }
+
+    function getInvestmentRealtimeOpenTickers() {
+        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
+            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
+            : null;
+        const holdings = latestSnapshot?.aggregate_holdings || latestSnapshot?.holdings || {};
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        return Object.entries(holdings)
+            .filter(([ticker, quantity]) => {
+                const normalizedTicker = normalizeInvestmentTicker(ticker);
+                const numericQuantity = Number(quantity);
+                return (
+                    normalizedTicker
+                    && !isForexPairTicker(normalizedTicker)
+                    && !moneyMarketTickers.has(normalizedTicker)
+                    && Number.isFinite(numericQuantity)
+                    && Math.abs(numericQuantity) > 1e-9
+                );
+            })
+            .map(([ticker]) => normalizeInvestmentTicker(ticker));
+    }
+
+    function buildInvestmentRealtimeTimestamp(quotes = []) {
+        const timestamps = (Array.isArray(quotes) ? quotes : [])
+            .map((quote) => String(quote?.timestamp || '').trim())
+            .filter(Boolean)
+            .sort();
+        if (timestamps.length) return timestamps[timestamps.length - 1];
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+    }
+
+    function buildInvestmentRealtimeChartPoints(quotes = []) {
+        const baseChartPoints = Array.isArray(investmentBaseChartPointsCache)
+            ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
+            : [];
+        if (!baseChartPoints.length || !investmentProcessedTransactionsCache.length) return baseChartPoints;
+
+        const latestSnapshot = investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1];
+        const latestBasePoint = baseChartPoints[baseChartPoints.length - 1];
+        const quoteByTicker = new Map(
+            (Array.isArray(quotes) ? quotes : [])
+                .map((quote) => [normalizeInvestmentTicker(quote?.ticker), quote])
+                .filter(([ticker, quote]) => ticker && Number.isFinite(Number(quote?.price)))
+        );
+        if (!quoteByTicker.size) return baseChartPoints;
+
+        const livePrices = { ...investmentLatestPricesCache };
+        quoteByTicker.forEach((quote, ticker) => {
+            const price = Number(quote?.price);
+            if (Number.isFinite(price) && price > 0) {
+                livePrices[ticker] = price;
+            }
+        });
+
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(investmentProcessedTransactionsCache, baseCurrency);
+        const valuationDate = normalizeLedgerDate(buildInvestmentRealtimeTimestamp(quotes))
+            || normalizeLedgerDate(latestSnapshot?.date)
+            || normalizeLedgerDate(latestBasePoint?.date);
+        const holdings = latestSnapshot?.aggregate_holdings || latestSnapshot?.holdings || {};
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        let aggregateMarketValue = 0;
+        const holdingsMarketValues = {};
+
+        Object.entries(holdings).forEach(([ticker, quantity]) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            const numericQuantity = Number(quantity);
+            if (!normalizedTicker || isForexPairTicker(normalizedTicker) || !Number.isFinite(numericQuantity)) return;
+            let price = Number(livePrices[normalizedTicker]);
+            if (moneyMarketTickers.has(normalizedTicker)) {
+                const anchoredPrice = latestSnapshot?.aggregate_money_market_anchors?.[normalizedTicker]
+                    ?? latestSnapshot?.money_market_anchors?.[normalizedTicker];
+                if (Number.isFinite(Number(anchoredPrice))) {
+                    price = Number(anchoredPrice);
+                }
+            }
+            if (!Number.isFinite(price) || price <= 0) return;
+            const quoteCurrency = getTickerQuoteCurrency(normalizedTicker);
+            const marketValue = convertAmountToBaseCurrency(
+                numericQuantity * price,
+                quoteCurrency,
+                valuationDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            holdingsMarketValues[normalizedTicker] = marketValue;
+            aggregateMarketValue += marketValue;
+        });
+
+        const aggregateRunningCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash) || 0;
+        const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
+        const session = Array.from(quoteByTicker.values()).find((quote) => quote?.session)?.session || 'realtime';
+        const realtimePoint = {
+            ...(latestBasePoint || {}),
+            date: realtimeTimestamp,
+            running_cash: aggregateRunningCash,
+            aggregate_running_cash: aggregateRunningCash,
+            market_value: aggregateMarketValue,
+            aggregate_market_value: aggregateMarketValue,
+            holdings_market_values: holdingsMarketValues,
+            aggregate_holdings_market_values: holdingsMarketValues,
+            total_equity: aggregateRunningCash + aggregateMarketValue,
+            aggregate_total_equity: aggregateRunningCash + aggregateMarketValue,
+            anchor_ledger_date: '',
+            anchor_ledger_nos: [],
+            cash_in_amount: 0,
+            cash_out_amount: 0,
+            net_transfer_amount: 0,
+            cumulative_net_transfer_amount: Number(latestBasePoint?.cumulative_net_transfer_amount) || 0,
+            is_trading_day: false,
+            is_realtime: true,
+            realtime_session: session,
+            realtime_source: 'yfinance',
+            previous_trading_point_index: baseChartPoints.length - 1,
+        };
+
+        const withoutRealtime = baseChartPoints.filter((point) => point?.is_realtime !== true);
+        return [...withoutRealtime, realtimePoint];
+    }
+
+    function applyInvestmentRealtimeQuotes(quotes = []) {
+        (Array.isArray(quotes) ? quotes : []).forEach((quote) => {
+            const ticker = normalizeInvestmentTicker(quote?.ticker);
+            const price = Number(quote?.price);
+            if (ticker && Number.isFinite(price) && price > 0) {
+                investmentLatestPricesCache[ticker] = price;
+            }
+        });
+        const liveChartPoints = buildInvestmentRealtimeChartPoints(quotes);
+        if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
+        investmentChartPointsCache = liveChartPoints;
+        renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, liveChartPoints, { resetPage: false, scrollToTop: false });
+        updateDashboardWithEquity(
+            investmentProcessedTransactionsCache,
+            investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1],
+            investmentLatestPricesCache,
+            investmentRawTransactionsCache,
+            liveChartPoints,
+            investmentTickerClosePricesCache,
+        );
+    }
+
+    function scheduleInvestmentRealtimeQuotePolling() {
+        if (investmentPageDisposed || !investmentProcessedTransactionsCache.length) return;
+        const tickers = getInvestmentRealtimeOpenTickers();
+        if (!tickers.length) return;
+        if (investmentRealtimeQuoteTimer) {
+            window.clearTimeout(investmentRealtimeQuoteTimer);
+        }
+        investmentRealtimeQuoteTimer = window.setTimeout(() => {
+            pollInvestmentRealtimeQuotes();
+        }, INVESTMENT_REALTIME_QUOTE_POLL_MS);
+    }
+
+    async function pollInvestmentRealtimeQuotes() {
+        if (investmentPageDisposed || investmentRealtimeQuoteInflight) return;
+        const tickers = getInvestmentRealtimeOpenTickers();
+        if (!tickers.length) return;
+        investmentRealtimeQuoteInflight = true;
+        investmentRealtimeQuoteAbortController = new AbortController();
+        const params = new URLSearchParams();
+        tickers.forEach((ticker) => params.append('ticker', ticker));
+        try {
+            const response = await fetch(
+                `${getInvestmentRealtimeQuoteEndpoint()}?${params.toString()}`,
+                buildInvestmentRequestOptions({ signal: investmentRealtimeQuoteAbortController.signal }),
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (response.ok && payload?.success !== false && Array.isArray(payload?.quotes)) {
+                applyInvestmentRealtimeQuotes(payload.quotes);
+            }
+        } catch (error) {
+            if (!isLifecycleInterruptedFetch(error)) {
+                console.warn('Unable to refresh investment realtime quotes', error);
+            }
+        } finally {
+            investmentRealtimeQuoteInflight = false;
+            investmentRealtimeQuoteAbortController = null;
+            scheduleInvestmentRealtimeQuotePolling();
+        }
+    }
+
+    function restartInvestmentRealtimeQuotePolling() {
+        stopInvestmentRealtimeQuotePolling();
+        pollInvestmentRealtimeQuotes();
     }
 
     function readInvestmentPageMemory() {
@@ -2520,23 +2755,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function showInvestmentLoadingModal() {
+    function showInvestmentWorkspaceModal({
+        title = WORKSPACE_MODAL_DEFAULT_TITLE,
+        copy = WORKSPACE_MODAL_DEFAULT_COPY,
+        iconClass = WORKSPACE_MODAL_DEFAULT_ICON_CLASS.replace(/^icon\s+/, ''),
+        lockClose = false,
+    } = {}) {
         if (!workspaceModalOverlay) return;
         if (workspaceModalOverlayTitle) {
-            workspaceModalOverlayTitle.textContent = INVESTMENT_LOADING_MODAL_TITLE;
+            workspaceModalOverlayTitle.textContent = title;
         }
         if (workspaceModalOverlayCopy) {
-            workspaceModalOverlayCopy.textContent = INVESTMENT_LOADING_MODAL_COPY;
+            workspaceModalOverlayCopy.textContent = copy;
         }
         if (workspaceModalOverlayIcon) {
-            workspaceModalOverlayIcon.className = `icon ${INVESTMENT_LOADING_MODAL_ICON_CLASS} workspace-modal-icon`;
+            const normalizedIconClass = String(iconClass || '').trim().replace(/^icon\s+/, '');
+            workspaceModalOverlayIcon.className = normalizedIconClass
+                ? `icon ${normalizedIconClass} workspace-modal-icon`
+                : WORKSPACE_MODAL_DEFAULT_ICON_CLASS;
+        }
+        if (workspaceModalOverlayClose) {
+            workspaceModalOverlayClose.hidden = lockClose;
+            workspaceModalOverlayClose.disabled = lockClose;
+            workspaceModalOverlayClose.setAttribute('aria-hidden', lockClose ? 'true' : 'false');
         }
         workspaceModalOverlay.hidden = false;
+    }
+
+    function showInvestmentLoadingModal() {
+        showInvestmentWorkspaceModal({
+            title: INVESTMENT_LOADING_MODAL_TITLE,
+            copy: INVESTMENT_LOADING_MODAL_COPY,
+            iconClass: INVESTMENT_LOADING_MODAL_ICON_CLASS,
+        });
     }
 
     function hideInvestmentLoadingModal({ resetContent = false } = {}) {
         if (!workspaceModalOverlay) return;
         workspaceModalOverlay.hidden = true;
+        if (workspaceModalOverlayClose) {
+            workspaceModalOverlayClose.hidden = false;
+            workspaceModalOverlayClose.disabled = false;
+            workspaceModalOverlayClose.setAttribute('aria-hidden', 'false');
+        }
         if (!resetContent) return;
         if (workspaceModalOverlayTitle && WORKSPACE_MODAL_DEFAULT_TITLE) {
             workspaceModalOverlayTitle.textContent = WORKSPACE_MODAL_DEFAULT_TITLE;
@@ -2572,8 +2833,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setInvestmentExportButtonVisibility(isVisible) {
         investmentHasExportableTransactions = Boolean(isVisible);
+        const shouldShowShareActions = investmentHasExportableTransactions && investmentChartReady;
+        if (investmentShareActions) {
+            investmentShareActions.hidden = !shouldShowShareActions;
+        }
         if (!exportTransactionsButton) return;
-        exportTransactionsButton.hidden = !(investmentHasExportableTransactions && investmentChartReady);
+        exportTransactionsButton.hidden = !shouldShowShareActions;
     }
 
     function setInvestmentChartReady(isReady, canvas = null) {
@@ -3143,8 +3408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'Investment Holdings and Transaction History';
     }
 
-    function downloadMarkdownFile(filename, content) {
-        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    function downloadBlobFile(filename, blob) {
         const objectUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = objectUrl;
@@ -3155,6 +3419,10 @@ document.addEventListener('DOMContentLoaded', () => {
         window.setTimeout(() => {
             window.URL.revokeObjectURL(objectUrl);
         }, 0);
+    }
+
+    function downloadMarkdownFile(filename, content) {
+        downloadBlobFile(filename, new Blob([content], { type: 'text/markdown;charset=utf-8' }));
     }
 
     function cloneRenderedTable(headerTable, bodyTable) {
@@ -3474,6 +3742,562 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function syncInvestmentShareMaskButtonState() {
+        if (!(shareMaskButton instanceof HTMLButtonElement)) return;
+        const label = investmentShareMaskEnabled ? 'Reveal Sensitive Values' : 'Mask Sensitive Values';
+        shareMaskButton.setAttribute('aria-pressed', investmentShareMaskEnabled ? 'true' : 'false');
+        shareMaskButton.setAttribute('aria-label', label);
+        shareMaskButton.title = label;
+    }
+
+    function syncInvestmentShareMaskState() {
+        if (investmentStockDetailsPanel instanceof HTMLElement) {
+            investmentStockDetailsPanel.classList.toggle('is-share-sensitive-masked', investmentShareMaskEnabled);
+        }
+        if (investmentShareActions instanceof HTMLElement) {
+            investmentShareActions.classList.toggle('is-mask-active', investmentShareMaskEnabled);
+        }
+        syncInvestmentEquityChartAxisMask();
+        syncInvestmentShareMaskButtonState();
+    }
+
+    function syncInvestmentEquityChartAxisMask() {
+        if (!investmentEquityChartInstance) return;
+        const yScaleTicks = investmentEquityChartInstance.options?.scales?.y?.ticks;
+        if (!yScaleTicks) return;
+        yScaleTicks.color = investmentShareMaskEnabled ? 'rgba(0, 0, 0, 0)' : resolveInvestmentTheme().muted;
+        investmentEquityChartInstance.update('none');
+    }
+
+    function getInvestmentShareViewTitle(view = activeInvestmentView) {
+        switch (normalizeInvestmentView(view)) {
+            case 'holdings':
+                return 'Holdings';
+            case 'stock_details':
+                return 'Stock details';
+            case 'metrics':
+                return 'Metrics';
+            case 'chart':
+            default:
+                return 'Overview';
+        }
+    }
+
+    function getInvestmentShareViewSubtitle(view = activeInvestmentView) {
+        const normalizedView = normalizeInvestmentView(view);
+        if (normalizedView === 'stock_details') {
+            const symbol = String(
+                investmentStockDetailsPanel?.querySelector('.ticker-identity-symbol')?.textContent
+                || formatInvestmentTickerForDisplay(ensureSelectedInvestmentStockTicker())
+                || ''
+            ).trim();
+            const company = String(investmentStockDetailsPanel?.querySelector('.ticker-identity-name')?.textContent || '').trim();
+            return company ? `${symbol} · ${company}` : symbol;
+        }
+        if (normalizedView === 'holdings') {
+            return 'Top 5 rows plus summary';
+        }
+        return '';
+    }
+
+    function getInvestmentProjectMeta() {
+        const sourceUrl = String(window.ANTIGRAVITY_APP?.project?.sourceUrl || '').trim();
+        const displayUrl = String(window.ANTIGRAVITY_APP?.project?.displayUrl || '').trim();
+        return {
+            sourceUrl: sourceUrl || window.location.href,
+            displayUrl: displayUrl || sourceUrl.replace(/^https?:\/\//, '') || window.location.host,
+        };
+    }
+
+    function getInvestmentShareTimestampText() {
+        const formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Hong_Kong',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23',
+        });
+        const parts = Object.create(null);
+        formatter.formatToParts(new Date()).forEach((part) => {
+            if (part.type !== 'literal') parts[part.type] = part.value;
+        });
+        return `${parts.day}/${parts.month}/${parts.year}\n${parts.hour}:${parts.minute}:${parts.second} HKT`;
+    }
+
+    function getInvestmentShareBrandIconUrl() {
+        return '/market-store/logos/EUV.png';
+    }
+
+    function sanitizeInvestmentShareClone(node) {
+        if (!(node instanceof HTMLElement)) return node;
+        node.querySelectorAll('[id]').forEach((element) => {
+            element.removeAttribute('id');
+        });
+        node.querySelectorAll('[data-bound], [data-history-hover-bound], [data-logo-fallback-bound]').forEach((element) => {
+            element.removeAttribute('data-bound');
+            element.removeAttribute('data-history-hover-bound');
+            element.removeAttribute('data-logo-fallback-bound');
+        });
+        return node;
+    }
+
+    function createInvestmentShareHeader(view = activeInvestmentView) {
+        const header = document.createElement('div');
+        header.className = 'investment-community-share-header';
+
+        const heading = document.createElement('div');
+        heading.className = 'investment-community-share-heading';
+
+        const title = document.createElement('p');
+        title.className = 'investment-community-share-title';
+        title.textContent = getInvestmentShareViewTitle(view);
+        heading.appendChild(title);
+
+        const subtitleText = getInvestmentShareViewSubtitle(view);
+        if (subtitleText && normalizeInvestmentView(view) !== 'chart') {
+            const subtitle = document.createElement('p');
+            subtitle.className = 'investment-community-share-subtitle';
+            subtitle.textContent = subtitleText;
+            heading.appendChild(subtitle);
+        }
+
+        header.appendChild(heading);
+        return header;
+    }
+
+    async function ensureInvestmentQrCodeFactory() {
+        if (typeof window.qrcode === 'function') return window.qrcode;
+        if (investmentQrCodeLibraryPromise) return investmentQrCodeLibraryPromise;
+        investmentQrCodeLibraryPromise = new Promise((resolve, reject) => {
+            const existingScript = document.querySelector('script[data-investment-share-library="qrcode-generator"]');
+            if (existingScript) {
+                existingScript.addEventListener('load', () => resolve(window.qrcode), { once: true });
+                existingScript.addEventListener('error', () => reject(new Error('Failed to load QR code renderer.')), { once: true });
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = '/static/assets/js/vendor/qrcode-generator.js';
+            script.async = true;
+            script.dataset.investmentShareLibrary = 'qrcode-generator';
+            script.addEventListener('load', () => {
+                if (typeof window.qrcode === 'function') {
+                    resolve(window.qrcode);
+                    return;
+                }
+                reject(new Error('QR code renderer loaded without exposing factory.'));
+            }, { once: true });
+            script.addEventListener('error', () => {
+                reject(new Error('Failed to load QR code renderer.'));
+            }, { once: true });
+            document.head.appendChild(script);
+        }).catch((error) => {
+            investmentQrCodeLibraryPromise = null;
+            throw error;
+        });
+        return investmentQrCodeLibraryPromise;
+    }
+
+    async function createInvestmentShareQrNode(sourceUrl) {
+        const qrFactory = await ensureInvestmentQrCodeFactory();
+        const qr = qrFactory(0, 'M');
+        qr.addData(String(sourceUrl || '').trim());
+        qr.make();
+        const moduleCount = qr.getModuleCount();
+        const margin = 2;
+        const viewBoxSize = moduleCount + margin * 2;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${viewBoxSize} ${viewBoxSize}`);
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('focusable', 'false');
+
+        const pathData = [];
+        for (let row = 0; row < moduleCount; row += 1) {
+            for (let col = 0; col < moduleCount; col += 1) {
+                if (!qr.isDark(row, col)) continue;
+                const x = col + margin;
+                const y = row + margin;
+                pathData.push(`M${x} ${y}h1v1H${x}z`);
+            }
+        }
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathData.join(''));
+        path.setAttribute('fill', 'currentColor');
+        svg.appendChild(path);
+        return svg;
+    }
+
+    async function createInvestmentShareFooter() {
+        const projectMeta = getInvestmentProjectMeta();
+        const footer = document.createElement('div');
+        footer.className = 'investment-community-share-footer';
+        footer.dataset.shareTemplateFixed = '1';
+
+        const brandIcon = document.createElement('img');
+        brandIcon.className = 'investment-community-share-footer-brand-icon';
+        brandIcon.src = getInvestmentShareBrandIconUrl();
+        brandIcon.alt = '';
+        brandIcon.decoding = 'sync';
+        footer.appendChild(brandIcon);
+
+        const copy = document.createElement('div');
+        copy.className = 'investment-community-share-footer-copy';
+
+        const timestamp = document.createElement('div');
+        timestamp.className = 'investment-community-share-footer-timestamp';
+        timestamp.textContent = getInvestmentShareTimestampText();
+
+        copy.appendChild(timestamp);
+        footer.appendChild(copy);
+
+        const qrShell = document.createElement('div');
+        qrShell.className = 'investment-community-share-footer-qr';
+        qrShell.appendChild(await createInvestmentShareQrNode(projectMeta.sourceUrl));
+        footer.appendChild(qrShell);
+        return footer;
+    }
+
+    function createInvestmentShareTemplateFrame(view = activeInvestmentView) {
+        const normalizedView = normalizeInvestmentView(view);
+        const host = document.createElement('div');
+        host.className = 'investment-community-share-capture';
+        host.style.setProperty('--investment-community-share-shell-export-width', '539.8px');
+        host.style.setProperty('--investment-community-share-shell-export-height', '856px');
+
+        const card = document.createElement('article');
+        card.className = 'investment-community-share-card';
+        card.dataset.shareView = normalizedView;
+        card.dataset.shareTemplate = 'stable-v1';
+
+        const body = document.createElement('div');
+        body.className = 'investment-community-share-body';
+
+        card.appendChild(createInvestmentShareHeader(normalizedView));
+        card.appendChild(body);
+        host.appendChild(card);
+        return { host, card, body };
+    }
+
+    function createInvestmentShareSection(className = '') {
+        const section = document.createElement('div');
+        section.className = ['investment-community-share-section', className].filter(Boolean).join(' ');
+        return section;
+    }
+
+    function createInvestmentShareChartImage(canvas) {
+        if (!(canvas instanceof HTMLCanvasElement)) return null;
+        const image = document.createElement('img');
+        image.className = 'investment-community-share-chart-image';
+        image.alt = '';
+        image.decoding = 'sync';
+        image.src = canvas.toDataURL('image/png');
+        return image;
+    }
+
+    function createInvestmentShareChartSection(canvas) {
+        const image = createInvestmentShareChartImage(canvas);
+        if (!(image instanceof HTMLImageElement)) return null;
+        const section = createInvestmentShareSection('investment-community-share-section--chart');
+        const shell = document.createElement('div');
+        shell.className = 'investment-community-share-chart-shell';
+        shell.appendChild(image);
+        section.appendChild(shell);
+        return section;
+    }
+
+    function buildInvestmentOverviewShareBody(body) {
+        const chartCanvas = document.getElementById('investmentEquityChart');
+        syncInvestmentEquityChartAxisMask();
+        const chartSection = createInvestmentShareChartSection(chartCanvas);
+        if (!(chartSection instanceof HTMLElement)) return false;
+        body.appendChild(chartSection);
+
+        const donutShell = investmentDummyChart?.querySelector('.style-token-portfolio-donut-shell');
+        if (donutShell instanceof HTMLElement) {
+            const donutSection = createInvestmentShareSection('investment-community-share-section--compact investment-community-share-section--padded');
+            const donutWrap = document.createElement('div');
+            donutWrap.className = 'investment-community-share-overview-donut';
+            donutWrap.appendChild(sanitizeInvestmentShareClone(donutShell.cloneNode(true)));
+            donutSection.appendChild(donutWrap);
+            body.appendChild(donutSection);
+        }
+        return true;
+    }
+
+    function buildInvestmentStockDetailsShareBody(body) {
+        if (!(investmentStockDetailsPanel instanceof HTMLElement)) return false;
+        const identity = investmentStockDetailsPanel.querySelector('.investment-stock-details-identity');
+        const chartCanvas = investmentStockDetailsPanel.querySelector('.investment-stock-details-price-chart-canvas');
+        const metrics = investmentStockDetailsPanel.querySelector('.investment-stock-details-metrics');
+        if (!(chartCanvas instanceof HTMLCanvasElement) || !(metrics instanceof HTMLElement)) return false;
+
+        if (identity instanceof HTMLElement) {
+            const identitySection = createInvestmentShareSection('investment-community-share-section--compact investment-community-share-section--padded');
+            identitySection.appendChild(sanitizeInvestmentShareClone(identity.cloneNode(true)));
+            body.appendChild(identitySection);
+        }
+
+        const chartSection = createInvestmentShareChartSection(chartCanvas);
+        if (chartSection instanceof HTMLElement) {
+            body.appendChild(chartSection);
+        }
+
+        const metricsSection = createInvestmentShareSection('investment-community-share-section--compact investment-community-share-section--padded');
+        metricsSection.appendChild(sanitizeInvestmentShareClone(metrics.cloneNode(true)));
+        body.appendChild(metricsSection);
+        return true;
+    }
+
+    function buildInvestmentHoldingsShareTable({ maskSensitive = false } = {}) {
+        const headerTable = document.querySelector('#investment_holdings_panel .investment-holdings-table[aria-hidden="true"]');
+        const bodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
+        if (!(headerTable instanceof HTMLTableElement) || !(bodyTable instanceof HTMLTableElement)) return null;
+
+        const normalizeShareHoldingsMoneyText = (value) => String(value || '').replace(/([+-]?)\$\s*/g, '$1').trim();
+        const removedColumnIndexes = maskSensitive ? [6, 3, 1] : [1];
+        const pruneShareHoldingsRow = (tableRow) => {
+            if (!(tableRow instanceof HTMLTableRowElement)) return;
+            removedColumnIndexes.forEach((index) => {
+                tableRow.cells.item(index)?.remove();
+            });
+        };
+        const buildShareTickerCell = (ticker) => {
+            const normalizedTicker = String(ticker || '').trim().toUpperCase();
+            const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
+            const profile = tickerProfiles?.[normalizedTicker] || {};
+            const tickerLabel = formatInvestmentTickerForDisplay(normalizedTicker);
+            const companyName = String(profile.company_name || tickerLabel);
+            const logoUrls = resolveInvestmentLogoUrls(profile, normalizedTicker);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link';
+            wrapper.dataset.ticker = normalizedTicker;
+
+            const row = document.createElement('div');
+            row.className = 'ticker-identity-row';
+
+            const logo = document.createElement('img');
+            logo.className = 'ticker-identity-logo';
+            logo.alt = '';
+            logo.hidden = true;
+            logo.loading = 'lazy';
+            logo.decoding = 'async';
+            logo.dataset.investmentLogoImage = '';
+            logo.dataset.logoUrl = JSON.stringify(logoUrls);
+            logo.dataset.ticker = normalizedTicker;
+
+            const placeholder = document.createElement('span');
+            placeholder.className = 'ticker-identity-logo ticker-identity-logo-placeholder';
+            placeholder.setAttribute('aria-hidden', 'true');
+
+            const copy = document.createElement('span');
+            copy.className = 'ticker-identity-copy';
+
+            const symbol = document.createElement('span');
+            symbol.className = 'suggestion-symbol ticker-identity-symbol';
+            symbol.textContent = tickerLabel;
+
+            const name = document.createElement('span');
+            name.className = 'suggestion-name ticker-identity-name';
+            name.title = companyName;
+            name.textContent = companyName;
+
+            copy.append(symbol, name);
+            row.append(logo, placeholder, copy);
+            wrapper.append(row);
+            return wrapper;
+        };
+
+        const headerRow = headerTable.querySelector('thead tr:first-child');
+        const summaryRow = headerTable.querySelector('.investment-holdings-summary-row');
+        const dataRows = Array.from(bodyTable.querySelectorAll('tbody tr')).slice(0, 5);
+        if (!(headerRow instanceof HTMLTableRowElement) || !dataRows.length) return null;
+
+        const shell = createInvestmentShareSection('investment-community-share-section--chart investment-community-share-table-shell');
+        const innerShell = document.createElement('div');
+        innerShell.className = 'investment-holdings-table-shell';
+
+        const table = document.createElement('table');
+        table.className = 'settings-table trade-transactions-table scrollable-data-table investment-holdings-table investment-community-share-holdings-table';
+
+        const thead = document.createElement('thead');
+        const sharedHeaderRow = sanitizeInvestmentShareClone(headerRow.cloneNode(true));
+        if (!(sharedHeaderRow instanceof HTMLTableRowElement)) return null;
+        pruneShareHoldingsRow(sharedHeaderRow);
+        thead.appendChild(sharedHeaderRow);
+        if (summaryRow instanceof HTMLTableRowElement) {
+            const sharedSummaryRow = sanitizeInvestmentShareClone(summaryRow.cloneNode(true));
+            if (sharedSummaryRow instanceof HTMLTableRowElement) {
+                const summaryLeadCell = sharedSummaryRow.cells.item(0);
+                if (summaryLeadCell instanceof HTMLTableCellElement) {
+                    summaryLeadCell.colSpan = Math.max(sharedHeaderRow.cells.length, 1);
+                }
+                while (sharedSummaryRow.cells.length > 1) {
+                    sharedSummaryRow.cells.item(1)?.remove();
+                }
+                thead.appendChild(sharedSummaryRow);
+            }
+        }
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        dataRows.forEach((row) => {
+            const sharedRow = sanitizeInvestmentShareClone(row.cloneNode(true));
+            if (!(sharedRow instanceof HTMLTableRowElement)) return;
+            pruneShareHoldingsRow(sharedRow);
+            const tickerCell = sharedRow.cells.item(0);
+            if (tickerCell instanceof HTMLTableCellElement) {
+                const ticker = String(sharedRow.dataset.investmentHoldingsTicker || tickerCell.textContent || '').trim();
+                tickerCell.textContent = '';
+                tickerCell.appendChild(buildShareTickerCell(ticker));
+            }
+            Array.from(sharedRow.cells).forEach((cell, index) => {
+                if (!(cell instanceof HTMLTableCellElement) || index === 0) return;
+                cell.textContent = normalizeShareHoldingsMoneyText(cell.textContent || '');
+            });
+            tbody.appendChild(sharedRow);
+        });
+        table.appendChild(tbody);
+
+        innerShell.appendChild(table);
+        shell.appendChild(innerShell);
+        return shell;
+    }
+
+    function buildInvestmentHoldingsShareBody(body) {
+        const tableShell = buildInvestmentHoldingsShareTable({ maskSensitive: investmentShareMaskEnabled });
+        if (!(tableShell instanceof HTMLElement)) return false;
+        body.appendChild(tableShell);
+        return true;
+    }
+
+    function buildInvestmentMetricsShareBody(body) {
+        const metricsPanel = document.getElementById('investment_metrics_panel');
+        if (!(metricsPanel instanceof HTMLElement)) return false;
+        const metricsSection = createInvestmentShareSection('investment-community-share-section--chart investment-community-share-section--padded');
+        const metricsGrid = sanitizeInvestmentShareClone(metricsPanel.cloneNode(true));
+        if (!(metricsGrid instanceof HTMLElement)) return false;
+        metricsGrid.classList.add('investment-community-share-metrics-grid');
+        body.appendChild(metricsSection);
+        metricsSection.appendChild(metricsGrid);
+        return true;
+    }
+
+    async function buildInvestmentCommunityShareCard() {
+        const normalizedView = normalizeInvestmentView(activeInvestmentView);
+        const { host, card, body } = createInvestmentShareTemplateFrame(normalizedView);
+        if (normalizedView === 'stock_details' && investmentShareMaskEnabled) {
+            card.classList.add('is-share-sensitive-masked');
+        }
+
+        let rendered = false;
+        if (normalizedView === 'stock_details') {
+            rendered = buildInvestmentStockDetailsShareBody(body);
+        } else if (normalizedView === 'holdings') {
+            rendered = buildInvestmentHoldingsShareBody(body);
+        } else if (normalizedView === 'metrics') {
+            rendered = buildInvestmentMetricsShareBody(body);
+        } else {
+            rendered = buildInvestmentOverviewShareBody(body);
+        }
+        if (!rendered) return null;
+
+        card.appendChild(await createInvestmentShareFooter());
+        return host;
+    }
+
+    function buildInvestmentScreenshotFilename() {
+        const timestamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d{3}Z$/, 'Z');
+        const suffix = activeInvestmentView === 'stock_details'
+            ? (ensureSelectedInvestmentStockTicker() || 'stock-details').toLowerCase()
+            : activeInvestmentView;
+        return `investment-${suffix}-${timestamp}.png`;
+    }
+
+    async function ensureInvestmentScreenshotLibrary() {
+        if (window.domtoimage?.toBlob) return window.domtoimage;
+        if (investmentScreenshotLibraryPromise) return investmentScreenshotLibraryPromise;
+        investmentScreenshotLibraryPromise = new Promise((resolve, reject) => {
+            const existingScript = document.querySelector('script[data-investment-screenshot-library="dom-to-image-more"]');
+            if (existingScript) {
+                existingScript.addEventListener('load', () => resolve(window.domtoimage), { once: true });
+                existingScript.addEventListener('error', () => reject(new Error('Failed to load screenshot library.')), { once: true });
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/dom-to-image-more@3.6.0/dist/dom-to-image-more.min.js';
+            script.async = true;
+            script.dataset.investmentScreenshotLibrary = 'dom-to-image-more';
+            script.addEventListener('load', () => {
+                if (window.domtoimage?.toBlob) {
+                    resolve(window.domtoimage);
+                    return;
+                }
+                reject(new Error('Screenshot library loaded without exposing dom-to-image-more.'));
+            }, { once: true });
+            script.addEventListener('error', () => {
+                reject(new Error('Failed to load screenshot library.'));
+            }, { once: true });
+            document.head.appendChild(script);
+        }).catch((error) => {
+            investmentScreenshotLibraryPromise = null;
+            throw error;
+        });
+        return investmentScreenshotLibraryPromise;
+    }
+
+    function waitForInvestmentShareImages(root) {
+        const images = Array.from(root.querySelectorAll('img'));
+        const pendingImages = images.filter((image) => !image.complete);
+        if (!pendingImages.length) return Promise.resolve();
+        return Promise.allSettled(pendingImages.map((image) => new Promise((resolve) => {
+            image.addEventListener('load', resolve, { once: true });
+            image.addEventListener('error', resolve, { once: true });
+        })));
+    }
+
+    async function saveCurrentInvestmentPanelScreenshot() {
+        showInvestmentWorkspaceModal({
+            title: INVESTMENT_SHARE_RENDER_MODAL_TITLE,
+            copy: INVESTMENT_SHARE_RENDER_MODAL_COPY,
+            iconClass: INVESTMENT_SHARE_RENDER_MODAL_ICON_CLASS,
+            lockClose: true,
+        });
+        try {
+            await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+            const captureTarget = await buildInvestmentCommunityShareCard();
+            if (!(captureTarget instanceof HTMLElement)) return;
+            const domtoimage = await ensureInvestmentScreenshotLibrary();
+            document.body.appendChild(captureTarget);
+            try {
+                await waitForInvestmentShareImages(captureTarget);
+                await new Promise((resolve) => window.requestAnimationFrame(resolve));
+                const captureRect = captureTarget.getBoundingClientRect();
+                const blob = await domtoimage.toBlob(captureTarget, {
+                    cacheBust: true,
+                    bgcolor: 'transparent',
+                    quality: 1,
+                    width: Math.max(1, Math.round(captureRect.width)),
+                    height: Math.max(1, Math.round(captureRect.height)),
+                    style: {
+                        transform: 'none',
+                    },
+                });
+                if (!(blob instanceof Blob)) {
+                    throw new Error('Failed to encode screenshot.');
+                }
+                downloadBlobFile(buildInvestmentScreenshotFilename(), blob);
+            } finally {
+                captureTarget.remove();
+            }
+        } finally {
+            hideInvestmentLoadingModal({ resetContent: true });
+        }
+    }
+
     function bindInvestmentExportButton() {
         if (!exportTransactionsButton || exportTransactionsButton.dataset.bound === '1') return;
         exportTransactionsButton.dataset.bound = '1';
@@ -3482,6 +4306,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!exportPayload) return;
             downloadMarkdownFile(exportPayload.filename, exportPayload.markdown);
         });
+        if (shareMaskButton && shareMaskButton.dataset.bound !== '1') {
+            shareMaskButton.dataset.bound = '1';
+            syncInvestmentShareMaskButtonState();
+            shareMaskButton.addEventListener('click', () => {
+                investmentShareMaskEnabled = !investmentShareMaskEnabled;
+                syncInvestmentShareMaskState();
+            });
+        }
+        if (shareCaptureButton && shareCaptureButton.dataset.bound !== '1') {
+            shareCaptureButton.dataset.bound = '1';
+            shareCaptureButton.addEventListener('click', async () => {
+                if (shareCaptureButton.getAttribute('aria-busy') === 'true') return;
+                shareCaptureButton.setAttribute('aria-busy', 'true');
+                try {
+                    await saveCurrentInvestmentPanelScreenshot();
+                } catch (error) {
+                    console.error('Failed to save investment screenshot.', error);
+                } finally {
+                    shareCaptureButton.removeAttribute('aria-busy');
+                }
+            });
+        }
+        syncInvestmentShareMaskState();
     }
 
     function bindHoldingsLogoFallbacks(container) {
@@ -5536,6 +6383,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const latestSnapshot = processed[processed.length - 1];
         const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
+        investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
+        investmentTickerClosePricesCache = tickerClosePrices && typeof tickerClosePrices === 'object' ? tickerClosePrices : {};
+        investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,
             fallbackTickers: Array.from(fallbackTickers),
@@ -5547,6 +6397,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Update dashboard with latest total equity
         updateDashboardWithEquity(processed, latestSnapshot, latestPrices, transactions, chartPoints, tickerClosePrices);
+        restartInvestmentRealtimeQuotePolling();
         return valuationStatus;
     }
 
@@ -5876,6 +6727,70 @@ document.addEventListener('DOMContentLoaded', () => {
             },
         };
 
+        const realtimeEndMarkerPlugin = {
+            id: "investmentRealtimeEndMarkerPlugin",
+            afterDatasetsDraw(chartInstance) {
+                const realtimeIndex = visibleChartPoints.findIndex((point) => point?.is_realtime === true);
+                if (realtimeIndex < 0) return;
+                const dataset = chartInstance.data?.datasets?.[0];
+                const pointValue = Number(dataset?.data?.[realtimeIndex]);
+                if (!Number.isFinite(pointValue)) return;
+                const { ctx, scales, chartArea } = chartInstance;
+                const xScale = scales?.x;
+                const yScale = scales?.y;
+                if (!ctx || !xScale || !yScale || !chartArea) return;
+                const x = xScale.getPixelForValue(realtimeIndex);
+                const y = yScale.getPixelForValue(pointValue);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+                if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
+
+                const progress = (performance.now() % 1800) / 1800;
+                const contraction = (Math.sin((progress * Math.PI * 2) - (Math.PI / 2)) + 1) / 2;
+                const coreRadius = 2.0 + (Math.pow(contraction, 1.45) * 1.75);
+                const drawMicrowaveRing = (phaseOffset, maxRadius, alphaScale, lineWidth) => {
+                    const ringProgress = (progress + phaseOffset) % 1;
+                    const easedProgress = 1 - Math.pow(1 - ringProgress, 2.4);
+                    const radius = coreRadius + 1 + (easedProgress * maxRadius);
+                    const alpha = alphaScale * Math.pow(1 - ringProgress, 1.9);
+                    if (alpha <= 0.01) return;
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.lineWidth = lineWidth;
+                    ctx.globalAlpha = alpha;
+                    ctx.strokeStyle = markerColor;
+                    ctx.shadowColor = markerColor;
+                    ctx.shadowBlur = 7 + (ringProgress * 6);
+                    ctx.stroke();
+                };
+                const markerColor = resolvedTheme.accentPositive || "#16a34a";
+                ctx.save();
+                drawMicrowaveRing(0, 11.5, 0.46, 1.8);
+                drawMicrowaveRing(0.5, 7.5, 0.24, 1.15);
+                ctx.globalAlpha = 0.14 + (0.22 * (1 - contraction));
+                ctx.beginPath();
+                ctx.arc(x, y, coreRadius + 2, 0, Math.PI * 2);
+                ctx.fillStyle = markerColor;
+                ctx.shadowColor = markerColor;
+                ctx.shadowBlur = 8;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.beginPath();
+                ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
+                ctx.fillStyle = markerColor;
+                ctx.shadowBlur = 4;
+                ctx.fill();
+                ctx.restore();
+
+                if (!investmentRealtimeMarkerFrame) {
+                    investmentRealtimeMarkerFrame = window.requestAnimationFrame(() => {
+                        investmentRealtimeMarkerFrame = 0;
+                        if (!chartInstance.canvas?.isConnected) return;
+                        chartInstance.draw();
+                    });
+                }
+            },
+        };
+
         const xAxisLabelPlugin = {
             id: "investmentXAxisLabelPlugin",
             afterDraw(chart) {
@@ -6073,6 +6988,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const holdingsMarkerRadius = 5;
         const holdingsMarkerStrokeWidth = 2.8;
         const holdingsMarkerSafePadding = Math.ceil(holdingsMarkerRadius + holdingsMarkerStrokeWidth + 2);
+        const realtimeMarkerSafePadding = 32;
 
         const commonOptions = {
             responsive: true,
@@ -6080,8 +6996,8 @@ document.addEventListener('DOMContentLoaded', () => {
             layout: {
                 padding: {
                     left: holdingsMarkerSafePadding,
-                    right: holdingsMarkerSafePadding,
-                    top: 44,
+                    right: Math.max(holdingsMarkerSafePadding, realtimeMarkerSafePadding),
+                    top: Math.max(44, realtimeMarkerSafePadding),
                     bottom: 24,
                 },
             },
@@ -6104,7 +7020,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         scale.width = fixedYAxisWidth;
                     },
                     ticks: {
-                        color: resolvedTheme.muted,
+                        color: investmentShareMaskEnabled ? 'rgba(0, 0, 0, 0)' : resolvedTheme.muted,
                         display: true,
                         padding: 8,
                         callback(value, index, ticks) {
@@ -6148,7 +7064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: { ...commonOptions.scales.y, ...equityYScale },
                 },
             },
-            plugins: [hoverGuidePlugin, holdingsHoverMarkerPlugin, xAxisLabelPlugin],
+            plugins: [hoverGuidePlugin, holdingsHoverMarkerPlugin, realtimeEndMarkerPlugin, xAxisLabelPlugin],
         });
         if (activeHoldingsHoverLedgerNo > 0) {
             investmentEquityChartInstance.update('none');

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -95,6 +95,7 @@ def _download_daily_history_with_yfinance(
         end: str | datetime | None = None,
         period: str | None = None,
         interval: str = "1d",
+        prepost: bool = False,
 ) -> pd.DataFrame:
     """
     Serialize yfinance downloads because yfinance 1.2.0 mutates module-level
@@ -115,6 +116,7 @@ def _download_daily_history_with_yfinance(
                 period=period,
                 interval=interval,
                 auto_adjust=False,
+                prepost=prepost,
                 progress=False,
                 multi_level_index=False,
                 threads=False,
@@ -204,6 +206,57 @@ def _download_recent_one_minute_history_with_yfinance(
     if combined.empty:
         raise ValueError(f"No recent 1-minute market data returned for {ticker} via yfinance.")
     return combined.reset_index(drop=True)
+
+
+def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
+    """
+    Fetch the latest yfinance 1-minute quote including pre-market and post-market bars.
+
+    The result is intentionally not written to the local parquet store because
+    the investment overview uses it as a live mark-to-market point, not as an
+    official daily close.
+    """
+    normalized_ticker = normalize_ticker(ticker)
+    history = _download_daily_history_with_yfinance(
+        normalized_ticker,
+        period="1d",
+        interval="1m",
+        prepost=True,
+    )
+    if history is None or history.empty:
+        raise ValueError(f"No realtime 1-minute quote returned for {normalized_ticker} via yfinance.")
+
+    normalized = normalize_history_frame(history, normalized_ticker, interval="1m")
+    if normalized.empty:
+        raise ValueError(f"No realtime 1-minute quote returned for {normalized_ticker} via yfinance.")
+
+    latest_row = normalized.sort_values("Date").iloc[-1]
+    latest_timestamp = pd.to_datetime(latest_row["Date"], errors="coerce")
+    latest_close = float(latest_row["Close"])
+    if pd.isna(latest_timestamp) or not math.isfinite(latest_close):
+        raise ValueError(f"No usable realtime 1-minute quote returned for {normalized_ticker} via yfinance.")
+
+    total_minutes = (int(latest_timestamp.hour) * 60) + int(latest_timestamp.minute)
+    regular_open = (9 * 60) + 30
+    regular_close = 16 * 60
+    premarket_open = 4 * 60
+    postmarket_close = 20 * 60
+    if regular_open <= total_minutes < regular_close:
+        session = "intraday"
+    elif premarket_open <= total_minutes < regular_open:
+        session = "pre"
+    elif regular_close <= total_minutes < postmarket_close:
+        session = "post"
+    else:
+        session = "off"
+
+    return {
+        "ticker": normalized_ticker,
+        "price": latest_close,
+        "timestamp": latest_timestamp.strftime("%Y-%m-%d %H:%M"),
+        "session": session,
+        "source": "yfinance",
+    }
 
 
 def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:

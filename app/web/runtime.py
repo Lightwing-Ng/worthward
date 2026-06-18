@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.20
+Code version: v0.3.23
 """
 
 from __future__ import annotations
@@ -87,6 +87,8 @@ FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
     "frontend-fetch-aborts.env",
     "frontend-fetch-aborts",
 )
+PROJECT_SOURCE_URL = "https://github.com/Lightwing-Ng/compareStocks"
+PROJECT_DISPLAY_URL = PROJECT_SOURCE_URL.removeprefix("https://").removeprefix("http://")
 
 
 def report_fetch_abort_debug_event(
@@ -117,6 +119,7 @@ from app.services.logos import fetch_quote_profile, has_valid_ticker_format, nor
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
     fetch_history,
+    fetch_yfinance_realtime_quote,
     list_available_market_intervals,
     refresh_history_store,
     refresh_one_minute_store,
@@ -234,6 +237,7 @@ class WebRuntime:
     investment_get_latest_price: Any
     investment_get_parquet: Any
     investment_get_intraday_history: Any
+    investment_get_realtime_quotes: Any
     live_trading_get_positions: Any
     live_trading_submit_order: Any
 
@@ -1447,6 +1451,53 @@ def build_web_runtime() -> WebRuntime:
                 "related_styles": [],
             },
             {
+                "id": style_token_id("Investment community share card"),
+                "name": "Investment community share card",
+                "sample_kind": "investment-share-card",
+                "sample_title": "Overview",
+                "sample_subtitle": "",
+                "sample_copy": "Style tokens renders the same HTML and CSS card body used by exported PNG community shares. The print spec is a portrait card at 53.98 mm by 85.60 mm with a 3.18 mm corner radius, mapped onto a 10 px per mm export grid for readable PNG output.",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "sample_url": PROJECT_DISPLAY_URL,
+                "sample_timestamp": "",
+                "tokens": [
+                    raw_token("--investment-community-share-print-width", "53.98mm"),
+                    raw_token("--investment-community-share-print-height", "85.60mm"),
+                    raw_token("--investment-community-share-print-radius", "3.18mm"),
+                    raw_token("--investment-community-share-accent", "#0055cc"),
+                    px_token("--investment-community-share-shell-width", 540, 1),
+                    px_token("--investment-community-share-shell-height", 856, 1),
+                    raw_token("--investment-community-share-card-radius", "31.8px"),
+                    px_token("--investment-community-share-card-padding", 14, 0),
+                    px_token("--investment-community-share-card-gap", 10, 0),
+                    px_token("--investment-community-share-section-gap", 10, 0),
+                    px_token("--investment-community-share-section-radius", 16, 0),
+                    px_token("--investment-community-share-footer-brand-size", 44, 0),
+                    px_token("--investment-community-share-footer-qr-size", 52, 0),
+                    material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-blur", "Frosted glass extracted"),
+                ],
+                "related_styles": [
+                    {
+                        "name": "Frosted glass extracted",
+                        "target_id": material_token_id("Frosted glass extracted"),
+                    },
+                    {
+                        "name": "Portfolio donut orbit",
+                        "target_id": style_token_id("Portfolio donut orbit"),
+                    },
+                    {
+                        "name": "Settings form input",
+                        "target_id": style_token_id("Settings form input"),
+                    },
+                ],
+            },
+            {
                 "id": style_token_id("Settings form input"),
                 "name": "Settings form input",
                 "sample_kind": "settings-form-input",
@@ -1606,6 +1657,7 @@ def build_web_runtime() -> WebRuntime:
             },
         ]
         token_order = {
+            "Investment community share card": 5,
             "Settings form input": 10,
             "Ticker input control": 15,
             "Settings execution option": 20,
@@ -3050,6 +3102,8 @@ def build_web_runtime() -> WebRuntime:
             theme=theme,
             theme_light=theme_light,
             theme_dark=theme_dark,
+            project_source_url=PROJECT_SOURCE_URL,
+            project_display_url=PROJECT_DISPLAY_URL,
             chart_config=chart_config,
             logos=logos,
             defaults=defaults,
@@ -3075,6 +3129,7 @@ def build_web_runtime() -> WebRuntime:
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
                 "investmentIntraday": "/api/investment/intraday",
+                "investmentRealtimeQuotes": "/api/investment/realtime-quotes",
                 "liveTradingPositions": "/api/live-trading/positions",
                 "liveTradingOrder": "/api/live-trading/orders",
             },
@@ -4258,6 +4313,50 @@ def build_web_runtime() -> WebRuntime:
             response.status_code = 500
             return apply_no_store_headers(response)
 
+    def investment_get_realtime_quotes():
+        """Get latest yfinance pre-market, regular-session, and post-market quotes."""
+        requested_tickers = [
+            validate_ticker_or_raise(ticker)
+            for ticker in request.args.getlist("ticker")
+            if str(ticker or "").strip()
+        ]
+        if not requested_tickers:
+            repeated = str(request.args.get("tickers", "")).strip()
+            requested_tickers = [
+                validate_ticker_or_raise(ticker)
+                for ticker in repeated.split(",")
+                if str(ticker or "").strip()
+            ]
+        requested_tickers = list(dict.fromkeys(requested_tickers))
+        if not requested_tickers:
+            response = jsonify({"success": False, "error": "No tickers provided"})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+
+        quotes: list[dict[str, object]] = []
+        failures: list[dict[str, str]] = []
+        fetched_at = pd.Timestamp.now(tz="UTC")
+        for ticker in requested_tickers:
+            try:
+                quotes.append(fetch_yfinance_realtime_quote(ticker))
+            except Exception as exc:  # noqa: BLE001
+                failures.append({
+                    "ticker": ticker,
+                    "error": str(exc),
+                })
+
+        status_code = 200 if quotes else 502
+        response = jsonify({
+            "success": bool(quotes),
+            "quotes": quotes,
+            "failures": failures,
+            "count": len(quotes),
+            "source": "yfinance",
+            "fetched_at": fetched_at.strftime("%Y-%m-%d %H:%M:%S%z"),
+        })
+        response.status_code = status_code
+        return apply_no_store_headers(response)
+
     def live_trading_get_positions():
         """Load current Longbridge stock positions for the Live trading workspace."""
         try:
@@ -4396,6 +4495,7 @@ def build_web_runtime() -> WebRuntime:
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,
+        investment_get_realtime_quotes=investment_get_realtime_quotes,
         live_trading_get_positions=live_trading_get_positions,
         live_trading_submit_order=live_trading_submit_order,
     )

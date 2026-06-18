@@ -63,7 +63,8 @@
     z-index: calc(var(--layer-surface-content) + 2);
 }
 
-.export-transactions-button {
+.export-transactions-button,
+.investment-share-action-button {
     width: var(--settings-round-icon-button-size);
     height: var(--settings-round-icon-button-size);
     padding: 0;
@@ -85,17 +86,21 @@
 }
 
 .export-transactions-button:hover,
-.export-transactions-button:focus-visible {
+.export-transactions-button:focus-visible,
+.investment-share-action-button:hover,
+.investment-share-action-button:focus-visible {
     background: var(--settings-round-icon-button-background-hover);
     color: var(--settings-round-icon-button-color-hover);
     box-shadow: var(--settings-round-icon-button-shadow-hover);
 }
 
-.export-transactions-button:active {
+.export-transactions-button:active,
+.investment-share-action-button:active {
     box-shadow: var(--settings-round-icon-button-shadow-active);
 }
 
-.export-transactions-button .icon {
+.export-transactions-button .icon,
+.investment-share-action-button .icon {
     width: var(--settings-round-icon-button-icon-size);
     height: var(--settings-round-icon-button-icon-size);
     background-color: currentColor;
