@@ -1,6 +1,6 @@
-/* Code version: v0.3.14 */
+/* Code version: v0.3.15 */
 @import url("./foundation/tokens.css?v=3.24.3");
-@import url("./layout/shell.css?v=3.23.1");
+@import url("./layout/shell.css?v=3.24.0");
 @import url("./components/forms.css?v=3.23.5");
 @import url("./views/workspace.css?v=3.23.5");
 @import url("./views/settings.css?v=3.23.2");

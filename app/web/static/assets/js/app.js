@@ -1,4 +1,4 @@
-/* Code version: v0.3.8-p13 */
+/* Code version: v0.3.9-p1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -69,6 +69,7 @@
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
     let pendingWorkspaceChartTransition = null;
+    let optimisticNavigationTimer = 0;
     const datePickerState = [];
     let validTradingDateSet = null;
     const portfolioWeightState = {
@@ -141,6 +142,136 @@
     };
 
     const getProgressiveMaskSelectors = (view, section = null) => getProgressiveManifest(view, section).masks || [];
+
+    const resolveSettingsSectionFromUrl = (url) => {
+        try {
+            const parsedUrl = new URL(url, window.location.origin);
+            const pathMatch = parsedUrl.pathname.match(/^\/settings\/([^/?#]+)/);
+            return pathMatch?.[1] || "about";
+        } catch (_error) {
+            return "about";
+        }
+    };
+
+    const resolveViewFromUrl = (url) => {
+        try {
+            const parsedUrl = new URL(url, window.location.origin);
+            const path = parsedUrl.pathname.toLowerCase();
+            if (
+                path === "/compare"
+                || path.startsWith("/compare/")
+                || path === "/workspaces/compare"
+                || path.startsWith("/workspaces/compare/")
+            ) return "tickers";
+            if (
+                path === "/portfolio"
+                || path.startsWith("/portfolio/")
+                || path === "/workspaces/portfolio"
+                || path.startsWith("/workspaces/portfolio/")
+            ) return "portfolio";
+            if (
+                path === "/dca"
+                || path.startsWith("/dca/")
+                || path === "/workspaces/dca"
+                || path.startsWith("/workspaces/dca/")
+            ) return "dca";
+            if (
+                path === "/backtest"
+                || path.startsWith("/backtest/")
+                || path === "/workspaces/backtest"
+                || path.startsWith("/workspaces/backtest/")
+            ) return "backtest";
+            if (path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "more";
+            if (path === "/settings" || path.startsWith("/settings/")) return "settings";
+            return null;
+        } catch (_error) {
+            return null;
+        }
+    };
+
+    const resolveDockGroupFromView = (view) => (WORKSPACE_VIEWS.has(view) ? "workspace" : view);
+
+    const normalizeNavigationUrl = (url) => {
+        try {
+            const parsedUrl = new URL(url, window.location.origin);
+            return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+        } catch (_error) {
+            return String(url || "");
+        }
+    };
+
+    const applyOptimisticMaskForTarget = (targetView, targetSection = null) => {
+        const selectors = getProgressiveMaskSelectors(targetView || state.currentView, targetSection);
+        const maskedNodes = new Set();
+        selectors.forEach((selector) => {
+            document.querySelectorAll(selector).forEach((node) => maskedNodes.add(node));
+        });
+        if (!maskedNodes.size) {
+            document.querySelectorAll("[data-workspace-mask]").forEach((node) => maskedNodes.add(node));
+        }
+        maskedNodes.forEach((node) => {
+            node.classList.add("is-masked-during-switch");
+        });
+    };
+
+    const syncDockPreviewTarget = (targetDockGroup) => {
+        if (!targetDockGroup) return;
+        const dockGroupByIndex = ["workspace", "more", "settings"];
+        $$(".sidebar-dock-item").forEach((link, index) => {
+            const isTarget = dockGroupByIndex[index] === targetDockGroup;
+            link.classList.toggle("is-active", isTarget);
+            if (isTarget) {
+                link.setAttribute("aria-current", "page");
+            } else {
+                link.removeAttribute("aria-current");
+            }
+        });
+    };
+
+    const syncLocalPreviewTarget = (link) => {
+        if (!(link instanceof HTMLElement)) return;
+        if (link.classList.contains("settings-nav-item")) {
+            const nav = link.closest(".settings-nav, .settings-nav-list, .hero");
+            const scope = nav || link.parentElement;
+            const navItems = Array.from(scope?.querySelectorAll(".settings-nav-item") || []);
+            let activeIndex = 0;
+            navItems.forEach((item, index) => {
+                const isTarget = item === link;
+                item.classList.toggle("is-active", isTarget);
+                if (isTarget) {
+                    item.setAttribute("aria-current", "page");
+                    activeIndex = index;
+                } else {
+                    item.removeAttribute("aria-current");
+                }
+            });
+            if (scope instanceof HTMLElement) scope.style.setProperty("--settings-active-index", String(Math.max(0, activeIndex)));
+            return;
+        }
+        if (link.classList.contains("local-store-page-button") && !link.classList.contains("local-store-page-nav")) {
+            const pagination = link.closest(".local-store-pagination");
+            pagination?.querySelectorAll(".local-store-page-button").forEach((item) => {
+                item.classList.toggle("is-active", item === link);
+            });
+        }
+    };
+
+    const beginOptimisticPageNavigation = (nextUrl, {link = null, targetDockGroup = null} = {}) => {
+        if (optimisticNavigationTimer) window.clearTimeout(optimisticNavigationTimer);
+        const targetView = resolveViewFromUrl(nextUrl);
+        const targetSection = targetView === "settings" ? resolveSettingsSectionFromUrl(nextUrl) : null;
+        const dockGroup = targetDockGroup || resolveDockGroupFromView(targetView);
+        document.body.classList.add("is-workspace-switching", "is-page-navigating");
+        document.documentElement.dataset.navigationTarget = targetView || "page";
+        document.documentElement.setAttribute("aria-busy", "true");
+        syncDockPreviewTarget(dockGroup);
+        syncLocalPreviewTarget(link);
+        applyOptimisticMaskForTarget(targetView, targetSection);
+        optimisticNavigationTimer = window.setTimeout(() => {
+            optimisticNavigationTimer = 0;
+            window.location.assign(nextUrl);
+        }, 70);
+    };
 
     const fetchJsonCached = async (cacheKey, url, {ttlMs = 30000} = {}) => {
         const cached = progressiveResourceCache.get(cacheKey);
@@ -1014,63 +1145,6 @@
 
     const attachDockMemory = () => {
         const dockGroupByIndex = ["workspace", "more", "settings"];
-        const dockLinks = $$(".sidebar-dock-item");
-        const resolveDockGroupFromView = (view) => (WORKSPACE_VIEWS.has(view) ? "workspace" : view);
-        const setDockPreviewTarget = (targetDockGroup) => {
-            dockLinks.forEach((link, index) => {
-                const isTarget = dockGroupByIndex[index] === targetDockGroup;
-                link.classList.toggle("is-active", isTarget);
-                if (isTarget) {
-                    link.setAttribute("aria-current", "page");
-                } else {
-                    link.removeAttribute("aria-current");
-                }
-            });
-        };
-        const resolveSettingsSectionFromUrl = (url) => {
-            try {
-                const parsedUrl = new URL(url, window.location.origin);
-                const pathMatch = parsedUrl.pathname.match(/^\/settings\/([^/?#]+)/);
-                return pathMatch?.[1] || "about";
-            } catch (_error) {
-                return "about";
-            }
-        };
-        const resolveViewFromUrl = (url) => {
-            try {
-                const parsedUrl = new URL(url, window.location.origin);
-                const path = parsedUrl.pathname.toLowerCase();
-                if (
-                    path === "/compare"
-                    || path.startsWith("/compare/")
-                    || path === "/workspaces/compare"
-                    || path.startsWith("/workspaces/compare/")
-                ) return "tickers";
-                if (
-                    path === "/portfolio"
-                    || path.startsWith("/portfolio/")
-                    || path === "/workspaces/portfolio"
-                    || path.startsWith("/workspaces/portfolio/")
-                ) return "portfolio";
-                if (
-                    path === "/dca"
-                    || path.startsWith("/dca/")
-                    || path === "/workspaces/dca"
-                    || path.startsWith("/workspaces/dca/")
-                ) return "dca";
-                if (
-                    path === "/backtest"
-                    || path.startsWith("/backtest/")
-                    || path === "/workspaces/backtest"
-                    || path.startsWith("/workspaces/backtest/")
-                ) return "backtest";
-                if (path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "more";
-                if (path === "/settings" || path.startsWith("/settings/")) return "settings";
-                return null;
-            } catch (_error) {
-                return null;
-            }
-        };
         $$(".sidebar-dock-item").forEach((link, index) => {
             const targetDockGroup = dockGroupByIndex[index];
             if (!targetDockGroup || link.dataset.boundDockMemory === "1") return;
@@ -1091,12 +1165,47 @@
                 if (targetDockGroup === currentDockGroup && nextUrl === (window.location.pathname + window.location.search)) {
                     return;
                 }
-                setDockPreviewTarget(targetDockGroup);
-                document.body.classList.add("is-workspace-switching");
-                window.requestAnimationFrame(() => {
-                    window.location.assign(nextUrl);
-                });
+                beginOptimisticPageNavigation(nextUrl, {link, targetDockGroup});
             });
+        });
+    };
+
+    const shouldHandleOptimisticLinkClick = (event, link) => {
+        if (event.defaultPrevented || event.button !== 0) return false;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+        if (!(link instanceof HTMLAnchorElement)) return false;
+        if (link.closest(".sidebar-dock")) return false;
+        if (link.hasAttribute("download")) return false;
+        const target = (link.getAttribute("target") || "").toLowerCase();
+        if (target && target !== "_self") return false;
+        const href = link.getAttribute("href");
+        if (!href || href.startsWith("#")) return false;
+        let url;
+        try {
+            url = new URL(href, window.location.href);
+        } catch (_error) {
+            return false;
+        }
+        if (url.origin !== window.location.origin) return false;
+        if (!resolveViewFromUrl(url.href)) return false;
+        const currentUrl = new URL(window.location.href);
+        if (url.pathname === currentUrl.pathname && url.search === currentUrl.search && url.hash) return false;
+        if (url.pathname === currentUrl.pathname && url.search === currentUrl.search) return false;
+        return true;
+    };
+
+    const attachOptimisticInternalNavigation = () => {
+        if (document.body.dataset.optimisticNavigationBound === "1") return;
+        document.body.dataset.optimisticNavigationBound = "1";
+        document.addEventListener("click", (event) => {
+            const link = event.target?.closest?.("a[href]");
+            if (!shouldHandleOptimisticLinkClick(event, link)) return;
+            const nextUrl = link.getAttribute("href") || "";
+            const normalizedNextUrl = normalizeNavigationUrl(nextUrl);
+            if (!normalizedNextUrl) return;
+            rememberCurrentViewUrl();
+            event.preventDefault();
+            beginOptimisticPageNavigation(normalizedNextUrl, {link});
         });
     };
 
@@ -3869,6 +3978,7 @@
     initThemeModeControls();
     rememberCurrentViewUrl();
     attachDockMemory();
+    attachOptimisticInternalNavigation();
     attachRemoveHandlers();
     attachTickerClearHandlers();
     attachPortfolioWeightHandlers();
@@ -4783,7 +4893,9 @@
     workspaceModalOverlayClose?.addEventListener("click", hideWorkspaceModal);
     window.addEventListener("pageshow", hideWorkspaceModal);
     window.addEventListener("pageshow", () => {
-        document.body.classList.remove("is-workspace-switching");
+        document.body.classList.remove("is-workspace-switching", "is-page-navigating");
+        document.documentElement.removeAttribute("data-navigation-target");
+        document.documentElement.removeAttribute("aria-busy");
         document.querySelectorAll(".is-masked-during-switch").forEach((node) => {
             node.classList.remove("is-masked-during-switch");
         });

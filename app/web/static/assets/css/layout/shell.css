@@ -1,3 +1,4 @@
+/* Code version: v3.24.0 */
 .sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--glass-surface-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
 .settings-round-icon-button,
 .sidebar-toggle {
@@ -60,7 +61,43 @@
 html.sidebar-memory-collapsed .app-shell { --sidebar-toggle-x: 0px; }
 html.sidebar-memory-collapsed .app-shell .sidebar { margin-left: -326px; opacity: 0; transform: scale(0.95); pointer-events: none; }
 html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) scale(0.95); }
-.workspace { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.workspace { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; transition: opacity 220ms var(--motion-standard), filter 320ms var(--motion-emphasized), transform 420ms var(--motion-inertial); }
+.workspace.panel::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: var(--radius-panel);
+	background:
+		linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--theme-glass-highlight) 72%, transparent) 50%, transparent 100%),
+		color-mix(in srgb, var(--glass-surface-background) 54%, transparent);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent);
+	backdrop-filter: saturate(150%) blur(8px);
+	-webkit-backdrop-filter: saturate(150%) blur(8px);
+	opacity: 0;
+	transform: translate3d(-18%, 0, 0);
+	transition: opacity 180ms var(--motion-standard), transform 620ms var(--motion-shimmer);
+	pointer-events: none;
+	z-index: calc(var(--layer-surface-content) + 2);
+}
+body.is-page-navigating .workspace {
+	opacity: 0.94;
+	filter: saturate(0.96) blur(0.4px);
+	transform: translate3d(0, 2px, 0) scale(0.997);
+}
+body.is-page-navigating .workspace.panel::after {
+	opacity: 1;
+	transform: translate3d(18%, 0, 0);
+}
+body.is-page-navigating .sidebar {
+	transition-duration: 360ms;
+}
+body.is-page-navigating .sidebar-dock {
+	animation: dock-navigation-settle 560ms var(--motion-inertial) both;
+}
+body.is-page-navigating .sidebar-dock::before {
+	background: color-mix(in srgb, var(--accent-fill) 18%, var(--accent-surface-muted));
+	box-shadow: 0 10px 26px var(--accent-shadow-soft);
+}
 [data-workspace-mask] { position: relative; }
 .is-pending-value {
 	color: transparent !important;
@@ -86,22 +123,29 @@ html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-e
 }
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch {
 	color: transparent !important;
+	transition: color 120ms var(--motion-standard), opacity 180ms var(--motion-standard), filter 220ms var(--motion-standard);
 }
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch img,
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch canvas,
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch svg {
-	opacity: 0;
+	opacity: 0.18;
+	filter: saturate(0.75) blur(1px);
+	transition: opacity 160ms var(--motion-standard), filter 220ms var(--motion-standard);
 }
 body.is-workspace-switching [data-workspace-mask].is-masked-during-switch::after {
 	content: "";
 	position: absolute;
 	inset: -2px;
 	border-radius: inherit;
-	background: var(--glass-mask-background);
+	background:
+		linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--theme-glass-highlight) 72%, transparent) 50%, transparent 100%),
+		var(--glass-mask-background);
 	border: var(--glass-mask-border);
 	box-shadow: var(--glass-mask-shadow);
 	backdrop-filter: var(--glass-mask-blur);
 	-webkit-backdrop-filter: var(--glass-mask-blur);
+	background-size: 220% 100%, auto;
+	animation: pending-sheen 1.15s var(--motion-shimmer) infinite;
 	pointer-events: none;
 }
 body.is-workspace-switching [data-workspace-mask="compare-return"].is-masked-during-switch::after,
@@ -139,6 +183,27 @@ body.is-workspace-switching [data-workspace-mask="settings-status-icon"].is-mask
 body.is-workspace-switching [data-workspace-mask="company-name"].is-masked-during-switch::after {
 	inset: -1px -6px;
 	border-radius: 9999px;
+}
+@keyframes dock-navigation-settle {
+	0% { filter: saturate(1); }
+	35% { filter: saturate(1.08); }
+	100% { filter: saturate(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+	body.is-page-navigating .sidebar-dock {
+		animation: none;
+	}
+	body.is-page-navigating .workspace,
+	body.is-page-navigating .workspace.panel::after,
+	body.is-workspace-switching [data-workspace-mask].is-masked-during-switch,
+	body.is-workspace-switching [data-workspace-mask].is-masked-during-switch img,
+	body.is-workspace-switching [data-workspace-mask].is-masked-during-switch canvas,
+	body.is-workspace-switching [data-workspace-mask].is-masked-during-switch svg {
+		transition-duration: 1ms;
+	}
+	body.is-workspace-switching [data-workspace-mask].is-masked-during-switch::after {
+		animation: none;
+	}
 }
 .hero { margin-bottom: 12px; position: relative; z-index: var(--layer-surface-content); }
 h1,

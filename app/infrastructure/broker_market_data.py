@@ -27,7 +27,13 @@ from app.core.broker_settings import (
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
-from app.infrastructure.storage import ensure_market_store_dir, intraday_history_store_path_for, history_store_path_for
+from app.infrastructure.storage import (
+    ensure_market_store_dir,
+    history_store_path_for,
+    intraday_history_store_path_for,
+    market_store_file_lock,
+    write_parquet_atomic,
+)
 from app.services.date_constraints import latest_completed_nyse_trading_day
 
 ONE_MINUTE_LOOKBACK_MONTHS = 6
@@ -835,20 +841,28 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
 
     new_dataset = fetch_longbridge_one_minute_history(ticker, settings, since=since)
 
-    if existing_df is not None:
-        # Merge new and old
-        combined = pd.concat([existing_df, new_dataset])
-        # Keep the latest record for any duplicate timestamps
-        combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+    with market_store_file_lock(path):
+        latest_existing_df: pd.DataFrame | None = existing_df
+        if path.exists():
+            try:
+                latest_existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+            except Exception:
+                latest_existing_df = existing_df
 
-        # Enforce the 6-month limit on the combined store
-        cut_off = one_minute_lookback_start().tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
-        combined = combined.loc[combined["Date"] >= cut_off].copy()
+        if latest_existing_df is not None and not latest_existing_df.empty:
+            # Merge new and old
+            combined = pd.concat([latest_existing_df, new_dataset])
+            # Keep the latest record for any duplicate timestamps
+            combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
 
-        combined.to_parquet(path, index=False)
-        return combined
-    else:
-        new_dataset.to_parquet(path, index=False)
+            # Enforce the 6-month limit on the combined store
+            cut_off = one_minute_lookback_start().tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
+            combined = combined.loc[combined["Date"] >= cut_off].copy()
+
+            write_parquet_atomic(path, combined, index=False)
+            return combined
+
+        write_parquet_atomic(path, new_dataset, index=False)
         return new_dataset
 
 

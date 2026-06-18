@@ -34,7 +34,9 @@ from app.infrastructure.storage import (
     ensure_market_store_dir,
     history_store_path_for,
     intraday_history_store_path_for,
+    market_store_file_lock,
     normalize_ticker,
+    write_parquet_atomic,
 )
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
@@ -212,19 +214,20 @@ def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
     if normalized_dataset.empty:
         raise ValueError(f"No 1-minute market data returned for {normalized_ticker}.")
 
-    if path.exists():
-        try:
-            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
-        except (ImportError, OSError, ValueError, KeyError) as exc:
-            LOGGER.warning("Unable to read existing 1-minute store for %s from %s: %s", normalized_ticker, path, exc)
-            existing_df = pd.DataFrame()
-        if not existing_df.empty:
-            normalized_dataset = pd.concat([existing_df, normalized_dataset], ignore_index=True)
-            normalized_dataset = normalized_dataset.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+    with market_store_file_lock(path):
+        if path.exists():
+            try:
+                existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+            except (ImportError, OSError, ValueError, KeyError) as exc:
+                LOGGER.warning("Unable to read existing 1-minute store for %s from %s: %s", normalized_ticker, path, exc)
+                existing_df = pd.DataFrame()
+            if not existing_df.empty:
+                normalized_dataset = pd.concat([existing_df, normalized_dataset], ignore_index=True)
+                normalized_dataset = normalized_dataset.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
 
-    cut_off = one_minute_lookback_start().tz_convert("America/New_York").tz_localize(None)
-    normalized_dataset = normalized_dataset.loc[normalized_dataset["Date"] >= cut_off].copy()
-    normalized_dataset.to_parquet(path, index=False)
+        cut_off = one_minute_lookback_start().tz_convert("America/New_York").tz_localize(None)
+        normalized_dataset = normalized_dataset.loc[normalized_dataset["Date"] >= cut_off].copy()
+        write_parquet_atomic(path, normalized_dataset, index=False)
     return path
 
 
@@ -431,14 +434,15 @@ def fetch_history(
     ensure_market_store_dir()
     path = history_store_path_for_interval(normalized_ticker, normalized_interval)
     if path.exists():
-        dataset = pd.read_parquet(path)
-        if is_intraday_market_interval(normalized_interval):
-            normalized_intraday = normalize_one_minute_store_frame(dataset)
-            if not normalized_intraday.equals(dataset):
-                normalized_intraday.to_parquet(path, index=False)
-            dataset = normalized_intraday
-        else:
-            dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
+        with market_store_file_lock(path):
+            dataset = pd.read_parquet(path)
+            if is_intraday_market_interval(normalized_interval):
+                normalized_intraday = normalize_one_minute_store_frame(dataset)
+                if not normalized_intraday.equals(dataset):
+                    write_parquet_atomic(path, normalized_intraday, index=False)
+                dataset = normalized_intraday
+            else:
+                dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
         return select_price_series(dataset, include_dividends)
 
     if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
@@ -449,7 +453,8 @@ def fetch_history(
 
     history = download_full_history(normalized_ticker, interval=normalized_interval)
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
-    normalized_dataset.to_parquet(path, index=False)
+    with market_store_file_lock(path):
+        write_parquet_atomic(path, normalized_dataset, index=False)
     return select_price_series(normalized_dataset, include_dividends)
 
 
@@ -461,16 +466,17 @@ def refresh_history_store(ticker: str) -> Path:
 
     start_date = None
     existing_df = None
-    if path.exists():
-        try:
-            existing_df = normalize_history_frame(pd.read_parquet(path), normalized_ticker)
-            if not existing_df.empty:
-                # Get the max date and go back 1 day to ensure overlap and consistency
-                max_date = pd.to_datetime(existing_df["Date"].max())
-                start_date = (max_date - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
-            LOGGER.warning("Unable to inspect existing daily history store for %s at %s: %s", normalized_ticker, path, exc)
-            existing_df = None
+    with market_store_file_lock(path):
+        if path.exists():
+            try:
+                existing_df = normalize_history_frame(pd.read_parquet(path), normalized_ticker)
+                if not existing_df.empty:
+                    # Get the max date and go back 1 day to ensure overlap and consistency
+                    max_date = pd.to_datetime(existing_df["Date"].max())
+                    start_date = (max_date - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.warning("Unable to inspect existing daily history store for %s at %s: %s", normalized_ticker, path, exc)
+                existing_df = None
 
     if start_date:
         # Incremental download logic
@@ -482,17 +488,24 @@ def refresh_history_store(ticker: str) -> Path:
             if not new_history.empty:
                 new_df = normalize_history_frame(new_history, normalized_ticker)
                 if existing_df is not None:
-                    existing_normalized = existing_df.reset_index(drop=True)
-                    existing_max_date = pd.to_datetime(existing_normalized["Date"].max(), errors="coerce")
-                    new_max_date = pd.to_datetime(new_df["Date"].max(), errors="coerce")
-                    if pd.notna(existing_max_date) and pd.notna(new_max_date) and new_max_date <= existing_max_date:
-                        return path
+                    with market_store_file_lock(path):
+                        try:
+                            latest_existing = normalize_history_frame(pd.read_parquet(path), normalized_ticker) if path.exists() else existing_df
+                        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                            LOGGER.warning("Unable to re-read daily history store for %s at %s: %s", normalized_ticker, path, exc)
+                            latest_existing = existing_df
 
-                    # Merge and drop duplicates, keeping newer data for the overlap
-                    combined = pd.concat([existing_normalized, new_df])
-                    combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
-                    if not combined.reset_index(drop=True).equals(existing_normalized):
-                        combined.to_parquet(path, index=False)
+                        existing_normalized = latest_existing.reset_index(drop=True)
+                        existing_max_date = pd.to_datetime(existing_normalized["Date"].max(), errors="coerce")
+                        new_max_date = pd.to_datetime(new_df["Date"].max(), errors="coerce")
+                        if pd.notna(existing_max_date) and pd.notna(new_max_date) and new_max_date <= existing_max_date:
+                            return path
+
+                        # Merge and drop duplicates, keeping newer data for the overlap
+                        combined = pd.concat([existing_normalized, new_df])
+                        combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+                        if not combined.reset_index(drop=True).equals(existing_normalized):
+                            write_parquet_atomic(path, combined, index=False)
                     return path
         except Exception as exc:
             # Fallback to full download if incremental fails
@@ -501,7 +514,8 @@ def refresh_history_store(ticker: str) -> Path:
     # Fallback / Initial download
     history = download_full_history(normalized_ticker)
     normalized_dataset = normalize_history_frame(history, normalized_ticker)
-    normalized_dataset.to_parquet(path, index=False)
+    with market_store_file_lock(path):
+        write_parquet_atomic(path, normalized_dataset, index=False)
     return path
 
 

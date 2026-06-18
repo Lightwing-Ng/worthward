@@ -193,6 +193,33 @@ def _write_parquet_table(path: Path, table: pd.DataFrame, columns: list[str]) ->
     tmp_path.replace(path)
 
 
+def write_parquet_atomic(path: Path, table: pd.DataFrame, *, index: bool = False) -> None:
+    ensure_market_store_dir()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.stem}.{uuid4().hex}.tmp{path.suffix}")
+    try:
+        table.to_parquet(tmp_path, index=index)
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+def write_json_atomic(path: Path, payload: object) -> None:
+    ensure_market_store_dir()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.stem}.{uuid4().hex}.tmp{path.suffix}")
+    try:
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
 def _table_lock_path(path: Path) -> Path:
     return path.with_name(f"{path.name}.lock")
 
@@ -233,6 +260,12 @@ def _parquet_table_lock(path: Path):
                         pass
             else:
                 yield
+
+
+@contextmanager
+def market_store_file_lock(path: Path):
+    with _parquet_table_lock(path):
+        yield
 
 
 def _utc_iso_timestamp(path: Path | None = None) -> str:
@@ -663,8 +696,14 @@ def delete_ticker_data(ticker: str) -> None:
     ensure_market_store_dir()
     normalized_ticker = normalize_ticker(ticker)
     history_path = history_store_path_for(normalized_ticker)
-    if history_path.exists():
-        history_path.unlink()
+    with market_store_file_lock(history_path):
+        if history_path.exists():
+            history_path.unlink()
+
+    intraday_history_path = intraday_history_store_path_for(normalized_ticker, "1m")
+    with market_store_file_lock(intraday_history_path):
+        if intraday_history_path.exists():
+            intraday_history_path.unlink()
 
     delete_profile_record(normalized_ticker)
     remove_search_cache_entries_for_ticker(normalized_ticker)

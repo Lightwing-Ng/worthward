@@ -146,9 +146,11 @@ from app.infrastructure.storage import (
     list_local_tickers,
     list_historical_tickers,
     load_profile_record,
+    market_store_file_lock,
     record_ticker_usage,
     record_strategy_usage,
     top_used_strategies,
+    write_json_atomic,
 )
 
 MAX_TICKERS = 5
@@ -346,23 +348,36 @@ def build_web_runtime() -> WebRuntime:
         return response
 
     def load_normalized_investment_payload() -> dict[str, Any]:
-        if not INVESTMENT_STORE_PATH.exists():
-            return {}
-        with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-            return normalize_investment_payload_tickers(json.load(f))
+        with market_store_file_lock(INVESTMENT_STORE_PATH):
+            if not INVESTMENT_STORE_PATH.exists():
+                return {}
+            with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+                return normalize_investment_payload_tickers(json.load(f))
 
     def write_investment_payload(payload: dict[str, Any]) -> None:
         normalized_payload = normalize_investment_payload_tickers(payload)
-        INVESTMENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        INVESTMENT_STORE_PATH.write_text(
-            json.dumps(
+        with market_store_file_lock(INVESTMENT_STORE_PATH):
+            write_json_atomic(
+                INVESTMENT_STORE_PATH,
                 cast(dict[str, Any], normalized_payload),
-                indent=2,
-                ensure_ascii=False,
             )
-            + "\n",
-            encoding="utf-8",
-        )
+
+    def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
+        with market_store_file_lock(INVESTMENT_STORE_PATH):
+            if INVESTMENT_STORE_PATH.exists():
+                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+                    current_payload = normalize_investment_payload_tickers(json.load(f))
+            else:
+                current_payload = {}
+            investment_payload = merge_investment_payloads(
+                current_payload,
+                imported_payload,
+            )
+            write_json_atomic(
+                INVESTMENT_STORE_PATH,
+                cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
+            )
+            return investment_payload
 
     def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -3639,11 +3654,12 @@ def build_web_runtime() -> WebRuntime:
         action = str(request.form.get("action", "market-data")).strip().lower() or "market-data"
         try:
             if action == "investment-transactions":
-                if INVESTMENT_STORE_PATH.exists():
-                    INVESTMENT_STORE_PATH.unlink()
-                    notice = "Cleared the local broker transaction record stored in settings_store/investment.json."
-                else:
-                    notice = "No local broker transaction record was found in settings_store/investment.json."
+                with market_store_file_lock(INVESTMENT_STORE_PATH):
+                    if INVESTMENT_STORE_PATH.exists():
+                        INVESTMENT_STORE_PATH.unlink()
+                        notice = "Cleared the local broker transaction record stored in settings_store/investment.json."
+                    else:
+                        notice = "No local broker transaction record was found in settings_store/investment.json."
             else:
                 cache_summary = clear_non_historical_market_cache()
                 reset_connectivity_caches()
@@ -3980,18 +3996,18 @@ def build_web_runtime() -> WebRuntime:
                     "error": f"{broker.upper()} investment import is not implemented yet.",
                 }), 400
 
-            investment_payload = merge_investment_payloads(
+            investment_payload_preview = merge_investment_payloads(
                 load_normalized_investment_payload(),
                 imported_payload,
             )
 
             freshness_refresh_failures = ensure_latest_daily_caches(
                 exclude_configured_money_market_tickers(
-                    extract_all_investment_tickers(investment_payload)
+                    extract_all_investment_tickers(investment_payload_preview)
                 )
             )
 
-            write_investment_payload(investment_payload)
+            investment_payload = merge_and_write_investment_payload(imported_payload)
 
             return jsonify({
                 "success": True,
@@ -4041,19 +4057,24 @@ def build_web_runtime() -> WebRuntime:
                     "error": "No local investment store exists yet.",
                 }), 400
 
-            investment_payload = load_normalized_investment_payload()
-            next_bindings = normalize_investment_internal_transfer_bindings(
-                investment_payload.get("manual_internal_transfer_bindings")
-            )
-            if target_key:
-                for existing_source_key, existing_target_key in list(next_bindings.items()):
-                    if existing_source_key != source_key and existing_target_key == target_key:
-                        del next_bindings[existing_source_key]
-                next_bindings[source_key] = target_key
-            else:
-                next_bindings.pop(source_key, None)
-            investment_payload["manual_internal_transfer_bindings"] = next_bindings
-            write_investment_payload(investment_payload)
+            with market_store_file_lock(INVESTMENT_STORE_PATH):
+                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
+                    investment_payload = normalize_investment_payload_tickers(json.load(f))
+                next_bindings = normalize_investment_internal_transfer_bindings(
+                    investment_payload.get("manual_internal_transfer_bindings")
+                )
+                if target_key:
+                    for existing_source_key, existing_target_key in list(next_bindings.items()):
+                        if existing_source_key != source_key and existing_target_key == target_key:
+                            del next_bindings[existing_source_key]
+                    next_bindings[source_key] = target_key
+                else:
+                    next_bindings.pop(source_key, None)
+                investment_payload["manual_internal_transfer_bindings"] = next_bindings
+                write_json_atomic(
+                    INVESTMENT_STORE_PATH,
+                    cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
+                )
             return jsonify({
                 "success": True,
                 "manual_internal_transfer_bindings": next_bindings,
