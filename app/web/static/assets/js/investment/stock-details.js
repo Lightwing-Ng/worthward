@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.1.0
+ * Code version: v0.2.1
+ * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
+ * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
 export function createInvestmentStockDetailsUtils({
@@ -72,6 +74,7 @@ export function createInvestmentStockDetailsUtils({
     shouldTrackHoldingTicker,
     syncInvestmentHoverLinkedViews,
     syncInvestmentStockDetailsDonutFromInteraction,
+    syncInvestmentSharePreview,
     waitForInvestmentStableElementBox,
 }) {
     function buildInvestmentStockDetailRows(processedTransactions, ticker) {
@@ -418,6 +421,18 @@ export function createInvestmentStockDetailsUtils({
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
+        const latestVisibleLabel = String(labels[labels.length - 1] || '');
+        const latestAvailableLabel = String(
+            useIntradayCandles
+                ? intradayRows[intradayRows.length - 1]?.date || ''
+                : fullLabels[fullLabels.length - 1] || ''
+        );
+        const shouldRenderRealtimePulse = Boolean(
+            latestVisibleLabel
+            && latestAvailableLabel
+            && latestVisibleLabel === latestAvailableLabel
+            && !(normalizedRange === 'auto' && stockDetailsAutoRangeContext?.isOpenPosition === false)
+        );
 
         await waitForInvestmentStableElementBox(chartHost, {
             minimumWidth: 160,
@@ -425,8 +440,18 @@ export function createInvestmentStockDetailsUtils({
         });
         if (renderRequestId !== getInvestmentStockDetailsPriceChartRequestSerial()) return;
 
-        chartHost.innerHTML = '<canvas class="investment-stock-details-price-chart-canvas"></canvas>';
+        chartHost.innerHTML = `
+            <div class="investment-stock-details-price-chart-stage">
+                <canvas class="investment-stock-details-price-chart-canvas"></canvas>
+                <div class="investment-stock-details-live-marker" data-investment-stock-details-live-marker hidden aria-hidden="true">
+                    <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-outer"></span>
+                    <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-inner"></span>
+                    <span class="investment-stock-details-live-marker-core"></span>
+                </div>
+            </div>
+        `;
         const canvas = chartHost.querySelector('canvas');
+        const realtimeMarkerElement = chartHost.querySelector('[data-investment-stock-details-live-marker]');
         if (!(canvas instanceof HTMLCanvasElement)) return;
 
         const chronologicalRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
@@ -937,6 +962,35 @@ export function createInvestmentStockDetailsUtils({
                 drawMarkerGroup(tradeMarkerPoints.sell, resolvedTheme.accentSecondary);
             },
         };
+        const realtimeEndMarkerPlugin = {
+            id: 'investmentStockDetailsRealtimeEndMarkerPlugin',
+            afterDatasetsDraw(chartInstance) {
+                if (!shouldRenderRealtimePulse || !(realtimeMarkerElement instanceof HTMLElement)) return;
+                const dataset = chartInstance.data?.datasets?.[0];
+                const lastIndex = Math.max(0, labels.length - 1);
+                const pointValue = Number(dataset?.data?.[lastIndex]);
+                const xScale = chartInstance.scales?.x;
+                const yScale = chartInstance.scales?.y;
+                const chartArea = chartInstance.chartArea;
+                if (!Number.isFinite(pointValue) || !xScale || !yScale || !chartArea) {
+                    realtimeMarkerElement.hidden = true;
+                    return;
+                }
+                const x = Number(xScale.getPixelForValue(lastIndex));
+                const y = Number(yScale.getPixelForValue(pointValue));
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                    realtimeMarkerElement.hidden = true;
+                    return;
+                }
+                if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) {
+                    realtimeMarkerElement.hidden = true;
+                    return;
+                }
+                realtimeMarkerElement.style.left = `${x}px`;
+                realtimeMarkerElement.style.top = `${y}px`;
+                realtimeMarkerElement.hidden = false;
+            },
+        };
         const getOrCreateTooltip = () => {
             let tooltip = document.querySelector('[data-investment-stock-details-tooltip="1"]');
             if (tooltip) return tooltip;
@@ -1082,6 +1136,15 @@ export function createInvestmentStockDetailsUtils({
             tooltipEl.classList.add('is-visible');
         };
 
+        let didNotifyChartReady = false;
+        const notifyChartReady = () => {
+            if (didNotifyChartReady) return;
+            didNotifyChartReady = true;
+            if (typeof syncInvestmentSharePreview === 'function') {
+                syncInvestmentSharePreview();
+            }
+        };
+
         const chartInstance = new window.Chart(canvas, {
             type: 'line',
             data: {
@@ -1119,12 +1182,15 @@ export function createInvestmentStockDetailsUtils({
                 layout: {
                     padding: {
                         left: STOCK_DETAILS_MARKER_X_PADDING_PX,
-                        right: STOCK_DETAILS_MARKER_X_PADDING_PX,
-                        top: 44,
+                        right: shouldRenderRealtimePulse ? 32 : STOCK_DETAILS_MARKER_X_PADDING_PX,
+                        top: shouldRenderRealtimePulse ? 32 : 44,
                         bottom: 24,
                     },
                 },
                 interaction: { mode: 'index', intersect: false },
+                animation: {
+                    onComplete: notifyChartReady,
+                },
                 plugins: {
                     legend: { display: false },
                     tooltip: { enabled: false, external: externalTooltipHandler },
@@ -1156,9 +1222,10 @@ export function createInvestmentStockDetailsUtils({
                     },
                 },
             },
-            plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin],
+            plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin, realtimeEndMarkerPlugin],
         });
         setInvestmentStockDetailsPriceChartInstance(chartInstance);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(notifyChartReady));
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;
         const TRADE_MARKER_SNAP_VERTICAL_PX = 20;

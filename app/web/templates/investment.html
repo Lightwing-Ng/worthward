@@ -113,6 +113,28 @@
                          hidden></div>
                 </div>
             </div>
+            <section class="investment-share-preview-demo"
+                     id="investment_share_preview_demo"
+                     aria-label="Investment share preview"
+                     hidden>
+                <div class="investment-share-preview-toolbar">
+                    <div class="investment-share-preview-status" aria-live="polite">
+                        <p class="investment-share-preview-kicker">Investment share preview</p>
+                        <p class="investment-share-preview-view" id="investment_share_preview_view_label">Overview</p>
+                    </div>
+                    <button type="button"
+                            class="investment-share-action-button investment-share-preview-mask-button"
+                            id="investment_share_preview_mask_button"
+                            aria-label="Mask Sensitive Values"
+                            title="Mask Sensitive Values"
+                            aria-pressed="false">
+                        <span class="icon"
+                              style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);">
+                        </span>
+                    </button>
+                </div>
+                <div class="investment-share-preview-shell" id="investment_share_preview_shell"></div>
+            </section>
         </article>
 
         <article class="chart-surface investment-history-surface" id="investment_history_surface">
