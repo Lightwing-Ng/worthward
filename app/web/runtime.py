@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.23
+Code version: v0.3.25
 """
 
 from __future__ import annotations
@@ -381,7 +381,19 @@ def build_web_runtime() -> WebRuntime:
                 INVESTMENT_STORE_PATH,
                 cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
             )
-            return investment_payload
+            return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
+
+    def refresh_investment_import_price_caches(
+        imported_payload: dict[str, Any],
+    ) -> list[str]:
+        try:
+            return ensure_latest_daily_caches(
+                exclude_configured_money_market_tickers(
+                    extract_all_investment_tickers(imported_payload)
+                )
+            )
+        except Exception as exc:
+            return [f"Price cache refresh failed after import: {exc}"]
 
     def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1476,7 +1488,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--investment-community-share-section-gap", 10, 0),
                     px_token("--investment-community-share-section-radius", 16, 0),
                     px_token("--investment-community-share-footer-brand-size", 44, 0),
-                    px_token("--investment-community-share-footer-qr-size", 52, 0),
+                    px_token("--investment-community-share-footer-qr-size", 44, 0),
                     material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
                     material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
                     material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),
@@ -4051,18 +4063,10 @@ def build_web_runtime() -> WebRuntime:
                     "error": f"{broker.upper()} investment import is not implemented yet.",
                 }), 400
 
-            investment_payload_preview = merge_investment_payloads(
-                load_normalized_investment_payload(),
-                imported_payload,
-            )
-
-            freshness_refresh_failures = ensure_latest_daily_caches(
-                exclude_configured_money_market_tickers(
-                    extract_all_investment_tickers(investment_payload_preview)
-                )
-            )
-
             investment_payload = merge_and_write_investment_payload(imported_payload)
+            freshness_refresh_failures = refresh_investment_import_price_caches(
+                imported_payload
+            )
 
             return jsonify({
                 "success": True,

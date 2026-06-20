@@ -1,4 +1,4 @@
-/* Code version: v0.3.5 */
+/* Code version: v0.3.6 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -752,9 +752,9 @@
 
     const STYLE_TOKEN_SHARE_PREVIEW_VIEWS = [
         {id: "chart", title: "Overview", subtitle: ""},
-        {id: "holdings", title: "Holdings", subtitle: "Top 5 rows plus summary"},
-        {id: "stock_details", title: "Stock details", subtitle: "NVDA · NVIDIA Corporation"},
-        {id: "metrics", title: "Metrics", subtitle: "Portfolio summary"},
+        {id: "holdings", title: "Holdings", subtitle: ""},
+        {id: "stock_details", title: "Stock details", subtitle: ""},
+        {id: "metrics", title: "Metrics", subtitle: ""},
     ];
 
     const createStyleTokenDemoElement = (tagName, className = "", textContent = null) => {
@@ -1076,7 +1076,7 @@
         demoShell.dataset.styleTokenSharePreviewView = currentView.id;
         card.dataset.shareView = currentView.id;
         card.setAttribute("aria-label", `${currentView.title} community share template`);
-        title.textContent = currentView.title;
+        title.textContent = "Overview";
         viewLabel.textContent = currentView.title;
         if (subtitle instanceof HTMLElement) {
             subtitle.textContent = currentView.subtitle;

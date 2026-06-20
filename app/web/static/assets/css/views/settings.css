@@ -1,4 +1,4 @@
-/* Code version: v0.4.5 */
+/* Code version: v0.4.6 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1204,8 +1204,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .style-token-demo .investment-community-share-footer-qr svg {
     display: block;
-    width: 64px;
-    height: 64px;
+    width: 100%;
+    height: 100%;
 }
 
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-header > div.investment-community-share-heading > p.investment-community-share-title {
@@ -1221,20 +1221,12 @@ section#investment-community-share-card .style-token-investment-share-preview-sh
 
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer {
     padding: 16px;
-    align-items: end;
+    align-items: center;
 }
 
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > img.investment-community-share-footer-brand-icon,
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr {
-    align-self: end;
-}
-
-section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr {
-    position: relative;
-}
-
-section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-footer > div.investment-community-share-footer-qr > svg {
-    position: absolute;
+    align-self: center;
 }
 
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(1) > div.investment-community-share-chart-shell > canvas.style-token-investment-share-chart-canvas {

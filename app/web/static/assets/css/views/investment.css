@@ -1,4 +1,4 @@
-/* Code version: v1.14.0 */
+/* Code version: v1.14.2 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -935,7 +935,7 @@
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 360px minmax(256px, 1fr);
+    grid-template-rows: 360px minmax(0, 1fr);
     align-items: stretch;
 }
 
@@ -952,7 +952,7 @@
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-body > .investment-community-share-section:nth-child(2),
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-body > .investment-community-share-section:nth-child(2) > .investment-community-share-overview-donut {
     height: 100%;
-    min-height: 256px;
+    min-height: 0;
 }
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-body > .investment-community-share-section:nth-child(2) > .investment-community-share-overview-donut {
@@ -983,6 +983,12 @@
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+}
+
+.investment-community-share-card .investment-stock-details-identity,
+.investment-community-share-card .style-token-investment-share-stock-identity {
+    --ticker-identity-logo-height: var(--investment-community-share-footer-brand-size, 44px);
+    --ticker-identity-logo-max-width: var(--investment-community-share-footer-brand-size, 44px);
 }
 
 .investment-community-share-card .investment-stock-details-metrics {
@@ -1022,13 +1028,13 @@
 }
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-overview-donut .portfolio-donut-orbit {
-    --portfolio-donut-orbit-donut-size: 188px;
-    --portfolio-donut-orbit-ring-width: 16px;
-    --portfolio-donut-orbit-logo-size: 28px;
+    --portfolio-donut-orbit-donut-size: 236px;
+    --portfolio-donut-orbit-ring-width: 18px;
+    --portfolio-donut-orbit-logo-size: 32px;
     width: 100%;
     height: 100%;
-    max-width: 256px;
-    max-height: 256px;
+    max-width: 100%;
+    max-height: 100%;
     margin: 0 auto;
 }
 
@@ -1054,7 +1060,7 @@
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-footer {
     padding: 16px;
-    align-items: end;
+    align-items: center;
 }
 
 .investment-community-share-footer-primary {
@@ -1101,8 +1107,8 @@
 }
 
 .investment-community-share-footer-qr {
-    width: var(--investment-community-share-footer-qr-size, 13.5mm);
-    height: var(--investment-community-share-footer-qr-size, 13.5mm);
+    width: var(--investment-community-share-footer-qr-size, var(--investment-community-share-footer-brand-size, 11.5mm));
+    height: var(--investment-community-share-footer-qr-size, var(--investment-community-share-footer-brand-size, 11.5mm));
     flex: 0 0 auto;
     color: #0055cc;
     background: transparent;
@@ -1110,17 +1116,7 @@
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-footer-brand-icon,
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-footer-qr {
-    align-self: end;
-}
-
-.investment-community-share-card[data-share-view="chart"] .investment-community-share-footer-qr {
-    position: relative;
-}
-
-.investment-community-share-card[data-share-view="chart"] .investment-community-share-footer-qr > svg {
-    position: absolute;
-    width: 64px;
-    height: 64px;
+    align-self: center;
 }
 
 .investment-community-share-footer-qr svg,

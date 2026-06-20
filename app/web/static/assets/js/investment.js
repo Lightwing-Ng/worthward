@@ -1,7 +1,17 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.46.1
+ * Code version: v1.47.1
+ * - Fixed: Overview share export now preserves identical curve coordinates when masking and replaces y-axis values with masked markers.
+ * - Fixed: Holdings share export now eagerly resolves row logo assets and times out stalled screenshot encoding instead of leaving the output button busy.
+ * - Changed: Investment share templates now keep the fixed Overview title and align footer brand and QR sizing across all four exported views.
+ * - Fixed: Investment share image capture now loads the screenshot renderer locally before falling back to CDN and reports stage timings.
+ * - Fixed: Stock details intraday quote loading now stays off outside pre-market, regular, and post-market sessions.
+ * - Fixed: Investment live values now stop polling and reset outside pre-market, regular, and post-market sessions.
+ * - Fixed: Investment overview realtime pulse now only appears during pre-market, regular, or post-market sessions.
+ * - Added: IBKR import feedback now reports incremental added and duplicate record counts
+ * - Refined: Overview community share PNG export now redraws the equity chart on a share-card canvas so the curve uses the allocated height
+ * - Refined: Overview community share PNG export now renders equity chart axis labels at 23 px
  * - Fixed: Overview community share PNG export now freezes donut satellite logos at their final orbit positions before capture
  * - Changed: Overview community share PNG export now uses the same 540 px token grid as the style-token preview
  * - Added: Investment share preview now renders the same community share card used by PNG export and refreshes across all four investment tabs
@@ -276,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_HISTORY_PAGE_SIZE = 50;
     const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
+    const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
     const investmentStockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
@@ -419,6 +430,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeHoldingsHoverLedgerNo = 0;
     let investmentChartPointsCache = [];
     let investmentBaseChartPointsCache = [];
+    let investmentBaseLatestPricesCache = {};
     let investmentLatestPricesCache = {};
     let investmentSharedChartDateRange = [];
     let investmentChartPointIndexByLedgerNo = new Map();
@@ -587,6 +599,92 @@ document.addEventListener('DOMContentLoaded', () => {
         return window.ANTIGRAVITY_APP?.endpoints?.investmentRealtimeQuotes || '/api/investment/realtime-quotes';
     }
 
+    function shouldShowInvestmentRealtimePulse(session) {
+        return ['pre', 'intraday', 'post'].includes(String(session || '').trim().toLowerCase());
+    }
+
+    function getInvestmentNewYorkClockParts(date = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        }).formatToParts(date).reduce((nextParts, part) => {
+            nextParts[part.type] = part.value;
+            return nextParts;
+        }, {});
+        return {
+            dateKey: `${parts.year || ''}-${parts.month || ''}-${parts.day || ''}`,
+            weekday: String(parts.weekday || ''),
+            hour: Number(parts.hour),
+            minute: Number(parts.minute),
+        };
+    }
+
+    function getInvestmentRealtimeClockSession(date = new Date()) {
+        const { weekday, hour, minute } = getInvestmentNewYorkClockParts(date);
+        if (weekday === 'Sat' || weekday === 'Sun' || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+            return 'off';
+        }
+        const totalMinutes = (hour * 60) + minute;
+        const intradayOpenMinutes = (9 * 60) + 30;
+        const intradayCloseMinutes = 16 * 60;
+        const premarketOpenMinutes = 4 * 60;
+        const postmarketCloseMinutes = 20 * 60;
+        if (totalMinutes >= intradayOpenMinutes && totalMinutes < intradayCloseMinutes) return 'intraday';
+        if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
+        if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
+        return 'off';
+    }
+
+    function shouldRunInvestmentRealtimeQuotes() {
+        return shouldShowInvestmentRealtimePulse(getInvestmentRealtimeClockSession());
+    }
+
+    function getInvestmentRealtimeQuoteDateKey(quote) {
+        const match = String(quote?.timestamp || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
+    }
+
+    function shouldUseInvestmentRealtimeQuote(quote) {
+        const currentDateKey = getInvestmentNewYorkClockParts().dateKey;
+        const quoteDateKey = getInvestmentRealtimeQuoteDateKey(quote);
+        return (
+            shouldShowInvestmentRealtimePulse(quote?.session)
+            && Boolean(currentDateKey)
+            && quoteDateKey === currentDateKey
+        );
+    }
+
+    function resetInvestmentRealtimeState() {
+        const baseChartPoints = Array.isArray(investmentBaseChartPointsCache)
+            ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
+            : [];
+        const hasRealtimePoint = Array.isArray(investmentChartPointsCache)
+            && investmentChartPointsCache.some((point) => point?.is_realtime === true);
+        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
+            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
+            : null;
+        if (!hasRealtimePoint || !baseChartPoints.length || !latestSnapshot) return;
+        const baseLatestPrices = investmentBaseLatestPricesCache && typeof investmentBaseLatestPricesCache === 'object'
+            ? { ...investmentBaseLatestPricesCache }
+            : {};
+        investmentLatestPricesCache = { ...baseLatestPrices };
+        investmentChartPointsCache = [...baseChartPoints];
+        updateDashboardWithEquity(
+            investmentProcessedTransactionsCache,
+            latestSnapshot,
+            baseLatestPrices,
+            investmentRawTransactionsCache,
+            baseChartPoints,
+            investmentTickerClosePricesCache,
+        );
+    }
+
     function getInvestmentRealtimeOpenTickers() {
         const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
             ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
@@ -713,14 +811,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyInvestmentRealtimeQuotes(quotes = []) {
-        (Array.isArray(quotes) ? quotes : []).forEach((quote) => {
+        const liveSessionQuotes = (Array.isArray(quotes) ? quotes : [])
+            .filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        if (!liveSessionQuotes.length) {
+            resetInvestmentRealtimeState();
+            return;
+        }
+        liveSessionQuotes.forEach((quote) => {
             const ticker = normalizeInvestmentTicker(quote?.ticker);
             const price = Number(quote?.price);
             if (ticker && Number.isFinite(price) && price > 0) {
                 investmentLatestPricesCache[ticker] = price;
             }
         });
-        const liveChartPoints = buildInvestmentRealtimeChartPoints(quotes);
+        const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
         if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
         investmentChartPointsCache = liveChartPoints;
         renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, liveChartPoints, { resetPage: false, scrollToTop: false });
@@ -740,15 +844,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentRealtimeQuoteTimer) {
             window.clearTimeout(investmentRealtimeQuoteTimer);
         }
+        const delayMs = shouldRunInvestmentRealtimeQuotes()
+            ? INVESTMENT_REALTIME_QUOTE_POLL_MS
+            : INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS;
         investmentRealtimeQuoteTimer = window.setTimeout(() => {
             pollInvestmentRealtimeQuotes();
-        }, INVESTMENT_REALTIME_QUOTE_POLL_MS);
+        }, delayMs);
     }
 
     async function pollInvestmentRealtimeQuotes() {
         if (investmentPageDisposed || investmentRealtimeQuoteInflight) return;
         const tickers = getInvestmentRealtimeOpenTickers();
         if (!tickers.length) return;
+        if (!shouldRunInvestmentRealtimeQuotes()) {
+            resetInvestmentRealtimeState();
+            scheduleInvestmentRealtimeQuotePolling();
+            return;
+        }
         investmentRealtimeQuoteInflight = true;
         investmentRealtimeQuoteAbortController = new AbortController();
         const params = new URLSearchParams();
@@ -1455,6 +1567,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
         if (!normalizedTicker || !isInvestmentStockDetailsIntradayRange(normalizedRange)) return [];
+        if (!shouldRunInvestmentRealtimeQuotes()) return [];
         const cacheKey = `${normalizedTicker}:${normalizedRange}`;
         if (investmentStockDetailsIntradayCache.has(cacheKey)) {
             return investmentStockDetailsIntradayCache.get(cacheKey) || [];
@@ -1804,6 +1917,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentStockDetailsPriceChartInstance: (value) => {
             investmentStockDetailsPriceChartInstance = value;
         },
+        shouldRunInvestmentRealtimeQuotes,
         shouldTrackHoldingTicker,
         syncInvestmentHoverLinkedViews,
         syncInvestmentStockDetailsDonutFromInteraction,
@@ -2697,14 +2811,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildIbkrImportFeedbackMessage({
+        importSummary = null,
         refreshNotice = '',
         valuationNotice = '',
         pendingTransferCount = 0,
     } = {}) {
+        const incrementalImport = importSummary && typeof importSummary === 'object'
+            ? importSummary.incremental_import
+            : null;
+        const importedRecordCount = Number(incrementalImport?.imported_record_count);
+        const addedRecordCount = Number(incrementalImport?.added_record_count);
+        const duplicateRecordCount = Number(incrementalImport?.duplicate_record_count);
         const items = [
             'Matching records were merged incrementally into the local investment store without clearing older data first.',
             'The server does not store your original CSV files. They were processed in memory and discarded after the import finished.',
         ];
+        if (
+            Number.isFinite(importedRecordCount)
+            && Number.isFinite(addedRecordCount)
+            && Number.isFinite(duplicateRecordCount)
+        ) {
+            items.unshift(
+                `This run parsed ${importedRecordCount.toLocaleString('en-US')} records, added ${addedRecordCount.toLocaleString('en-US')}, and treated ${duplicateRecordCount.toLocaleString('en-US')} as already present.`
+            );
+        }
         if (pendingTransferCount > 0) {
             items.push(
                 `Immediate action: Review and bind ${pendingTransferCount} possible HSBC transfer ${pendingTransferCount === 1 ? 'match' : 'matches'} in Transaction history to remove duplicate-equity spikes.`
@@ -3781,6 +3911,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentShareViewTitle(view = activeInvestmentView) {
+        void view;
+        return 'Overview';
+    }
+
+    function getInvestmentShareViewLabel(view = activeInvestmentView) {
         switch (normalizeInvestmentView(view)) {
             case 'holdings':
                 return 'Holdings';
@@ -3795,19 +3930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentShareViewSubtitle(view = activeInvestmentView) {
-        const normalizedView = normalizeInvestmentView(view);
-        if (normalizedView === 'stock_details') {
-            const symbol = String(
-                investmentStockDetailsPanel?.querySelector('.ticker-identity-symbol')?.textContent
-                || formatInvestmentTickerForDisplay(ensureSelectedInvestmentStockTicker())
-                || ''
-            ).trim();
-            const company = String(investmentStockDetailsPanel?.querySelector('.ticker-identity-name')?.textContent || '').trim();
-            return company ? `${symbol} · ${company}` : symbol;
-        }
-        if (normalizedView === 'holdings') {
-            return 'Top 5 rows plus summary';
-        }
+        void view;
         return '';
     }
 
@@ -3998,13 +4121,129 @@ document.addEventListener('DOMContentLoaded', () => {
         return section;
     }
 
-    function createInvestmentShareChartImage(canvas) {
+    function parseInvestmentShareChartDate(value) {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) return null;
+        return {
+            year: Number(match[1]),
+            monthIndex: Number(match[2]) - 1,
+            day: Number(match[3]),
+        };
+    }
+
+    function buildInvestmentShareChartTickIndexes(count) {
+        if (count <= 0) return [];
+        if (count === 1) return [0];
+        return Array.from(new Set([
+            0,
+            Math.round((count - 1) / 3),
+            Math.round(((count - 1) * 2) / 3),
+            count - 1,
+        ])).sort((left, right) => left - right);
+    }
+
+    function formatInvestmentShareChartAxisValue(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return '';
+        const maximumFractionDigits = Math.abs(numericValue) >= 100 ? 0 : 2;
+        return new Intl.NumberFormat('en-US', {
+            maximumFractionDigits,
+        }).format(numericValue);
+    }
+
+    function createInvestmentShareEquityChartDataUrl() {
+        const runtimeState = investmentEquityChartRuntimeState;
+        const values = (Array.isArray(runtimeState?.equity) ? runtimeState.equity : [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value));
+        const rawDates = Array.isArray(runtimeState?.rawDates) ? runtimeState.rawDates : [];
+        if (!values.length || rawDates.length !== values.length) return null;
+
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = 1020;
+        exportCanvas.height = 720;
+        const context = exportCanvas.getContext('2d');
+        if (!context) return null;
+
+        const resolvedTheme = resolveInvestmentTheme();
+        const padding = {
+            top: 18,
+            right: 30,
+            bottom: 86,
+            left: 142,
+        };
+        const plotWidth = exportCanvas.width - padding.left - padding.right;
+        const plotHeight = exportCanvas.height - padding.top - padding.bottom;
+        const minValue = Math.min(...values);
+        const maxValue = Math.max(...values);
+        const valueRange = Math.max(maxValue - minValue, Math.abs(maxValue || 1) * 0.02, 1);
+        const chartMin = minValue - (valueRange * 0.025);
+        const chartMax = maxValue + (valueRange * 0.025);
+        const chartRange = chartMax - chartMin || 1;
+        const xForIndex = (index) => padding.left + ((plotWidth / Math.max(values.length - 1, 1)) * index);
+        const yForValue = (value) => padding.top + plotHeight - (((value - chartMin) / chartRange) * plotHeight);
+        const axisFont = '700 23px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+
+        context.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+        context.font = axisFont;
+        context.fillStyle = resolvedTheme.muted;
+
+        context.textAlign = 'right';
+        context.textBaseline = 'middle';
+        for (let index = 1; index <= 5; index += 1) {
+            const value = chartMin + ((chartRange / 6) * index);
+            const label = investmentShareMaskEnabled ? '***' : formatInvestmentShareChartAxisValue(value);
+            context.fillText(label, padding.left - 14, yForValue(value));
+        }
+
+        context.textBaseline = 'top';
+        buildInvestmentShareChartTickIndexes(values.length).forEach((index, tickIndex, tickIndexes) => {
+            const parsedDate = parseInvestmentShareChartDate(rawDates[index]);
+            if (!parsedDate) return;
+            const [firstLine, secondLine] = formatInvestmentFullDateLines(parsedDate, { allowWrap: true });
+            const x = xForIndex(index);
+            if (tickIndex === 0) context.textAlign = 'left';
+            else if (tickIndex === tickIndexes.length - 1) context.textAlign = 'right';
+            else context.textAlign = 'center';
+            context.fillText(firstLine, x, exportCanvas.height - 58);
+            context.fillText(secondLine, x, exportCanvas.height - 31);
+        });
+
+        context.strokeStyle = resolvedTheme.accentPrimary;
+        context.lineWidth = 6;
+        context.lineJoin = 'round';
+        context.lineCap = 'round';
+        context.beginPath();
+        values.forEach((value, index) => {
+            const x = xForIndex(index);
+            const y = yForValue(value);
+            if (index === 0) {
+                context.moveTo(x, y);
+                return;
+            }
+            context.lineTo(x, y);
+        });
+        context.stroke();
+
+        return exportCanvas.toDataURL('image/png');
+    }
+
+    function createInvestmentShareChartDataUrl(canvas) {
         if (!(canvas instanceof HTMLCanvasElement)) return null;
+        if (canvas.id === 'investmentEquityChart') {
+            return createInvestmentShareEquityChartDataUrl() || canvas.toDataURL('image/png');
+        }
+        return canvas.toDataURL('image/png');
+    }
+
+    function createInvestmentShareChartImage(canvas) {
+        const chartDataUrl = createInvestmentShareChartDataUrl(canvas);
+        if (!chartDataUrl) return null;
         const image = document.createElement('img');
         image.className = 'investment-community-share-chart-image';
         image.alt = '';
         image.decoding = 'sync';
-        image.src = canvas.toDataURL('image/png');
+        image.src = chartDataUrl;
         return image;
     }
 
@@ -4111,7 +4350,7 @@ document.addEventListener('DOMContentLoaded', () => {
             logo.className = 'ticker-identity-logo';
             logo.alt = '';
             logo.hidden = true;
-            logo.loading = 'lazy';
+            logo.loading = 'eager';
             logo.decoding = 'async';
             logo.dataset.investmentLogoImage = '';
             logo.dataset.logoUrl = JSON.stringify(logoUrls);
@@ -4136,6 +4375,12 @@ document.addEventListener('DOMContentLoaded', () => {
             copy.append(symbol, name);
             row.append(logo, placeholder, copy);
             wrapper.append(row);
+            syncInvestmentTickerLogoAsset(
+                logo,
+                placeholder,
+                logoUrls,
+                normalizedTicker ? `${normalizedTicker} logo` : '',
+            );
             return wrapper;
         };
 
@@ -4241,24 +4486,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const timestamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d{3}Z$/, 'Z');
         const suffix = activeInvestmentView === 'stock_details'
             ? (ensureSelectedInvestmentStockTicker() || 'stock-details').toLowerCase()
-            : activeInvestmentView;
+            : getInvestmentShareViewLabel(activeInvestmentView).toLowerCase().replace(/\s+/g, '-');
         return `investment-${suffix}-${timestamp}.png`;
     }
 
     async function ensureInvestmentScreenshotLibrary() {
         if (window.domtoimage?.toBlob) return window.domtoimage;
         if (investmentScreenshotLibraryPromise) return investmentScreenshotLibraryPromise;
-        investmentScreenshotLibraryPromise = new Promise((resolve, reject) => {
+        const loadScript = (src, sourceLabel) => new Promise((resolve, reject) => {
             const existingScript = document.querySelector('script[data-investment-screenshot-library="dom-to-image-more"]');
-            if (existingScript) {
+            if (existingScript && existingScript.src === new URL(src, window.location.href).href) {
                 existingScript.addEventListener('load', () => resolve(window.domtoimage), { once: true });
                 existingScript.addEventListener('error', () => reject(new Error('Failed to load screenshot library.')), { once: true });
                 return;
             }
             const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/dom-to-image-more@3.6.0/dist/dom-to-image-more.min.js';
+            script.src = src;
             script.async = true;
             script.dataset.investmentScreenshotLibrary = 'dom-to-image-more';
+            script.dataset.investmentScreenshotLibrarySource = sourceLabel;
             script.addEventListener('load', () => {
                 if (window.domtoimage?.toBlob) {
                     resolve(window.domtoimage);
@@ -4270,21 +4516,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 reject(new Error('Failed to load screenshot library.'));
             }, { once: true });
             document.head.appendChild(script);
-        }).catch((error) => {
+        });
+        investmentScreenshotLibraryPromise = loadScript(
+            '/static/assets/js/vendor/dom-to-image-more.min.js',
+            'local',
+        ).catch(() => loadScript(
+            'https://cdn.jsdelivr.net/npm/dom-to-image-more@3.6.0/dist/dom-to-image-more.min.js',
+            'cdn',
+        )).catch((error) => {
             investmentScreenshotLibraryPromise = null;
             throw error;
         });
         return investmentScreenshotLibraryPromise;
     }
 
+    function debugInvestmentShareCaptureTiming(label, startedAt) {
+        const elapsedMs = Math.round(performance.now() - startedAt);
+        console.debug(`[Investment share capture] ${label}: ${elapsedMs} ms`);
+    }
+
     function waitForInvestmentShareImages(root) {
         const images = Array.from(root.querySelectorAll('img'));
         const pendingImages = images.filter((image) => !image.complete);
         if (!pendingImages.length) return Promise.resolve();
-        return Promise.allSettled(pendingImages.map((image) => new Promise((resolve) => {
+        const imageSettled = Promise.allSettled(pendingImages.map((image) => new Promise((resolve) => {
             image.addEventListener('load', resolve, { once: true });
             image.addEventListener('error', resolve, { once: true });
         })));
+        const timeout = new Promise((resolve) => window.setTimeout(resolve, 1500));
+        return Promise.race([imageSettled, timeout]);
+    }
+
+    function withInvestmentShareTimeout(promise, timeoutMs, timeoutMessage) {
+        let timeoutId = 0;
+        const timeout = new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+        });
+        return Promise.race([promise, timeout]).finally(() => {
+            if (timeoutId) window.clearTimeout(timeoutId);
+        });
     }
 
     async function saveCurrentInvestmentPanelScreenshot() {
@@ -4295,19 +4565,24 @@ document.addEventListener('DOMContentLoaded', () => {
             lockClose: true,
         });
         try {
+            const captureStartedAt = performance.now();
             await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+            debugInvestmentShareCaptureTiming('after initial frames', captureStartedAt);
             const captureTarget = await buildInvestmentCommunityShareCard();
+            debugInvestmentShareCaptureTiming('after card build', captureStartedAt);
             if (!(captureTarget instanceof HTMLElement)) return;
             const domtoimage = await ensureInvestmentScreenshotLibrary();
+            debugInvestmentShareCaptureTiming('after screenshot library ready', captureStartedAt);
             document.body.appendChild(captureTarget);
             try {
                 await new Promise((resolve) => window.requestAnimationFrame(resolve));
                 stabilizeInvestmentShareDonutOrbits(captureTarget);
                 await waitForInvestmentShareImages(captureTarget);
+                debugInvestmentShareCaptureTiming('after image readiness', captureStartedAt);
                 await new Promise((resolve) => window.requestAnimationFrame(resolve));
                 stabilizeInvestmentShareDonutOrbits(captureTarget);
                 const captureRect = captureTarget.getBoundingClientRect();
-                const blob = await domtoimage.toBlob(captureTarget, {
+                const blob = await withInvestmentShareTimeout(domtoimage.toBlob(captureTarget, {
                     cacheBust: true,
                     bgcolor: 'transparent',
                     quality: 1,
@@ -4316,10 +4591,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     style: {
                         transform: 'none',
                     },
-                });
+                }), 15000, 'Investment screenshot encoding timed out.');
                 if (!(blob instanceof Blob)) {
                     throw new Error('Failed to encode screenshot.');
                 }
+                debugInvestmentShareCaptureTiming('after blob encode', captureStartedAt);
                 downloadBlobFile(buildInvestmentScreenshotFilename(), blob);
             } finally {
                 captureTarget.remove();
@@ -5147,6 +5423,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (selectedBroker === 'ibkr') {
                         setImportFeedback(
                             buildIbkrImportFeedbackMessage({
+                                importSummary: result.summary,
                                 refreshNotice,
                                 valuationNotice,
                                 pendingTransferCount,
@@ -6766,6 +7043,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const latestSnapshot = processed[processed.length - 1];
         const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
+        investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,
@@ -7180,6 +7458,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     markerElement.hidden = true;
                     return;
                 }
+                const realtimePoint = runtimeState.visibleChartPoints[realtimeIndex];
+                if (!shouldShowInvestmentRealtimePulse(realtimePoint?.realtime_session)) {
+                    markerElement.hidden = true;
+                    return;
+                }
                 const dataset = chartInstance.data?.datasets?.[0];
                 const pointValue = Number(dataset?.data?.[realtimeIndex]);
                 if (!Number.isFinite(pointValue)) {
@@ -7221,10 +7504,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
                 const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
                 const baselineY = chartArea.bottom;
-                const lineHeight = 10;
+                const labelOptions = chart.options?.plugins?.investmentXAxisLabels || {};
+                const fontSize = Number.parseFloat(labelOptions.fontSize) || 12;
+                const lineHeight = Number.parseFloat(labelOptions.lineHeight) || 10;
+                const fontWeight = String(labelOptions.fontWeight || '700');
+                const fontFamily = String(labelOptions.fontFamily || '"GDS Transport", "Helvetica Neue", Arial, sans-serif');
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
-                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
                 ctx.textBaseline = "top";
                 tickIndexes.forEach((index, tickIndex) => {
                     const parsedDate = parseRawDate(rawDates[index]);
@@ -7441,6 +7728,12 @@ document.addEventListener('DOMContentLoaded', () => {
             plugins: {
                 legend: { display: false },
                 tooltip: { enabled: false, external: externalTooltipHandler },
+                investmentXAxisLabels: {
+                    fontSize: 12,
+                    fontWeight: '700',
+                    fontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
+                    lineHeight: 10,
+                },
             },
             scales: {
                 x: {

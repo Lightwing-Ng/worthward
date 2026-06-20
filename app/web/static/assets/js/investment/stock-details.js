@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.1
+ * Code version: v0.2.2
+ * - Fixed: Stock-details intraday candles and live pulse now stay off outside active realtime sessions.
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
@@ -71,6 +72,7 @@ export function createInvestmentStockDetailsUtils({
     resolveInvestmentTheme,
     setActiveStockDetailsHoverPointRecord,
     setInvestmentStockDetailsPriceChartInstance,
+    shouldRunInvestmentRealtimeQuotes = () => false,
     shouldTrackHoldingTicker,
     syncInvestmentHoverLinkedViews,
     syncInvestmentStockDetailsDonutFromInteraction,
@@ -365,8 +367,9 @@ export function createInvestmentStockDetailsUtils({
         }
 
         const normalizedRange = normalizeInvestmentStockDetailsRange(getSelectedInvestmentStockDetailsRange());
+        const allowRealtimeData = shouldRunInvestmentRealtimeQuotes();
         let intradayRows = [];
-        if (isInvestmentStockDetailsIntradayRange(normalizedRange)) {
+        if (isInvestmentStockDetailsIntradayRange(normalizedRange) && allowRealtimeData) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Loading 1-minute price history...</div>';
             try {
                 intradayRows = await loadInvestmentStockDetailsIntradayRows(normalizedTicker, normalizedRange);
@@ -428,7 +431,8 @@ export function createInvestmentStockDetailsUtils({
                 : fullLabels[fullLabels.length - 1] || ''
         );
         const shouldRenderRealtimePulse = Boolean(
-            latestVisibleLabel
+            allowRealtimeData
+            && latestVisibleLabel
             && latestAvailableLabel
             && latestVisibleLabel === latestAvailableLabel
             && !(normalizedRange === 'auto' && stockDetailsAutoRangeContext?.isOpenPosition === false)
