@@ -1,4 +1,4 @@
-/* Code version: v1.14.2 */
+/* Code version: v1.14.10 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -788,6 +788,8 @@
 }
 
 .investment-community-share-card {
+    --investment-community-share-footer-brand-size: 36px;
+    --investment-community-share-footer-qr-size: 108px;
     width: 100%;
     height: 100%;
     aspect-ratio: 53.98 / 85.60;
@@ -824,10 +826,10 @@
 
 .investment-community-share-title {
     margin: 0;
-    font-size: max(var(--font-card-title), 7mm);
+    font-size: 36px;
     line-height: 1.02;
     letter-spacing: -0.04em;
-    font-weight: var(--font-weight-bold);
+    font-weight: 400;
 }
 
 .investment-community-share-subtitle {
@@ -927,11 +929,6 @@
     min-height: 0;
 }
 
-.investment-community-share-card[data-share-view="chart"] .investment-community-share-title {
-    font-size: 36px;
-    font-weight: 400;
-}
-
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -960,8 +957,17 @@
     align-items: stretch;
 }
 
+.investment-community-share-card[data-share-view="stock_details"] .investment-community-share-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 360px minmax(0, 1fr);
+    align-items: stretch;
+}
+
+.investment-community-share-card[data-share-view="stock_details"] .investment-community-share-section--chart,
 .investment-community-share-card[data-share-view="stock_details"] .investment-community-share-chart-shell {
-    min-height: 320px;
+    height: 100%;
+    min-height: 0;
 }
 
 .investment-community-share-card .investment-stock-details-identity,
@@ -1028,11 +1034,11 @@
 }
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-overview-donut .portfolio-donut-orbit {
-    --portfolio-donut-orbit-donut-size: 236px;
-    --portfolio-donut-orbit-ring-width: 18px;
-    --portfolio-donut-orbit-logo-size: 32px;
-    width: 100%;
-    height: 100%;
+    --portfolio-donut-orbit-donut-size: 176px;
+    --portfolio-donut-orbit-ring-width: 16px;
+    --portfolio-donut-orbit-logo-size: 28px;
+    width: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
+    height: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
     max-width: 100%;
     max-height: 100%;
     margin: 0 auto;
@@ -1054,12 +1060,12 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 12px;
     align-items: center;
-    padding-top: 4px;
+    padding: 0;
     flex: 0 0 auto;
 }
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-footer {
-    padding: 16px;
+    padding: 0;
     align-items: center;
 }
 
@@ -1092,18 +1098,13 @@
 }
 
 .investment-community-share-footer-timestamp {
-    font-size: max(var(--font-form-control), 4.5mm);
+    font-family: Arial, sans-serif;
+    font-size: 23px;
     line-height: 1.12;
-    font-weight: var(--font-weight-bold);
+    font-weight: 500;
     color: color-mix(in srgb, var(--investment-community-share-accent, #0055cc) 78%, var(--text) 22%);
     font-variant-numeric: tabular-nums;
     white-space: pre-line;
-}
-
-.investment-community-share-card[data-share-view="chart"] .investment-community-share-footer-timestamp {
-    font-family: Arial, sans-serif;
-    font-size: 23px;
-    font-weight: 500;
 }
 
 .investment-community-share-footer-qr {
@@ -1196,13 +1197,14 @@
 
 .investment-community-share-table-shell .investment-holdings-table thead th {
     position: static;
-    font-size: 21px;
+    font-size: 17px;
     font-weight: 500;
 }
 
+.investment-community-share-table-shell .investment-holdings-table th,
 .investment-community-share-table-shell .investment-holdings-table tbody td,
 .investment-community-share-table-shell .investment-holdings-summary-copy {
-    font-size: 20px;
+    font-size: 17px;
 }
 
 .investment-community-share-table-shell .investment-holdings-summary-row > th {
@@ -2259,7 +2261,7 @@
 }
 
 .investment-holdings-value-negative {
-    color: var(--theme-accent-secondary);
+    color: #ff2f92;
 }
 
 @keyframes investment-live-digit-old-rise {

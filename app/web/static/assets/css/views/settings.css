@@ -1,4 +1,4 @@
-/* Code version: v0.4.6 */
+/* Code version: v0.4.7 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1240,11 +1240,11 @@ section#investment-community-share-card .style-token-investment-share-preview-sh
 }
 
 section#investment-community-share-card .style-token-investment-share-preview-shell > article.investment-community-share-card > div.investment-community-share-body > section.investment-community-share-section:nth-child(2) > div.investment-community-share-overview-donut > div.style-token-portfolio-donut-shell > div.portfolio-donut-orbit {
-    --portfolio-donut-orbit-donut-size: 188px;
+    --portfolio-donut-orbit-donut-size: 176px;
     --portfolio-donut-orbit-ring-width: 16px;
     --portfolio-donut-orbit-logo-size: 28px;
-    width: 100%;
-    height: 100%;
+    width: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
+    height: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
     max-width: 256px;
     max-height: 256px;
     margin: 0 auto;

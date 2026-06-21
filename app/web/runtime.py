@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.25
+Code version: v0.3.26
 """
 
 from __future__ import annotations
@@ -1487,8 +1487,8 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--investment-community-share-card-gap", 10, 0),
                     px_token("--investment-community-share-section-gap", 10, 0),
                     px_token("--investment-community-share-section-radius", 16, 0),
-                    px_token("--investment-community-share-footer-brand-size", 44, 0),
-                    px_token("--investment-community-share-footer-qr-size", 44, 0),
+                    px_token("--investment-community-share-footer-brand-size", 36, 0),
+                    px_token("--investment-community-share-footer-qr-size", 108, 0),
                     material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
                     material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
                     material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),

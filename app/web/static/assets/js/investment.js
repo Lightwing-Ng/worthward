@@ -1,10 +1,18 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.47.1
+ * Code version: v1.47.9
+ * - Fixed: All investment share card titles and footer timestamps now use the Overview typography.
+ * - Fixed: Stock details share cards now reserve the same 360 px chart height as the Overview share chart.
+ * - Fixed: Holdings share cards now show the rendered summary row first and preserve view-colored P&L values.
+ * - Fixed: Investment share footer brand icon and timestamp now share the same vertical centerline.
+ * - Fixed: Investment share card titles now match the exported view instead of always rendering Overview.
+ * - Fixed: Investment share donut previews now preserve satellite-logo safe bounds while using the available height.
+ * - Fixed: Investment share footer now uses a 36 px brand icon and bottom-aligns the icon, timestamp, and QR code.
+ * - Fixed: Investment share cards now apply the 108 px QR size in both template previews and all PNG export paths.
  * - Fixed: Overview share export now preserves identical curve coordinates when masking and replaces y-axis values with masked markers.
  * - Fixed: Holdings share export now eagerly resolves row logo assets and times out stalled screenshot encoding instead of leaving the output button busy.
- * - Changed: Investment share templates now keep the fixed Overview title and align footer brand and QR sizing across all four exported views.
+ * - Changed: Investment share templates now align footer brand and QR sizing across all four exported views.
  * - Fixed: Investment share image capture now loads the screenshot renderer locally before falling back to CDN and reports stage timings.
  * - Fixed: Stock details intraday quote loading now stays off outside pre-market, regular, and post-market sessions.
  * - Fixed: Investment live values now stop polling and reset outside pre-market, regular, and post-market sessions.
@@ -3911,8 +3919,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentShareViewTitle(view = activeInvestmentView) {
-        void view;
-        return 'Overview';
+        return getInvestmentShareViewLabel(view);
     }
 
     function getInvestmentShareViewLabel(view = activeInvestmentView) {
@@ -4100,6 +4107,8 @@ document.addEventListener('DOMContentLoaded', () => {
         host.className = 'investment-community-share-capture';
         host.style.setProperty('--investment-community-share-shell-export-width', '540px');
         host.style.setProperty('--investment-community-share-shell-export-height', '856px');
+        host.style.setProperty('--investment-community-share-footer-brand-size', '36px');
+        host.style.setProperty('--investment-community-share-footer-qr-size', '108px');
 
         const card = document.createElement('article');
         card.className = 'investment-community-share-card';
@@ -4331,6 +4340,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 tableRow.cells.item(index)?.remove();
             });
         };
+        const adaptShareHoldingsSummaryRow = (tableRow) => {
+            if (!(tableRow instanceof HTMLTableRowElement)) return;
+            const summaryCopyCell = tableRow.cells.item(1);
+            const summaryLeadCell = tableRow.cells.item(0);
+            if (summaryLeadCell instanceof HTMLTableCellElement && summaryCopyCell instanceof HTMLTableCellElement) {
+                summaryLeadCell.className = 'investment-holdings-cell investment-holdings-cell-ticker';
+                summaryLeadCell.textContent = '';
+                Array.from(summaryCopyCell.childNodes).forEach((child) => {
+                    summaryLeadCell.appendChild(child);
+                });
+            }
+            pruneShareHoldingsRow(tableRow);
+            Array.from(tableRow.cells).forEach((cell, index) => {
+                if (!(cell instanceof HTMLTableCellElement)) return;
+                if (index === 0 && cell.querySelector('.investment-holdings-summary-copy')) return;
+                cell.textContent = normalizeShareHoldingsMoneyText(cell.textContent || '');
+            });
+        };
         const buildShareTickerCell = (ticker) => {
             const normalizedTicker = String(ticker || '').trim().toUpperCase();
             const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
@@ -4400,20 +4427,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const sharedHeaderRow = sanitizeInvestmentShareClone(headerRow.cloneNode(true));
         if (!(sharedHeaderRow instanceof HTMLTableRowElement)) return null;
         pruneShareHoldingsRow(sharedHeaderRow);
-        thead.appendChild(sharedHeaderRow);
         if (summaryRow instanceof HTMLTableRowElement) {
             const sharedSummaryRow = sanitizeInvestmentShareClone(summaryRow.cloneNode(true));
             if (sharedSummaryRow instanceof HTMLTableRowElement) {
-                const summaryLeadCell = sharedSummaryRow.cells.item(0);
-                if (summaryLeadCell instanceof HTMLTableCellElement) {
-                    summaryLeadCell.colSpan = Math.max(sharedHeaderRow.cells.length, 1);
-                }
-                while (sharedSummaryRow.cells.length > 1) {
-                    sharedSummaryRow.cells.item(1)?.remove();
-                }
+                adaptShareHoldingsSummaryRow(sharedSummaryRow);
                 thead.appendChild(sharedSummaryRow);
             }
         }
+        thead.appendChild(sharedHeaderRow);
         table.appendChild(thead);
 
         const tbody = document.createElement('tbody');
