@@ -1,7 +1,12 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.50.9
+ * Code version: v1.51.2
+ * - Fixed: Investment overview 1W ticker refresh requests now time out independently so one slow market-data source cannot block the whole chart.
+ * - Fixed: Investment overview 1W now sends the exact five selected trading days to the intraday endpoint so missing days can be refreshed and returned.
+ * - Fixed: Investment overview 1W now actively asks the intraday endpoint to refresh stale one-minute stores before calculating close-based equity.
+ * - Fixed: Investment overview 1W now keeps successful ticker rows when another ticker's one-minute refresh fails.
+ * - Fixed: Investment overview 1W now hides cross-day line segments so adjacent trading days can have factual gaps instead of forced joins.
  * - Removed: Investment overview 1W no longer keeps the unused flat-line fallback helper after switching to close-only intraday points.
  * - Fixed: Investment overview 1W now leaves a selected trading day blank when no local one-minute close data exists instead of drawing fallback flat steps.
  * - Fixed: Investment overview 1W now renders exactly five US trading days and only includes the current day while regular-session intraday is active.
@@ -429,6 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeInvestmentStockDetailRowIds = [];
     const INVESTMENT_MANUAL_SCROLL_SUPPRESS_MS = 1400;
     const INVESTMENT_PROGRAMMATIC_SCROLL_GUARD_MS = 900;
+    const INVESTMENT_OVERVIEW_INTRADAY_REQUEST_TIMEOUT_MS = 45000;
     const investmentScrollIntentState = {
         history: {
             suppressUntil: 0,
@@ -1639,10 +1645,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function loadInvestmentOverviewIntradayRows(ticker) {
+    async function loadInvestmentOverviewIntradayRows(ticker, dayKeys = []) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return [];
-        const cacheKey = `${normalizedTicker}:1w`;
+        const requestedDayKeys = (Array.isArray(dayKeys) ? dayKeys : [])
+            .map((dayKey) => normalizeLedgerDate(dayKey))
+            .filter(Boolean);
+        const requestedDays = requestedDayKeys.join(',');
+        const cacheKey = `${normalizedTicker}:1w:${requestedDays}`;
         if (investmentOverviewIntradayCache.has(cacheKey)) {
             return investmentOverviewIntradayCache.get(cacheKey) || [];
         }
@@ -1650,10 +1660,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return investmentOverviewIntradayInflight.get(cacheKey);
         }
         const requestPromise = (async () => {
-            const response = await fetch(
-                `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=1w`,
-                buildInvestmentRequestOptions(),
+            const abortController = new AbortController();
+            const timeoutId = window.setTimeout(
+                () => abortController.abort(),
+                INVESTMENT_OVERVIEW_INTRADAY_REQUEST_TIMEOUT_MS,
             );
+            const dayQuery = requestedDays ? `&days=${encodeURIComponent(requestedDays)}` : '';
+            let response = null;
+            try {
+                response = await fetch(
+                    `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=1w&ensure_store=1${dayQuery}`,
+                    buildInvestmentRequestOptions({ signal: abortController.signal }),
+                );
+            } finally {
+                window.clearTimeout(timeoutId);
+            }
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || payload?.success === false) {
                 throw new Error(payload?.error || `Unable to load 1-minute market data for ${normalizedTicker}.`);
@@ -1924,16 +1945,16 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         if (!activeTickers.length) return [];
 
-        let tickerRows = [];
-        try {
-            tickerRows = await Promise.all(activeTickers.map(async (ticker) => ({
-                ticker,
-                rows: await loadInvestmentOverviewIntradayRows(ticker),
-            })));
-        } catch (error) {
-            console.warn(error);
-            return [];
-        }
+        const tickerResults = await Promise.allSettled(activeTickers.map(async (ticker) => ({
+            ticker,
+            rows: await loadInvestmentOverviewIntradayRows(ticker, dayKeys),
+        })));
+        const tickerRows = tickerResults
+            .filter((result) => result.status === 'fulfilled')
+            .map((result) => result.value);
+        tickerResults
+            .filter((result) => result.status === 'rejected')
+            .forEach((result) => console.warn(result.reason));
         const minuteMapByTicker = new Map(tickerRows.map(({ ticker, rows }) => {
             const closeMap = new Map();
             buildInvestmentOverviewIntradayMinuteMap(rows).forEach((bar, minuteKey) => {
@@ -2056,6 +2077,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 point: null,
             }))
         ));
+    }
+
+    function getInvestmentEquitySegmentBorderColor(context, fallbackColor = "#0055cc") {
+        const rawLabels = context?.chart?.data?.rawLabels;
+        const p0Index = Number(context?.p0DataIndex);
+        const p1Index = Number(context?.p1DataIndex);
+        if (
+            investmentEquityChartRuntimeState?.overviewIntradayLinePoints?.length
+            && Array.isArray(rawLabels)
+            && Number.isInteger(p0Index)
+            && Number.isInteger(p1Index)
+        ) {
+            const p0DayKey = normalizeLedgerDate(rawLabels[p0Index]);
+            const p1DayKey = normalizeLedgerDate(rawLabels[p1Index]);
+            if (p0DayKey && p1DayKey && p0DayKey !== p1DayKey) {
+                return 'rgba(0, 85, 204, 0)';
+            }
+        }
+        return fallbackColor;
     }
 
     async function buildInvestmentOverviewIntradayCandles() {
@@ -7923,6 +7963,9 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentEquityChartInstance.data.datasets[0].showLine = true;
             investmentEquityChartInstance.data.datasets[0].spanGaps = false;
             investmentEquityChartInstance.data.datasets[0].borderColor = "#0055cc";
+            investmentEquityChartInstance.data.datasets[0].segment = {
+                borderColor: (context) => getInvestmentEquitySegmentBorderColor(context, "#0055cc"),
+            };
         }
         const yScale = investmentEquityChartInstance.options?.scales?.y;
         if (yScale) {
@@ -8495,6 +8538,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         spanGaps: false,
                         borderJoinStyle: "round",
                         borderCapStyle: "round",
+                        segment: {
+                            borderColor: (context) => getInvestmentEquitySegmentBorderColor(context, equitySeriesColor),
+                        },
                     },
                 ],
             },

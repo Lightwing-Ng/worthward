@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -624,6 +624,25 @@ def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
                 f"yfinance 30-day fallback failed: {thirty_day_error}. "
                 f"yfinance 7-day fallback failed: {seven_day_error}."
             ) from seven_day_error
+
+
+def refresh_recent_one_minute_store_with_yfinance(
+        ticker: str,
+        *,
+        days: int = YFINANCE_INTRADAY_FALLBACK_DAYS,
+) -> OneMinuteRefreshResult:
+    normalized_ticker = normalize_ticker(ticker)
+    safe_days = max(YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS, int(days))
+    fallback_dataset = _download_recent_one_minute_history_with_yfinance(
+        normalized_ticker,
+        days=safe_days,
+    )
+    fallback_path = _upsert_one_minute_store(normalized_ticker, fallback_dataset)
+    return OneMinuteRefreshResult(
+        path=fallback_path,
+        source=f"yfinance_{safe_days}d",
+        fetched_days=safe_days,
+    )
 
 
 def ensure_fresh_history_store(ticker: str) -> bool:

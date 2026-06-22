@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.26
+Code version: v0.3.27
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
     has_recent_one_minute_store,
+    is_one_minute_store_fresh,
     one_minute_lookback_start,
     test_broker_connection,
 )
@@ -123,6 +124,7 @@ from app.services.market_data import (
     list_available_market_intervals,
     refresh_history_store,
     refresh_one_minute_store,
+    refresh_recent_one_minute_store_with_yfinance,
     select_price_series,
 )
 from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
@@ -4238,6 +4240,11 @@ def build_web_runtime() -> WebRuntime:
         ticker = request.args.get("ticker", "").strip().upper()
         requested_range = request.args.get("range", "").strip().lower() or "1w"
         ensure_store = request.args.get("ensure_store", "").strip() == "1"
+        requested_days = [
+            day
+            for day in (part.strip() for part in request.args.get("days", "").split(","))
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", day)
+        ]
         if not ticker:
             response = jsonify({"success": False, "error": "No ticker provided"})
             response.status_code = 400
@@ -4247,7 +4254,7 @@ def build_web_runtime() -> WebRuntime:
             normalized_ticker = validate_ticker_or_raise(ticker)
             refresh_result = None
             intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
-            if ensure_store and not has_recent_one_minute_store(normalized_ticker) and intraday_path is None:
+            if ensure_store and not is_one_minute_store_fresh(normalized_ticker):
                 refresh_result = refresh_one_minute_store(normalized_ticker)
                 intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
 
@@ -4267,9 +4274,28 @@ def build_web_runtime() -> WebRuntime:
                 response = jsonify({"success": False, "error": f"No 1-minute OHLC data for {normalized_ticker}"})
                 response.status_code = 404
                 return apply_no_store_headers(response)
+            if ensure_store and requested_days:
+                available_days = set(intraday["Date"].dt.strftime("%Y-%m-%d").drop_duplicates().tolist())
+                missing_days = [day for day in requested_days if day not in available_days]
+                if missing_days:
+                    try:
+                        refresh_result = refresh_recent_one_minute_store_with_yfinance(
+                            normalized_ticker,
+                            days=30,
+                        )
+                        intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
+                        dataset = pd.read_parquet(intraday_path) if intraday_path is not None else dataset
+                        intraday = dataset.copy()
+                        intraday["Date"] = pd.to_datetime(intraday["Date"], errors="coerce")
+                        intraday = intraday.dropna(subset=["Date", "Open", "High", "Low", "Close"]).sort_values("Date")
+                    except Exception:
+                        pass
 
             latest_timestamp = intraday["Date"].max()
-            if requested_range == "current-day":
+            if requested_days:
+                requested_day_set = set(requested_days)
+                intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d").isin(requested_day_set)].copy()
+            elif requested_range == "current-day":
                 latest_day = latest_timestamp.strftime("%Y-%m-%d")
                 intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d") == latest_day].copy()
             elif requested_range == "3d":
@@ -4302,6 +4328,7 @@ def build_web_runtime() -> WebRuntime:
                 "ticker": normalized_ticker,
                 "interval": "1m",
                 "range": requested_range,
+                "days": requested_days,
                 "rows": rows,
                 "count": len(rows),
                 "refreshed": refresh_result is not None,
