@@ -238,6 +238,7 @@ class WebRuntime:
     investment_get_parquet: Any
     investment_get_intraday_history: Any
     investment_get_realtime_quotes: Any
+    investment_update_internal_transfer_binding: Any
     live_trading_get_positions: Any
     live_trading_submit_order: Any
 
@@ -4140,11 +4141,6 @@ def build_web_runtime() -> WebRuntime:
             })
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
-        finally:
-            if transactions_file is not None:
-                transactions_file.close()
-            if positions_file is not None:
-                positions_file.close()
 
     def investment_get_latest_price():
         """Get the latest closing price for a ticker from local market store."""
@@ -4500,6 +4496,7 @@ def build_web_runtime() -> WebRuntime:
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,
         investment_get_realtime_quotes=investment_get_realtime_quotes,
+        investment_update_internal_transfer_binding=investment_update_internal_transfer_binding,
         live_trading_get_positions=live_trading_get_positions,
         live_trading_submit_order=live_trading_submit_order,
     )

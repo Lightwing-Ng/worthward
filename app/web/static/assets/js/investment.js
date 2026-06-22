@@ -984,14 +984,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function readInvestmentInternalTransferBindings() {
+        const serverBindings = normalizeInvestmentInternalTransferBindings(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.manual_internal_transfer_bindings
+        );
+        let localBindings = {};
         try {
             const raw = window.localStorage.getItem(INVESTMENT_INTERNAL_TRANSFER_BINDINGS_STORAGE_KEY);
-            if (!raw) return {};
-            const parsed = JSON.parse(raw);
-            return normalizeInvestmentInternalTransferBindings(parsed);
+            if (raw) {
+                localBindings = normalizeInvestmentInternalTransferBindings(JSON.parse(raw));
+            }
         } catch (_error) {
-            return {};
+            // ignore corrupt localStorage
         }
+        return { ...serverBindings, ...localBindings };
     }
 
     function writeInvestmentInternalTransferBindings(nextBindings) {
@@ -1022,6 +1027,19 @@ document.addEventListener('DOMContentLoaded', () => {
             delete nextBindings[normalizedSourceKey];
         }
         writeInvestmentInternalTransferBindings(nextBindings);
+        try {
+            fetch('/api/investment/internal-transfer-binding', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_key: normalizedSourceKey,
+                    target_key: normalizedTargetKey,
+                }),
+            }).catch(() => {});
+        } catch (_error) {
+            // fire-and-forget: do not block the UI if the server is unreachable
+        }
     }
 
     function buildInvestmentTransactionBindingKey(txn) {
