@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.51.3
+ * Code version: v1.51.4
+ * - Fixed: Holdings and Stock details live value animations now reserve their measured maximum box so digit rolls do not resize surrounding table rows or metric cards.
  * - Fixed: Investment overview 1W now preserves the last healthy intraday equity curve when switching away and back from another range.
  * - Fixed: Investment overview 1W now rejects degraded flat recomputations so range switching cannot overwrite a real curve with a horizontal line.
  * - Fixed: Investment overview 1W ticker refresh requests now time out independently so one slow market-data source cannot block the whole chart.
@@ -6692,6 +6693,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function measureInvestmentLiveStaticContent(node, display, useSplit) {
+        if (!(node instanceof HTMLElement) || !(document.body instanceof HTMLElement)) {
+            return { width: 0, height: 0 };
+        }
+        const clone = document.createElement('span');
+        clone.className = node.className;
+        clone.classList.remove('is-live-rise', 'is-live-fall');
+        clone.style.position = 'absolute';
+        clone.style.left = '-10000px';
+        clone.style.top = '0';
+        clone.style.visibility = 'hidden';
+        clone.style.pointerEvents = 'none';
+        clone.style.minWidth = '0';
+        clone.style.minHeight = '0';
+        clone.style.whiteSpace = 'nowrap';
+        renderInvestmentLiveStaticContent(clone, display, useSplit);
+        const measurementHost = node.parentElement instanceof HTMLElement ? node.parentElement : document.body;
+        measurementHost.appendChild(clone);
+        const rect = clone.getBoundingClientRect();
+        clone.remove();
+        return {
+            width: Math.ceil(Math.max(0, rect.width || 0)),
+            height: Math.ceil(Math.max(0, rect.height || 0)),
+        };
+    }
+
+    function reserveInvestmentLiveValueLayout(node, previousDisplay, nextDisplay, useSplit) {
+        if (!(node instanceof HTMLElement)) return;
+        const currentRect = node.getBoundingClientRect();
+        const previousSize = measureInvestmentLiveStaticContent(node, previousDisplay, useSplit);
+        const nextSize = measureInvestmentLiveStaticContent(node, nextDisplay, useSplit);
+        const previousReservedWidth = Number(node.dataset.investmentLiveReserveWidth || 0);
+        const previousReservedHeight = Number(node.dataset.investmentLiveReserveHeight || 0);
+        const reserveWidth = Math.ceil(Math.max(
+            previousReservedWidth,
+            currentRect.width || 0,
+            previousSize.width,
+            nextSize.width,
+        ));
+        const reserveHeight = Math.ceil(Math.max(
+            previousReservedHeight,
+            currentRect.height || 0,
+            previousSize.height,
+            nextSize.height,
+        ));
+        if (reserveWidth > 0) {
+            node.dataset.investmentLiveReserveWidth = String(reserveWidth);
+            node.style.minWidth = `${reserveWidth}px`;
+        }
+        if (reserveHeight > 0) {
+            node.dataset.investmentLiveReserveHeight = String(reserveHeight);
+            node.style.minHeight = `${reserveHeight}px`;
+        }
+    }
+
     function shouldUseSplitLiveValue(node) {
         return node instanceof HTMLElement && (
             node.classList.contains('investment-stock-details-metric-value')
@@ -6710,6 +6766,7 @@ document.addEventListener('DOMContentLoaded', () => {
             && direction !== 'flat'
             && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
         );
+        reserveInvestmentLiveValueLayout(node, previousDisplay, nextDisplay, useSplit);
         node.classList.remove('is-live-rise', 'is-live-fall');
         node.replaceChildren();
         if (shouldAnimate) {
