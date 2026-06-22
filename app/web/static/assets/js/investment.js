@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.51.2
+ * Code version: v1.51.3
+ * - Fixed: Investment overview 1W now preserves the last healthy intraday equity curve when switching away and back from another range.
+ * - Fixed: Investment overview 1W now rejects degraded flat recomputations so range switching cannot overwrite a real curve with a horizontal line.
  * - Fixed: Investment overview 1W ticker refresh requests now time out independently so one slow market-data source cannot block the whole chart.
  * - Fixed: Investment overview 1W now sends the exact five selected trading days to the intraday endpoint so missing days can be refreshed and returned.
  * - Fixed: Investment overview 1W now actively asks the intraday endpoint to refresh stale one-minute stores before calculating close-based equity.
@@ -503,6 +505,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentOverviewIntradayCache = new Map();
     const investmentOverviewIntradayInflight = new Map();
     let investmentOverviewIntradayRenderSerial = 0;
+    let investmentOverviewIntradayLinePointsCache = {
+        key: '',
+        points: [],
+        quality: null,
+    };
     let investmentRealtimeQuoteTimer = 0;
     let investmentRealtimeQuoteAbortController = null;
     let investmentRealtimeQuoteInflight = false;
@@ -2077,6 +2084,79 @@ document.addEventListener('DOMContentLoaded', () => {
                 point: null,
             }))
         ));
+    }
+
+    function getInvestmentOverviewIntradayLineCacheKey(dayKeys = buildInvestmentOverviewTradingDayKeys()) {
+        return (Array.isArray(dayKeys) ? dayKeys : [])
+            .map((dayKey) => normalizeLedgerDate(dayKey))
+            .filter(Boolean)
+            .join(',');
+    }
+
+    function getInvestmentOverviewIntradayLineQuality(linePoints = []) {
+        const finiteEntries = (Array.isArray(linePoints) ? linePoints : [])
+            .map((entry) => ({
+                date: String(entry?.date || ''),
+                equity: Number(entry?.equity),
+            }))
+            .filter((entry) => entry.date && Number.isFinite(entry.equity));
+        if (!finiteEntries.length) {
+            return {
+                finiteCount: 0,
+                finiteDayCount: 0,
+                distinctCount: 0,
+                valueRange: 0,
+                isHealthy: false,
+            };
+        }
+        const values = finiteEntries.map((entry) => entry.equity);
+        const minValue = Math.min(...values);
+        const maxValue = Math.max(...values);
+        const distinctCount = new Set(values.map((value) => value.toFixed(2))).size;
+        const finiteDayCount = new Set(finiteEntries.map((entry) => normalizeLedgerDate(entry.date)).filter(Boolean)).size;
+        const valueRange = maxValue - minValue;
+        return {
+            finiteCount: finiteEntries.length,
+            finiteDayCount,
+            distinctCount,
+            valueRange,
+            isHealthy: finiteEntries.length >= 390
+                && finiteDayCount >= 2
+                && distinctCount >= 12
+                && valueRange > 10,
+        };
+    }
+
+    function shouldUseInvestmentOverviewIntradayLinePoints(nextLinePoints = [], cachedLinePoints = []) {
+        const nextQuality = getInvestmentOverviewIntradayLineQuality(nextLinePoints);
+        const cachedQuality = getInvestmentOverviewIntradayLineQuality(cachedLinePoints);
+        if (!cachedQuality.isHealthy) return nextQuality.isHealthy;
+        if (!nextQuality.isHealthy) return false;
+        if (nextQuality.finiteDayCount < cachedQuality.finiteDayCount) return false;
+        if (nextQuality.valueRange < cachedQuality.valueRange * 0.08) return false;
+        if (nextQuality.distinctCount < Math.max(12, Math.floor(cachedQuality.distinctCount * 0.4))) return false;
+        return true;
+    }
+
+    function getCachedInvestmentOverviewIntradayLinePoints() {
+        const cacheKey = getInvestmentOverviewIntradayLineCacheKey();
+        if (
+            investmentOverviewIntradayLinePointsCache.key === cacheKey
+            && getInvestmentOverviewIntradayLineQuality(investmentOverviewIntradayLinePointsCache.points).isHealthy
+        ) {
+            return investmentOverviewIntradayLinePointsCache.points;
+        }
+        return [];
+    }
+
+    function cacheInvestmentOverviewIntradayLinePoints(linePoints = []) {
+        const quality = getInvestmentOverviewIntradayLineQuality(linePoints);
+        if (!quality.isHealthy) return;
+        investmentOverviewIntradayLinePointsCache = {
+            key: getInvestmentOverviewIntradayLineCacheKey(),
+            points: linePoints,
+            quality,
+        };
     }
 
     function getInvestmentEquitySegmentBorderColor(context, fallbackColor = "#0055cc") {
@@ -7944,6 +8024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected) return;
         const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, overviewIntradayLinePoints);
         if (!nextChartState.overviewIntradayLinePoints.length) return;
+        cacheInvestmentOverviewIntradayLinePoints(nextChartState.overviewIntradayLinePoints);
         const chartYPaddingPx = 5;
         const nextYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
@@ -7982,6 +8063,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (requestSerial !== investmentOverviewIntradayRenderSerial) return;
             if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return;
             if (!Array.isArray(linePoints) || linePoints.length < 390) return;
+            const cachedLinePoints = getCachedInvestmentOverviewIntradayLinePoints();
+            if (
+                cachedLinePoints.length
+                && !shouldUseInvestmentOverviewIntradayLinePoints(linePoints, cachedLinePoints)
+            ) {
+                applyInvestmentOverviewIntradayLinePoints(chartPoints, cachedLinePoints);
+                return;
+            }
+            if (
+                !cachedLinePoints.length
+                && !getInvestmentOverviewIntradayLineQuality(linePoints).isHealthy
+            ) {
+                return;
+            }
             applyInvestmentOverviewIntradayLinePoints(chartPoints, linePoints);
         }).catch((error) => {
             console.warn(error);
@@ -8059,8 +8154,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentChartReady(false, canvas);
 
         const referenceLineWidth = 2.0;
+        const cachedOverviewIntradayLinePoints = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+            ? getCachedInvestmentOverviewIntradayLinePoints()
+            : [];
         const initialOverviewIntradayLinePoints = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
-            ? buildInvestmentOverviewEmptyIntradayLinePoints()
+            ? (cachedOverviewIntradayLinePoints.length
+                ? cachedOverviewIntradayLinePoints
+                : buildInvestmentOverviewEmptyIntradayLinePoints())
             : [];
         const chartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
         syncInvestmentEquityChartCaches(chartState);
