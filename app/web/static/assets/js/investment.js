@@ -1,7 +1,18 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.47.9
+ * Code version: v1.50.9
+ * - Removed: Investment overview 1W no longer keeps the unused flat-line fallback helper after switching to close-only intraday points.
+ * - Fixed: Investment overview 1W now leaves a selected trading day blank when no local one-minute close data exists instead of drawing fallback flat steps.
+ * - Fixed: Investment overview 1W now renders exactly five US trading days and only includes the current day while regular-session intraday is active.
+ * - Fixed: Holdings live values now preserve the standard metric split-number layout during digit rolls so table rows do not jump while prices update.
+ * - Fixed: Investment overview 1W now starts from an empty fixed intraday axis instead of briefly rendering the daily equity line before close-based data loads.
+ * - Fixed: Investment overview 1W excludes the current New York calendar day before regular-session intraday begins.
+ * - Fixed: Investment live metric updates now use a single in-place digit roll without rendering duplicate full-value spans or outside delta badges.
+ * - Fixed: Investment overview 1W keeps blank intraday slots as null instead of coercing them to zero.
+ * - Fixed: Investment overview 1W now leaves non-trading days and future intraday minutes blank unless at least one open holding has a real one-minute close for that slot.
+ * - Changed: Investment overview 1W abandons candlesticks and renders a fixed five-trading-day intraday close equity line with 390 regular-session slots per day.
+ * - Changed: Investment overview 1W applies dated trades and cash movements from the next trading-day open to match day-precision broker statements.
  * - Fixed: All investment share card titles and footer timestamps now use the Overview typography.
  * - Fixed: Stock details share cards now reserve the same 360 px chart height as the Overview share chart.
  * - Fixed: Holdings share cards now show the rendered summary row first and preserve view-colored P&L values.
@@ -483,6 +494,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsPriceChartRequestSerial = 0;
     const investmentStockDetailsIntradayCache = new Map();
     const investmentStockDetailsIntradayInflight = new Map();
+    const investmentOverviewIntradayCache = new Map();
+    const investmentOverviewIntradayInflight = new Map();
+    let investmentOverviewIntradayRenderSerial = 0;
     let investmentRealtimeQuoteTimer = 0;
     let investmentRealtimeQuoteAbortController = null;
     let investmentRealtimeQuoteInflight = false;
@@ -1623,6 +1637,528 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             investmentStockDetailsIntradayInflight.delete(cacheKey);
         }
+    }
+
+    async function loadInvestmentOverviewIntradayRows(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return [];
+        const cacheKey = `${normalizedTicker}:1w`;
+        if (investmentOverviewIntradayCache.has(cacheKey)) {
+            return investmentOverviewIntradayCache.get(cacheKey) || [];
+        }
+        if (investmentOverviewIntradayInflight.has(cacheKey)) {
+            return investmentOverviewIntradayInflight.get(cacheKey);
+        }
+        const requestPromise = (async () => {
+            const response = await fetch(
+                `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=1w`,
+                buildInvestmentRequestOptions(),
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.error || `Unable to load 1-minute market data for ${normalizedTicker}.`);
+            }
+            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            investmentOverviewIntradayCache.set(cacheKey, rows);
+            return rows;
+        })();
+        investmentOverviewIntradayInflight.set(cacheKey, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            investmentOverviewIntradayInflight.delete(cacheKey);
+        }
+    }
+
+    function buildInvestmentOverviewIntradayMinuteMap(rows = [], requiredDateKey = '') {
+        const minuteMap = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const minuteKey = normalizeInvestmentIntradayMinuteKey(row?.date);
+            if (!minuteKey) return;
+            if (requiredDateKey && normalizeLedgerDate(minuteKey) !== requiredDateKey) return;
+            if (getInvestmentTradeSessionType(minuteKey) !== 'intraday') return;
+            const open = Number(row?.open);
+            const high = Number(row?.high);
+            const low = Number(row?.low);
+            const close = Number(row?.close);
+            if (![open, high, low, close].every(Number.isFinite)) return;
+            minuteMap.set(minuteKey, { open, high, low, close });
+        });
+        return minuteMap;
+    }
+
+    function getInvestmentSnapshotFixedHoldingValue(snapshot, ticker, quantity, valuationDate, fxTimeline, baseCurrency, tickerPriceIndex = null) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const numericQuantity = Number(quantity);
+        if (!normalizedTicker || !Number.isFinite(numericQuantity) || Math.abs(numericQuantity) < 1e-9) return 0;
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        let price = null;
+        if (moneyMarketTickers.has(normalizedTicker)) {
+            price = Number(
+                snapshot?.aggregate_money_market_anchors?.[normalizedTicker]
+                ?? snapshot?.money_market_anchors?.[normalizedTicker],
+            );
+        }
+        if (!Number.isFinite(price) || price <= 0) {
+            price = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[normalizedTicker], valuationDate);
+        }
+        if (!Number.isFinite(price) || price <= 0) return 0;
+        return convertAmountToBaseCurrency(
+            numericQuantity * price,
+            getTickerQuoteCurrency(normalizedTicker),
+            valuationDate,
+            fxTimeline,
+            baseCurrency,
+        );
+    }
+
+    function getInvestmentOverviewLatestOneWeekMinuteKeys(minuteKeys = []) {
+        const orderedMinuteKeys = [...new Set(Array.isArray(minuteKeys) ? minuteKeys : [])].filter(Boolean).sort();
+        const latestMinuteKey = orderedMinuteKeys[orderedMinuteKeys.length - 1] || '';
+        const latestDate = parseInvestmentIntradayTimestamp(latestMinuteKey);
+        if (!(latestDate instanceof Date) || Number.isNaN(latestDate.getTime())) {
+            return orderedMinuteKeys;
+        }
+        const startDate = new Date(latestDate.getTime());
+        startDate.setDate(startDate.getDate() - 6);
+        return orderedMinuteKeys.filter((minuteKey) => {
+            const minuteDate = parseInvestmentIntradayTimestamp(minuteKey);
+            return minuteDate instanceof Date && !Number.isNaN(minuteDate.getTime()) && minuteDate >= startDate;
+        });
+    }
+
+    function aggregateInvestmentOverviewCandlesForDisplay(candles = [], maxVisibleCandles = 220) {
+        const normalizedCandles = (Array.isArray(candles) ? candles : [])
+            .filter((bar) => (
+                bar?.date
+                && [bar.open, bar.high, bar.low, bar.close].every((value) => Number.isFinite(Number(value)))
+            ));
+        const safeMaxVisibleCandles = Math.max(40, Math.floor(Number(maxVisibleCandles) || 220));
+        if (normalizedCandles.length <= safeMaxVisibleCandles) return normalizedCandles;
+        const dayGroups = normalizedCandles.reduce((groups, bar) => {
+            const dayKey = normalizeLedgerDate(bar.date) || 'unknown';
+            if (!groups.has(dayKey)) groups.set(dayKey, []);
+            groups.get(dayKey).push(bar);
+            return groups;
+        }, new Map());
+        const maxCandlesPerDay = Math.max(12, Math.floor(safeMaxVisibleCandles / Math.max(dayGroups.size, 1)));
+        const displayCandles = [];
+        Array.from(dayGroups.keys()).sort().forEach((dayKey) => {
+            const dayCandles = dayGroups.get(dayKey) || [];
+            const bucketSize = Math.max(1, Math.ceil(dayCandles.length / maxCandlesPerDay));
+            for (let start = 0; start < dayCandles.length; start += bucketSize) {
+                const bucket = dayCandles.slice(start, start + bucketSize);
+                if (!bucket.length) continue;
+                const open = Number(bucket[0].open);
+                const close = Number(bucket[bucket.length - 1].close);
+                const high = Math.max(...bucket.map((bar) => Number(bar.high)).filter(Number.isFinite));
+                const low = Math.min(...bucket.map((bar) => Number(bar.low)).filter(Number.isFinite));
+                if (![open, high, low, close].every(Number.isFinite)) continue;
+                displayCandles.push({
+                    date: bucket[bucket.length - 1].date,
+                    open: roundInvestmentChartCurrencyValue(open),
+                    high: roundInvestmentChartCurrencyValue(high),
+                    low: roundInvestmentChartCurrencyValue(low),
+                    close: roundInvestmentChartCurrencyValue(close),
+                });
+            }
+        });
+        return displayCandles;
+    }
+
+    function formatInvestmentOverviewDateKey(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function getInvestmentOverviewObservedHolidayKey(year, monthIndex, day) {
+        const date = new Date(Date.UTC(year, monthIndex, day));
+        const weekday = date.getUTCDay();
+        if (weekday === 6) {
+            date.setUTCDate(date.getUTCDate() - 1);
+        } else if (weekday === 0) {
+            date.setUTCDate(date.getUTCDate() + 1);
+        }
+        return formatInvestmentOverviewDateKey(date);
+    }
+
+    function getInvestmentOverviewNthWeekdayKey(year, monthIndex, weekday, nth) {
+        const date = new Date(Date.UTC(year, monthIndex, 1));
+        const offset = (weekday - date.getUTCDay() + 7) % 7;
+        date.setUTCDate(1 + offset + ((nth - 1) * 7));
+        return formatInvestmentOverviewDateKey(date);
+    }
+
+    function getInvestmentOverviewLastWeekdayKey(year, monthIndex, weekday) {
+        const date = new Date(Date.UTC(year, monthIndex + 1, 0));
+        const offset = (date.getUTCDay() - weekday + 7) % 7;
+        date.setUTCDate(date.getUTCDate() - offset);
+        return formatInvestmentOverviewDateKey(date);
+    }
+
+    function getInvestmentOverviewGoodFridayKey(year) {
+        const a = year % 19;
+        const b = Math.floor(year / 100);
+        const c = year % 100;
+        const d = Math.floor(b / 4);
+        const e = b % 4;
+        const f = Math.floor((b + 8) / 25);
+        const g = Math.floor((b - f + 1) / 3);
+        const h = ((19 * a) + b - d - g + 15) % 30;
+        const i = Math.floor(c / 4);
+        const k = c % 4;
+        const l = (32 + (2 * e) + (2 * i) - h - k) % 7;
+        const m = Math.floor((a + (11 * h) + (22 * l)) / 451);
+        const month = Math.floor((h + l - (7 * m) + 114) / 31);
+        const day = ((h + l - (7 * m) + 114) % 31) + 1;
+        const easter = new Date(Date.UTC(year, month - 1, day));
+        easter.setUTCDate(easter.getUTCDate() - 2);
+        return formatInvestmentOverviewDateKey(easter);
+    }
+
+    function getInvestmentOverviewMarketHolidayKeys(year) {
+        return new Set([
+            getInvestmentOverviewObservedHolidayKey(year, 0, 1),
+            getInvestmentOverviewNthWeekdayKey(year, 0, 1, 3),
+            getInvestmentOverviewNthWeekdayKey(year, 1, 1, 3),
+            getInvestmentOverviewGoodFridayKey(year),
+            getInvestmentOverviewLastWeekdayKey(year, 4, 1),
+            getInvestmentOverviewObservedHolidayKey(year, 5, 19),
+            getInvestmentOverviewObservedHolidayKey(year, 6, 4),
+            getInvestmentOverviewNthWeekdayKey(year, 8, 1, 1),
+            getInvestmentOverviewNthWeekdayKey(year, 10, 4, 4),
+            getInvestmentOverviewObservedHolidayKey(year, 11, 25),
+        ]);
+    }
+
+    function isInvestmentOverviewTradingDayKey(dayKey) {
+        const normalizedDayKey = normalizeLedgerDate(dayKey);
+        const match = normalizedDayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return false;
+        const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+        const weekday = date.getUTCDay();
+        if (weekday === 0 || weekday === 6) return false;
+        return !getInvestmentOverviewMarketHolidayKeys(date.getUTCFullYear()).has(normalizedDayKey);
+    }
+
+    function buildInvestmentOverviewTradingDayKeys() {
+        const currentDateKey = getInvestmentNewYorkClockParts().dateKey || '';
+        const currentDateMatch = currentDateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const currentDate = currentDateMatch
+            ? new Date(Date.UTC(Number(currentDateMatch[1]), Number(currentDateMatch[2]) - 1, Number(currentDateMatch[3])))
+            : null;
+        if (!(currentDate instanceof Date) || Number.isNaN(currentDate.getTime())) return [];
+        if (getInvestmentRealtimeClockSession() !== 'intraday') {
+            currentDate.setUTCDate(currentDate.getUTCDate() - 1);
+        }
+        const dayKeys = [];
+        const cursor = new Date(currentDate.getTime());
+        while (dayKeys.length < 5) {
+            const dayKey = formatInvestmentOverviewDateKey(cursor);
+            if (isInvestmentOverviewTradingDayKey(dayKey)) {
+                dayKeys.unshift(dayKey);
+            }
+            cursor.setUTCDate(cursor.getUTCDate() - 1);
+        }
+        return dayKeys;
+    }
+
+    function buildInvestmentOverviewRegularSessionMinuteKeys(dayKey) {
+        const keys = [];
+        if (!normalizeLedgerDate(dayKey)) return keys;
+        for (let minuteOffset = 0; minuteOffset < 390; minuteOffset += 1) {
+            const totalMinutes = (9 * 60) + 30 + minuteOffset;
+            const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+            const minutes = String(totalMinutes % 60).padStart(2, '0');
+            keys.push(`${dayKey} ${hours}:${minutes}`);
+        }
+        return keys;
+    }
+
+    function getInvestmentOverviewEffectiveSnapshotForTradingDay(dayKey) {
+        const normalizedDayKey = normalizeLedgerDate(dayKey);
+        if (!normalizedDayKey || !Array.isArray(investmentProcessedTransactionsCache)) return null;
+        let effectiveSnapshot = null;
+        investmentProcessedTransactionsCache.forEach((snapshot) => {
+            const snapshotDate = normalizeLedgerDate(snapshot?.date);
+            if (snapshotDate && snapshotDate < normalizedDayKey) {
+                effectiveSnapshot = snapshot;
+            }
+        });
+        return effectiveSnapshot;
+    }
+
+    function buildInvestmentOverviewActiveTickerSetForSnapshots(snapshots = []) {
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        return Array.from((Array.isArray(snapshots) ? snapshots : []).reduce((tickerSet, snapshot) => {
+            const holdings = snapshot?.aggregate_holdings || snapshot?.holdings || {};
+            Object.entries(holdings).forEach(([ticker, quantity]) => {
+                const normalizedTicker = normalizeInvestmentTicker(ticker);
+                const numericQuantity = Number(quantity);
+                if (
+                    normalizedTicker
+                    && !isForexPairTicker(normalizedTicker)
+                    && !moneyMarketTickers.has(normalizedTicker)
+                    && Number.isFinite(numericQuantity)
+                    && Math.abs(numericQuantity) > 1e-9
+                ) {
+                    tickerSet.add(normalizedTicker);
+                }
+            });
+            return tickerSet;
+        }, new Set()));
+    }
+
+    async function buildInvestmentOverviewIntradayLinePoints() {
+        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return [];
+        const dayKeys = buildInvestmentOverviewTradingDayKeys();
+        if (dayKeys.length !== 5) return [];
+        const effectiveSnapshotsByDay = new Map(
+            dayKeys.map((dayKey) => [dayKey, getInvestmentOverviewEffectiveSnapshotForTradingDay(dayKey)]),
+        );
+        const activeTickers = buildInvestmentOverviewActiveTickerSetForSnapshots(
+            Array.from(effectiveSnapshotsByDay.values()).filter(Boolean),
+        );
+        if (!activeTickers.length) return [];
+
+        let tickerRows = [];
+        try {
+            tickerRows = await Promise.all(activeTickers.map(async (ticker) => ({
+                ticker,
+                rows: await loadInvestmentOverviewIntradayRows(ticker),
+            })));
+        } catch (error) {
+            console.warn(error);
+            return [];
+        }
+        const minuteMapByTicker = new Map(tickerRows.map(({ ticker, rows }) => {
+            const closeMap = new Map();
+            buildInvestmentOverviewIntradayMinuteMap(rows).forEach((bar, minuteKey) => {
+                const close = Number(bar?.close);
+                if (Number.isFinite(close)) closeMap.set(minuteKey, close);
+            });
+            return [ticker, closeMap];
+        }));
+        const availableMinuteKeys = new Set(
+            Array.from(minuteMapByTicker.values()).flatMap((minuteMap) => [...minuteMap.keys()]),
+        );
+        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(investmentProcessedTransactionsCache, baseCurrency);
+        const fallbackValueCache = new Map();
+        const getFallbackValue = (snapshot, ticker, quantity, valuationDate) => {
+            const cacheKey = `${ticker}:${quantity}:${valuationDate}`;
+            if (fallbackValueCache.has(cacheKey)) return fallbackValueCache.get(cacheKey);
+            const value = getInvestmentSnapshotFixedHoldingValue(
+                snapshot,
+                ticker,
+                quantity,
+                valuationDate,
+                fxTimeline,
+                baseCurrency,
+                tickerPriceIndex,
+            );
+            fallbackValueCache.set(cacheKey, value);
+            return value;
+        };
+
+        return dayKeys.flatMap((dayKey) => {
+            const snapshot = effectiveSnapshotsByDay.get(dayKey);
+            const minuteKeys = buildInvestmentOverviewRegularSessionMinuteKeys(dayKey);
+            if (!snapshot) {
+                return minuteKeys.map((minuteKey) => ({
+                    date: minuteKey,
+                    equity: null,
+                    point: null,
+                }));
+            }
+            const hasAnyIntradayCloseForDay = minuteKeys.some((minuteKey) => availableMinuteKeys.has(minuteKey));
+            if (!hasAnyIntradayCloseForDay) {
+                return minuteKeys.map((minuteKey) => ({
+                    date: minuteKey,
+                    equity: null,
+                    point: null,
+                }));
+            }
+            const holdings = snapshot?.aggregate_holdings || snapshot?.holdings || {};
+            const aggregateRunningCash = Number(snapshot?.aggregate_running_cash ?? snapshot?.running_cash) || 0;
+            return minuteKeys.map((minuteKey) => {
+                if (!availableMinuteKeys.has(minuteKey)) {
+                    return {
+                        date: minuteKey,
+                        equity: null,
+                        point: null,
+                    };
+                }
+                let aggregateMarketValue = 0;
+                const holdingsMarketValues = {};
+                Object.entries(holdings).forEach(([ticker, quantity]) => {
+                    const normalizedTicker = normalizeInvestmentTicker(ticker);
+                    const numericQuantity = Number(quantity);
+                    if (!normalizedTicker || isForexPairTicker(normalizedTicker) || !Number.isFinite(numericQuantity) || Math.abs(numericQuantity) < 1e-9) return;
+                    const close = minuteMapByTicker.get(normalizedTicker)?.get(minuteKey);
+                    let marketValue = 0;
+                    if (Number.isFinite(close) && close > 0) {
+                        marketValue = convertAmountToBaseCurrency(
+                            numericQuantity * close,
+                            getTickerQuoteCurrency(normalizedTicker),
+                            dayKey,
+                            fxTimeline,
+                            baseCurrency,
+                        );
+                    } else {
+                        marketValue = getFallbackValue(snapshot, normalizedTicker, numericQuantity, dayKey);
+                    }
+                    aggregateMarketValue += marketValue;
+                    if (Math.abs(marketValue) > 1e-9) {
+                        holdingsMarketValues[normalizedTicker] = marketValue;
+                    }
+                });
+                const aggregateTotalEquity = aggregateRunningCash + aggregateMarketValue;
+                const point = {
+                    date: minuteKey,
+                    running_cash: aggregateRunningCash,
+                    aggregate_running_cash: aggregateRunningCash,
+                    market_value: aggregateMarketValue,
+                    aggregate_market_value: aggregateMarketValue,
+                    holdings_market_values: holdingsMarketValues,
+                    aggregate_holdings_market_values: holdingsMarketValues,
+                    total_equity: aggregateTotalEquity,
+                    aggregate_total_equity: aggregateTotalEquity,
+                    anchor_ledger_date: '',
+                    anchor_ledger_nos: [],
+                    cash_in_amount: 0,
+                    cash_out_amount: 0,
+                    net_transfer_amount: 0,
+                    cumulative_net_transfer_amount: Number(snapshot?.cumulative_net_transfer_amount) || 0,
+                    is_trading_day: true,
+                    is_intraday_equity: true,
+                };
+                return {
+                    date: minuteKey,
+                    equity: roundInvestmentChartCurrencyValue(aggregateTotalEquity),
+                    point,
+                };
+            });
+        });
+    }
+
+    function buildInvestmentOverviewEmptyIntradayLinePoints() {
+        const dayKeys = buildInvestmentOverviewTradingDayKeys();
+        if (dayKeys.length !== 5) return [];
+        return dayKeys.flatMap((dayKey) => (
+            buildInvestmentOverviewRegularSessionMinuteKeys(dayKey).map((minuteKey) => ({
+                date: minuteKey,
+                equity: null,
+                point: null,
+            }))
+        ));
+    }
+
+    async function buildInvestmentOverviewIntradayCandles() {
+        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return [];
+        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
+            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
+            : null;
+        if (!latestSnapshot) return [];
+        const openTickers = Array.from(new Set(getInvestmentRealtimeOpenTickers())).filter(Boolean);
+        if (!openTickers.length) return [];
+
+        let tickerRows = [];
+        try {
+            tickerRows = await Promise.all(openTickers.map(async (ticker) => ({
+                ticker,
+                rows: await loadInvestmentOverviewIntradayRows(ticker),
+            })));
+        } catch (error) {
+            console.warn(error);
+            return [];
+        }
+        const minuteMaps = tickerRows.map(({ ticker, rows }) => ({
+            ticker,
+            minuteMap: buildInvestmentOverviewIntradayMinuteMap(rows),
+        }));
+        const minuteKeys = getInvestmentOverviewLatestOneWeekMinuteKeys(
+            minuteMaps.flatMap((entry) => [...entry.minuteMap.keys()]),
+        );
+        if (minuteKeys.length < 30) return [];
+
+        const holdings = latestSnapshot?.aggregate_holdings || latestSnapshot?.holdings || {};
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(investmentProcessedTransactionsCache, baseCurrency);
+        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        const aggregateRunningCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash) || 0;
+        const intradayTickerSet = new Set(openTickers);
+        const holdingQuantityByTicker = new Map(
+            Object.entries(holdings)
+                .map(([ticker, quantity]) => [normalizeInvestmentTicker(ticker), Number(quantity)])
+                .filter(([ticker, quantity]) => ticker && Number.isFinite(quantity)),
+        );
+        const fixedHoldingValue = Object.entries(holdings).reduce((sum, [ticker, quantity]) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            if (!normalizedTicker || intradayTickerSet.has(normalizedTicker)) return sum;
+            return sum + getInvestmentSnapshotFixedHoldingValue(
+                latestSnapshot,
+                normalizedTicker,
+                quantity,
+                normalizeLedgerDate(minuteKeys[minuteKeys.length - 1]),
+                fxTimeline,
+                baseCurrency,
+                tickerPriceIndex,
+            );
+        }, 0);
+        const minuteMapByTicker = new Map(minuteMaps.map((entry) => [entry.ticker, entry.minuteMap]));
+        const fallbackValueCache = new Map();
+        const getCachedFallbackValue = (ticker, quantity, valuationDate) => {
+            const cacheKey = `${ticker}:${valuationDate}`;
+            if (fallbackValueCache.has(cacheKey)) return fallbackValueCache.get(cacheKey);
+            const fallbackValue = getInvestmentSnapshotFixedHoldingValue(
+                latestSnapshot,
+                ticker,
+                quantity,
+                valuationDate,
+                fxTimeline,
+                baseCurrency,
+                tickerPriceIndex,
+            );
+            fallbackValueCache.set(cacheKey, fallbackValue);
+            return fallbackValue;
+        };
+
+        return minuteKeys.map((minuteKey) => {
+            const valuationDate = normalizeLedgerDate(minuteKey) || normalizeLedgerDate(minuteKeys[minuteKeys.length - 1]);
+            const totals = { open: aggregateRunningCash + fixedHoldingValue, high: aggregateRunningCash + fixedHoldingValue, low: aggregateRunningCash + fixedHoldingValue, close: aggregateRunningCash + fixedHoldingValue };
+            openTickers.forEach((ticker) => {
+                const quantity = Number(holdingQuantityByTicker.get(ticker));
+                if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) return;
+                const bar = minuteMapByTicker.get(ticker)?.get(minuteKey);
+                if (!bar) {
+                    const fallbackValue = getCachedFallbackValue(ticker, quantity, valuationDate);
+                    totals.open += fallbackValue;
+                    totals.high += fallbackValue;
+                    totals.low += fallbackValue;
+                    totals.close += fallbackValue;
+                    return;
+                }
+                const highPrice = quantity >= 0 ? bar.high : bar.low;
+                const lowPrice = quantity >= 0 ? bar.low : bar.high;
+                const quoteCurrency = getTickerQuoteCurrency(ticker);
+                totals.open += convertAmountToBaseCurrency(quantity * bar.open, quoteCurrency, valuationDate, fxTimeline, baseCurrency);
+                totals.high += convertAmountToBaseCurrency(quantity * highPrice, quoteCurrency, valuationDate, fxTimeline, baseCurrency);
+                totals.low += convertAmountToBaseCurrency(quantity * lowPrice, quoteCurrency, valuationDate, fxTimeline, baseCurrency);
+                totals.close += convertAmountToBaseCurrency(quantity * bar.close, quoteCurrency, valuationDate, fxTimeline, baseCurrency);
+            });
+            return {
+                date: minuteKey,
+                open: roundInvestmentChartCurrencyValue(totals.open),
+                high: roundInvestmentChartCurrencyValue(totals.high),
+                low: roundInvestmentChartCurrencyValue(totals.low),
+                close: roundInvestmentChartCurrencyValue(totals.close),
+            };
+        }).filter((bar) => [bar.open, bar.high, bar.low, bar.close].every(Number.isFinite));
     }
 
     function normalizeInvestmentStockDetailsRange(range) {
@@ -5627,11 +6163,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         </a>
                     </td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money">${averagePriceDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">
+                        <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(averagePriceDisplay)}</span>
+                    </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         ${renderInvestmentLiveValue('last', summary.lastPrice, {
                             ticker: summary.ticker,
+                            className: 'trade-metric-value investment-stock-details-metric-value',
                             formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                            useSplitValue: true,
                         })}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
@@ -5649,7 +6189,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         ${renderInvestmentLiveValue('position_weight', summary.hasOpenPosition ? summary.positionWeight : null, {
                             ticker: summary.ticker,
+                            className: 'trade-metric-value investment-stock-details-metric-value',
                             formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsPercent(nextValue),
+                            useSplitValue: true,
                         })}
                     </td>
                 </tr>
@@ -5848,18 +6390,24 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    function renderWorkspaceMetricValueContent(value) {
+    function getWorkspaceMetricValueParts(value) {
         const rawValue = String(value ?? '').trim() || '--';
         const numericMatch = rawValue.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(?:\.(\d+))(%?)$/);
         if (!numericMatch) {
-            return `<span class="workspace-metric-value-major">${escapeHtml(rawValue)}</span>`;
+            return [{ className: 'workspace-metric-value-major', text: rawValue }];
         }
         const [, prefix, integerPart, decimalPart = '', suffix = ''] = numericMatch;
         return [
-            `<span class="workspace-metric-value-major">${escapeHtml(`${prefix}${integerPart}.`)}</span>`,
-            `<span class="workspace-metric-value-minor">${escapeHtml(decimalPart)}</span>`,
-            suffix ? `<span class="workspace-metric-value-suffix">${escapeHtml(suffix)}</span>` : '',
-        ].join('');
+            { className: 'workspace-metric-value-major', text: `${prefix}${integerPart}.` },
+            { className: 'workspace-metric-value-minor', text: decimalPart },
+            ...(suffix ? [{ className: 'workspace-metric-value-suffix', text: suffix }] : []),
+        ];
+    }
+
+    function renderWorkspaceMetricValueContent(value) {
+        return getWorkspaceMetricValueParts(value)
+            .map((part) => `<span class="${part.className}">${escapeHtml(part.text)}</span>`)
+            .join('');
     }
 
     function renderInvestmentLiveValue(field, value, {
@@ -5951,78 +6499,77 @@ document.addEventListener('DOMContentLoaded', () => {
         return nextNumber > previousNumber ? 'rise' : 'fall';
     }
 
-    function resolveInvestmentLiveDisplayPrecision(display) {
-        const normalizedDisplay = String(display || '').replace(/,/g, '').trim();
-        const decimalMatch = normalizedDisplay.match(/\.(\d+)/);
-        return decimalMatch ? decimalMatch[1].length : 0;
-    }
+    function createInvestmentLiveDigit(previousChar, nextChar, direction) {
+        const digit = document.createElement('span');
+        if (previousChar === nextChar || direction === 'flat') {
+            digit.className = 'investment-live-digit';
+            digit.textContent = nextChar;
+            return digit;
+        }
+        digit.className = `investment-live-digit investment-live-digit--changed investment-live-digit--${direction}`;
 
-    function formatInvestmentLiveDeltaDisplay(previousValue, nextValue, nextDisplay) {
-        const previousNumber = Number(previousValue);
-        const nextNumber = Number(nextValue);
-        if (!Number.isFinite(previousNumber) || !Number.isFinite(nextNumber)) return '';
-        const delta = nextNumber - previousNumber;
-        if (Math.abs(delta) <= INVESTMENT_LIVE_DIGIT_EPSILON) return '';
-        const fractionDigits = Math.min(4, Math.max(0, resolveInvestmentLiveDisplayPrecision(nextDisplay)));
-        const suffix = String(nextDisplay || '').trim().endsWith('%') ? '%' : '';
-        const formattedDelta = new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: fractionDigits,
-            maximumFractionDigits: fractionDigits,
-        }).format(Math.abs(delta));
-        return `${delta >= 0 ? '+' : '-'}${formattedDelta}${suffix}`;
+        const oldFace = document.createElement('span');
+        oldFace.className = 'investment-live-digit-face investment-live-digit-face--old';
+        oldFace.textContent = previousChar;
+
+        const newFace = document.createElement('span');
+        newFace.className = 'investment-live-digit-face investment-live-digit-face--new';
+        newFace.textContent = nextChar;
+
+        digit.append(oldFace, newFace);
+        return digit;
     }
 
     function buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit = false) {
         const fragment = document.createDocumentFragment();
-
-        if (useSplit) {
-            const previousNode = document.createElement('span');
-            previousNode.className = `investment-live-display investment-live-display--${direction} investment-live-display--out`;
-            previousNode.setAttribute('aria-hidden', 'true');
-            previousNode.innerHTML = renderWorkspaceMetricValueContent(previousDisplay);
-
-            const nextNode = document.createElement('span');
-            nextNode.className = `investment-live-display investment-live-display--${direction} investment-live-display--in`;
-            nextNode.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
-
-            fragment.appendChild(previousNode);
-            fragment.appendChild(nextNode);
-            return fragment;
-        }
 
         const previousChars = Array.from(String(previousDisplay || ''));
         const nextChars = Array.from(String(nextDisplay || ''));
         const maxLength = Math.max(previousChars.length, nextChars.length);
         const previousOffset = maxLength - previousChars.length;
         const nextOffset = maxLength - nextChars.length;
+        const nextParts = useSplit ? getWorkspaceMetricValueParts(nextDisplay) : [];
+        const nextPartBoundaries = [];
+        let nextPartEnd = 0;
+        nextParts.forEach((part) => {
+            nextPartEnd += Array.from(part.text).length;
+            nextPartBoundaries.push(nextPartEnd);
+        });
+        let splitWrapper = null;
+        let splitPartIndex = -1;
+        const ensureSplitWrapper = (nextCharIndex) => {
+            if (!useSplit) return fragment;
+            const normalizedCharIndex = Math.max(0, nextCharIndex);
+            const partIndex = nextPartBoundaries.findIndex((boundary) => normalizedCharIndex < boundary);
+            const safePartIndex = partIndex >= 0 ? partIndex : Math.max(0, nextParts.length - 1);
+            if (splitWrapper && splitPartIndex === safePartIndex) return splitWrapper;
+            splitWrapper = document.createElement('span');
+            splitWrapper.className = nextParts[safePartIndex]?.className || 'workspace-metric-value-major';
+            splitPartIndex = safePartIndex;
+            fragment.appendChild(splitWrapper);
+            return splitWrapper;
+        };
 
         for (let index = 0; index < maxLength; index += 1) {
-            const previousChar = previousChars[index - previousOffset] ?? '';
-            const nextChar = nextChars[index - nextOffset] ?? '';
+            const previousIndex = index - previousOffset;
+            const nextIndex = index - nextOffset;
+            const previousChar = previousChars[previousIndex] ?? '';
+            const nextChar = nextChars[nextIndex] ?? '';
             if (!previousChar && !nextChar) continue;
-            if (previousChar === nextChar || direction === 'flat') {
-                const digit = document.createElement('span');
-                digit.className = 'investment-live-digit';
-                digit.textContent = nextChar;
-                fragment.appendChild(digit);
-                continue;
-            }
-            const digit = document.createElement('span');
-            digit.className = `investment-live-digit investment-live-digit--changed investment-live-digit--${direction}`;
-
-            const oldFace = document.createElement('span');
-            oldFace.className = 'investment-live-digit-face investment-live-digit-face--old';
-            oldFace.textContent = previousChar;
-
-            const newFace = document.createElement('span');
-            newFace.className = 'investment-live-digit-face investment-live-digit-face--new';
-            newFace.textContent = nextChar;
-
-            digit.append(oldFace, newFace);
-            fragment.appendChild(digit);
+            const target = ensureSplitWrapper(nextIndex);
+            target.appendChild(createInvestmentLiveDigit(previousChar, nextChar, direction));
         }
 
         return fragment;
+    }
+
+    function renderInvestmentLiveStaticContent(node, nextDisplay, useSplit) {
+        if (!(node instanceof HTMLElement)) return;
+        if (useSplit) {
+            node.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
+        } else {
+            node.textContent = nextDisplay;
+        }
     }
 
     function shouldUseSplitLiveValue(node) {
@@ -6036,7 +6583,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(node instanceof HTMLElement)) return;
         const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
         const direction = resolveInvestmentLiveNumberDirection(node.dataset.investmentLiveNumber, nextNumber);
-        const deltaDisplay = formatInvestmentLiveDeltaDisplay(node.dataset.investmentLiveNumber, nextNumber, nextDisplay);
         const useSplit = shouldUseSplitLiveValue(node);
         const shouldAnimate = (
             previousDisplay
@@ -6047,20 +6593,20 @@ document.addEventListener('DOMContentLoaded', () => {
         node.classList.remove('is-live-rise', 'is-live-fall');
         node.replaceChildren();
         if (shouldAnimate) {
+            const animationToken = `${Date.now()}:${Math.random()}`;
+            node.dataset.investmentLiveAnimationToken = animationToken;
             node.appendChild(buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit));
             node.classList.add(direction === 'rise' ? 'is-live-rise' : 'is-live-fall');
-            if (deltaDisplay) {
-                const deltaNode = document.createElement('span');
-                deltaNode.className = `investment-live-delta investment-live-delta--${direction}`;
-                deltaNode.setAttribute('aria-hidden', 'true');
-                deltaNode.textContent = deltaDisplay;
-                deltaNode.addEventListener('animationend', () => deltaNode.remove(), { once: true });
-                node.appendChild(deltaNode);
-            }
-        } else if (useSplit) {
-            node.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
+            window.setTimeout(() => {
+                if (!node.isConnected) return;
+                if (node.dataset.investmentLiveAnimationToken !== animationToken) return;
+                renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
+                node.classList.remove('is-live-rise', 'is-live-fall');
+                delete node.dataset.investmentLiveAnimationToken;
+            }, 540);
         } else {
-            node.textContent = nextDisplay;
+            delete node.dataset.investmentLiveAnimationToken;
+            renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
         }
         node.dataset.investmentLiveDisplay = nextDisplay;
         if (Number.isFinite(Number(nextNumber))) {
@@ -7202,7 +7748,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.round(normalizedValue * 100) / 100;
     }
 
-    function buildInvestmentEquityChartRenderState(chartPoints = []) {
+    function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntradayLinePoints = []) {
         const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();
@@ -7241,12 +7787,43 @@ document.addEventListener('DOMContentLoaded', () => {
         ));
         const visibleChartPoints = renderableVisiblePoints.map(({ point }) => point);
         const visiblePointSourceIndexes = renderableVisiblePoints.map(({ sourceIndex }) => sourceIndex);
-        const rawDates = visibleChartPoints.map((point) => point.date);
-        const equity = visibleChartPoints.map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
-        const historicalEquity = visibleChartPoints
+        const normalizedIntradayLinePoints = (Array.isArray(overviewIntradayLinePoints) ? overviewIntradayLinePoints : [])
+            .map((entry) => ({
+                date: String(entry?.date || ''),
+                equity: entry?.equity !== null && entry?.equity !== undefined && Number.isFinite(Number(entry.equity))
+                    ? roundInvestmentChartCurrencyValue(entry.equity)
+                    : null,
+                point: entry?.point || null,
+            }))
+            .filter((entry) => entry.date);
+        const useOverviewIntradayLine = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+            && normalizedIntradayLinePoints.length >= 390;
+        const rawDates = useOverviewIntradayLine
+            ? normalizedIntradayLinePoints.map((entry) => entry.date)
+            : visibleChartPoints.map((point) => point.date);
+        const equity = useOverviewIntradayLine
+            ? normalizedIntradayLinePoints.map((entry) => entry.equity)
+            : visibleChartPoints.map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
+        const historicalEquity = useOverviewIntradayLine
+            ? normalizedIntradayLinePoints
+                .map((entry) => entry.equity)
+                .filter((value) => Number.isFinite(value))
+            : visibleChartPoints
             .filter((point) => point?.is_realtime !== true)
             .map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity))
             .filter((value) => Number.isFinite(value));
+        const renderedVisibleChartPoints = useOverviewIntradayLine
+            ? normalizedIntradayLinePoints.map((entry) => entry.point || {
+                date: entry.date,
+                aggregate_total_equity: entry.equity,
+                total_equity: entry.equity,
+                anchor_ledger_date: '',
+                anchor_ledger_nos: [],
+            })
+            : visibleChartPoints;
+        const renderedVisiblePointSourceIndexes = useOverviewIntradayLine
+            ? normalizedIntradayLinePoints.map(() => -1)
+            : visiblePointSourceIndexes;
         const visibleChartPointIndexByLedgerNo = new Map();
         visibleChartPoints.forEach((point, index) => {
             const ledgerNos = Array.isArray(point?.anchor_ledger_nos) ? point.anchor_ledger_nos : [];
@@ -7259,13 +7836,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             sortedChartPoints,
             fullChartPointIndexByLedgerNo,
-            visibleChartPoints,
-            visiblePointSourceIndexes,
+            visibleChartPoints: renderedVisibleChartPoints,
+            visiblePointSourceIndexes: renderedVisiblePointSourceIndexes,
             visibleChartPointIndexByLedgerNo,
             rawDates,
             labels: [...rawDates],
             equity,
             historicalEquity,
+            overviewIntradayLinePoints: useOverviewIntradayLine ? normalizedIntradayLinePoints : [],
             latestChartPoint: sortedChartPoints[sortedChartPoints.length - 1] || null,
         };
     }
@@ -7282,6 +7860,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncInvestmentEquityChartRealtime(chartPoints = []) {
         if (!investmentEquityChartInstance || !window.Chart) {
             renderEquityChartWithEquity(chartPoints);
+            return;
+        }
+        if (investmentEquityChartRuntimeState?.overviewIntradayLinePoints?.length) {
             return;
         }
         const canvas = investmentEquityChartInstance.canvas;
@@ -7315,6 +7896,53 @@ document.addEventListener('DOMContentLoaded', () => {
             yScale.max = nextYScale.max;
         }
         investmentEquityChartInstance.update('none');
+    }
+
+    function applyInvestmentOverviewIntradayLinePoints(chartPoints = [], overviewIntradayLinePoints = []) {
+        if (!investmentEquityChartInstance || !window.Chart) return;
+        const canvas = investmentEquityChartInstance.canvas;
+        if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected) return;
+        const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, overviewIntradayLinePoints);
+        if (!nextChartState.overviewIntradayLinePoints.length) return;
+        const chartYPaddingPx = 5;
+        const nextYScale = buildPixelPaddedInvestmentEquityYScale(
+            canvas,
+            nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+            chartYPaddingPx,
+        );
+        investmentEquityChartRuntimeState = {
+            ...nextChartState,
+            frozenYScale: nextYScale,
+            realtimeMarkerElement: investmentEquityChartRuntimeState?.realtimeMarkerElement || null,
+        };
+        syncInvestmentEquityChartCaches(investmentEquityChartRuntimeState);
+        investmentEquityChartInstance.data.labels = [...investmentEquityChartRuntimeState.labels];
+        investmentEquityChartInstance.data.rawLabels = [...investmentEquityChartRuntimeState.rawDates];
+        if (Array.isArray(investmentEquityChartInstance.data.datasets) && investmentEquityChartInstance.data.datasets[0]) {
+            investmentEquityChartInstance.data.datasets[0].data = [...investmentEquityChartRuntimeState.equity];
+            investmentEquityChartInstance.data.datasets[0].showLine = true;
+            investmentEquityChartInstance.data.datasets[0].spanGaps = false;
+            investmentEquityChartInstance.data.datasets[0].borderColor = "#0055cc";
+        }
+        const yScale = investmentEquityChartInstance.options?.scales?.y;
+        if (yScale) {
+            yScale.min = nextYScale.min;
+            yScale.max = nextYScale.max;
+        }
+        investmentEquityChartInstance.update('none');
+    }
+
+    function scheduleInvestmentOverviewIntradayLinePoints(chartPoints = []) {
+        const requestSerial = ++investmentOverviewIntradayRenderSerial;
+        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return;
+        buildInvestmentOverviewIntradayLinePoints().then((linePoints) => {
+            if (requestSerial !== investmentOverviewIntradayRenderSerial) return;
+            if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return;
+            if (!Array.isArray(linePoints) || linePoints.length < 390) return;
+            applyInvestmentOverviewIntradayLinePoints(chartPoints, linePoints);
+        }).catch((error) => {
+            console.warn(error);
+        });
     }
 
     function buildPixelPaddedInvestmentEquityYScale(canvas, dataset = [], paddingPx = 0) {
@@ -7388,12 +8016,15 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentChartReady(false, canvas);
 
         const referenceLineWidth = 2.0;
-        const chartState = buildInvestmentEquityChartRenderState(chartPoints);
+        const initialOverviewIntradayLinePoints = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+            ? buildInvestmentOverviewEmptyIntradayLinePoints()
+            : [];
+        const chartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
         syncInvestmentEquityChartCaches(chartState);
 
         // Read theme tokens
         const resolvedTheme = resolveInvestmentTheme();
-        const equitySeriesColor = resolvedTheme.accentPrimary;
+        const equitySeriesColor = "#0055cc";
 
         const fixedYAxisWidth = 52;
         let activeChartHoverDate = "";
@@ -7860,6 +8491,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         borderWidth: referenceLineWidth,
                         pointRadius: 0,
                         tension: 0,
+                        showLine: true,
+                        spanGaps: false,
                         borderJoinStyle: "round",
                         borderCapStyle: "round",
                     },
@@ -7881,6 +8514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             plugins: [hoverGuidePlugin, holdingsHoverMarkerPlugin, realtimeEndMarkerPlugin, xAxisLabelPlugin],
         });
+        scheduleInvestmentOverviewIntradayLinePoints(chartPoints);
         if (activeHoldingsHoverLedgerNo > 0) {
             investmentEquityChartInstance.update('none');
         }

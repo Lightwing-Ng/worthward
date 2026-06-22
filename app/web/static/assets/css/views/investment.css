@@ -1,4 +1,4 @@
-/* Code version: v1.14.10 */
+/* Code version: v1.14.11 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2030,52 +2030,26 @@
 .investment-live-value {
     position: relative;
     display: inline-flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: flex-end;
     min-width: 0;
+    min-height: 1em;
+    line-height: inherit;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-}
-
-.investment-live-delta {
-    position: absolute;
-    right: calc(100% + 4px);
-    top: 50%;
-    z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: max-content;
-    padding: 1px 4px;
-    border-radius: 5px;
-    font-size: 0.72em;
-    font-weight: 700;
-    line-height: 1.15;
-    pointer-events: none;
-    transform: translate3d(4px, -50%, 0) scale(0.96);
-    opacity: 0;
-    animation: investment-live-delta-pop 1.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.investment-live-delta--rise {
-    color: var(--theme-accent-positive);
-    background: color-mix(in srgb, var(--theme-accent-positive) 16%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-accent-positive) 32%, transparent);
-}
-
-.investment-live-delta--fall {
-    color: var(--theme-accent-secondary);
-    background: color-mix(in srgb, var(--theme-accent-secondary) 16%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-accent-secondary) 32%, transparent);
 }
 
 .investment-live-digit {
     position: relative;
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
     min-width: 0.62ch;
+    height: 1em;
     line-height: 1;
+    overflow: hidden;
+    vertical-align: baseline;
 }
 
 .investment-live-digit--changed {
@@ -2319,25 +2293,6 @@
     100% {
         opacity: 1;
         transform: translate(-50%, -50%);
-    }
-}
-
-@keyframes investment-live-delta-pop {
-    0% {
-        opacity: 0;
-        transform: translate3d(8px, -50%, 0) scale(0.92);
-    }
-    18% {
-        opacity: 1;
-        transform: translate3d(0, -50%, 0) scale(1);
-    }
-    72% {
-        opacity: 1;
-        transform: translate3d(0, -50%, 0) scale(1);
-    }
-    100% {
-        opacity: 0;
-        transform: translate3d(-4px, -50%, 0) scale(0.98);
     }
 }
 
