@@ -206,7 +206,10 @@
         selectors.forEach((selector) => {
             document.querySelectorAll(selector).forEach((node) => maskedNodes.add(node));
         });
-        if (!maskedNodes.size) {
+        // Fallback: mask all workspace elements only when navigating within a workspace view.
+        // Views like "settings" and "more" intentionally have empty mask lists — do not trigger
+        // the catch-all fallback for them, as it would bleed masks from the departing page.
+        if (!maskedNodes.size && WORKSPACE_VIEWS.has(targetView || state.currentView)) {
             document.querySelectorAll("[data-workspace-mask]").forEach((node) => maskedNodes.add(node));
         }
         maskedNodes.forEach((node) => {
