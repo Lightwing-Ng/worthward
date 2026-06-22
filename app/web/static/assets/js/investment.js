@@ -334,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
             valueKey: 'directUsdDeposits',
             rowsKey: 'directDepositRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.directUsdDeposits, 'USD'),
         },
         {
             key: 'net-usd-converted',
@@ -341,6 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'USD received from FX conversion after subtracting conversion commissions.',
             valueKey: 'netUsdConverted',
             rowsKey: 'netUsdConvertedRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.netUsdConverted, 'USD'),
         },
         {
             key: 'fx-funding-loss',
@@ -348,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
             valueKey: 'fxFundingLoss',
             rowsKey: 'fxFundingLossRows',
-            formatValue: (metrics) => formatMetricLossAmount(metrics?.fxFundingLoss),
+            formatValue: (metrics) => formatMetricLossAmountWithCurrency(metrics?.fxFundingLoss, 'USD'),
             valueClass: (metrics) => getNegativeMetricClass(metrics?.fxFundingLoss),
         },
         {
@@ -357,6 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
             valueKey: 'finalInvestableUsd',
             rowsKey: 'finalInvestableUsdRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.finalInvestableUsd, 'USD'),
         },
         {
             key: 'total-commission',
@@ -3932,7 +3935,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!investmentEquityChartInstance) return;
         const yScaleTicks = investmentEquityChartInstance.options?.scales?.y?.ticks;
         if (!yScaleTicks) return;
-        yScaleTicks.color = investmentShareMaskEnabled ? 'rgba(0, 0, 0, 0)' : resolveInvestmentTheme().muted;
+        yScaleTicks.color = resolveInvestmentTheme().muted;
+        yScaleTicks.callback = function (value, index, ticks) {
+            if (index === 0 || index === ticks.length - 1) return '';
+            if (investmentShareMaskEnabled) return '***';
+            return typeof this.getLabelForValue === 'function' ? this.getLabelForValue(value) : String(value);
+        };
         investmentEquityChartInstance.update('none');
     }
 
@@ -5627,12 +5635,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         })}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">${realizedDisplay}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
+                        <span class="trade-metric-value investment-stock-details-metric-value${realizedClass}">${renderWorkspaceMetricValueContent(realizedDisplay)}</span>
+                    </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">
                         ${renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
                             ticker: summary.ticker,
-                            className: unrealizedClass.trim(),
+                            className: `trade-metric-value investment-stock-details-metric-value ${unrealizedClass.trim()}`,
                             formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                            useSplitValue: true,
                         })}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">
@@ -5650,24 +5661,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-holdings-cell investment-holdings-cell-center"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-ticker">
                     <span class="investment-holdings-summary-copy">Cumulative P&amp;L: ${renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
-                        className: cumulativePnlClass.trim(),
+                        className: `trade-metric-value investment-stock-details-metric-value ${cumulativePnlClass.trim()}`,
                         formatter: (nextValue) => formatSignedHoldingsMoney(nextValue),
+                        useSplitValue: true,
                     })}</span>
                     <span class="investment-holdings-summary-copy">${summaries.length} instruments, ${openCount} open, ${closedCount} closed</span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
-                <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">${formatHoldingsMoney(totalRealizedPnl)}</td>
+                <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
+                    <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(formatHoldingsMoney(totalRealizedPnl))}</span>
+                </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
                     ${renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
-                        className: totalUnrealizedClass.trim(),
+                        className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
                         formatter: (nextValue) => formatHoldingsMoney(nextValue),
+                        useSplitValue: true,
                     })}
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money">
                     ${renderInvestmentLiveValue('summary_position_weight', totalWeight, {
                         formatter: (nextValue) => formatHoldingsPercent(nextValue),
+                        useSplitValue: true,
                     })}
                 </td>
             </tr>
@@ -5850,6 +5866,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ticker = '',
         formatter = (nextValue) => String(nextValue ?? '').trim() || '-',
         className = '',
+        useSplitValue = false,
     } = {}) {
         const displayText = formatter(value);
         const numericValue = Number(value);
@@ -5858,7 +5875,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const numberAttr = Number.isFinite(numericValue)
             ? ` data-investment-live-number="${escapeHtml(String(numericValue))}"`
             : '';
-        return `<span class="investment-live-value${classToken}" data-investment-live-field="${escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(displayText)}">${escapeHtml(displayText)}</span>`;
+        const innerHtml = useSplitValue ? renderWorkspaceMetricValueContent(displayText) : escapeHtml(displayText);
+        return `<span class="investment-live-value${classToken}" data-investment-live-field="${escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(displayText)}">${innerHtml}</span>`;
     }
 
     function getInvestmentHoldingsRealtimeState() {
@@ -5954,13 +5972,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${delta >= 0 ? '+' : '-'}${formattedDelta}${suffix}`;
     }
 
-    function buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction) {
+    function buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit = false) {
+        const fragment = document.createDocumentFragment();
+
+        if (useSplit) {
+            const previousNode = document.createElement('span');
+            previousNode.className = `investment-live-display investment-live-display--${direction} investment-live-display--out`;
+            previousNode.setAttribute('aria-hidden', 'true');
+            previousNode.innerHTML = renderWorkspaceMetricValueContent(previousDisplay);
+
+            const nextNode = document.createElement('span');
+            nextNode.className = `investment-live-display investment-live-display--${direction} investment-live-display--in`;
+            nextNode.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
+
+            fragment.appendChild(previousNode);
+            fragment.appendChild(nextNode);
+            return fragment;
+        }
+
         const previousChars = Array.from(String(previousDisplay || ''));
         const nextChars = Array.from(String(nextDisplay || ''));
         const maxLength = Math.max(previousChars.length, nextChars.length);
         const previousOffset = maxLength - previousChars.length;
         const nextOffset = maxLength - nextChars.length;
-        const fragment = document.createDocumentFragment();
 
         for (let index = 0; index < maxLength; index += 1) {
             const previousChar = previousChars[index - previousOffset] ?? '';
@@ -5991,11 +6025,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return fragment;
     }
 
+    function shouldUseSplitLiveValue(node) {
+        return node instanceof HTMLElement && (
+            node.classList.contains('investment-stock-details-metric-value')
+            || node.closest('.investment-holdings-summary-row')
+        );
+    }
+
     function updateInvestmentLiveValueNode(node, nextDisplay, nextNumber) {
         if (!(node instanceof HTMLElement)) return;
         const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
         const direction = resolveInvestmentLiveNumberDirection(node.dataset.investmentLiveNumber, nextNumber);
         const deltaDisplay = formatInvestmentLiveDeltaDisplay(node.dataset.investmentLiveNumber, nextNumber, nextDisplay);
+        const useSplit = shouldUseSplitLiveValue(node);
         const shouldAnimate = (
             previousDisplay
             && previousDisplay !== nextDisplay
@@ -6005,7 +6047,7 @@ document.addEventListener('DOMContentLoaded', () => {
         node.classList.remove('is-live-rise', 'is-live-fall');
         node.replaceChildren();
         if (shouldAnimate) {
-            node.appendChild(buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction));
+            node.appendChild(buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit));
             node.classList.add(direction === 'rise' ? 'is-live-rise' : 'is-live-fall');
             if (deltaDisplay) {
                 const deltaNode = document.createElement('span');
@@ -6015,6 +6057,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 deltaNode.addEventListener('animationend', () => deltaNode.remove(), { once: true });
                 node.appendChild(deltaNode);
             }
+        } else if (useSplit) {
+            node.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
         } else {
             node.textContent = nextDisplay;
         }
@@ -6162,11 +6206,13 @@ document.addEventListener('DOMContentLoaded', () => {
             'investment-stock-details-metric-value',
             metric?.valueClass || '',
         ].filter(Boolean).join(' ');
-        return renderInvestmentLiveValue(metric?.liveField || '', metric?.liveNumber, {
-            ticker: activeTicker,
-            className,
-            formatter: () => metric?.value || '-',
-        });
+        const display = metric?.value || '-';
+        const numeric = metric?.liveNumber;
+        const numberAttr = Number.isFinite(Number(numeric))
+            ? ` data-investment-live-number="${escapeHtml(String(numeric))}"`
+            : '';
+        const tickerAttr = activeTicker ? ` data-investment-live-ticker="${escapeHtml(activeTicker)}"` : '';
+        return `<span class="${className}" data-investment-live-field="${escapeHtml(metric?.liveField || '')}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(display)}">${renderWorkspaceMetricValueContent(display)}</span>`;
     }
 
     function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
@@ -7788,12 +7834,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         scale.width = fixedYAxisWidth;
                     },
                     ticks: {
-                        color: investmentShareMaskEnabled ? 'rgba(0, 0, 0, 0)' : resolvedTheme.muted,
+                        color: resolvedTheme.muted,
                         display: true,
                         padding: 8,
                         callback(value, index, ticks) {
-                            if (index === 0 || index === ticks.length - 1) return "";
-                            return typeof this.getLabelForValue === "function" ? this.getLabelForValue(value) : String(value);
+                            if (index === 0 || index === ticks.length - 1) return '';
+                            if (investmentShareMaskEnabled) return '***';
+                            return typeof this.getLabelForValue === 'function' ? this.getLabelForValue(value) : String(value);
                         },
                     },
                 },

@@ -2256,6 +2256,20 @@
     padding: var(--scrollable-data-table-summary-padding);
 }
 
+.investment-holdings-table {
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
+}
+
+.investment-holdings-table .trade-metric-value {
+    display: inline-flex !important;
+    align-items: baseline !important;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    padding-bottom: 0;
+}
+
 .investment-holdings-value-positive {
     color: var(--theme-accent-positive);
 }
