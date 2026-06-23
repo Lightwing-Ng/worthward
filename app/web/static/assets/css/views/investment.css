@@ -2313,7 +2313,7 @@
 
 .investment-holdings-summary-metric-row {
     display: flex;
-    align-items: baseline;
+    align-items: flex-end;
     justify-content: flex-start;
     gap: 6px;
     white-space: nowrap;
@@ -2328,6 +2328,18 @@
 
 .investment-holdings-live-value {
     /* Inherit font-size, font-weight, and letter-spacing from the table metrics context for consistency */
+    align-items: flex-end !important;
+    line-height: 1.3;
+}
+
+.investment-holdings-live-value > .workspace-metric-value-major,
+.investment-holdings-live-value > .workspace-metric-value-minor,
+.investment-holdings-live-value > .workspace-metric-value-suffix {
+    align-items: flex-end;
+}
+
+.investment-holdings-live-value > .workspace-metric-value-minor {
+    transform: none;
 }
 
 .investment-holdings-summary-copy {
