@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.2
+ * Code version: v0.2.3
+ * - Fixed: Stock-details price chart axis labels now dedupe same-day ticks and reserve a stable today slot during live sessions so refresh and live polling no longer shift the plotted range.
  * - Fixed: Stock-details intraday candles and live pulse now stay off outside active realtime sessions.
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
@@ -13,6 +14,7 @@ export function createInvestmentStockDetailsUtils({
     adjustTradePriceForRenderedSeries,
     applyDirectionalTrade,
     buildInvestmentFxRateTimeline,
+    buildInvestmentAxisTickIndexes,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
     buildTickerPriceIndex,
@@ -46,6 +48,7 @@ export function createInvestmentStockDetailsUtils({
     getInvestmentStockDetailsPriceChartInstance,
     getInvestmentStockDetailsPriceChartRequestSerial,
     getInvestmentStockDetailsRangeLabels,
+    getInvestmentLiveSessionDateKey,
     getInvestmentTradeSessionType,
     getMoneyMarketTickerSet,
     getNormalizedTransactionType,
@@ -391,10 +394,10 @@ export function createInvestmentStockDetailsUtils({
         const fullLabels = constrainTickerDatesToSharedRange(tickerLabels);
         const useIntradayCandles = Array.isArray(intradayRows) && intradayRows.length > 0;
         const stockDetailsAutoRangeContext = getInvestmentStockDetailsAutoRangeContext(normalizedTicker, detailRows);
-        const labels = useIntradayCandles
+        let labels = useIntradayCandles
             ? intradayRows.map((row) => String(row?.date || ''))
             : getInvestmentStockDetailsRangeLabels(fullLabels, normalizedRange, stockDetailsAutoRangeContext);
-        const closeValues = useIntradayCandles
+        let closeValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const close = Number(intradayRows[index]?.close);
                 return Number.isFinite(close) ? close : null;
@@ -403,6 +406,24 @@ export function createInvestmentStockDetailsUtils({
                 const close = Number(tickerPriceMap[date]);
                 return Number.isFinite(close) ? close : null;
             });
+        if (!useIntradayCandles) {
+            const liveDateKey = typeof getInvestmentLiveSessionDateKey === 'function'
+                ? getInvestmentLiveSessionDateKey()
+                : '';
+            if (liveDateKey && !labels.some((label) => normalizeLedgerDate(label) === liveDateKey)) {
+                const lastFiniteClose = [...closeValues].reverse().find((value) => Number.isFinite(value));
+                const fallbackClose = Number(
+                    tickerPriceMap[liveDateKey]
+                    ?? tickerPriceMap[labels[labels.length - 1]]
+                    ?? lastFiniteClose
+                );
+                labels = [...labels, liveDateKey];
+                closeValues = [
+                    ...closeValues,
+                    Number.isFinite(fallbackClose) ? fallbackClose : null,
+                ];
+            }
+        }
         const openValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const open = Number(intradayRows[index]?.open);
@@ -801,7 +822,9 @@ export function createInvestmentStockDetailsUtils({
                 const xScale = scales?.x;
                 if (!chartArea || !xScale || !labels.length) return;
                 const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+                const tickIndexes = typeof buildInvestmentAxisTickIndexes === 'function'
+                    ? buildInvestmentAxisTickIndexes(labels, labels, viewportWidth, parseRawDate)
+                    : Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
                 const baselineY = chartArea.bottom;
                 const lineHeight = 10;
                 ctx.save();

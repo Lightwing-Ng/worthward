@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.3
+ * Code version: v1.54.8
+ * - Fixed: Overview equity range switching now updates the chart in place so the segmented control is not destroyed and re-measured on every 1W through Max change.
+ * - Fixed: Daily-equity live chart points now survive render-state preparation so 1M through Max can keep the is_realtime marker target needed by the breathing pulse.
+ * - Fixed: Overview live-session slot, dedupe, shared-range extension, realtime polling chart writes, and breathing marker targeting now apply only to 1M through Max, leaving the specialized 1W intraday pipeline untouched.
+ * - Fixed: Investment overview equity now keeps a single stable today slot during pre-market, regular, and post-market live sessions on daily ranges instead of appending a second same-day point that duplicated x-axis labels or shifted the plotted range.
  * - Fixed: Broker filter trigger now keeps a centered chevron in the resting state and no longer shows broker logos or placeholder tiles in the header cell.
  * - Improved: Holdings, Stock details, and Metrics live values now right-align integer digits, measure per-character slot widths, and animate only changed digit positions with easeOutCubic requestAnimationFrame rolls that avoid layout jitter.
  * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
@@ -698,6 +702,150 @@ document.addEventListener('DOMContentLoaded', () => {
         return shouldShowInvestmentRealtimePulse(getInvestmentRealtimeClockSession());
     }
 
+    function isInvestmentOverviewIntradayEquityRange(range = selectedInvestmentEquityRange) {
+        return normalizeInvestmentEquityRange(range) === '1w';
+    }
+
+    function isInvestmentDailyEquityLiveRange(range = selectedInvestmentEquityRange) {
+        return !isInvestmentOverviewIntradayEquityRange(range);
+    }
+
+    function getInvestmentLiveSessionDateKey() {
+        return shouldRunInvestmentRealtimeQuotes()
+            ? getInvestmentNewYorkClockParts().dateKey
+            : '';
+    }
+
+    function getInvestmentDailyEquityLiveSessionDateKey() {
+        return isInvestmentDailyEquityLiveRange()
+            ? getInvestmentLiveSessionDateKey()
+            : '';
+    }
+
+    function findInvestmentChartPointIndexForLedgerDate(chartPoints = [], ledgerDate = '') {
+        const normalizedLedgerDate = normalizeLedgerDate(ledgerDate);
+        if (!normalizedLedgerDate || !Array.isArray(chartPoints)) return -1;
+        for (let index = chartPoints.length - 1; index >= 0; index -= 1) {
+            if (normalizeLedgerDate(chartPoints[index]?.date) === normalizedLedgerDate) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    function shouldPreferInvestmentChartPoint(candidate, incumbent) {
+        if (candidate?.is_realtime && !incumbent?.is_realtime) return true;
+        if (!candidate?.is_realtime && incumbent?.is_realtime) return false;
+        return true;
+    }
+
+    function dedupeInvestmentChartPointsByLedgerDate(chartPoints = []) {
+        if (!Array.isArray(chartPoints) || !chartPoints.length) return [];
+        return chartPoints.reduce((dedupedPoints, point) => {
+            const ledgerDate = normalizeLedgerDate(point?.date);
+            if (!ledgerDate) {
+                dedupedPoints.push(point);
+                return dedupedPoints;
+            }
+            const previousPoint = dedupedPoints[dedupedPoints.length - 1];
+            const previousLedgerDate = normalizeLedgerDate(previousPoint?.date);
+            if (previousLedgerDate === ledgerDate) {
+                dedupedPoints[dedupedPoints.length - 1] = shouldPreferInvestmentChartPoint(point, previousPoint)
+                    ? point
+                    : previousPoint;
+                return dedupedPoints;
+            }
+            dedupedPoints.push(point);
+            return dedupedPoints;
+        }, []);
+    }
+
+    function ensureInvestmentLiveSessionChartSlot(chartPoints = []) {
+        const sourcePoints = Array.isArray(chartPoints) ? chartPoints : [];
+        const realtimePoints = sourcePoints.filter((point) => point?.is_realtime === true);
+        let withoutRealtime = sourcePoints.filter((point) => point?.is_realtime !== true);
+        const liveDateKey = getInvestmentDailyEquityLiveSessionDateKey();
+        if (liveDateKey && withoutRealtime.length) {
+            if (findInvestmentChartPointIndexForLedgerDate(withoutRealtime, liveDateKey) < 0) {
+                const latestPoint = withoutRealtime[withoutRealtime.length - 1];
+                if (latestPoint) {
+                    withoutRealtime = [
+                        ...withoutRealtime,
+                        {
+                            ...latestPoint,
+                            date: liveDateKey,
+                            is_live_session_slot: true,
+                            is_trading_day: true,
+                            anchor_ledger_date: '',
+                            anchor_ledger_nos: [],
+                        },
+                    ];
+                }
+            }
+        }
+        if (!realtimePoints.length) return withoutRealtime;
+        const realtimeByDate = new Map();
+        realtimePoints.forEach((point) => {
+            const dateKey = normalizeLedgerDate(point?.date);
+            if (dateKey) realtimeByDate.set(dateKey, point);
+        });
+        const merged = withoutRealtime.map((point) => {
+            const dateKey = normalizeLedgerDate(point?.date);
+            return dateKey && realtimeByDate.has(dateKey) ? realtimeByDate.get(dateKey) : point;
+        });
+        realtimePoints.forEach((point) => {
+            const dateKey = normalizeLedgerDate(point?.date);
+            if (dateKey && !merged.some((entry) => normalizeLedgerDate(entry?.date) === dateKey)) {
+                merged.push(point);
+            }
+        });
+        return merged.sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
+    }
+
+    function getInvestmentEquityChartInputPoints(fallbackChartPoints = []) {
+        const fallback = Array.isArray(fallbackChartPoints) ? fallbackChartPoints : [];
+        if (!isInvestmentDailyEquityLiveRange()) return fallback;
+        if (Array.isArray(investmentChartPointsCache) && investmentChartPointsCache.length) {
+            return [...investmentChartPointsCache];
+        }
+        if (Array.isArray(investmentBaseChartPointsCache) && investmentBaseChartPointsCache.length) {
+            return ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache);
+        }
+        return ensureInvestmentLiveSessionChartSlot(fallback);
+    }
+
+    function buildInvestmentAxisTickIndexes(labels = [], rawDates = [], plotWidth = 0, parseRawDate = null) {
+        const normalizedLabels = Array.isArray(labels) ? labels : [];
+        if (!normalizedLabels.length) return [];
+        const tickIndexes = Array.from(buildInvestmentEquityTickIndexSet(normalizedLabels.length, plotWidth))
+            .sort((left, right) => left - right);
+        const seenLedgerDates = new Set();
+        return tickIndexes.filter((index) => {
+            const rawDate = Array.isArray(rawDates) && rawDates[index] !== undefined
+                ? rawDates[index]
+                : normalizedLabels[index];
+            const ledgerDate = normalizeLedgerDate(rawDate);
+            if (!ledgerDate || seenLedgerDates.has(ledgerDate)) return false;
+            seenLedgerDates.add(ledgerDate);
+            return true;
+        });
+    }
+
+    function buildInvestmentEquityTickIndexSet(count, plotWidth) {
+        if (count <= 0) return new Set();
+        if (count === 1) return new Set([0]);
+        const maxTickCount = plotWidth >= 768 ? 4 : 3;
+        if (maxTickCount === 3 || count < 4) {
+            return new Set([0, Math.round((count - 1) / 2), count - 1]);
+        }
+        return new Set([
+            0,
+            Math.round((count - 1) / 3),
+            Math.round(((count - 1) * 2) / 3),
+            count - 1,
+        ]);
+    }
+
     function getInvestmentRealtimeQuoteDateKey(quote) {
         const match = String(quote?.timestamp || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
         return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
@@ -775,9 +923,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentRealtimeChartPoints(quotes = []) {
-        const baseChartPoints = Array.isArray(investmentBaseChartPointsCache)
-            ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
-            : [];
+        if (!isInvestmentDailyEquityLiveRange()) {
+            return Array.isArray(investmentBaseChartPointsCache)
+                ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
+                : [];
+        }
+        const baseChartPoints = ensureInvestmentLiveSessionChartSlot(
+            Array.isArray(investmentBaseChartPointsCache)
+                ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
+                : [],
+        );
         if (!baseChartPoints.length || !investmentProcessedTransactionsCache.length) return baseChartPoints;
 
         const latestSnapshot = investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1];
@@ -834,10 +989,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const aggregateRunningCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash) || 0;
         const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
+        const realtimeDateKey = normalizeLedgerDate(realtimeTimestamp)
+            || getInvestmentDailyEquityLiveSessionDateKey()
+            || normalizeLedgerDate(latestBasePoint?.date);
         const session = Array.from(quoteByTicker.values()).find((quote) => quote?.session)?.session || 'realtime';
+        const targetIndex = findInvestmentChartPointIndexForLedgerDate(baseChartPoints, realtimeDateKey);
+        const anchorPoint = targetIndex >= 0 ? baseChartPoints[targetIndex] : (latestBasePoint || {});
         const realtimePoint = {
-            ...(latestBasePoint || {}),
-            date: realtimeTimestamp,
+            ...anchorPoint,
+            date: realtimeDateKey || realtimeTimestamp,
+            realtime_timestamp: realtimeTimestamp,
             running_cash: aggregateRunningCash,
             aggregate_running_cash: aggregateRunningCash,
             market_value: aggregateMarketValue,
@@ -854,13 +1015,20 @@ document.addEventListener('DOMContentLoaded', () => {
             cumulative_net_transfer_amount: Number(latestBasePoint?.cumulative_net_transfer_amount) || 0,
             is_trading_day: false,
             is_realtime: true,
+            is_live_session_slot: false,
             realtime_session: session,
             realtime_source: 'yfinance',
-            previous_trading_point_index: baseChartPoints.length - 1,
+            previous_trading_point_index: Number.isFinite(Number(anchorPoint?.previous_trading_point_index))
+                ? Number(anchorPoint.previous_trading_point_index)
+                : (targetIndex > 0 ? targetIndex - 1 : -1),
         };
 
-        const withoutRealtime = baseChartPoints.filter((point) => point?.is_realtime !== true);
-        return [...withoutRealtime, realtimePoint];
+        if (targetIndex >= 0) {
+            const nextChartPoints = [...baseChartPoints];
+            nextChartPoints[targetIndex] = realtimePoint;
+            return dedupeInvestmentChartPointsByLedgerDate(nextChartPoints);
+        }
+        return dedupeInvestmentChartPointsByLedgerDate([...baseChartPoints, realtimePoint]);
     }
 
     function applyInvestmentRealtimeQuotes(quotes = []) {
@@ -878,11 +1046,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
+        syncInvestmentHoldingsRealtimeValues();
+        if (!isInvestmentDailyEquityLiveRange()) return;
         if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
         investmentChartPointsCache = liveChartPoints;
         renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, liveChartPoints, { resetPage: false, scrollToTop: false });
         syncInvestmentEquityChartRealtime(liveChartPoints);
-        syncInvestmentHoldingsRealtimeValues();
         const latestLiveChartPoint = liveChartPoints[liveChartPoints.length - 1] || null;
         if (latestLiveChartPoint) {
             renderInvestmentDummyPortfolioDonut(latestLiveChartPoint, investmentDummyTickerProfiles);
@@ -2259,6 +2428,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return [];
     }
 
+    function resolveInvestmentEquityRealtimeMarkerTarget(runtimeState) {
+        if (isInvestmentOverviewIntradayEquityRange()) return null;
+        const visibleChartPoints = Array.isArray(runtimeState?.visibleChartPoints)
+            ? runtimeState.visibleChartPoints
+            : [];
+        const realtimeIndex = visibleChartPoints.findIndex((point) => point?.is_realtime === true);
+        if (realtimeIndex < 0) return null;
+        return {
+            index: realtimeIndex,
+            session: visibleChartPoints[realtimeIndex]?.realtime_session,
+        };
+    }
+
     function cacheInvestmentOverviewIntradayLinePoints(linePoints = []) {
         const quality = getInvestmentOverviewIntradayLineQuality(linePoints);
         if (!quality.isHealthy) return;
@@ -2712,6 +2894,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentStockDetailsPriceChartInstance: (value) => {
             investmentStockDetailsPriceChartInstance = value;
         },
+        buildInvestmentAxisTickIndexes,
+        getInvestmentLiveSessionDateKey,
         shouldRunInvestmentRealtimeQuotes,
         shouldTrackHoldingTicker,
         syncInvestmentHoverLinkedViews,
@@ -2742,15 +2926,16 @@ document.addEventListener('DOMContentLoaded', () => {
             rangeControl.dataset.active = nextRange;
             const nextIndex = Math.max(0, INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
-            scheduleInvestmentEquityRangePillUpdate();
+            updateInvestmentEquityRangePill();
             syncInvestmentHistoryHeading();
-            renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, chartPoints, { resetPage: true, scrollToTop: true });
-            renderEquityChartWithEquity(chartPoints);
+            const nextChartPoints = getInvestmentEquityChartInputPoints(chartPoints);
+            renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, nextChartPoints, { resetPage: true, scrollToTop: true });
+            updateInvestmentEquityChartDisplay(nextChartPoints);
         }, { signal });
-        window.addEventListener('resize', scheduleInvestmentEquityRangePillUpdate, { signal });
+        window.addEventListener('resize', updateInvestmentEquityRangePill, { signal });
         if (window.ResizeObserver) {
             const resizeObserver = new ResizeObserver(() => {
-                scheduleInvestmentEquityRangePillUpdate();
+                updateInvestmentEquityRangePill();
             });
             resizeObserver.observe(rangeControl);
             const rangeShell = rangeControl.closest('.investment-stock-details-range-shell');
@@ -6756,6 +6941,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map((point) => normalizeLedgerDate(point?.date))
                 .filter(Boolean)
             : [];
+        if (isInvestmentDailyEquityLiveRange()) {
+            const liveDateKey = getInvestmentDailyEquityLiveSessionDateKey();
+            if (liveDateKey) {
+                normalizedDates.push(liveDateKey);
+            }
+        }
         investmentSharedChartDateRange = Array.from(new Set(normalizedDates)).sort();
     }
 
@@ -8727,6 +8918,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const latestSnapshot = processed[processed.length - 1];
         const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
+        investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
+            ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
+            : [...investmentBaseChartPointsCache];
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         const valuationStatus = buildValuationStatus({
@@ -8793,7 +8987,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
         }
-        renderEquityChartWithEquity(chartPoints);
+        updateInvestmentEquityChartDisplay(getInvestmentEquityChartInputPoints(chartPoints));
         syncInvestmentDummyDonutFromInteraction();
         syncInvestmentStockDetailsDonutFromInteraction();
     }
@@ -8805,7 +8999,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntradayLinePoints = []) {
-        const sortedChartPoints = [...chartPoints].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        const useOverviewIntradayLineRequested = isInvestmentOverviewIntradayEquityRange();
+        const preparedChartPoints = (Array.isArray(chartPoints) ? chartPoints : [])
+            .filter((point) => useOverviewIntradayLineRequested ? point?.is_realtime !== true : true);
+        const normalizedChartPoints = useOverviewIntradayLineRequested
+            ? preparedChartPoints
+            : ensureInvestmentLiveSessionChartSlot(preparedChartPoints);
+        const sortedChartPoints = (useOverviewIntradayLineRequested
+            ? normalizedChartPoints
+            : dedupeInvestmentChartPointsByLedgerDate(normalizedChartPoints))
+            .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();
         sortedChartPoints.forEach((point, index) => {
@@ -8918,7 +9121,10 @@ document.addEventListener('DOMContentLoaded', () => {
             renderEquityChartWithEquity(chartPoints);
             return;
         }
-        if (investmentEquityChartRuntimeState?.overviewIntradayLinePoints?.length) {
+        if (
+            isInvestmentOverviewIntradayEquityRange()
+            || investmentEquityChartRuntimeState?.overviewIntradayLinePoints?.length
+        ) {
             return;
         }
         const canvas = investmentEquityChartInstance.canvas;
@@ -8928,9 +9134,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const previousRuntimeState = investmentEquityChartRuntimeState || {};
         const nextChartState = buildInvestmentEquityChartRenderState(chartPoints);
+        const previousLabels = Array.isArray(previousRuntimeState.labels) ? previousRuntimeState.labels : [];
+        const nextLabels = Array.isArray(nextChartState.labels) ? nextChartState.labels : [];
+        const labelsStable = previousLabels.length === nextLabels.length
+            && previousLabels.every((label, index) => label === nextLabels[index]);
         const chartYPaddingPx = 5;
-        const nextYScale = previousRuntimeState.frozenYScale
-            || buildPixelPaddedInvestmentEquityYScale(
+        const nextYScale = labelsStable && previousRuntimeState.frozenYScale
+            ? previousRuntimeState.frozenYScale
+            : buildPixelPaddedInvestmentEquityYScale(
                 canvas,
                 nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
                 chartYPaddingPx,
@@ -8941,10 +9152,73 @@ document.addEventListener('DOMContentLoaded', () => {
             realtimeMarkerElement: previousRuntimeState.realtimeMarkerElement || null,
         };
         syncInvestmentEquityChartCaches(investmentEquityChartRuntimeState);
-        investmentEquityChartInstance.data.labels = [...investmentEquityChartRuntimeState.labels];
-        investmentEquityChartInstance.data.rawLabels = [...investmentEquityChartRuntimeState.rawDates];
+        if (!labelsStable) {
+            investmentEquityChartInstance.data.labels = [...investmentEquityChartRuntimeState.labels];
+            investmentEquityChartInstance.data.rawLabels = [...investmentEquityChartRuntimeState.rawDates];
+        }
         if (Array.isArray(investmentEquityChartInstance.data.datasets) && investmentEquityChartInstance.data.datasets[0]) {
             investmentEquityChartInstance.data.datasets[0].data = [...investmentEquityChartRuntimeState.equity];
+        }
+        const yScale = investmentEquityChartInstance.options?.scales?.y;
+        if (yScale && !labelsStable) {
+            yScale.min = nextYScale.min;
+            yScale.max = nextYScale.max;
+        }
+        investmentEquityChartInstance.update('none');
+    }
+
+    function applyInvestmentEquityRangeChange(chartPoints = []) {
+        if (!investmentEquityChartInstance || !window.Chart) {
+            renderEquityChartWithEquity(chartPoints);
+            return;
+        }
+        const canvas = investmentEquityChartInstance.canvas;
+        if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected) {
+            renderEquityChartWithEquity(chartPoints);
+            return;
+        }
+
+        if (!isInvestmentOverviewIntradayEquityRange()) {
+            investmentOverviewIntradayRenderSerial += 1;
+        }
+
+        const cachedOverviewIntradayLinePoints = isInvestmentOverviewIntradayEquityRange()
+            ? getCachedInvestmentOverviewIntradayLinePoints()
+            : [];
+        const initialOverviewIntradayLinePoints = isInvestmentOverviewIntradayEquityRange()
+            ? (cachedOverviewIntradayLinePoints.length
+                ? cachedOverviewIntradayLinePoints
+                : buildInvestmentOverviewEmptyIntradayLinePoints())
+            : [];
+
+        const previousRuntimeState = investmentEquityChartRuntimeState || {};
+        const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
+        const chartYPaddingPx = 5;
+        const nextYScale = buildPixelPaddedInvestmentEquityYScale(
+            canvas,
+            nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+            chartYPaddingPx,
+        );
+        const realtimeMarkerElement = previousRuntimeState.realtimeMarkerElement
+            || canvas.closest('.investment-equity-chart-stage')?.querySelector('[data-investment-equity-live-marker]');
+
+        investmentEquityChartRuntimeState = {
+            ...nextChartState,
+            frozenYScale: nextYScale,
+            realtimeMarkerElement: realtimeMarkerElement instanceof HTMLElement ? realtimeMarkerElement : null,
+        };
+        syncInvestmentEquityChartCaches(investmentEquityChartRuntimeState);
+        investmentEquityChartInstance.data.labels = [...investmentEquityChartRuntimeState.labels];
+        investmentEquityChartInstance.data.rawLabels = [...investmentEquityChartRuntimeState.rawDates];
+        const dataset = investmentEquityChartInstance.data.datasets?.[0];
+        if (dataset) {
+            dataset.data = [...investmentEquityChartRuntimeState.equity];
+            dataset.showLine = true;
+            dataset.spanGaps = false;
+            dataset.borderColor = "#0055cc";
+            dataset.segment = {
+                borderColor: (context) => getInvestmentEquitySegmentBorderColor(context, "#0055cc"),
+            };
         }
         const yScale = investmentEquityChartInstance.options?.scales?.y;
         if (yScale) {
@@ -8952,6 +9226,22 @@ document.addEventListener('DOMContentLoaded', () => {
             yScale.max = nextYScale.max;
         }
         investmentEquityChartInstance.update('none');
+        if (isInvestmentOverviewIntradayEquityRange()) {
+            scheduleInvestmentOverviewIntradayLinePoints(chartPoints);
+        }
+    }
+
+    function updateInvestmentEquityChartDisplay(chartPoints = []) {
+        const inputPoints = Array.isArray(chartPoints) ? chartPoints : [];
+        if (!inputPoints.length) {
+            renderEquityChartWithEquity(inputPoints);
+            return;
+        }
+        if (investmentEquityChartInstance?.canvas?.isConnected) {
+            applyInvestmentEquityRangeChange(inputPoints);
+            return;
+        }
+        renderEquityChartWithEquity(inputPoints);
     }
 
     function applyInvestmentOverviewIntradayLinePoints(chartPoints = [], overviewIntradayLinePoints = []) {
@@ -9113,31 +9403,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const parseRawDate = (value) => {
             if (typeof value !== "string") return null;
-            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
             if (!match) return null;
             return {
                 year: Number(match[1]),
                 monthIndex: Number(match[2]) - 1,
                 day: Number(match[3]),
+                hours: match[4] ? Number(match[4]) : null,
+                minutes: match[5] ? Number(match[5]) : null,
             };
         };
 
         const formatChartDateLines = (dateParts) => formatInvestmentFullDateLines(dateParts, { allowWrap: true });
-
-        const buildTickIndexSet = (count, plotWidth) => {
-            if (count <= 0) return new Set();
-            if (count === 1) return new Set([0]);
-            const maxTickCount = plotWidth >= 768 ? 4 : 3;
-            if (maxTickCount === 3 || count < 4) {
-                return new Set([0, Math.round((count - 1) / 2), count - 1]);
-            }
-            return new Set([
-                0,
-                Math.round((count - 1) / 3),
-                Math.round(((count - 1) * 2) / 3),
-                count - 1,
-            ]);
-        };
 
         const hoverGuidePlugin = {
             id: "investmentHoverGuidePlugin",
@@ -9248,13 +9525,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const runtimeState = getRuntimeState();
                 const markerElement = runtimeState?.realtimeMarkerElement;
                 if (!(markerElement instanceof HTMLElement)) return;
-                const realtimeIndex = runtimeState.visibleChartPoints.findIndex((point) => point?.is_realtime === true);
-                if (realtimeIndex < 0) {
+                const markerTarget = resolveInvestmentEquityRealtimeMarkerTarget(runtimeState);
+                if (!markerTarget || !Number.isInteger(markerTarget.index) || markerTarget.index < 0) {
                     markerElement.hidden = true;
                     return;
                 }
-                const realtimePoint = runtimeState.visibleChartPoints[realtimeIndex];
-                if (!shouldShowInvestmentRealtimePulse(realtimePoint?.realtime_session)) {
+                const realtimeIndex = markerTarget.index;
+                if (!shouldShowInvestmentRealtimePulse(markerTarget.session)) {
                     markerElement.hidden = true;
                     return;
                 }
@@ -9297,7 +9574,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rawDates = Array.isArray(runtimeState.rawDates) ? runtimeState.rawDates : [];
                 if (!chartArea || !xScale || !labels.length) return;
                 const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
+                const tickIndexes = buildInvestmentAxisTickIndexes(labels, rawDates, viewportWidth, parseRawDate);
                 const baselineY = chartArea.bottom;
                 const labelOptions = chart.options?.plugins?.investmentXAxisLabels || {};
                 const fontSize = Number.parseFloat(labelOptions.fontSize) || 12;
@@ -9342,7 +9619,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return tooltip;
         };
 
-        const formatTooltipDate = (dateParts) => formatInvestmentFullDateParts(dateParts);
+        const formatTooltipDate = (dateParts) => formatInvestmentFullDateParts(dateParts, {
+            includeTime: Number.isFinite(dateParts?.hours) && Number.isFinite(dateParts?.minutes),
+        });
 
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
@@ -9365,8 +9644,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
             const listEl = tooltipEl.querySelector(".chart-tooltip-list");
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
-            const parsedDate = parseRawDate(rawDates[pointIndex]);
             const pointRecord = visibleChartPoints[pointIndex];
+            const tooltipDateSource = String(pointRecord?.realtime_timestamp || rawDates[pointIndex] || '');
+            const parsedDate = parseRawDate(tooltipDateSource);
             const sourcePointIndex = Number.isFinite(pointIndex) && pointIndex >= 0
                 ? Number(visiblePointSourceIndexes[pointIndex])
                 : -1;
