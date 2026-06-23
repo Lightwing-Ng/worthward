@@ -1,4 +1,4 @@
-/* Code version: v1.14.12 */
+/* Code version: v1.14.14 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -300,6 +300,7 @@
 .investment-history-broker-filter-header {
     padding: 4px 0;
     vertical-align: middle;
+    color: var(--scrollable-data-table-header-color);
 }
 
 .investment-broker-filter-field {
@@ -317,14 +318,49 @@
 
 .investment-broker-filter-trigger.live-trading-broker-trigger,
 .investment-broker-filter-trigger.form-select {
+    --investment-broker-filter-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z'/%3E%3C/svg%3E");
+    position: relative;
     width: 20px;
     min-width: 20px;
     height: 20px;
     min-height: 20px;
     padding: 0;
     justify-content: center;
-    background-position: 50% 50%;
-    background-size: 10px 6px;
+    color: inherit;
+    background-image: none;
+    background-color: transparent;
+    box-shadow: none;
+    border: 0;
+}
+
+.investment-broker-filter-trigger.live-trading-broker-trigger::before,
+.investment-broker-filter-trigger.form-select::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 10px;
+    height: 6px;
+    transform: translate(-50%, -50%);
+    background-color: currentColor;
+    mask-image: var(--investment-broker-filter-chevron-mask);
+    -webkit-mask-image: var(--investment-broker-filter-chevron-mask);
+    mask-repeat: no-repeat;
+    -webkit-mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-position: center;
+    mask-size: contain;
+    -webkit-mask-size: contain;
+    pointer-events: none;
+}
+
+.investment-broker-filter-trigger.live-trading-broker-trigger:hover,
+.investment-broker-filter-trigger.live-trading-broker-trigger:focus,
+.investment-broker-filter-trigger.live-trading-broker-trigger:focus-visible,
+.investment-broker-filter-trigger.live-trading-broker-trigger[aria-expanded="true"] {
+    color: inherit;
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    box-shadow: none;
 }
 
 .investment-broker-filter-trigger-slot {
