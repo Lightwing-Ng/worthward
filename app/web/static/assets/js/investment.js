@@ -5143,10 +5143,11 @@ document.addEventListener('DOMContentLoaded', () => {
             pruneShareHoldingsRow(tableRow);
             Array.from(tableRow.cells).forEach((cell, index) => {
                 if (!(cell instanceof HTMLTableCellElement)) return;
-                if (index === 0 && cell.querySelector('.investment-holdings-summary-copy')) return;
+                if (index === 0 && (cell.querySelector('.investment-holdings-summary-ticker-body') || cell.querySelector('.investment-holdings-summary-copy'))) return;
                 cell.textContent = normalizeShareHoldingsMoneyText(cell.textContent || '');
             });
         };
+
         const buildShareTickerCell = (ticker) => {
             const normalizedTicker = String(ticker || '').trim().toUpperCase();
             const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
@@ -6325,7 +6326,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return boundedDates.length ? boundedDates : normalizedTickerDates;
     }
 
-    function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY) {
+    function renderHoldingsTable(summaries, tickerProfiles, TOTAL_EQUITY, AGGREGATE_CASH) {
         if (!summaries.length) {
             return `
                 <div class="investment-holdings-table-shell">
@@ -6429,16 +6430,46 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
 
+        const cashClass = Number.isFinite(AGGREGATE_CASH) && AGGREGATE_CASH >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
+        const totalEquityClass = Number.isFinite(TOTAL_EQUITY) && TOTAL_EQUITY >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
+
         const summaryRowHtml = `
             <tr class="investment-holdings-summary-row">
                 <td class="investment-holdings-cell investment-holdings-cell-center"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                    <span class="investment-holdings-summary-copy">Cumulative P&amp;L: ${renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
-                        className: `trade-metric-value investment-stock-details-metric-value ${cumulativePnlClass.trim()}`,
-                        formatter: (nextValue) => formatSignedHoldingsMoney(nextValue),
-                        useSplitValue: true,
-                    })}</span>
-                    <span class="investment-holdings-summary-copy">${summaries.length} instruments, ${openCount} open, ${closedCount} closed</span>
+                    <span class="investment-holdings-summary-ticker-body">
+                        <span class="investment-holdings-summary-instruments">${summaries.length} instruments, ${openCount} open, ${closedCount} closed</span>
+                        <span class="investment-holdings-summary-metrics">
+                            <span class="investment-holdings-summary-metric-row">
+                                <span class="investment-holdings-summary-metric-label">Cash</span>
+                                ${renderInvestmentLiveValue('summary_cash_balance', Number.isFinite(AGGREGATE_CASH) ? AGGREGATE_CASH : null, {
+                                    className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cashClass}`,
+                                    formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                                    useSplitValue: true,
+                                })}
+                            </span>
+                            <span class="investment-holdings-summary-metric-row">
+                                <span class="investment-holdings-summary-metric-label">Total Equity</span>
+                                ${renderInvestmentLiveValue('summary_total_equity', Number.isFinite(TOTAL_EQUITY) ? TOTAL_EQUITY : null, {
+                                    className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${totalEquityClass}`,
+                                    formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                                    useSplitValue: true,
+                                })}
+                            </span>
+                            <span class="investment-holdings-summary-metric-row">
+                                <span class="investment-holdings-summary-metric-label">Cumulative P&amp;L</span>
+                                ${renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
+                                    className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cumulativePnlClass}`,
+                                    formatter: (nextValue) => formatSignedHoldingsMoney(nextValue),
+                                    useSplitValue: true,
+                                })}
+                            </span>
+                        </span>
+                    </span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
@@ -7634,6 +7665,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastKnownTickerPrices = {};
 
         const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        const hsbcAvailableCashWindowStartDate = orderedTransactions.reduce((latestDate, txn) => {
+            if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) !== 'hsbc') return latestDate;
+            const settlementDate = normalizeLedgerDate(txn?.source?.cash_settlement_date);
+            if (!settlementDate) return latestDate;
+            return !latestDate || settlementDate > latestDate ? settlementDate : latestDate;
+        }, '');
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
             ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
@@ -7803,9 +7840,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
+            const transactionDate = normalizeLedgerDate(txn?.date);
+            const hasWindowedAvailableCash = (
+                txn?.source?.available_cash_after_raw !== undefined
+                && txn?.source?.available_cash_after_raw !== null
+                && (
+                    !hsbcAvailableCashWindowStartDate
+                    || !transactionDate
+                    || transactionDate >= hsbcAvailableCashWindowStartDate
+                )
+            );
             const authoritativeHsbcCashAfter = Number(
-                txn?.source?.available_cash_after_raw
+                (
+                    hasWindowedAvailableCash
+                        ? txn?.source?.available_cash_after_raw
+                        : undefined
+                )
                 ?? txn?.source?.cash_settlement_balance_after_raw
+                ?? (
+                    txn?.source?.file_kind === 'hsbc_usd_account_text'
+                        ? txn?.source?.balance_after_raw
+                        : undefined
+                )
             );
             if (
                 normalizeInvestmentBroker(brokerCode) === 'hsbc'
@@ -8022,7 +8078,8 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
-        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, AGGREGATE_TOTAL_EQUITY);
+        const AGGREGATE_CASH = Number(last?.aggregate_running_cash ?? last?.running_cash);
+        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, AGGREGATE_TOTAL_EQUITY, AGGREGATE_CASH);
         attachHoldingsTableAlignmentSync(holdingsPanel);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
