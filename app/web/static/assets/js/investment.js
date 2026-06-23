@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.52.0
+ * Code version: v1.54.0
  * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
  * - Changed: USD funding metrics now omit the dollar sign because USD is the workspace default currency.
  * - Added: Investment metrics cumulative and unrealized P&L now reuse the Holdings live value updater during pre-market, regular, and post-market sessions.
@@ -1134,16 +1134,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.round(Math.abs(right.getTime() - left.getTime()) / 86400000);
     }
 
+    function getInvestmentInternalTransferDirection(txn) {
+        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (brokerCode !== 'hsbc' && normalizedType === 'deposit') return 'hsbc_to_broker';
+        if (brokerCode === 'hsbc' && normalizedType === 'deposit') return 'broker_to_hsbc';
+        return '';
+    }
+
     function isInvestmentInternalTransferSourceCandidate(txn) {
-        if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === 'hsbc') return false;
-        if (getNormalizedTransactionType(txn) !== 'deposit') return false;
+        if (!getInvestmentInternalTransferDirection(txn)) return false;
         if (String(txn?.ticker || '').trim()) return false;
         return Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9;
     }
 
-    function isInvestmentInternalTransferTargetCandidate(txn) {
-        if (normalizeInvestmentBroker(getTransactionBrokerCode(txn)) !== 'hsbc') return false;
+    function isInvestmentInternalTransferTargetCandidateForDirection(txn, direction) {
+        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+        if (direction === 'hsbc_to_broker' && brokerCode !== 'hsbc') return false;
+        if (direction === 'broker_to_hsbc' && brokerCode === 'hsbc') return false;
         if (getNormalizedTransactionType(txn) !== 'withdrawal') return false;
+        if (String(txn?.ticker || '').trim()) return false;
         return Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9;
     }
 
@@ -1151,6 +1161,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
         const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
         return Math.min(sourceAmount, targetAmount);
+    }
+
+    function getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn) {
+        const direction = getInvestmentInternalTransferDirection(sourceTxn);
+        if (!direction) return 0;
+        const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
+        const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
+        const feeAmount = targetAmount - sourceAmount;
+        return feeAmount > 0.005 ? feeAmount : 0;
+    }
+
+    function getInvestmentInternalTransferCommissionTxn(sourceTxn, targetTxn) {
+        const direction = getInvestmentInternalTransferDirection(sourceTxn);
+        if (direction === 'broker_to_hsbc') return sourceTxn;
+        if (direction === 'hsbc_to_broker') return targetTxn;
+        return null;
     }
 
     function formatInvestmentTransferAccountCompact(txn) {
@@ -1168,18 +1194,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalized.length > 4 ? normalized.slice(-4) : normalized;
     }
 
-    function formatInvestmentInternalTransferOptionLabel(txn) {
+    function formatInvestmentInternalTransferOptionLabel(txn, metadata = {}) {
         const brokerLabel = getInvestmentBrokerMeta(getTransactionBrokerCode(txn)).label;
         const accountCompact = formatInvestmentTransferAccountCompact(txn);
         const dateLabel = formatTransactionDateDisplay(txn);
         const descriptionLabel = String(formatTransactionDescription(txn) || '').replace(/\s+/g, ' ').trim() || '--';
         const amountLabel = formatAmountWithCurrency(getTransactionAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false });
+        const feeAmount = Number(metadata?.feeAmount) || 0;
+        const feeLabel = feeAmount > 0.005
+            ? `includes ${formatInvestmentInternalTransferFeeAmount(feeAmount, formatTransactionCurrency(txn) || 'USD')} transfer fee`
+            : '';
         return [
             accountCompact ? `${brokerLabel} ${accountCompact}` : brokerLabel,
             dateLabel,
             descriptionLabel,
             amountLabel,
+            feeLabel,
         ].filter(Boolean).join(' · ');
+    }
+
+    function formatInvestmentInternalTransferFeeAmount(feeAmount, currency) {
+        const normalizedCurrency = String(currency || '').trim().toUpperCase() || 'USD';
+        const amountText = formatAmount(Number(feeAmount) || 0);
+        return normalizedCurrency === 'USD'
+            ? `USD ${amountText}`
+            : `${normalizedCurrency} ${amountText}`;
+    }
+
+    function formatInvestmentInternalTransferFeeNote(feeAmount, currency) {
+        const numericFeeAmount = Number(feeAmount);
+        if (!Number.isFinite(numericFeeAmount) || numericFeeAmount <= 0.005) return '';
+        return `Transfer fee ${formatInvestmentInternalTransferFeeAmount(numericFeeAmount, currency || 'USD')} will be recorded as HSBC commission.`;
     }
 
     function getInvestmentInternalTransferReferenceText(txn) {
@@ -1197,6 +1242,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sourceKey) return '';
         const binding = investmentInternalTransferResolvedBindingsBySourceKey.get(sourceKey);
         if (!binding?.targetTxn) return '';
+        if (getInvestmentInternalTransferDirection(binding.sourceTxn) === 'broker_to_hsbc') {
+            const sourceReferenceText = getInvestmentInternalTransferReferenceText(binding.sourceTxn);
+            return sourceReferenceText || '';
+        }
         const referenceText = getInvestmentInternalTransferReferenceText(binding.targetTxn);
         return referenceText || '';
     }
@@ -1225,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isInvestmentInternalTransferSourceCandidate(txn)) {
                 sourceTransactions.push(txn);
             }
-            if (isInvestmentInternalTransferTargetCandidate(txn)) {
+            if (getNormalizedTransactionType(txn) === 'withdrawal' && Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9) {
                 targetTransactions.push(txn);
                 targetByKey.set(transactionKey, txn);
             }
@@ -1234,15 +1283,24 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceTransactions.forEach((sourceTxn) => {
             const sourceKey = String(sourceTxn?.manual_internal_transfer_key || '').trim();
             if (!sourceKey) return;
+            const direction = getInvestmentInternalTransferDirection(sourceTxn);
+            if (!direction) return;
             const selectedTargetKey = String(storedBindings[sourceKey] || '').trim();
             const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
             const sourceDate = normalizeLedgerDate(sourceTxn?.date);
             const amountTolerance = Math.max(0.01, sourceAmount * 0.02);
-            const selectedTarget = selectedTargetKey ? targetByKey.get(selectedTargetKey) || null : null;
+            const selectedTargetCandidate = selectedTargetKey ? targetByKey.get(selectedTargetKey) || null : null;
+            const selectedTarget = (
+                selectedTargetCandidate
+                && isInvestmentInternalTransferTargetCandidateForDirection(selectedTargetCandidate, direction)
+            )
+                ? selectedTargetCandidate
+                : null;
             const options = targetTransactions
                 .filter((targetTxn) => {
                     const targetKey = String(targetTxn?.manual_internal_transfer_key || '').trim();
                     if (!targetKey || targetKey === selectedTargetKey) return Boolean(targetKey);
+                    if (!isInvestmentInternalTransferTargetCandidateForDirection(targetTxn, direction)) return false;
                     const targetDate = normalizeLedgerDate(targetTxn?.date);
                     const dayDistance = getInvestmentLedgerDateDistanceDays(sourceDate, targetDate);
                     if (!Number.isFinite(dayDistance) || dayDistance > INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS) return false;
@@ -1252,38 +1310,60 @@ document.addEventListener('DOMContentLoaded', () => {
                     const targetCurrency = String(formatTransactionCurrency(targetTxn) || '').trim().toUpperCase();
                     return !sourceCurrency || !targetCurrency || sourceCurrency === targetCurrency;
                 })
-                .map((targetTxn) => ({
-                    key: String(targetTxn?.manual_internal_transfer_key || '').trim(),
-                    label: formatInvestmentInternalTransferOptionLabel(targetTxn),
-                    targetTxn,
-                    dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(targetTxn?.date)),
-                    amountDiff: Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount),
-                }))
+                .map((targetTxn) => {
+                    const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn);
+                    return {
+                        key: String(targetTxn?.manual_internal_transfer_key || '').trim(),
+                        label: formatInvestmentInternalTransferOptionLabel(targetTxn, { feeAmount }),
+                        targetTxn,
+                        dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(targetTxn?.date)),
+                        amountDiff: Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount),
+                        feeAmount,
+                        feeNote: formatInvestmentInternalTransferFeeNote(
+                            feeAmount,
+                            formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(targetTxn) || 'USD'
+                        ),
+                    };
+                })
                 .sort((left, right) => (
-                    left.dayDistance - right.dayDistance
-                    || left.amountDiff - right.amountDiff
+                    left.amountDiff - right.amountDiff
+                    || left.dayDistance - right.dayDistance
+                    || left.feeAmount - right.feeAmount
                     || String(left.targetTxn?.date || '').localeCompare(String(right.targetTxn?.date || ''))
                     || (Number(left.targetTxn?.ledger_no) || 0) - (Number(right.targetTxn?.ledger_no) || 0)
                 ));
 
             if (selectedTarget && !options.some((option) => option.key === selectedTargetKey)) {
+                const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, selectedTarget);
                 options.unshift({
                     key: selectedTargetKey,
-                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget),
+                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget, { feeAmount }),
                     targetTxn: selectedTarget,
                     dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(selectedTarget?.date)),
                     amountDiff: Math.abs((Math.abs(Number(getTransactionAmount(selectedTarget)) || 0)) - sourceAmount),
+                    feeAmount,
+                    feeNote: formatInvestmentInternalTransferFeeNote(
+                        feeAmount,
+                        formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(selectedTarget) || 'USD'
+                    ),
                 });
             }
 
             sourceOptionsByKey.set(sourceKey, options);
             if (selectedTarget) {
+                const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, selectedTarget);
                 resolvedBindingsBySourceKey.set(sourceKey, {
                     sourceKey,
                     targetKey: selectedTargetKey,
                     sourceTxn,
                     targetTxn: selectedTarget,
                     amount: getInvestmentInternalTransferPairAmount(sourceTxn, selectedTarget),
+                    feeAmount,
+                    commissionTxn: getInvestmentInternalTransferCommissionTxn(sourceTxn, selectedTarget),
+                    feeNote: formatInvestmentInternalTransferFeeNote(
+                        feeAmount,
+                        formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(selectedTarget) || 'USD'
+                    ),
                 });
             }
         });
@@ -1321,6 +1401,9 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.manual_internal_transfer_currency = '';
             txn.manual_internal_transfer_candidate_count = 0;
             txn.manual_internal_transfer_needs_binding = false;
+            txn.manual_internal_transfer_fee_amount = 0;
+            txn.manual_internal_transfer_fee_note = '';
+            txn.manual_internal_transfer_commission_amount = 0;
         });
 
         const bridgeDeltasByIndex = new Map();
@@ -1338,6 +1421,9 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.manual_internal_transfer_candidate_count = options.length;
             txn.manual_internal_transfer_selected_target_key = String(resolvedBinding?.targetKey || '').trim();
             txn.manual_internal_transfer_needs_binding = !resolvedBinding;
+            const pendingFeeOption = options.find((option) => Number(option?.feeAmount) > 0.005) || null;
+            txn.manual_internal_transfer_fee_amount = Number(resolvedBinding?.feeAmount ?? pendingFeeOption?.feeAmount ?? 0) || 0;
+            txn.manual_internal_transfer_fee_note = String(resolvedBinding?.feeNote || pendingFeeOption?.feeNote || '').trim();
         });
 
         investmentInternalTransferResolvedBindingsBySourceKey.forEach((binding) => {
@@ -1346,6 +1432,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetTxn,
                 targetKey,
                 amount,
+                feeAmount,
+                commissionTxn,
+                feeNote,
             } = binding;
             const pairAmount = Number(amount) || 0;
             if (!(pairAmount > 1e-9)) return;
@@ -1358,6 +1447,12 @@ document.addEventListener('DOMContentLoaded', () => {
             targetTxn.manual_internal_transfer_role = 'target';
             targetTxn.manual_internal_transfer_pair_key = String(sourceTxn?.manual_internal_transfer_key || '').trim();
             targetTxn.manual_internal_transfer_pair_amount = pairAmount;
+            const numericFeeAmount = Number(feeAmount) || 0;
+            if (numericFeeAmount > 0.005 && commissionTxn) {
+                commissionTxn.manual_internal_transfer_fee_amount = numericFeeAmount;
+                commissionTxn.manual_internal_transfer_fee_note = String(feeNote || '').trim();
+                commissionTxn.manual_internal_transfer_commission_amount = -Math.abs(numericFeeAmount);
+            }
 
             const sourceIndex = transactions.indexOf(sourceTxn);
             const targetIndex = transactions.indexOf(targetTxn);
@@ -4286,6 +4381,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolvedDescription = getInvestmentResolvedTransferDescription(txn);
         const descriptionCurrentText = resolvedDescription || description;
         const resolvedBinding = sourceKey ? investmentInternalTransferResolvedBindingsBySourceKey.get(sourceKey) || null : null;
+        const transferFeeNote = txn?.manual_internal_transfer_needs_binding
+            ? String(txn?.manual_internal_transfer_fee_note || '').trim()
+            : '';
         const resolvedBrokerLabel = resolvedBinding?.targetTxn
             ? getInvestmentBrokerMeta(getTransactionBrokerCode(resolvedBinding.targetTxn)).label
             : 'HSBC';
@@ -4298,7 +4396,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             data-investment-transfer-source-key="${escapeHtml(sourceKey)}"
                             aria-label="Bind internal transfer counterpart">
                         ${txn?.manual_internal_transfer_needs_binding
-                            ? '<option value="">Bind HSBC outflow...</option>'
+                            ? '<option value="">Bind transfer outflow...</option>'
                             : `<option value="${escapeHtml(selectedTargetKey)}" selected>from ${escapeHtml(resolvedBrokerLabel)}</option><option value="">Undo link</option>`}
                         ${transferOptions.map((option) => `
                             <option value="${escapeHtml(option.key)}"${txn?.manual_internal_transfer_needs_binding && option.key === selectedTargetKey ? ' selected' : ''}>
@@ -4306,6 +4404,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </option>
                         `).join('')}
                     </select>
+                    ${transferFeeNote ? `<span class="investment-transfer-link-fee-note">${escapeHtml(transferFeeNote)}</span>` : ''}
                 </div>
             `
             : escapeHtml(description);
@@ -7704,7 +7803,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
-            const authoritativeHsbcCashAfter = Number(txn?.source?.cash_settlement_balance_after_raw);
+            const authoritativeHsbcCashAfter = Number(
+                txn?.source?.available_cash_after_raw
+                ?? txn?.source?.cash_settlement_balance_after_raw
+            );
             if (
                 normalizeInvestmentBroker(brokerCode) === 'hsbc'
                 && Number.isFinite(authoritativeHsbcCashAfter)

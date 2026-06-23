@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.43.4
+ * Code version: v1.44.0
  * - Changed: HSBC same-day history now sorts funding cash rows ahead of trade executions, while executions still follow ascending reference codes and can reuse hidden settlement rows only as internal cash-after calibration
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
@@ -50,7 +50,9 @@ export function createInvestmentDataUtils({
     function getTransactionCommission(txn) {
         const commission = txn?.normalized?.commission ?? txn?.commission ?? 0;
         const numericCommission = Number(commission);
-        return Number.isFinite(numericCommission) ? numericCommission : 0;
+        const manualTransferCommission = Number(txn?.manual_internal_transfer_commission_amount ?? 0);
+        return (Number.isFinite(numericCommission) ? numericCommission : 0)
+            + (Number.isFinite(manualTransferCommission) ? manualTransferCommission : 0);
     }
 
     function getInvestmentStartingCash() {

@@ -3128,6 +3128,15 @@
     outline-offset: 2px;
 }
 
+.investment-transfer-link-fee-note {
+    display: block;
+    min-width: 0;
+    color: var(--theme-warning-strong, #b36b00);
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: normal;
+}
+
 .investment-history-cell-left:has(.investment-transfer-link-shell) {
     padding-top: 0;
     padding-bottom: 0;
