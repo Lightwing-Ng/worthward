@@ -1,6 +1,6 @@
 {# Code version: v1.7.3 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
 
 {% block sidebar_content %}
@@ -39,19 +39,13 @@
                         <label class="settings-form-label live-trading-field-label" for="live_trading_broker">Broker</label>
                         <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
                             <select id="live_trading_broker"
-                                    name="broker"
-                                    class="trade-strategy-native-select backtest-shared-select-native"
-                                    hidden
-                                    aria-hidden="true"
-                                    tabindex="-1">
-                                <option value="longbridge"
-                                        data-icon-url="{{ url_for('market_store_logo', filename='brokers/Longbridge.png') }}"
-                                        data-icon-alt="Longbridge logo"
-                                        selected>Longbridge</option>
-                                <option value="ibkr"
-                                        data-icon-url="{{ url_for('market_store_logo', filename='brokers/IBKR.png') }}"
-                                        data-icon-alt="IBKR logo">IBKR</option>
-                            </select>
+                                name="broker"
+                                class="trade-strategy-native-select backtest-shared-select-native"
+                                hidden
+                                aria-hidden="true"
+                                tabindex="-1">
+                            {{ render_broker_select_options(live_trading_broker_codes, 'longbridge') }}
+                        </select>
                             <div class="trade-strategy-combobox backtest-shared-select-combobox">
                                 <button type="button"
                                         class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger"

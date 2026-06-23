@@ -2972,12 +2972,64 @@
         });
     };
 
+    const BROKER_PINYIN_SORT_KEYS = {
+        hsbc: "hsbc",
+        ibkr: "ibkr",
+        longbridge: "longbridge",
+    };
+    const brokerPinyinCollator = new Intl.Collator("zh-CN", {sensitivity: "base", numeric: true});
+
+    const isBrokerSharedSelectKind = (field) => {
+        if (!(field instanceof HTMLElement)) return false;
+        const kind = String(field.dataset.sharedSelectKind || "").trim().toLowerCase();
+        return kind === "settings-broker"
+            || kind === "live-trading-broker"
+            || kind === "investment-import-broker";
+    };
+
+    const getBrokerOptionSortKey = (option) => {
+        if (!(option instanceof HTMLOptionElement)) return "";
+        const explicitKey = String(option.dataset.pinyinSortKey || "").trim().toLowerCase();
+        if (explicitKey) return explicitKey;
+        const catalogKey = BROKER_PINYIN_SORT_KEYS[String(option.value || "").trim().toLowerCase()];
+        if (catalogKey) return catalogKey;
+        return String(option.textContent || option.value || "").trim().toLowerCase();
+    };
+
+    const compareBrokerOptionSortKeys = (leftKey, rightKey) => brokerPinyinCollator.compare(leftKey, rightKey);
+
+    const sortBrokerSelectOptions = (select) => {
+        if (!(select instanceof HTMLSelectElement)) return;
+        const selectedValue = String(select.value || "");
+        const options = Array.from(select.options);
+        options.sort((left, right) => {
+            const bySortKey = compareBrokerOptionSortKeys(
+                getBrokerOptionSortKey(left),
+                getBrokerOptionSortKey(right),
+            );
+            if (bySortKey !== 0) return bySortKey;
+            return compareBrokerOptionSortKeys(
+                String(left.value || "").trim().toLowerCase(),
+                String(right.value || "").trim().toLowerCase(),
+            );
+        });
+        const fragment = document.createDocumentFragment();
+        options.forEach((option) => fragment.appendChild(option));
+        select.replaceChildren(fragment);
+        if (selectedValue && Array.from(select.options).some((option) => option.value === selectedValue)) {
+            select.value = selectedValue;
+        }
+    };
+
     const refreshSharedSelectField = (field) => {
         syncSharedSelectTriggerLabel(field);
     };
 
     const initializeSharedSelectField = (field) => {
         const parts = getSharedSelectParts(field);
+        if (parts && isBrokerSharedSelectKind(parts.field)) {
+            sortBrokerSelectOptions(parts.select);
+        }
         refreshSharedSelectField(field);
         if (!parts || parts.field.dataset.sharedSelectJsBound === "1") return;
         parts.field.dataset.sharedSelectJsBound = "1";

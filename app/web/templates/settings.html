@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import render_broker_select_options with context %}
 
 {% block sidebar_content %}
 {% set nav_sections = [
@@ -626,8 +627,7 @@
                     <label class="settings-form-label" for="selected_broker">Broker</label>
                     <div class="trade-strategy-row backtest-shared-select-row settings-broker-select-row">
                         <select id="selected_broker" name="selected_broker" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
-                            <option value="longbridge" data-icon-url="{{ url_for('market_store_logo', filename='brokers/Longbridge.png') }}" data-icon-alt="Longbridge logo" {% if broker_settings.selected_broker == 'longbridge' %}selected{% endif %}>Longbridge</option>
-                            <option value="ibkr" data-icon-url="{{ url_for('market_store_logo', filename='brokers/IBKR.png') }}" data-icon-alt="IBKR logo" {% if broker_settings.selected_broker == 'ibkr' %}selected{% endif %}>IBKR</option>
+                            {{ render_broker_select_options(settings_broker_codes, broker_settings.selected_broker) }}
                         </select>
                         <div class="trade-strategy-combobox backtest-shared-select-combobox">
                             <button

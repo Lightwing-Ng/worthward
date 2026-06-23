@@ -1,6 +1,6 @@
 {# Code version: v1.1.0 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
 
 {% block sidebar_content %}
@@ -161,19 +161,7 @@
                                             hidden
                                             aria-hidden="true"
                                             tabindex="-1">
-                                        <option value="ibkr"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/IBKR.png') }}"
-                                                data-icon-alt="IBKR logo"
-                                                data-description="Supported now for CSV import."
-                                                selected>IBKR</option>
-                                        <option value="longbridge"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/Longbridge.png') }}"
-                                                data-icon-alt="Longbridge logo"
-                                                data-description="Uses the configured authentication session to pull historical orders and cash flow.">Longbridge</option>
-                                            <option value="hsbc"
-                                                data-icon-url="{{ url_for('market_store_logo', filename='brokers/HSBC.png') }}"
-                                                data-icon-alt="HSBC logo"
-                                                data-description="Paste plain text from HSBC Order Status and the USD cash account.">HSBC</option>
+                                        {{ render_broker_select_options(investment_import_broker_codes, 'ibkr') }}
                                     </select>
                                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                                         <button type="button"
