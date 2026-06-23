@@ -1,4 +1,4 @@
-/* Code version: v0.3.9-p1 */
+/* Code version: v0.3.10 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2477,6 +2477,32 @@
         }));
     };
 
+    const getEffectiveThemeMode = (mode = document.documentElement.dataset.themeMode) => {
+        if (mode === "light" || mode === "dark") return mode;
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    };
+
+    const syncThemeModeForm = (mode) => {
+        const formElement = document.querySelector("[data-theme-mode-form]");
+        if (!(formElement instanceof HTMLFormElement)) return;
+        const normalizedMode = mode === "light" || mode === "dark" || mode === "system" ? mode : "system";
+        Array.from(formElement.querySelectorAll("[data-theme-mode-option]")).forEach((option) => {
+            if (option instanceof HTMLInputElement) option.checked = option.value === normalizedMode;
+        });
+    };
+
+    const syncGlobalThemeToggle = () => {
+        const toggle = document.getElementById("global_theme_toggle");
+        if (!(toggle instanceof HTMLButtonElement)) return;
+        const effectiveMode = getEffectiveThemeMode();
+        const nextMode = effectiveMode === "dark" ? "light" : "dark";
+        const label = nextMode === "dark" ? "Switch to Dark mode" : "Switch to Light mode";
+        toggle.dataset.effectiveTheme = effectiveMode;
+        toggle.setAttribute("aria-label", label);
+        toggle.setAttribute("title", label);
+        toggle.setAttribute("aria-pressed", String(effectiveMode === "dark"));
+    };
+
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
         if (document.documentElement.dataset.themeMode === "system") {
             window.dispatchEvent(new CustomEvent("antigravity:theme-mode-change", {
@@ -2488,6 +2514,7 @@
     const initThemeModeControls = () => {
         const currentMode = readThemeModePreference();
         applyThemeModePreference(currentMode);
+        syncGlobalThemeToggle();
         const formElement = document.querySelector("[data-theme-mode-form]");
         if (!(formElement instanceof HTMLFormElement)) return;
         const options = Array.from(formElement.querySelectorAll("[data-theme-mode-option]"));
@@ -2500,11 +2527,31 @@
                 if (!option.checked) return;
                 writeThemeModePreference(option.value);
                 applyThemeModePreference(option.value);
+                syncGlobalThemeToggle();
             });
         });
     };
 
     bootstrap.initThemeModeControls = initThemeModeControls;
+
+    const initGlobalAppearanceControls = () => {
+        const themeToggle = document.getElementById("global_theme_toggle");
+        if (themeToggle instanceof HTMLButtonElement && themeToggle.dataset.boundThemeToggle !== "1") {
+            themeToggle.dataset.boundThemeToggle = "1";
+            themeToggle.addEventListener("click", () => {
+                const nextMode = getEffectiveThemeMode() === "dark" ? "light" : "dark";
+                writeThemeModePreference(nextMode);
+                applyThemeModePreference(nextMode);
+                syncThemeModeForm(nextMode);
+                syncGlobalThemeToggle();
+            });
+        }
+        syncGlobalThemeToggle();
+        window.addEventListener("antigravity:theme-mode-change", () => {
+            syncThemeModeForm(document.documentElement.dataset.themeMode);
+            syncGlobalThemeToggle();
+        });
+    };
 
     const showWorkspaceModal = (options = {}) => {
         if (!workspaceModalOverlay) return;
@@ -3979,6 +4026,7 @@
     initializeDatePickers();
     initializeWorkspaceEnhancements();
     initThemeModeControls();
+    initGlobalAppearanceControls();
     rememberCurrentViewUrl();
     attachDockMemory();
     attachOptimisticInternalNavigation();

@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.51.4
+ * Code version: v1.52.0
+ * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
+ * - Changed: USD funding metrics now omit the dollar sign because USD is the workspace default currency.
+ * - Added: Investment metrics cumulative and unrealized P&L now reuse the Holdings live value updater during pre-market, regular, and post-market sessions.
  * - Fixed: Holdings and Stock details live value animations now reserve their measured maximum box so digit rolls do not resize surrounding table rows or metric cards.
  * - Fixed: Investment overview 1W now preserves the last healthy intraday equity curve when switching away and back from another range.
  * - Fixed: Investment overview 1W now rejects degraded flat recomputations so range switching cannot overwrite a real curve with a horizontal line.
@@ -353,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
             valueKey: 'directUsdDeposits',
             rowsKey: 'directDepositRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.directUsdDeposits, 'USD'),
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.directUsdDeposits, 'USD', { showUsdSymbol: false }),
         },
         {
             key: 'net-usd-converted',
@@ -361,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'USD received from FX conversion after subtracting conversion commissions.',
             valueKey: 'netUsdConverted',
             rowsKey: 'netUsdConvertedRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.netUsdConverted, 'USD'),
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.netUsdConverted, 'USD', { showUsdSymbol: false }),
         },
         {
             key: 'fx-funding-loss',
@@ -378,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
             summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
             valueKey: 'finalInvestableUsd',
             rowsKey: 'finalInvestableUsdRows',
-            formatValue: (metrics) => formatAmountWithCurrency(metrics?.finalInvestableUsd, 'USD'),
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.finalInvestableUsd, 'USD', { showUsdSymbol: false }),
         },
         {
             key: 'total-commission',
@@ -408,6 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rowsKey: 'cumulativePnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.cumulativePnl),
             valueClass: (metrics) => getSignedMetricClass(metrics?.cumulativePnl),
+            liveField: 'metrics_cumulative_pnl',
+            liveNumberKey: 'cumulativePnl',
         },
         {
             key: 'realized-pnl',
@@ -426,6 +431,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rowsKey: 'unrealizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalUnrealizedPnl),
             valueClass: (metrics) => getSignedMetricClass(metrics?.totalUnrealizedPnl),
+            liveField: 'metrics_unrealized_pnl',
+            liveNumberKey: 'totalUnrealizedPnl',
         },
     ];
     let activeInvestmentView = 'chart';
@@ -5698,7 +5705,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMetricCards(metricDefinitions, metricValues) {
         return metricDefinitions.map((definition) => `
-            <div class="trade-metric-card">
+            <div class="trade-metric-card trade-metric-card--value-align-end">
                 <span class="trade-metric-label">${definition.label}</span>
                 ${renderMetricValueWithTooltip({
                     key: definition.key,
@@ -5710,6 +5717,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (definition.valueClass || ''),
                     summary: definition.summary,
                     rows: metricValues?.[definition.rowsKey],
+                    liveField: definition.liveField,
+                    liveNumber: definition.liveNumberKey
+                        ? metricValues?.[definition.liveNumberKey]
+                        : metricValues?.[definition.valueKey],
                 })}
             </div>
         `).join('');
@@ -6851,12 +6862,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_unrealized_pnl"]');
         const summaryWeightNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_position_weight"]');
         const summaryUnrealizedCell = summaryUnrealizedNode?.closest('td');
+        const metricsCumulativeNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_cumulative_pnl"]');
+        const metricsUnrealizedNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_unrealized_pnl"]');
+        const metricsCumulativeTrigger = metricsCumulativeNode?.closest('.investment-metric-tooltip-trigger');
+        const metricsUnrealizedTrigger = metricsUnrealizedNode?.closest('.investment-metric-tooltip-trigger');
 
         updateInvestmentLiveValueNode(cumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
         updateInvestmentLiveValueNode(summaryUnrealizedNode, formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
         updateInvestmentLiveValueNode(summaryWeightNode, formatHoldingsPercent(totalWeight), totalWeight);
+        updateInvestmentLiveValueNode(metricsCumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
+        updateInvestmentLiveValueNode(metricsUnrealizedNode, formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
         syncInvestmentLiveTone(cumulativeNode, cumulativePnl, { enableSignedTone: true });
         syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, { enableSignedTone: true });
+        syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, { enableSignedTone: true });
+        syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, { enableSignedTone: true });
         syncInvestmentStockDetailsRealtimeMetrics();
     }
 
@@ -8756,8 +8775,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatMetricLossAmountWithCurrency(value, currency) {
         if (value === undefined || value === null || Number.isNaN(Number(value))) return '--';
         const numericValue = Number(value);
-        if (Math.abs(numericValue) < 1e-9) return formatAmountWithCurrency(0, currency);
-        return formatAmountWithCurrency(-Math.abs(numericValue), currency);
+        if (Math.abs(numericValue) < 1e-9) return formatAmountWithCurrency(0, currency, { showUsdSymbol: false });
+        return formatAmountWithCurrency(-Math.abs(numericValue), currency, { showUsdSymbol: false });
     }
 
     function getNegativeMetricClass(value) {
@@ -8831,6 +8850,18 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function renderMetricValueCopy(metric, valueClass) {
+        const value = metric?.value || '--';
+        if (metric?.liveField) {
+            return renderInvestmentLiveValue(metric.liveField, metric?.liveNumber, {
+                className: `investment-metric-tooltip-value-copy trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}`,
+                formatter: () => value,
+                useSplitValue: true,
+            });
+        }
+        return `<span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${renderWorkspaceMetricValueContent(value)}</span>`;
+    }
+
     function renderMetricValueWithTooltip(metric) {
         const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
             ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
@@ -8869,7 +8900,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return `
             <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
-                <span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${renderWorkspaceMetricValueContent(metric?.value || '--')}</span>
+                ${renderMetricValueCopy(metric, valueClass)}
                 <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
                     <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
                     ${rowListHtml}

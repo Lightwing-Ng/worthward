@@ -1454,7 +1454,8 @@
 
 #investment_metrics_panel.trade-metrics-grid {
     grid-auto-rows: max-content;
-    gap: 0;
+    column-gap: 14px;
+    row-gap: 0;
     overflow: visible;
     scrollbar-width: none;
     scrollbar-gutter: auto;
@@ -1465,6 +1466,19 @@
     min-height: 0;
     max-height: none;
     align-content: start;
+}
+
+#investment_metrics_panel .investment-metric-tooltip-trigger.trade-metric-value {
+    inline-size: 100%;
+    justify-content: flex-end;
+}
+
+#investment_metrics_panel .investment-metric-tooltip-value-copy {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    min-width: 0;
+    text-align: right;
 }
 
 #investment_metrics_panel.trade-metrics-grid::-webkit-scrollbar {
