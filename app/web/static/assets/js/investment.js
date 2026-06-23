@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.0
+ * Code version: v1.54.1
+ * - Improved: Holdings, Stock details, and Metrics live values now right-align integer digits, measure per-character slot widths, and animate only changed digit positions with easeOutCubic requestAnimationFrame rolls that avoid layout jitter.
  * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
  * - Changed: USD funding metrics now omit the dollar sign because USD is the workspace default currency.
  * - Added: Investment metrics cumulative and unrealized P&L now reuse the Holdings live value updater during pre-market, regular, and post-market sessions.
@@ -318,6 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
+    const INVESTMENT_LIVE_DIGIT_ANIMATION_MS = 520;
+    const investmentLiveCharWidthCache = new Map();
+    const investmentLiveValueAnimationCancels = new WeakMap();
     const investmentStockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
     const investmentShareActions = document.getElementById('investment_share_actions');
@@ -6761,68 +6765,299 @@ document.addEventListener('DOMContentLoaded', () => {
         return nextNumber > previousNumber ? 'rise' : 'fall';
     }
 
-    function createInvestmentLiveDigit(previousChar, nextChar, direction) {
-        const digit = document.createElement('span');
-        if (previousChar === nextChar || direction === 'flat') {
-            digit.className = 'investment-live-digit';
-            digit.textContent = nextChar;
-            return digit;
+    function parseInvestmentLiveDisplaySegments(display) {
+        const raw = String(display ?? '').trim();
+        if (!raw || raw === '-') {
+            return null;
         }
-        digit.className = `investment-live-digit investment-live-digit--changed investment-live-digit--${direction}`;
-
-        const oldFace = document.createElement('span');
-        oldFace.className = 'investment-live-digit-face investment-live-digit-face--old';
-        oldFace.textContent = previousChar;
-
-        const newFace = document.createElement('span');
-        newFace.className = 'investment-live-digit-face investment-live-digit-face--new';
-        newFace.textContent = nextChar;
-
-        digit.append(oldFace, newFace);
-        return digit;
+        const match = raw.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(\.)(\d*)(%?)$/);
+        if (!match) {
+            return {
+                isStructured: false,
+                chars: Array.from(raw),
+            };
+        }
+        const [, prefix, integerPart, dot, fractionalPart, suffix] = match;
+        return {
+            isStructured: true,
+            prefix: Array.from(prefix),
+            integer: Array.from(integerPart),
+            dot: [dot],
+            fraction: Array.from(fractionalPart),
+            suffix: Array.from(suffix),
+        };
     }
 
-    function buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit = false) {
-        const fragment = document.createDocumentFragment();
+    function alignInvestmentLiveSegmentChars(previousChars, nextChars, align = 'left') {
+        const safePrevious = Array.isArray(previousChars) ? previousChars : [];
+        const safeNext = Array.isArray(nextChars) ? nextChars : [];
+        const maxLength = Math.max(safePrevious.length, safeNext.length);
+        const pairs = [];
+        for (let index = 0; index < maxLength; index += 1) {
+            const previousIndex = align === 'right'
+                ? index - (maxLength - safePrevious.length)
+                : index;
+            const nextIndex = align === 'right'
+                ? index - (maxLength - safeNext.length)
+                : index;
+            const previousChar = previousIndex >= 0 && previousIndex < safePrevious.length
+                ? safePrevious[previousIndex]
+                : '';
+            const nextChar = nextIndex >= 0 && nextIndex < safeNext.length
+                ? safeNext[nextIndex]
+                : '';
+            if (!previousChar && !nextChar) continue;
+            pairs.push({ previousChar, nextChar });
+        }
+        return pairs;
+    }
 
-        const previousChars = Array.from(String(previousDisplay || ''));
-        const nextChars = Array.from(String(nextDisplay || ''));
-        const maxLength = Math.max(previousChars.length, nextChars.length);
-        const previousOffset = maxLength - previousChars.length;
-        const nextOffset = maxLength - nextChars.length;
-        const nextParts = useSplit ? getWorkspaceMetricValueParts(nextDisplay) : [];
-        const nextPartBoundaries = [];
-        let nextPartEnd = 0;
-        nextParts.forEach((part) => {
-            nextPartEnd += Array.from(part.text).length;
-            nextPartBoundaries.push(nextPartEnd);
+    function buildInvestmentLiveSegmentPairs(previousDisplay, nextDisplay) {
+        const previousSegments = parseInvestmentLiveDisplaySegments(previousDisplay);
+        const nextSegments = parseInvestmentLiveDisplaySegments(nextDisplay);
+        if (!previousSegments && !nextSegments) {
+            return [];
+        }
+        if (!previousSegments || !nextSegments) {
+            return alignInvestmentLiveSegmentChars(
+                Array.from(String(previousDisplay || '')),
+                Array.from(String(nextDisplay || '')),
+                'right',
+            ).map((pair) => ({ ...pair, partClassName: '' }));
+        }
+        if (!previousSegments.isStructured || !nextSegments.isStructured) {
+            return alignInvestmentLiveSegmentChars(previousSegments.chars, nextSegments.chars, 'right')
+                .map((pair) => ({ ...pair, partClassName: '' }));
+        }
+        const segmentOrder = ['prefix', 'integer', 'dot', 'fraction', 'suffix'];
+        const segmentAlign = {
+            prefix: 'left',
+            integer: 'right',
+            dot: 'left',
+            fraction: 'left',
+            suffix: 'left',
+        };
+        const segmentPartClass = {
+            prefix: 'workspace-metric-value-major',
+            integer: 'workspace-metric-value-major',
+            dot: 'workspace-metric-value-major',
+            fraction: 'workspace-metric-value-minor',
+            suffix: 'workspace-metric-value-suffix',
+        };
+        return segmentOrder.flatMap((segmentKey) => (
+            alignInvestmentLiveSegmentChars(
+                previousSegments[segmentKey],
+                nextSegments[segmentKey],
+                segmentAlign[segmentKey],
+            ).map((pair) => ({
+                ...pair,
+                partClassName: segmentPartClass[segmentKey],
+            }))
+        ));
+    }
+
+    function getInvestmentLiveMeasurementFingerprint(node, partClassName = '') {
+        if (!(node instanceof HTMLElement)) return '';
+        const styles = window.getComputedStyle(node);
+        return [
+            partClassName,
+            styles.fontFamily,
+            styles.fontSize,
+            styles.fontWeight,
+            styles.fontStyle,
+            styles.letterSpacing,
+            styles.fontVariantNumeric,
+        ].join('|');
+    }
+
+    function measureInvestmentLiveCharWidth(node, char, partClassName = '') {
+        const safeChar = String(char || '0');
+        const fingerprint = getInvestmentLiveMeasurementFingerprint(node, partClassName);
+        const cacheKey = `${fingerprint}::${safeChar}`;
+        if (investmentLiveCharWidthCache.has(cacheKey)) {
+            return investmentLiveCharWidthCache.get(cacheKey);
+        }
+        if (!(node instanceof HTMLElement) || !(document.body instanceof HTMLElement)) {
+            return 0;
+        }
+        const wrapper = document.createElement('span');
+        wrapper.className = node.className;
+        wrapper.style.position = 'absolute';
+        wrapper.style.left = '-10000px';
+        wrapper.style.top = '0';
+        wrapper.style.visibility = 'hidden';
+        wrapper.style.pointerEvents = 'none';
+        wrapper.style.whiteSpace = 'nowrap';
+        const measurer = document.createElement('span');
+        measurer.className = partClassName || 'workspace-metric-value-major';
+        measurer.style.whiteSpace = 'pre';
+        measurer.textContent = safeChar;
+        wrapper.appendChild(measurer);
+        document.body.appendChild(wrapper);
+        const width = Math.ceil(Math.max(0, measurer.getBoundingClientRect().width || 0));
+        wrapper.remove();
+        investmentLiveCharWidthCache.set(cacheKey, width);
+        return width;
+    }
+
+    function resolveInvestmentLiveSlotWidth(node, previousChar, nextChar, partClassName = '') {
+        const widths = [previousChar, nextChar]
+            .filter(Boolean)
+            .map((char) => measureInvestmentLiveCharWidth(node, char, partClassName));
+        if (widths.length) return Math.max(...widths);
+        return measureInvestmentLiveCharWidth(node, '0', partClassName);
+    }
+
+    function applyInvestmentLiveDigitSlotWidth(digit, width) {
+        if (!(digit instanceof HTMLElement) || !Number.isFinite(width) || width <= 0) return;
+        digit.style.width = `${Math.ceil(width)}px`;
+        digit.style.minWidth = `${Math.ceil(width)}px`;
+        digit.style.maxWidth = `${Math.ceil(width)}px`;
+    }
+
+    function createInvestmentLiveDigit(previousChar, nextChar, direction, slotWidth = 0) {
+        const digit = document.createElement('span');
+        const previous = String(previousChar || '');
+        const next = String(nextChar || '');
+        const displayChar = next || previous;
+        const changed = previous !== next && direction !== 'flat' && Boolean(previous || next);
+        applyInvestmentLiveDigitSlotWidth(digit, slotWidth);
+
+        if (!changed) {
+            digit.className = 'investment-live-digit';
+            digit.textContent = displayChar;
+            return { digit, animate: false };
+        }
+
+        digit.className = `investment-live-digit investment-live-digit--changed investment-live-digit--${direction}`;
+        if (previous) {
+            const oldFace = document.createElement('span');
+            oldFace.className = 'investment-live-digit-face investment-live-digit-face--old';
+            oldFace.textContent = previous;
+            digit.appendChild(oldFace);
+        }
+        if (next) {
+            const newFace = document.createElement('span');
+            newFace.className = 'investment-live-digit-face investment-live-digit-face--new';
+            newFace.textContent = next;
+            if (direction === 'rise') {
+                newFace.style.color = 'var(--theme-accent-positive)';
+            } else if (direction === 'fall') {
+                newFace.style.color = 'var(--theme-accent-secondary)';
+            }
+            digit.appendChild(newFace);
+        }
+        return { digit, animate: true };
+    }
+
+    function applyInvestmentLiveDigitFrame(digit, direction, eased) {
+        const oldFace = digit.querySelector('.investment-live-digit-face--old');
+        const newFace = digit.querySelector('.investment-live-digit-face--new');
+        const isRise = direction === 'rise';
+        const oldYOffset = isRise ? (-100 * eased) : (100 * eased);
+        const newYOffset = isRise ? (100 * (1 - eased)) : (-100 * (1 - eased));
+        if (oldFace instanceof HTMLElement) {
+            oldFace.style.opacity = String(1 - eased);
+            oldFace.style.transform = `translate(-50%, calc(-50% + ${oldYOffset}%))`;
+        }
+        if (newFace instanceof HTMLElement) {
+            newFace.style.opacity = String(eased);
+            newFace.style.transform = `translate(-50%, calc(-50% + ${newYOffset}%))`;
+        }
+    }
+
+    function animateInvestmentLiveDigit(digit, direction, onComplete) {
+        if (!(digit instanceof HTMLElement)) {
+            if (typeof onComplete === 'function') onComplete();
+            return () => {};
+        }
+        const startTime = performance.now();
+        let frameId = 0;
+        const step = (now) => {
+            const progress = Math.min(1, (now - startTime) / INVESTMENT_LIVE_DIGIT_ANIMATION_MS);
+            applyInvestmentLiveDigitFrame(digit, direction, easeOutCubic(progress));
+            if (progress < 1) {
+                frameId = window.requestAnimationFrame(step);
+                return;
+            }
+            if (typeof onComplete === 'function') onComplete();
+        };
+        applyInvestmentLiveDigitFrame(digit, direction, 0);
+        frameId = window.requestAnimationFrame(step);
+        return () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+        };
+    }
+
+    function runInvestmentLiveDigitAnimations(digits, onComplete) {
+        const animatedDigits = (Array.isArray(digits) ? digits : []).filter((entry) => entry?.animate);
+        if (!animatedDigits.length) {
+            if (typeof onComplete === 'function') onComplete();
+            return () => {};
+        }
+        let remaining = animatedDigits.length;
+        const cancelers = [];
+        const finishOne = () => {
+            remaining -= 1;
+            if (remaining <= 0 && typeof onComplete === 'function') {
+                onComplete();
+            }
+        };
+        animatedDigits.forEach(({ digit, direction }) => {
+            cancelers.push(animateInvestmentLiveDigit(digit, direction, finishOne));
         });
+        return () => {
+            cancelers.forEach((cancel) => {
+                if (typeof cancel === 'function') cancel();
+            });
+        };
+    }
+
+    function cancelInvestmentLiveValueAnimation(node) {
+        const cancel = investmentLiveValueAnimationCancels.get(node);
+        if (typeof cancel === 'function') cancel();
+        investmentLiveValueAnimationCancels.delete(node);
+    }
+
+    function buildInvestmentLiveValueFragment(referenceNode, previousDisplay, nextDisplay, direction, useSplit = false) {
+        const fragment = document.createDocumentFragment();
+        const pairs = buildInvestmentLiveSegmentPairs(previousDisplay, nextDisplay);
+        const animatedDigits = [];
         let splitWrapper = null;
-        let splitPartIndex = -1;
-        const ensureSplitWrapper = (nextCharIndex) => {
+        let splitPartClassName = '';
+
+        const ensureSplitWrapper = (partClassName) => {
             if (!useSplit) return fragment;
-            const normalizedCharIndex = Math.max(0, nextCharIndex);
-            const partIndex = nextPartBoundaries.findIndex((boundary) => normalizedCharIndex < boundary);
-            const safePartIndex = partIndex >= 0 ? partIndex : Math.max(0, nextParts.length - 1);
-            if (splitWrapper && splitPartIndex === safePartIndex) return splitWrapper;
+            const safeClassName = partClassName || 'workspace-metric-value-major';
+            if (splitWrapper && splitPartClassName === safeClassName) return splitWrapper;
             splitWrapper = document.createElement('span');
-            splitWrapper.className = nextParts[safePartIndex]?.className || 'workspace-metric-value-major';
-            splitPartIndex = safePartIndex;
+            splitWrapper.className = safeClassName;
+            splitPartClassName = safeClassName;
             fragment.appendChild(splitWrapper);
             return splitWrapper;
         };
 
-        for (let index = 0; index < maxLength; index += 1) {
-            const previousIndex = index - previousOffset;
-            const nextIndex = index - nextOffset;
-            const previousChar = previousChars[previousIndex] ?? '';
-            const nextChar = nextChars[nextIndex] ?? '';
-            if (!previousChar && !nextChar) continue;
-            const target = ensureSplitWrapper(nextIndex);
-            target.appendChild(createInvestmentLiveDigit(previousChar, nextChar, direction));
-        }
+        pairs.forEach(({ previousChar, nextChar, partClassName }) => {
+            const slotWidth = resolveInvestmentLiveSlotWidth(
+                referenceNode,
+                previousChar,
+                nextChar,
+                partClassName,
+            );
+            const { digit, animate } = createInvestmentLiveDigit(
+                previousChar,
+                nextChar,
+                direction,
+                slotWidth,
+            );
+            const target = ensureSplitWrapper(partClassName);
+            target.appendChild(digit);
+            if (animate) {
+                animatedDigits.push({ digit, direction });
+            }
+        });
 
-        return fragment;
+        return { fragment, animatedDigits };
     }
 
     function renderInvestmentLiveStaticContent(node, nextDisplay, useSplit) {
@@ -6898,6 +7133,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateInvestmentLiveValueNode(node, nextDisplay, nextNumber) {
         if (!(node instanceof HTMLElement)) return;
+        cancelInvestmentLiveValueAnimation(node);
         const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
         const direction = resolveInvestmentLiveNumberDirection(node.dataset.investmentLiveNumber, nextNumber);
         const useSplit = shouldUseSplitLiveValue(node);
@@ -6913,15 +7149,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (shouldAnimate) {
             const animationToken = `${Date.now()}:${Math.random()}`;
             node.dataset.investmentLiveAnimationToken = animationToken;
-            node.appendChild(buildInvestmentLiveValueFragment(previousDisplay, nextDisplay, direction, useSplit));
+            const { fragment, animatedDigits } = buildInvestmentLiveValueFragment(
+                node,
+                previousDisplay,
+                nextDisplay,
+                direction,
+                useSplit,
+            );
+            node.appendChild(fragment);
             node.classList.add(direction === 'rise' ? 'is-live-rise' : 'is-live-fall');
-            window.setTimeout(() => {
+            const cancelAnimation = runInvestmentLiveDigitAnimations(animatedDigits, () => {
                 if (!node.isConnected) return;
                 if (node.dataset.investmentLiveAnimationToken !== animationToken) return;
                 renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
                 node.classList.remove('is-live-rise', 'is-live-fall');
                 delete node.dataset.investmentLiveAnimationToken;
-            }, 540);
+                investmentLiveValueAnimationCancels.delete(node);
+            });
+            investmentLiveValueAnimationCancels.set(node, cancelAnimation);
         } else {
             delete node.dataset.investmentLiveAnimationToken;
             renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
@@ -7074,6 +7319,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInvestmentStockDetailsLiveMetricValueSpan(metric, activeTicker) {
         const className = [
+            'investment-live-value',
             'trade-metric-value',
             'investment-stock-details-metric-value',
             metric?.valueClass || '',

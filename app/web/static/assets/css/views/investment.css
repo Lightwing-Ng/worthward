@@ -2052,11 +2052,22 @@
     display: inline-flex;
     align-items: baseline;
     justify-content: flex-end;
+    flex: 0 0 auto;
     min-width: 0;
     min-height: 1em;
     line-height: inherit;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    contain: layout style;
+}
+
+.investment-live-value > .workspace-metric-value-major,
+.investment-live-value > .workspace-metric-value-minor,
+.investment-live-value > .workspace-metric-value-suffix {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: baseline;
+    white-space: nowrap;
 }
 
 .investment-live-digit {
@@ -2065,7 +2076,7 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    min-width: 0.62ch;
+    box-sizing: content-box;
     height: 1em;
     line-height: 1;
     overflow: hidden;
@@ -2079,6 +2090,7 @@
 .investment-live-digit-face {
     display: block;
     line-height: 1;
+    white-space: pre;
 }
 
 .investment-live-digit--changed > .investment-live-digit-face {
@@ -2086,33 +2098,7 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    will-change: transform, opacity, color;
-}
-
-.investment-live-digit--changed > .investment-live-digit-face--old {
-    opacity: 1;
-}
-
-.investment-live-digit--changed > .investment-live-digit-face--new {
-    opacity: 0;
-}
-
-.investment-live-digit--rise > .investment-live-digit-face--old {
-    animation: investment-live-digit-old-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.investment-live-digit--rise > .investment-live-digit-face--new {
-    color: var(--theme-accent-positive);
-    animation: investment-live-digit-new-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.investment-live-digit--fall > .investment-live-digit-face--old {
-    animation: investment-live-digit-old-fall 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.investment-live-digit--fall > .investment-live-digit-face--new {
-    color: var(--theme-accent-secondary);
-    animation: investment-live-digit-new-fall 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity;
 }
 
 .investment-holdings-cell-ticker {
@@ -2324,49 +2310,7 @@
     color: #ff2f92;
 }
 
-@keyframes investment-live-digit-old-rise {
-    0% {
-        opacity: 1;
-        transform: translate(-50%, -50%);
-    }
-    100% {
-        opacity: 0;
-        transform: translate(-50%, calc(-150%));
-    }
-}
 
-@keyframes investment-live-digit-new-rise {
-    0% {
-        opacity: 0;
-        transform: translate(-50%, 50%);
-    }
-    100% {
-        opacity: 1;
-        transform: translate(-50%, -50%);
-    }
-}
-
-@keyframes investment-live-digit-old-fall {
-    0% {
-        opacity: 1;
-        transform: translate(-50%, -50%);
-    }
-    100% {
-        opacity: 0;
-        transform: translate(-50%, 50%);
-    }
-}
-
-@keyframes investment-live-digit-new-fall {
-    0% {
-        opacity: 0;
-        transform: translate(-50%, calc(-150%));
-    }
-    100% {
-        opacity: 1;
-        transform: translate(-50%, -50%);
-    }
-}
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme-override="light"]) #investment_holdings_panel {
