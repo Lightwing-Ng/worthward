@@ -1,4 +1,4 @@
-/* Code version: v3.24.3 */
+/* Code version: v3.24.4 */
 .sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--glass-surface-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
 .settings-round-icon-button,
 .global-quick-action-button,
@@ -52,7 +52,7 @@
 	--global-quick-action-step: calc(var(--settings-round-icon-button-size) + var(--global-quick-action-gap));
 	position: fixed;
 	top: calc(var(--page-edge-pad) + var(--sidebar-toggle-top));
-	right: max(calc(var(--page-edge-pad) * 2), calc(((100vw - 1560px) / 2) + (var(--page-edge-pad) * 2)));
+	right: var(--global-quick-actions-right);
 	z-index: var(--layer-fixed-dock);
 	width: calc((var(--settings-round-icon-button-size) * 2) + var(--global-quick-action-gap));
 	height: var(--settings-round-icon-button-size);

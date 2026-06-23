@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.8
+ * Code version: v1.54.10
+ * - Fixed: Investment export and share action buttons now align with the global theme toggle horizontally and the view segmented control vertical center.
+ * - Fixed: Holdings Last now reuses the live digit-roll updater with green-up and red-down tone, and summary cash/equity values stay on the same realtime sync path.
  * - Fixed: Overview equity range switching now updates the chart in place so the segmented control is not destroyed and re-measured on every 1W through Max change.
  * - Fixed: Daily-equity live chart points now survive render-state preparation so 1M through Max can keep the is_realtime marker target needed by the breathing pulse.
  * - Fixed: Overview live-session slot, dedupe, shared-range extension, realtime polling chart writes, and breathing marker targeting now apply only to 1M through Max, leaving the specialized 1W intraday pipeline untouched.
@@ -1046,6 +1048,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
+        if (isInvestmentDailyEquityLiveRange() && liveChartPoints.length && liveChartPoints !== investmentChartPointsCache) {
+            investmentChartPointsCache = liveChartPoints;
+        }
         syncInvestmentHoldingsRealtimeValues();
         if (!isInvestmentDailyEquityLiveRange()) return;
         if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
@@ -1781,23 +1786,37 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function syncInvestmentShareActionsPosition() {
+        if (!(investmentShareActions instanceof HTMLElement) || !(segmentedControl instanceof HTMLElement)) {
+            return;
+        }
+        const segmentedRect = segmentedControl.getBoundingClientRect();
+        if (!segmentedRect.height) return;
+        const centerY = segmentedRect.top + (segmentedRect.height / 2);
+        investmentShareActions.style.setProperty('--investment-share-actions-top', `${centerY}px`);
+        investmentShareActions.style.top = `${centerY}px`;
+    }
+
     function updateInvestmentSegmentedPill() {
         if (!segmentedControl) return;
         const activeLabel = segmentedControl.querySelector('input[type="radio"]:checked + span');
         if (!activeLabel) {
             segmentedControl.classList.remove('is-pill-ready');
+            syncInvestmentShareActionsPosition();
             return;
         }
 
         const pillGeometry = measureInvestmentSegmentedPillGeometry(segmentedControl, activeLabel);
         if (!pillGeometry) {
             segmentedControl.classList.remove('is-pill-ready');
+            syncInvestmentShareActionsPosition();
             return;
         }
 
         segmentedControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         segmentedControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
         segmentedControl.classList.add('is-pill-ready');
+        syncInvestmentShareActionsPosition();
     }
 
     function scheduleInvestmentSegmentedPillUpdate() {
@@ -2982,6 +3001,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clearTimeout(investmentSurfaceCleanupTimer);
             investmentSurfaceCleanupTimer = null;
         }
+        syncInvestmentShareActionsPosition();
     }
 
     function animateInvestmentSurfaceHeight() {
@@ -7017,6 +7037,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : (summary.unrealizedPnl >= 0
                     ? ' investment-holdings-value-positive'
                     : ' investment-holdings-value-negative');
+            const lastClass = resolveInvestmentLastPriceToneClass(summary.lastPrice, summary.ticker);
 
             return `
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
@@ -7045,10 +7066,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(averagePriceDisplay)}</span>
                     </td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money">
+                    <td class="investment-holdings-cell investment-holdings-cell-money${lastClass}">
                         ${renderInvestmentLiveValue('last', summary.lastPrice, {
                             ticker: summary.ticker,
-                            className: 'trade-metric-value investment-stock-details-metric-value',
+                            className: `trade-metric-value investment-stock-details-metric-value${lastClass}`,
                             formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
@@ -7336,15 +7357,59 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="investment-live-value${classToken}" data-investment-live-field="${escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(displayText)}">${innerHtml}</span>`;
     }
 
+    function computeLiveHoldingsTotalEquity(summaries, aggregateCash) {
+        const safeCash = Number.isFinite(Number(aggregateCash)) ? Number(aggregateCash) : 0;
+        const openMarketValue = (Array.isArray(summaries) ? summaries : [])
+            .filter((summary) => summary?.hasOpenPosition)
+            .reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        return safeCash + openMarketValue;
+    }
+
+    function resolveInvestmentTickerReferenceClose(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return null;
+        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        const latestLedgerDate = normalizeLedgerDate(
+            investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]?.date
+        );
+        const referenceClose = getIndexedClosePriceOnOrBefore(
+            tickerPriceIndex[normalizedTicker],
+            latestLedgerDate,
+        );
+        return Number.isFinite(Number(referenceClose)) ? Number(referenceClose) : null;
+    }
+
+    function resolveInvestmentLastPriceToneClass(lastPrice, ticker) {
+        const price = Number(lastPrice);
+        const referenceClose = resolveInvestmentTickerReferenceClose(ticker);
+        if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(referenceClose)) return '';
+        if (price > referenceClose + INVESTMENT_LIVE_DIGIT_EPSILON) return ' investment-holdings-value-positive';
+        if (price < referenceClose - INVESTMENT_LIVE_DIGIT_EPSILON) return ' investment-holdings-value-negative';
+        return '';
+    }
+
     function getInvestmentHoldingsRealtimeState() {
         if (!Array.isArray(investmentRawTransactionsCache) || !investmentRawTransactionsCache.length) {
             return null;
         }
+        const latestSnapshot = investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1];
+        const aggregateCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash);
         const latestChartPoint = Array.isArray(investmentChartPointsCache) && investmentChartPointsCache.length
             ? investmentChartPointsCache[investmentChartPointsCache.length - 1]
             : null;
-        const totalEquity = Number(latestChartPoint?.aggregate_total_equity ?? latestChartPoint?.total_equity);
-        const safeTotalEquity = Number.isFinite(totalEquity) ? totalEquity : 0;
+        const realtimeChartPoint = Array.isArray(investmentChartPointsCache)
+            ? investmentChartPointsCache.find((point) => point?.is_realtime === true)
+            : null;
+        const preliminaryRealtimeEquity = Number(
+            realtimeChartPoint?.aggregate_total_equity ?? realtimeChartPoint?.total_equity
+        );
+        const preliminaryChartEquity = Number(
+            latestChartPoint?.aggregate_total_equity ?? latestChartPoint?.total_equity
+        );
+        const preliminaryTotalEquity = Number.isFinite(preliminaryRealtimeEquity)
+            ? preliminaryRealtimeEquity
+            : preliminaryChartEquity;
+        const safeTotalEquity = Number.isFinite(preliminaryTotalEquity) ? preliminaryTotalEquity : 0;
         const valuationDate = normalizeLedgerDate(latestChartPoint?.date)
             || normalizeLedgerDate(investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]?.date)
             || '';
@@ -7394,9 +7459,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 0;
             return nextSummary;
         });
+        const totalEquity = Number.isFinite(preliminaryRealtimeEquity)
+            ? preliminaryRealtimeEquity
+            : computeLiveHoldingsTotalEquity(summaries, aggregateCash);
+        const resolvedTotalEquity = Number.isFinite(totalEquity) ? totalEquity : 0;
+        if (Math.abs(resolvedTotalEquity - safeTotalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON) {
+            summaries.forEach((summary) => {
+                if (!summary?.hasOpenPosition) return;
+                summary.positionWeight = Math.abs(resolvedTotalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON
+                    ? ((Number(summary.marketValue) || 0) / resolvedTotalEquity) * 100
+                    : 0;
+            });
+        }
         return {
             summaries,
-            totalEquity: safeTotalEquity,
+            totalEquity: resolvedTotalEquity,
+            aggregateCash: Number.isFinite(aggregateCash) ? aggregateCash : null,
         };
     }
 
@@ -7835,10 +7913,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function syncInvestmentLiveDirectionTone(targets, previousValue, nextValue) {
+        const direction = resolveInvestmentLiveNumberDirection(previousValue, nextValue);
+        if (direction === 'flat') return;
+        const elements = Array.isArray(targets) ? targets : [targets];
+        elements.forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            element.classList.remove('investment-holdings-value-positive', 'investment-holdings-value-negative');
+            if (direction === 'rise') {
+                element.classList.add('investment-holdings-value-positive');
+            } else if (direction === 'fall') {
+                element.classList.add('investment-holdings-value-negative');
+            }
+        });
+    }
+
     function syncInvestmentHoldingsRealtimeValues() {
         const realtimeState = getInvestmentHoldingsRealtimeState();
         if (!realtimeState) return;
-        const { summaries, totalEquity } = realtimeState;
+        const { summaries, totalEquity, aggregateCash } = realtimeState;
         investmentTickerSummariesCache = Array.isArray(summaries) ? [...summaries] : [];
 
         summaries.forEach((summary) => {
@@ -7849,7 +7942,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastNode = row.querySelector('[data-investment-live-field="last"]');
             const unrealizedNode = row.querySelector('[data-investment-live-field="unrealized_pnl"]');
             const weightNode = row.querySelector('[data-investment-live-field="position_weight"]');
+            const lastCell = lastNode?.closest('td');
             const unrealizedCell = unrealizedNode?.closest('td');
+            const previousLastPrice = Number(lastNode?.dataset.investmentLiveNumber);
 
             updateInvestmentLiveValueNode(lastNode, summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice), summary.lastPrice);
             updateInvestmentLiveValueNode(
@@ -7862,6 +7957,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary.hasOpenPosition ? formatHoldingsPercent(summary.positionWeight) : '-',
                 summary.hasOpenPosition ? summary.positionWeight : null,
             );
+            syncInvestmentLiveDirectionTone([lastNode, lastCell], previousLastPrice, summary.lastPrice);
             syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
                 enableSignedTone: summary.unrealizedPnl !== null,
             });
@@ -7876,10 +7972,25 @@ document.addEventListener('DOMContentLoaded', () => {
             ? (totalNetMarketValue / totalEquity) * 100
             : 0;
 
+        const cashNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]');
+        const totalEquityNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_total_equity"]');
         const cumulativeNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cumulative_pnl"]');
         const summaryUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_unrealized_pnl"]');
         const summaryWeightNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_position_weight"]');
         const summaryUnrealizedCell = summaryUnrealizedNode?.closest('td');
+
+        updateInvestmentLiveValueNode(
+            cashNode,
+            aggregateCash === null ? '-' : formatHoldingsMoney(aggregateCash),
+            aggregateCash,
+        );
+        updateInvestmentLiveValueNode(
+            totalEquityNode,
+            totalEquity === null ? '-' : formatHoldingsMoney(totalEquity),
+            totalEquity,
+        );
+        syncInvestmentLiveTone(cashNode, aggregateCash, { enableSignedTone: aggregateCash !== null });
+        syncInvestmentLiveTone(totalEquityNode, totalEquity, { enableSignedTone: totalEquity !== null });
         const metricsCumulativeNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_cumulative_pnl"]');
         const metricsUnrealizedNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_unrealized_pnl"]');
         const metricsCumulativeTrigger = metricsCumulativeNode?.closest('.investment-metric-tooltip-trigger');
@@ -7931,6 +8042,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 display: tickerSummary.lastPrice === null ? '-' : formatHoldingsMoney(tickerSummary.lastPrice),
                 value: tickerSummary.lastPrice,
                 signedTone: false,
+                directionTone: true,
             },
             {
                 field: 'stock_position_weight',
@@ -7944,9 +8056,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const node = investmentStockDetailsPanel.querySelector(
                 `[data-investment-live-field="${CSS.escape(update.field)}"][data-investment-live-ticker="${CSS.escape(activeTicker)}"]`
             );
+            const previousValue = Number(node?.dataset.investmentLiveNumber);
             updateInvestmentLiveValueNode(node, update.display, update.value);
             if (update.signedTone) {
                 syncInvestmentLiveTone(node, update.value, { enableSignedTone: Number.isFinite(Number(update.value)) });
+            }
+            if (update.directionTone) {
+                syncInvestmentLiveDirectionTone(node, previousValue, update.value);
             }
         });
     }
@@ -8029,6 +8145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const realizedClass = (Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const unrealizedClass = (Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative';
         const lastPriceDisplay = tickerSummary.lastPrice === null ? '-' : formatHoldingsMoney(tickerSummary.lastPrice);
+        const lastPriceClass = resolveInvestmentLastPriceToneClass(tickerSummary.lastPrice, activeTicker);
         const weightDisplay = tickerSummary.hasOpenPosition ? formatHoldingsPercent(tickerSummary.positionWeight) : '-';
         const stockMetricCards = [
             {
@@ -8111,7 +8228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             {
                 label: 'Last price',
                 value: lastPriceDisplay,
-                valueClass: '',
+                valueClass: lastPriceClass.trim(),
                 liveField: 'stock_last_price',
                 liveNumber: tickerSummary.lastPrice,
             },

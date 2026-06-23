@@ -1,4 +1,4 @@
-/* Code version: v1.14.11 */
+/* Code version: v1.14.12 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -594,8 +594,6 @@
 .investment-report-card {
     --trade-detail-track-height: 36px;
     --trade-detail-panel-height: 160px;
-    --export-transactions-edge-offset: var(--page-edge-pad);
-    --investment-export-button-top: calc(var(--page-edge-pad) + var(--settings-round-icon-button-size) + 6px);
     --investment-share-action-gap: 10px;
     --investment-share-action-step: calc(var(--settings-round-icon-button-size) + var(--investment-share-action-gap));
     display: flex;
@@ -610,14 +608,20 @@
     position: relative;
 }
 
-.investment-report-card > .investment-share-actions {
-    position: absolute;
-    top: var(--investment-export-button-top);
-    right: var(--export-transactions-edge-offset);
-    z-index: calc(var(--layer-surface-content) + 2);
+.investment-view-segmented-wrap > .investment-share-actions {
+    position: fixed;
+    top: var(--investment-share-actions-top, var(--sidebar-toggle-center-offset));
+    right: var(--global-quick-actions-right);
+    transform: translateY(-50%);
+    z-index: var(--layer-fixed-dock);
     width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
     height: var(--settings-round-icon-button-size);
     isolation: isolate;
+    pointer-events: none;
+}
+
+.investment-view-segmented-wrap > .investment-share-actions:not([hidden]) {
+    pointer-events: auto;
 }
 
 .investment-share-actions > .export-transactions-button,
@@ -781,7 +785,9 @@
     flex: 0 0 auto;
     display: flex;
     justify-content: center;
+    align-items: center;
     margin-bottom: 0px;
+    position: relative;
 }
 
 .investment-view-surface-body {

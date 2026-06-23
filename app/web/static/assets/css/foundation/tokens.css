@@ -44,6 +44,7 @@
 	--radius-soft: 10px;
 	--radius-pill: 999px;
 	--page-edge-pad: 10px;
+	--global-quick-actions-right: max(calc(var(--page-edge-pad) * 2), calc(((100vw - 1560px) / 2) + (var(--page-edge-pad) * 2)));
 	--sidebar-width: 312px;
 	--sidebar-toggle-top: var(--page-edge-pad);
 	--sidebar-toggle-left: var(--page-edge-pad);
