@@ -298,6 +298,7 @@ export function createInvestmentStockDetailsUtils({
             return {
                 brokerCode: metric.brokerCode,
                 brokerLabel: getInvestmentBrokerMeta(metric.brokerCode).label,
+                shares,
                 positionDisplay: formatHoldingsPosition(shares),
                 marketValue,
                 marketValueDisplay: marketValue === null ? '-' : formatHoldingsMoney(marketValue),

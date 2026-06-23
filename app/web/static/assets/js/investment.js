@@ -7025,27 +7025,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 valueClass: realizedClass,
                 cardClass: 'investment-stock-details-metric-card-with-breakdown',
                 details: [
-                    {
+                    realizedBreakdown.dividendIncome !== 0 && {
                         label: 'Dividend income',
                         value: formatHoldingsMoney(realizedBreakdown.dividendIncome),
                         valueClass: getSignedMetricClass(realizedBreakdown.dividendIncome),
                     },
-                    {
+                    realizedBreakdown.paymentInLieuIncome !== 0 && {
                         label: 'Payment in lieu',
                         value: formatHoldingsMoney(realizedBreakdown.paymentInLieuIncome),
                         valueClass: getSignedMetricClass(realizedBreakdown.paymentInLieuIncome),
                     },
-                    {
+                    realizedBreakdown.dividendWithholding !== 0 && {
                         label: 'Foreign tax withholding',
                         value: formatHoldingsMoney(realizedBreakdown.dividendWithholding),
                         valueClass: getSignedMetricClass(realizedBreakdown.dividendWithholding),
                     },
-                    {
+                    realizedBreakdown.tradingSpreadIncome !== 0 && {
                         label: 'Trading spread income',
                         value: formatHoldingsMoney(realizedBreakdown.tradingSpreadIncome),
                         valueClass: getSignedMetricClass(realizedBreakdown.tradingSpreadIncome),
                     },
-                ],
+                ].filter(Boolean),
             },
             {
                 label: 'Total P&L',
@@ -7059,11 +7059,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 value: formatHoldingsPosition(tickerSummary.shares),
                 valueClass: '',
                 details: hasBrokerMetricBreakdown
-                    ? brokerMetricDetails.map((metric) => ({
-                        label: metric.brokerLabel,
-                        value: metric.positionDisplay,
-                        valueClass: '',
-                    }))
+                    ? brokerMetricDetails
+                        .filter((metric) => !isFlatPosition(metric.shares))
+                        .map((metric) => ({
+                            label: metric.brokerLabel,
+                            value: metric.positionDisplay,
+                            valueClass: '',
+                        }))
                     : [],
             },
             {
@@ -7073,11 +7075,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 liveField: 'stock_market_value',
                 liveNumber: tickerSummary.hasOpenPosition ? tickerSummary.marketValue : null,
                 details: hasBrokerMetricBreakdown
-                    ? brokerMetricDetails.map((metric) => ({
-                        label: metric.brokerLabel,
-                        value: metric.marketValueDisplay,
-                        valueClass: '',
-                    }))
+                    ? brokerMetricDetails
+                        .filter((metric) => !isFlatPosition(metric.shares))
+                        .map((metric) => ({
+                            label: metric.brokerLabel,
+                            value: metric.marketValueDisplay,
+                            valueClass: '',
+                        }))
                     : [],
             },
             {
@@ -7104,11 +7108,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 value: totalTradeCountDisplay,
                 valueClass: '',
                 details: hasBrokerMetricBreakdown
-                    ? brokerMetricDetails.map((metric) => ({
-                        label: metric.brokerLabel,
-                        value: metric.totalTradesDisplay,
-                        valueClass: '',
-                    }))
+                    ? brokerMetricDetails
+                        .filter((metric) => !isFlatPosition(metric.shares))
+                        .map((metric) => ({
+                            label: metric.brokerLabel,
+                            value: metric.totalTradesDisplay,
+                            valueClass: '',
+                        }))
                     : [],
             },
             {
@@ -7116,11 +7122,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 value: totalCommissionDisplay,
                 valueClass: totalCommissionClass,
                 details: hasBrokerMetricBreakdown
-                    ? brokerMetricDetails.map((metric) => ({
-                        label: metric.brokerLabel,
-                        value: metric.totalCommissionDisplay,
-                        valueClass: getNegativeMetricClass(metric.totalCommission),
-                    }))
+                    ? brokerMetricDetails
+                        .filter((metric) => !isFlatPosition(metric.shares))
+                        .map((metric) => ({
+                            label: metric.brokerLabel,
+                            value: metric.totalCommissionDisplay,
+                            valueClass: getNegativeMetricClass(metric.totalCommission),
+                        }))
                     : [],
             },
         ];
