@@ -297,6 +297,57 @@
     grid-template-columns: 16px 22px minmax(0, 1fr);
 }
 
+.investment-history-broker-filter-header {
+    padding: 4px 0;
+    vertical-align: middle;
+}
+
+.investment-broker-filter-field {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.investment-broker-filter-row {
+    display: block;
+    width: var(--investment-col-broker-min-width);
+    margin: 0 auto;
+}
+
+.investment-broker-filter-trigger.live-trading-broker-trigger,
+.investment-broker-filter-trigger.form-select {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    min-height: 20px;
+    padding: 0;
+    justify-content: center;
+    background-position: 50% 50%;
+    background-size: 10px 6px;
+}
+
+.investment-broker-filter-trigger-slot {
+    display: none;
+}
+
+.investment-broker-filter-trigger-label {
+    display: none !important;
+}
+
+.investment-broker-filter-dropdown {
+    min-width: 168px;
+    overflow: auto;
+}
+
+.investment-broker-filter-dropdown .trade-strategy-dropdown-option.is-broker-logo-only.is-with-icon {
+    grid-template-columns: 16px 20px;
+}
+
+.investment-broker-filter-dropdown .trade-strategy-dropdown-option.is-broker-logo-only .trade-strategy-dropdown-copy {
+    display: none;
+}
+
 .live-trading-section-header-chart {
     align-items: flex-end;
 }

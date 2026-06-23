@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.1
+ * Code version: v1.54.3
+ * - Fixed: Broker filter trigger now keeps a centered chevron in the resting state and no longer shows broker logos or placeholder tiles in the header cell.
  * - Improved: Holdings, Stock details, and Metrics live values now right-align integer digits, measure per-character slot widths, and animate only changed digit positions with easeOutCubic requestAnimationFrame rolls that avoid layout jitter.
  * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
  * - Changed: USD funding metrics now omit the dollar sign because USD is the workspace default currency.
@@ -506,6 +507,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentHistoryTableAlignmentCleanup = null;
     let investmentStockDetailsTableAlignmentCleanup = null;
     let investmentHistoryCurrentPage = 1;
+    let investmentBrokerFilterSelectedCodes = new Set();
+    let investmentBrokerFilterDocumentListenersBound = false;
     let investmentHistoryVisibleTransactionsCache = [];
     let investmentRawTransactionsCache = [];
     let investmentTickerClosePricesCache = {};
@@ -3804,6 +3807,454 @@ document.addEventListener('DOMContentLoaded', () => {
         return INVESTMENT_BROKER_META[normalizedBroker] || INVESTMENT_BROKER_META.ibkr;
     }
 
+    const INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS = {
+        hsbc: 'hsbc',
+        ibkr: 'ibkr',
+        longbridge: 'longbridge',
+    };
+    const investmentBrokerFilterCollator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true });
+
+    function getInvestmentBrokerFilterSortKey(brokerCode) {
+        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+        return INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS[normalizedBrokerCode]
+            || getInvestmentBrokerMeta(normalizedBrokerCode).label.trim().toLowerCase()
+            || normalizedBrokerCode;
+    }
+
+    function compareInvestmentBrokerFilterCodes(leftCode, rightCode) {
+        const bySortKey = investmentBrokerFilterCollator.compare(
+            getInvestmentBrokerFilterSortKey(leftCode),
+            getInvestmentBrokerFilterSortKey(rightCode),
+        );
+        if (bySortKey !== 0) return bySortKey;
+        return normalizeInvestmentBroker(leftCode).localeCompare(normalizeInvestmentBroker(rightCode));
+    }
+
+    function sortInvestmentBrokerFilterCodes(brokerCodes = []) {
+        return Array.from(new Set(
+            (Array.isArray(brokerCodes) ? brokerCodes : [])
+                .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
+                .filter(Boolean),
+        )).sort(compareInvestmentBrokerFilterCodes);
+    }
+
+    function getAvailableInvestmentBrokerCodes() {
+        const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
+            ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
+            : [];
+        const transactionBrokerCodes = Array.isArray(investmentProcessedTransactionsCache)
+            ? investmentProcessedTransactionsCache.map((txn) => getTransactionBrokerCode(txn))
+            : [];
+        const effectiveBrokerCodes = payloadBrokerCodes.length ? payloadBrokerCodes : transactionBrokerCodes;
+        return sortInvestmentBrokerFilterCodes(effectiveBrokerCodes);
+    }
+
+    function getInvestmentBrokerFilterSelectedCodes() {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        return new Set(
+            Array.from(investmentBrokerFilterSelectedCodes)
+                .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
+                .filter((brokerCode) => availableBrokerCodes.includes(brokerCode)),
+        );
+    }
+
+    function isInvestmentBrokerFilterAllSelected(selectedCodes = getInvestmentBrokerFilterSelectedCodes(), availableCodes = getAvailableInvestmentBrokerCodes()) {
+        if (!availableCodes.length) return true;
+        if (!selectedCodes.size) return false;
+        return availableCodes.every((brokerCode) => selectedCodes.has(brokerCode));
+    }
+
+    function matchesInvestmentBrokerFilter(txn) {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        if (!availableBrokerCodes.length) return true;
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        if (isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes)) {
+            return true;
+        }
+        if (!selectedBrokerCodes.size) {
+            return false;
+        }
+        return selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn)));
+    }
+
+    function initializeInvestmentBrokerFilterSelection() {
+        investmentBrokerFilterSelectedCodes = new Set(getAvailableInvestmentBrokerCodes());
+    }
+
+    function renderInvestmentBrokerFilterHeaderInnerMarkup(filterId = 'investment_history_broker_filter') {
+        return `
+            <div class="field investment-broker-filter-field backtest-shared-select-field"
+                 data-investment-broker-filter
+                 data-filter-id="${escapeHtml(filterId)}">
+                <div class="trade-strategy-row backtest-shared-select-row investment-broker-filter-row live-trading-broker-row">
+                    <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                        <button type="button"
+                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger investment-broker-filter-trigger"
+                                data-investment-broker-filter-trigger
+                                aria-haspopup="listbox"
+                                aria-expanded="false"
+                                aria-controls="${escapeHtml(filterId)}_dropdown"
+                                title="All brokers"
+                                aria-label="Broker filter: All brokers">
+                            <span class="ticker-leading-slot live-trading-broker-trigger-slot investment-broker-filter-trigger-slot" aria-hidden="true">
+                                <span class="ticker-logo-placeholder"
+                                      data-investment-broker-filter-placeholder></span>
+                                <img class="ticker-input-logo live-trading-broker-trigger-logo investment-broker-filter-trigger-logo"
+                                     data-investment-broker-filter-logo
+                                     alt=""
+                                     hidden>
+                            </span>
+                            <span class="trade-strategy-trigger-label live-trading-broker-trigger-label investment-broker-filter-trigger-label"
+                                  data-investment-broker-filter-label
+                                  hidden
+                                  aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <div id="${escapeHtml(filterId)}_dropdown"
+                         class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown investment-broker-filter-dropdown"
+                         data-investment-broker-filter-dropdown
+                         role="listbox"
+                         aria-label="Broker"
+                         hidden></div>
+                </div>
+            </div>
+        `;
+    }
+
+    function getInvestmentBrokerFilterScopeId(th) {
+        if (!(th instanceof HTMLElement)) return 'investment_history_broker_filter';
+        return th.closest('.investment-stock-details-table-shell')
+            ? 'investment_stock_details_broker_filter'
+            : 'investment_history_broker_filter';
+    }
+
+    function syncInvestmentBrokerFilterTrigger(field) {
+        if (!(field instanceof HTMLElement)) return;
+        const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
+        const triggerLogo = field.querySelector('[data-investment-broker-filter-logo]');
+        const triggerPlaceholder = field.querySelector('[data-investment-broker-filter-placeholder]');
+        if (!(trigger instanceof HTMLButtonElement)) return;
+
+        if (triggerLogo instanceof HTMLImageElement) {
+            triggerLogo.hidden = true;
+            triggerLogo.alt = '';
+            triggerLogo.removeAttribute('src');
+        }
+        if (triggerPlaceholder instanceof HTMLElement) {
+            triggerPlaceholder.hidden = true;
+        }
+
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const selectedBrokerList = availableBrokerCodes.filter((brokerCode) => selectedBrokerCodes.has(brokerCode));
+        const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+
+        let triggerTitle = 'All brokers';
+        if (!allSelected) {
+            if (!selectedBrokerList.length) {
+                triggerTitle = 'No brokers selected';
+            } else if (selectedBrokerList.length === 1) {
+                triggerTitle = getInvestmentBrokerMeta(selectedBrokerList[0]).label;
+            } else {
+                triggerTitle = `${selectedBrokerList.length} brokers selected`;
+            }
+        }
+
+        trigger.title = triggerTitle;
+        trigger.setAttribute('aria-label', `Broker filter: ${triggerTitle}`);
+    }
+
+    function positionInvestmentBrokerFilterDropdown(field) {
+        if (!(field instanceof HTMLElement)) return;
+        const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
+        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        const row = field.querySelector('.investment-broker-filter-row');
+        if (!(trigger instanceof HTMLElement)
+            || !(dropdown instanceof HTMLElement)
+            || !(row instanceof HTMLElement)
+            || dropdown.hidden) {
+            return;
+        }
+        const triggerRect = trigger.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        dropdown.style.left = `${Math.round(triggerRect.left - rowRect.left)}px`;
+        dropdown.style.top = `${Math.round(triggerRect.bottom - rowRect.top + 4)}px`;
+        dropdown.style.right = 'auto';
+        dropdown.style.width = `${Math.round(Math.max(triggerRect.width, 168))}px`;
+        dropdown.style.maxHeight = `${Math.round(Math.max(120, window.innerHeight - triggerRect.bottom - 16))}px`;
+    }
+
+    function setInvestmentBrokerFilterDropdownOpen(field, isOpen) {
+        if (!(field instanceof HTMLElement)) return;
+        const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
+        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        if (!(trigger instanceof HTMLButtonElement) || !(dropdown instanceof HTMLElement)) return;
+        dropdown.hidden = !isOpen;
+        trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        field.classList.toggle('is-open', isOpen);
+        if (isOpen) {
+            positionInvestmentBrokerFilterDropdown(field);
+        } else {
+            dropdown.style.left = '';
+            dropdown.style.top = '';
+            dropdown.style.right = '';
+            dropdown.style.width = '';
+            dropdown.style.maxHeight = '';
+        }
+    }
+
+    function closeInvestmentBrokerFilterDropdowns(exceptField = null) {
+        document.querySelectorAll('[data-investment-broker-filter]').forEach((field) => {
+            if (!(field instanceof HTMLElement)) return;
+            if (exceptField && field === exceptField) return;
+            setInvestmentBrokerFilterDropdownOpen(field, false);
+        });
+    }
+
+    function createInvestmentBrokerFilterOptionButton({
+        value,
+        label,
+        iconUrl = '',
+        iconAlt = '',
+        logoOnly = false,
+        isSelected = false,
+        onClick,
+    }) {
+        const optionButton = document.createElement('button');
+        optionButton.type = 'button';
+        optionButton.className = 'trade-strategy-dropdown-option';
+        if (logoOnly) {
+            optionButton.classList.add('is-broker-logo-only');
+        }
+        optionButton.dataset.value = value;
+        optionButton.setAttribute('role', 'option');
+        optionButton.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        optionButton.setAttribute('aria-label', label);
+        if (isSelected) {
+            optionButton.classList.add('is-selected', 'is-active');
+        }
+
+        const checkElement = document.createElement('span');
+        checkElement.className = 'trade-strategy-dropdown-check';
+        checkElement.setAttribute('aria-hidden', 'true');
+        optionButton.appendChild(checkElement);
+
+        if (iconUrl) {
+            optionButton.classList.add('is-with-icon');
+            const mediaSlot = document.createElement('span');
+            mediaSlot.className = 'trade-strategy-dropdown-media-slot';
+            mediaSlot.setAttribute('aria-hidden', 'true');
+
+            const mediaPlaceholder = document.createElement('span');
+            mediaPlaceholder.className = 'trade-strategy-dropdown-media-placeholder';
+
+            const mediaElement = document.createElement('img');
+            mediaElement.className = 'trade-strategy-dropdown-media';
+            mediaElement.alt = iconAlt || `${label} logo`;
+            mediaElement.loading = 'eager';
+            mediaElement.decoding = 'async';
+            mediaElement.hidden = true;
+            mediaElement.addEventListener('load', () => {
+                mediaElement.hidden = false;
+                mediaPlaceholder.hidden = true;
+            });
+            mediaElement.addEventListener('error', () => {
+                mediaElement.hidden = true;
+                mediaElement.removeAttribute('src');
+                mediaPlaceholder.hidden = false;
+            });
+            mediaElement.src = iconUrl;
+            if (mediaElement.complete && mediaElement.naturalWidth > 0 && mediaElement.naturalHeight > 0) {
+                mediaElement.hidden = false;
+                mediaPlaceholder.hidden = true;
+            }
+
+            mediaSlot.appendChild(mediaPlaceholder);
+            mediaSlot.appendChild(mediaElement);
+            optionButton.appendChild(mediaSlot);
+        }
+
+        if (!logoOnly || !iconUrl) {
+            const copyElement = document.createElement('span');
+            copyElement.className = 'trade-strategy-dropdown-copy';
+            const titleElement = document.createElement('span');
+            titleElement.className = 'trade-strategy-dropdown-title';
+            titleElement.textContent = label;
+            copyElement.appendChild(titleElement);
+            optionButton.appendChild(copyElement);
+        }
+
+        optionButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            onClick?.();
+        });
+        return optionButton;
+    }
+
+    function renderInvestmentBrokerFilterDropdown(field) {
+        if (!(field instanceof HTMLElement)) return;
+        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        if (!(dropdown instanceof HTMLElement)) return;
+
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+
+        dropdown.innerHTML = '';
+        dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
+            value: '__all__',
+            label: 'All',
+            isSelected: allSelected,
+            onClick: () => {
+                investmentBrokerFilterSelectedCodes = new Set(availableBrokerCodes);
+                applyInvestmentBrokerFilterChange();
+                renderInvestmentBrokerFilterDropdown(field);
+            },
+        }));
+
+        availableBrokerCodes.forEach((brokerCode) => {
+            const brokerMeta = getInvestmentBrokerMeta(brokerCode);
+            dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
+                value: brokerCode,
+                label: brokerMeta.label,
+                iconUrl: brokerMeta.logoUrl,
+                iconAlt: brokerMeta.logoAlt,
+                logoOnly: true,
+                isSelected: allSelected || selectedBrokerCodes.has(brokerCode),
+                onClick: () => {
+                    const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes());
+                    if (allSelected) {
+                        nextSelection.delete(brokerCode);
+                    } else if (nextSelection.has(brokerCode)) {
+                        nextSelection.delete(brokerCode);
+                    } else {
+                        nextSelection.add(brokerCode);
+                    }
+                    investmentBrokerFilterSelectedCodes = nextSelection;
+                    applyInvestmentBrokerFilterChange();
+                    renderInvestmentBrokerFilterDropdown(field);
+                },
+            }));
+        });
+    }
+
+    function syncInvestmentBrokerFilterField(field) {
+        if (!(field instanceof HTMLElement)) return;
+        syncInvestmentBrokerFilterTrigger(field);
+        if (!field.classList.contains('is-open')) return;
+        renderInvestmentBrokerFilterDropdown(field);
+        positionInvestmentBrokerFilterDropdown(field);
+    }
+
+    function syncAllInvestmentBrokerFilterUi() {
+        document.querySelectorAll('[data-investment-broker-filter]').forEach((field) => {
+            syncInvestmentBrokerFilterField(field);
+        });
+    }
+
+    function bindInvestmentBrokerFilterField(field) {
+        if (!(field instanceof HTMLElement) || field.dataset.investmentBrokerFilterBound === '1') return;
+        field.dataset.investmentBrokerFilterBound = '1';
+        const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
+        if (!(trigger instanceof HTMLButtonElement)) return;
+
+        trigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const shouldOpen = field.querySelector('[data-investment-broker-filter-dropdown]')?.hidden !== false;
+            closeInvestmentBrokerFilterDropdowns(field);
+            if (shouldOpen) {
+                renderInvestmentBrokerFilterDropdown(field);
+            }
+            setInvestmentBrokerFilterDropdownOpen(field, shouldOpen);
+        });
+
+        syncInvestmentBrokerFilterField(field);
+    }
+
+    function ensureInvestmentBrokerFilterDocumentListeners() {
+        if (investmentBrokerFilterDocumentListenersBound) return;
+        investmentBrokerFilterDocumentListenersBound = true;
+        document.addEventListener('click', () => {
+            closeInvestmentBrokerFilterDropdowns();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeInvestmentBrokerFilterDropdowns();
+            }
+        });
+        window.addEventListener('resize', () => {
+            document.querySelectorAll('[data-investment-broker-filter].is-open').forEach((field) => {
+                positionInvestmentBrokerFilterDropdown(field);
+            });
+        });
+    }
+
+    function mountInvestmentBrokerFilterHeaders(root = document) {
+        ensureInvestmentBrokerFilterDocumentListeners();
+        const scope = root instanceof Document ? root : root;
+        const headers = scope.querySelectorAll ? scope.querySelectorAll('th[aria-label="Broker"]') : [];
+        headers.forEach((th) => {
+            if (!(th instanceof HTMLElement)) return;
+            th.classList.add('investment-history-broker-filter-header');
+            const filterId = getInvestmentBrokerFilterScopeId(th);
+            if (!th.querySelector('[data-investment-broker-filter]')) {
+                th.innerHTML = renderInvestmentBrokerFilterHeaderInnerMarkup(filterId);
+            }
+            bindInvestmentBrokerFilterField(th.querySelector('[data-investment-broker-filter]'));
+        });
+        syncAllInvestmentBrokerFilterUi();
+    }
+
+    function applyInvestmentBrokerFilterChange() {
+        syncAllInvestmentBrokerFilterUi();
+        renderInvestmentHistoryTableRows(
+            investmentProcessedTransactionsCache,
+            investmentChartPointsCache,
+            { resetPage: true, scrollToTop: true },
+        );
+        if (activeInvestmentView === 'stock_details') {
+            refreshInvestmentStockDetailsTableRows();
+        }
+    }
+
+    function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
+        const filteredDetailRows = detailRows.filter((txn) => matchesInvestmentBrokerFilter(txn));
+        if (!filteredDetailRows.length) {
+            return `
+                <tr>
+                    <td colspan="10" class="investment-history-empty-cell">No ticker-linked transactions match the selected brokers.</td>
+                </tr>
+            `;
+        }
+        return filteredDetailRows.map((txn) => `
+            <tr data-investment-stock-detail-ledger="${txn.ledger_no}">
+                ${renderInvestmentBrokerCell(txn)}
+                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
+                <td class="investment-history-cell investment-history-cell-left">${formatTransactionDescription(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmount(txn.rowMarketValue)}</td>
+                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
+            </tr>
+        `).join('');
+    }
+
+    function refreshInvestmentStockDetailsTableRows() {
+        if (!(investmentStockDetailsTableHost instanceof HTMLElement)) return;
+        const activeTicker = ensureSelectedInvestmentStockTicker();
+        if (!activeTicker) return;
+        const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
+        const tbody = investmentStockDetailsTableHost.querySelector('.investment-stock-details-table-scroll tbody');
+        if (!(tbody instanceof HTMLElement)) return;
+        tbody.innerHTML = renderInvestmentStockDetailsTableRowsMarkup(detailRows);
+        mountInvestmentBrokerFilterHeaders(investmentStockDetailsTableHost);
+        bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
+        attachStockDetailsTableAlignmentSync(investmentStockDetailsTableHost);
+    }
+
     function getSelectedInvestmentImportBroker() {
         return normalizeInvestmentBroker(investmentImportBrokerSelect?.value || 'ibkr');
     }
@@ -6056,6 +6507,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initInvestmentViewTabs();
     initInvestmentDummyDonut();
+    mountInvestmentBrokerFilterHeaders();
     bindInvestmentHistoryPagination();
     bindInvestmentExportButton();
     syncInvestmentImportMode();
@@ -7508,20 +7960,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     : [],
             },
         ];
-        const rowsHtml = detailRows.length ? detailRows.map((txn) => `
-            <tr data-investment-stock-detail-ledger="${txn.ledger_no}">
-                ${renderInvestmentBrokerCell(txn)}
-                <td class="investment-history-cell investment-history-cell-center">${txn.ledger_no}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatTransactionDateDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
-                <td class="investment-history-cell investment-history-cell-left">${formatTransactionDescription(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmount(txn.rowMarketValue)}</td>
-                <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
-            </tr>
-        `).join('') : `
+        const rowsHtml = detailRows.length
+            ? renderInvestmentStockDetailsTableRowsMarkup(detailRows)
+            : `
             <tr>
                 <td colspan="10" class="investment-history-empty-cell">No ticker-linked transactions are available for this stock.</td>
             </tr>
@@ -7581,7 +8022,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${renderInvestmentStockDetailsColgroup()}
                         <thead>
                         <tr>
-                            <th aria-label="Broker"></th>
+                            <th aria-label="Broker">${renderInvestmentBrokerFilterHeaderInnerMarkup('investment_stock_details_broker_filter')}</th>
                             <th>No.</th>
                             <th>Time</th>
                             <th>Type</th>
@@ -7603,6 +8044,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             attachStockDetailsTableAlignmentSync(investmentStockDetailsTableHost);
+            mountInvestmentBrokerFilterHeaders(investmentStockDetailsTableHost);
             bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
             syncInvestmentStockDetailsTableVisibility();
         }
@@ -7693,15 +8135,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTransactions = Array.isArray(processedTransactions)
             ? processedTransactions.filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
             : [];
+        const brokerFilteredTransactions = normalizedTransactions.filter((txn) => matchesInvestmentBrokerFilter(txn));
         const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
         const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
             normalizedChartPoints.map((point) => point?.date),
             selectedInvestmentEquityRange,
         ));
         if (!visibleRangeLabels.size) {
-            return normalizedTransactions;
+            return brokerFilteredTransactions;
         }
-        return normalizedTransactions.filter((txn) => visibleRangeLabels.has(normalizeLedgerDate(txn?.date)));
+        return brokerFilteredTransactions.filter((txn) => visibleRangeLabels.has(normalizeLedgerDate(txn?.date)));
     }
 
     function getInvestmentHistoryTotalPages(totalRows = 0) {
@@ -7886,6 +8329,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 </tr>
             `;
+            initializeInvestmentBrokerFilterSelection();
+            mountInvestmentBrokerFilterHeaders();
             renderInvestmentHistoryPagination(0);
             attachHistoryTableAlignmentSync(historyTable);
             return { isDegraded: false, message: '' };
@@ -8291,6 +8736,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // 3. Render reverse chronological rows constrained by the active equity range
+        initializeInvestmentBrokerFilterSelection();
+        mountInvestmentBrokerFilterHeaders();
         renderInvestmentHistoryTableRows(processed, chartPoints, { resetPage: !preserveHistoryPage, scrollToTop });
 
         // 4. Update dashboard with latest total equity
