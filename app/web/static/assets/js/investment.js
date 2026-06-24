@@ -5418,7 +5418,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentShareBrandIconUrl() {
-        return '/market-store/logos/EUV.png';
+        return '/market-store/logos/favicon.svg';
     }
 
     function sanitizeInvestmentShareClone(node) {
