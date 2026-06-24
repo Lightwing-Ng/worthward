@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.44.0
+ * Code version: v1.45.0
  * - Changed: HSBC same-day history now sorts funding cash rows ahead of trade executions, while executions still follow ascending reference codes and can reuse hidden settlement rows only as internal cash-after calibration
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
@@ -66,6 +66,21 @@ export function createInvestmentDataUtils({
 
     function getInvestmentEndingCash() {
         const rawValue = window.ANTIGRAVITY_INVESTMENT_DATA?.ending_cash;
+        if (rawValue === undefined || rawValue === null || rawValue === '') {
+            return null;
+        }
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function getInvestmentBrokerEndingCash(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        if (!normalizedBroker) return null;
+        const summaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        if (!summaries || typeof summaries !== 'object') return null;
+        const summary = summaries[normalizedBroker];
+        if (!summary || typeof summary !== 'object') return null;
+        const rawValue = summary.ending_cash ?? summary.ending_cash_raw;
         if (rawValue === undefined || rawValue === null || rawValue === '') {
             return null;
         }
@@ -1427,6 +1442,7 @@ export function createInvestmentDataUtils({
         formatTransactionDescription,
         getIndexedClosePriceOnOrBefore,
         getInvestmentEquityRangeLabels,
+        getInvestmentBrokerEndingCash,
         getInvestmentEndingCash,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,

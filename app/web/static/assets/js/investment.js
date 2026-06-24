@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.10
+ * Code version: v1.54.11
+ * - Added: Mixed-broker portfolios now calibrate each broker's latest history Balance from per-broker ending cash snapshots, so IBKR CSV Ending Cash can align with the broker app after HSBC merge
  * - Fixed: Investment export and share action buttons now align with the global theme toggle horizontally and the view segmented control vertical center.
  * - Fixed: Holdings Last now reuses the live digit-roll updater with green-up and red-down tone, and summary cash/equity values stay on the same realtime sync path.
  * - Fixed: Overview equity range switching now updates the chart in place so the segmented control is not destroyed and re-measured on every 1W through Max change.
@@ -606,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getIndexedClosePriceOnOrBefore,
         getAuthoritativePositionSnapshot,
         getInvestmentEquityRangeLabels,
+        getInvestmentBrokerEndingCash,
         getInvestmentEndingCash,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
@@ -1553,6 +1555,43 @@ document.addEventListener('DOMContentLoaded', () => {
             sourceOptionsByKey,
             resolvedBindingsBySourceKey,
         };
+    }
+
+    function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) {
+        const transactions = Array.isArray(processedTransactions) ? processedTransactions : [];
+        if (!transactions.length) return;
+
+        const brokerCodes = Array.from(new Set(
+            transactions
+                .map((txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)))
+                .filter(Boolean)
+        ));
+
+        brokerCodes.forEach((brokerCode) => {
+            const authoritativeEndingCash = getInvestmentBrokerEndingCash(brokerCode);
+            if (authoritativeEndingCash === null) return;
+
+            const lastBrokerTxn = [...transactions].reverse().find(
+                (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === brokerCode
+            );
+            if (!lastBrokerTxn) return;
+
+            if (brokerCode === 'hsbc') {
+                const replayedCash = Number(lastBrokerTxn.broker_running_cash);
+                if (Number.isFinite(replayedCash) && Math.abs(replayedCash - authoritativeEndingCash) < 0.005) {
+                    return;
+                }
+            }
+
+            const normalizedEndingCash = Math.max(0, authoritativeEndingCash);
+            lastBrokerTxn.broker_running_cash = normalizedEndingCash;
+            lastBrokerTxn.broker_cash_by_currency = createCashLedger(
+                normalizedEndingCash,
+                getInvestmentBaseCurrency(),
+            );
+            const brokerMarketValue = Number(lastBrokerTxn.broker_market_value) || 0;
+            lastBrokerTxn.broker_total_equity = normalizedEndingCash + brokerMarketValue;
+        });
     }
 
     function applyInvestmentInternalTransferBindings(processedTransactions = []) {
@@ -8994,6 +9033,7 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.market_value = aggregateMarketValue;
             txn.total_equity = txn.aggregate_total_equity;
         });
+        applyAuthoritativeBrokerEndingCashBalances(processed);
         if (authoritativePositionSnapshot !== null && processed.length) {
             const latestProcessed = processed[processed.length - 1];
             const authoritativeEndingCash = getInvestmentEndingCash();
