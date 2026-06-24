@@ -324,7 +324,7 @@
 			throw new Error("Portfolio summary content is not ready for screenshot export.");
 		}
 		const summarySection = share().createSection?.("investment-community-share-section--compact investment-community-share-section--padded");
-		const chartSection = share().createChartSection?.(chartCanvas);
+		const chartSection = await share().createChartSection?.(chartCanvas);
 		if (!(summarySection instanceof HTMLElement) || !(chartSection instanceof HTMLElement)) {
 			throw new Error("Portfolio share sections are not ready for screenshot export.");
 		}
@@ -335,7 +335,7 @@
 		}
 		const title = document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()
 			|| "Portfolio";
-		const frame = share().createTemplateFrame?.({ shareView: "chart", title });
+		const frame = share().createTemplateFrame?.({ shareView: "portfolio", title });
 		if (!frame?.host || !frame?.body || !frame?.card) {
 			throw new Error("Portfolio share template is unavailable.");
 		}

@@ -206,6 +206,8 @@
 		return svg;
 	};
 
+	const INVESTMENT_COMMUNITY_SHARE_FOOTER_PROMPT = "Welcome to vibe and star this project.";
+
 	const createWorkspaceShareFooter = async () => {
 		const projectMeta = getProjectMeta();
 		const footer = document.createElement("div");
@@ -225,6 +227,10 @@
 		timestamp.className = "investment-community-share-footer-timestamp";
 		timestamp.textContent = getShareTimestampText();
 		copy.appendChild(timestamp);
+		const prompt = document.createElement("p");
+		prompt.className = "investment-community-share-footer-prompt";
+		prompt.textContent = INVESTMENT_COMMUNITY_SHARE_FOOTER_PROMPT;
+		copy.appendChild(prompt);
 		footer.appendChild(copy);
 
 		const qrShell = document.createElement("div");
@@ -234,17 +240,97 @@
 		return footer;
 	};
 
-	const readWorkspaceShareChartDataUrl = (canvas) => {
-		if (!(canvas instanceof HTMLCanvasElement)) return null;
-		const chartInstance = window.Chart?.getChart?.(canvas);
-		try {
-			return chartInstance?.toBase64Image?.("image/png", 1) || canvas.toDataURL("image/png");
-		} catch (_error) {
-			return chartInstance?.toBase64Image?.("image/png", 1) || null;
-		}
+	const readCommunityShareSafePaddingPx = (scope = document.documentElement) => {
+		const element = scope instanceof HTMLElement ? scope : document.documentElement;
+		const styles = window.getComputedStyle(element);
+		const raw = styles.getPropertyValue("--investment-community-share-safe-padding").trim()
+			|| styles.getPropertyValue("--investment-community-share-card-padding").trim()
+			|| "10px";
+		const value = Number.parseFloat(raw);
+		return Number.isFinite(value) ? value : 10;
 	};
 
-	const createWorkspaceShareChartSection = (canvas, className = "investment-community-share-section--chart") => {
+	const normalizeShareChartLayoutPadding = (layoutPadding) => {
+		if (typeof layoutPadding === "number") {
+			return {
+				top: layoutPadding,
+				right: layoutPadding,
+				bottom: layoutPadding,
+				left: layoutPadding,
+			};
+		}
+		return {
+			top: Number(layoutPadding?.top ?? 0),
+			right: Number(layoutPadding?.right ?? 0),
+			bottom: Number(layoutPadding?.bottom ?? 0),
+			left: Number(layoutPadding?.left ?? 0),
+		};
+	};
+
+	const readShareChartAxisFontSize = (canvas, chartInstance) => {
+		if (canvas instanceof HTMLCanvasElement) {
+			const raw = window.getComputedStyle(canvas).getPropertyValue("--workspace-share-chart-axis-font-size").trim();
+			const parsed = Number.parseFloat(raw);
+			if (Number.isFinite(parsed) && parsed > 0) return parsed;
+		}
+		const labelOptions = chartInstance?.options?.plugins?.investmentXAxisLabels || {};
+		const pluginSize = Number.parseFloat(labelOptions.fontSize);
+		if (Number.isFinite(pluginSize) && pluginSize > 0) return pluginSize;
+		const tickFontSize = chartInstance?.options?.scales?.y?.ticks?.font?.size;
+		if (Number.isFinite(tickFontSize) && tickFontSize > 0) return tickFontSize;
+		return 12;
+	};
+
+	const readShareChartLabelLineHeight = (chartInstance, axisFontSize) => {
+		const labelOptions = chartInstance?.options?.plugins?.investmentXAxisLabels || {};
+		const pluginLineHeight = Number.parseFloat(labelOptions.lineHeight);
+		if (Number.isFinite(pluginLineHeight) && pluginLineHeight > 0) return pluginLineHeight;
+		return Math.max(10, Math.round(axisFontSize * 0.84));
+	};
+
+	const readShareChartBottomPadding = (chartInstance, safePadding) => {
+		const axisFontSize = readShareChartAxisFontSize(chartInstance?.canvas, chartInstance);
+		const lineHeight = readShareChartLabelLineHeight(chartInstance, axisFontSize);
+		const labelBlockHeight = Math.ceil(lineHeight + axisFontSize + 4);
+		return Math.max(safePadding, 22, labelBlockHeight);
+	};
+
+	const captureCommunityShareChartDataUrl = (sourceCanvas, chartInstance = null) => {
+		if (!(sourceCanvas instanceof HTMLCanvasElement)) return null;
+		const resolvedChartInstance = chartInstance || window.Chart?.getChart?.(sourceCanvas) || null;
+		if (!resolvedChartInstance?.options?.layout) {
+			return sourceCanvas.toDataURL("image/png");
+		}
+
+		const safePadding = readCommunityShareSafePaddingPx();
+		const originalPadding = normalizeShareChartLayoutPadding(resolvedChartInstance.options.layout.padding);
+		const usesExtendedInsets = originalPadding.right > 12 || originalPadding.top > 12;
+		const minBottomPadding = readShareChartBottomPadding(resolvedChartInstance, safePadding);
+		const originalAnimation = resolvedChartInstance.options.animation;
+
+		if (typeof resolvedChartInstance.stop === "function") {
+			resolvedChartInstance.stop();
+		}
+		resolvedChartInstance.options.animation = false;
+		resolvedChartInstance.options.layout.padding = {
+			left: safePadding,
+			right: usesExtendedInsets ? Math.max(safePadding, 24) : safePadding,
+			top: usesExtendedInsets ? Math.max(safePadding, 24) : safePadding,
+			bottom: Math.max(safePadding, minBottomPadding),
+		};
+		resolvedChartInstance.update("none");
+		const dataUrl = sourceCanvas.toDataURL("image/png");
+		resolvedChartInstance.options.layout.padding = originalPadding;
+		resolvedChartInstance.options.animation = originalAnimation;
+		resolvedChartInstance.update("none");
+		return dataUrl;
+	};
+
+	const readWorkspaceShareChartDataUrl = (canvas, chartInstance = null) => (
+		captureCommunityShareChartDataUrl(canvas, chartInstance)
+	);
+
+	const createWorkspaceShareChartSection = async (canvas, className = "investment-community-share-section--chart") => {
 		const chartDataUrl = readWorkspaceShareChartDataUrl(canvas);
 		if (!chartDataUrl) return null;
 		const image = document.createElement("img");
@@ -509,11 +595,11 @@
 			metricsClone.classList.add("workspace-share-metrics-card", "investment-community-share-metrics-grid");
 			metricsSection.appendChild(metricsClone);
 		}
-		const priceSection = createWorkspaceShareChartSection(
+		const priceSection = await createWorkspaceShareChartSection(
 			priceCanvas,
 			"investment-community-share-section--chart workspace-share-section--trade-chart",
 		);
-		const equitySection = createWorkspaceShareChartSection(
+		const equitySection = await createWorkspaceShareChartSection(
 			equityCanvas,
 			"investment-community-share-section--chart workspace-share-section--trade-chart",
 		);
@@ -541,6 +627,8 @@
 		createTemplateFrame: createWorkspaceShareTemplateFrame,
 		createFooter: createWorkspaceShareFooter,
 		createChartSection: createWorkspaceShareChartSection,
+		captureChartDataUrl: captureCommunityShareChartDataUrl,
+		readSafePaddingPx: readCommunityShareSafePaddingPx,
 		sanitizeClone: sanitizeWorkspaceShareClone,
 		buildFilename: buildWorkspaceShareFilename,
 		buildTradeCard: buildTradeWorkspaceShareCard,

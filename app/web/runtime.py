@@ -176,7 +176,7 @@ LEGACY_VIEW_ALIASES = {
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
-                               "clear-caches", "style-tokens"}
+                               "clear-caches", "style-tokens", "export-image"}
 SUPPORTED_MORE_SECTIONS = {"investment", "live-trading"}
 LEGACY_MORE_SECTION_ALIASES = {
     "timing": "investment",
@@ -1472,53 +1472,6 @@ def build_web_runtime() -> WebRuntime:
                 "related_styles": [],
             },
             {
-                "id": style_token_id("Investment community share card"),
-                "name": "Investment community share card",
-                "sample_kind": "investment-share-card",
-                "sample_title": "Overview",
-                "sample_subtitle": "",
-                "sample_copy": "Style tokens renders the same HTML and CSS card body used by exported PNG community shares. The print spec is a portrait card at 53.98 mm by 85.60 mm with a 3.18 mm corner radius, mapped onto a 10 px per mm export grid for readable PNG output.",
-                "sample_button": "",
-                "sample_button_class": "",
-                "sample_icon_class": "",
-                "sample_icon_shell_class": "",
-                "sample_url": PROJECT_DISPLAY_URL,
-                "sample_timestamp": "",
-                "tokens": [
-                    raw_token("--investment-community-share-print-width", "53.98mm"),
-                    raw_token("--investment-community-share-print-height", "85.60mm"),
-                    raw_token("--investment-community-share-print-radius", "3.18mm"),
-                    raw_token("--investment-community-share-accent", "#0055cc"),
-                    px_token("--investment-community-share-shell-width", 540, 1),
-                    px_token("--investment-community-share-shell-height", 856, 1),
-                    raw_token("--investment-community-share-card-radius", "31.8px"),
-                    px_token("--investment-community-share-card-padding", 14, 0),
-                    px_token("--investment-community-share-card-gap", 10, 0),
-                    px_token("--investment-community-share-section-gap", 10, 0),
-                    px_token("--investment-community-share-section-radius", 16, 0),
-                    px_token("--investment-community-share-footer-brand-size", 72, 0),
-                    px_token("--investment-community-share-footer-qr-size", 108, 0),
-                    material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-blur", "Frosted glass extracted"),
-                ],
-                "related_styles": [
-                    {
-                        "name": "Frosted glass extracted",
-                        "target_id": material_token_id("Frosted glass extracted"),
-                    },
-                    {
-                        "name": "Portfolio donut orbit",
-                        "target_id": style_token_id("Portfolio donut orbit"),
-                    },
-                    {
-                        "name": "Settings form input",
-                        "target_id": style_token_id("Settings form input"),
-                    },
-                ],
-            },
-            {
                 "id": style_token_id("Settings form input"),
                 "name": "Settings form input",
                 "sample_kind": "settings-form-input",
@@ -1698,6 +1651,114 @@ def build_web_runtime() -> WebRuntime:
         }
         rows.sort(key=lambda row: (token_order.get(str(row.get("name", "")), 999), str(row.get("name", ""))))
         return rows
+
+    def build_export_image_rows() -> list[dict[str, object]]:
+        def export_image_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
+        def style_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
+        def material_token_id(name: str) -> str:
+            return name.strip().lower().replace(" ", "-")
+
+        def px_token(name: str, value: int, min_value: int = 0) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": f"{value}px",
+                "editable": True,
+                "numeric_value": value,
+                "unit": "px",
+                "min_value": min_value,
+            }
+
+        def raw_token(name: str, value: str) -> dict[str, object]:
+            text_value = str(value)
+            if re.fullmatch(r"-?\d+", text_value):
+                numeric_value = int(text_value)
+                return {
+                    "name": name,
+                    "value": text_value,
+                    "editable": True,
+                    "numeric_value": numeric_value,
+                    "unit": "",
+                    "min_value": 0,
+                }
+            return {
+                "name": name,
+                "value": text_value,
+                "editable": False,
+                "numeric_value": None,
+                "unit": "",
+                "min_value": 0,
+            }
+
+        def material_reference_token(name: str, material_name: str) -> dict[str, object]:
+            return {
+                "name": name,
+                "value": material_name,
+                "editable": False,
+                "numeric_value": None,
+                "unit": "",
+                "min_value": 0,
+                "reference_target_id": material_token_id(material_name),
+                "reference_label": material_name,
+            }
+
+        return [
+            {
+                "id": export_image_id("Investment community share card"),
+                "name": "Investment community share card",
+                "sample_kind": "export-image-share-card",
+                "sample_title": "Overview",
+                "sample_subtitle": "",
+                "sample_copy": "Export image previews use the same HTML and CSS as workspace and investment PNG exports. The print spec is a portrait card at 53.98 mm by 85.60 mm with a 3.18 mm corner radius, mapped onto a 10 px per mm export grid for readable PNG output.",
+                "sample_button": "",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "sample_url": PROJECT_DISPLAY_URL,
+                "sample_timestamp": "",
+                "tokens": [
+                    raw_token("--investment-community-share-print-width", "53.98mm"),
+                    raw_token("--investment-community-share-print-height", "85.60mm"),
+                    raw_token("--investment-community-share-print-radius", "3.18mm"),
+                    raw_token("--investment-community-share-accent", "#0055cc"),
+                    px_token("--investment-community-share-shell-width", 540, 1),
+                    px_token("--investment-community-share-shell-height", 856, 1),
+                    raw_token("--investment-community-share-card-radius", "31.8px"),
+                    px_token("--investment-community-share-safe-padding", 10, 0),
+                    px_token("--investment-community-share-card-gap", 10, 0),
+                    px_token("--investment-community-share-section-gap", 10, 0),
+                    px_token("--investment-community-share-section-radius", 16, 0),
+                    px_token("--investment-community-share-footer-brand-size", 72, 0),
+                    px_token("--investment-community-share-footer-qr-size", 108, 0),
+                    px_token("--investment-community-share-ticker-identity-logo-size", 36, 1),
+                    material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-blur", "Frosted glass extracted"),
+                ],
+                "related_styles": [
+                    {
+                        "name": "Frosted glass extracted",
+                        "target_id": material_token_id("Frosted glass extracted"),
+                    },
+                    {
+                        "name": "Portfolio donut orbit",
+                        "target_id": style_token_id("Portfolio donut orbit"),
+                    },
+                    {
+                        "name": "Settings form input",
+                        "target_id": style_token_id("Settings form input"),
+                    },
+                    {
+                        "name": "Ticker identity row",
+                        "target_id": style_token_id("Ticker identity row"),
+                    },
+                ],
+            },
+        ]
 
     def build_font_token_rows() -> list[dict[str, object]]:
         def font_token_id(name: str) -> str:
@@ -2507,6 +2568,7 @@ def build_web_runtime() -> WebRuntime:
         settings_service_rows: list[dict[str, str | bool]] = []
         strategy_settings_rows: list[dict[str, object]] = []
         style_token_rows: list[dict[str, object]] = []
+        export_image_rows: list[dict[str, object]] = []
         material_token_rows: list[dict[str, object]] = []
         font_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
@@ -2563,6 +2625,8 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = "Clear caches"
             elif settings_section == "style-tokens":
                 settings_title = "Style tokens"
+            elif settings_section == "export-image":
+                settings_title = "Export image"
         elif current_view == "more":
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
@@ -3004,6 +3068,7 @@ def build_web_runtime() -> WebRuntime:
             strategy_settings_rows = build_strategy_settings_rows(strategy_options)
             font_token_rows = build_font_token_rows()
             style_token_rows = build_style_token_rows()
+            export_image_rows = build_export_image_rows()
             material_token_rows = build_material_token_rows()
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
@@ -3095,6 +3160,7 @@ def build_web_runtime() -> WebRuntime:
             strategy_settings_rows=strategy_settings_rows,
             font_token_rows=font_token_rows,
             style_token_rows=style_token_rows,
+            export_image_rows=export_image_rows,
             material_token_rows=material_token_rows,
             backtest_execution_mode=backtest_execution_mode,
             date_display_full_format=date_display_settings.full_date_format,
@@ -3118,7 +3184,7 @@ def build_web_runtime() -> WebRuntime:
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
-                            "style-tokens")},
+                            "style-tokens", "export-image")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("investment", "live-trading")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,

@@ -236,7 +236,7 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
-{% if current_view in ["tickers", "portfolio", "dca", "backtest"] %}
+{% if current_view in ["tickers", "portfolio", "dca", "backtest", "more"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version) }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}

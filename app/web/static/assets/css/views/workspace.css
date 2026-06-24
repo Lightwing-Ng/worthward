@@ -1836,6 +1836,11 @@ footer {
     --settings-icon-surface: var(--accent-surface-icon);
 }
 
+.settings-nav-item-export-image {
+    --settings-icon-tint: var(--accent-text);
+    --settings-icon-surface: var(--accent-surface-icon);
+}
+
 .settings-nav-item.is-active .settings-nav-icon-shell {
     background: var(--accent-surface-emphasis);
 }

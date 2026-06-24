@@ -115,14 +115,41 @@
 		return false;
 	};
 
+	const buildCompareShareHeadingSection = () => {
+		const summaryCard = document.querySelector(".compare-summary-content-card");
+		const headingCard = summaryCard?.previousElementSibling;
+		if (!(headingCard instanceof HTMLElement)) return null;
+		const section = share().createSection?.("investment-community-share-section--compact investment-community-share-section--padded");
+		if (!(section instanceof HTMLElement)) return null;
+		const clone = share().sanitizeClone?.(headingCard.cloneNode(true));
+		if (clone instanceof HTMLElement) {
+			clone.classList.add("compare-share-heading-card");
+			section.appendChild(clone);
+		}
+		return section;
+	};
+
 	const buildCompareShareSummarySection = () => {
 		const summaryCard = document.querySelector(".compare-summary-content-card");
 		if (!(summaryCard instanceof HTMLElement)) return null;
 		const section = share().createSection?.("investment-community-share-section--compact investment-community-share-section--padded");
 		if (!(section instanceof HTMLElement)) return null;
-		const clone = share().sanitizeClone?.(summaryCard.cloneNode(true), { removeWinnerBadge: true });
+		const clone = share().sanitizeClone?.(summaryCard.cloneNode(true));
 		if (clone instanceof HTMLElement) {
 			clone.classList.add("compare-share-summary-card");
+			const summaryRegion = clone.querySelector("#compare_summary_region, .performance-grid");
+			if (summaryRegion instanceof HTMLElement) {
+				summaryRegion.style.removeProperty("grid-template-columns");
+			}
+			clone.querySelectorAll(".winner-badge").forEach((badge) => {
+				if (!(badge instanceof HTMLElement)) return;
+				const winnerIcon = document.createElement("img");
+				winnerIcon.className = badge.className;
+				winnerIcon.src = "/static/images/checkmark.circle.fill.green.svg";
+				winnerIcon.alt = badge.getAttribute("aria-label") || "";
+				winnerIcon.setAttribute("role", badge.getAttribute("role") || "img");
+				badge.replaceWith(winnerIcon);
+			});
 			section.appendChild(clone);
 		}
 		return section;
@@ -133,19 +160,21 @@
 		if (!(chartCanvas instanceof HTMLCanvasElement) || chartCanvas.dataset.chartMounted !== "1") {
 			throw new Error("Compare chart is not ready for screenshot export.");
 		}
+		const headingSection = buildCompareShareHeadingSection();
 		const summarySection = buildCompareShareSummarySection();
-		const chartSection = share().createChartSection?.(chartCanvas);
-		if (!(summarySection instanceof HTMLElement) || !(chartSection instanceof HTMLElement)) {
+		const chartSection = await share().createChartSection?.(chartCanvas);
+		if (!(headingSection instanceof HTMLElement) || !(summarySection instanceof HTMLElement) || !(chartSection instanceof HTMLElement)) {
 			throw new Error("Compare summary content is not ready for screenshot export.");
 		}
 
 		const frame = share().createTemplateFrame?.({
 			shareView: "compare",
-			title: appState().labels?.chart_summary || "Stock return comparison",
+			title: "Compare stocks",
 		});
 		if (!frame?.host || !frame?.card || !frame?.body) {
 			throw new Error("Compare share template is unavailable.");
 		}
+		frame.body.appendChild(headingSection);
 		frame.body.appendChild(summarySection);
 		frame.body.appendChild(chartSection);
 		frame.card.appendChild(await share().createFooter?.());

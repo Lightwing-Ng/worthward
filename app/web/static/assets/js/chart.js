@@ -217,10 +217,11 @@
 				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
 				const baselineY = chartArea.bottom;
-				const lineHeight = 10;
 				ctx.save();
 				ctx.fillStyle = resolvedTheme.muted;
-				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+				const axisFontSize = readPxToken(chartInstance.canvas, "--workspace-share-chart-axis-font-size", 12);
+				const lineHeight = Math.round(axisFontSize * 1.08);
+				ctx.font = `700 ${axisFontSize}px "GDS Transport", "Helvetica Neue", Arial, sans-serif`;
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
 					const parsedDate = parseRawDate(rawDates[index]);
@@ -232,8 +233,8 @@
 					if (tickIndex === 0) ctx.textAlign = "left";
 					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
 					else ctx.textAlign = "center";
-					ctx.fillText(firstLine, x, baselineY);
-					ctx.fillText(secondLine, x, baselineY + lineHeight);
+					ctx.fillText(firstLine, x, baselineY + 4);
+					ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
 				});
 				ctx.restore();
 			},
@@ -422,6 +423,8 @@
 
 		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
 		const chartYScale = buildPixelPaddedYScale(canvas, targetSeriesByIndex, chartYPaddingPx);
+		const axisFontSize = readPxToken(canvas, "--workspace-share-chart-axis-font-size", 12);
+		const xAxisBottomPadding = Math.max(22, Math.round(axisFontSize * 2.6));
 		const chart = new Chart(canvas, {
 			type: "line",
 			data: {
@@ -448,7 +451,7 @@
 				animation: refreshTransition ? false : undefined,
 				responsive: true,
 				maintainAspectRatio: false,
-				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: 22, left: 4 } },
+				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: xAxisBottomPadding, left: 4 } },
 				interaction: { mode: "index", intersect: false },
 				hover: { mode: "index", intersect: false },
 				onHover(_event, activeElements, chartInstance) {
@@ -482,7 +485,10 @@
 						ticks: {
 							color: resolvedTheme.muted,
 							padding: 10,
-							font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 },
+							font: {
+								family: 'GDS Transport, Helvetica Neue, Arial, sans-serif',
+								size: readPxToken(canvas, '--workspace-share-chart-axis-font-size', 12),
+							},
 							callback(value, index, ticks) {
 								if (index === 0 || index === ticks.length - 1) return "";
 								return formatPercentAxisLabel(value);

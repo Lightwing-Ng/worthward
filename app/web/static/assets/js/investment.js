@@ -5456,10 +5456,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parts.day}/${parts.month}/${parts.year}\n${parts.hour}:${parts.minute}:${parts.second} HKT`;
     }
 
-    function getInvestmentShareBrandIconUrl() {
-        return '/market-store/logos/favicon.svg';
-    }
-
     function sanitizeInvestmentShareClone(node) {
         if (!(node instanceof HTMLElement)) return node;
         node.querySelectorAll('[id]').forEach((element) => {
@@ -5559,6 +5555,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return svg;
     }
 
+    const INVESTMENT_COMMUNITY_SHARE_FOOTER_PROMPT = 'Welcome to vibe and star this project.';
+
     async function createInvestmentShareFooter() {
         const projectMeta = getInvestmentProjectMeta();
         const footer = document.createElement('div');
@@ -5567,7 +5565,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const brandIcon = document.createElement('img');
         brandIcon.className = 'investment-community-share-footer-brand-icon';
-        brandIcon.src = getInvestmentShareBrandIconUrl();
+        brandIcon.src = '/market-store/logos/favicon.svg';
         brandIcon.alt = '';
         brandIcon.decoding = 'sync';
         footer.appendChild(brandIcon);
@@ -5580,6 +5578,12 @@ document.addEventListener('DOMContentLoaded', () => {
         timestamp.textContent = getInvestmentShareTimestampText();
 
         copy.appendChild(timestamp);
+
+        const prompt = document.createElement('p');
+        prompt.className = 'investment-community-share-footer-prompt';
+        prompt.textContent = INVESTMENT_COMMUNITY_SHARE_FOOTER_PROMPT;
+        copy.appendChild(prompt);
+
         footer.appendChild(copy);
 
         const qrShell = document.createElement('div');
@@ -5618,117 +5622,35 @@ document.addEventListener('DOMContentLoaded', () => {
         return section;
     }
 
-    function parseInvestmentShareChartDate(value) {
-        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (!match) return null;
-        return {
-            year: Number(match[1]),
-            monthIndex: Number(match[2]) - 1,
-            day: Number(match[3]),
-        };
-    }
-
-    function buildInvestmentShareChartTickIndexes(count) {
-        if (count <= 0) return [];
-        if (count === 1) return [0];
-        return Array.from(new Set([
-            0,
-            Math.round((count - 1) / 3),
-            Math.round(((count - 1) * 2) / 3),
-            count - 1,
-        ])).sort((left, right) => left - right);
-    }
-
-    function formatInvestmentShareChartAxisValue(value) {
-        const numericValue = Number(value);
-        if (!Number.isFinite(numericValue)) return '';
-        const maximumFractionDigits = Math.abs(numericValue) >= 100 ? 0 : 2;
-        return new Intl.NumberFormat('en-US', {
-            maximumFractionDigits,
-        }).format(numericValue);
-    }
-
-    function createInvestmentShareEquityChartDataUrl() {
-        const runtimeState = investmentEquityChartRuntimeState;
-        const values = (Array.isArray(runtimeState?.equity) ? runtimeState.equity : [])
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value));
-        const rawDates = Array.isArray(runtimeState?.rawDates) ? runtimeState.rawDates : [];
-        if (!values.length || rawDates.length !== values.length) return null;
-
-        const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = 1020;
-        exportCanvas.height = 720;
-        const context = exportCanvas.getContext('2d');
-        if (!context) return null;
-
-        const resolvedTheme = resolveInvestmentTheme();
-        const padding = {
-            top: 18,
-            right: 30,
-            bottom: 86,
-            left: 142,
-        };
-        const plotWidth = exportCanvas.width - padding.left - padding.right;
-        const plotHeight = exportCanvas.height - padding.top - padding.bottom;
-        const minValue = Math.min(...values);
-        const maxValue = Math.max(...values);
-        const valueRange = Math.max(maxValue - minValue, Math.abs(maxValue || 1) * 0.02, 1);
-        const chartMin = minValue - (valueRange * 0.025);
-        const chartMax = maxValue + (valueRange * 0.025);
-        const chartRange = chartMax - chartMin || 1;
-        const xForIndex = (index) => padding.left + ((plotWidth / Math.max(values.length - 1, 1)) * index);
-        const yForValue = (value) => padding.top + plotHeight - (((value - chartMin) / chartRange) * plotHeight);
-        const axisFont = '700 23px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
-
-        context.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
-        context.font = axisFont;
-        context.fillStyle = resolvedTheme.muted;
-
-        context.textAlign = 'right';
-        context.textBaseline = 'middle';
-        for (let index = 1; index <= 5; index += 1) {
-            const value = chartMin + ((chartRange / 6) * index);
-            const label = investmentShareMaskEnabled ? '***' : formatInvestmentShareChartAxisValue(value);
-            context.fillText(label, padding.left - 14, yForValue(value));
+    function readInvestmentShareSafePaddingPx(scope = document.documentElement) {
+        const readFromBootstrap = window.ANTIGRAVITY_BOOTSTRAP?.workspaceShare?.readSafePaddingPx;
+        if (typeof readFromBootstrap === 'function') {
+            return readFromBootstrap(scope);
         }
+        const element = scope instanceof HTMLElement ? scope : document.documentElement;
+        const styles = window.getComputedStyle(element);
+        const raw = styles.getPropertyValue('--investment-community-share-safe-padding').trim()
+            || styles.getPropertyValue('--investment-community-share-card-padding').trim()
+            || '10px';
+        const value = Number.parseFloat(raw);
+        return Number.isFinite(value) ? value : 10;
+    }
 
-        context.textBaseline = 'top';
-        buildInvestmentShareChartTickIndexes(values.length).forEach((index, tickIndex, tickIndexes) => {
-            const parsedDate = parseInvestmentShareChartDate(rawDates[index]);
-            if (!parsedDate) return;
-            const [firstLine, secondLine] = formatInvestmentFullDateLines(parsedDate, { allowWrap: true });
-            const x = xForIndex(index);
-            if (tickIndex === 0) context.textAlign = 'left';
-            else if (tickIndex === tickIndexes.length - 1) context.textAlign = 'right';
-            else context.textAlign = 'center';
-            context.fillText(firstLine, x, exportCanvas.height - 58);
-            context.fillText(secondLine, x, exportCanvas.height - 31);
-        });
-
-        context.strokeStyle = resolvedTheme.accentPrimary;
-        context.lineWidth = 6;
-        context.lineJoin = 'round';
-        context.lineCap = 'round';
-        context.beginPath();
-        values.forEach((value, index) => {
-            const x = xForIndex(index);
-            const y = yForValue(value);
-            if (index === 0) {
-                context.moveTo(x, y);
-                return;
-            }
-            context.lineTo(x, y);
-        });
-        context.stroke();
-
-        return exportCanvas.toDataURL('image/png');
+    function resolveInvestmentShareChartInstance(canvas) {
+        if (!(canvas instanceof HTMLCanvasElement)) return null;
+        if (canvas.id === 'investmentEquityChart') return investmentEquityChartInstance;
+        if (canvas.classList.contains('investment-stock-details-price-chart-canvas')) {
+            return investmentStockDetailsPriceChartInstance;
+        }
+        return window.Chart?.getChart?.(canvas) || null;
     }
 
     function createInvestmentShareChartDataUrl(canvas) {
         if (!(canvas instanceof HTMLCanvasElement)) return null;
-        if (canvas.id === 'investmentEquityChart') {
-            return createInvestmentShareEquityChartDataUrl() || canvas.toDataURL('image/png');
+        const capture = window.ANTIGRAVITY_BOOTSTRAP?.workspaceShare?.captureChartDataUrl;
+        const chartInstance = resolveInvestmentShareChartInstance(canvas);
+        if (typeof capture === 'function') {
+            return capture(canvas, chartInstance) || canvas.toDataURL('image/png');
         }
         return canvas.toDataURL('image/png');
     }
@@ -5820,7 +5742,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const bodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
         if (!(headerTable instanceof HTMLTableElement) || !(bodyTable instanceof HTMLTableElement)) return null;
 
-        const normalizeShareHoldingsMoneyText = (value) => String(value || '').replace(/([+-]?)\$\s*/g, '$1').trim();
         const removedColumnIndexes = maskSensitive ? [6, 3, 1] : [1];
         const pruneShareHoldingsRow = (tableRow) => {
             if (!(tableRow instanceof HTMLTableRowElement)) return;
@@ -5843,7 +5764,7 @@ document.addEventListener('DOMContentLoaded', () => {
             Array.from(tableRow.cells).forEach((cell, index) => {
                 if (!(cell instanceof HTMLTableCellElement)) return;
                 if (index === 0 && (cell.querySelector('.investment-holdings-summary-ticker-body') || cell.querySelector('.investment-holdings-summary-copy'))) return;
-                cell.textContent = normalizeShareHoldingsMoneyText(cell.textContent || '');
+                populateShareHoldingsMetricCell(cell);
             });
         };
 
@@ -5939,7 +5860,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             Array.from(sharedRow.cells).forEach((cell, index) => {
                 if (!(cell instanceof HTMLTableCellElement) || index === 0) return;
-                cell.textContent = normalizeShareHoldingsMoneyText(cell.textContent || '');
+                populateShareHoldingsMetricCell(cell);
             });
             tbody.appendChild(sharedRow);
         });
@@ -7366,11 +7287,45 @@ document.addEventListener('DOMContentLoaded', () => {
             return [{ className: 'workspace-metric-value-major', text: rawValue }];
         }
         const [, prefix, integerPart, decimalPart = '', suffix = ''] = numericMatch;
+        if (!decimalPart) {
+            return [{ className: 'workspace-metric-value-major', text: `${prefix}${integerPart}${suffix}` }];
+        }
         return [
             { className: 'workspace-metric-value-major', text: `${prefix}${integerPart}.` },
             { className: 'workspace-metric-value-minor', text: decimalPart },
             ...(suffix ? [{ className: 'workspace-metric-value-suffix', text: suffix }] : []),
         ];
+    }
+
+    function normalizeShareHoldingsMoneyText(value) {
+        return String(value || '').replace(/([+-]?)\$\s*/g, '$1').trim();
+    }
+
+    function resolveShareHoldingsMetricToneClass(displayText, element) {
+        if (element instanceof HTMLElement) {
+            if (element.classList.contains('investment-holdings-value-positive')) return ' investment-holdings-value-positive';
+            if (element.classList.contains('investment-holdings-value-negative')) return ' investment-holdings-value-negative';
+        }
+        const normalized = String(displayText || '').trim();
+        if (normalized.startsWith('+')) return ' investment-holdings-value-positive';
+        if (normalized.startsWith('-') && normalized !== '-') return ' investment-holdings-value-negative';
+        return '';
+    }
+
+    function populateShareHoldingsMetricCell(cell) {
+        if (!(cell instanceof HTMLTableCellElement)) return;
+        const existingMetric = cell.querySelector('.trade-metric-value, .investment-live-value');
+        const displayText = normalizeShareHoldingsMoneyText(
+            (existingMetric instanceof HTMLElement
+                ? (existingMetric.dataset.investmentLiveDisplay || existingMetric.textContent)
+                : cell.textContent) || '',
+        ).trim() || '-';
+        const toneClass = resolveShareHoldingsMetricToneClass(displayText, existingMetric);
+        cell.textContent = '';
+        const metric = document.createElement('span');
+        metric.className = `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${toneClass}`.trim();
+        metric.innerHTML = renderWorkspaceMetricValueContent(displayText);
+        cell.appendChild(metric);
     }
 
     function renderWorkspaceMetricValueContent(value) {

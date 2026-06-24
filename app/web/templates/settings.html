@@ -9,6 +9,7 @@
     'font-tokens',
     'material-tokens',
     'style-tokens',
+    'export-image',
     'network',
     'broker-access',
     'email-smtp',
@@ -46,6 +47,10 @@
     <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
         <span class="settings-nav-label">Style tokens</span>
+    </a>
+    <a href="{{ settings_urls['export-image'] }}" class="settings-nav-item settings-nav-item-export-image{% if settings_section == 'export-image' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-export-image"></span></span>
+        <span class="settings-nav-label">Export image</span>
     </a>
     <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-item-network settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
@@ -850,66 +855,6 @@
                             </div>
                         </article>
                     </section>
-                    {% elif row.sample_kind == "investment-share-card" %}
-                    <div class="style-token-investment-share-preview-demo" data-style-token-share-demo data-style-token-share-preview-index="0">
-                        <div class="style-token-investment-share-preview-toolbar">
-                            <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="Show previous investment share preview">
-                                <span class="icon icon-page-prev" aria-hidden="true"></span>
-                            </button>
-                            <div class="style-token-investment-share-preview-status" aria-live="polite">
-                                <p class="style-token-investment-share-preview-kicker">Investment share preview</p>
-                                <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>{{ row.sample_title }}</p>
-                            </div>
-                            <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="Show next investment share preview">
-                                <span class="icon icon-page-next" aria-hidden="true"></span>
-                            </button>
-                        </div>
-                        <div class="style-token-investment-share-preview-shell">
-                            <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" aria-label="Overview community share template">
-                                <div class="investment-community-share-header">
-                                    <div class="investment-community-share-heading">
-                                        <p class="investment-community-share-title">{{ row.sample_title }}</p>
-                                        <p class="investment-community-share-subtitle" data-style-token-share-subtitle hidden></p>
-                                    </div>
-                                </div>
-                                <div class="investment-community-share-body">
-                                    <section class="investment-community-share-section investment-community-share-section--chart">
-                                        <div class="investment-community-share-chart-shell style-token-investment-share-chart-shell">
-                                            <canvas
-                                                class="style-token-investment-share-chart-canvas"
-                                                width="552"
-                                                height="300"
-                                                aria-hidden="true"
-                                                data-style-token-share-chart="overview"
-                                            ></canvas>
-                                        </div>
-                                    </section>
-                                    <section class="investment-community-share-section investment-community-share-section--compact investment-community-share-section--padded">
-                                        <div class="investment-community-share-overview-donut">
-                                            <div class="style-token-portfolio-donut-shell">
-                                                <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
-                                                    <div class="portfolio-donut-logo-layer">
-                                                        <img class="portfolio-donut-logo" src="/static/images/Google__G__logo.svg" alt="" data-style-token-donut-angle="180">
-                                                        <img class="portfolio-donut-logo" src="/market-store/logos/EUV.png" alt="" data-style-token-donut-angle="308">
-                                                        <img class="portfolio-donut-logo" src="/market-store/logos/IBKR.png" alt="" data-style-token-donut-angle="20">
-                                                    </div>
-                                                    <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 140deg, transparent 140deg 142deg, color-mix(in srgb, var(--theme-accent-primary) 40%, var(--theme-accent-secondary) 60%) 142deg 248deg, transparent 248deg 250deg, var(--theme-accent-secondary) 250deg 328deg, transparent 328deg 330deg, color-mix(in srgb, var(--theme-accent-positive) 72%, var(--theme-accent-primary) 28%) 330deg 360deg);"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </section>
-                                </div>
-                                <div class="investment-community-share-footer">
-                                    <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
-                                    <div class="investment-community-share-footer-copy">
-                                        <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
-                                    </div>
-                                    <div class="investment-community-share-footer-qr" aria-hidden="true" data-style-token-share-qr="{{ row.sample_url }}">
-                                    </div>
-                                </div>
-                            </article>
-                        </div>
-                    </div>
                     {% elif row.sample_kind == "settings-form-input" %}
                     <div class="style-token-settings-input-shell">
                         <label class="style-token-settings-input-label" for="style_token_settings_text_input">{{ row.sample_title }}</label>
@@ -1069,6 +1014,144 @@
                     <div class="style-token-title-row">
                         <p class="style-token-title">{{ row.name }}</p>
                     </div>
+                    <div class="style-token-table-wrap">
+                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                            <tbody>
+                                {% for token in row.tokens %}
+                                <tr>
+                                    <td class="style-token-name">{{ token.name }}</td>
+                                    <td class="style-token-value">
+                                        {% if token.editable %}
+                                        <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
+                                            <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
+                                            <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="Increase value">▲</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="Decrease value">▼</button>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        {% if token.reference_target_id %}
+                                        <a
+                                            href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                                            class="style-token-value-link"
+                                            data-settings-section-link="material-tokens"
+                                            data-style-token-material-link
+                                        >{{ token.reference_label }}</a>
+                                        {% else %}
+                                        <span class="style-token-value-text">{{ token.value }}</span>
+                                        {% endif %}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% for related_style in row.related_styles %}
+                                <tr class="style-token-related-row">
+                                    <td class="style-token-name">
+                                        <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
+                                    </td>
+                                    <td class="style-token-value">
+                                        <span class="style-token-related-value">Reusable style</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+            </div>
+    </section>
+    {% elif settings_section == "export-image" %}
+    <section class="style-token-shell export-image-shell" data-export-image-shell>
+            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize export image previews"></button>
+            <div class="style-token-list export-image-list">
+            {% for row in export_image_rows %}
+            <section id="{{ row.id }}" class="style-token-card export-image-card" data-style-token-card="{{ row.id }}">
+                <div class="style-token-demo export-image-demo" data-style-token-density="regular">
+                    {% if row.sample_kind == "export-image-share-card" %}
+                    <div class="export-image-share-preview-groups">
+                        <div class="style-token-investment-share-preview-demo export-image-share-preview-demo" data-style-token-share-demo data-style-token-share-preview-group="investment" data-style-token-share-preview-index="0">
+                            <div class="style-token-investment-share-preview-toolbar">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="Show previous investment share preview">
+                                    <span class="icon icon-page-prev" aria-hidden="true"></span>
+                                </button>
+                                <div class="style-token-investment-share-preview-status" aria-live="polite">
+                                    <p class="style-token-investment-share-preview-kicker">Investment share preview</p>
+                                    <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>{{ row.sample_title }}</p>
+                                </div>
+                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false">
+                                    <span class="icon" style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);" aria-hidden="true"></span>
+                                </button>
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="Show next investment share preview">
+                                    <span class="icon icon-page-next" aria-hidden="true"></span>
+                                </button>
+                            </div>
+                            <div class="style-token-investment-share-preview-shell">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" aria-label="Overview community share template">
+                                    <div class="investment-community-share-header">
+                                        <div class="investment-community-share-heading">
+                                            <p class="investment-community-share-title">{{ row.sample_title }}</p>
+                                            <p class="investment-community-share-subtitle" data-style-token-share-subtitle hidden></p>
+                                        </div>
+                                    </div>
+                                    <div class="investment-community-share-body"></div>
+                                    <div class="investment-community-share-footer">
+                                        <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
+                                        <div class="investment-community-share-footer-copy">
+                                            <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
+                                            <p class="investment-community-share-footer-prompt">Welcome to vibe and star this project.</p>
+                                        </div>
+                                        <div class="investment-community-share-footer-qr" aria-hidden="true" data-style-token-share-qr="{{ row.sample_url }}"></div>
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                        <div class="style-token-investment-share-preview-demo export-image-share-preview-demo" data-style-token-share-demo data-style-token-share-preview-group="workspace" data-style-token-share-preview-index="0">
+                            <div class="style-token-investment-share-preview-toolbar">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="Show previous workspace share preview">
+                                    <span class="icon icon-page-prev" aria-hidden="true"></span>
+                                </button>
+                                <div class="style-token-investment-share-preview-status" aria-live="polite">
+                                    <p class="style-token-investment-share-preview-kicker">Workspace share preview</p>
+                                    <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>Compare</p>
+                                </div>
+                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false">
+                                    <span class="icon" style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);" aria-hidden="true"></span>
+                                </button>
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="Show next workspace share preview">
+                                    <span class="icon icon-page-next" aria-hidden="true"></span>
+                                </button>
+                            </div>
+                            <div class="style-token-investment-share-preview-shell">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" aria-label="Compare community share template">
+                                    <div class="investment-community-share-header">
+                                        <div class="investment-community-share-heading">
+                                            <p class="investment-community-share-title">Compare stocks</p>
+                                        </div>
+                                    </div>
+                                    <div class="investment-community-share-body"></div>
+                                    <div class="investment-community-share-footer">
+                                        <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
+                                        <div class="investment-community-share-footer-copy">
+                                            <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
+                                            <p class="investment-community-share-footer-prompt">Welcome to vibe and star this project.</p>
+                                        </div>
+                                        <div class="investment-community-share-footer-qr" aria-hidden="true" data-style-token-share-qr="{{ row.sample_url }}"></div>
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="style-token-meta export-image-meta">
+                    <div class="style-token-title-row">
+                        <p class="style-token-title">{{ row.name }}</p>
+                    </div>
+                    {% if row.sample_copy %}
+                    <p class="style-token-investment-share-demo-note export-image-demo-note">{{ row.sample_copy }}</p>
+                    {% endif %}
                     <div class="style-token-table-wrap">
                         <table class="style-token-table" aria-label="{{ row.name }} tokens">
                             <tbody>

@@ -12,6 +12,28 @@
     let activeSettingsSummaryMorphCleanup = null;
     let refreshStyleTokenDemoDensity = null;
 
+    const getStyleTokenShell = () => (
+        document.querySelector("[data-export-image-shell]")
+        || document.querySelector("[data-style-token-shell]")
+    );
+
+    const getStyleTokenApplyTargets = (shell) => {
+        if (!(shell instanceof HTMLElement)) return [];
+        if (shell.hasAttribute("data-export-image-shell")) {
+            return [document.documentElement, shell];
+        }
+        return [shell];
+    };
+
+    const applyStyleTokenProperty = (shell, tokenName, value) => {
+        if (!tokenName) return;
+        getStyleTokenApplyTargets(shell).forEach((target) => {
+            if (target instanceof HTMLElement) {
+                target.style.setProperty(tokenName, value);
+            }
+        });
+    };
+
     const getContext = () => settingsContext || {};
     const getState = () => getContext().state || null;
     const getEndpoints = () => getContext().endpoints || {};
@@ -257,7 +279,7 @@
     };
 
     const attachStyleTokenResizer = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         const handle = shell?.querySelector("[data-style-token-resizer]");
         if (typeof activeStyleTokenResizerCleanup === "function") {
             activeStyleTokenResizerCleanup();
@@ -375,7 +397,7 @@
     };
 
     const attachStyleTokenDemoResponsiveness = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (typeof activeStyleTokenDemoDensityCleanup === "function") {
             activeStyleTokenDemoDensityCleanup();
             activeStyleTokenDemoDensityCleanup = null;
@@ -426,7 +448,7 @@
     };
 
     const refreshStyleTokenPortfolioDonutDemo = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
         shell.querySelectorAll(".style-token-portfolio-donut-orbit").forEach((orbitElement) => {
             if (!(orbitElement instanceof HTMLElement)) return;
@@ -454,7 +476,7 @@
     };
 
     const attachStyleTokenControls = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
         const setActiveControl = (nextControl) => {
             if (styleTokenActiveControl instanceof HTMLElement && styleTokenActiveControl !== nextControl) {
@@ -483,7 +505,7 @@
             const applyValue = (nextValue) => {
                 if (!tokenName || !Number.isFinite(nextValue)) return;
                 const safeValue = Math.max(Number.isFinite(minValue) ? minValue : 0, nextValue);
-                shell.style.setProperty(tokenName, `${safeValue}${unit}`);
+                applyStyleTokenProperty(shell, tokenName, `${safeValue}${unit}`);
                 refreshStyleTokenPortfolioDonutDemo();
                 (controlsByToken.get(tokenName) || []).forEach((peerControl) => {
                     peerControl.dataset.styleTokenValue = String(safeValue);
@@ -524,7 +546,7 @@
     };
 
     const attachStyleTokenReferences = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
         const pulseTargetCard = (targetId, options = {}) => {
             if (!targetId) return;
@@ -561,7 +583,7 @@
     };
 
     const revealStyleTokenHashTarget = (hash = window.location.hash) => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement) || !hash || !hash.startsWith("#")) return;
         const targetId = decodeURIComponent(hash.slice(1));
         if (!targetId) return;
@@ -610,7 +632,7 @@
     };
 
     const attachStyleTokenModeSwitches = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement)) return;
         shell.querySelectorAll(".style-token-demo .range-mode-shell").forEach((switchShell) => {
             if (!(switchShell instanceof HTMLElement) || switchShell.dataset.bound === "1") return;
@@ -628,7 +650,7 @@
     };
 
     const attachStyleTokenDemoInteractions = () => {
-        const shell = document.querySelector("[data-style-token-shell]");
+        const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement) || shell.dataset.bound === "1") return;
         shell.dataset.bound = "1";
         shell.addEventListener("click", (event) => {
@@ -750,12 +772,40 @@
         return svg;
     };
 
-    const STYLE_TOKEN_SHARE_PREVIEW_VIEWS = [
+    const INVESTMENT_SHARE_PREVIEW_VIEWS = [
         {id: "chart", title: "Overview", subtitle: ""},
         {id: "holdings", title: "Holdings", subtitle: ""},
         {id: "stock_details", title: "Stock details", subtitle: ""},
         {id: "metrics", title: "Metrics", subtitle: ""},
     ];
+
+    const WORKSPACE_SHARE_PREVIEW_VIEWS = [
+        {id: "compare", title: "Compare stocks", subtitle: ""},
+        {id: "portfolio", title: "Portfolio", subtitle: ""},
+        {id: "dca", title: "DCA", subtitle: ""},
+        {id: "backtest", title: "Backtest", subtitle: ""},
+    ];
+
+    const getSharePreviewViewsForDemo = (demoShell) => {
+        const group = (demoShell?.dataset?.styleTokenSharePreviewGroup || "investment").trim();
+        return group === "workspace" ? WORKSPACE_SHARE_PREVIEW_VIEWS : INVESTMENT_SHARE_PREVIEW_VIEWS;
+    };
+
+    const isSharePreviewMaskEnabled = (demoShell) => demoShell?.dataset?.styleTokenShareMaskEnabled === "1";
+
+    const setSharePreviewMaskEnabled = (demoShell, enabled) => {
+        if (!(demoShell instanceof HTMLElement)) return;
+        demoShell.dataset.styleTokenShareMaskEnabled = enabled ? "1" : "0";
+        const maskButton = demoShell.querySelector("[data-style-token-share-mask]");
+        if (maskButton instanceof HTMLButtonElement) {
+            const label = enabled ? "Show Sensitive Values" : "Mask Sensitive Values";
+            maskButton.setAttribute("aria-pressed", enabled ? "true" : "false");
+            maskButton.setAttribute("aria-label", label);
+            maskButton.title = label;
+        }
+        const currentIndex = Number.parseInt(demoShell.dataset.styleTokenSharePreviewIndex || "0", 10) || 0;
+        applyStyleTokenInvestmentSharePreview(demoShell, currentIndex);
+    };
 
     const createStyleTokenDemoElement = (tagName, className = "", textContent = null) => {
         const element = document.createElement(tagName);
@@ -847,6 +897,40 @@
         return section;
     };
 
+    const getShareHoldingsMetricValueParts = (value) => {
+        const rawValue = String(value ?? "").trim() || "--";
+        const numericMatch = rawValue.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(?:\.(\d+))(%?)$/);
+        if (!numericMatch) {
+            return [{className: "workspace-metric-value-major", text: rawValue}];
+        }
+        const [, prefix, integerPart, decimalPart = "", suffix = ""] = numericMatch;
+        if (!decimalPart) {
+            return [{className: "workspace-metric-value-major", text: `${prefix}${integerPart}${suffix}`}];
+        }
+        return [
+            {className: "workspace-metric-value-major", text: `${prefix}${integerPart}.`},
+            {className: "workspace-metric-value-minor", text: decimalPart},
+            ...(suffix ? [{className: "workspace-metric-value-suffix", text: suffix}] : []),
+        ];
+    };
+
+    const createShareHoldingsMetricValueCell = (value) => {
+        const displayText = String(value || "").trim() || "-";
+        let toneClass = "";
+        if (displayText.startsWith("+")) toneClass = " investment-holdings-value-positive";
+        else if (displayText.startsWith("-") && displayText !== "-") toneClass = " investment-holdings-value-negative";
+        const cell = createStyleTokenDemoElement("td", "investment-holdings-cell investment-holdings-cell-money");
+        const metric = createStyleTokenDemoElement(
+            "span",
+            `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${toneClass}`.trim(),
+        );
+        getShareHoldingsMetricValueParts(displayText).forEach((part) => {
+            metric.append(createStyleTokenDemoElement("span", part.className, part.text));
+        });
+        cell.append(metric);
+        return cell;
+    };
+
     const createStyleTokenShareDemoHoldingsSection = ({maskSensitive = false} = {}) => {
         const section = createStyleTokenShareDemoSection("investment-community-share-section--chart investment-community-share-table-shell");
         const shell = createStyleTokenDemoElement("div", "investment-holdings-table-shell");
@@ -900,7 +984,7 @@
             const orderedValues = maskSensitive
                 ? [row.values.weight, row.values.avgCost, row.values.last]
                 : [row.values.weight, row.values.shares, row.values.avgCost, row.values.last, row.values.pnl];
-            orderedValues.forEach((value) => tr.append(createStyleTokenDemoElement("td", "", value)));
+            orderedValues.forEach((value) => tr.append(createShareHoldingsMetricValueCell(value)));
             tbody.append(tr);
         });
         table.append(thead, tbody);
@@ -909,12 +993,136 @@
         return section;
     };
 
-    const createStyleTokenSharePreviewBody = (viewId) => {
+    const createStyleTokenShareDemoCompareHeadingSection = () => {
+        const section = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
+        const card = createStyleTokenDemoElement(
+            "article",
+            "report-card workspace-article-card workspace-summary-card compare-share-heading-card",
+        );
+        const headingRow = createStyleTokenDemoElement("div", "report-heading-row");
+        headingRow.append(createStyleTokenDemoElement("p", "report-heading", "Performance summary"));
+        card.append(headingRow);
+        section.append(card);
+        return section;
+    };
+
+    const createStyleTokenShareDemoCompareSummarySection = () => {
+        const section = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
+        const card = createStyleTokenDemoElement("article", "report-card workspace-content-card compare-summary-content-card compare-share-summary-card");
+        const panel = createStyleTokenDemoElement("div", "", null);
+        panel.id = "compare_summary_panel";
+        panel.append(createStyleTokenDemoElement("p", "compare-summary-date-range", "11 Feb 2010 - 18 Jun 2026"));
+        const grid = createStyleTokenDemoElement("div", "performance-grid");
+        grid.id = "compare_summary_region";
+        [
+            {ticker: "TQQQ", company: "ProShares UltraPro QQQ", value: "284.62%", color: "#0055cc", isWinner: true},
+            {ticker: "NVDA", company: "NVIDIA Corporation", value: "42.18%", color: "#16a34a"},
+            {ticker: "GOOGL", company: "Alphabet Inc.", value: "28.64%", color: "#f59e0b"},
+        ].forEach((item) => {
+            const performanceItem = createStyleTokenDemoElement("section", "performance-item");
+            performanceItem.dataset.ticker = item.ticker;
+            const row = createStyleTokenDemoElement("div", "ticker-identity-row");
+            const logo = createStyleTokenDemoElement("img", "ticker-identity-logo");
+            logo.src = `/market-store/logos/${item.ticker}.png`;
+            logo.alt = "";
+            const copy = createStyleTokenDemoElement("span", "ticker-identity-copy");
+            copy.append(
+                createStyleTokenDemoElement("span", "suggestion-symbol ticker-identity-symbol", item.ticker),
+                createStyleTokenDemoElement("span", "suggestion-name ticker-identity-name", item.company),
+            );
+            row.append(logo, copy);
+            const value = createStyleTokenDemoElement("p", "report-value");
+            const valueSpan = createStyleTokenDemoElement("span", "", item.value);
+            valueSpan.style.color = item.color;
+            value.append(valueSpan);
+            if (item.isWinner) {
+                const winnerBadge = createStyleTokenDemoElement("img", "winner-badge");
+                winnerBadge.src = "/static/images/checkmark.circle.fill.green.svg";
+                winnerBadge.alt = "";
+                winnerBadge.setAttribute("role", "img");
+                winnerBadge.setAttribute("aria-label", "Winner");
+                value.append(winnerBadge);
+            }
+            performanceItem.append(row, value);
+            grid.append(performanceItem);
+        });
+        panel.append(grid);
+        card.append(panel);
+        section.append(card);
+        return section;
+    };
+
+    const createStyleTokenShareDemoPortfolioSummarySection = () => {
+        const section = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
+        const card = createStyleTokenDemoElement("article", "report-card workspace-content-card portfolio-summary-content-card portfolio-share-summary-card");
+        const summary = createStyleTokenDemoElement("div", "portfolio-summary");
+        const main = createStyleTokenDemoElement("div", "portfolio-summary-main");
+        main.append(
+            createStyleTokenDemoElement("p", "portfolio-total-label", "Total return"),
+            createStyleTokenDemoElement("p", "portfolio-total-value", "36.42%"),
+        );
+        summary.append(main);
+        card.append(summary);
+        section.append(card);
+        return section;
+    };
+
+    const createStyleTokenShareDemoTradeMetricsSection = () => {
+        const section = createStyleTokenShareDemoSection("investment-community-share-section--chart investment-community-share-section--padded");
+        const grid = createStyleTokenShareDemoMetricsGrid([
+            {label: "Total return", value: "36.42%"},
+            {label: "CAGR", value: "18.6%"},
+            {label: "Max drawdown", value: "-12.4%"},
+            {label: "Sharpe", value: "1.42"},
+        ]);
+        grid.classList.add("workspace-share-metrics-card");
+        section.append(grid);
+        return section;
+    };
+
+    const createStyleTokenShareDemoTradeChartSection = (chartKind = "price") => {
+        const section = createStyleTokenShareDemoSection("investment-community-share-section--chart workspace-share-section--trade-chart");
+        const shell = createStyleTokenDemoElement("div", "investment-community-share-chart-shell style-token-investment-share-chart-shell");
+        const canvas = createStyleTokenDemoElement("canvas", "style-token-investment-share-chart-canvas");
+        canvas.width = 552;
+        canvas.height = chartKind === "equity" ? 180 : 120;
+        canvas.setAttribute("aria-hidden", "true");
+        canvas.dataset.styleTokenShareChart = chartKind;
+        shell.append(canvas);
+        section.append(shell);
+        return section;
+    };
+
+    const createStyleTokenSharePreviewBody = (viewId, {maskSensitive = false, previewGroup = "investment"} = {}) => {
+        if (previewGroup === "workspace") {
+            switch (viewId) {
+                case "portfolio":
+                    return [
+                        createStyleTokenShareDemoChartSection("overview"),
+                        createStyleTokenShareDemoPortfolioSummarySection(),
+                    ];
+                case "dca":
+                case "backtest":
+                    return [
+                        createStyleTokenShareDemoTradeMetricsSection(),
+                        createStyleTokenShareDemoTradeChartSection("price"),
+                        createStyleTokenShareDemoTradeChartSection("equity"),
+                    ];
+                case "compare":
+                default:
+                    return [
+                        createStyleTokenShareDemoCompareHeadingSection(),
+                        createStyleTokenShareDemoCompareSummarySection(),
+                        createStyleTokenShareDemoChartSection("overview"),
+                    ];
+            }
+        }
         switch (viewId) {
             case "holdings":
-                return [createStyleTokenShareDemoHoldingsSection()];
+                return [createStyleTokenShareDemoHoldingsSection({maskSensitive})];
             case "stock_details": {
                 const metricsSection = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
+                metricsSection.classList.add("investment-stock-details-metrics");
                 metricsSection.append(createStyleTokenShareDemoMetricsGrid([
                     {label: "Last", value: "$ 1,248.60"},
                     {label: "Day", value: "+2.81%"},
@@ -963,6 +1171,16 @@
         }
     };
 
+    const readStyleTokenShareSafePaddingPx = (cardStyles, rootStyles) => {
+        const raw = cardStyles.getPropertyValue("--investment-community-share-safe-padding").trim()
+            || rootStyles.getPropertyValue("--investment-community-share-safe-padding").trim()
+            || cardStyles.getPropertyValue("--investment-community-share-card-padding").trim()
+            || rootStyles.getPropertyValue("--investment-community-share-card-padding").trim()
+            || "10px";
+        const value = Number.parseFloat(raw);
+        return Number.isFinite(value) ? value : 10;
+    };
+
     const drawStyleTokenInvestmentShareChart = (canvas) => {
         if (!(canvas instanceof HTMLCanvasElement)) return;
         const context = canvas.getContext("2d");
@@ -979,6 +1197,7 @@
         const card = canvas.closest(".investment-community-share-card") || document.documentElement;
         const cardStyles = window.getComputedStyle(card);
         const rootStyles = window.getComputedStyle(document.documentElement);
+        const safePadding = readStyleTokenShareSafePaddingPx(cardStyles, rootStyles);
         const accent = cardStyles.getPropertyValue("--investment-community-share-accent").trim()
             || rootStyles.getPropertyValue("--investment-community-share-accent").trim()
             || "#0055cc";
@@ -988,53 +1207,114 @@
         const bodyText = cardStyles.getPropertyValue("--text").trim()
             || rootStyles.getPropertyValue("--text").trim()
             || "#111827";
-        const labelFontSize = Math.max(
-            Number.parseFloat(cardStyles.getPropertyValue("--font-form-label"))
-            || Number.parseFloat(rootStyles.getPropertyValue("--font-form-label"))
-            || 14,
-            14,
-        );
-        const labelFontWeight = cardStyles.getPropertyValue("--font-weight-semibold").trim()
-            || rootStyles.getPropertyValue("--font-weight-semibold").trim()
-            || "600";
-        const labelFontFamily = cardStyles.fontFamily || rootStyles.fontFamily || "system-ui";
-        const labelFont = `${labelFontWeight} ${labelFontSize}px ${labelFontFamily}`;
-
         const chartKind = (canvas.dataset.styleTokenShareChart || "overview").trim();
+        const isOverviewStyleChart = chartKind === "overview";
+        const labelFontSize = isOverviewStyleChart
+            ? 23
+            : Math.max(
+                Number.parseFloat(cardStyles.getPropertyValue("--font-form-label"))
+                || Number.parseFloat(rootStyles.getPropertyValue("--font-form-label"))
+                || 14,
+                14,
+            );
+        const labelFontWeight = isOverviewStyleChart
+            ? "700"
+            : (cardStyles.getPropertyValue("--font-weight-semibold").trim()
+                || rootStyles.getPropertyValue("--font-weight-semibold").trim()
+                || "600");
+        const labelFontFamily = isOverviewStyleChart
+            ? '"GDS Transport", "Helvetica Neue", Arial, sans-serif'
+            : (cardStyles.fontFamily || rootStyles.fontFamily || "system-ui");
+        const labelFont = `${labelFontWeight} ${labelFontSize}px ${labelFontFamily}`;
         const isStockDetailsChart = chartKind === "stock_details";
-        const padding = {top: 18, right: 18, bottom: 40, left: 54};
-        const plotWidth = cssWidth - padding.left - padding.right;
-        const plotHeight = cssHeight - padding.top - padding.bottom;
+        const isTradePriceChart = chartKind === "price";
+        const isTradeEquityChart = chartKind === "equity";
         const data = isStockDetailsChart
             ? [998, 1004, 1012, 1026, 1048, 1064, 1088, 1120, 1108, 1142, 1178, 1214, 1248]
-            : [26800, 26850, 26790, 27120, 27860, 27410, 27080, 27240, 27300, 26940, 26220, 26650, 27640, 29120, 29540, 29880, 30220, 30610, 30420, 31250, 36120, 34080, 35610, 38920];
-        const minValue = isStockDetailsChart ? 960 : 26000;
-        const maxValue = isStockDetailsChart ? 1280 : 39000;
-        const yAxisValues = isStockDetailsChart ? [1240, 1180, 1120, 1060, 1000] : [38000, 36000, 34000, 32000, 30000, 28000];
+            : isTradePriceChart
+                ? [182.4, 184.1, 183.2, 186.8, 188.4, 191.2, 189.6, 193.8, 196.4, 198.2, 201.6, 204.8]
+                : isTradeEquityChart
+                    ? [100000, 101200, 100800, 103400, 105600, 104200, 107800, 110400, 112600, 115200, 118400, 121800]
+                    : [26800, 26850, 26790, 27120, 27860, 27410, 27080, 27240, 27300, 26940, 26220, 26650, 27640, 29120, 29540, 29880, 30220, 30610, 30420, 31250, 36120, 34080, 35610, 38920];
+        const minValue = isStockDetailsChart
+            ? 960
+            : isTradePriceChart
+                ? 180
+                : isTradeEquityChart
+                    ? 99000
+                    : 26000;
+        const maxValue = isStockDetailsChart
+            ? 1280
+            : isTradePriceChart
+                ? 208
+                : isTradeEquityChart
+                    ? 124000
+                    : 39000;
+        const yAxisValues = isStockDetailsChart
+            ? [1240, 1180, 1120, 1060, 1000]
+            : isTradePriceChart
+                ? [204, 198, 192, 186, 180]
+                : isTradeEquityChart
+                    ? [120000, 115000, 110000, 105000, 100000]
+                    : [38000, 36000, 34000, 32000, 30000, 28000];
         const xAxisLabels = isStockDetailsChart
             ? ["1 Apr 2026", "16 May 2026", "18 Jun 2026"]
             : ["1 Jan 2026", "27 Mar 2026", "18 Jun 2026"];
 
         context.font = labelFont;
+        const formatShareChartAxisValue = (value) => value.toLocaleString("en-US");
+        const yAxisLabelWidth = Math.max(
+            ...yAxisValues.map((value) => context.measureText(formatShareChartAxisValue(value)).width),
+            0,
+        );
+        const yAxisGutter = Math.ceil(yAxisLabelWidth) + safePadding;
+        const xAxisLineHeight = Math.round(labelFontSize * 1.08);
+        const xAxisBlockHeight = isOverviewStyleChart
+            ? (xAxisLineHeight * 2) + safePadding
+            : (isStockDetailsChart ? 24 : 34);
+        const padding = {
+            top: safePadding + 6,
+            right: safePadding,
+            bottom: xAxisBlockHeight,
+            left: yAxisGutter,
+        };
+        const plotWidth = cssWidth - padding.left - padding.right;
+        const plotHeight = cssHeight - padding.top - padding.bottom;
+
         context.fillStyle = textMuted;
         context.textBaseline = "middle";
         yAxisValues.forEach((value) => {
             const ratio = (value - minValue) / (maxValue - minValue);
             const y = padding.top + plotHeight - (ratio * plotHeight);
             context.textAlign = "right";
-            context.fillText(value.toLocaleString("en-US"), padding.left - 10, y);
+            context.fillText(formatShareChartAxisValue(value), padding.left - safePadding, y);
         });
 
-        context.textBaseline = "alphabetic";
-        context.textAlign = "left";
-        context.fillText(xAxisLabels[0], padding.left, cssHeight - 10);
-        context.textAlign = "center";
-        context.fillText(xAxisLabels[1], padding.left + (plotWidth * 0.52), cssHeight - 10);
-        context.textAlign = "right";
-        context.fillText(xAxisLabels[2], cssWidth - padding.right, cssHeight - 10);
+        context.textBaseline = "top";
+        if (isOverviewStyleChart) {
+            const xAxisTicks = [
+                {line1: "11/02", line2: "2010", align: "left", x: padding.left},
+                {line1: "27/03", line2: "2026", align: "center", x: padding.left + (plotWidth * 0.52)},
+                {line1: "18/06", line2: "2026", align: "right", x: cssWidth - safePadding},
+            ];
+            const xAxisTop = cssHeight - safePadding - xAxisBlockHeight + Math.max(0, (xAxisBlockHeight - (xAxisLineHeight * 2)) / 2);
+            xAxisTicks.forEach(({line1, line2, align, x}) => {
+                context.textAlign = align;
+                context.fillText(line1, x, xAxisTop);
+                context.fillText(line2, x, xAxisTop + xAxisLineHeight);
+            });
+        } else {
+            context.textBaseline = "alphabetic";
+            context.textAlign = "left";
+            context.fillText(xAxisLabels[0], padding.left, cssHeight - safePadding);
+            context.textAlign = "center";
+            context.fillText(xAxisLabels[1], padding.left + (plotWidth * 0.52), cssHeight - safePadding);
+            context.textAlign = "right";
+            context.fillText(xAxisLabels[2], cssWidth - safePadding, cssHeight - safePadding);
+        }
 
         context.strokeStyle = accent;
-        context.lineWidth = 4;
+        context.lineWidth = isOverviewStyleChart ? 6 : 4;
         context.lineJoin = "round";
         context.lineCap = "round";
         context.beginPath();
@@ -1061,8 +1341,10 @@
 
     const applyStyleTokenInvestmentSharePreview = (demoShell, nextIndex = 0) => {
         if (!(demoShell instanceof HTMLElement)) return;
-        const previewViews = STYLE_TOKEN_SHARE_PREVIEW_VIEWS;
+        const previewViews = getSharePreviewViewsForDemo(demoShell);
         if (!previewViews.length) return;
+        const previewGroup = (demoShell.dataset.styleTokenSharePreviewGroup || "investment").trim();
+        const maskSensitive = isSharePreviewMaskEnabled(demoShell);
         const normalizedIndex = ((nextIndex % previewViews.length) + previewViews.length) % previewViews.length;
         const currentView = previewViews[normalizedIndex];
         const card = demoShell.querySelector("[data-style-token-share-preview-card]");
@@ -1076,13 +1358,14 @@
         demoShell.dataset.styleTokenSharePreviewView = currentView.id;
         card.dataset.shareView = currentView.id;
         card.setAttribute("aria-label", `${currentView.title} community share template`);
-        title.textContent = "Overview";
+        title.textContent = previewGroup === "workspace" ? currentView.title : "Overview";
         viewLabel.textContent = currentView.title;
         if (subtitle instanceof HTMLElement) {
             subtitle.textContent = currentView.subtitle;
             subtitle.hidden = !currentView.subtitle;
         }
-        body.replaceChildren(...createStyleTokenSharePreviewBody(currentView.id));
+        card.classList.toggle("is-share-sensitive-masked", maskSensitive);
+        body.replaceChildren(...createStyleTokenSharePreviewBody(currentView.id, {maskSensitive, previewGroup}));
         refreshStyleTokenPortfolioDonutDemo();
         body.querySelectorAll("[data-style-token-share-chart]").forEach((canvas) => {
             drawStyleTokenInvestmentShareChart(canvas);
@@ -1112,10 +1395,30 @@
                     applyStyleTokenInvestmentSharePreview(demoShell, currentIndex + delta);
                 });
             });
+            const maskButton = demoShell.querySelector("[data-style-token-share-mask]");
+            if (maskButton instanceof HTMLButtonElement && maskButton.dataset.bound !== "1") {
+                maskButton.dataset.bound = "1";
+                maskButton.addEventListener("click", () => {
+                    setSharePreviewMaskEnabled(demoShell, !isSharePreviewMaskEnabled(demoShell));
+                });
+            }
             applyStyleTokenInvestmentSharePreview(
                 demoShell,
                 Number.parseInt(demoShell.dataset.styleTokenSharePreviewIndex || "0", 10) || 0,
             );
+        });
+    };
+
+    const seedExportImageTokenDefaults = () => {
+        const shell = getStyleTokenShell();
+        if (!(shell instanceof HTMLElement) || !shell.hasAttribute("data-export-image-shell")) return;
+        shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
+            if (!(control instanceof HTMLElement)) return;
+            const tokenName = control.dataset.styleTokenName || "";
+            const unit = control.dataset.styleTokenUnit || "";
+            const numericValue = Number.parseInt(control.dataset.styleTokenValue || "", 10);
+            if (!tokenName || !Number.isFinite(numericValue)) return;
+            applyStyleTokenProperty(shell, tokenName, `${numericValue}${unit}`);
         });
     };
 
@@ -1714,6 +2017,7 @@
         bootstrap.initThemeModeControls?.();
         applyTemplateInlineStyles();
         refreshStyleTokenPortfolioDonutDemo();
+        seedExportImageTokenDefaults();
         renderStyleTokenInvestmentSharePreview();
         attachBrokerSettingsHandlers();
         attachNetworkRefreshButton();
