@@ -1,4 +1,4 @@
-/* Code version: v0.3.6 */
+/* Code version: v0.5.0 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -122,6 +122,263 @@
         const brokerSelect = document.getElementById("selected_broker");
         if (!(brokerSelect instanceof HTMLSelectElement) || brokerSelect.dataset.bound === "1") return;
         brokerSelect.dataset.bound = "1";
+        let ibkrGatewayPollTimer = 0;
+        let ibkrPortDebounceTimer = 0;
+        let ibkrEnsureBackendInFlight = false;
+        let ibkrLoginInProgress = false;
+        let ibkrGatewayLoginUrl = "";
+        const IBKR_GATEWAY_POLL_INTERVAL_MS = 2000;
+        const resolveIbkrGatewayLoginUrl = (port) => {
+            if (ibkrGatewayLoginUrl) return ibkrGatewayLoginUrl;
+            return `https://127.0.0.1:${port}/sso/Login?forwardTo=22&RL=1&ip2loc=US`;
+        };
+        const syncIbkrGatewayBaseUrl = () => {
+            const portInput = document.getElementById("ibkr_port");
+            const baseUrlInput = document.getElementById("ibkr_base_url");
+            if (!(baseUrlInput instanceof HTMLInputElement)) return;
+            const rawPort = portInput instanceof HTMLInputElement ? portInput.value.trim() : "";
+            const parsedPort = Number.parseInt(rawPort || "8689", 10);
+            const port = Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535 ? parsedPort : 8689;
+            baseUrlInput.value = `https://127.0.0.1:${port}/v1/api`;
+        };
+        const getSelectedBroker = () => String(brokerSelect.value || "").trim().toLowerCase();
+        const readIbkrPort = () => {
+            const portInput = document.getElementById("ibkr_port");
+            const rawPort = portInput instanceof HTMLInputElement ? portInput.value.trim() : "";
+            const parsedPort = Number.parseInt(rawPort || "8689", 10);
+            return Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535 ? String(parsedPort) : "8689";
+        };
+        const isIbkrPortValid = () => {
+            const portInput = document.getElementById("ibkr_port");
+            if (!(portInput instanceof HTMLInputElement)) return false;
+            const rawPort = portInput.value.trim();
+            if (!rawPort) return false;
+            const parsedPort = Number.parseInt(rawPort, 10);
+            return Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535;
+        };
+        const buildIbkrGatewayFormData = () => {
+            syncIbkrGatewayBaseUrl();
+            const formData = new FormData();
+            const accountInput = document.querySelector('input[name="ibkr_account_id"]');
+            const verifyInput = document.querySelector('input[name="ibkr_verify_ssl"][type="checkbox"]');
+            formData.append("selected_broker", "ibkr");
+            formData.append("ibkr_port", readIbkrPort());
+            formData.append("ibkr_account_id", accountInput instanceof HTMLInputElement ? accountInput.value.trim() : "");
+            formData.append("ibkr_verify_ssl", verifyInput instanceof HTMLInputElement && verifyInput.checked ? "1" : "0");
+            return formData;
+        };
+        const getIbkrStartButton = () => document.querySelector("[data-ibkr-gateway-start]");
+        const setIbkrStartButtonEnabled = (enabled) => {
+            const button = getIbkrStartButton();
+            if (!(button instanceof HTMLButtonElement)) return;
+            if (button.classList.contains("is-pending")) return;
+            button.disabled = !enabled;
+        };
+        const setIbkrGatewayStatus = (message, tone = "idle") => {
+            const status = document.querySelector("[data-ibkr-gateway-status]");
+            const statusText = document.querySelector("[data-ibkr-gateway-status-text]");
+            if (status instanceof HTMLElement) {
+                status.dataset.status = tone;
+                status.hidden = tone === "idle" && !message;
+            }
+            if (statusText instanceof HTMLElement) {
+                statusText.textContent = message;
+            }
+        };
+        const applyIbkrGatewayPayload = (payload) => {
+            if (typeof payload.login_url === "string" && payload.login_url.trim()) {
+                ibkrGatewayLoginUrl = payload.login_url.trim();
+            }
+            if (!isIbkrPortValid()) {
+                setIbkrGatewayStatus("", "idle");
+                setIbkrStartButtonEnabled(false);
+                return false;
+            }
+            if (!payload.installed) {
+                setIbkrGatewayStatus(payload.message || "Gateway is not installed.", "error");
+                setIbkrStartButtonEnabled(false);
+                return false;
+            }
+            if (payload.authenticated) {
+                setIbkrGatewayStatus("", "success");
+                setIbkrStartButtonEnabled(true);
+                return true;
+            }
+            if (payload.running || payload.reachable) {
+                setIbkrGatewayStatus("", "running");
+                setIbkrStartButtonEnabled(true);
+                return true;
+            }
+            setIbkrGatewayStatus(payload.message || "", payload.message ? "pending" : "idle");
+            setIbkrStartButtonEnabled(false);
+            return false;
+        };
+        const setBrokerTestFeedback = (message, tone = "idle", checkedAt = "") => {
+            const feedback = document.querySelector("[data-broker-test-feedback]");
+            if (!(feedback instanceof HTMLElement)) return;
+            feedback.hidden = false;
+            feedback.classList.toggle("is-success", tone === "success");
+            feedback.classList.toggle("is-error", tone === "error");
+            const suffix = checkedAt ? ` Tested at ${checkedAt}.` : "";
+            feedback.innerHTML = tone === "success"
+                ? `<span class="settings-broker-test-feedback-icon" aria-hidden="true"></span><span>${message}${suffix}</span>`
+                : `<span>${message}${suffix}</span>`;
+        };
+        const setButtonPending = (button, isPending, label) => {
+            if (!(button instanceof HTMLButtonElement)) return;
+            if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent.trim();
+            button.disabled = isPending;
+            button.classList.toggle("is-pending", isPending);
+            button.textContent = isPending ? label : button.dataset.defaultLabel;
+        };
+        const stopIbkrGatewayPolling = () => {
+            if (ibkrGatewayPollTimer) {
+                window.clearTimeout(ibkrGatewayPollTimer);
+                ibkrGatewayPollTimer = 0;
+            }
+        };
+        const fetchIbkrGatewayStatus = async () => {
+            const endpoints = getEndpoints();
+            if (!endpoints.ibkrGatewayStatus) return null;
+            const response = await fetch(`${endpoints.ibkrGatewayStatus}?port=${encodeURIComponent(readIbkrPort())}`, {
+                credentials: "same-origin",
+                headers: {"Accept": "application/json"},
+            });
+            return response.json();
+        };
+        const pauseIbkrGatewayProbesForLogin = () => {
+            ibkrLoginInProgress = true;
+            stopIbkrGatewayPolling();
+        };
+        const pollIbkrGatewayStatus = async ({continuous = false} = {}) => {
+            stopIbkrGatewayPolling();
+            if (ibkrLoginInProgress) return;
+            if (!isIbkrPortValid()) {
+                setIbkrGatewayStatus("", "idle");
+                setIbkrStartButtonEnabled(false);
+                return;
+            }
+            try {
+                const payload = await fetchIbkrGatewayStatus();
+                if (!payload) return;
+                const ready = applyIbkrGatewayPayload(payload);
+                if (continuous && !ready) {
+                    ibkrGatewayPollTimer = window.setTimeout(() => {
+                        pollIbkrGatewayStatus({continuous: true});
+                    }, IBKR_GATEWAY_POLL_INTERVAL_MS);
+                }
+            } catch (_error) {
+                setIbkrGatewayStatus("Starting gateway...", "pending");
+                setIbkrStartButtonEnabled(false);
+                if (continuous) {
+                    ibkrGatewayPollTimer = window.setTimeout(() => {
+                        pollIbkrGatewayStatus({continuous: true});
+                    }, IBKR_GATEWAY_POLL_INTERVAL_MS);
+                }
+            }
+        };
+        const ensureIbkrGatewayBackend = async () => {
+            if (ibkrLoginInProgress) return;
+            if (!isIbkrPortValid() || ibkrEnsureBackendInFlight) {
+                if (!isIbkrPortValid()) {
+                    setIbkrGatewayStatus("", "idle");
+                    setIbkrStartButtonEnabled(false);
+                }
+                return;
+            }
+            const endpoints = getEndpoints();
+            if (!endpoints.ibkrGatewayStatus || !endpoints.ibkrGatewayStart) return;
+            ibkrEnsureBackendInFlight = true;
+            try {
+                const statusPayload = await fetchIbkrGatewayStatus();
+                if (!statusPayload) return;
+                if (applyIbkrGatewayPayload(statusPayload)) return;
+                if (!statusPayload.installed) return;
+                setIbkrGatewayStatus("Starting gateway...", "pending");
+                const response = await fetch(endpoints.ibkrGatewayStart, {
+                    method: "POST",
+                    body: buildIbkrGatewayFormData(),
+                    credentials: "same-origin",
+                    headers: {"Accept": "application/json"},
+                });
+                const startPayload = await response.json();
+                if (!response.ok || startPayload.success === false) {
+                    setIbkrGatewayStatus(startPayload.message || "Could not start gateway.", "error");
+                    setIbkrStartButtonEnabled(false);
+                    return;
+                }
+                applyIbkrGatewayPayload(startPayload);
+                if (!(startPayload.running || startPayload.reachable || startPayload.authenticated)) {
+                    pollIbkrGatewayStatus({continuous: true});
+                }
+            } catch (error) {
+                setIbkrGatewayStatus(`Could not start gateway. ${error?.message || error}`, "error");
+                setIbkrStartButtonEnabled(false);
+            } finally {
+                ibkrEnsureBackendInFlight = false;
+            }
+        };
+        const scheduleIbkrGatewayBackendCheck = () => {
+            syncIbkrGatewayBaseUrl();
+            ibkrLoginInProgress = false;
+            ibkrGatewayLoginUrl = "";
+            window.clearTimeout(ibkrPortDebounceTimer);
+            ibkrPortDebounceTimer = window.setTimeout(() => {
+                ensureIbkrGatewayBackend();
+            }, 500);
+        };
+        const openIbkrLoginWindow = (loginUrl) => {
+            const loginTab = window.open(loginUrl, "ibkr_gateway_login");
+            if (!loginTab) {
+                setIbkrGatewayStatus("Browser blocked the login tab.", "error");
+                return false;
+            }
+            loginTab.focus?.();
+            return true;
+        };
+        const startIbkrGatewayLogin = async (button) => {
+            if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+            setButtonPending(button, true, "Opening...");
+            try {
+                pauseIbkrGatewayProbesForLogin();
+                const loginUrl = resolveIbkrGatewayLoginUrl(readIbkrPort());
+                if (!openIbkrLoginWindow(loginUrl)) {
+                    ibkrLoginInProgress = false;
+                    return;
+                }
+                setIbkrGatewayStatus("", "running");
+            } finally {
+                setButtonPending(button, false);
+                setIbkrStartButtonEnabled(true);
+            }
+        };
+        const testIbkrGatewayConnection = async (button) => {
+            const endpoints = getEndpoints();
+            if (!endpoints.ibkrGatewayTest) return false;
+            ibkrLoginInProgress = false;
+            stopIbkrGatewayPolling();
+            setButtonPending(button, true, "Testing...");
+            setBrokerTestFeedback("Testing IBKR connection...", "idle");
+            try {
+                const response = await fetch(endpoints.ibkrGatewayTest, {
+                    method: "POST",
+                    body: buildIbkrGatewayFormData(),
+                    credentials: "same-origin",
+                    headers: {"Accept": "application/json"},
+                });
+                const payload = await response.json();
+                const ok = response.ok && payload.success === true;
+                setBrokerTestFeedback(payload.message || (ok ? "Successfully connected to IBKR." : "Connection failed."), ok ? "success" : "error", payload.checked_at || "");
+                if (ok) {
+                    setIbkrGatewayStatus("", "success");
+                }
+            } catch (error) {
+                setBrokerTestFeedback(`Connection failed: ${error?.message || error}`, "error");
+            } finally {
+                setButtonPending(button, false);
+            }
+            return true;
+        };
         const syncLongbridgeAuthFields = () => {
             const authModeShell = document.getElementById("longbridge_auth_mode");
             const authInputs = Array.from(document.querySelectorAll('input[name="longbridge_auth_mode"]'))
@@ -145,7 +402,36 @@
                 element.hidden = element.dataset.brokerFields !== selected;
             });
             syncLongbridgeAuthFields();
+            syncIbkrGatewayBaseUrl();
+            if (selected === "ibkr") ensureIbkrGatewayBackend();
         });
+        const ibkrPortInput = document.getElementById("ibkr_port");
+        if (ibkrPortInput instanceof HTMLInputElement && ibkrPortInput.dataset.bound !== "1") {
+            ibkrPortInput.dataset.bound = "1";
+            ibkrPortInput.addEventListener("input", scheduleIbkrGatewayBackendCheck);
+            ibkrPortInput.addEventListener("change", () => {
+                window.clearTimeout(ibkrPortDebounceTimer);
+                ensureIbkrGatewayBackend();
+            });
+            syncIbkrGatewayBaseUrl();
+        }
+        const ibkrStartButton = getIbkrStartButton();
+        if (ibkrStartButton instanceof HTMLButtonElement && ibkrStartButton.dataset.bound !== "1") {
+            ibkrStartButton.dataset.bound = "1";
+            ibkrStartButton.addEventListener("click", () => startIbkrGatewayLogin(ibkrStartButton));
+        }
+        const brokerForm = brokerSelect.closest("form");
+        const brokerTestButton = document.querySelector("[data-broker-test-button]");
+        if (brokerForm instanceof HTMLFormElement && brokerForm.dataset.ibkrAsyncBound !== "1") {
+            brokerForm.dataset.ibkrAsyncBound = "1";
+            brokerForm.addEventListener("submit", async (event) => {
+                const submitter = event.submitter;
+                const isTestAction = submitter instanceof HTMLButtonElement && submitter.name === "action" && submitter.value === "test";
+                if (!isTestAction || getSelectedBroker() !== "ibkr") return;
+                event.preventDefault();
+                await testIbkrGatewayConnection(brokerTestButton);
+            });
+        }
         const authModeShell = document.getElementById("longbridge_auth_mode");
         if (authModeShell instanceof HTMLElement && authModeShell.dataset.bound !== "1") {
             authModeShell.dataset.bound = "1";
@@ -154,6 +440,9 @@
                 input.addEventListener("change", syncLongbridgeAuthFields);
             });
             syncLongbridgeAuthFields();
+        }
+        if (getSelectedBroker() === "ibkr") {
+            ensureIbkrGatewayBackend();
         }
     };
 

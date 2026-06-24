@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.54.11
+ * Code version: v1.55.2
+ * - Fixed: Investment history Max range and pagination now keep processed transaction caches current, so Gateway-ledger pages cannot render as empty while transactions exist.
  * - Added: Mixed-broker portfolios now calibrate each broker's latest history Balance from per-broker ending cash snapshots, so IBKR CSV Ending Cash can align with the broker app after HSBC merge
  * - Fixed: Investment export and share action buttons now align with the global theme toggle horizontally and the view segmented control vertical center.
  * - Fixed: Holdings Last now reuses the live digit-roll updater with green-up and red-down tone, and summary cash/equity values stay on the same realtime sync path.
@@ -264,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const importSubmitButton = document.getElementById('investment_import_submit_button');
     const investmentImportNote = document.getElementById('investment_import_note');
     const investmentImportIbkrFields = document.getElementById('investment_import_ibkr_fields');
+    const investmentImportIbkrMode = document.getElementById('investment_import_ibkr_mode');
     const investmentImportLongbridgeFields = document.getElementById('investment_import_longbridge_fields');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
     const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
@@ -4503,6 +4505,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalizeInvestmentBroker(investmentImportBrokerSelect?.value || 'ibkr');
     }
 
+    function getSelectedIbkrImportMode() {
+        const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
+        const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
+        return value === 'gateway' ? 'gateway' : 'csv';
+    }
+
+    function syncIbkrImportModePanels() {
+        const selectedMode = getSelectedIbkrImportMode();
+        if (investmentImportIbkrMode instanceof HTMLElement) {
+            investmentImportIbkrMode.dataset.active = selectedMode;
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '2');
+            investmentImportIbkrMode.style.setProperty('--segmented-active-index', selectedMode === 'gateway' ? '1' : '0');
+        }
+        document.querySelectorAll('[data-ibkr-import-mode-panel]').forEach((panel) => {
+            if (!(panel instanceof HTMLElement)) return;
+            panel.hidden = panel.dataset.ibkrImportModePanel !== selectedMode;
+        });
+    }
+
     function toDateInputValue(date) {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -4755,12 +4776,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncInvestmentImportMode() {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
+        const ibkrImportMode = getSelectedIbkrImportMode();
+        const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
         const isLongbridge = selectedBroker === 'longbridge';
         const isHsbc = selectedBroker === 'hsbc';
-        const usesSyncAction = isLongbridge || isHsbc;
+        const usesSyncAction = isIbkrGateway || isLongbridge || isHsbc;
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
+            syncIbkrImportModePanels();
         }
         if (investmentImportLongbridgeFields instanceof HTMLElement) {
             investmentImportLongbridgeFields.hidden = !isLongbridge;
@@ -4769,10 +4793,10 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportHsbcFields.hidden = !isHsbc;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
-            transactionsCsvInput.required = isIbkr;
+            transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
         }
         if (positionsCsvInput instanceof HTMLInputElement) {
-            positionsCsvInput.required = isIbkr;
+            positionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
         }
         if (longbridgeStartDateInput instanceof HTMLInputElement) {
             longbridgeStartDateInput.required = isLongbridge;
@@ -4785,7 +4809,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
                 : (isLongbridge
                     ? 'Syncs Longbridge activity into <code>settings_store/investment.json</code> without clearing existing records.'
-                    : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.');
+                    : (isIbkrGateway
+                        ? 'Syncs IBKR PortfolioAnalyst transactions for the last 365 days, plus current positions and cash, into <code>settings_store/investment.json</code> without clearing existing records.'
+                        : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.'));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -6494,10 +6520,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const positionsFile = positionsCsvInput?.files?.[0];
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
+        const ibkrImportMode = getSelectedIbkrImportMode();
+        const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
+        const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
         const isLongbridge = selectedBroker === 'longbridge';
         const isHsbc = selectedBroker === 'hsbc';
-        const transactionReady = isIbkr ? isLikelyTransactionHistoryFile(transactionFile) : false;
-        const positionsReady = isIbkr ? isLikelyPositionsFile(positionsFile) : false;
+        const transactionReady = isIbkrCsv ? isLikelyTransactionHistoryFile(transactionFile) : false;
+        const positionsReady = isIbkrCsv ? isLikelyPositionsFile(positionsFile) : false;
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
@@ -6510,7 +6539,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const hsbcCashAccountReady = isHsbc && isLikelyHsbcCashAccountText(hsbcCashAccountText);
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
-            (isIbkr && transactionReady && positionsReady)
+            (isIbkrCsv && transactionReady && positionsReady)
+            || isIbkrGateway
             || (isLongbridge && Boolean(sharedRangeReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
         );
@@ -6690,6 +6720,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+    document.querySelectorAll('input[name="ibkr_import_mode"]').forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        input.addEventListener('change', () => {
+            clearImportFeedback();
+            syncInvestmentImportMode();
+            syncImportValidationState();
+            syncInvestmentImportContainerHeight();
+        });
+    });
     [hsbcCashAccountTextInput, hsbcPortfolioTextInput, hsbcOrderStatusTextInput].forEach((input) => {
         if (!input) return;
         input.addEventListener('input', () => {
@@ -6753,6 +6792,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectedBroker = getSelectedInvestmentImportBroker();
             const transactionsFile = transactionsCsv?.files?.[0];
             const positionsFile = positionsCsv?.files?.[0];
+            const ibkrImportMode = getSelectedIbkrImportMode();
             const formData = new FormData();
             formData.append('broker', selectedBroker);
             if (!SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker)) {
@@ -6761,16 +6801,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (selectedBroker === 'ibkr') {
-                if (!transactionsFile || !positionsFile) {
+                formData.append('ibkr_import_mode', ibkrImportMode);
+                if (ibkrImportMode === 'gateway') {
+                    formData.append('ibkr_gateway_sync', '1');
+                } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                     return;
-                }
-                if (!isLikelyTransactionHistoryFile(transactionsFile) || !isLikelyPositionsFile(positionsFile)) {
+                } else if (!isLikelyTransactionHistoryFile(transactionsFile) || !isLikelyPositionsFile(positionsFile)) {
                     setImportFeedback('Please make sure the first file is your Transaction History CSV and the second file is your Realized Summary CSV.', 'error');
                     return;
+                } else {
+                    formData.append('transactions_csv', transactionsFile);
+                    formData.append('positions_csv', positionsFile);
                 }
-                formData.append('transactions_csv', transactionsFile);
-                formData.append('positions_csv', positionsFile);
             } else if (selectedBroker === 'longbridge') {
                 const startDate = String(longbridgeStartDateInput?.value || '').trim();
                 const endDate = String(longbridgeEndDateInput?.value || '').trim();
@@ -8438,6 +8481,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ? processedTransactions.filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
             : [];
         const brokerFilteredTransactions = normalizedTransactions.filter((txn) => matchesInvestmentBrokerFilter(txn));
+        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === 'max') {
+            return brokerFilteredTransactions;
+        }
         const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
         const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
             normalizedChartPoints.map((point) => point?.date),
@@ -8597,7 +8643,15 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentHistoryCurrentPage = Math.min(totalPages, Math.max(1, investmentHistoryCurrentPage || 1));
         }
         const pageStart = (investmentHistoryCurrentPage - 1) * INVESTMENT_HISTORY_PAGE_SIZE;
-        const pageTransactions = investmentHistoryVisibleTransactionsCache.slice(pageStart, pageStart + INVESTMENT_HISTORY_PAGE_SIZE);
+        let pageTransactions = investmentHistoryVisibleTransactionsCache.slice(pageStart, pageStart + INVESTMENT_HISTORY_PAGE_SIZE);
+        if (!pageTransactions.length && investmentHistoryVisibleTransactionsCache.length) {
+            investmentHistoryCurrentPage = totalPages;
+            const fallbackPageStart = (investmentHistoryCurrentPage - 1) * INVESTMENT_HISTORY_PAGE_SIZE;
+            pageTransactions = investmentHistoryVisibleTransactionsCache.slice(
+                fallbackPageStart,
+                fallbackPageStart + INVESTMENT_HISTORY_PAGE_SIZE,
+            );
+        }
         tbody.innerHTML = pageTransactions.map((txn) => renderInvestmentHistoryRowMarkup(txn)).join('');
         renderInvestmentHistoryPagination(investmentHistoryVisibleTransactionsCache.length);
         bindInvestmentHistoryChartInteractions(tbody);
@@ -9033,6 +9087,7 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
+        investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         const valuationStatus = buildValuationStatus({

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.27
+Code version: v0.3.30
 """
 
 from __future__ import annotations
@@ -34,9 +34,15 @@ from app.infrastructure.broker_market_data import (
     one_minute_lookback_start,
     test_broker_connection,
 )
+from app.infrastructure.ibkr_gateway import (
+    get_ibkr_gateway_runtime_status,
+    start_ibkr_gateway,
+)
 from app.infrastructure.longbridge_cli import authenticate_longbridge_cli_with_auth_code
 from app.core.broker_settings import (
     BrokerSettings,
+    build_ibkr_base_url_from_port,
+    extract_ibkr_port_from_base_url,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
@@ -84,6 +90,7 @@ from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
     build_investment_payload_from_hsbc_pasted_text,
     build_investment_payload_from_ibkr_csvs,
+    build_investment_payload_from_ibkr_gateway,
     build_investment_payload_from_longbridge,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
@@ -229,6 +236,9 @@ class WebRuntime:
     backtest_settings_action: Any
     email_smtp_action: Any
     broker_access_action: Any
+    ibkr_gateway_start_api: Any
+    ibkr_gateway_status_api: Any
+    ibkr_gateway_test_api: Any
     local_market_store_action: Any
     settings_cache_action: Any
     market_store_logo: Any
@@ -3215,6 +3225,9 @@ def build_web_runtime() -> WebRuntime:
                 "dateConstraints": "/api/date-constraints",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
+                "ibkrGatewayStart": "/api/settings/ibkr-gateway/start",
+                "ibkrGatewayStatus": "/api/settings/ibkr-gateway/status",
+                "ibkrGatewayTest": "/api/settings/ibkr-gateway/test",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
                 "investmentIntraday": "/api/investment/intraday",
@@ -3618,6 +3631,12 @@ def build_web_runtime() -> WebRuntime:
         ).strip().lower() or current_settings.longbridge_auth_mode
         if selected_broker == "longbridge" and longbridge_auth_code:
             longbridge_auth_mode = "cli_oauth"
+        ibkr_port = str(request.form.get("ibkr_port", "")).strip()
+        ibkr_base_url = (
+            build_ibkr_base_url_from_port(ibkr_port)
+            if ibkr_port
+            else str(request.form.get("ibkr_base_url", "")).strip() or current_settings.ibkr_base_url
+        )
         updated_settings = BrokerSettings(
             selected_broker=selected_broker,
             longbridge_auth_mode=longbridge_auth_mode,
@@ -3626,6 +3645,9 @@ def build_web_runtime() -> WebRuntime:
             longbridge_app_key=str(request.form.get("longbridge_app_key", "")).strip() or current_settings.longbridge_app_key,
             longbridge_app_secret=str(request.form.get("longbridge_app_secret", "")).strip() or current_settings.longbridge_app_secret,
             longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
+            ibkr_base_url=ibkr_base_url,
+            ibkr_account_id=str(request.form.get("ibkr_account_id", "")).strip() or current_settings.ibkr_account_id,
+            ibkr_verify_ssl=request.form.getlist("ibkr_verify_ssl")[-1] == "1" if request.form.getlist("ibkr_verify_ssl") else False,
         )
         save_broker_settings(updated_settings)
         action = request.form.get("action", "save")
@@ -3667,6 +3689,55 @@ def build_web_runtime() -> WebRuntime:
                 "This project is open source, and the developer cannot retrieve your local secrets."
             )
             return _redirect_with_settings_feedback("broker-access", notice=notice)
+
+    def _build_ibkr_settings_from_request() -> BrokerSettings:
+        current_settings = load_broker_settings()
+        ibkr_port = str(request.form.get("ibkr_port", request.args.get("port", ""))).strip()
+        ibkr_base_url = build_ibkr_base_url_from_port(ibkr_port) if ibkr_port else current_settings.ibkr_base_url
+        return BrokerSettings(
+            selected_broker="ibkr",
+            longbridge_auth_mode=current_settings.longbridge_auth_mode,
+            longbridge_cli_path=current_settings.longbridge_cli_path,
+            longbridge_cli_home=current_settings.longbridge_cli_home,
+            longbridge_app_key=current_settings.longbridge_app_key,
+            longbridge_app_secret=current_settings.longbridge_app_secret,
+            longbridge_access_token=current_settings.longbridge_access_token,
+            ibkr_base_url=ibkr_base_url,
+            ibkr_account_id=str(request.form.get("ibkr_account_id", current_settings.ibkr_account_id)).strip(),
+            ibkr_verify_ssl=(
+                request.form.getlist("ibkr_verify_ssl")[-1] == "1"
+                if request.form.getlist("ibkr_verify_ssl")
+                else current_settings.ibkr_verify_ssl
+            ),
+        )
+
+    def ibkr_gateway_start_api():
+        settings = _build_ibkr_settings_from_request()
+        save_broker_settings(settings)
+        status = start_ibkr_gateway(settings, port=request.form.get("ibkr_port"))
+        return jsonify({"success": status.running or status.reachable, **status.to_json()})
+
+    def ibkr_gateway_status_api():
+        current_settings = load_broker_settings()
+        port = request.args.get("port") or request.form.get("ibkr_port")
+        status = get_ibkr_gateway_runtime_status(port or extract_ibkr_port_from_base_url(current_settings.ibkr_base_url))
+        return jsonify({"success": True, **status.to_json()})
+
+    def ibkr_gateway_test_api():
+        settings = _build_ibkr_settings_from_request()
+        save_broker_settings(settings)
+        success, message = test_broker_connection(settings)
+        checked_at = datetime.now().astimezone()
+        checked_at_label = format_display_datetime(
+            checked_at,
+            include_seconds=True,
+            timezone_suffix=checked_at.strftime("%Z"),
+        )
+        return jsonify({
+            "success": success,
+            "message": message,
+            "checked_at": checked_at_label,
+        })
 
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
@@ -4055,29 +4126,42 @@ def build_web_runtime() -> WebRuntime:
             transactions_file = request.files.get("transactions_csv")
             positions_file = request.files.get("positions_csv")
             if broker == "ibkr":
-                if transactions_file is None or positions_file is None:
-                    return jsonify({
-                        "success": False,
-                        "error": "Please upload both the Transaction History CSV and the Realized Summary CSV.",
-                    }), 400
+                ibkr_import_mode = str(request.form.get("ibkr_import_mode", "csv")).strip().lower()
+                if ibkr_import_mode == "gateway":
+                    imported_payload = build_investment_payload_from_ibkr_gateway(
+                        load_broker_settings(),
+                    )
+                    success_message = (
+                        "IBKR Gateway sync complete. PortfolioAnalyst transactions for the current position conids "
+                        "were requested for the last 365 days, and current positions plus cash ledger were refreshed "
+                        "through the authenticated Client Portal Gateway session. Matching records were merged "
+                        "incrementally into the local investment store without clearing older data first. Use CSV "
+                        "import for full historical backfills, including fully closed symbols."
+                    )
+                else:
+                    if transactions_file is None or positions_file is None:
+                        return jsonify({
+                            "success": False,
+                            "error": "Please upload both the Transaction History CSV and the Realized Summary CSV.",
+                        }), 400
 
-                transactions_payload = transactions_file.read()
-                positions_payload = positions_file.read()
-                if not transactions_payload or not positions_payload:
-                    return jsonify({
-                        "success": False,
-                        "error": "Both CSV files must be non-empty.",
-                    }), 400
+                    transactions_payload = transactions_file.read()
+                    positions_payload = positions_file.read()
+                    if not transactions_payload or not positions_payload:
+                        return jsonify({
+                            "success": False,
+                            "error": "Both CSV files must be non-empty.",
+                        }), 400
 
-                imported_payload = build_investment_payload_from_ibkr_csvs(
-                    transaction_csv_bytes=transactions_payload,
-                    positions_csv_bytes=positions_payload,
-                )
-                success_message = (
-                    "IBKR import complete. Matching records were merged incrementally into the local investment store "
-                    "without clearing older data first. The server does not store your original CSV files. "
-                    "They were processed in memory and discarded after the import finished."
-                )
+                    imported_payload = build_investment_payload_from_ibkr_csvs(
+                        transaction_csv_bytes=transactions_payload,
+                        positions_csv_bytes=positions_payload,
+                    )
+                    success_message = (
+                        "IBKR import complete. Matching records were merged incrementally into the local investment store "
+                        "without clearing older data first. The server does not store your original CSV files. "
+                        "They were processed in memory and discarded after the import finished."
+                    )
             elif broker == "longbridge":
                 imported_payload = build_investment_payload_from_longbridge(
                     load_broker_settings(),
@@ -4552,6 +4636,9 @@ def build_web_runtime() -> WebRuntime:
         backtest_settings_action=backtest_settings_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,
+        ibkr_gateway_start_api=ibkr_gateway_start_api,
+        ibkr_gateway_status_api=ibkr_gateway_status_api,
+        ibkr_gateway_test_api=ibkr_gateway_test_api,
         local_market_store_action=local_market_store_action,
         settings_cache_action=settings_cache_action,
         market_store_logo=market_store_logo,

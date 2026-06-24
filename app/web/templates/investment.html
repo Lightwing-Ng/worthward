@@ -1,4 +1,4 @@
-{# Code version: v1.1.1 #}
+{# Code version: v1.2.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
@@ -171,6 +171,20 @@
                                 </div>
                             </div>
                             <div class="investment-import-field-group" id="investment_import_ibkr_fields" hidden>
+                            <div class="investment-import-field investment-import-bridge-field investment-import-plain-field investment-import-mode-field">
+                                <label class="settings-form-label" id="investment_import_ibkr_mode_label">Import method</label>
+                                {{ render_segmented_control(
+                                    "segmented-control--compact investment-import-method-segmented",
+                                    "ibkr_import_mode",
+                                    "csv",
+                                    [
+                                        {"id": "ibkr_import_mode_csv", "value": "csv", "label": "CSV"},
+                                        {"id": "ibkr_import_mode_gateway", "value": "gateway", "label": "Gateway"},
+                                    ],
+                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: 0;" aria-labelledby="investment_import_ibkr_mode_label"'
+                                ) }}
+                            </div>
+                            <div data-ibkr-import-mode-panel="csv">
                             <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="transactions">
                                 <label class="trade-strategy-param-label" for="transactions_csv">
                                 <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
@@ -221,6 +235,7 @@
                                     <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
                                            class="settings-form-control investment-import-file-input" required>
                                 </div>
+                            </div>
                             </div>
                             </div>
                             <div class="investment-import-field-group" id="investment_import_longbridge_fields" hidden>

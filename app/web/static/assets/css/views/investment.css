@@ -2922,10 +2922,9 @@
 
 .investment-import-form {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 16px;
+    grid-template-rows: auto auto;
+    gap: 10px;
     min-height: 0;
-    height: 100%;
 }
 
 .investment-import-stack {
@@ -2950,6 +2949,23 @@
 .investment-import-broker-field {
     width: 100%;
     grid-column: 1 / -1;
+}
+
+.investment-import-mode-field {
+    grid-column: 1 / -1;
+}
+
+.investment-import-method-segmented {
+    width: min(100%, 280px);
+    margin-inline: 0;
+}
+
+[data-ibkr-import-mode-panel="csv"] {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
 }
 
 #investment_import_ibkr_fields,

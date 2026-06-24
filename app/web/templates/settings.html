@@ -628,36 +628,44 @@
             </div>
     </section>
     <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
-                <div class="field settings-form-row settings-broker-row backtest-shared-select-field settings-broker-shared-select" data-shared-select-field data-shared-select-kind="settings-broker">
-                    <label class="settings-form-label" for="selected_broker">Broker</label>
-                    <div class="trade-strategy-row backtest-shared-select-row settings-broker-select-row">
-                        <select id="selected_broker" name="selected_broker" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                <div class="field live-trading-broker-strip backtest-shared-select-field settings-broker-row"
+                     data-shared-select-field
+                     data-shared-select-kind="settings-broker">
+                    <label class="settings-form-label live-trading-field-label" for="selected_broker">Broker</label>
+                    <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
+                        <select id="selected_broker"
+                                name="selected_broker"
+                                class="trade-strategy-native-select backtest-shared-select-native"
+                                hidden
+                                aria-hidden="true"
+                                tabindex="-1">
                             {{ render_broker_select_options(settings_broker_codes, broker_settings.selected_broker) }}
                         </select>
                         <div class="trade-strategy-combobox backtest-shared-select-combobox">
-                            <button
-                                type="button"
-                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger settings-broker-select-trigger"
-                                data-shared-select-trigger
-                                aria-haspopup="listbox"
-                                aria-expanded="false"
-                                aria-controls="selected_broker_dropdown"
-                            >
-                                <span class="ticker-leading-slot settings-broker-select-trigger-slot" aria-hidden="true">
-                                    <span class="ticker-logo-placeholder" data-shared-select-trigger-placeholder></span>
-                                    <img class="ticker-input-logo settings-broker-select-trigger-logo" data-shared-select-trigger-logo alt="" hidden>
+                            <button type="button"
+                                    class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger"
+                                    data-shared-select-trigger
+                                    aria-haspopup="listbox"
+                                    aria-expanded="false"
+                                    aria-controls="selected_broker_dropdown">
+                                <span class="ticker-leading-slot live-trading-broker-trigger-slot" aria-hidden="true">
+                                    <span class="ticker-logo-placeholder"
+                                          data-shared-select-trigger-placeholder></span>
+                                    <img class="ticker-input-logo live-trading-broker-trigger-logo"
+                                         data-shared-select-trigger-logo
+                                         alt=""
+                                         hidden>
                                 </span>
-                                <span class="trade-strategy-trigger-label settings-broker-select-trigger-label" data-shared-select-trigger-label></span>
+                                <span class="trade-strategy-trigger-label live-trading-broker-trigger-label"
+                                      data-shared-select-trigger-label></span>
                             </button>
                         </div>
-                        <div
-                            id="selected_broker_dropdown"
-                            class="trade-strategy-dropdown backtest-shared-select-dropdown settings-broker-select-dropdown"
-                            data-shared-select-dropdown
-                            role="listbox"
-                            aria-label="Broker"
-                            hidden
-                        ></div>
+                        <div id="selected_broker_dropdown"
+                             class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown"
+                             data-shared-select-dropdown
+                             role="listbox"
+                             aria-label="Broker"
+                             hidden></div>
                     </div>
                 </div>
 
@@ -706,7 +714,27 @@
                 </div>
 
                 <div data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
-                    <p class="settings-service-note">IBKR integration is currently being finalized. Please use Longbridge for 1-minute market data for now.</p>
+                    <div class="settings-form-row">
+                        <label class="settings-form-label" for="ibkr_port">Gateway port</label>
+                        <input type="number" id="ibkr_port" name="ibkr_port" class="settings-form-control settings-form-control-numeric" value="{{ broker_settings.ibkr_port or 8689 }}" min="1" max="65535" step="1" inputmode="numeric" autocomplete="off">
+                        <input type="hidden" id="ibkr_base_url" name="ibkr_base_url" value="{{ broker_settings.ibkr_base_url }}" data-ibkr-base-url>
+                        <input type="hidden" name="ibkr_account_id" value="{{ broker_settings.ibkr_account_id }}">
+                    </div>
+                    <div class="settings-ibkr-gateway-status" data-ibkr-gateway-status role="status" aria-live="polite" hidden>
+                        <span class="settings-ibkr-gateway-status-dot" aria-hidden="true"></span>
+                        <span data-ibkr-gateway-status-text></span>
+                    </div>
+                    <div class="settings-ibkr-gateway-actions">
+                        <button type="button" class="settings-inline-button settings-inline-button-primary settings-ibkr-gateway-start-button" data-ibkr-gateway-start disabled>Start gateway to logon</button>
+                    </div>
+                    <label class="settings-general-option settings-general-option--action settings-broker-checkbox-row">
+                        <input type="hidden" name="ibkr_verify_ssl" value="0">
+                        <input type="checkbox" name="ibkr_verify_ssl" value="1" {% if broker_settings.ibkr_verify_ssl %}checked{% endif %}>
+                        <span class="settings-general-option-copy">
+                            <span class="settings-general-option-title">Verify SSL certificate</span>
+                            <span class="settings-general-option-desc">Keep this off for the local Gateway's self-signed certificate. Turn it on only when your Gateway URL uses a trusted certificate.</span>
+                        </span>
+                    </label>
                 </div>
 
                 <div class="settings-action-package-grid">
@@ -715,16 +743,18 @@
                         <div class="settings-action-package-copy settings-callout-text">
                             <p class="settings-service-note">Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.</p>
                             {% if broker_test_status and broker_test_message %}
-                            <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite">
+                            <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite" data-broker-test-feedback>
                                 {% if broker_test_status == 'success' %}
                                 <span class="settings-broker-test-feedback-icon" aria-hidden="true"></span>
                                 {% endif %}
                                 <span>{{ broker_test_message }}{% if broker_test_checked_at %} Tested at {{ broker_test_checked_at }}.{% endif %}</span>
                             </p>
+                            {% else %}
+                            <p class="settings-broker-test-feedback" role="status" aria-live="polite" data-broker-test-feedback hidden></p>
                             {% endif %}
                         </div>
                         <div class="settings-action-package-form">
-                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">Test connection</button>
+                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary" data-broker-test-button>Test connection</button>
                         </div>
                     </section>
                 </div>

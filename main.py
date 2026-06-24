@@ -26,6 +26,14 @@ def _log_startup(message: str) -> None:
     print(f"{LOG_PREFIX} {message}")
 
 
+def _should_manage_ibkr_gateway_as_long_lived() -> bool:
+    try:
+        broker_settings = load_broker_settings()
+    except (OSError, JSONDecodeError):
+        return False
+    return broker_settings.selected_broker == "ibkr"
+
+
 def _should_manage_longbridge_as_long_lived() -> bool:
     try:
         broker_settings = load_broker_settings()
@@ -61,6 +69,9 @@ def _build_run_options(config: dict) -> dict:
     use_reloader = debug_enabled
     if use_reloader and _should_manage_longbridge_as_long_lived():
         _log_startup("Disabled Flask reloader to keep the Longbridge quote context long-lived.")
+        use_reloader = False
+    if use_reloader and _should_manage_ibkr_gateway_as_long_lived():
+        _log_startup("Disabled Flask reloader to keep the local IBKR Gateway process stable.")
         use_reloader = False
     return {
         "debug": debug_enabled,

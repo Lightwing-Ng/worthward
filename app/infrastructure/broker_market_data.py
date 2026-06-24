@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.4.1
+    Code version: v0.5.2
 """
 
 from __future__ import annotations
@@ -11,8 +11,14 @@ from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version as package_version
 import json
+import socket
+import ssl
+import time
 from threading import Event, Lock, Thread
 from typing import Any
+from urllib.parse import urlparse, urlunparse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -26,6 +32,7 @@ from app.core.broker_settings import (
     uses_longbridge_cli_oauth,
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
+from app.infrastructure.ibkr_gateway import read_recent_gateway_cp_login_failure
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.storage import (
     ensure_market_store_dir,
@@ -53,6 +60,9 @@ _LONGBRIDGE_QUOTE_CONTEXT: Any | None = None
 _LONGBRIDGE_KEEPALIVE_SIGNATURE: tuple[str, str, str] | None = None
 _LONGBRIDGE_KEEPALIVE_THREAD: Thread | None = None
 _LONGBRIDGE_KEEPALIVE_STOP_EVENT: Event | None = None
+IBKR_CONNECTION_TIMEOUT_SECONDS = 8
+IBKR_AUTH_STATUS_RETRY_ATTEMPTS = 6
+IBKR_AUTH_STATUS_RETRY_DELAY_SECONDS = 4.0
 
 
 # #region debug-point shared:reporter
@@ -136,6 +146,258 @@ def one_minute_lookback_start(reference: datetime | pd.Timestamp | None = None) 
     return anchor - pd.DateOffset(months=ONE_MINUTE_LOOKBACK_MONTHS)
 
 
+def _build_ibkr_url(settings: BrokerSettings, path: str) -> str:
+    base_url = settings.ibkr_base_url.rstrip("/")
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return f"{base_url}{normalized_path}"
+
+
+def _ibkr_ssl_context(settings: BrokerSettings):
+    return None if settings.ibkr_verify_ssl else ssl._create_unverified_context()
+
+
+def _read_ibkr_http_error_body(error: HTTPError) -> str:
+    try:
+        return error.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def _parse_ibkr_json_body(raw_body: str) -> Any:
+    if not raw_body:
+        return {}
+    return json.loads(raw_body)
+
+
+def _request_ibkr_json(
+    settings: BrokerSettings,
+    path: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+    allow_unauthenticated: bool = False,
+) -> Any:
+    headers = {"Accept": "application/json"}
+    body_bytes = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        body_bytes = json.dumps(payload).encode("utf-8")
+    request = Request(
+        _build_ibkr_url(settings, path),
+        data=body_bytes,
+        headers=headers,
+        method=method,
+    )
+    context = _ibkr_ssl_context(settings)
+    try:
+        with urlopen(
+            request,
+            timeout=IBKR_CONNECTION_TIMEOUT_SECONDS,
+            context=context,
+        ) as response:
+            raw_body = response.read().decode("utf-8", errors="replace").strip()
+    except HTTPError as error:
+        if allow_unauthenticated and error.code == 401:
+            return _parse_ibkr_json_body(_read_ibkr_http_error_body(error))
+        raise
+    return _parse_ibkr_json_body(raw_body)
+
+
+def _nudge_ibkr_brokerage_session(settings: BrokerSettings) -> None:
+    for path, method, payload in (
+        ("/tickle", "GET", None),
+        ("/iserver/auth/ssodh/init", "POST", {"publish": True, "compete": True}),
+    ):
+        try:
+            _request_ibkr_json(
+                settings,
+                path,
+                method=method,
+                payload=payload,
+                allow_unauthenticated=True,
+            )
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+            continue
+
+
+def _ibkr_cp_validate_failed(settings: BrokerSettings) -> bool:
+    try:
+        payload = _request_ibkr_json(
+            settings,
+            "/sso/validate?gw=1",
+            allow_unauthenticated=True,
+        )
+    except HTTPError:
+        return True
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return False
+    return not isinstance(payload, dict) or not payload.get("RESULT")
+
+
+def _ibkr_auth_not_ready_message(settings: BrokerSettings | None = None) -> str:
+    cp_failure = read_recent_gateway_cp_login_failure()
+    if cp_failure:
+        return (
+            "IBKR showed Client login succeeds in the browser, but the local Gateway could not validate "
+            f"the Client Portal session ({cp_failure}). "
+            "Open the login tab again, finish password and MFA without switching back to this page, "
+            "wait until Client login succeeds, then click Test connection. "
+            "Close TWS, IBKR Mobile, and other IBKR sessions first."
+        )
+    if settings is not None and _ibkr_cp_validate_failed(settings):
+        return (
+            "IBKR showed Client login succeeds in the browser, but /v1/api/sso/validate still returns Access Denied. "
+            "The brokerage API session was never established. "
+            "Restart the Gateway, wait 30 seconds, log in once in the new tab, then test again."
+        )
+    return (
+        "IBKR Gateway shows Client login succeeds in the browser, but the brokerage API session is not ready yet. "
+        "Wait 10-15 seconds after that message, then test again. "
+        "If it keeps failing, restart the Gateway, log in once, and avoid opening TWS or another IBKR session at the same time."
+    )
+
+
+def _fetch_ibkr_auth_status(settings: BrokerSettings) -> dict[str, Any]:
+    auth_status = _request_ibkr_json(
+        settings,
+        "/iserver/auth/status",
+        allow_unauthenticated=True,
+    )
+    return auth_status if isinstance(auth_status, dict) else {}
+
+
+def _extract_ibkr_account_ids(accounts_payload: Any) -> list[str]:
+    if isinstance(accounts_payload, dict):
+        raw_accounts = accounts_payload.get("accounts", [])
+    elif isinstance(accounts_payload, list):
+        raw_accounts = accounts_payload
+    else:
+        raw_accounts = []
+
+    account_ids: list[str] = []
+    for account in raw_accounts:
+        if isinstance(account, str):
+            account_id = account.strip()
+        elif isinstance(account, dict):
+            account_id = str(
+                account.get("id")
+                or account.get("accountId")
+                or account.get("account_id")
+                or account.get("account")
+                or ""
+            ).strip()
+        else:
+            account_id = ""
+        if account_id and account_id not in account_ids:
+            account_ids.append(account_id)
+    return account_ids
+
+
+def _format_ibkr_connection_error(error: Exception) -> str:
+    if isinstance(error, HTTPError):
+        try:
+            body = error.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            body = ""
+        suffix = f" Response: {body}" if body else ""
+        return f"IBKR Gateway returned HTTP {error.code}.{suffix}"
+    if isinstance(error, URLError):
+        reason = getattr(error, "reason", error)
+        return (
+            "Could not reach the IBKR Client Portal Gateway. "
+            "Start the Gateway, sign in, and confirm the Gateway port. "
+            f"Original error: {reason}"
+        )
+    if isinstance(error, TimeoutError):
+        return "Connection timeout. Check whether the IBKR Client Portal Gateway is running."
+    return f"Connection failed: {error}"
+
+
+def _probe_ibkr_plain_http_server(settings: BrokerSettings) -> str:
+    parsed_url = urlparse(settings.ibkr_base_url)
+    port = parsed_url.port
+    if port != 5000:
+        return ""
+    host = parsed_url.hostname or "127.0.0.1"
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            pass
+    except OSError:
+        return ""
+    probe_url = urlunparse(("http", parsed_url.netloc, "/v1/api/iserver/auth/status", "", "", ""))
+    request = Request(probe_url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=2) as response:
+            server = response.headers.get("Server", "").strip()
+    except HTTPError as error:
+        server = error.headers.get("Server", "").strip()
+    except Exception:
+        return ""
+    if "airtunes" in server.lower():
+        return (
+            "Port 5000 is currently served by macOS AirPlay Receiver (AirTunes), not IBKR. "
+            "Disable AirPlay Receiver in macOS settings or configure the IBKR Client Portal Gateway "
+            "to listen on another port, then update the Gateway port here."
+        )
+    return ""
+
+
+def test_ibkr_client_portal_connection(settings: BrokerSettings) -> tuple[bool, str]:
+    try:
+        auth_status: dict[str, Any] = {}
+        for attempt in range(IBKR_AUTH_STATUS_RETRY_ATTEMPTS):
+            if attempt > 0:
+                _nudge_ibkr_brokerage_session(settings)
+                time.sleep(IBKR_AUTH_STATUS_RETRY_DELAY_SECONDS)
+            auth_status = _fetch_ibkr_auth_status(settings)
+            if auth_status.get("authenticated") and auth_status.get("connected"):
+                break
+        else:
+            if not auth_status:
+                return False, _ibkr_auth_not_ready_message(settings)
+            if not auth_status.get("authenticated"):
+                return False, _ibkr_auth_not_ready_message(settings)
+            if not auth_status.get("connected"):
+                return (
+                    False,
+                    "IBKR Gateway is authenticated, but it is not connected to the brokerage backend yet. "
+                    "Wait a moment, then test again.",
+                )
+
+        accounts_payload = _request_ibkr_json(settings, "/portfolio/accounts")
+        account_ids = _extract_ibkr_account_ids(accounts_payload)
+        configured_account_id = settings.ibkr_account_id.strip()
+        if configured_account_id and account_ids and configured_account_id not in account_ids:
+            available_accounts = ", ".join(account_ids)
+            return (
+                False,
+                f"IBKR authenticated, but Account ID {configured_account_id} was not returned. "
+                f"Available accounts: {available_accounts}.",
+            )
+        if configured_account_id and not account_ids:
+            return (
+                True,
+                "Successfully connected to IBKR. The account list was empty, so the configured Account ID was saved but not verified.",
+            )
+        account_label = configured_account_id or (account_ids[0] if account_ids else "default session")
+        return True, f"Successfully connected to IBKR Client Portal Gateway for {account_label}."
+    except json.JSONDecodeError:
+        return False, "IBKR Gateway responded, but the response was not valid JSON."
+    except Exception as error:
+        port_conflict_message = _probe_ibkr_plain_http_server(settings)
+        if port_conflict_message:
+            return False, port_conflict_message
+        if isinstance(error, HTTPError) and error.code == 401:
+            return False, _ibkr_auth_not_ready_message(settings)
+        if isinstance(error, URLError) and "CERTIFICATE_VERIFY_FAILED" in str(getattr(error, "reason", error)):
+            return (
+                False,
+                "Could not verify the local IBKR Gateway certificate. "
+                "Turn off Verify SSL certificate in Broker Access for the self-signed local Gateway, then test again.",
+            )
+        return False, _format_ibkr_connection_error(error)
+
+
 def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
     if settings.selected_broker == "longbridge":
         if uses_longbridge_cli_oauth(settings):
@@ -198,7 +460,7 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             return False, f"Connection failed: {message}"
 
     if settings.selected_broker == "ibkr":
-        return False, "IBKR integration is currently in development."
+        return test_ibkr_client_portal_connection(settings)
 
     return False, f"Unsupported broker: {settings.selected_broker}"
 
