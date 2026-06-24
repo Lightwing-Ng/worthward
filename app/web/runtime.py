@@ -1490,7 +1490,7 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--investment-community-share-card-gap", 10, 0),
                     px_token("--investment-community-share-section-gap", 10, 0),
                     px_token("--investment-community-share-section-radius", 16, 0),
-                    px_token("--investment-community-share-footer-brand-size", 36, 0),
+                    px_token("--investment-community-share-footer-brand-size", 72, 0),
                     px_token("--investment-community-share-footer-qr-size", 108, 0),
                     material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
                     material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),

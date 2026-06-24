@@ -881,7 +881,7 @@
 }
 
 .investment-community-share-card {
-    --investment-community-share-footer-brand-size: 36px;
+    --investment-community-share-footer-brand-size: 72px;
     --investment-community-share-footer-qr-size: 108px;
     width: 100%;
     height: 100%;
@@ -1086,8 +1086,8 @@
 
 .investment-community-share-card .investment-stock-details-identity,
 .investment-community-share-card .style-token-investment-share-stock-identity {
-    --ticker-identity-logo-height: var(--investment-community-share-footer-brand-size, 44px);
-    --ticker-identity-logo-max-width: var(--investment-community-share-footer-brand-size, 44px);
+    --ticker-identity-logo-height: 36px;
+    --ticker-identity-logo-max-width: 36px;
 }
 
 .investment-community-share-card .investment-stock-details-metrics {

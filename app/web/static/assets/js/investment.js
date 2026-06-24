@@ -5556,7 +5556,7 @@ document.addEventListener('DOMContentLoaded', () => {
         host.className = 'investment-community-share-capture';
         host.style.setProperty('--investment-community-share-shell-export-width', '540px');
         host.style.setProperty('--investment-community-share-shell-export-height', '856px');
-        host.style.setProperty('--investment-community-share-footer-brand-size', '36px');
+        host.style.setProperty('--investment-community-share-footer-brand-size', '72px');
         host.style.setProperty('--investment-community-share-footer-qr-size', '108px');
 
         const card = document.createElement('article');
