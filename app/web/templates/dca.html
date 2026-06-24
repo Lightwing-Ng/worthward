@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import render_segmented_control with context %}
+{% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
 
 {% block sidebar_content %}
@@ -18,6 +18,9 @@
                 {% include "_dca_form.html" %}
             </article>
             <article class="workspace-mode-main">
+                {% if dca_result %}
+                {{ render_investment_share_actions(shell_id='workspace_share_drawer_dca', share_drawer='dca', show_mask=false, capture_label='Save DCA screenshot', anchor_label='Share DCA') }}
+                {% endif %}
                 <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                     <article class="report-card workspace-article-card workspace-summary-card">
                         <div class="report-heading-row">

@@ -467,22 +467,6 @@
         });
     };
 
-    const areBacktestChartsReady = () => {
-        const priceCanvas = document.getElementById("tradePriceChart");
-        const equityCanvas = document.getElementById("tradeEquityChart");
-        return Boolean(
-            priceCanvas?.dataset.tradeChartReady === "1"
-            && equityCanvas?.dataset.tradeChartReady === "1"
-        );
-    };
-
-    const syncBacktestExportButtonVisibility = () => {
-        if (state.currentView !== "backtest") return;
-        const exportButton = document.getElementById("export_transactions_button");
-        if (!exportButton) return;
-        exportButton.hidden = !areBacktestChartsReady();
-    };
-
     const attachTradeDetailTabs = () => {
         const shell = $("[data-trade-detail-shell]");
         if (!shell) return;
@@ -503,7 +487,6 @@
             panels.forEach((panel) => {
                 panel.hidden = panel.dataset.tradeDetailPanel !== active;
             });
-            syncBacktestExportButtonVisibility();
         };
         shell.querySelectorAll('input[name="trade_detail_tab"]').forEach((input) => {
             if (input.dataset.bound === "1") return;
@@ -530,22 +513,6 @@
         if (!response.ok) throw new Error(`Market store presence fetch failed: ${response.status}`);
         const payload = await response.json();
         return Array.isArray(payload?.missingHistory) ? payload.missingHistory : [];
-    };
-
-    const attachExportButtonHandler = () => {
-        if (state.currentView !== "backtest") return;
-        const button = document.getElementById("export_transactions_button");
-        if (!button || button.dataset.bound === "1") return;
-        button.dataset.bound = "1";
-        if (button.dataset.tradeChartReadyBound !== "1") {
-            button.dataset.tradeChartReadyBound = "1";
-            window.addEventListener("antigravity:backtest-charts-ready", syncBacktestExportButtonVisibility);
-        }
-        button.addEventListener("click", () => {
-            const exportUrl = "/api/export-transactions" + window.location.search;
-            window.location.assign(exportUrl);
-        });
-        syncBacktestExportButtonVisibility();
     };
 
     const attachWorkspaceSummaryMorph = () => {
@@ -715,7 +682,7 @@
         initMobilePageBottomPadding();
         attachNoticeHandlers();
         attachTradeDetailTabs();
-        attachExportButtonHandler();
+        bootstrap.initWorkspaceShareDrawer?.();
         attachWorkspaceSummaryMorph();
         attachWorkspaceModeLayout();
         bootstrap.initSettingsWorkspace?.({

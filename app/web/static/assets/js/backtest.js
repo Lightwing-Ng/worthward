@@ -759,7 +759,7 @@
 			if (!canvas || canvas.dataset.tradeChartReady === "1") return;
 			canvas.dataset.tradeChartReady = "1";
 			if (priceCanvas.dataset.tradeChartReady === "1" && equityCanvas.dataset.tradeChartReady === "1") {
-				window.dispatchEvent(new CustomEvent("antigravity:backtest-charts-ready"));
+				bootstrap.workspaceShare?.dispatchReady?.("backtest");
 			}
 		};
 		const resolveChartReadyAnimation = (canvas, animationConfig) => {
@@ -1002,6 +1002,26 @@
 			animateBacktestRefreshTransition(priceChart, equityChart, refreshTransition, close, equity, allInEquity, chartYPaddingPx);
 		}
 	};
+
+	const share = () => bootstrap.workspaceShare || {};
+
+	const buildBacktestShareFilename = () => {
+		const ticker = String(window.ANTIGRAVITY_APP?.backtestResult?.summary?.ticker || "").trim().toLowerCase() || "backtest";
+		return share().buildFilename?.("backtest", ticker) || `backtest-${ticker}.png`;
+	};
+
+	bootstrap.registerWorkspaceShareProvider?.("backtest", {
+		isReady: () => Boolean(window.ANTIGRAVITY_APP?.backtestResult) && share().areTradeChartsReady?.(),
+		buildCard: () => share().buildTradeCard?.({
+			shareView: "backtest",
+			title: document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()
+				|| "Backtest",
+		}),
+		buildFilename: buildBacktestShareFilename,
+		onAnchorClick: () => {
+			window.location.assign(`/api/export-transactions${window.location.search}`);
+		},
+	});
 
 	bootstrap.initBacktestWorkspace = initBacktestWorkspace;
 	initBacktestWorkspace();

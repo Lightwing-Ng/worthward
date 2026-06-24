@@ -58,6 +58,18 @@
 		});
 	};
 
+	const formatPercentAxisLabel = (value) => {
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return "";
+		return `${numeric.toLocaleString("en-US", { maximumFractionDigits: 0 })}%`;
+	};
+
+	const formatPercentTooltipLabel = (value) => {
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return "";
+		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+	};
+
 	const readPxToken = (element, tokenName, fallbackValue) => {
 		if (!(element instanceof Element)) return fallbackValue;
 		const rawValue = getComputedStyle(element).getPropertyValue(tokenName).trim();
@@ -307,7 +319,7 @@
 					color: point.dataset.borderColor,
 					label: state.currentView === "portfolio" ? (portfolioLabelMap[point.dataset.label] || point.dataset.label) : point.dataset.label,
 					logoUrl: profile?.logo_url || "",
-					value: `${point.parsed.y.toFixed(2)}%`,
+					value: formatPercentTooltipLabel(point.parsed.y),
 				};
 			});
 
@@ -473,7 +485,7 @@
 							font: { family: 'GDS Transport, Helvetica Neue, Arial, sans-serif', size: 12 },
 							callback(value, index, ticks) {
 								if (index === 0 || index === ticks.length - 1) return "";
-								return `${value}%`;
+								return formatPercentAxisLabel(value);
 							},
 						},
 					},
@@ -503,6 +515,9 @@
 				});
 				chart.update();
 			});
+		}
+		if (state.currentView === "tickers" || state.currentView === "portfolio") {
+			bootstrap.workspaceShare?.dispatchReady?.(state.currentView);
 		}
 		return chart;
 	};

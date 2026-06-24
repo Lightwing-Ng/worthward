@@ -539,6 +539,14 @@
     word-break: normal;
 }
 
+.compare-summary-date-range {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: var(--font-ui-md);
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+}
+
 .performance-grid {
     display: grid;
     grid-template-rows: auto auto auto;

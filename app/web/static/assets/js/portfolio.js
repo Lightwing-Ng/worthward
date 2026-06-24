@@ -312,6 +312,57 @@
 		renderPortfolioPreview();
 	};
 
+	const share = () => bootstrap.workspaceShare || {};
+
+	const buildPortfolioCommunityShareCard = async () => {
+		const chartCanvas = document.getElementById("returnsChart");
+		if (!(chartCanvas instanceof HTMLCanvasElement) || chartCanvas.dataset.chartMounted !== "1") {
+			throw new Error("Portfolio chart is not ready for screenshot export.");
+		}
+		const summaryCard = document.querySelector(".portfolio-summary-content-card");
+		if (!(summaryCard instanceof HTMLElement)) {
+			throw new Error("Portfolio summary content is not ready for screenshot export.");
+		}
+		const summarySection = share().createSection?.("investment-community-share-section--compact investment-community-share-section--padded");
+		const chartSection = share().createChartSection?.(chartCanvas);
+		if (!(summarySection instanceof HTMLElement) || !(chartSection instanceof HTMLElement)) {
+			throw new Error("Portfolio share sections are not ready for screenshot export.");
+		}
+		const clone = share().sanitizeClone?.(summaryCard.cloneNode(true));
+		if (clone instanceof HTMLElement) {
+			clone.classList.add("portfolio-share-summary-card");
+			summarySection.appendChild(clone);
+		}
+		const title = document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()
+			|| "Portfolio";
+		const frame = share().createTemplateFrame?.({ shareView: "chart", title });
+		if (!frame?.host || !frame?.body || !frame?.card) {
+			throw new Error("Portfolio share template is unavailable.");
+		}
+		frame.body.appendChild(chartSection);
+		frame.body.appendChild(summarySection);
+		frame.card.appendChild(await share().createFooter?.());
+		return frame.host;
+	};
+
+	const buildPortfolioShareFilename = () => {
+		const tickers = (window.ANTIGRAVITY_APP?.portfolio?.items || [])
+			.map((item) => String(item?.ticker || "").trim().toLowerCase())
+			.filter(Boolean)
+			.join("-") || "portfolio";
+		return share().buildFilename?.("portfolio", tickers) || `portfolio-${tickers}.png`;
+	};
+
+	bootstrap.registerWorkspaceShareProvider?.("portfolio", {
+		isReady: () => {
+			const chartCanvas = document.getElementById("returnsChart");
+			const hasSeries = Array.isArray(window.ANTIGRAVITY_APP?.chart?.series) && window.ANTIGRAVITY_APP.chart.series.length > 0;
+			return hasSeries && chartCanvas?.dataset.chartMounted === "1";
+		},
+		buildCard: buildPortfolioCommunityShareCard,
+		buildFilename: buildPortfolioShareFilename,
+	});
+
 	bootstrap.initPortfolioWorkspace = initPortfolioWorkspace;
 	initPortfolioWorkspace();
 })();

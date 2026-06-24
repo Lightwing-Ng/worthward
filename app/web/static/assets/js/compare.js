@@ -1,6 +1,8 @@
-/* Code version: v0.3.5 */
+/* Code version: v0.4.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+	const appState = () => window.ANTIGRAVITY_APP || {};
+	const share = () => bootstrap.workspaceShare || {};
 
 	bootstrap.buildComparePendingWorkspaceMarkup = ({
 		currentValues = [],
@@ -18,8 +20,11 @@
 				
 				
 				<article class="report-card workspace-content-card compare-summary-content-card">
-					<div class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
+					<div id="compare_summary_panel">
+						<p id="compare_summary_date_range" class="compare-summary-date-range is-pending-value">Loading range...</p>
+						<div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
 						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
+						</div>
 					</div>
 				</article>
 				<article class="chart-surface"><div class="chart-heading-row"><p class="chart-heading">${chartHeading}</p></div><div class="chart-wrap is-pending-value" data-workspace-mask="chart-area"></div></article>
@@ -80,16 +85,16 @@
 		const nextWorkspacePanel = doc?.getElementById("workspace_panel");
 		if (!workspacePanel || !nextWorkspacePanel || typeof replaceDomRegion !== "function") return false;
 
-		const currentSummaryRegion = document.getElementById("compare_summary_region");
-		const nextSummaryRegion = doc.getElementById("compare_summary_region");
+		const currentSummaryPanel = document.getElementById("compare_summary_panel");
+		const nextSummaryPanel = doc.getElementById("compare_summary_panel");
 		const currentChartRegion = document.getElementById("compare_chart_region");
 		const nextChartRegion = doc.getElementById("compare_chart_region");
-		if (!currentChartRegion || !nextChartRegion || (Boolean(currentSummaryRegion) !== Boolean(nextSummaryRegion))) {
+		if (!currentChartRegion || !nextChartRegion || (Boolean(currentSummaryPanel) !== Boolean(nextSummaryPanel))) {
 			workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
 			return true;
 		}
 
-		if (currentSummaryRegion && nextSummaryRegion) replaceDomRegion(currentSummaryRegion, nextSummaryRegion);
+		if (currentSummaryPanel && nextSummaryPanel) replaceDomRegion(currentSummaryPanel, nextSummaryPanel);
 		replaceDomRegion(currentChartRegion, nextChartRegion);
 		workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
 		workspacePanel.querySelectorAll(".is-pending-card").forEach((node) => node.classList.remove("is-pending-card"));
@@ -101,9 +106,6 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		// Cash dividend toggles keep the same time axis, so we can reuse
-		// the existing same-axis refresh transition instead of rebuilding
-		// the whole chart from scratch.
 		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
@@ -112,4 +114,62 @@
 		}
 		return false;
 	};
+
+	const buildCompareShareSummarySection = () => {
+		const summaryCard = document.querySelector(".compare-summary-content-card");
+		if (!(summaryCard instanceof HTMLElement)) return null;
+		const section = share().createSection?.("investment-community-share-section--compact investment-community-share-section--padded");
+		if (!(section instanceof HTMLElement)) return null;
+		const clone = share().sanitizeClone?.(summaryCard.cloneNode(true), { removeWinnerBadge: true });
+		if (clone instanceof HTMLElement) {
+			clone.classList.add("compare-share-summary-card");
+			section.appendChild(clone);
+		}
+		return section;
+	};
+
+	const buildCompareCommunityShareCard = async () => {
+		const chartCanvas = document.getElementById("returnsChart");
+		if (!(chartCanvas instanceof HTMLCanvasElement) || chartCanvas.dataset.chartMounted !== "1") {
+			throw new Error("Compare chart is not ready for screenshot export.");
+		}
+		const summarySection = buildCompareShareSummarySection();
+		const chartSection = share().createChartSection?.(chartCanvas);
+		if (!(summarySection instanceof HTMLElement) || !(chartSection instanceof HTMLElement)) {
+			throw new Error("Compare summary content is not ready for screenshot export.");
+		}
+
+		const frame = share().createTemplateFrame?.({
+			shareView: "compare",
+			title: appState().labels?.chart_summary || "Stock return comparison",
+		});
+		if (!frame?.host || !frame?.card || !frame?.body) {
+			throw new Error("Compare share template is unavailable.");
+		}
+		frame.body.appendChild(summarySection);
+		frame.body.appendChild(chartSection);
+		frame.card.appendChild(await share().createFooter?.());
+		return frame.host;
+	};
+
+	const buildCompareShareFilename = () => {
+		const tickers = (appState().chart?.series || [])
+			.map((item) => String(item?.ticker || "").trim().toLowerCase())
+			.filter(Boolean)
+			.join("-") || "comparison";
+		return share().buildFilename?.("compare", tickers) || `compare-${tickers}.png`;
+	};
+
+	bootstrap.registerWorkspaceShareProvider?.("tickers", {
+		isReady: () => {
+			const chartCanvas = document.getElementById("returnsChart");
+			const hasSeries = Array.isArray(appState().chart?.series) && appState().chart.series.length > 0;
+			return hasSeries && chartCanvas?.dataset.chartMounted === "1";
+		},
+		buildCard: buildCompareCommunityShareCard,
+		buildFilename: buildCompareShareFilename,
+		modalLabels: {
+			failedTitle: "Screenshot export failed",
+		},
+	});
 })();

@@ -660,6 +660,27 @@
     pointer-events: auto;
 }
 
+.investment-share-actions {
+    --investment-share-action-gap: 10px;
+    --investment-share-action-step: calc(var(--settings-round-icon-button-size) + var(--investment-share-action-gap));
+}
+
+.investment-share-actions[data-share-drawer] {
+    position: fixed;
+    top: var(--investment-share-actions-top, var(--sidebar-toggle-center-offset));
+    right: var(--global-quick-actions-right);
+    transform: translateY(-50%);
+    z-index: calc(var(--layer-fixed-dock) + 2);
+    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    height: var(--settings-round-icon-button-size);
+    isolation: isolate;
+    pointer-events: none;
+}
+
+.investment-share-actions[data-share-drawer]:not([hidden]) {
+    pointer-events: auto;
+}
+
 .investment-share-actions > .export-transactions-button,
 .investment-share-actions > .investment-share-action-button {
     position: absolute;
@@ -1055,6 +1076,93 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 360px minmax(0, 1fr);
     align-items: stretch;
+}
+
+.investment-community-share-card[data-share-view="compare"] .investment-community-share-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 360px;
+    align-items: stretch;
+}
+
+.investment-community-share-card[data-share-view="compare"] .investment-community-share-section--chart,
+.investment-community-share-card[data-share-view="compare"] .investment-community-share-chart-shell {
+    height: 100%;
+    min-height: 360px;
+}
+
+.investment-community-share-card[data-share-view="compare"] .compare-share-summary-card,
+.investment-community-share-card[data-share-view="compare"] .compare-summary-content-card {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+}
+
+.investment-community-share-card[data-share-view="compare"] .compare-summary-date-range {
+    margin: 0 0 10px;
+    color: var(--theme-muted);
+    font-size: max(var(--font-ui-md), 3.8mm);
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+}
+
+.investment-community-share-card[data-share-view="compare"] .performance-grid {
+    margin-bottom: 0;
+}
+
+.investment-community-share-card[data-share-view="compare"] .performance-item {
+    min-width: 0;
+}
+
+.investment-community-share-card[data-share-view="compare"] .report-value {
+    font-size: max(var(--font-metric-lg), 7mm);
+}
+
+.investment-community-share-card[data-share-view="portfolio"] .investment-community-share-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 360px;
+    align-items: stretch;
+}
+
+.investment-community-share-card[data-share-view="portfolio"] .investment-community-share-section--chart,
+.investment-community-share-card[data-share-view="portfolio"] .investment-community-share-chart-shell {
+    height: 100%;
+    min-height: 360px;
+}
+
+.investment-community-share-card[data-share-view="portfolio"] .portfolio-share-summary-card,
+.investment-community-share-card[data-share-view="portfolio"] .portfolio-summary-content-card {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+}
+
+.investment-community-share-card[data-share-view="dca"] .investment-community-share-body,
+.investment-community-share-card[data-share-view="backtest"] .investment-community-share-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 150px 220px;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.investment-community-share-card[data-share-view="dca"] .workspace-share-section--trade-chart,
+.investment-community-share-card[data-share-view="backtest"] .workspace-share-section--trade-chart,
+.investment-community-share-card[data-share-view="dca"] .workspace-share-section--trade-chart .investment-community-share-chart-shell,
+.investment-community-share-card[data-share-view="backtest"] .workspace-share-section--trade-chart .investment-community-share-chart-shell {
+    height: 100%;
+    min-height: 0;
+}
+
+.investment-community-share-card[data-share-view="dca"] .workspace-share-metrics-card,
+.investment-community-share-card[data-share-view="backtest"] .workspace-share-metrics-card {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
 }
 
 .investment-community-share-card[data-share-view="stock_details"] .investment-community-share-section--chart,

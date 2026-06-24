@@ -514,7 +514,38 @@
             priceChart.update();
             equityChart.update();
         });
+
+        const markDcaChartReady = (canvas) => {
+            if (!(canvas instanceof HTMLCanvasElement) || canvas.dataset.tradeChartReady === "1") return;
+            canvas.dataset.tradeChartReady = "1";
+            if (priceCanvas.dataset.tradeChartReady === "1" && equityCanvas.dataset.tradeChartReady === "1") {
+                bootstrap.workspaceShare?.dispatchReady?.("dca");
+            }
+        };
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                markDcaChartReady(priceCanvas);
+                markDcaChartReady(equityCanvas);
+            });
+        });
     };
+
+    const share = () => bootstrap.workspaceShare || {};
+
+    const buildDcaShareFilename = () => {
+        const ticker = String(window.ANTIGRAVITY_APP?.dcaResult?.summary?.ticker || "").trim().toLowerCase() || "dca";
+        return share().buildFilename?.("dca", ticker) || `dca-${ticker}.png`;
+    };
+
+    bootstrap.registerWorkspaceShareProvider?.("dca", {
+        isReady: () => Boolean(window.ANTIGRAVITY_APP?.dcaResult) && share().areTradeChartsReady?.(),
+        buildCard: () => share().buildTradeCard?.({
+            shareView: "dca",
+            title: document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading")?.textContent?.trim()
+                || "DCA",
+        }),
+        buildFilename: buildDcaShareFilename,
+    });
 
     bootstrap.initDcaWorkspace = initDcaWorkspace;
     initDcaWorkspace();

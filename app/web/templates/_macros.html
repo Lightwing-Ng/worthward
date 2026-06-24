@@ -182,6 +182,26 @@
 </div>
 {%- endmacro %}
 
+{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None) -%}
+<div class="investment-share-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %} hidden>
+    <button type="button" class="investment-share-action-button" id="share_capture_button"
+            aria-label="{{ capture_label }}" title="{{ capture_label }}">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/photo.badge.arrow.down.svg); mask-image: url(/static/images/photo.badge.arrow.down.svg);"></span>
+    </button>
+    <button type="button" class="investment-share-action-button" id="share_mask_button"
+            aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false"{% if not show_mask %} hidden aria-hidden="true" tabindex="-1"{% endif %}>
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);"></span>
+    </button>
+    <button type="button" class="export-transactions-button" id="export_transactions_button"
+            aria-label="{{ anchor_label }}" title="{{ anchor_title or anchor_label }}">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
+    </button>
+</div>
+{%- endmacro %}
+
 {% macro render_broker_select_options(broker_codes, selected_code=None) -%}
 {% for entry in sorted_broker_entries(broker_codes) %}
 <option value="{{ entry.code }}"

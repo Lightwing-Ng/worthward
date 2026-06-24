@@ -1,6 +1,6 @@
 {# Code version: v1.1.1 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
 
 {% block sidebar_content %}
@@ -66,26 +66,7 @@
                                 ],
                                 'id="investment_view_segmented" data-active="chart" data-option-count="4" data-segmented-pill="measured"'
                             ) }}
-                    <div class="investment-share-actions" id="investment_share_actions" hidden>
-                        <button type="button" class="investment-share-action-button" id="share_capture_button"
-                                aria-label="Save Current Screenshot" title="Save Current Screenshot">
-                                    <span class="icon"
-                                          style="-webkit-mask-image: url(/static/images/photo.badge.arrow.down.svg); mask-image: url(/static/images/photo.badge.arrow.down.svg);">
-                                    </span>
-                        </button>
-                        <button type="button" class="investment-share-action-button" id="share_mask_button"
-                                aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false">
-                                    <span class="icon"
-                                          style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);">
-                                    </span>
-                        </button>
-                        <button type="button" class="export-transactions-button" id="export_transactions_button"
-                                aria-label="Export Transactions" title="Export Transactions">
-                                    <span class="icon"
-                                          style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);">
-                                    </span>
-                        </button>
-                    </div>
+                    {{ render_investment_share_actions(shell_id='investment_share_actions', show_mask=true) }}
                 </div>
                 <div class="investment-view-surface-body" id="investment_view_surface_body">
                     <div id="investment_chart_panel" data-investment-view-panel="chart">
