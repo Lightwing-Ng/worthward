@@ -1,16 +1,66 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-from app.core.config import PERIOD_OFFSETS, SUPPORTED_PERIODS_1D as SUPPORTED_PERIODS
-from app.services.presentation import format_display_date
+from app.core.config import PERIOD_OFFSETS
+from app.services.presentation import format_display_date, format_period_label
 from app.models.schemas import SeriesPayload
+
+
+def latest_common_start(datasets: list[pd.DataFrame]) -> pd.Timestamp:
+    if not datasets:
+        raise ValueError("At least one dataset is required.")
+    return max(pd.Timestamp(dataset["Date"].min()) for dataset in datasets)
+
+
+def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    aligned = align_many_datasets_on_common_dates([dataset_a, dataset_b])
+    return aligned[0], aligned[1]
+
+
+def align_many_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    if not datasets:
+        return []
+    merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
+    for index, dataset in enumerate(datasets[1:], start=1):
+        merged = pd.merge(
+            merged,
+            dataset[["Date", "Close"]].rename(columns={"Close": f"Close_{index}"}),
+            on="Date",
+            how="inner",
+        ).sort_values("Date")
+    if merged.empty:
+        raise ValueError("The selected tickers do not share any common trading dates.")
+    return [
+        merged[["Date", f"Close_{index}"]].rename(columns={f"Close_{index}": "Close"}).copy()
+        for index in range(len(datasets))
+    ]
+
+
+def build_compare_start_notice(effective_start: pd.Timestamp) -> str:
+    return f"Comparison starts from {format_display_date(effective_start)}."
+
+
+def build_period_shortfall_notice(
+        requested_period: str,
+        effective_start: pd.Timestamp,
+        *,
+        fallback_period: str | None = None,
+) -> str:
+    period_label = format_period_label(requested_period)
+    notice = (
+        f"Requested period {period_label} exceeds the shared trading history. "
+        f"Comparison starts from {format_display_date(effective_start)}."
+    )
+    if fallback_period and fallback_period != requested_period:
+        notice = f"{notice} Automatically switched to {format_period_label(fallback_period)}."
+    return notice
 
 
 def resolve_effective_period(
@@ -18,33 +68,38 @@ def resolve_effective_period(
         dataset_a: pd.DataFrame,
         dataset_b: pd.DataFrame,
 ) -> tuple[str, str | None]:
+    return resolve_effective_period_for_datasets(requested_period, [dataset_a, dataset_b])
+
+
+def resolve_effective_period_for_datasets(
+        requested_period: str,
+        datasets: list[pd.DataFrame],
+) -> tuple[str, str | None]:
+    if not datasets:
+        raise ValueError("At least one dataset is required.")
+
+    common_start = latest_common_start(datasets)
+    common_end = min(dataset["Date"].max() for dataset in datasets)
+    available_days = (common_end - common_start).days
+
     if requested_period == "max":
+        earliest_listing = min(pd.Timestamp(dataset["Date"].min()) for dataset in datasets)
+        if earliest_listing.normalize() < common_start.normalize():
+            return "max", build_compare_start_notice(common_start)
         return "max", None
 
-    common_start = max(dataset_a["Date"].min(), dataset_b["Date"].min())
-    common_end = min(dataset_a["Date"].max(), dataset_b["Date"].max())
-    available_days = (common_end - common_start).days
     requested_start = (common_end - PERIOD_OFFSETS[requested_period]).normalize()
-    if requested_start >= common_start:
+    if requested_start >= common_start.normalize():
         return requested_period, None
-
-    fallback_period = "max"
-    for candidate in SUPPORTED_PERIODS:
-        if candidate == "max":
-            break
-        candidate_start = (common_end - PERIOD_OFFSETS[candidate]).normalize()
-        if candidate_start >= common_start:
-            fallback_period = candidate
 
     if available_days <= 0:
         raise ValueError("The selected tickers do not have overlapping trading history.")
 
-    notice = (
-        f"Requested period {requested_period} exceeds the shared trading history. "
-        f"Automatically switched to {fallback_period} based on the latest common start date "
-        f"({format_display_date(common_start)})."
+    return "max", build_period_shortfall_notice(
+        requested_period,
+        common_start,
+        fallback_period="max",
     )
-    return fallback_period, notice
 
 
 def slice_dataset_for_period(dataset: pd.DataFrame, period: str, reference_end_date: pd.Timestamp) -> pd.DataFrame:
@@ -67,20 +122,34 @@ def slice_dataset_for_period(dataset: pd.DataFrame, period: str, reference_end_d
     return sliced if not sliced.empty else bounded_dataset.tail(1).copy()
 
 
-def align_datasets_on_common_dates(dataset_a: pd.DataFrame, dataset_b: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    merged = pd.merge(
-        dataset_a[["Date", "Close"]],
-        dataset_b[["Date", "Close"]],
-        on="Date",
-        how="inner",
-        suffixes=("_a", "_b"),
-    ).sort_values("Date")
-    if merged.empty:
-        raise ValueError("The selected tickers do not share any common trading dates.")
-    return (
-        merged[["Date", "Close_a"]].rename(columns={"Close_a": "Close"}).copy(),
-        merged[["Date", "Close_b"]].rename(columns={"Close_b": "Close"}).copy(),
-    )
+def slice_datasets_for_compare_period(
+        datasets: list[pd.DataFrame],
+        period: str,
+        reference_end_date: pd.Timestamp,
+) -> list[pd.DataFrame]:
+    if not datasets:
+        raise ValueError("At least one dataset is required.")
+
+    common_end = pd.Timestamp(reference_end_date)
+    common_start = latest_common_start(datasets).normalize()
+
+    if period == "max":
+        effective_start = common_start
+        requested_start = None
+    else:
+        requested_start = (common_end - PERIOD_OFFSETS[period]).normalize()
+        effective_start = max(requested_start, common_start)
+
+    sliced_datasets: list[pd.DataFrame] = []
+    for dataset in datasets:
+        bounded_dataset = dataset[dataset["Date"] <= common_end].copy()
+        if bounded_dataset.empty:
+            sliced_datasets.append(dataset.tail(1).copy())
+            continue
+        trimmed = bounded_dataset[bounded_dataset["Date"] >= effective_start].copy()
+        sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
+
+    return align_many_datasets_on_common_dates(sliced_datasets)
 
 
 def build_series_payload(

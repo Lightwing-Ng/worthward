@@ -42,7 +42,12 @@ from app.core.broker_settings import (
     save_broker_settings,
     uses_longbridge_cli_oauth,
 )
-from app.services.comparisons import build_series_payload, slice_dataset_for_period
+from app.services.comparisons import (
+    build_series_payload,
+    resolve_effective_period_for_datasets,
+    slice_dataset_for_period,
+    slice_datasets_for_compare_period,
+)
 from app.core.email_settings import (
     SmtpSettings,
     build_oauth_settings_message,
@@ -70,6 +75,7 @@ from app.core.config import (
     DEFAULT_INTERVAL,
     DEFAULT_PERIOD,
     DEFAULT_TICKERS,
+    COMPARE_PERIODS_1D,
     PERIOD_OFFSETS,
     SUPPORTED_PERIODS_1M,
 )
@@ -2271,7 +2277,12 @@ def build_web_runtime() -> WebRuntime:
                 return pd.Series(dtype="datetime64[ns]")
         return merged["Date"].reset_index(drop=True)
 
-    def build_supported_periods_from_dates(date_values: pd.Series, interval: str = "1d") -> list[str]:
+    def build_supported_periods_from_dates(
+            date_values: pd.Series,
+            interval: str = "1d",
+            *,
+            candidate_periods: tuple[str, ...] | None = None,
+    ) -> list[str]:
         timestamps = pd.to_datetime(date_values, errors="coerce").dropna().sort_values().drop_duplicates()
         if timestamps.empty:
             return ["1d"] if interval == "1m" else ["1d"]
@@ -2279,7 +2290,8 @@ def build_web_runtime() -> WebRuntime:
         start = timestamps.iloc[0]
         end = timestamps.iloc[-1]
         trading_day_count = len(pd.Index(timestamps.dt.normalize()).unique())
-        candidate_periods = SUPPORTED_PERIODS_1M if interval == "1m" else ADAPTIVE_PERIODS_1D
+        if candidate_periods is None:
+            candidate_periods = SUPPORTED_PERIODS_1M if interval == "1m" else ADAPTIVE_PERIODS_1D
         supported: list[str] = []
 
         for candidate in candidate_periods:
@@ -2344,15 +2356,7 @@ def build_web_runtime() -> WebRuntime:
         return build_supported_periods_from_dates(dataset["Date"], interval=interval)
 
     def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
-        shared_dates = extract_shared_dates(datasets)
-        if shared_dates.empty:
-            raise ValueError("The selected tickers do not have overlapping trading history.")
-        supported_periods = build_supported_periods_from_dates(shared_dates, interval="1d")
-        return resolve_requested_period_from_supported(
-            requested_period,
-            supported_periods,
-            earliest_available=shared_dates.min(),
-        )
+        return resolve_effective_period_for_datasets(requested_period, datasets)
 
     def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "investment"):
         backtest_execution_mode = load_backtest_execution_mode()
@@ -2834,6 +2838,7 @@ def build_web_runtime() -> WebRuntime:
                         supported_periods = build_supported_periods_from_dates(
                             extract_shared_dates(datasets),
                             interval="1d",
+                            candidate_periods=COMPARE_PERIODS_1D,
                         )
                         date_constraints = build_date_constraint_payload(
                             *datasets,
@@ -2900,8 +2905,11 @@ def build_web_runtime() -> WebRuntime:
                             elif notice_resolve:
                                 notice = (notice or "") + " " + notice_resolve
                             common_end_date = min(dataset["Date"].max() for dataset in datasets)
-                            sliced_datasets = [slice_dataset_for_period(dataset, period, common_end_date) for dataset in datasets]
-                            aligned_datasets = align_datasets_on_common_dates(sliced_datasets)
+                            aligned_datasets = slice_datasets_for_compare_period(
+                                datasets,
+                                period,
+                                common_end_date,
+                            )
                             exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
                             exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                             period_label = format_period_label(period)
