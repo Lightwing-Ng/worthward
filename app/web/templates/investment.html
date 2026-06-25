@@ -238,12 +238,12 @@
                             </div>
                             </div>
                             </div>
-                            <div class="investment-import-field-group" id="investment_import_longbridge_fields" hidden>
+                            <div class="investment-import-field-group" id="investment_import_longbridge_hk_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field investment-import-plain-field date-picker-field" data-date-picker data-date-role="start">
                                     <label class="trade-strategy-param-label" for="longbridge_start_date" id="investment_import_range_start_label">
                                         <span class="investment-import-label-trigger">
                                             <span class="investment-import-label-step" aria-hidden="true">➊</span>
-                                            <span class="investment-import-label-text">Longbridge start date</span>
+                                            <span class="investment-import-label-text">Longbridge (HK) start date</span>
                                             <span class="investment-import-status-icon" id="longbridge_start_date_status" aria-hidden="true"></span>
                                         </span>
                                     </label>
@@ -286,7 +286,7 @@
                                     <label class="trade-strategy-param-label" for="longbridge_end_date" id="investment_import_range_end_label">
                                         <span class="investment-import-label-trigger">
                                             <span class="investment-import-label-step" aria-hidden="true">➋</span>
-                                            <span class="investment-import-label-text">Longbridge end date</span>
+                                            <span class="investment-import-label-text">Longbridge (HK) end date</span>
                                             <span class="investment-import-status-icon" id="longbridge_end_date_status" aria-hidden="true"></span>
                                         </span>
                                     </label>
@@ -323,6 +323,62 @@
                                             <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
                                         </div>
                                         <div class="date-picker-days" data-date-grid></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="investment-import-field-group" id="investment_import_longbridge_sg_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="longbridge-sg-fund-details">
+                                    <label class="trade-strategy-param-label" for="longbridge_sg_fund_details_txt">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">Fund Details text</span>
+                                            <span class="investment-import-status-icon" id="longbridge_sg_fund_details_txt_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to download this file in Longbridge (SG)</span>
+                                                <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Singapore account.</span>
+                                                <span class="investment-import-help-step">➊ Open Account > Fund Details.</span>
+                                                <span class="investment-import-help-step">➋ Copy the full page text, or export/save it as a plain text file.</span>
+                                                <span class="investment-import-help-step">➌ Upload that text file here. It should include rewards, deposits, withdrawals, dividends, and fees.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="longbridge_sg_fund_details_txt"
+                                               name="longbridge_sg_fund_details_txt"
+                                               type="file"
+                                               accept=".txt,text/plain"
+                                               class="settings-form-control investment-import-file-input"
+                                               required>
+                                    </div>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="longbridge-sg-history-orders">
+                                    <label class="trade-strategy-param-label" for="longbridge_sg_history_orders_xlsx">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                            <span class="investment-import-label-text">History Orders spreadsheet</span>
+                                            <span class="investment-import-status-icon" id="longbridge_sg_history_orders_xlsx_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to download this file in Longbridge (SG)</span>
+                                                <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Singapore account.</span>
+                                                <span class="investment-import-help-step">➊ Open Orders > History Orders.</span>
+                                                <span class="investment-import-help-step">➋ Export the filled order history as an Excel spreadsheet.</span>
+                                                <span class="investment-import-help-step">➌ Upload that .xlsx file here. It should include the Orders and Trade Log sheets.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="longbridge_sg_history_orders_xlsx"
+                                               name="longbridge_sg_history_orders_xlsx"
+                                               type="file"
+                                               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                               class="settings-form-control investment-import-file-input"
+                                               required>
                                     </div>
                                 </div>
                             </div>

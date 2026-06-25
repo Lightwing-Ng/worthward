@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.8
+ * Code version: v1.45.9
  * - Fixed: Zero-price grant rows now inherit same-day rendered split factors from sibling trades, preventing stale proxy histories from leaving phantom SPYM/SPLG shares.
  * - Added: Exported module version metadata so browser-side cache drift can be diagnosed without manually inspecting loaded source files.
  * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
@@ -179,6 +179,29 @@ export function createInvestmentDataUtils({
         return /^Currency Conversion \((Credit|Debit)\)$/i.test(String(txn?.description || '').trim());
     }
 
+    function isForexConversionTimelineRow(txn) {
+        if (isCurrencyConversionCashFlow(txn)) return true;
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType !== 'forex_trade_component') return false;
+        const description = String(txn?.description || '').trim();
+        if (/^FX FROM /i.test(description)) return true;
+        return /^Currency Conversion \((Credit|Debit)\)$/i.test(
+            String(txn?.source?.transaction_type_raw || '').trim(),
+        );
+    }
+
+    function getForexConversionTimelineGroupKey(txn, ledgerDate) {
+        const broker = String(txn?.broker || '').trim().toLowerCase();
+        const account = String(txn?.account || '').trim();
+        const description = normalizeTransactionDescriptionWhitespace(txn?.description || '');
+        if (description) {
+            return `${broker}|${account}|${ledgerDate}|${description.toUpperCase()}`;
+        }
+        const flowName = String(txn?.source?.transaction_type_raw || '').trim().toUpperCase();
+        const datetimeKey = String(txn?.datetime || txn?.date || '').trim();
+        return `${broker}|${account}|${ledgerDate}|${datetimeKey}|${flowName}`;
+    }
+
     function recordFxRateForDate(dateRates, currency, date, rate) {
         const normalizedCurrency = normalizeCurrencyCode(currency);
         const normalizedDate = normalizeLedgerDate(date);
@@ -217,10 +240,10 @@ export function createInvestmentDataUtils({
         const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         const groupedRows = new Map();
         (Array.isArray(transactions) ? transactions : []).forEach((txn, index) => {
-            if (!isCurrencyConversionCashFlow(txn)) return;
+            if (!isForexConversionTimelineRow(txn)) return;
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return;
-            const groupKey = `${String(txn?.datetime || txn?.date || '').trim()}|${ledgerDate}`;
+            const groupKey = getForexConversionTimelineGroupKey(txn, ledgerDate);
             if (!groupedRows.has(groupKey)) {
                 groupedRows.set(groupKey, []);
             }
@@ -457,7 +480,10 @@ export function createInvestmentDataUtils({
         if (normalizedType === 'forex_trade_component') {
             const forexPair = String(txn?.ticker || '').trim();
             const [baseCurrency] = forexPair.split('.');
-            return baseCurrency || '';
+            if (baseCurrency) return baseCurrency;
+            const explicitCurrency = String(txn?.currency || '').trim();
+            if (explicitCurrency) return explicitCurrency;
+            return '';
         }
 
         const explicitCurrency = String(txn?.currency || '').trim();
@@ -1769,4 +1795,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.8';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.9';

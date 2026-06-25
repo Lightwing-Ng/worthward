@@ -94,6 +94,7 @@ from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_gateway,
     build_investment_payload_from_longbridge,
+    build_investment_payload_from_longbridge_sg_files,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
@@ -4235,16 +4236,43 @@ def build_web_runtime() -> WebRuntime:
                         "without clearing older data first. The server does not store your original CSV files. "
                         "They were processed in memory and discarded after the import finished."
                     )
-            elif broker == "longbridge":
+            elif broker == "longbridge_hk":
                 imported_payload = build_investment_payload_from_longbridge(
                     load_broker_settings(),
                     start_date=str(request.form.get("longbridge_start_date", "")).strip(),
                     end_date=str(request.form.get("longbridge_end_date", "")).strip(),
                 )
                 success_message = (
-                    "Longbridge sync complete. Historical orders and cash-flow records were pulled through the configured "
+                    "Longbridge (HK) sync complete. Historical orders and cash-flow records were pulled through the configured "
                     "Longbridge authentication session, then merged incrementally into the local investment store "
                     "without clearing older data first."
+                )
+            elif broker == "longbridge_sg":
+                fund_details_file = request.files.get("longbridge_sg_fund_details_txt")
+                history_orders_file = request.files.get("longbridge_sg_history_orders_xlsx")
+                if fund_details_file is None or history_orders_file is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Please upload both the Fund Details text file and the History Orders spreadsheet.",
+                    }), 400
+
+                fund_details_text = fund_details_file.read().decode("utf-8", errors="replace")
+                history_orders_bytes = history_orders_file.read()
+                if not fund_details_text.strip() or not history_orders_bytes:
+                    return jsonify({
+                        "success": False,
+                        "error": "Both Longbridge (SG) import files must be non-empty.",
+                    }), 400
+
+                imported_payload = build_investment_payload_from_longbridge_sg_files(
+                    fund_details_text=fund_details_text,
+                    history_orders_xlsx_bytes=history_orders_bytes,
+                    fund_details_filename=str(getattr(fund_details_file, "filename", "") or "").strip(),
+                    history_orders_filename=str(getattr(history_orders_file, "filename", "") or "").strip(),
+                )
+                success_message = (
+                    "Longbridge (SG) import complete. Fund Details and History Orders files were parsed in memory and "
+                    "merged incrementally into the local investment store without clearing older data first."
                 )
             elif broker == "futuhk":
                 statement_pdf_files = request.files.getlist("futuhk_statement_pdfs")

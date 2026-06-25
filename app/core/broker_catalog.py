@@ -35,12 +35,19 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="IBKR.png",
         description="Supported now for CSV import.",
     ),
-    "longbridge": BrokerCatalogEntry(
-        code="longbridge",
-        label="Longbridge",
-        pinyin_sort_key="longbridge",
+    "longbridge_hk": BrokerCatalogEntry(
+        code="longbridge_hk",
+        label="Longbridge (HK)",
+        pinyin_sort_key="longbridgehk",
         icon_filename="Longbridge.png",
         description="Uses the configured authentication session to pull historical orders and cash flow.",
+    ),
+    "longbridge_sg": BrokerCatalogEntry(
+        code="longbridge_sg",
+        label="Longbridge (SG)",
+        pinyin_sort_key="longbridgesg",
+        icon_filename="Longbridge.png",
+        description="Upload Fund Details plain text and History Orders XLSX exports.",
     ),
     "futuhk": BrokerCatalogEntry(
         code="futuhk",
@@ -60,7 +67,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
 
 SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
-INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge")
+INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge_hk", "longbridge_sg")
 
 
 def broker_pinyin_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:
