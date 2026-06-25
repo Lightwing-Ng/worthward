@@ -174,6 +174,9 @@ from app.infrastructure.storage import (
     market_store_file_lock,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
+    known_ticker_company_names_payload,
+    propagate_investment_lineage_identity_profiles,
+    resolve_known_ticker_company_name,
     record_ticker_usage,
     record_strategy_usage,
     top_used_strategies,
@@ -493,6 +496,10 @@ def build_web_runtime() -> WebRuntime:
         for raw_ticker in collect_investment_display_tickers(transactions):
             company_name, logo_url = resolve_ticker_identity_snapshot(raw_ticker)
             if company_name == raw_ticker:
+                known_company_name = resolve_known_ticker_company_name(raw_ticker)
+                if known_company_name:
+                    company_name = known_company_name
+            if company_name == raw_ticker:
                 inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
                 if inferred_money_market_name:
                     company_name = inferred_money_market_name
@@ -509,6 +516,7 @@ def build_web_runtime() -> WebRuntime:
                         **profile_entry,
                         "ticker": bare_ticker,
                     }
+        propagate_investment_lineage_identity_profiles(ticker_profiles)
         return ticker_profiles
 
     def iter_investment_store_ticker_aliases(ticker: str) -> list[str]:
@@ -2045,6 +2053,10 @@ def build_web_runtime() -> WebRuntime:
                 logo_url = str(profile.logo_url or "").strip() or logo_url
                 if logo_url and company_name and company_name.upper() != normalized_ticker:
                     break
+        if company_name.upper() == normalized_ticker:
+            known_company_name = resolve_known_ticker_company_name(ticker)
+            if known_company_name:
+                company_name = known_company_name
         return company_name, logo_url
 
     def build_local_market_rows_for_tickers(
@@ -4083,6 +4095,7 @@ def build_web_runtime() -> WebRuntime:
                 "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
                 "ticker_lineage": investment_ticker_lineage_payload(),
+                "known_ticker_company_names": known_ticker_company_names_payload(),
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
             })
@@ -4109,6 +4122,7 @@ def build_web_runtime() -> WebRuntime:
             data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
             data["ticker_lineage"] = investment_ticker_lineage_payload()
+            data["known_ticker_company_names"] = known_ticker_company_names_payload()
             data["freshness_refresh_failures"] = []
             data["section_freshness"] = section_freshness
             data["success"] = True

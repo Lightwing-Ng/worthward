@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.5
+ * Code version: v1.45.6
+ * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
  * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
  * - Fixed: Holdings and stock-details aggregation now canonicalizes market-store tickers so MSFT.US rolls into MSFT and legacy SPLG.US rolls into SPYM without mutating the imported ledger.
  * - Fixed: Broker statements without intraday timestamps now replay same-time funding rows before trades and withdrawals so cash/equity does not dip negative from row order alone.
@@ -1092,6 +1093,41 @@ export function createInvestmentDataUtils({
         return candidates[0] || normalizeInvestmentTicker(ticker);
     }
 
+    function getInvestmentLegacyLineageTickers(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return [];
+        const lineageMap = getInvestmentTickerLineageMap();
+        const proxyTickers = new Set(['SPY', 'SPY.US']);
+        const legacyTickers = [];
+        Object.entries(lineageMap).forEach(([legacyTicker, successors]) => {
+            const identitySuccessors = (Array.isArray(successors) ? successors : [])
+                .map((entry) => normalizeInvestmentTicker(entry))
+                .filter((entry) => entry && !proxyTickers.has(entry));
+            if (identitySuccessors.includes(normalizedTicker)) {
+                const normalizedLegacyTicker = normalizeInvestmentTicker(legacyTicker);
+                if (normalizedLegacyTicker && !legacyTickers.includes(normalizedLegacyTicker)) {
+                    legacyTickers.push(normalizedLegacyTicker);
+                }
+            }
+        });
+        return legacyTickers;
+    }
+
+    function getInvestmentTickerProfileLookupCandidates(ticker) {
+        const legacyLineageTickers = getInvestmentLegacyLineageTickers(ticker);
+        const storeAliasCandidates = getInvestmentTickerStoreAliasCandidates(ticker);
+        const candidates = [];
+        const addCandidate = (value) => {
+            const normalizedCandidate = normalizeInvestmentTicker(value);
+            if (normalizedCandidate && !candidates.includes(normalizedCandidate)) {
+                candidates.push(normalizedCandidate);
+            }
+        };
+        legacyLineageTickers.forEach(addCandidate);
+        storeAliasCandidates.forEach(addCandidate);
+        return candidates;
+    }
+
     function buildValuationStatus({
         backendFailures = [],
         fallbackTickers = [],
@@ -1621,6 +1657,8 @@ export function createInvestmentDataUtils({
         buildTickerSummaries,
         buildValuationStatus,
         getInvestmentCanonicalTicker,
+        getInvestmentLegacyLineageTickers,
+        getInvestmentTickerProfileLookupCandidates,
         getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
         convertAmountToBaseCurrency,

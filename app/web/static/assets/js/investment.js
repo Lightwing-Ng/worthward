@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.7
+ * Code version: v1.55.10
+ * - Fixed: Lineage profile lookup now uses exported data-utils helpers instead of an undefined local lineage-map reference.
+ * - Fixed: Canonical lineage successors such as SPYM now inherit legacy ticker profiles so issuer full names remain visible after symbol-only subtitle suppression.
+ * - Fixed: Investment ticker identity rows now resolve known issuer full names and hide duplicate symbol-only subtitles when no better label exists.
  * - Fixed: Investment holdings and overview chart now bootstrap yfinance pre/intraday/post quotes on first render instead of briefly showing the prior regular-session close.
  * - Fixed: Investment realtime quote application now only marks holdings and chart points when the quote session matches the active New York clock session.
  * - Fixed: Investment transaction descriptions now display canonical tickers, matching holdings and stock details.
@@ -612,6 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         buildTickerSummaries,
         buildValuationStatus,
         getInvestmentCanonicalTicker,
+        getInvestmentTickerProfileLookupCandidates,
         getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
         convertAmountToBaseCurrency,
@@ -4221,9 +4225,43 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalizedTicker;
     }
 
+    function getInvestmentKnownTickerCompanyNames() {
+        const payloadNames = window.ANTIGRAVITY_INVESTMENT_DATA?.known_ticker_company_names;
+        return payloadNames && typeof payloadNames === 'object' && !Array.isArray(payloadNames)
+            ? payloadNames
+            : {};
+    }
+
+    function isInvestmentTickerFallbackCompanyName(companyName, ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const displayTicker = formatInvestmentTickerForDisplay(ticker);
+        const normalizedName = String(companyName || '').trim().toUpperCase();
+        if (!normalizedName) return true;
+        return (
+            normalizedName === normalizedTicker.toUpperCase()
+            || normalizedName === displayTicker.toUpperCase()
+        );
+    }
+
+    function resolveKnownInvestmentTickerCompanyName(ticker) {
+        const knownNames = getInvestmentKnownTickerCompanyNames();
+        const candidates = getInvestmentTickerProfileLookupCandidates(ticker);
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (normalizedTicker && !candidates.includes(normalizedTicker)) {
+            candidates.unshift(normalizedTicker);
+        }
+        for (const candidate of candidates) {
+            const knownName = String(knownNames[candidate] || '').trim();
+            if (knownName && !isInvestmentTickerFallbackCompanyName(knownName, ticker)) {
+                return knownName;
+            }
+        }
+        return '';
+    }
+
     function resolveInvestmentTickerProfile(tickerProfiles, ticker) {
         const profiles = tickerProfiles && typeof tickerProfiles === 'object' ? tickerProfiles : {};
-        const candidates = getInvestmentTickerStoreAliasCandidates(ticker);
+        const candidates = getInvestmentTickerProfileLookupCandidates(ticker);
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (normalizedTicker && !candidates.includes(normalizedTicker)) {
             candidates.push(normalizedTicker);
@@ -4235,15 +4273,34 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!fallbackProfile) fallbackProfile = profile;
             const companyName = String(profile.company_name || '').trim();
             if (!companyName) continue;
-            const displayTicker = formatInvestmentTickerForDisplay(candidate);
-            if (
-                companyName.toUpperCase() !== candidate.toUpperCase()
-                && companyName.toUpperCase() !== displayTicker.toUpperCase()
-            ) {
+            if (!isInvestmentTickerFallbackCompanyName(companyName, candidate)) {
                 return profile;
             }
         }
+        const knownCompanyName = resolveKnownInvestmentTickerCompanyName(ticker);
+        if (knownCompanyName) {
+            return {
+                ...(fallbackProfile || {}),
+                ticker: normalizedTicker || String(ticker || '').trim().toUpperCase(),
+                company_name: knownCompanyName,
+            };
+        }
         return fallbackProfile || {};
+    }
+
+    function resolveInvestmentTickerCompanyName(tickerProfiles, ticker) {
+        const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
+        const companyName = String(profile.company_name || '').trim();
+        if (companyName && !isInvestmentTickerFallbackCompanyName(companyName, ticker)) {
+            return companyName;
+        }
+        return '';
+    }
+
+    function renderInvestmentTickerIdentityNameHtml(companyName) {
+        const normalizedName = String(companyName || '').trim();
+        if (!normalizedName) return '';
+        return `<span class="suggestion-name ticker-identity-name" title="${escapeHtml(normalizedName)}">${escapeHtml(normalizedName)}</span>`;
     }
 
     function normalizeInvestmentBroker(broker) {
@@ -6022,7 +6079,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
             const profile = resolveInvestmentTickerProfile(tickerProfiles, normalizedTicker);
             const tickerLabel = formatInvestmentTickerForDisplay(normalizedTicker);
-            const companyName = String(profile.company_name || tickerLabel);
+            const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, normalizedTicker);
             const logoUrls = resolveInvestmentLogoUrls(profile, normalizedTicker);
 
             const wrapper = document.createElement('div');
@@ -6053,12 +6110,14 @@ document.addEventListener('DOMContentLoaded', () => {
             symbol.className = 'suggestion-symbol ticker-identity-symbol';
             symbol.textContent = tickerLabel;
 
-            const name = document.createElement('span');
-            name.className = 'suggestion-name ticker-identity-name';
-            name.title = companyName;
-            name.textContent = companyName;
-
-            copy.append(symbol, name);
+            copy.appendChild(symbol);
+            if (companyName) {
+                const name = document.createElement('span');
+                name.className = 'suggestion-name ticker-identity-name';
+                name.title = companyName;
+                name.textContent = companyName;
+                copy.appendChild(name);
+            }
             row.append(logo, placeholder, copy);
             wrapper.append(row);
             syncInvestmentTickerLogoAsset(
@@ -7271,7 +7330,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowsHtml = summaries.map((summary, index) => {
             const profile = resolveInvestmentTickerProfile(tickerProfiles, summary.ticker);
             const tickerLabel = formatInvestmentTickerForDisplay(summary.ticker);
-            const companyName = String(profile.company_name || tickerLabel);
+            const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, summary.ticker);
             const logoUrls = resolveInvestmentLogoUrls(profile, summary.ticker);
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
             const realizedClass = summary.realizedPnl >= 0
@@ -7302,7 +7361,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                                     <span class="ticker-identity-copy">
                                         <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(tickerLabel)}</span>
-                                        <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                                        ${renderInvestmentTickerIdentityNameHtml(companyName)}
                                     </span>
                                 </div>
                             </div>
@@ -8447,7 +8506,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
         const profile = resolveInvestmentTickerProfile(tickerProfiles, activeTicker);
         const displayTicker = formatInvestmentTickerForDisplay(activeTicker);
-        const companyName = String(profile.company_name || displayTicker);
+        const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, activeTicker);
         const logoUrls = resolveInvestmentLogoUrls(profile, activeTicker);
         const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
@@ -8623,7 +8682,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                         <span class="ticker-identity-copy">
                             <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(displayTicker)}</span>
-                            <span class="suggestion-name ticker-identity-name" title="${escapeHtml(companyName)}">${escapeHtml(companyName)}</span>
+                            ${renderInvestmentTickerIdentityNameHtml(companyName)}
                         </span>
                     </div>
                 </div>

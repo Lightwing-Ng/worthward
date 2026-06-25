@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.3
+Code version: v0.3.4
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from app.infrastructure.storage import (
     history_store_path_for,
     investment_ticker_store_aliases,
     list_local_tickers,
+    resolve_known_ticker_company_name,
     load_profile_record,
     load_search_cache_items,
     logo_store_path_for,
@@ -51,6 +52,7 @@ YFINANCE_LOOKUP_LOCK = Lock()
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
     "JEPQ": "https://www.jpmorganchase.com",
+    "RAM": "https://www.roundhillinvestments.com/etf/ram/",
 }
 
 ISSUER_WEBSITE_HINTS = {
@@ -272,7 +274,12 @@ def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
     except Exception as exc:
         LOGGER.warning("Quote profile remote lookup failed for %s: %s", lookup_symbol, exc)
         info = {}
-    company_name = info.get("longName") or info.get("shortName") or normalized_ticker
+    company_name = (
+            info.get("longName")
+            or info.get("shortName")
+            or resolve_known_ticker_company_name(normalized_ticker)
+            or normalized_ticker
+    )
     website = resolve_website(normalized_ticker, company_name, info.get("website"))
     return {
         "ticker": normalized_ticker,

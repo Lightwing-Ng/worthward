@@ -160,12 +160,88 @@ INVESTMENT_TICKER_LINEAGE: dict[str, tuple[str, ...]] = {
     "SPLG": ("SPYM", "SPYM.US", "SPY", "SPY.US"),
 }
 
+LINEAGE_IDENTITY_PROXY_TICKERS = frozenset({"SPY", "SPY.US"})
+
+# Canonical issuer names for tickers that are not yet populated by yfinance or
+# other remote profile providers. Keep ledger symbols unchanged; this only
+# affects display labels and profile refresh fallbacks.
+KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
+    "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
+}
+
+
+def resolve_known_ticker_company_name(ticker: str) -> str | None:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return None
+    for candidate in investment_ticker_store_aliases(ticker):
+        known_name = KNOWN_TICKER_COMPANY_NAMES.get(normalize_ticker(candidate))
+        if known_name:
+            return known_name
+    return KNOWN_TICKER_COMPANY_NAMES.get(normalized_ticker)
+
+
+def known_ticker_company_names_payload() -> dict[str, str]:
+    payload = dict(KNOWN_TICKER_COMPANY_NAMES)
+    for ticker, company_name in KNOWN_TICKER_COMPANY_NAMES.items():
+        if not ticker.endswith(".US"):
+            payload.setdefault(f"{ticker}.US", company_name)
+    return payload
+
 
 def investment_ticker_lineage_payload() -> dict[str, list[str]]:
     return {
         legacy_ticker: list(candidates)
         for legacy_ticker, candidates in INVESTMENT_TICKER_LINEAGE.items()
     }
+
+
+def investment_ticker_lineage_identity_successors(legacy_ticker: str) -> tuple[str, ...]:
+    successors = INVESTMENT_TICKER_LINEAGE.get(normalize_ticker(legacy_ticker), ())
+    return tuple(
+        normalize_ticker(candidate)
+        for candidate in successors
+        if normalize_ticker(candidate) not in LINEAGE_IDENTITY_PROXY_TICKERS
+    )
+
+
+def investment_ticker_lineage_legacy_tickers(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return []
+    legacy_tickers: list[str] = []
+    for legacy_ticker in INVESTMENT_TICKER_LINEAGE:
+        identity_successors = investment_ticker_lineage_identity_successors(legacy_ticker)
+        if normalized_ticker in identity_successors:
+            normalized_legacy = normalize_ticker(legacy_ticker)
+            if normalized_legacy and normalized_legacy not in legacy_tickers:
+                legacy_tickers.append(normalized_legacy)
+    return legacy_tickers
+
+
+def is_ticker_fallback_company_name(company_name: str, ticker: str) -> bool:
+    normalized_ticker = normalize_ticker(ticker)
+    normalized_name = str(company_name or "").strip().upper()
+    if not normalized_name or not normalized_ticker:
+        return True
+    bare_ticker = normalized_ticker[:-3] if normalized_ticker.endswith(".US") else normalized_ticker
+    return normalized_name in {normalized_ticker, bare_ticker}
+
+
+def propagate_investment_lineage_identity_profiles(
+        ticker_profiles: dict[str, dict[str, str]],
+) -> None:
+    for legacy_ticker, entry in list(ticker_profiles.items()):
+        for successor in investment_ticker_lineage_identity_successors(legacy_ticker):
+            existing = ticker_profiles.get(successor)
+            if existing is None or is_ticker_fallback_company_name(
+                    str(existing.get("company_name") or ""),
+                    successor,
+            ):
+                ticker_profiles[successor] = {
+                    **entry,
+                    "ticker": successor,
+                }
 
 
 def investment_ticker_store_aliases(ticker: str) -> list[str]:
