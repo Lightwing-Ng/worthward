@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.5
+ * Code version: v0.2.6
+ * - Fixed: Stock-details transaction replay now shares rendered split-factor hints with zero-price grant rows.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  * - Fixed: Stock details now uses canonical investment tickers so MSFT.US and MSFT share one transaction history, broker metric set, and price chart.
  * - Fixed: Stock-details price chart axis labels now dedupe same-day ticks and reserve a stable today slot during live sessions so refresh and live polling no longer shift the plotted range.
@@ -10,7 +11,7 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.5';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.6';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -21,6 +22,7 @@ export function createInvestmentStockDetailsUtils({
     buildInvestmentAxisTickIndexes,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
+    buildRenderedSplitFactorHints,
     buildTickerPriceIndex,
     clearInvestmentHistoryHighlights,
     clearInvestmentStockDetailHighlights,
@@ -94,12 +96,13 @@ export function createInvestmentStockDetailsUtils({
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(processedTransactions, tickerPriceIndex);
         let lastKnownTickerPrice = null;
         const detailRows = [];
         (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
             if (getInvestmentCanonicalTicker(txn?.ticker) !== normalizedTicker) return;
             const normalizedType = getNormalizedTransactionType(txn);
-            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
+            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const transactionPrice = getTransactionPrice(txn);
             let realizedPnl = null;
             if (normalizedType === 'buy' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
@@ -252,7 +255,7 @@ export function createInvestmentStockDetailsUtils({
             }
             const metric = brokerMetrics.get(brokerCode);
             const normalizedType = getNormalizedTransactionType(txn);
-            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
+            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const transactionCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
             if (transactionCurrency) {
                 metric.currencyCounts.set(

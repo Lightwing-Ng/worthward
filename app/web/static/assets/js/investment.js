@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.14
+ * Code version: v1.55.15
+ * - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
  * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
  * - Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
  * - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
@@ -219,14 +220,14 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.45.7';
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.8';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.5';
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.6';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.14',
+    entry: 'v1.55.15',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -630,6 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyDirectionalTrade,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
+        buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
@@ -3185,6 +3187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         buildInvestmentFxRateTimeline,
         buildInvestmentIntradayDayBoundaries,
         buildInvestmentIntradayDayFallbackIndex,
+        buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
         clearInvestmentHistoryHighlights,
         clearInvestmentStockDetailHighlights,
@@ -9424,11 +9427,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
             let qty = getTransactionQuantity(txn);
-            const valuationQty = getTransactionValuationQuantity(txn, tickerPriceIndex);
+            const valuationQty = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
 
             // 2. Net amount: for cash calculation
             let amount = getTransactionAmount(txn);

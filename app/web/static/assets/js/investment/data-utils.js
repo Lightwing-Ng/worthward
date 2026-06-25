@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.7
+ * Code version: v1.45.8
+ * - Fixed: Zero-price grant rows now inherit same-day rendered split factors from sibling trades, preventing stale proxy histories from leaving phantom SPYM/SPLG shares.
  * - Added: Exported module version metadata so browser-side cache drift can be diagnosed without manually inspecting loaded source files.
  * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
  * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
@@ -756,10 +757,59 @@ export function createInvestmentDataUtils({
         return Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2 ? roundedFactor : factor;
     }
 
-    function getTransactionValuationQuantity(txn, tickerPriceIndex) {
+    function getRenderedSplitFactorHintKey(txn) {
+        const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+        const date = normalizeLedgerDate(txn?.date);
+        return ticker && date ? `${ticker}|${date}` : '';
+    }
+
+    function buildRenderedSplitFactorHints(transactions, tickerPriceIndex) {
+        const buckets = new Map();
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            if (!shouldTrackHoldingTicker(txn)) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (!['buy', 'sell', 'dividend_reinvestment'].includes(normalizedType)) return;
+            const key = getRenderedSplitFactorHintKey(txn);
+            if (!key) return;
+            const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
+            if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+            if (!buckets.has(key)) {
+                buckets.set(key, []);
+            }
+            buckets.get(key).push(factor);
+        });
+        const hints = new Map();
+        buckets.forEach((factors, key) => {
+            const roundedCounts = new Map();
+            factors.forEach((factor) => {
+                const roundedKey = factor.toFixed(8);
+                roundedCounts.set(roundedKey, (Number(roundedCounts.get(roundedKey)) || 0) + 1);
+            });
+            const [bestFactor] = Array.from(roundedCounts.entries())
+                .sort((left, right) => right[1] - left[1] || Number(left[0]) - Number(right[0]))[0] || [];
+            const numericFactor = Number(bestFactor);
+            if (Number.isFinite(numericFactor) && numericFactor > 0) {
+                hints.set(key, numericFactor);
+            }
+        });
+        return hints;
+    }
+
+    function getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints = null) {
         const quantity = getTransactionQuantity(txn);
         if (!Number.isFinite(quantity)) return quantity;
-        const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
+        let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (
+            normalizedType === 'grant'
+            && (!Number.isFinite(factor) || Math.abs(factor - 1) < 1e-9)
+            && renderedSplitFactorHints instanceof Map
+        ) {
+            const hintedFactor = renderedSplitFactorHints.get(getRenderedSplitFactorHintKey(txn));
+            if (Number.isFinite(hintedFactor) && hintedFactor > 0) {
+                factor = hintedFactor;
+            }
+        }
         return quantity * (Number.isFinite(factor) && factor > 0 ? factor : 1);
     }
 
@@ -1458,6 +1508,7 @@ export function createInvestmentDataUtils({
         const tickerMap = new Map();
         const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
@@ -1501,7 +1552,7 @@ export function createInvestmentDataUtils({
             const ticker = getInvestmentCanonicalTicker(txn.ticker);
             if (!ticker) return;
             const normalizedType = getNormalizedTransactionType(txn);
-            const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
+            const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const amount = getTransactionAmount(txn);
 
             if (!tickerMap.has(ticker)) {
@@ -1654,6 +1705,7 @@ export function createInvestmentDataUtils({
         applyDirectionalTrade,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
+        buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
@@ -1717,4 +1769,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.7';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.8';
