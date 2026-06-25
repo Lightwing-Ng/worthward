@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.6
+ * Code version: v0.2.7
+ * - Fixed: Broker metric replay now builds its own rendered split-factor hints instead of reading a stock-detail row-local variable.
  * - Fixed: Stock-details transaction replay now shares rendered split-factor hints with zero-price grant rows.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  * - Fixed: Stock details now uses canonical investment tickers so MSFT.US and MSFT share one transaction history, broker metric set, and price chart.
@@ -11,7 +12,7 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.6';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.7';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -230,6 +231,7 @@ export function createInvestmentStockDetailsUtils({
         if (!normalizedTicker || !orderedRows.length) return [];
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedRows, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
         const quoteCurrency = getTickerQuoteCurrency(normalizedTicker) || baseCurrency;
         const orderedTransactions = [...(Array.isArray(getInvestmentProcessedTransactionsCache()) ? getInvestmentProcessedTransactionsCache() : [])]

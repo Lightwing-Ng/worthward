@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.15
+ * Code version: v1.55.16
+ * - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
  * - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
  * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
  * - Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
@@ -224,10 +225,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.6';
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.15',
+    entry: 'v1.55.16',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
