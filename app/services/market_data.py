@@ -46,6 +46,7 @@ INTRADAY_INTERVALS = {"1m"}
 YFINANCE_INTRADAY_FALLBACK_DAYS = 30
 YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
 YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS = 7
+DAILY_HISTORY_PERIOD_FALLBACKS = ("max", "5y", "2y", "1y", "6mo", "3mo", "1mo", "5d", "1d")
 COMMON_SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 25.0, 40.0, 50.0)
 SPLIT_FACTOR_CANDIDATES = tuple(
     sorted({*COMMON_SPLIT_FACTORS, *(1.0 / factor for factor in COMMON_SPLIT_FACTORS)})
@@ -302,24 +303,38 @@ def _download_daily_history_with_longbridge(
     return fetch_longbridge_daily_history(ticker, settings, since=since_dt)
 
 
+def _daily_history_period_candidates(
+        *,
+        start: str | None = None,
+        period: str | None = None,
+) -> list[str | None]:
+    if start is not None:
+        return [None]
+    if period is None or period == "max":
+        return list(DAILY_HISTORY_PERIOD_FALLBACKS)
+    return [period]
+
+
 def _download_daily_history_with_fallback(
         ticker: str,
         *,
         start: str | None = None,
         period: str | None = None,
 ) -> pd.DataFrame:
-    try:
-        dataset = _download_daily_history_with_yfinance(
-            ticker,
-            start=start,
-            period=period,
-            interval="1d",
-        )
-        if dataset is None or dataset.empty:
-            raise ValueError(f"No 1-day market data returned for {ticker} via yfinance.")
-        return dataset
-    except Exception as exc:
-        yfinance_error = exc
+    yfinance_error: Exception | None = None
+    for candidate_period in _daily_history_period_candidates(start=start, period=period):
+        try:
+            dataset = _download_daily_history_with_yfinance(
+                ticker,
+                start=start,
+                period=candidate_period,
+                interval="1d",
+            )
+            if dataset is not None and not dataset.empty:
+                return dataset
+            yfinance_error = ValueError(f"No 1-day market data returned for {ticker} via yfinance.")
+        except Exception as exc:
+            yfinance_error = exc
 
     settings = _load_longbridge_market_settings()
     if settings is None:
