@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.10
+ * Code version: v1.55.12
+ * - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.
+ * - Fixed: Holdings Last now applies US post quotes from the prior session day and Hong Kong intraday quotes on their own market clocks during US after-hours.
  * - Fixed: Lineage profile lookup now uses exported data-utils helpers instead of an undefined local lineage-map reference.
  * - Fixed: Canonical lineage successors such as SPYM now inherit legacy ticker profiles so issuer full names remain visible after symbol-only subtitle suppression.
  * - Fixed: Investment ticker identity rows now resolve known issuer full names and hide duplicate symbol-only subtitles when no better label exists.
@@ -732,7 +734,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function shouldRunInvestmentRealtimeQuotes() {
-        return shouldShowInvestmentRealtimePulse(getInvestmentRealtimeClockSession());
+        if (shouldShowInvestmentRealtimePulse(getInvestmentRealtimeClockSession())) {
+            return true;
+        }
+        return (
+            shouldShowInvestmentRealtimePulse(getInvestmentHongKongClockSession())
+            && portfolioHasOpenHongKongHoldings()
+        );
     }
 
     function isInvestmentOverviewIntradayEquityRange(range = selectedInvestmentEquityRange) {
@@ -880,21 +888,143 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentRealtimeQuoteDateKey(quote) {
+        const sessionDate = String(quote?.session_date || '').trim();
+        if (sessionDate) return normalizeLedgerDate(sessionDate);
         const match = String(quote?.timestamp || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
         return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
     }
 
-    function shouldUseInvestmentRealtimeQuote(quote) {
+    function isInvestmentHongKongTicker(ticker) {
+        return String(normalizeInvestmentTicker(ticker) || '').endsWith('.HK');
+    }
+
+    function getInvestmentQuoteMarket(quote, ticker = quote?.ticker) {
+        const quoteMarket = String(quote?.market || '').trim().toUpperCase();
+        if (quoteMarket) return quoteMarket;
+        return isInvestmentHongKongTicker(ticker) ? 'HK' : 'US';
+    }
+
+    function getInvestmentHongKongClockParts(date = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Hong_Kong',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        }).formatToParts(date).reduce((nextParts, part) => {
+            nextParts[part.type] = part.value;
+            return nextParts;
+        }, {});
+        return {
+            dateKey: `${parts.year || ''}-${parts.month || ''}-${parts.day || ''}`,
+            weekday: String(parts.weekday || ''),
+            hour: Number(parts.hour),
+            minute: Number(parts.minute),
+        };
+    }
+
+    function getInvestmentHongKongClockSession(date = new Date()) {
+        const { weekday, hour, minute } = getInvestmentHongKongClockParts(date);
+        if (weekday === 'Sat' || weekday === 'Sun' || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+            return 'off';
+        }
+        const totalMinutes = (hour * 60) + minute;
+        const morningOpenMinutes = (9 * 60) + 30;
+        const morningCloseMinutes = 12 * 60;
+        const afternoonOpenMinutes = 13 * 60;
+        const afternoonCloseMinutes = 16 * 60;
+        if (totalMinutes >= morningOpenMinutes && totalMinutes < morningCloseMinutes) return 'intraday';
+        if (totalMinutes >= afternoonOpenMinutes && totalMinutes < afternoonCloseMinutes) return 'intraday';
+        return 'off';
+    }
+
+    function shiftInvestmentCalendarDateKey(dateKey, dayDelta = 0) {
+        const normalizedDateKey = normalizeLedgerDate(dateKey);
+        if (!normalizedDateKey || !Number.isFinite(Number(dayDelta))) return '';
+        const [year, month, day] = normalizedDateKey.split('-').map((value) => Number(value));
+        if (![year, month, day].every(Number.isFinite)) return '';
+        const shifted = new Date(Date.UTC(year, month - 1, day + Number(dayDelta)));
+        const shiftedYear = shifted.getUTCFullYear();
+        const shiftedMonth = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+        const shiftedDay = String(shifted.getUTCDate()).padStart(2, '0');
+        return `${shiftedYear}-${shiftedMonth}-${shiftedDay}`;
+    }
+
+    function shouldUseInvestmentUsRealtimeQuote(quote) {
         const currentDateKey = getInvestmentNewYorkClockParts().dateKey;
         const quoteDateKey = getInvestmentRealtimeQuoteDateKey(quote);
         const activeSession = getInvestmentRealtimeClockSession();
+        const quoteSession = String(quote?.session || '').trim().toLowerCase();
+        if (
+            !shouldShowInvestmentRealtimePulse(activeSession)
+            || !shouldShowInvestmentRealtimePulse(quoteSession)
+            || quoteSession !== activeSession
+            || !currentDateKey
+            || !quoteDateKey
+        ) {
+            return false;
+        }
+        if (activeSession === 'intraday') {
+            return quoteDateKey === currentDateKey;
+        }
+        return true;
+    }
+
+    function shouldApplyInvestmentRealtimePriceForHoldings(quote) {
+        if (shouldUseInvestmentRealtimeQuote(quote)) return true;
+        const market = getInvestmentQuoteMarket(quote);
+        if (market !== 'US') return false;
+        const quoteSession = String(quote?.session || '').trim().toLowerCase();
+        const activeSession = getInvestmentRealtimeClockSession();
+        if (quoteSession === 'post' && (activeSession === 'post' || activeSession === 'off')) {
+            return true;
+        }
+        if (quoteSession === 'pre' && (activeSession === 'pre' || activeSession === 'off')) {
+            return true;
+        }
+        return false;
+    }
+
+    function shouldUseInvestmentHongKongRealtimeQuote(quote) {
+        const currentDateKey = getInvestmentHongKongClockParts().dateKey;
+        const quoteDateKey = getInvestmentRealtimeQuoteDateKey(quote);
+        const activeSession = getInvestmentHongKongClockSession();
+        const quoteSession = String(quote?.session || '').trim().toLowerCase();
         return (
             shouldShowInvestmentRealtimePulse(activeSession)
-            && shouldShowInvestmentRealtimePulse(quote?.session)
-            && String(quote?.session || '').trim().toLowerCase() === activeSession
+            && shouldShowInvestmentRealtimePulse(quoteSession)
+            && quoteSession === activeSession
             && Boolean(currentDateKey)
             && quoteDateKey === currentDateKey
         );
+    }
+
+    function shouldUseInvestmentRealtimeQuote(quote) {
+        const ticker = normalizeInvestmentTicker(quote?.ticker);
+        const market = getInvestmentQuoteMarket(quote, ticker);
+        if (market === 'HK') {
+            return shouldUseInvestmentHongKongRealtimeQuote(quote);
+        }
+        return shouldUseInvestmentUsRealtimeQuote(quote);
+    }
+
+    function portfolioHasOpenHongKongHoldings() {
+        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
+            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
+            : null;
+        const holdings = latestSnapshot?.aggregate_holdings || latestSnapshot?.holdings || {};
+        return Object.keys(holdings).some((ticker) => {
+            const normalizedTicker = normalizeInvestmentTicker(ticker);
+            const quantity = Number(holdings[ticker]);
+            return (
+                isInvestmentHongKongTicker(normalizedTicker)
+                && Number.isFinite(quantity)
+                && Math.abs(quantity) > 1e-9
+            );
+        });
     }
 
     function getInvestmentRealtimeTickersFromSnapshot(snapshot) {
@@ -940,18 +1070,33 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyInvestmentSessionRealtimePrices(latestPrices, quotes = []) {
         const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
         (Array.isArray(quotes) ? quotes : [])
-            .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote) && shouldUseInvestmentRealtimeQuote(quote))
+            .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote) && shouldApplyInvestmentRealtimePriceForHoldings(quote))
             .forEach((quote) => {
                 const ticker = normalizeInvestmentTicker(quote?.ticker);
                 const price = Number(quote?.price);
                 safeLatestPrices[ticker] = price;
                 investmentLatestPricesCache[ticker] = price;
+                investmentBaseLatestPricesCache[ticker] = price;
             });
         return safeLatestPrices;
     }
 
+    function getInvestmentEmbeddedRealtimeQuotes() {
+        const quotes = window.ANTIGRAVITY_INVESTMENT_DATA?.realtime_quotes;
+        return Array.isArray(quotes) ? quotes : [];
+    }
+
+    function mergeInvestmentRealtimeQuotePayloads(...quoteGroups) {
+        const merged = new Map();
+        quoteGroups.flat().forEach((quote) => {
+            const ticker = normalizeInvestmentTicker(quote?.ticker);
+            if (!ticker || !isInvestmentHoldingsRealtimeQuote(quote)) return;
+            merged.set(ticker, quote);
+        });
+        return Array.from(merged.values());
+    }
+
     async function bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot) {
-        if (!shouldRunInvestmentRealtimeQuotes()) return [];
         const tickers = getInvestmentRealtimeTickersFromSnapshot(latestSnapshot);
         if (!tickers.length) return [];
         try {
@@ -1170,12 +1315,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyInvestmentRealtimeQuotes(quotes = []) {
         const holdingsQuotes = (Array.isArray(quotes) ? quotes : [])
             .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote));
-        const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (liveSessionQuotes.length) {
             liveSessionQuotes.forEach((quote) => {
                 const ticker = normalizeInvestmentTicker(quote?.ticker);
                 const price = Number(quote?.price);
                 investmentLatestPricesCache[ticker] = price;
+                investmentBaseLatestPricesCache[ticker] = price;
             });
             syncInvestmentHoldingsRealtimeValues();
         }
@@ -9492,8 +9638,11 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
 
-        const bootstrapRealtimeQuotes = await bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot);
-        const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        const bootstrapRealtimeQuotes = mergeInvestmentRealtimeQuotePayloads(
+            getInvestmentEmbeddedRealtimeQuotes(),
+            await bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot),
+        );
+        const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (bootstrapSessionQuotes.length) {
             applyInvestmentSessionRealtimePrices(latestPrices, bootstrapSessionQuotes);
             if (isInvestmentDailyEquityLiveRange()) {

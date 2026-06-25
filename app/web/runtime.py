@@ -491,6 +491,27 @@ def build_web_runtime() -> WebRuntime:
                 fallback_candidate = description
         return fallback_candidate
 
+    def load_investment_realtime_quotes(open_tickers: list[str] | set[str] | tuple[str, ...]) -> list[dict[str, object]]:
+        quotes: list[dict[str, object]] = []
+        requested_tickers = list(dict.fromkeys(
+            str(ticker).strip().upper()
+            for ticker in (open_tickers or [])
+            if str(ticker or "").strip()
+        ))
+        if not requested_tickers:
+            return quotes
+        with ThreadPoolExecutor(max_workers=min(6, len(requested_tickers))) as executor:
+            futures = {
+                executor.submit(fetch_yfinance_realtime_quote, ticker): ticker
+                for ticker in requested_tickers
+            }
+            for future in as_completed(futures, timeout=30):
+                try:
+                    quotes.append(future.result())
+                except Exception:  # noqa: BLE001
+                    continue
+        return quotes
+
     def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
         ticker_profiles: dict[str, dict[str, str]] = {}
         for raw_ticker in collect_investment_display_tickers(transactions):
@@ -4096,6 +4117,7 @@ def build_web_runtime() -> WebRuntime:
                 "money_market_tickers": sorted(configured_money_market_tickers),
                 "ticker_lineage": investment_ticker_lineage_payload(),
                 "known_ticker_company_names": known_ticker_company_names_payload(),
+                "realtime_quotes": [],
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
             })
@@ -4123,6 +4145,7 @@ def build_web_runtime() -> WebRuntime:
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
             data["ticker_lineage"] = investment_ticker_lineage_payload()
             data["known_ticker_company_names"] = known_ticker_company_names_payload()
+            data["realtime_quotes"] = load_investment_realtime_quotes(section_freshness["open_tickers"])
             data["freshness_refresh_failures"] = []
             data["section_freshness"] = section_freshness
             data["success"] = True

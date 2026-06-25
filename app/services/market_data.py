@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.3
+Code version: v0.4.4
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
 from app.infrastructure.broker_market_data import (
+    HONG_KONG_TIMEZONE,
     NEW_YORK_TIMEZONE,
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
@@ -209,6 +210,42 @@ def _download_recent_one_minute_history_with_yfinance(
     return combined.reset_index(drop=True)
 
 
+def infer_ticker_market(ticker: str) -> str:
+    normalized_ticker = normalize_ticker(ticker)
+    if normalized_ticker.endswith(".HK"):
+        return "HK"
+    if normalized_ticker.endswith((".SH", ".SZ")):
+        return "CN"
+    if normalized_ticker.endswith(".SG"):
+        return "SG"
+    return "US"
+
+
+def classify_hk_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
+    """Classify a Hong Kong equity bar timestamp into intraday or off."""
+    parsed_timestamp = pd.to_datetime(timestamp, errors="coerce")
+    if pd.isna(parsed_timestamp):
+        return "off"
+    localized = parsed_timestamp
+    if localized.tzinfo is None:
+        localized = localized.tz_localize(HONG_KONG_TIMEZONE)
+    else:
+        localized = localized.tz_convert(HONG_KONG_TIMEZONE)
+    weekday = int(localized.weekday())
+    if weekday >= 5:
+        return "off"
+    total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+    morning_open = (9 * 60) + 30
+    morning_close = 12 * 60
+    afternoon_open = 13 * 60
+    afternoon_close = 16 * 60
+    if morning_open <= total_minutes < morning_close:
+        return "intraday"
+    if afternoon_open <= total_minutes < afternoon_close:
+        return "intraday"
+    return "off"
+
+
 def classify_us_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
     """Classify a US equity bar timestamp into pre, intraday, post, or off."""
     parsed_timestamp = pd.to_datetime(timestamp, errors="coerce")
@@ -259,13 +296,28 @@ def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
     if pd.isna(latest_timestamp) or not math.isfinite(latest_close):
         raise ValueError(f"No usable realtime 1-minute quote returned for {normalized_ticker} via yfinance.")
 
-    session = classify_us_equity_session(latest_timestamp)
+    market = infer_ticker_market(normalized_ticker)
+    if market == "HK":
+        localized_timestamp = (
+            pd.Timestamp(latest_timestamp)
+            .tz_localize(NEW_YORK_TIMEZONE)
+            .tz_convert(HONG_KONG_TIMEZONE)
+        )
+        session = classify_hk_equity_session(localized_timestamp)
+        display_timestamp = localized_timestamp.strftime("%Y-%m-%d %H:%M")
+        session_date = localized_timestamp.strftime("%Y-%m-%d")
+    else:
+        session = classify_us_equity_session(latest_timestamp)
+        display_timestamp = pd.Timestamp(latest_timestamp).strftime("%Y-%m-%d %H:%M")
+        session_date = pd.Timestamp(latest_timestamp).strftime("%Y-%m-%d")
 
     return {
         "ticker": normalized_ticker,
         "price": latest_close,
-        "timestamp": latest_timestamp.strftime("%Y-%m-%d %H:%M"),
+        "timestamp": display_timestamp,
         "session": session,
+        "session_date": session_date,
+        "market": market,
         "source": "yfinance",
     }
 
