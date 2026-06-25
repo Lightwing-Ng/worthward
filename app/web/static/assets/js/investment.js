@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.16
+ * Code version: v1.55.18
+ * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
+ * - Fixed: Investment broker filter now unions payload and transaction broker codes and shows Longbridge (HK)/(SG) labels instead of identical logo-only tiles.
  * - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
  * - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
  * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
@@ -221,7 +223,7 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.45.9';
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.11';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
@@ -301,6 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const longbridgeSgHistoryOrdersInput = document.getElementById('longbridge_sg_history_orders_xlsx');
     const longbridgeSgFundDetailsStatus = document.getElementById('longbridge_sg_fund_details_txt_status');
     const longbridgeSgHistoryOrdersStatus = document.getElementById('longbridge_sg_history_orders_xlsx_status');
+    const longbridgeHkFundDetailsInput = document.getElementById('longbridge_hk_fund_details_txt');
+    const longbridgeHkHistoryOrdersInput = document.getElementById('longbridge_hk_history_orders_xlsx');
+    const longbridgeHkFundDetailsStatus = document.getElementById('longbridge_hk_fund_details_txt_status');
+    const longbridgeHkHistoryOrdersStatus = document.getElementById('longbridge_hk_history_orders_xlsx_status');
     const investmentImportFutuhkFields = document.getElementById('investment_import_futuhk_fields');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
     const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
@@ -397,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'forex_trade_component',
         'fx_translation_pnl',
         'deposit',
+        'kol_reward',
         'grant',
         'withdrawal',
     ]);
@@ -468,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Total realized profit and loss across all tracked holdings activity.',
+            summary: 'Realized profit and loss from holdings activity plus KOL reward income.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
@@ -691,6 +698,8 @@ document.addEventListener('DOMContentLoaded', () => {
         normalizePriceHistoryPayload,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
+        sumKolRewardRealizedIncomeInBaseCurrency,
+        isKolRewardTransaction,
     } = createInvestmentDataUtils({
         noCommissionTransactionTypes: NO_COMMISSION_TRANSACTION_TYPES,
         investmentCommonSplitFactors: INVESTMENT_COMMON_SPLIT_FACTORS,
@@ -4561,6 +4570,12 @@ document.addEventListener('DOMContentLoaded', () => {
         )).sort(compareInvestmentBrokerFilterCodes);
     }
 
+    function shouldRenderInvestmentBrokerFilterLogoOnly(brokerCode) {
+        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+        // Longbridge HK and SG share one logo asset, so logo-only tiles are indistinguishable.
+        return !['longbridge_hk', 'longbridge_sg'].includes(normalizedBrokerCode);
+    }
+
     function getAvailableInvestmentBrokerCodes() {
         const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
             ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
@@ -4568,8 +4583,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const transactionBrokerCodes = Array.isArray(investmentProcessedTransactionsCache)
             ? investmentProcessedTransactionsCache.map((txn) => getTransactionBrokerCode(txn))
             : [];
-        const effectiveBrokerCodes = payloadBrokerCodes.length ? payloadBrokerCodes : transactionBrokerCodes;
-        return sortInvestmentBrokerFilterCodes(effectiveBrokerCodes);
+        return sortInvestmentBrokerFilterCodes([
+            ...payloadBrokerCodes,
+            ...transactionBrokerCodes,
+        ]);
     }
 
     function getInvestmentBrokerFilterSelectedCodes() {
@@ -4687,6 +4704,18 @@ document.addEventListener('DOMContentLoaded', () => {
         trigger.setAttribute('aria-label', `Broker filter: ${triggerTitle}`);
     }
 
+    function measureInvestmentBrokerFilterDropdownWidth(dropdown) {
+        if (!(dropdown instanceof HTMLElement)) return 0;
+        const previousWidth = dropdown.style.width;
+        const previousMaxWidth = dropdown.style.maxWidth;
+        dropdown.style.width = 'max-content';
+        dropdown.style.maxWidth = 'none';
+        const measuredWidth = Math.ceil(dropdown.getBoundingClientRect().width);
+        dropdown.style.width = previousWidth;
+        dropdown.style.maxWidth = previousMaxWidth;
+        return measuredWidth;
+    }
+
     function positionInvestmentBrokerFilterDropdown(field) {
         if (!(field instanceof HTMLElement)) return;
         const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
@@ -4700,11 +4729,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const triggerRect = trigger.getBoundingClientRect();
         const rowRect = row.getBoundingClientRect();
+        const viewportPadding = 16;
+        const viewportMaxWidth = Math.max(120, window.innerWidth - triggerRect.left - viewportPadding);
+        const contentWidth = Math.max(
+            Math.ceil(triggerRect.width),
+            measureInvestmentBrokerFilterDropdownWidth(dropdown),
+        );
         dropdown.style.left = `${Math.round(triggerRect.left - rowRect.left)}px`;
         dropdown.style.top = `${Math.round(triggerRect.bottom - rowRect.top + 4)}px`;
         dropdown.style.right = 'auto';
-        dropdown.style.width = `${Math.round(Math.max(triggerRect.width, 168))}px`;
-        dropdown.style.maxHeight = `${Math.round(Math.max(120, window.innerHeight - triggerRect.bottom - 16))}px`;
+        dropdown.style.width = `${Math.min(contentWidth, viewportMaxWidth)}px`;
+        dropdown.style.maxWidth = `${viewportMaxWidth}px`;
+        dropdown.style.maxHeight = `${Math.round(Math.max(120, window.innerHeight - triggerRect.bottom - viewportPadding))}px`;
     }
 
     function setInvestmentBrokerFilterDropdownOpen(field, isOpen) {
@@ -4722,6 +4758,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dropdown.style.top = '';
             dropdown.style.right = '';
             dropdown.style.width = '';
+            dropdown.style.maxWidth = '';
             dropdown.style.maxHeight = '';
         }
     }
@@ -4837,12 +4874,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         availableBrokerCodes.forEach((brokerCode) => {
             const brokerMeta = getInvestmentBrokerMeta(brokerCode);
+            const logoOnly = shouldRenderInvestmentBrokerFilterLogoOnly(brokerCode);
             dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
                 value: brokerCode,
                 label: brokerMeta.label,
                 iconUrl: brokerMeta.logoUrl,
                 iconAlt: brokerMeta.logoAlt,
-                logoOnly: true,
+                logoOnly,
                 isSelected: allSelected || selectedBrokerCodes.has(brokerCode),
                 onClick: () => {
                     const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes());
@@ -5284,16 +5322,24 @@ document.addEventListener('DOMContentLoaded', () => {
             positionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
         }
         if (longbridgeStartDateInput instanceof HTMLInputElement) {
-            longbridgeStartDateInput.required = isLongbridgeHk;
+            longbridgeStartDateInput.required = false;  // HK supports files as alternative; submit validates
         }
         if (longbridgeEndDateInput instanceof HTMLInputElement) {
-            longbridgeEndDateInput.required = isLongbridgeHk;
+            longbridgeEndDateInput.required = false;
         }
         if (longbridgeSgFundDetailsInput instanceof HTMLInputElement) {
             longbridgeSgFundDetailsInput.required = isLongbridgeSg;
         }
         if (longbridgeSgHistoryOrdersInput instanceof HTMLInputElement) {
             longbridgeSgHistoryOrdersInput.required = isLongbridgeSg;
+        }
+        // For Longbridge HK, files are optional alternative to dates (CLI). Do not force required on files.
+        // Keep date required only if we decide pure CLI; allow files to bypass in submit validation.
+        if (longbridgeHkFundDetailsInput instanceof HTMLInputElement) {
+            longbridgeHkFundDetailsInput.required = false;
+        }
+        if (longbridgeHkHistoryOrdersInput instanceof HTMLInputElement) {
+            longbridgeHkHistoryOrdersInput.required = false;
         }
         if (futuhkStatementPdfsInput instanceof HTMLInputElement) {
             futuhkStatementPdfsInput.required = isFutuhk;
@@ -5302,7 +5348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportNote.innerHTML = isHsbc
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
                 : (isLongbridgeHk
-                    ? 'Syncs Longbridge (HK) activity into <code>settings_store/investment.json</code> without clearing existing records.'
+                    ? 'Imports Longbridge (HK) via date range (CLI) or Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
                     : (isLongbridgeSg
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.json</code> without clearing existing records.'
                         : (isFutuhk
@@ -7039,6 +7085,9 @@ document.addEventListener('DOMContentLoaded', () => {
             && String(longbridgeStartDateInput?.value || '').trim()
             && String(longbridgeEndDateInput?.value || '').trim()
             && String(longbridgeStartDateInput?.value || '') <= String(longbridgeEndDateInput?.value || '');
+        const longbridgeHkFundDetailsFile = longbridgeHkFundDetailsInput?.files?.[0];
+        const longbridgeHkHistoryOrdersFile = longbridgeHkHistoryOrdersInput?.files?.[0];
+        const longbridgeHkFilesReady = isLongbridgeHk && isLikelyLongbridgeSgFundDetailsFile(longbridgeHkFundDetailsFile) && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeHkHistoryOrdersFile);
         const longbridgeSgFundDetailsReady = isLongbridgeSg && isLikelyLongbridgeSgFundDetailsFile(longbridgeSgFundDetailsFile);
         const longbridgeSgHistoryOrdersReady = isLongbridgeSg && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeSgHistoryOrdersFile);
         const hsbcPortfolioReady = isHsbc && isLikelyHsbcPortfolioText(hsbcPortfolioText);
@@ -7051,7 +7100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
             || isIbkrGateway
-            || (isLongbridgeHk && Boolean(sharedRangeReady))
+            || (isLongbridgeHk && (Boolean(sharedRangeReady) || Boolean(longbridgeHkFilesReady)))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
@@ -7063,6 +7112,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(longbridgeEndDateStatus, Boolean(isLongbridgeHk && String(longbridgeEndDateInput?.value || '').trim()));
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
         setImportStatusIcon(longbridgeSgHistoryOrdersStatus, Boolean(longbridgeSgHistoryOrdersReady));
+        const longbridgeHkFundDetailsReady = !!(longbridgeHkFundDetailsInput && longbridgeHkFundDetailsInput.files && longbridgeHkFundDetailsInput.files.length > 0);
+        const longbridgeHkHistoryOrdersReady = !!(longbridgeHkHistoryOrdersInput && longbridgeHkHistoryOrdersInput.files && longbridgeHkHistoryOrdersInput.files.length > 0);
+        setImportStatusIcon(longbridgeHkFundDetailsStatus, longbridgeHkFundDetailsReady);
+        setImportStatusIcon(longbridgeHkHistoryOrdersStatus, longbridgeHkHistoryOrdersReady);
         setImportStatusIcon(hsbcPortfolioTextStatus, Boolean(hsbcPortfolioReady));
         setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
@@ -7223,7 +7276,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncInvestmentImportMode();
     syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
-    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7330,18 +7383,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     formData.append('positions_csv', positionsFile);
                 }
             } else if (selectedBroker === 'longbridge_hk') {
-                const startDate = String(longbridgeStartDateInput?.value || '').trim();
-                const endDate = String(longbridgeEndDateInput?.value || '').trim();
-                if (!startDate || !endDate) {
-                    setImportFeedback('Please choose both Longbridge (HK) start and end dates before syncing.', 'error');
-                    return;
+                const hkFundFile = longbridgeHkFundDetailsInput?.files?.[0];
+                const hkOrdersFile = longbridgeHkHistoryOrdersInput?.files?.[0];
+                if (hkFundFile && hkOrdersFile) {
+                    if (
+                        !isLikelyLongbridgeSgFundDetailsFile(hkFundFile)
+                        || !isLikelyLongbridgeSgHistoryOrdersFile(hkOrdersFile)
+                    ) {
+                        setImportFeedback('Please upload a Fund Details .txt and History Orders .xlsx for Longbridge (HK).', 'error');
+                        return;
+                    }
+                    formData.append('longbridge_hk_fund_details_txt', hkFundFile);
+                    formData.append('longbridge_hk_history_orders_xlsx', hkOrdersFile);
+                } else {
+                    const startDate = String(longbridgeStartDateInput?.value || '').trim();
+                    const endDate = String(longbridgeEndDateInput?.value || '').trim();
+                    if (!startDate || !endDate) {
+                        setImportFeedback('Please choose both Longbridge (HK) start and end dates before syncing, or upload HK Fund Details + History Orders files.', 'error');
+                        return;
+                    }
+                    if (startDate > endDate) {
+                        setImportFeedback('Longbridge (HK) start date must be on or before the end date.', 'error');
+                        return;
+                    }
+                    formData.append('longbridge_start_date', startDate);
+                    formData.append('longbridge_end_date', endDate);
                 }
-                if (startDate > endDate) {
-                    setImportFeedback('Longbridge (HK) start date must be on or before the end date.', 'error');
-                    return;
-                }
-                formData.append('longbridge_start_date', startDate);
-                formData.append('longbridge_end_date', endDate);
             } else if (selectedBroker === 'longbridge_sg') {
                 const fundDetailsFile = longbridgeSgFundDetailsInput?.files?.[0];
                 const historyOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
@@ -10808,7 +10875,15 @@ document.addEventListener('DOMContentLoaded', () => {
             TOTAL_EQUITY,
             normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
         );
-        const totalRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
+        const kolRewardRealizedIncome = sumKolRewardRealizedIncomeInBaseCurrency(
+            safeTransactions,
+            fxTimeline,
+            baseCurrency,
+        );
+        const holdingsRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const totalRealizedPnl = holdingsRealizedPnl + kolRewardRealizedIncome;
         const totalUnrealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const openTickers = new Set(
@@ -10828,6 +10903,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const unrealizedPnlRows = [];
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            if (isKolRewardTransaction(txn)) {
+                realizedPnlRows.push(ledgerNo);
+                return;
+            }
             if (!shouldTrackHoldingTicker(txn)) return;
             realizedPnlRows.push(ledgerNo);
             const normalizedTicker = getInvestmentCanonicalTicker(txn?.ticker);
@@ -11029,6 +11108,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (normalizedType === 'deposit') {
+                if (isKolRewardTransaction(txn)) {
+                    currentDepositStreak.length = 0;
+                    return;
+                }
                 if (txn?.manual_internal_transfer_external_flow_excluded === true) {
                     currentDepositStreak.length = 0;
                     return;

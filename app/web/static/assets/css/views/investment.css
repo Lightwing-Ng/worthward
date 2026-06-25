@@ -372,8 +372,15 @@
 }
 
 .investment-broker-filter-dropdown {
-    min-width: 168px;
+    width: max-content;
+    max-width: calc(100vw - 16px);
     overflow: auto;
+}
+
+.investment-broker-filter-dropdown .trade-strategy-dropdown-option {
+    width: auto;
+    min-width: 100%;
+    white-space: nowrap;
 }
 
 .investment-broker-filter-dropdown .trade-strategy-dropdown-option.is-broker-logo-only.is-with-icon {

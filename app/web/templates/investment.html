@@ -325,6 +325,56 @@
                                         <div class="date-picker-days" data-date-grid></div>
                                     </div>
                                 </div>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="longbridge-hk-fund-details">
+                                    <label class="trade-strategy-param-label" for="longbridge_hk_fund_details_txt">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">Fund Details text (HK files)</span>
+                                            <span class="investment-import-status-icon" id="longbridge_hk_fund_details_txt_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to download this file in Longbridge (HK)</span>
+                                                <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Hong Kong account.</span>
+                                                <span class="investment-import-help-step">➊ Open Account > Fund Details (use text or HTML export; .txt preferred).</span>
+                                                <span class="investment-import-help-step">➋ Upload that text file here. It should include coupons, rewards, deposits, FX, dividends, commissions, and money market placements.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="longbridge_hk_fund_details_txt"
+                                               name="longbridge_hk_fund_details_txt"
+                                               type="file"
+                                               accept=".txt,text/plain"
+                                               class="settings-form-control investment-import-file-input">
+                                    </div>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="longbridge-hk-history-orders">
+                                    <label class="trade-strategy-param-label" for="longbridge_hk_history_orders_xlsx">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                            <span class="investment-import-label-text">History Orders spreadsheet (HK files)</span>
+                                            <span class="investment-import-status-icon" id="longbridge_hk_history_orders_xlsx_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to download this file in Longbridge (HK)</span>
+                                                <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Hong Kong account.</span>
+                                                <span class="investment-import-help-step">➊ Open Orders > History Orders.</span>
+                                                <span class="investment-import-help-step">➋ Export the filled order history as an Excel spreadsheet (includes Orders + Logs sheets).</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="longbridge_hk_history_orders_xlsx"
+                                               name="longbridge_hk_history_orders_xlsx"
+                                               type="file"
+                                               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                               class="settings-form-control investment-import-file-input">
+                                    </div>
+                                </div>
                             </div>
                             <div class="investment-import-field-group" id="investment_import_longbridge_sg_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="longbridge-sg-fund-details">
@@ -587,5 +637,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.55.16') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.55.18') }}"></script>
 {% endblock %}

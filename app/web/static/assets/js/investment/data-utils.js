@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.9
+ * Code version: v1.45.11
+ * - Added: KOL reward rows are classified as realized income instead of ordinary deposits for funding and P&L metrics.
+ * - Fixed: Broker-imported buy/sell rows now keep authoritative share counts during holdings replay instead of rescaling quantities to match split-adjusted chart closes.
  * - Fixed: Zero-price grant rows now inherit same-day rendered split factors from sibling trades, preventing stale proxy histories from leaving phantom SPYM/SPLG shares.
  * - Added: Exported module version metadata so browser-side cache drift can be diagnosed without manually inspecting loaded source files.
  * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
@@ -80,7 +82,7 @@ export function createInvestmentDataUtils({
         const normalizedType = getNormalizedTransactionType(txn);
         const cashAmount = getTransactionCashSortAmount(txn);
         if (cashAmount > 1e-9) return 0;
-        if (['deposit', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)) return 0;
+        if (['deposit', 'kol_reward', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)) return 0;
         if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) return 1;
         if (cashAmount < -1e-9) return 2;
         if (['withdrawal', 'foreign_tax_withholding', 'debit_interest'].includes(normalizedType)) return 2;
@@ -126,6 +128,35 @@ export function createInvestmentDataUtils({
 
     function getInvestmentBaseCurrency() {
         return INVESTMENT_BASE_CURRENCY;
+    }
+
+    function isKolRewardTransaction(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'kol_reward') return true;
+        if (normalizedType !== 'deposit') return false;
+        const rawFlow = String(txn?.source?.transaction_type_raw || '').trim().toLowerCase();
+        if (rawFlow === 'kol') return true;
+        return /kol\s+rewards?/i.test(String(txn?.description || '').trim());
+    }
+
+    function sumKolRewardRealizedIncomeInBaseCurrency(
+        transactions,
+        fxTimeline,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        return (Array.isArray(transactions) ? transactions : []).reduce((total, txn) => {
+            if (!isKolRewardTransaction(txn)) return total;
+            const amount = getTransactionAmount(txn);
+            const currency = formatTransactionCurrency(txn) || baseCurrency;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            return total + convertAmountToBaseCurrency(
+                amount,
+                currency,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+        }, 0);
     }
 
     function getTickerQuoteCurrency(ticker) {
@@ -821,11 +852,33 @@ export function createInvestmentDataUtils({
         return hints;
     }
 
+    function hasAuthoritativeImportedPositionQuantity(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (!['buy', 'sell', 'dividend_reinvestment'].includes(normalizedType)) return false;
+        if (
+            txn?.normalized?.position_quantity !== undefined
+            && txn?.normalized?.position_quantity !== null
+            && String(txn.normalized.position_quantity).trim() !== ''
+        ) {
+            return true;
+        }
+        if (txn?.quantity_abs !== undefined && txn?.quantity_abs !== null && String(txn.quantity_abs).trim() !== '') {
+            return true;
+        }
+        if (txn?.quantity_raw !== undefined && txn?.quantity_raw !== null && String(txn.quantity_raw).trim() !== '') {
+            return true;
+        }
+        return false;
+    }
+
     function getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints = null) {
         const quantity = getTransactionQuantity(txn);
         if (!Number.isFinite(quantity)) return quantity;
-        let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
         const normalizedType = getNormalizedTransactionType(txn);
+        if (hasAuthoritativeImportedPositionQuantity(txn)) {
+            return quantity;
+        }
+        let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
         if (
             normalizedType === 'grant'
             && (!Number.isFinite(factor) || Math.abs(factor - 1) < 1e-9)
@@ -1791,8 +1844,10 @@ export function createInvestmentDataUtils({
         shiftLedgerDate,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
+        sumKolRewardRealizedIncomeInBaseCurrency,
+        isKolRewardTransaction,
         addCashLedgerDelta,
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.9';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.11';
