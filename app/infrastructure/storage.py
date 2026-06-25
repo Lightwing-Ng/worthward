@@ -193,6 +193,12 @@ def investment_ticker_store_aliases(ticker: str) -> list[str]:
 
     add_alias(normalized_ticker)
 
+    if (
+            not normalized_ticker.endswith((".US", ".HK"))
+            and re.fullmatch(r"[A-Z0-9]+", normalized_ticker)
+    ):
+        add_alias(f"{normalized_ticker}.US")
+
     return aliases
 
 

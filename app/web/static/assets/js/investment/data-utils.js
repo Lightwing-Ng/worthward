@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.4
+ * Code version: v1.45.5
  * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
  * - Fixed: Holdings and stock-details aggregation now canonicalizes market-store tickers so MSFT.US rolls into MSFT and legacy SPLG.US rolls into SPYM without mutating the imported ledger.
  * - Fixed: Broker statements without intraday timestamps now replay same-time funding rows before trades and withdrawals so cash/equity does not dip negative from row order alone.
@@ -1077,6 +1077,13 @@ export function createInvestmentDataUtils({
             }
         }
         addCandidate(normalizedTicker);
+        if (
+            !normalizedTicker.endsWith('.US')
+            && !normalizedTicker.endsWith('.HK')
+            && /^[A-Z0-9]+$/.test(normalizedTicker)
+        ) {
+            addCandidate(`${normalizedTicker}.US`);
+        }
         return candidates;
     }
 

@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.5
+ * Code version: v1.55.7
+ * - Fixed: Investment holdings and overview chart now bootstrap yfinance pre/intraday/post quotes on first render instead of briefly showing the prior regular-session close.
+ * - Fixed: Investment realtime quote application now only marks holdings and chart points when the quote session matches the active New York clock session.
  * - Fixed: Investment transaction descriptions now display canonical tickers, matching holdings and stock details.
  * - Fixed: Holdings, stock details, exports, and valuation replay now aggregate canonical investment tickers so MSFT.US merges into MSFT and SPLG.US inherits SPYM.
  * - Fixed: Investment cash replay now preallocates later same-currency funding to earlier broker-statement trades when missing intraday timestamps would otherwise create a false negative cash balance.
@@ -881,11 +883,81 @@ document.addEventListener('DOMContentLoaded', () => {
     function shouldUseInvestmentRealtimeQuote(quote) {
         const currentDateKey = getInvestmentNewYorkClockParts().dateKey;
         const quoteDateKey = getInvestmentRealtimeQuoteDateKey(quote);
+        const activeSession = getInvestmentRealtimeClockSession();
         return (
-            shouldShowInvestmentRealtimePulse(quote?.session)
+            shouldShowInvestmentRealtimePulse(activeSession)
+            && shouldShowInvestmentRealtimePulse(quote?.session)
+            && String(quote?.session || '').trim().toLowerCase() === activeSession
             && Boolean(currentDateKey)
             && quoteDateKey === currentDateKey
         );
+    }
+
+    function getInvestmentRealtimeTickersFromSnapshot(snapshot) {
+        const holdings = snapshot?.aggregate_holdings || snapshot?.holdings || {};
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        return Array.from(new Set(
+            Object.entries(holdings)
+                .filter(([ticker, quantity]) => {
+                    const normalizedTicker = normalizeInvestmentTicker(ticker);
+                    const numericQuantity = Number(quantity);
+                    return (
+                        normalizedTicker
+                        && !isForexPairTicker(normalizedTicker)
+                        && !moneyMarketTickers.has(normalizedTicker)
+                        && Number.isFinite(numericQuantity)
+                        && Math.abs(numericQuantity) > 1e-9
+                    );
+                })
+                .map(([ticker]) => normalizeInvestmentTicker(ticker)),
+        ));
+    }
+
+    async function requestInvestmentRealtimeQuotes(tickers = [], { signal } = {}) {
+        const normalizedTickers = Array.from(new Set(
+            (Array.isArray(tickers) ? tickers : [])
+                .map((ticker) => normalizeInvestmentTicker(ticker))
+                .filter(Boolean),
+        ));
+        if (!normalizedTickers.length) return [];
+        const params = new URLSearchParams();
+        normalizedTickers.forEach((ticker) => params.append('ticker', ticker));
+        const response = await fetch(
+            `${getInvestmentRealtimeQuoteEndpoint()}?${params.toString()}`,
+            buildInvestmentRequestOptions({ signal }),
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && payload?.success !== false && Array.isArray(payload?.quotes)) {
+            return payload.quotes;
+        }
+        return [];
+    }
+
+    function applyInvestmentSessionRealtimePrices(latestPrices, quotes = []) {
+        const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
+        (Array.isArray(quotes) ? quotes : [])
+            .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote) && shouldUseInvestmentRealtimeQuote(quote))
+            .forEach((quote) => {
+                const ticker = normalizeInvestmentTicker(quote?.ticker);
+                const price = Number(quote?.price);
+                safeLatestPrices[ticker] = price;
+                investmentLatestPricesCache[ticker] = price;
+            });
+        return safeLatestPrices;
+    }
+
+    async function bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot) {
+        if (!shouldRunInvestmentRealtimeQuotes()) return [];
+        const tickers = getInvestmentRealtimeTickersFromSnapshot(latestSnapshot);
+        if (!tickers.length) return [];
+        try {
+            return await requestInvestmentRealtimeQuotes(tickers);
+        } catch (error) {
+            if (!isLifecycleInterruptedFetch(error)) {
+                console.warn('Unable to bootstrap investment session realtime quotes', error);
+            }
+            return [];
+        }
     }
 
     function resetInvestmentRealtimeChartState() {
@@ -1094,16 +1166,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyInvestmentRealtimeQuotes(quotes = []) {
         const holdingsQuotes = (Array.isArray(quotes) ? quotes : [])
             .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote));
-        holdingsQuotes.forEach((quote) => {
-            const ticker = normalizeInvestmentTicker(quote?.ticker);
-            const price = Number(quote?.price);
-            investmentLatestPricesCache[ticker] = price;
-        });
-        if (holdingsQuotes.length) {
+        const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        if (liveSessionQuotes.length) {
+            liveSessionQuotes.forEach((quote) => {
+                const ticker = normalizeInvestmentTicker(quote?.ticker);
+                const price = Number(quote?.price);
+                investmentLatestPricesCache[ticker] = price;
+            });
             syncInvestmentHoldingsRealtimeValues();
         }
 
-        const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
         if (!liveSessionQuotes.length) {
             if (shouldRunInvestmentRealtimeQuotes()) {
                 resetInvestmentRealtimeChartState();
@@ -1150,16 +1222,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         investmentRealtimeQuoteInflight = true;
         investmentRealtimeQuoteAbortController = new AbortController();
-        const params = new URLSearchParams();
-        tickers.forEach((ticker) => params.append('ticker', ticker));
         try {
-            const response = await fetch(
-                `${getInvestmentRealtimeQuoteEndpoint()}?${params.toString()}`,
-                buildInvestmentRequestOptions({ signal: investmentRealtimeQuoteAbortController.signal }),
-            );
-            const payload = await response.json().catch(() => ({}));
-            if (response.ok && payload?.success !== false && Array.isArray(payload?.quotes)) {
-                applyInvestmentRealtimeQuotes(payload.quotes);
+            const quotes = await requestInvestmentRealtimeQuotes(tickers, {
+                signal: investmentRealtimeQuoteAbortController.signal,
+            });
+            if (quotes.length) {
+                applyInvestmentRealtimeQuotes(quotes);
+            } else if (shouldRunInvestmentRealtimeQuotes()) {
+                resetInvestmentRealtimeChartState();
             }
         } catch (error) {
             if (!isLifecycleInterruptedFetch(error)) {
@@ -9354,7 +9424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const latestSnapshot = processed[processed.length - 1];
-        const chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
+        let chartPoints = buildDailyEquityChartPoints(processed, tickerClosePrices, moneyMarketTickers);
         investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
@@ -9362,6 +9432,20 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
+
+        const bootstrapRealtimeQuotes = await bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot);
+        const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        if (bootstrapSessionQuotes.length) {
+            applyInvestmentSessionRealtimePrices(latestPrices, bootstrapSessionQuotes);
+            if (isInvestmentDailyEquityLiveRange()) {
+                const liveChartPoints = buildInvestmentRealtimeChartPoints(bootstrapSessionQuotes);
+                if (liveChartPoints.length) {
+                    chartPoints = liveChartPoints;
+                    investmentChartPointsCache = [...liveChartPoints];
+                }
+            }
+        }
+
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,
             fallbackTickers: Array.from(fallbackTickers),

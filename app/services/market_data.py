@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.2
+Code version: v0.4.3
 """
 
 from __future__ import annotations
@@ -209,6 +209,28 @@ def _download_recent_one_minute_history_with_yfinance(
     return combined.reset_index(drop=True)
 
 
+def classify_us_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
+    """Classify a US equity bar timestamp into pre, intraday, post, or off."""
+    parsed_timestamp = pd.to_datetime(timestamp, errors="coerce")
+    if pd.isna(parsed_timestamp):
+        return "off"
+    localized = parsed_timestamp
+    if localized.tzinfo is not None:
+        localized = localized.tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
+    total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+    regular_open = (9 * 60) + 30
+    regular_close = 16 * 60
+    premarket_open = 4 * 60
+    postmarket_close = 20 * 60
+    if regular_open <= total_minutes < regular_close:
+        return "intraday"
+    if premarket_open <= total_minutes < regular_open:
+        return "pre"
+    if regular_close <= total_minutes < postmarket_close:
+        return "post"
+    return "off"
+
+
 def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
     """
     Fetch the latest yfinance 1-minute quote including pre-market and post-market bars.
@@ -237,19 +259,7 @@ def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
     if pd.isna(latest_timestamp) or not math.isfinite(latest_close):
         raise ValueError(f"No usable realtime 1-minute quote returned for {normalized_ticker} via yfinance.")
 
-    total_minutes = (int(latest_timestamp.hour) * 60) + int(latest_timestamp.minute)
-    regular_open = (9 * 60) + 30
-    regular_close = 16 * 60
-    premarket_open = 4 * 60
-    postmarket_close = 20 * 60
-    if regular_open <= total_minutes < regular_close:
-        session = "intraday"
-    elif premarket_open <= total_minutes < regular_open:
-        session = "pre"
-    elif regular_close <= total_minutes < postmarket_close:
-        session = "post"
-    else:
-        session = "off"
+    session = classify_us_equity_session(latest_timestamp)
 
     return {
         "ticker": normalized_ticker,

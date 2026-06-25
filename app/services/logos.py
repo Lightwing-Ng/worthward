@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -256,16 +256,26 @@ def resolve_website(ticker: str, company_name: str, website: str | None) -> str 
     return None
 
 
+def quote_lookup_symbol(ticker: str) -> str:
+    normalized_ticker = normalize_ticker_input(ticker)
+    if normalized_ticker.endswith(".US"):
+        bare_ticker = normalized_ticker[:-3].strip()
+        return bare_ticker or normalized_ticker
+    return normalized_ticker
+
+
 def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
+    normalized_ticker = normalize_ticker_input(ticker)
+    lookup_symbol = quote_lookup_symbol(normalized_ticker)
     try:
-        info = _load_yfinance_ticker_info(ticker)
+        info = _load_yfinance_ticker_info(lookup_symbol)
     except Exception as exc:
-        LOGGER.warning("Quote profile remote lookup failed for %s: %s", ticker, exc)
+        LOGGER.warning("Quote profile remote lookup failed for %s: %s", lookup_symbol, exc)
         info = {}
-    company_name = info.get("longName") or info.get("shortName") or ticker.upper()
-    website = resolve_website(ticker, company_name, info.get("website"))
+    company_name = info.get("longName") or info.get("shortName") or normalized_ticker
+    website = resolve_website(normalized_ticker, company_name, info.get("website"))
     return {
-        "ticker": ticker.upper(),
+        "ticker": normalized_ticker,
         "company_name": company_name,
         "website": website,
     }
