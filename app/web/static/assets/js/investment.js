@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.13
+ * Code version: v1.55.14
+ * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
+ * - Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
  * - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
  * - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.
  * - Fixed: Holdings Last now applies US post quotes from the prior session day and Hong Kong intraday quotes on their own market clocks during US after-hours.
@@ -207,14 +209,28 @@
  */
 
 import {
+    INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     getInvestmentDonutOrbitAnimationState,
     getPortfolioDonutOrbitMetrics,
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
     syncInvestmentDonutOrbitLogos,
-} from './investment/chart-orbit.js';
-import { createInvestmentDataUtils } from './investment/data-utils.js';
-import { createInvestmentStockDetailsUtils } from './investment/stock-details.js';
+} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.36.2';
+import {
+    INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    createInvestmentDataUtils,
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.7';
+import {
+    INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+    createInvestmentStockDetailsUtils,
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.5';
+
+window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
+    entry: 'v1.55.14',
+    chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
+    dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+});
 
 registerInvestmentChartHelpers(window);
 

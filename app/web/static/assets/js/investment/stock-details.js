@@ -1,13 +1,16 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.4
+ * Code version: v0.2.5
+ * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  * - Fixed: Stock details now uses canonical investment tickers so MSFT.US and MSFT share one transaction history, broker metric set, and price chart.
  * - Fixed: Stock-details price chart axis labels now dedupe same-day ticks and reserve a stable today slot during live sessions so refresh and live polling no longer shift the plotted range.
  * - Fixed: Stock-details intraday candles and live pulse now stay off outside active realtime sessions.
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
+
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.5';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,

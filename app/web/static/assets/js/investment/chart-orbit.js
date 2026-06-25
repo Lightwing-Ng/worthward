@@ -1,8 +1,11 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.36.1-p1
+ * Code version: v1.36.2
+ * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
+
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.36.2';
 
 const investmentDonutOrbitLayerState = new WeakMap();
 

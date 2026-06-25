@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.6
+ * Code version: v1.45.7
+ * - Added: Exported module version metadata so browser-side cache drift can be diagnosed without manually inspecting loaded source files.
  * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
  * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
  * - Fixed: Holdings and stock-details aggregation now canonicalizes market-store tickers so MSFT.US rolls into MSFT and legacy SPLG.US rolls into SPYM without mutating the imported ledger.
@@ -1715,3 +1716,5 @@ export function createInvestmentDataUtils({
         addCashLedgerDelta,
     };
 }
+
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.7';
