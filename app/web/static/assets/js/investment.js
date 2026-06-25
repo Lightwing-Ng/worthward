@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.12
+ * Code version: v1.55.13
+ * - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
  * - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.
  * - Fixed: Holdings Last now applies US post quotes from the prior session day and Hong Kong intraday quotes on their own market clocks during US after-hours.
  * - Fixed: Lineage profile lookup now uses exported data-utils helpers instead of an undefined local lineage-map reference.
@@ -1115,19 +1116,22 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
         const hasRealtimePoint = Array.isArray(investmentChartPointsCache)
             && investmentChartPointsCache.some((point) => point?.is_realtime === true);
-        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
-            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
-            : null;
-        if (!hasRealtimePoint || !baseChartPoints.length || !latestSnapshot) return;
+        if (!hasRealtimePoint || !baseChartPoints.length) return;
         investmentChartPointsCache = [...baseChartPoints];
-        updateDashboardWithEquity(
+        if (!isInvestmentDailyEquityLiveRange()) return;
+        renderInvestmentHistoryTableRows(
             investmentProcessedTransactionsCache,
-            latestSnapshot,
-            investmentLatestPricesCache,
-            investmentRawTransactionsCache,
             baseChartPoints,
-            investmentTickerClosePricesCache,
+            { resetPage: false, scrollToTop: false },
         );
+        updateInvestmentEquityChartDisplay(getInvestmentEquityChartInputPoints(baseChartPoints));
+        const latestBasePoint = baseChartPoints[baseChartPoints.length - 1] || null;
+        if (!latestBasePoint) return;
+        renderInvestmentDummyPortfolioDonut(latestBasePoint, investmentDummyTickerProfiles);
+        syncInvestmentDummyDonutFromInteraction();
+        if (activeInvestmentView === 'stock_details') {
+            syncInvestmentStockDetailsDonutFromInteraction();
+        }
     }
 
     function resetInvestmentRealtimeState() {
@@ -1152,6 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentRawTransactionsCache,
             baseChartPoints,
             investmentTickerClosePricesCache,
+            { refreshStockDetailsPanel: false },
         );
     }
 
@@ -1345,6 +1350,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (latestLiveChartPoint) {
             renderInvestmentDummyPortfolioDonut(latestLiveChartPoint, investmentDummyTickerProfiles);
             syncInvestmentDummyDonutFromInteraction();
+            if (activeInvestmentView === 'stock_details') {
+                syncInvestmentStockDetailsDonutFromInteraction();
+            }
         }
     }
 
@@ -8388,8 +8396,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateInvestmentLiveValueNode(node, nextDisplay, nextNumber) {
         if (!(node instanceof HTMLElement)) return;
-        cancelInvestmentLiveValueAnimation(node);
         const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
+        const nextDisplayNormalized = String(nextDisplay ?? '').trim();
+        const previousNumber = String(node.dataset.investmentLiveNumber || '').trim();
+        const nextNumberNormalized = Number.isFinite(Number(nextNumber)) ? String(nextNumber) : '';
+        if (
+            previousDisplay === nextDisplayNormalized
+            && previousNumber === nextNumberNormalized
+            && !node.dataset.investmentLiveAnimationToken
+        ) {
+            return;
+        }
+        cancelInvestmentLiveValueAnimation(node);
         const direction = resolveInvestmentLiveNumberDirection(node.dataset.investmentLiveNumber, nextNumber);
         const useSplit = shouldUseSplitLiveValue(node);
         const shouldAnimate = (
@@ -9672,7 +9690,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return valuationStatus;
     }
 
-    function updateDashboardWithEquity(processed, latestSnapshot, latestPrices, rawTransactions, chartPoints = [], tickerClosePrices = {}) {
+    function updateDashboardWithEquity(
+        processed,
+        latestSnapshot,
+        latestPrices,
+        rawTransactions,
+        chartPoints = [],
+        tickerClosePrices = {},
+        { refreshStockDetailsPanel = true } = {},
+    ) {
         const last = latestSnapshot || processed[processed.length - 1];
         if (!last) return;
         const AGGREGATE_TOTAL_EQUITY = getLatestDashboardEquity(processed, chartPoints);
@@ -9680,7 +9706,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const holdingsPanel = document.getElementById('investment_holdings_panel');
         const metricsPanel = document.getElementById('investment_metrics_panel');
         if (!holdingsPanel || !metricsPanel || !(investmentStockDetailsPanel instanceof HTMLElement)) return;
-        const shouldAnimateVisibleMetricsPanel = activeInvestmentView === 'holdings' || activeInvestmentView === 'metrics' || activeInvestmentView === 'stock_details';
+        const shouldAnimateVisibleMetricsPanel = (
+            activeInvestmentView === 'holdings'
+            || activeInvestmentView === 'metrics'
+            || (activeInvestmentView === 'stock_details' && refreshStockDetailsPanel)
+        );
         if (shouldAnimateVisibleMetricsPanel) {
             lockInvestmentSurfaceHeight();
         }
@@ -9707,7 +9737,11 @@ document.addEventListener('DOMContentLoaded', () => {
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
         bindHoldingsStockDetailsLinks(holdingsPanel);
-        renderInvestmentStockDetailsPanel(tickerProfiles);
+        if (refreshStockDetailsPanel) {
+            renderInvestmentStockDetailsPanel(tickerProfiles);
+        } else if (activeInvestmentView === 'stock_details') {
+            syncInvestmentStockDetailsRealtimeMetrics();
+        }
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
         renderInvestmentDummyPortfolioDonut(latestChartPoint || {
             aggregate_running_cash: Number(last?.aggregate_running_cash ?? last?.running_cash) || 0,
