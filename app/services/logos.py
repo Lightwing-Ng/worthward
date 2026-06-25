@@ -30,11 +30,13 @@ from app.infrastructure.storage import (
     has_logo_asset,
     has_profile_record,
     history_store_path_for,
+    investment_ticker_store_aliases,
     list_local_tickers,
     load_profile_record,
     load_search_cache_items,
     logo_store_path_for,
     normalize_ticker,
+    resolve_logo_store_path,
     store_search_cache_items,
     top_used_tickers,
     upsert_profile_record,
@@ -91,20 +93,27 @@ def _load_yfinance_ticker_info(ticker: str) -> dict[str, object]:
 
 def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None) -> str:
     if modified_at_ns is None:
-        logo_path = logo_store_path_for(filename.removesuffix(".png"))
-        if logo_path.exists():
-            modified_at_ns = logo_path.stat().st_mtime_ns
+        for stem in (
+            filename.removesuffix(".png"),
+            filename.removesuffix(".svg"),
+            filename,
+        ):
+            logo_path = resolve_logo_store_path(stem)
+            if logo_path is not None:
+                modified_at_ns = logo_path.stat().st_mtime_ns
+                filename = logo_path.name
+                break
     if modified_at_ns is None:
         return url_for("market_store_logo", filename=filename)
     return url_for("market_store_logo", filename=filename, v=modified_at_ns)
 
 
 def resolve_stored_logo_url(ticker: str) -> str:
-    normalized_ticker = normalize_ticker_input(ticker)
-    logo_path = logo_store_path_for(normalized_ticker)
-    if not logo_path.exists():
-        return ""
-    return build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+    for candidate in investment_ticker_store_aliases(ticker):
+        logo_path = resolve_logo_store_path(candidate)
+        if logo_path is not None:
+            return build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
+    return ""
 
 
 def normalize_ticker_input(raw_ticker: str) -> str:

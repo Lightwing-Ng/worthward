@@ -1,7 +1,11 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.0
+ * Code version: v1.45.4
+ * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
+ * - Fixed: Holdings and stock-details aggregation now canonicalizes market-store tickers so MSFT.US rolls into MSFT and legacy SPLG.US rolls into SPYM without mutating the imported ledger.
+ * - Fixed: Broker statements without intraday timestamps now replay same-time funding rows before trades and withdrawals so cash/equity does not dip negative from row order alone.
+ * - Fixed: Investment ticker lineage now prefers current successor/base market stores before stale legacy `.US` caches, including SPLG to SPYM.
  * - Changed: HSBC same-day history now sorts funding cash rows ahead of trade executions, while executions still follow ascending reference codes and can reuse hidden settlement rows only as internal cash-after calibration
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
@@ -53,6 +57,31 @@ export function createInvestmentDataUtils({
         const manualTransferCommission = Number(txn?.manual_internal_transfer_commission_amount ?? 0);
         return (Number.isFinite(numericCommission) ? numericCommission : 0)
             + (Number.isFinite(manualTransferCommission) ? manualTransferCommission : 0);
+    }
+
+    function getTransactionCashSortAmount(txn) {
+        const amount = getTransactionAmount(txn);
+        const numericAmount = Number(amount);
+        if (Number.isFinite(numericAmount) && Math.abs(numericAmount) > 1e-9) {
+            return numericAmount;
+        }
+        const normalizedAmount = txn?.normalized?.cash_flow_amount
+            ?? txn?.normalized?.accounting_adjustment_amount
+            ?? txn?.net_amount_raw
+            ?? txn?.gross_amount_raw;
+        const numericNormalizedAmount = Number(normalizedAmount);
+        return Number.isFinite(numericNormalizedAmount) ? numericNormalizedAmount : 0;
+    }
+
+    function getSameTimeCashSafetySortCategory(txn) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        const cashAmount = getTransactionCashSortAmount(txn);
+        if (cashAmount > 1e-9) return 0;
+        if (['deposit', 'sell', 'dividend', 'credit_interest', 'payment_in_lieu'].includes(normalizedType)) return 0;
+        if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) return 1;
+        if (cashAmount < -1e-9) return 2;
+        if (['withdrawal', 'foreign_tax_withholding', 'debit_interest'].includes(normalizedType)) return 2;
+        return 1;
     }
 
     function getInvestmentStartingCash() {
@@ -158,6 +187,29 @@ export function createInvestmentDataUtils({
         dateRates[normalizedCurrency][normalizedDate] = numericRate;
     }
 
+    function getTodayLedgerDate() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function recordForexTradeFxRates(transactions, dateRates, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (!['forex_trade', 'forex_trade_component'].includes(normalizedType)) return;
+            const forexPair = String(txn?.ticker || '').trim().toUpperCase();
+            const [pairBase, pairQuote] = forexPair.split('.');
+            if (pairBase !== normalizedBaseCurrency || !pairQuote) return;
+            const rate = getTransactionPrice(txn);
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (!ledgerDate || !Number.isFinite(rate) || rate <= 0) return;
+            recordFxRateForDate(dateRates, pairQuote, ledgerDate, rate);
+        });
+    }
+
     function buildInvestmentFxRateTimeline(transactions, baseCurrency = INVESTMENT_BASE_CURRENCY) {
         const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
         const groupedRows = new Map();
@@ -200,6 +252,7 @@ export function createInvestmentDataUtils({
                 recordFxRateForDate(dateRates, entry.currency, entry.ledgerDate, inferredRate);
             });
         });
+        recordForexTradeFxRates(transactions, dateRates, normalizedBaseCurrency);
 
         const timeline = {
             baseCurrency: normalizedBaseCurrency,
@@ -242,6 +295,37 @@ export function createInvestmentDataUtils({
             }
         }
         return null;
+    }
+
+    function getLatestFxRateForCurrency(fxTimeline, currency) {
+        const normalizedCurrency = normalizeCurrencyCode(currency);
+        const baseCurrency = normalizeCurrencyCode(fxTimeline?.baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        if (!normalizedCurrency || normalizedCurrency === baseCurrency) return 1;
+        const entry = fxTimeline?.ratesByCurrency?.[normalizedCurrency];
+        const dates = Array.isArray(entry?.dates) ? entry.dates : [];
+        if (!dates.length) return null;
+        const latestDate = dates[dates.length - 1];
+        const rate = Number(entry?.values?.[latestDate]);
+        return Number.isFinite(rate) && rate > 0 ? rate : null;
+    }
+
+    function convertAmountToBaseCurrencyAtLatestRate(amount, currency, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) < 1e-9) return 0;
+        const normalizedCurrency = normalizeCurrencyCode(currency) || normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        if (normalizedCurrency === normalizedBaseCurrency) {
+            return numericAmount;
+        }
+        const todayRate = getFxRateForDate(fxTimeline, normalizedCurrency, getTodayLedgerDate());
+        if (Number.isFinite(todayRate) && todayRate > 0) {
+            return numericAmount / todayRate;
+        }
+        const latestRate = getLatestFxRateForCurrency(fxTimeline, normalizedCurrency);
+        if (Number.isFinite(latestRate) && latestRate > 0) {
+            return numericAmount / latestRate;
+        }
+        return numericAmount;
     }
 
     function convertAmountToBaseCurrency(amount, currency, targetDate, fxTimeline, baseCurrency = INVESTMENT_BASE_CURRENCY) {
@@ -376,6 +460,9 @@ export function createInvestmentDataUtils({
         const explicitCurrency = String(txn?.currency || '').trim();
         if (explicitCurrency) return explicitCurrency;
 
+        const ticker = String(txn?.ticker || '').trim();
+        if (ticker) return getTickerQuoteCurrency(ticker);
+
         return '';
     }
 
@@ -446,12 +533,13 @@ export function createInvestmentDataUtils({
         }
 
         if (txn.ticker && qty) {
+            const displayTicker = getInvestmentCanonicalTicker(txn.ticker) || txn.ticker;
             const cleanQty = Number.isInteger(Number(qty)) ? String(parseInt(qty, 10)) : qty;
             if (price && ['buy', 'sell', 'grant'].includes(normalizedTypeDesc)) {
                 const cleanPrice = Number(price).toFixed(2);
-                description = `${txn.ticker} @ ${cleanPrice} × ${cleanQty}`;
+                description = `${displayTicker} @ ${cleanPrice} × ${cleanQty}`;
             } else {
-                description = `${txn.ticker}@${cleanQty}`;
+                description = `${displayTicker}@${cleanQty}`;
             }
         } else if (brokerCode === 'hsbc' && ['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
             description = getTransactionDescriptionText(
@@ -578,6 +666,19 @@ export function createInvestmentDataUtils({
             if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
                 return leftSequence - rightSequence;
             }
+        }
+        const leftCashCategory = getSameTimeCashSafetySortCategory(leftTxn);
+        const rightCashCategory = getSameTimeCashSafetySortCategory(rightTxn);
+        if (leftCashCategory !== rightCashCategory) {
+            return leftCashCategory - rightCashCategory;
+        }
+        const leftCashAmount = getTransactionCashSortAmount(leftTxn);
+        const rightCashAmount = getTransactionCashSortAmount(rightTxn);
+        if (leftCashCategory === 0 && leftCashAmount !== rightCashAmount) {
+            return rightCashAmount - leftCashAmount;
+        }
+        if (leftCashCategory === 2 && leftCashAmount !== rightCashAmount) {
+            return rightCashAmount - leftCashAmount;
         }
         const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
         const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);
@@ -898,16 +999,30 @@ export function createInvestmentDataUtils({
     }
 
     function normalizePriceHistoryPayload(priceHistoryByTicker) {
-        const normalized = {};
+        const rawMaps = {};
         Object.entries(priceHistoryByTicker || {}).forEach(([ticker, rows]) => {
             const normalizedTicker = normalizeInvestmentTicker(ticker);
             if (!normalizedTicker || !Array.isArray(rows)) return;
-            normalized[normalizedTicker] = {};
+            rawMaps[normalizedTicker] = rawMaps[normalizedTicker] || {};
             rows.forEach((row) => {
                 const date = normalizeLedgerDate(row?.date);
                 const close = Number(row?.close);
                 if (!date || !Number.isFinite(close)) return;
-                normalized[normalizedTicker][date] = close;
+                rawMaps[normalizedTicker][date] = close;
+            });
+        });
+        const normalized = {};
+        Object.entries(rawMaps).forEach(([ticker, dateMap]) => {
+            normalized[ticker] = { ...(normalized[ticker] || {}), ...dateMap };
+        });
+        Object.entries(rawMaps).forEach(([ticker, dateMap]) => {
+            const canonicalTicker = getInvestmentCanonicalTicker(ticker);
+            if (!canonicalTicker || canonicalTicker === ticker) return;
+            normalized[canonicalTicker] = normalized[canonicalTicker] || {};
+            Object.entries(dateMap || {}).forEach(([date, close]) => {
+                if (normalized[canonicalTicker][date] === undefined) {
+                    normalized[canonicalTicker][date] = close;
+                }
             });
         });
         return normalized;
@@ -924,8 +1039,65 @@ export function createInvestmentDataUtils({
         return null;
     }
 
-    function buildValuationStatus({ backendFailures = [], fallbackTickers = [], missingTickers = [] } = {}) {
+    const INVESTMENT_TICKER_LINEAGE_FALLBACK = {
+        'SPLG.US': ['SPYM', 'SPYM.US', 'SPLG', 'SPY', 'SPY.US'],
+        SPLG: ['SPYM', 'SPYM.US', 'SPY', 'SPY.US'],
+    };
+
+    function getInvestmentTickerLineageMap() {
+        const payloadLineage = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_lineage;
+        if (payloadLineage && typeof payloadLineage === 'object' && !Array.isArray(payloadLineage)) {
+            return payloadLineage;
+        }
+        return INVESTMENT_TICKER_LINEAGE_FALLBACK;
+    }
+
+    function getInvestmentTickerStoreAliasCandidates(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return [];
+        const candidates = [];
+        const addCandidate = (value) => {
+            const normalizedAlias = normalizeInvestmentTicker(value);
+            if (normalizedAlias && !candidates.includes(normalizedAlias)) {
+                candidates.push(normalizedAlias);
+            }
+        };
+        const lineageMap = getInvestmentTickerLineageMap();
+        (lineageMap[normalizedTicker] || []).forEach((alias) => {
+            addCandidate(alias);
+        });
+        if (normalizedTicker.endsWith('.US')) {
+            addCandidate(normalizedTicker.slice(0, -3).trim());
+        }
+        if (normalizedTicker.endsWith('.HK')) {
+            const [symbol, suffix] = normalizedTicker.split('.');
+            const strippedSymbol = String(symbol || '').replace(/^0+(?=\d)/, '');
+            if (strippedSymbol && strippedSymbol !== symbol) {
+                addCandidate(`${strippedSymbol}.${suffix}`);
+            }
+        }
+        addCandidate(normalizedTicker);
+        return candidates;
+    }
+
+    function getInvestmentCanonicalTicker(ticker) {
+        const candidates = getInvestmentTickerStoreAliasCandidates(ticker);
+        return candidates[0] || normalizeInvestmentTicker(ticker);
+    }
+
+    function buildValuationStatus({
+        backendFailures = [],
+        fallbackTickers = [],
+        missingTickers = [],
+        openTickers = [],
+    } = {}) {
         const normalizedBackendFailures = Array.isArray(backendFailures) ? backendFailures : [];
+        const openTickerSet = new Set(
+            (Array.isArray(openTickers) ? openTickers : [])
+                .map((ticker) => normalizeInvestmentTicker(ticker))
+                .filter(Boolean),
+        );
+        const isOpenTicker = (ticker) => openTickerSet.has(normalizeInvestmentTicker(ticker));
         const formatDisplayTicker = (ticker) => {
             const normalizedTicker = normalizeInvestmentTicker(ticker);
             return normalizedTicker.endsWith('.US') ? normalizedTicker.slice(0, -3) : normalizedTicker;
@@ -933,14 +1105,18 @@ export function createInvestmentDataUtils({
         const normalizedFallbackTickers = Array.from(new Set((Array.isArray(fallbackTickers) ? fallbackTickers : [])
             .map((ticker) => normalizeInvestmentTicker(ticker))
             .filter((ticker) => !isForexPairTicker(ticker))
-            .filter(Boolean)));
+            .filter(Boolean)
+            .filter((ticker) => isOpenTicker(ticker))));
         const normalizedMissingTickers = Array.from(new Set((Array.isArray(missingTickers) ? missingTickers : [])
             .map((ticker) => normalizeInvestmentTicker(ticker))
             .filter((ticker) => !isForexPairTicker(ticker))
-            .filter(Boolean)));
+            .filter(Boolean)
+            .filter((ticker) => isOpenTicker(ticker))));
         const filteredBackendFailures = normalizedBackendFailures.filter((entry) => {
             const ticker = normalizeInvestmentTicker(entry?.ticker || '');
-            return ticker ? !isForexPairTicker(ticker) : true;
+            if (ticker && isForexPairTicker(ticker)) return false;
+            if (ticker && !isOpenTicker(ticker)) return false;
+            return true;
         });
         const hasBackendFailures = filteredBackendFailures.length > 0;
         const isDegraded = hasBackendFailures || normalizedFallbackTickers.length > 0 || normalizedMissingTickers.length > 0;
@@ -1242,10 +1418,44 @@ export function createInvestmentDataUtils({
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
+        const canonicalAuthoritativePositionSnapshot = {};
+        if (useAuthoritativePositionSnapshot) {
+            Object.entries(authoritativePositionSnapshot).forEach(([ticker, snapshot]) => {
+                const canonicalTicker = getInvestmentCanonicalTicker(ticker);
+                if (!canonicalTicker) return;
+                const quantity = Number(snapshot?.quantity) || 0;
+                const costPrice = Number(snapshot?.costPrice);
+                const marketValue = Number(snapshot?.marketValue);
+                const lastPrice = Number(snapshot?.lastPrice);
+                const previous = canonicalAuthoritativePositionSnapshot[canonicalTicker];
+                if (!previous) {
+                    canonicalAuthoritativePositionSnapshot[canonicalTicker] = {
+                        ...snapshot,
+                        quantity,
+                    };
+                    return;
+                }
+                const previousQuantity = Number(previous.quantity) || 0;
+                const nextQuantity = previousQuantity + quantity;
+                const previousCostTotal = Math.abs(previousQuantity) * (Number(previous.costPrice) || 0);
+                const nextCostTotal = Math.abs(quantity) * (Number.isFinite(costPrice) ? costPrice : 0);
+                previous.quantity = nextQuantity;
+                previous.costPrice = Math.abs(nextQuantity) > 1e-9
+                    ? (previousCostTotal + nextCostTotal) / Math.abs(nextQuantity)
+                    : (Number.isFinite(costPrice) ? costPrice : previous.costPrice);
+                if (Number.isFinite(marketValue)) {
+                    previous.marketValue = (Number(previous.marketValue) || 0) + marketValue;
+                }
+                if (Number.isFinite(lastPrice) && lastPrice > 0) {
+                    previous.lastPrice = lastPrice;
+                }
+            });
+        }
 
         orderedTransactions.forEach((txn) => {
             if (!shouldTrackHoldingTicker(txn)) return;
-            const ticker = String(txn.ticker).trim().toUpperCase();
+            const ticker = getInvestmentCanonicalTicker(txn.ticker);
+            if (!ticker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
             const amount = getTransactionAmount(txn);
@@ -1259,18 +1469,7 @@ export function createInvestmentDataUtils({
             const quoteCurrency = getTickerQuoteCurrency(ticker);
 
             if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                const realizedBefore = summary.realizedPnl;
                 applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                const realizedDelta = summary.realizedPnl - realizedBefore;
-                if (Math.abs(realizedDelta) > 1e-9) {
-                    summary.realizedPnl = realizedBefore + convertAmountToBaseCurrency(
-                        realizedDelta,
-                        quoteCurrency,
-                        ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    );
-                }
                 return;
             }
 
@@ -1288,34 +1487,17 @@ export function createInvestmentDataUtils({
             }
 
             if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                const realizedBefore = summary.realizedPnl;
                 applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                const realizedDelta = summary.realizedPnl - realizedBefore;
-                if (Math.abs(realizedDelta) > 1e-9) {
-                    summary.realizedPnl = realizedBefore + convertAmountToBaseCurrency(
-                        realizedDelta,
-                        quoteCurrency,
-                        ledgerDate,
-                        fxTimeline,
-                        baseCurrency,
-                    );
-                }
                 return;
             }
 
             if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
-                summary.realizedPnl += convertAmountToBaseCurrency(
-                    amount,
-                    normalizeCurrencyCode(formatTransactionCurrency(txn)) || quoteCurrency,
-                    ledgerDate,
-                    fxTimeline,
-                    baseCurrency,
-                );
+                summary.realizedPnl += amount;
             }
         });
 
         if (useAuthoritativePositionSnapshot) {
-            Object.keys(authoritativePositionSnapshot).forEach((ticker) => {
+            Object.keys(canonicalAuthoritativePositionSnapshot).forEach((ticker) => {
                 if (!tickerMap.has(ticker)) {
                     tickerMap.set(ticker, createPositionState(ticker));
                 }
@@ -1324,7 +1506,7 @@ export function createInvestmentDataUtils({
 
         return Array.from(tickerMap.values()).map((summary) => {
             const snapshotEntry = useAuthoritativePositionSnapshot
-                ? authoritativePositionSnapshot[summary.ticker] ?? null
+                ? canonicalAuthoritativePositionSnapshot[summary.ticker] ?? null
                 : null;
             const shares = useAuthoritativePositionSnapshot
                 ? Number(snapshotEntry?.quantity) || 0
@@ -1354,6 +1536,13 @@ export function createInvestmentDataUtils({
                         : null));
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
+            const realizedPnlLocal = Number(summary.realizedPnl) || 0;
+            const realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
+                realizedPnlLocal,
+                quoteCurrency,
+                fxTimeline,
+                baseCurrency,
+            );
             const marketValueLocal = hasOpenPosition
                 ? (marketValueFromSnapshot !== null
                     ? marketValueFromSnapshot
@@ -1391,6 +1580,9 @@ export function createInvestmentDataUtils({
                 averagePrice,
                 lastPrice,
                 marketValue,
+                realizedPnl,
+                realizedPnlLocal,
+                quoteCurrency,
                 unrealizedPnl,
                 positionWeight,
                 hasOpenPosition,
@@ -1421,8 +1613,11 @@ export function createInvestmentDataUtils({
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        getInvestmentCanonicalTicker,
+        getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
         convertAmountToBaseCurrency,
+        convertAmountToBaseCurrencyAtLatestRate,
         createCashLedger,
         compareInvestmentTransactions,
         calculateSnapshotMarketValue,
@@ -1449,7 +1644,9 @@ export function createInvestmentDataUtils({
         getLatestDashboardEquity,
         getAuthoritativePositionSnapshot,
         getFxRateForDate,
+        getLatestFxRateForCurrency,
         getInvestmentBaseCurrency,
+        getTodayLedgerDate,
         getMoneyMarketTickerSet,
         getNormalizedTransactionType,
         getTransactionAmount,

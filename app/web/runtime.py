@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.30
+Code version: v0.3.31
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from datetime import datetime
 from http.client import RemoteDisconnected
 import json
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from io import BytesIO
@@ -88,6 +89,7 @@ from app.core.config import (
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
 from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
+    build_investment_payload_from_futuhk_statement_pdfs,
     build_investment_payload_from_hsbc_pasted_text,
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_gateway,
@@ -140,7 +142,12 @@ from app.services.market_data import (
     refresh_recent_one_minute_store_with_yfinance,
     select_price_series,
 )
-from app.services.market_freshness import ensure_latest_daily_caches, extract_all_investment_tickers, extract_open_investment_tickers
+from app.services.market_freshness import (
+    ensure_latest_daily_caches,
+    ensure_latest_investment_daily_caches,
+    extract_all_investment_tickers,
+    extract_open_investment_tickers,
+)
 from app.services.market_freshness import ensure_latest_backtest_caches
 from app.models.schemas import DateConstraintPayload, QuoteProfile, SeriesPayload
 from app.services.presentation import (
@@ -165,6 +172,8 @@ from app.infrastructure.storage import (
     list_historical_tickers,
     load_profile_record,
     market_store_file_lock,
+    investment_ticker_lineage_payload,
+    investment_ticker_store_aliases,
     record_ticker_usage,
     record_strategy_usage,
     top_used_strategies,
@@ -361,6 +370,8 @@ def build_web_runtime() -> WebRuntime:
             if str(ticker).strip().upper() not in configured_money_market_tickers
         ]
 
+    investment_daily_refresh_lock = threading.Lock()
+
     def is_configured_money_market_ticker(ticker: str) -> bool:
         return str(ticker).strip().upper() in configured_money_market_tickers
 
@@ -406,13 +417,23 @@ def build_web_runtime() -> WebRuntime:
         imported_payload: dict[str, Any],
     ) -> list[str]:
         try:
-            return ensure_latest_daily_caches(
+            return ensure_latest_investment_daily_caches(
                 exclude_configured_money_market_tickers(
                     extract_all_investment_tickers(imported_payload)
                 )
             )
         except Exception as exc:
             return [f"Price cache refresh failed after import: {exc}"]
+
+    def refresh_investment_open_tickers_in_background(tickers: list[str]) -> None:
+        if not investment_daily_refresh_lock.acquire(blocking=False):
+            return
+        try:
+            ensure_latest_investment_daily_caches(
+                exclude_configured_money_market_tickers(tickers)
+            )
+        finally:
+            investment_daily_refresh_lock.release()
 
     def build_investment_section_freshness(payload: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -475,23 +496,23 @@ def build_web_runtime() -> WebRuntime:
                 inferred_money_market_name = resolve_money_market_company_name(raw_ticker, transactions)
                 if inferred_money_market_name:
                     company_name = inferred_money_market_name
-            ticker_profiles[raw_ticker] = {
+            profile_entry = {
                 "ticker": raw_ticker,
                 "company_name": company_name,
                 "logo_url": logo_url,
             }
+            ticker_profiles[raw_ticker] = profile_entry
+            if raw_ticker.endswith(".US"):
+                bare_ticker = raw_ticker[:-3].strip()
+                if bare_ticker and bare_ticker not in ticker_profiles:
+                    ticker_profiles[bare_ticker] = {
+                        **profile_entry,
+                        "ticker": bare_ticker,
+                    }
         return ticker_profiles
 
     def iter_investment_store_ticker_aliases(ticker: str) -> list[str]:
-        normalized_ticker = normalize_ticker_input(ticker)
-        if not normalized_ticker:
-            return []
-        aliases: list[str] = [normalized_ticker]
-        if normalized_ticker.endswith(".US"):
-            base_ticker = normalized_ticker[:-3].strip()
-            if base_ticker and base_ticker not in aliases:
-                aliases.append(base_ticker)
-        return aliases
+        return investment_ticker_store_aliases(ticker)
 
     def resolve_investment_history_store_path(
             ticker: str,
@@ -521,25 +542,31 @@ def build_web_runtime() -> WebRuntime:
 
     def load_investment_price_histories(
             transactions: list[dict[str, Any]],
+            *,
+            open_tickers: list[str] | set[str] | tuple[str, ...] | None = None,
     ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]:
         price_history_by_ticker: dict[str, list[dict[str, Any]]] = {}
         failures: list[dict[str, str]] = []
+        open_ticker_set = {
+            normalize_ticker_input(str(ticker))
+            for ticker in (open_tickers or [])
+            if str(ticker or "").strip()
+        }
         for ticker in collect_investment_display_tickers(transactions):
             if is_configured_money_market_ticker(ticker):
                 continue
             try:
                 path = resolve_investment_history_store_path(ticker)
-                if path is None or classify_daily_store_status(ticker) != "fresh":
-                    try:
-                        refresh_history_store(ticker)
-                    except Exception:
-                        pass
-                    path = resolve_investment_history_store_path(ticker)
+                should_refresh_live_cache = ticker in open_ticker_set
                 if path is None:
                     failures.append({
                         "ticker": ticker,
                         "reason": "missing_store",
-                        "message": f"No local market history is available for {ticker}.",
+                        "message": (
+                            f"No local market history is available for {ticker}."
+                            if should_refresh_live_cache
+                            else f"No cached market history is available for the closed position {ticker}; ledger trade prices will be used instead."
+                        ),
                     })
                     continue
                 prices = load_price_history_series(path)
@@ -4055,6 +4082,7 @@ def build_web_runtime() -> WebRuntime:
                 "price_history_by_ticker": {},
                 "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
+                "ticker_lineage": investment_ticker_lineage_payload(),
                 "section_freshness": build_investment_section_freshness({}),
                 "success": True,
             })
@@ -4071,17 +4099,25 @@ def build_web_runtime() -> WebRuntime:
         try:
             data = load_normalized_investment_payload()
             section_freshness = build_investment_section_freshness(data)
-            freshness_refresh_failures = ensure_latest_daily_caches(section_freshness["open_tickers"])
             transactions = data.get("transactions", [])
-            price_history_by_ticker, price_history_failures = load_investment_price_histories(transactions)
+            price_history_by_ticker, price_history_failures = load_investment_price_histories(
+                transactions,
+                open_tickers=section_freshness["open_tickers"],
+            )
             data["ticker_profiles"] = build_investment_ticker_profiles(transactions)
             data["price_history_by_ticker"] = price_history_by_ticker
             data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
-            data["freshness_refresh_failures"] = freshness_refresh_failures
+            data["ticker_lineage"] = investment_ticker_lineage_payload()
+            data["freshness_refresh_failures"] = []
             data["section_freshness"] = section_freshness
             data["success"] = True
             response = jsonify(data)
+            threading.Thread(
+                target=refresh_investment_open_tickers_in_background,
+                args=(section_freshness["open_tickers"],),
+                daemon=True,
+            ).start()
             report_fetch_abort_debug_event(
                 "E",
                 "runtime.py:investment_get_transactions",
@@ -4089,7 +4125,7 @@ def build_web_runtime() -> WebRuntime:
                 {
                     "status": 200,
                     "transaction_count": len(transactions),
-                    "freshness_refresh_failure_count": len(freshness_refresh_failures),
+                    "freshness_refresh_failure_count": 0,
                     "price_history_failure_count": len(price_history_failures),
                 },
             )
@@ -4173,6 +4209,28 @@ def build_web_runtime() -> WebRuntime:
                     "Longbridge authentication session, then merged incrementally into the local investment store "
                     "without clearing older data first."
                 )
+            elif broker == "futuhk":
+                statement_pdf_files = request.files.getlist("futuhk_statement_pdfs")
+                statement_pdf_payloads: list[tuple[bytes, str]] = []
+                for statement_pdf_file in statement_pdf_files:
+                    if statement_pdf_file is None:
+                        continue
+                    pdf_bytes = statement_pdf_file.read()
+                    if not pdf_bytes:
+                        continue
+                    statement_pdf_payloads.append(
+                        (
+                            pdf_bytes,
+                            str(getattr(statement_pdf_file, "filename", "") or "").strip(),
+                        )
+                    )
+                imported_payload = build_investment_payload_from_futuhk_statement_pdfs(
+                    statement_pdf_payloads,
+                )
+                success_message = (
+                    "Futu (HK) import complete. Monthly statement PDFs were parsed in memory and merged "
+                    "incrementally into the local investment store without clearing older data first."
+                )
             elif broker == "hsbc":
                 imported_payload = build_investment_payload_from_hsbc_pasted_text(
                     portfolio_text=str(
@@ -4197,17 +4255,22 @@ def build_web_runtime() -> WebRuntime:
                 }), 400
 
             investment_payload = merge_and_write_investment_payload(imported_payload)
-            freshness_refresh_failures = refresh_investment_import_price_caches(
-                imported_payload
-            )
+            
+            # Run the price cache refresh in the background so we don't block the UI with network requests
+            def background_refresh(payload: dict[str, Any]) -> None:
+                try:
+                    refresh_investment_import_price_caches(payload)
+                except Exception:
+                    pass
+            
+            threading.Thread(target=background_refresh, args=(imported_payload,), daemon=True).start()
+            freshness_refresh_failures: list[str] = []
 
             return jsonify({
                 "success": True,
                 "message": success_message,
                 "summary": investment_payload.get("summary", {}),
                 "freshness_refresh_failures": freshness_refresh_failures,
-                "transactions": investment_payload.get("transactions", []),
-                "investment": investment_payload,
             })
         except ValueError as exc:
             report_fetch_abort_debug_event(
@@ -4338,7 +4401,7 @@ def build_web_runtime() -> WebRuntime:
                         section_freshness = build_investment_section_freshness(load_normalized_investment_payload())
                         should_refresh_ticker = ticker in set(section_freshness["open_tickers"])
                     if should_refresh_ticker:
-                        ensure_latest_daily_caches([ticker])
+                        ensure_latest_investment_daily_caches([ticker])
                         path = resolve_investment_history_store_path(ticker) or path
 
             if path is None:

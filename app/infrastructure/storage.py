@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.4
+Code version: v0.3.5
 """
 
 from __future__ import annotations
@@ -140,6 +140,74 @@ def normalize_ticker(ticker: str) -> str:
     return _canonicalize_ticker_token(ticker).replace("/", "_")
 
 
+def canonicalize_investment_ticker(ticker: str) -> str:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker.endswith(".HK"):
+        return normalized_ticker
+    symbol, suffix = normalized_ticker.rsplit(".", 1)
+    hk_variants = _hk_ticker_code_variants(symbol)
+    canonical_symbol = hk_variants[-1] if hk_variants else symbol
+    return f"{canonical_symbol}.{suffix}"
+
+
+# Ordered market-data lineage for legacy tickers. Ledger transactions keep the
+# original symbol (for example SPLG.US); lineage is only used for quotes,
+# cache refresh, and chart replay. SPLG was succeeded by SPYM on 2025-10-31,
+# so the current successor is preferred over stale legacy stores.
+# SPY remains a last-resort broad S&P 500 proxy.
+INVESTMENT_TICKER_LINEAGE: dict[str, tuple[str, ...]] = {
+    "SPLG.US": ("SPYM", "SPYM.US", "SPLG", "SPY", "SPY.US"),
+    "SPLG": ("SPYM", "SPYM.US", "SPY", "SPY.US"),
+}
+
+
+def investment_ticker_lineage_payload() -> dict[str, list[str]]:
+    return {
+        legacy_ticker: list(candidates)
+        for legacy_ticker, candidates in INVESTMENT_TICKER_LINEAGE.items()
+    }
+
+
+def investment_ticker_store_aliases(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return []
+
+    aliases: list[str] = []
+
+    def add_alias(value: str) -> None:
+        normalized_candidate = normalize_ticker(value)
+        if normalized_candidate and normalized_candidate not in aliases:
+            aliases.append(normalized_candidate)
+
+    for candidate in INVESTMENT_TICKER_LINEAGE.get(normalized_ticker, ()):
+        add_alias(candidate)
+
+    if normalized_ticker.endswith(".US"):
+        add_alias(normalized_ticker[:-3].strip())
+
+    if normalized_ticker.endswith(".HK"):
+        symbol, suffix = normalized_ticker.rsplit(".", 1)
+        for code in _hk_ticker_code_variants(symbol):
+            add_alias(f"{code}.{suffix}")
+
+    add_alias(normalized_ticker)
+
+    return aliases
+
+
+def expand_tickers_with_store_lineage(tickers: list[str] | set[str] | tuple[str, ...]) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for ticker in tickers:
+        for candidate in investment_ticker_store_aliases(ticker):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            expanded.append(candidate)
+    return expanded
+
+
 def history_store_path_for(ticker: str) -> Path:
     return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}.parquet"
 
@@ -149,7 +217,58 @@ def intraday_history_store_path_for(ticker: str, interval: str = "1m") -> Path:
     return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.parquet"
 
 
+def _hk_ticker_code_variants(symbol: str) -> list[str]:
+    normalized_symbol = str(symbol or "").strip().upper()
+    if not re.fullmatch(r"\d{4,5}", normalized_symbol):
+        return [normalized_symbol] if normalized_symbol else []
+    stripped = normalized_symbol.lstrip("0") or normalized_symbol
+    variants: list[str] = []
+    for candidate in (normalized_symbol, stripped):
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+    return variants
+
+
+def logo_store_filenames_for(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return []
+
+    filenames: list[str] = []
+
+    def add_filename(value: str) -> None:
+        normalized_value = str(value or "").strip()
+        if not normalized_value or normalized_value in filenames:
+            return
+        filenames.append(normalized_value)
+
+    if "." in normalized_ticker:
+        symbol, suffix = normalized_ticker.rsplit(".", 1)
+        if suffix == "HK":
+            for code in _hk_ticker_code_variants(symbol):
+                for extension in ("svg", "png"):
+                    add_filename(f"{code}.{suffix}.{extension}")
+        for extension in ("svg", "png"):
+            add_filename(f"{normalized_ticker}.{extension}")
+    else:
+        for extension in ("svg", "png"):
+            add_filename(f"{normalized_ticker}.{extension}")
+
+    return filenames
+
+
+def resolve_logo_store_path(ticker: str) -> Path | None:
+    for filename in logo_store_filenames_for(ticker):
+        candidate = LOGOS_STORE_DIR / filename
+        if candidate.exists() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
 def logo_store_path_for(ticker: str) -> Path:
+    resolved = resolve_logo_store_path(ticker)
+    if resolved is not None:
+        return resolved
     return LOGOS_STORE_DIR / f"{normalize_ticker(ticker)}.png"
 
 
@@ -525,8 +644,7 @@ def list_historical_tickers() -> list[str]:
 
 
 def has_logo_asset(ticker: str) -> bool:
-    path = logo_store_path_for(ticker)
-    return path.exists() and path.stat().st_size > 0
+    return resolve_logo_store_path(ticker) is not None
 
 
 def is_store_entry_fresh(path: Path) -> bool:

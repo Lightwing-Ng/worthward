@@ -326,6 +326,36 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="investment-import-field-group" id="investment_import_futuhk_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="futuhk-statements">
+                                    <label class="trade-strategy-param-label" for="futuhk_statement_pdfs">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">Monthly statement PDFs</span>
+                                            <span class="investment-import-status-icon" id="futuhk_statement_pdfs_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to download these files in Futu (HK)</span>
+                                                <span class="investment-import-help-step">🄌 Sign in to the Futu app or web portal.</span>
+                                                <span class="investment-import-help-step">➊ Open Account > Statements and choose the monthly statement for the account you want to import.</span>
+                                                <span class="investment-import-help-step">➋ Export or download the monthly statement as a PDF.</span>
+                                                <span class="investment-import-help-step">➌ Upload one or more monthly PDFs here. You can select Feb and Mar together for a backfill.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="futuhk_statement_pdfs"
+                                               name="futuhk_statement_pdfs"
+                                               type="file"
+                                               accept=".pdf,application/pdf"
+                                               multiple
+                                               class="settings-form-control investment-import-file-input"
+                                               required>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="investment-import-field-group" id="investment_import_hsbc_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_cash_account_display">
@@ -501,5 +531,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.54.3') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.55.5') }}"></script>
 {% endblock %}

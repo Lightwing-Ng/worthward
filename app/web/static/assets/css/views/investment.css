@@ -2454,6 +2454,28 @@
     vertical-align: top;
 }
 
+.investment-holdings-dual-currency {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+    gap: 2px;
+    max-width: 100%;
+}
+
+.investment-holdings-dual-currency-primary.trade-metric-value {
+    display: inline-flex !important;
+    align-items: baseline !important;
+}
+
+.investment-holdings-dual-currency-secondary {
+    font-size: 0.82em;
+    line-height: 1.2;
+    opacity: 0.72;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .investment-live-value {
     position: relative;
     display: inline-flex;

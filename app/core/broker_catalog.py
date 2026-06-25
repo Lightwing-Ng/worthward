@@ -42,11 +42,25 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="Longbridge.png",
         description="Uses the configured authentication session to pull historical orders and cash flow.",
     ),
+    "futuhk": BrokerCatalogEntry(
+        code="futuhk",
+        label="Futu (HK)",
+        pinyin_sort_key="futuhk",
+        icon_filename="FutuHK.svg",
+        description="Upload one or more Futu Securities International (Hong Kong) monthly statement PDFs.",
+    ),
+    "cmbwl": BrokerCatalogEntry(
+        code="cmbwl",
+        label="CMB Wing Lung Bank",
+        pinyin_sort_key="cmbwinglungbank",
+        icon_filename="CMB Wing Lung.svg",
+        description="Parse completed securities order notification emails (.eml).",
+    ),
 }
 
 SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
-INVESTMENT_IMPORT_BROKER_CODES = ("hsbc", "ibkr", "longbridge")
+INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge")
 
 
 def broker_pinyin_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:

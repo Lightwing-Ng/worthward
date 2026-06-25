@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.3
+ * Code version: v0.2.4
+ * - Fixed: Stock details now uses canonical investment tickers so MSFT.US and MSFT share one transaction history, broker metric set, and price chart.
  * - Fixed: Stock-details price chart axis labels now dedupe same-day ticks and reserve a stable today slot during live sessions so refresh and live polling no longer shift the plotted range.
  * - Fixed: Stock-details intraday candles and live pulse now stay off outside active realtime sessions.
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
@@ -42,6 +43,7 @@ export function createInvestmentStockDetailsUtils({
     getInvestmentBaseCurrency,
     getInvestmentBrokerMeta,
     getInvestmentChartPointsCache,
+    getInvestmentCanonicalTicker,
     getInvestmentMarketStoreTickerCandidates,
     getInvestmentProcessedTransactionsCache,
     getInvestmentStockDetailsPanel,
@@ -83,7 +85,7 @@ export function createInvestmentStockDetailsUtils({
     waitForInvestmentStableElementBox,
 }) {
     function buildInvestmentStockDetailRows(processedTransactions, ticker) {
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         if (!normalizedTicker) return [];
         const stockState = createPositionState(normalizedTicker);
         const moneyMarketTickers = getMoneyMarketTickerSet();
@@ -92,7 +94,7 @@ export function createInvestmentStockDetailsUtils({
         let lastKnownTickerPrice = null;
         const detailRows = [];
         (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
-            if (normalizeInvestmentTicker(txn?.ticker) !== normalizedTicker) return;
+            if (getInvestmentCanonicalTicker(txn?.ticker) !== normalizedTicker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex);
             const transactionPrice = getTransactionPrice(txn);
@@ -140,7 +142,7 @@ export function createInvestmentStockDetailsUtils({
     }
 
     function getInvestmentStockDetailsAutoRangeContext(ticker, detailRows = []) {
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         if (!normalizedTicker) {
             return {
                 tradeDates: [],
@@ -151,7 +153,7 @@ export function createInvestmentStockDetailsUtils({
         const tradeDates = [];
         let fallbackShares = 0;
         orderedRows.forEach((txn) => {
-            if (normalizeInvestmentTicker(txn?.ticker) !== normalizedTicker) return;
+            if (getInvestmentCanonicalTicker(txn?.ticker) !== normalizedTicker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (ledgerDate && ['buy', 'sell'].includes(normalizedType)) {
@@ -217,7 +219,7 @@ export function createInvestmentStockDetailsUtils({
     }
 
     function buildInvestmentStockDetailBrokerMetrics(detailRows, ticker, lastPrice) {
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
         if (!normalizedTicker || !orderedRows.length) return [];
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
@@ -364,7 +366,7 @@ export function createInvestmentStockDetailsUtils({
 
         destroyInvestmentStockDetailsPriceChart();
         const renderRequestId = incrementInvestmentStockDetailsPriceChartRequestSerial();
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         if (!normalizedTicker || !window.Chart) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;

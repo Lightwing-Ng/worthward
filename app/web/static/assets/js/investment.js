@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.2
+ * Code version: v1.55.5
+ * - Fixed: Investment transaction descriptions now display canonical tickers, matching holdings and stock details.
+ * - Fixed: Holdings, stock details, exports, and valuation replay now aggregate canonical investment tickers so MSFT.US merges into MSFT and SPLG.US inherits SPYM.
+ * - Fixed: Investment cash replay now preallocates later same-currency funding to earlier broker-statement trades when missing intraday timestamps would otherwise create a false negative cash balance.
  * - Fixed: Investment history Max range and pagination now keep processed transaction caches current, so Gateway-ledger pages cannot render as empty while transactions exist.
  * - Added: Mixed-broker portfolios now calibrate each broker's latest history Balance from per-broker ending cash snapshots, so IBKR CSV Ending Cash can align with the broker app after HSBC merge
  * - Fixed: Investment export and share action buttons now align with the global theme toggle horizontally and the view segmented control vertical center.
@@ -267,7 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentImportIbkrFields = document.getElementById('investment_import_ibkr_fields');
     const investmentImportIbkrMode = document.getElementById('investment_import_ibkr_mode');
     const investmentImportLongbridgeFields = document.getElementById('investment_import_longbridge_fields');
+    const investmentImportFutuhkFields = document.getElementById('investment_import_futuhk_fields');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
+    const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
+    const futuhkStatementPdfsStatus = document.getElementById('futuhk_statement_pdfs_status');
     const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
     const longbridgeStartDateStatus = document.getElementById('longbridge_start_date_status');
     const hsbcPortfolioTextInput = document.getElementById('hsbc_portfolio_text');
@@ -579,8 +585,20 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/HSBC.png',
             logoAlt: 'HSBC logo',
         },
+        futuhk: {
+            code: 'futuhk',
+            label: 'Futu (HK)',
+            logoUrl: '/market-store/logos/brokers/FutuHK.svg',
+            logoAlt: 'Futu (HK) logo',
+        },
+        cmbwl: {
+            code: 'cmbwl',
+            label: 'CMB Wing Lung Bank',
+            logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
+            logoAlt: 'CMB Wing Lung Bank logo',
+        },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge', 'hsbc']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge', 'hsbc', 'futuhk', 'cmbwl']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -591,8 +609,11 @@ document.addEventListener('DOMContentLoaded', () => {
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        getInvestmentCanonicalTicker,
+        getInvestmentTickerStoreAliasCandidates,
         cloneCashLedgerBalances,
         convertAmountToBaseCurrency,
+        convertAmountToBaseCurrencyAtLatestRate,
         createCashLedger,
         compareInvestmentTransactions,
         createPositionState,
@@ -867,6 +888,27 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function resetInvestmentRealtimeChartState() {
+        const baseChartPoints = Array.isArray(investmentBaseChartPointsCache)
+            ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
+            : [];
+        const hasRealtimePoint = Array.isArray(investmentChartPointsCache)
+            && investmentChartPointsCache.some((point) => point?.is_realtime === true);
+        const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
+            ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
+            : null;
+        if (!hasRealtimePoint || !baseChartPoints.length || !latestSnapshot) return;
+        investmentChartPointsCache = [...baseChartPoints];
+        updateDashboardWithEquity(
+            investmentProcessedTransactionsCache,
+            latestSnapshot,
+            investmentLatestPricesCache,
+            investmentRawTransactionsCache,
+            baseChartPoints,
+            investmentTickerClosePricesCache,
+        );
+    }
+
     function resetInvestmentRealtimeState() {
         const baseChartPoints = Array.isArray(investmentBaseChartPointsCache)
             ? investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
@@ -911,6 +953,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             })
             .map(([ticker]) => normalizeInvestmentTicker(ticker));
+    }
+
+    function getInvestmentRealtimeHoldingsTickers() {
+        const moneyMarketTickers = getMoneyMarketTickerSet();
+        return Array.from(new Set(getAvailableInvestmentStockTickers()))
+            .filter((ticker) => ticker && !isForexPairTicker(ticker) && !moneyMarketTickers.has(ticker));
+    }
+
+    function isInvestmentHoldingsRealtimeQuote(quote) {
+        const ticker = normalizeInvestmentTicker(quote?.ticker);
+        const price = Number(quote?.price);
+        return Boolean(ticker) && Number.isFinite(price) && price > 0;
     }
 
     function buildInvestmentRealtimeTimestamp(quotes = []) {
@@ -1038,24 +1092,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyInvestmentRealtimeQuotes(quotes = []) {
-        const liveSessionQuotes = (Array.isArray(quotes) ? quotes : [])
-            .filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
-        if (!liveSessionQuotes.length) {
-            resetInvestmentRealtimeState();
-            return;
-        }
-        liveSessionQuotes.forEach((quote) => {
+        const holdingsQuotes = (Array.isArray(quotes) ? quotes : [])
+            .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote));
+        holdingsQuotes.forEach((quote) => {
             const ticker = normalizeInvestmentTicker(quote?.ticker);
             const price = Number(quote?.price);
-            if (ticker && Number.isFinite(price) && price > 0) {
-                investmentLatestPricesCache[ticker] = price;
-            }
+            investmentLatestPricesCache[ticker] = price;
         });
+        if (holdingsQuotes.length) {
+            syncInvestmentHoldingsRealtimeValues();
+        }
+
+        const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldUseInvestmentRealtimeQuote(quote));
+        if (!liveSessionQuotes.length) {
+            if (shouldRunInvestmentRealtimeQuotes()) {
+                resetInvestmentRealtimeChartState();
+            }
+            return;
+        }
         const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
         if (isInvestmentDailyEquityLiveRange() && liveChartPoints.length && liveChartPoints !== investmentChartPointsCache) {
             investmentChartPointsCache = liveChartPoints;
         }
-        syncInvestmentHoldingsRealtimeValues();
         if (!isInvestmentDailyEquityLiveRange()) return;
         if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
         investmentChartPointsCache = liveChartPoints;
@@ -1070,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function scheduleInvestmentRealtimeQuotePolling() {
         if (investmentPageDisposed || !investmentProcessedTransactionsCache.length) return;
-        const tickers = getInvestmentRealtimeOpenTickers();
+        const tickers = getInvestmentRealtimeHoldingsTickers();
         if (!tickers.length) return;
         if (investmentRealtimeQuoteTimer) {
             window.clearTimeout(investmentRealtimeQuoteTimer);
@@ -1085,12 +1143,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function pollInvestmentRealtimeQuotes() {
         if (investmentPageDisposed || investmentRealtimeQuoteInflight) return;
-        const tickers = getInvestmentRealtimeOpenTickers();
+        const tickers = getInvestmentRealtimeHoldingsTickers();
         if (!tickers.length) return;
         if (!shouldRunInvestmentRealtimeQuotes()) {
-            resetInvestmentRealtimeState();
-            scheduleInvestmentRealtimeQuotePolling();
-            return;
+            resetInvestmentRealtimeChartState();
         }
         investmentRealtimeQuoteInflight = true;
         investmentRealtimeQuoteAbortController = new AbortController();
@@ -2922,6 +2978,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentStockDetailsPriceChartRequestSerial: () => investmentStockDetailsPriceChartRequestSerial,
         getInvestmentStockDetailsRangeLabels,
         getInvestmentTradeSessionType,
+        getInvestmentCanonicalTicker,
         getMoneyMarketTickerSet,
         getNormalizedTransactionType,
         getSelectedInvestmentStockDetailsRange: () => selectedInvestmentStockDetailsRange,
@@ -3400,27 +3457,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function buildMarketStoreLogoUrl(ticker) {
+    function buildMarketStoreLogoFilenames(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
-        return `/market-store/logos/${encodeURIComponent(normalizedTicker || 'stock')}.png`;
+        if (!normalizedTicker) return ['stock.png'];
+
+        const filenames = [];
+        const addFilename = (value) => {
+            const normalizedValue = String(value || '').trim();
+            if (!normalizedValue || filenames.includes(normalizedValue)) return;
+            filenames.push(normalizedValue);
+        };
+
+        getInvestmentMarketStoreTickerCandidates(ticker).forEach((candidate) => {
+            if (candidate.includes('.')) {
+                const [symbol, suffix] = candidate.split('.');
+                if (suffix === 'HK') {
+                    const strippedSymbol = String(symbol || '').replace(/^0+(?=\d)/, '');
+                    if (strippedSymbol && strippedSymbol !== symbol) {
+                        addFilename(`${strippedSymbol}.${suffix}.svg`);
+                        addFilename(`${strippedSymbol}.${suffix}.png`);
+                    }
+                }
+                addFilename(`${candidate}.svg`);
+                addFilename(`${candidate}.png`);
+                return;
+            }
+            addFilename(`${candidate}.svg`);
+            addFilename(`${candidate}.png`);
+        });
+        return filenames.length ? filenames : [`${normalizedTicker}.png`];
+    }
+
+    function buildMarketStoreLogoUrl(ticker) {
+        const [filename] = buildMarketStoreLogoFilenames(ticker);
+        return `/market-store/logos/${encodeURIComponent(filename || 'stock.png')}`;
     }
 
     function getInvestmentMarketStoreTickerCandidates(ticker) {
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
-        if (!normalizedTicker) return [];
-        const candidates = [normalizedTicker];
-        if (normalizedTicker.endsWith('.US')) {
-            const baseTicker = normalizedTicker.slice(0, -3).trim();
-            if (baseTicker && !candidates.includes(baseTicker)) {
-                candidates.push(baseTicker);
-            }
-        }
-        return candidates;
+        return getInvestmentTickerStoreAliasCandidates(ticker);
     }
 
     function buildMarketStoreLogoUrls(ticker) {
-        return getInvestmentMarketStoreTickerCandidates(ticker).map((candidate) => (
-            `/market-store/logos/${encodeURIComponent(candidate || 'stock')}.png`
+        return buildMarketStoreLogoFilenames(ticker).map((filename) => (
+            `/market-store/logos/${encodeURIComponent(filename)}`
         ));
     }
 
@@ -3554,7 +3633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fillFragments.push(`${palette[index] || resolvedTheme.accentPrimary} ${segmentStart}deg ${segmentEnd}deg`);
                 const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const ticker = entry.ticker;
-                const profile = tickerProfiles?.[ticker] || {};
+                const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
                 const logoUrl = resolveInvestmentLogoUrl(profile, ticker);
                 logoItems.push({ ticker, logoUrl, midAngle });
             }
@@ -3758,7 +3837,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeTicker = ensureSelectedInvestmentStockTicker();
         if (!activeTicker) return;
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
-        const profile = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles?.[activeTicker] || {};
+        const profile = resolveInvestmentTickerProfile(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {},
+            activeTicker,
+        );
         const pointRecord = activeStockDetailsHoverPointRecord
             || getActiveInvestmentInteractionPoint()
             || investmentLatestChartPoint
@@ -4008,6 +4090,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return !upperName.includes('TRANSACTIONS');
     }
 
+    function isLikelyPdfFile(file) {
+        if (!(file instanceof File)) return false;
+        const lowerName = String(file.name || '').trim().toLowerCase();
+        const mimeType = String(file.type || '').trim().toLowerCase();
+        return lowerName.endsWith('.pdf') || mimeType === 'application/pdf';
+    }
+
+    function isLikelyFutuStatementPdf(file) {
+        if (!isLikelyPdfFile(file)) return false;
+        const fileName = String(file.name || '').trim();
+        if (!fileName) return false;
+        if (/\d{10,}-\d+-\d{6}-/.test(fileName)) return true;
+        if (/statement|月結單|结单/i.test(fileName)) return true;
+        return file.size > 1024;
+    }
+
+    function getSelectedFutuStatementPdfFiles() {
+        if (!(futuhkStatementPdfsInput instanceof HTMLInputElement)) return [];
+        return Array.from(futuhkStatementPdfsInput.files || []).filter((file) => file instanceof File);
+    }
+
     function setImportStatusIcon(icon, visible) {
         if (!icon) return;
         icon.classList.toggle('is-visible', Boolean(visible));
@@ -4040,7 +4143,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalizedTicker.endsWith('.US')) {
             return normalizedTicker.slice(0, -3);
         }
+        if (normalizedTicker.endsWith('.HK')) {
+            const [symbol, suffix] = normalizedTicker.split('.');
+            const strippedSymbol = String(symbol || '').replace(/^0+(?=\d)/, '');
+            return strippedSymbol ? `${strippedSymbol}.${suffix}` : normalizedTicker;
+        }
         return normalizedTicker;
+    }
+
+    function resolveInvestmentTickerProfile(tickerProfiles, ticker) {
+        const profiles = tickerProfiles && typeof tickerProfiles === 'object' ? tickerProfiles : {};
+        const candidates = getInvestmentTickerStoreAliasCandidates(ticker);
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (normalizedTicker && !candidates.includes(normalizedTicker)) {
+            candidates.push(normalizedTicker);
+        }
+        let fallbackProfile = null;
+        for (const candidate of candidates) {
+            const profile = profiles[candidate];
+            if (!profile || typeof profile !== 'object') continue;
+            if (!fallbackProfile) fallbackProfile = profile;
+            const companyName = String(profile.company_name || '').trim();
+            if (!companyName) continue;
+            const displayTicker = formatInvestmentTickerForDisplay(candidate);
+            if (
+                companyName.toUpperCase() !== candidate.toUpperCase()
+                && companyName.toUpperCase() !== displayTicker.toUpperCase()
+            ) {
+                return profile;
+            }
+        }
+        return fallbackProfile || {};
     }
 
     function normalizeInvestmentBroker(broker) {
@@ -4050,13 +4183,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentBrokerMeta(broker) {
         const normalizedBroker = normalizeInvestmentBroker(broker);
-        return INVESTMENT_BROKER_META[normalizedBroker] || INVESTMENT_BROKER_META.ibkr;
+        if (INVESTMENT_BROKER_META[normalizedBroker]) {
+            return INVESTMENT_BROKER_META[normalizedBroker];
+        }
+        const fallbackLabel = normalizedBroker ? normalizedBroker.toUpperCase() : 'Broker';
+        return {
+            code: normalizedBroker || 'unknown',
+            label: fallbackLabel,
+            logoUrl: '',
+            logoAlt: `${fallbackLabel} logo`,
+        };
     }
 
     const INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS = {
+        cmbwl: 'cmbwinglungbank',
         hsbc: 'hsbc',
         ibkr: 'ibkr',
         longbridge: 'longbridge',
+        futuhk: 'futuhk',
     };
     const investmentBrokerFilterCollator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true });
 
@@ -4480,9 +4624,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-center">${formatEventType(txn.type)}</td>
                 <td class="investment-history-cell investment-history-cell-left">${formatTransactionDescription(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-center">${formatTransactionCurrency(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount ?? getTransactionEconomicAmount(txn))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmountWithCurrency(txn.display_amount ?? getTransactionEconomicAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmount(txn.rowMarketValue)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${txn.rowMarketValue === null ? '-' : formatAmountWithCurrency(txn.rowMarketValue, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
                 <td class="investment-history-cell investment-history-cell-right ${txn.rowRealizedPnl === null ? '' : (txn.rowRealizedPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative')}">${txn.rowRealizedPnl === null ? '-' : formatAmountWithCurrency(txn.rowRealizedPnl, formatTransactionCurrency(txn), { showUsdSymbol: false })}</td>
             </tr>
         `).join('');
@@ -4779,6 +4923,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ibkrImportMode = getSelectedIbkrImportMode();
         const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
         const isLongbridge = selectedBroker === 'longbridge';
+        const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
         const usesSyncAction = isIbkrGateway || isLongbridge || isHsbc;
 
@@ -4788,6 +4933,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportLongbridgeFields instanceof HTMLElement) {
             investmentImportLongbridgeFields.hidden = !isLongbridge;
+        }
+        if (investmentImportFutuhkFields instanceof HTMLElement) {
+            investmentImportFutuhkFields.hidden = !isFutuhk;
         }
         if (investmentImportHsbcFields instanceof HTMLElement) {
             investmentImportHsbcFields.hidden = !isHsbc;
@@ -4804,14 +4952,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (longbridgeEndDateInput instanceof HTMLInputElement) {
             longbridgeEndDateInput.required = isLongbridge;
         }
+        if (futuhkStatementPdfsInput instanceof HTMLInputElement) {
+            futuhkStatementPdfsInput.required = isFutuhk;
+        }
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
                 : (isLongbridge
                     ? 'Syncs Longbridge activity into <code>settings_store/investment.json</code> without clearing existing records.'
-                    : (isIbkrGateway
-                        ? 'Syncs IBKR PortfolioAnalyst transactions for the last 365 days, plus current positions and cash, into <code>settings_store/investment.json</code> without clearing existing records.'
-                        : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.'));
+                    : (isFutuhk
+                        ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                        : (isIbkrGateway
+                            ? 'Syncs IBKR PortfolioAnalyst transactions for the last 365 days, plus current positions and cash, into <code>settings_store/investment.json</code> without clearing existing records.'
+                            : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -5202,7 +5355,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
                 ? investmentProcessedTransactionsCache
                 : [];
-            const tickerTransactions = processedTransactions.filter((txn) => normalizeInvestmentTicker(txn?.ticker) === activeTicker);
+            const tickerTransactions = processedTransactions.filter((txn) => getInvestmentCanonicalTicker(txn?.ticker) === activeTicker);
             const dateRange = buildExportDateRange(tickerTransactions, latestEquityDate);
             if (!dateRange) {
                 return null;
@@ -5797,7 +5950,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const buildShareTickerCell = (ticker) => {
             const normalizedTicker = String(ticker || '').trim().toUpperCase();
             const tickerProfiles = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_profiles || {};
-            const profile = tickerProfiles?.[normalizedTicker] || {};
+            const profile = resolveInvestmentTickerProfile(tickerProfiles, normalizedTicker);
             const tickerLabel = formatInvestmentTickerForDisplay(normalizedTicker);
             const companyName = String(profile.company_name || tickerLabel);
             const logoUrls = resolveInvestmentLogoUrls(profile, normalizedTicker);
@@ -6335,11 +6488,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getFirstStockDetailLedgerNoForDate(rawDate) {
         const normalizedDate = normalizeLedgerDate(rawDate);
-        const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
+        const activeTicker = getInvestmentCanonicalTicker(selectedInvestmentStockTicker || '');
         if (!normalizedDate || !activeTicker || !Array.isArray(investmentProcessedTransactionsCache)) return 0;
         const match = investmentProcessedTransactionsCache.find((txn) => (
             normalizeLedgerDate(txn?.date) === normalizedDate
-            && normalizeInvestmentTicker(txn?.ticker) === activeTicker
+            && getInvestmentCanonicalTicker(txn?.ticker) === activeTicker
         ));
         const ledgerNo = Number(match?.ledger_no);
         return Number.isFinite(ledgerNo) && ledgerNo > 0 ? ledgerNo : 0;
@@ -6524,7 +6677,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
         const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
         const isLongbridge = selectedBroker === 'longbridge';
+        const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
+        const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
         const transactionReady = isIbkrCsv ? isLikelyTransactionHistoryFile(transactionFile) : false;
         const positionsReady = isIbkrCsv ? isLikelyPositionsFile(positionsFile) : false;
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
@@ -6537,11 +6692,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const hsbcPortfolioReady = isHsbc && isLikelyHsbcPortfolioText(hsbcPortfolioText);
         const hsbcOrderStatusReady = isHsbc && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
         const hsbcCashAccountReady = isHsbc && isLikelyHsbcCashAccountText(hsbcCashAccountText);
+        const futuhkStatementsReady = isFutuhk
+            && futuhkStatementFiles.length > 0
+            && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
             || isIbkrGateway
             || (isLongbridge && Boolean(sharedRangeReady))
+            || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
         );
 
@@ -6552,6 +6711,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(hsbcPortfolioTextStatus, Boolean(hsbcPortfolioReady));
         setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
+        setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         syncActionButtonState(submitButton, {
@@ -6708,7 +6868,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncInvestmentImportMode();
     syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
-    [transactionsCsvInput, positionsCsvInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -6827,6 +6987,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 formData.append('longbridge_start_date', startDate);
                 formData.append('longbridge_end_date', endDate);
+            } else if (selectedBroker === 'futuhk') {
+                const statementFiles = getSelectedFutuStatementPdfFiles();
+                if (!statementFiles.length) {
+                    setImportFeedback('Please choose at least one Futu (HK) monthly statement PDF before importing.', 'error');
+                    return;
+                }
+                if (!statementFiles.every((file) => isLikelyFutuStatementPdf(file))) {
+                    setImportFeedback('Please upload valid Futu (HK) monthly statement PDF files.', 'error');
+                    return;
+                }
+                statementFiles.forEach((file) => {
+                    formData.append('futuhk_statement_pdfs', file);
+                });
             } else if (selectedBroker === 'hsbc') {
                 const portfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
                 const orderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
@@ -7026,12 +7199,11 @@ document.addEventListener('DOMContentLoaded', () => {
             : ' investment-holdings-value-negative';
 
         const rowsHtml = summaries.map((summary, index) => {
-            const profile = tickerProfiles?.[summary.ticker] || {};
+            const profile = resolveInvestmentTickerProfile(tickerProfiles, summary.ticker);
             const tickerLabel = formatInvestmentTickerForDisplay(summary.ticker);
             const companyName = String(profile.company_name || tickerLabel);
             const logoUrls = resolveInvestmentLogoUrls(profile, summary.ticker);
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
-            const realizedDisplay = formatHoldingsMoney(summary.realizedPnl);
             const realizedClass = summary.realizedPnl >= 0
                 ? ' investment-holdings-value-positive'
                 : ' investment-holdings-value-negative';
@@ -7073,13 +7245,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${renderInvestmentLiveValue('last', summary.lastPrice, {
                             ticker: summary.ticker,
                             className: `trade-metric-value investment-stock-details-metric-value${lastClass}`,
-                            formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                            formatter: (nextValue) => formatHoldingsLocalMoney(nextValue, summary.quoteCurrency),
                             useSplitValue: true,
                         })}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
-                        <span class="trade-metric-value investment-stock-details-metric-value${realizedClass}">${renderWorkspaceMetricValueContent(realizedDisplay)}</span>
+                        ${renderHoldingsDualCurrencyValue(
+                            summary.realizedPnl,
+                            summary.realizedPnlLocal,
+                            summary.quoteCurrency,
+                            { valueClass: realizedClass },
+                        )}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">
                         ${renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
@@ -7287,7 +7464,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return Array.from(new Set((Array.isArray(investmentProcessedTransactionsCache) ? investmentProcessedTransactionsCache : [])
             .filter((txn) => shouldTrackHoldingTicker(txn))
-            .map((txn) => normalizeInvestmentTicker(txn?.ticker))
+            .map((txn) => getInvestmentCanonicalTicker(txn?.ticker))
             .filter(Boolean)));
     }
 
@@ -7377,6 +7554,49 @@ document.addEventListener('DOMContentLoaded', () => {
             .join('');
     }
 
+    function formatHoldingsLocalMoney(value, currency) {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+        const normalizedCurrency = String(currency || '').trim().toUpperCase();
+        const baseCurrency = getInvestmentBaseCurrency();
+        const formatted = formatHoldingsMoney(value);
+        if (!normalizedCurrency || normalizedCurrency === baseCurrency) {
+            return formatted;
+        }
+        return `${normalizedCurrency} ${formatted}`;
+    }
+
+    function formatHoldingsLocalCurrencyLine(value, currency) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return '';
+        const normalizedCurrency = String(currency || '').trim().toUpperCase();
+        const baseCurrency = getInvestmentBaseCurrency();
+        if (!normalizedCurrency || normalizedCurrency === baseCurrency) return '';
+        const sign = numericValue < 0 ? '-' : '';
+        return `${normalizedCurrency} ${formatHoldingsMoney(Math.abs(numericValue))}`;
+    }
+
+    function shouldShowHoldingsLocalCurrencyLine(localValue, currency) {
+        const normalizedCurrency = String(currency || '').trim().toUpperCase();
+        const baseCurrency = getInvestmentBaseCurrency();
+        if (!normalizedCurrency || normalizedCurrency === baseCurrency) return false;
+        const numericValue = Number(localValue);
+        return Number.isFinite(numericValue) && Math.abs(numericValue) >= 1e-9;
+    }
+
+    function renderHoldingsDualCurrencyValue(usdValue, localValue, currency, { valueClass = '' } = {}) {
+        const usdDisplay = formatHoldingsMoney(usdValue);
+        if (!shouldShowHoldingsLocalCurrencyLine(localValue, currency)) {
+            return `<span class="trade-metric-value investment-stock-details-metric-value${valueClass}">${renderWorkspaceMetricValueContent(usdDisplay)}</span>`;
+        }
+        const localDisplay = formatHoldingsLocalCurrencyLine(localValue, currency);
+        return `
+            <span class="investment-holdings-dual-currency">
+                <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-dual-currency-primary${valueClass}">${renderWorkspaceMetricValueContent(usdDisplay)}</span>
+                <span class="investment-holdings-dual-currency-secondary">${escapeHtml(localDisplay)}</span>
+            </span>
+        `;
+    }
+
     function renderInvestmentLiveValue(field, value, {
         ticker = '',
         formatter = (nextValue) => String(nextValue ?? '').trim() || '-',
@@ -7460,6 +7680,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ).map((summary) => {
             const nextSummary = { ...summary };
             const livePrice = Number(investmentLatestPricesCache[nextSummary.ticker]);
+            if (Number.isFinite(livePrice) && livePrice > 0) {
+                nextSummary.lastPrice = livePrice;
+            }
             if (!nextSummary.hasOpenPosition || !Number.isFinite(livePrice) || livePrice <= 0) {
                 return nextSummary;
             }
@@ -7488,7 +7711,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     fxTimeline,
                     baseCurrency,
                 );
-            nextSummary.lastPrice = livePrice;
             nextSummary.marketValue = marketValue;
             nextSummary.unrealizedPnl = unrealizedPnl;
             nextSummary.positionWeight = Number.isFinite(safeTotalEquity) && Math.abs(safeTotalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON
@@ -7983,7 +8205,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const unrealizedCell = unrealizedNode?.closest('td');
             const previousLastPrice = Number(lastNode?.dataset.investmentLiveNumber);
 
-            updateInvestmentLiveValueNode(lastNode, summary.lastPrice === null ? '-' : formatHoldingsMoney(summary.lastPrice), summary.lastPrice);
+            updateInvestmentLiveValueNode(
+                lastNode,
+                formatHoldingsLocalMoney(summary.lastPrice, summary.quoteCurrency),
+                summary.lastPrice,
+            );
             updateInvestmentLiveValueNode(
                 unrealizedNode,
                 summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl),
@@ -8149,7 +8375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         clearInvestmentStockDetailsRangeControlBindings();
         const tickerSummary = investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || createPositionState(activeTicker);
-        const profile = tickerProfiles?.[activeTicker] || {};
+        const profile = resolveInvestmentTickerProfile(tickerProfiles, activeTicker);
         const displayTicker = formatInvestmentTickerForDisplay(activeTicker);
         const companyName = String(profile.company_name || displayTicker);
         const logoUrls = resolveInvestmentLogoUrls(profile, activeTicker);
@@ -8754,32 +8980,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function applyHoldingStateUpdate(state, txn, normalizedType, valuationQty, price) {
             if (!txn.ticker || valuationQty === null || Number.isNaN(valuationQty)) return;
-            const normalizedTicker = String(txn.ticker).trim().toUpperCase();
+            const rawTicker = String(txn.ticker).trim().toUpperCase();
+            const normalizedTicker = getInvestmentCanonicalTicker(rawTicker);
             if (isForexPairTicker(normalizedTicker)) return;
-            if (!state.holdings[txn.ticker]) state.holdings[txn.ticker] = 0;
-            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+            if (!normalizedTicker) return;
+            if (!state.holdings[normalizedTicker]) state.holdings[normalizedTicker] = 0;
+            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker) || moneyMarketTickers.has(rawTicker);
             if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
                 if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
-                    const previousQuantity = state.holdings[txn.ticker];
-                    const previousAnchor = state.moneyMarketAnchors[txn.ticker] ?? price;
+                    const previousQuantity = state.holdings[normalizedTicker];
+                    const previousAnchor = state.moneyMarketAnchors[normalizedTicker] ?? price;
                     const nextQuantity = previousQuantity + valuationQty;
-                    state.moneyMarketAnchors[txn.ticker] = nextQuantity > 0
+                    state.moneyMarketAnchors[normalizedTicker] = nextQuantity > 0
                         ? (((previousQuantity * previousAnchor) + (valuationQty * price)) / nextQuantity)
                         : price;
                 }
-                state.holdings[txn.ticker] += valuationQty;
+                state.holdings[normalizedTicker] += valuationQty;
                 return;
             }
             if (normalizedType !== 'sell') return;
-            state.holdings[txn.ticker] -= valuationQty;
-            if (isMoneyMarketTicker && state.holdings[txn.ticker] > 0 && price !== null && !Number.isNaN(price)) {
-                state.moneyMarketAnchors[txn.ticker] = state.moneyMarketAnchors[txn.ticker] ?? price;
+            state.holdings[normalizedTicker] -= valuationQty;
+            if (isMoneyMarketTicker && state.holdings[normalizedTicker] > 0 && price !== null && !Number.isNaN(price)) {
+                state.moneyMarketAnchors[normalizedTicker] = state.moneyMarketAnchors[normalizedTicker] ?? price;
             }
-            if (state.holdings[txn.ticker] <= 0) {
-                delete state.moneyMarketAnchors[txn.ticker];
+            if (state.holdings[normalizedTicker] <= 0) {
+                delete state.moneyMarketAnchors[normalizedTicker];
             }
-            if (Math.abs(state.holdings[txn.ticker]) < 1e-9) {
-                delete state.holdings[txn.ticker];
+            if (Math.abs(state.holdings[normalizedTicker]) < 1e-9) {
+                delete state.holdings[normalizedTicker];
             }
         }
 
@@ -8813,6 +9041,80 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
+        function calculateInvestmentCashDelta(txn) {
+            let qty = getTransactionQuantity(txn);
+            let amount = getTransactionAmount(txn);
+            let price = getTransactionPrice(txn);
+            let commission = 0;
+            if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
+            else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
+            const normalizedType = getNormalizedTransactionType(txn);
+            if ((amount === 0 || amount === undefined) && qty !== null && price !== null && ['buy', 'sell'].includes(txn.type)) {
+                amount = qty * price;
+            }
+
+            let cashDelta = 0;
+            if (txn.normalized !== undefined) {
+                cashDelta += amount;
+            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
+                cashDelta += amount;
+            } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend'
+                || normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
+                if (normalizedType === 'sell' && amount && commission) {
+                    cashDelta += (amount - commission);
+                } else {
+                    cashDelta += amount;
+                }
+            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment'
+                || normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
+                if (amount !== 0) {
+                    cashDelta += amount;
+                }
+            }
+
+            const isImported = txn.normalized !== undefined;
+            if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
+                cashDelta -= Math.abs(commission);
+            }
+            return Number.isFinite(cashDelta) ? cashDelta : 0;
+        }
+
+        function buildInvestmentCashFundingAdjustments(transactionsForReplay) {
+            const adjustments = new Map();
+            const simulatedBalances = new Map();
+            const cashDeltas = transactionsForReplay.map((txn) => calculateInvestmentCashDelta(txn));
+            const simulationKeyFor = (txn) => {
+                const brokerCode = getTransactionBrokerCode(txn);
+                const currency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
+                return `${brokerCode}|${currency}`;
+            };
+            const getAdjustment = (index) => Number(adjustments.get(index)) || 0;
+            transactionsForReplay.forEach((txn, index) => {
+                const key = simulationKeyFor(txn);
+                const currentBalance = Number(simulatedBalances.get(key)) || 0;
+                let effectiveDelta = cashDeltas[index] + getAdjustment(index);
+                let projectedBalance = currentBalance + effectiveDelta;
+                if (projectedBalance < -1e-9) {
+                    let deficit = Math.abs(projectedBalance);
+                    for (let futureIndex = index + 1; futureIndex < transactionsForReplay.length && deficit > 1e-9; futureIndex += 1) {
+                        const futureTxn = transactionsForReplay[futureIndex];
+                        if (simulationKeyFor(futureTxn) !== key) continue;
+                        const availableFutureCash = cashDeltas[futureIndex] + getAdjustment(futureIndex);
+                        if (availableFutureCash <= 1e-9) continue;
+                        const allocation = Math.min(availableFutureCash, deficit);
+                        adjustments.set(index, getAdjustment(index) + allocation);
+                        adjustments.set(futureIndex, getAdjustment(futureIndex) - allocation);
+                        deficit -= allocation;
+                    }
+                    effectiveDelta = cashDeltas[index] + getAdjustment(index);
+                    projectedBalance = currentBalance + effectiveDelta;
+                }
+                simulatedBalances.set(key, projectedBalance);
+            });
+            return adjustments;
+        }
+
+        const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -8844,47 +9146,15 @@ document.addEventListener('DOMContentLoaded', () => {
             applyHoldingStateUpdate(brokerLedgerState, txn, normalizedType, valuationQty, price);
 
             if (shouldTrackHoldingTicker(txn) && price !== null && Number.isFinite(price) && price > 0) {
-                lastKnownTickerPrices[String(txn.ticker).trim().toUpperCase()] = price;
+                const priceTicker = getInvestmentCanonicalTicker(txn.ticker);
+                if (priceTicker) {
+                    lastKnownTickerPrices[priceTicker] = price;
+                }
             }
 
-            // Calculate cash impact based on transaction type
             const ledgerDate = normalizeLedgerDate(txn?.date);
             const transactionCurrency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
-            let cashDelta = 0;
-
-            // For IBKR imported format (txn.normalized exists), net_amount already includes commission
-            // and is already correctly signed: -ve = cash out, +ve = cash in. Just add directly.
-            if (txn.normalized !== undefined) {
-                cashDelta += amount;
-            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
-                // Adjustment can be any direction - use the amount sign directly
-                cashDelta += amount;
-            } else if (normalizedType === 'deposit' || normalizedType === 'sell' || normalizedType === 'dividend' || 
-                normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
-                // Cash in: these transactions add cash to your account
-                // For manually added transactions where commission is separate
-                if (normalizedType === 'sell' && amount && commission) {
-                    cashDelta += (amount - commission);
-                } else {
-                    cashDelta += amount;
-                }
-            } else if (normalizedType === 'withdrawal' || normalizedType === 'buy' || normalizedType === 'dividend_reinvestment' || 
-                       normalizedType === 'foreign_tax_withholding' || normalizedType === 'debit_interest') {
-                // Cash out: these transactions remove cash from your account
-                // For manually added transactions
-                if (amount !== 0) {
-                    cashDelta += amount;
-                }
-            }
-
-            // For buy/sell we already accounted for commission above
-            // Only subtract commission for other types
-            // For IBKR imported format (normalized), commission is already included in net_amount
-            // Only subtract commission for manually added transactions where commission is separate
-            const isImported = txn.normalized !== undefined;
-            if (!isImported && commission && !['buy', 'sell'].includes(normalizedType)) {
-                cashDelta -= Math.abs(commission);
-            }
+            const cashDelta = calculateInvestmentCashDelta(txn) + (Number(cashFundingAdjustments.get(processedIndex)) || 0);
             applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
             const transactionDate = normalizeLedgerDate(txn?.date);
@@ -8951,7 +9221,9 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.entries(authoritativePositionSnapshot).forEach(([ticker, snapshot]) => {
                 const quantity = Number(snapshot?.quantity);
                 if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) return;
-                authoritativeHoldings[ticker] = quantity;
+                const canonicalTicker = getInvestmentCanonicalTicker(ticker);
+                if (!canonicalTicker) return;
+                authoritativeHoldings[canonicalTicker] = (Number(authoritativeHoldings[canonicalTicker]) || 0) + quantity;
             });
             latestProcessed.holdings = authoritativeHoldings;
             latestProcessed.aggregate_holdings = { ...authoritativeHoldings };
@@ -8995,7 +9267,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const valuationDate = normalizeLedgerDate(txn.date);
                 let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex[normalizedTicker], valuationDate);
                 if (isMoneyMarketTicker) {
-                    const sameDaySellPrice = normalizedTicker === String(txn.ticker || '').trim().toUpperCase()
+                    const sameDaySellPrice = normalizedTicker === getInvestmentCanonicalTicker(txn.ticker)
                         && getNormalizedTransactionType(txn) === 'sell'
                         ? getTransactionPrice(txn)
                         : null;
@@ -9094,6 +9366,7 @@ document.addEventListener('DOMContentLoaded', () => {
             backendFailures: priceHistoryFailures,
             fallbackTickers: Array.from(fallbackTickers),
             missingTickers: Array.from(missingTickers),
+            openTickers: window.ANTIGRAVITY_INVESTMENT_DATA?.section_freshness?.open_tickers || [],
         });
 
         // 3. Render reverse chronological rows constrained by the active equity range
@@ -9126,9 +9399,13 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentTickerClosePricesCache = tickerClosePrices && typeof tickerClosePrices === 'object'
             ? { ...tickerClosePrices }
             : {};
-        const tickerSummaries = buildTickerSummaries(rawTransactions, latestPrices, AGGREGATE_TOTAL_EQUITY, tickerClosePrices);
+        const mergedLatestPrices = {
+            ...(latestPrices && typeof latestPrices === 'object' ? latestPrices : {}),
+            ...(investmentLatestPricesCache && typeof investmentLatestPricesCache === 'object' ? investmentLatestPricesCache : {}),
+        };
+        const tickerSummaries = buildTickerSummaries(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY, tickerClosePrices);
         const fundingMetrics = getUsdFundingMetrics(processed);
-        const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, latestPrices, AGGREGATE_TOTAL_EQUITY);
+        const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
@@ -10138,7 +10415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             if (!shouldTrackHoldingTicker(txn)) return;
             realizedPnlRows.push(ledgerNo);
-            const normalizedTicker = normalizeInvestmentTicker(txn?.ticker);
+            const normalizedTicker = getInvestmentCanonicalTicker(txn?.ticker);
             if (normalizedTicker && openTickers.has(normalizedTicker)) {
                 unrealizedPnlRows.push(ledgerNo);
             }
