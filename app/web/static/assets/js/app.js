@@ -2820,6 +2820,19 @@
             // Use fixed positioning to escape the height-constrained floating #transaction_form_container.
             // This ensures the full broker list (including Longbridge (SG) and Charles Schwab at the end)
             // is visible and scrollable/selectable even when the browser window or form panel is short.
+            const container = trigger.closest('#transaction_form_container');
+            let offsetLeft = 0;
+            let offsetTop = 0;
+            if (container) {
+                const style = window.getComputedStyle(container);
+                const hasTransform = style.transform !== 'none' || style.perspective !== 'none' || style.filter !== 'none';
+                if (hasTransform) {
+                    const containerRect = container.getBoundingClientRect();
+                    offsetLeft = containerRect.left;
+                    offsetTop = containerRect.top;
+                }
+            }
+
             const dropdownGap = 4;
             const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
             const spaceBelow = Math.max(140, viewportHeight - triggerRect.bottom - dropdownGap - 12);
@@ -2827,8 +2840,8 @@
             const maxH = Math.min(380, spaceBelow);
 
             dropdown.style.position = 'fixed';
-            dropdown.style.left = `${Math.round(triggerRect.left)}px`;
-            dropdown.style.top = `${Math.round(triggerRect.bottom + dropdownGap)}px`;
+            dropdown.style.left = `${Math.round(triggerRect.left - offsetLeft)}px`;
+            dropdown.style.top = `${Math.round(triggerRect.bottom - offsetTop + dropdownGap)}px`;
             dropdown.style.bottom = 'auto';
             dropdown.style.right = 'auto';
             dropdown.style.width = `${Math.round(triggerRect.width)}px`;
