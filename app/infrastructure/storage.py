@@ -244,6 +244,42 @@ def propagate_investment_lineage_identity_profiles(
                 }
 
 
+def investment_ticker_identity_store_aliases(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return []
+
+    aliases: list[str] = []
+
+    def add_alias(value: str) -> None:
+        normalized_candidate = normalize_ticker(value)
+        if normalized_candidate and normalized_candidate not in aliases:
+            aliases.append(normalized_candidate)
+
+    for candidate in INVESTMENT_TICKER_LINEAGE.get(normalized_ticker, ()):
+        if normalize_ticker(candidate) in LINEAGE_IDENTITY_PROXY_TICKERS:
+            continue
+        add_alias(candidate)
+
+    if normalized_ticker.endswith(".US"):
+        add_alias(normalized_ticker[:-3].strip())
+
+    if normalized_ticker.endswith(".HK"):
+        symbol, suffix = normalized_ticker.rsplit(".", 1)
+        for code in _hk_ticker_code_variants(symbol):
+            add_alias(f"{code}.{suffix}")
+
+    add_alias(normalized_ticker)
+
+    if (
+            not normalized_ticker.endswith((".US", ".HK"))
+            and re.fullmatch(r"[A-Z0-9]+", normalized_ticker)
+    ):
+        add_alias(f"{normalized_ticker}.US")
+
+    return aliases
+
+
 def investment_ticker_store_aliases(ticker: str) -> list[str]:
     normalized_ticker = normalize_ticker(ticker)
     if not normalized_ticker:

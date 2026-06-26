@@ -1,12 +1,13 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.13
+ * Code version: v1.45.14
  * - Fixed: IBKR forex trade component rows now display the acquired quote currency and a compact conversion description derived from the pair rate.
  * - Fixed: Cash equivalent ticker settings now preserve an explicitly empty configured list instead of falling back to money-market defaults.
  * - Added: KOL reward rows are classified as realized income instead of ordinary deposits for funding and P&L metrics.
  * - Fixed: Broker-imported buy/sell rows now keep authoritative share counts during holdings replay instead of rescaling quantities to match split-adjusted chart closes.
  * - Fixed: Zero-price grant rows now inherit same-day rendered split factors from sibling trades, preventing stale proxy histories from leaving phantom SPYM/SPLG shares.
+ * - Fixed: Split-factor replay now ignores SPY lineage proxy prices and rejects downscaling factors so SPLG grants cannot collapse into phantom SPYM short positions after git pull.
  * - Added: Exported module version metadata so browser-side cache drift can be diagnosed without manually inspecting loaded source files.
  * - Fixed: Exported lineage profile lookup helpers so investment entry code can resolve canonical successors such as SPYM without ReferenceErrors.
  * - Fixed: Transaction descriptions now render canonical investment tickers so MSFT.US displays as MSFT and SPLG.US displays as SPYM.
@@ -802,21 +803,51 @@ export function createInvestmentDataUtils({
         return Number.isFinite(price) ? price : 0;
     }
 
+    const INVESTMENT_LINEAGE_PROXY_TICKERS = new Set(['SPY', 'SPY.US']);
+
+    function getInvestmentIdentityStoreAliasCandidates(ticker) {
+        return getInvestmentTickerStoreAliasCandidates(ticker)
+            .filter((candidate) => !INVESTMENT_LINEAGE_PROXY_TICKERS.has(candidate));
+    }
+
+    function getIndexedClosePriceForTransaction(txn, tickerPriceIndex) {
+        const valuationDate = normalizeLedgerDate(txn?.date);
+        if (!valuationDate || !tickerPriceIndex) return null;
+        const candidates = [];
+        const addCandidate = (value) => {
+            const normalizedCandidate = normalizeInvestmentTicker(value);
+            if (normalizedCandidate && !candidates.includes(normalizedCandidate)) {
+                candidates.push(normalizedCandidate);
+            }
+        };
+        addCandidate(txn?.ticker);
+        addCandidate(getInvestmentCanonicalTicker(txn?.ticker));
+        getInvestmentIdentityStoreAliasCandidates(txn?.ticker).forEach(addCandidate);
+        for (let index = 0; index < candidates.length; index += 1) {
+            const close = getIndexedClosePriceOnOrBefore(tickerPriceIndex[candidates[index]], valuationDate);
+            if (Number.isFinite(close) && close > 0) {
+                return close;
+            }
+        }
+        return null;
+    }
+
+    function normalizeRenderedSplitFactor(factor) {
+        if (!Number.isFinite(factor) || factor <= 0 || factor < 1) return 1;
+        const roundedFactor = Math.round(factor);
+        return Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2 ? roundedFactor : factor;
+    }
+
     function getTransactionRenderedSplitFactor(txn, tickerPriceIndex) {
         if (!shouldTrackHoldingTicker(txn)) return 1;
         const normalizedType = getNormalizedTransactionType(txn);
         if (!['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)) return 1;
-        const ticker = normalizeInvestmentTicker(txn?.ticker);
         const rawPrice = getTransactionPrice(txn);
-        if (!ticker || !Number.isFinite(rawPrice) || rawPrice <= 0) return 1;
-        const valuationDate = normalizeLedgerDate(txn?.date);
-        const renderedClose = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[ticker], valuationDate);
+        if (!Number.isFinite(rawPrice) || rawPrice <= 0) return 1;
+        const renderedClose = getIndexedClosePriceForTransaction(txn, tickerPriceIndex);
         const adjustedPrice = adjustTradePriceForRenderedSeries(rawPrice, renderedClose);
         if (!Number.isFinite(adjustedPrice) || adjustedPrice <= 0) return 1;
-        const factor = rawPrice / adjustedPrice;
-        if (!Number.isFinite(factor) || factor <= 0) return 1;
-        const roundedFactor = Math.round(factor);
-        return Math.abs(factor - roundedFactor) < 0.08 && roundedFactor >= 2 ? roundedFactor : factor;
+        return normalizeRenderedSplitFactor(rawPrice / adjustedPrice);
     }
 
     function getRenderedSplitFactorHintKey(txn) {
@@ -834,7 +865,7 @@ export function createInvestmentDataUtils({
             const key = getRenderedSplitFactorHintKey(txn);
             if (!key) return;
             const factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
-            if (!Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return;
+            if (!Number.isFinite(factor) || factor < 1 || Math.abs(factor - 1) < 1e-9) return;
             if (!buckets.has(key)) {
                 buckets.set(key, []);
             }
@@ -850,7 +881,7 @@ export function createInvestmentDataUtils({
             const [bestFactor] = Array.from(roundedCounts.entries())
                 .sort((left, right) => right[1] - left[1] || Number(left[0]) - Number(right[0]))[0] || [];
             const numericFactor = Number(bestFactor);
-            if (Number.isFinite(numericFactor) && numericFactor > 0) {
+            if (Number.isFinite(numericFactor) && numericFactor >= 1) {
                 hints.set(key, numericFactor);
             }
         });
@@ -890,7 +921,7 @@ export function createInvestmentDataUtils({
             && renderedSplitFactorHints instanceof Map
         ) {
             const hintedFactor = renderedSplitFactorHints.get(getRenderedSplitFactorHintKey(txn));
-            if (Number.isFinite(hintedFactor) && hintedFactor > 0) {
+            if (Number.isFinite(hintedFactor) && hintedFactor >= 1) {
                 factor = hintedFactor;
             }
         }
@@ -1164,6 +1195,7 @@ export function createInvestmentDataUtils({
             normalized[ticker] = { ...(normalized[ticker] || {}), ...dateMap };
         });
         Object.entries(rawMaps).forEach(([ticker, dateMap]) => {
+            if (INVESTMENT_LINEAGE_PROXY_TICKERS.has(ticker)) return;
             const canonicalTicker = getInvestmentCanonicalTicker(ticker);
             if (!canonicalTicker || canonicalTicker === ticker) return;
             normalized[canonicalTicker] = normalized[canonicalTicker] || {};
@@ -1868,4 +1900,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.13';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.14';

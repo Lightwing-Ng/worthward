@@ -181,6 +181,7 @@ from app.infrastructure.storage import (
     list_historical_tickers,
     load_profile_record,
     market_store_file_lock,
+    investment_ticker_identity_store_aliases,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
     known_ticker_company_names_payload,
@@ -195,7 +196,7 @@ from app.infrastructure.storage import (
 MAX_TICKERS = 5
 MIN_TICKERS = 2
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v1"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v2"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 15.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 10
@@ -709,8 +710,14 @@ def build_web_runtime() -> WebRuntime:
             ticker: str,
             *,
             interval: str = "1d",
+            include_proxy: bool = True,
     ) -> Path | None:
-        for candidate in iter_investment_store_ticker_aliases(ticker):
+        alias_candidates = (
+            iter_investment_store_ticker_aliases(ticker)
+            if include_proxy
+            else investment_ticker_identity_store_aliases(ticker)
+        )
+        for candidate in alias_candidates:
             path = intraday_history_store_path_for(candidate, interval) if interval == "1m" else history_store_path_for(candidate)
             if path.exists() and path.stat().st_size > 0:
                 return path
@@ -747,7 +754,7 @@ def build_web_runtime() -> WebRuntime:
             if is_configured_money_market_ticker(ticker):
                 continue
             try:
-                path = resolve_investment_history_store_path(ticker)
+                path = resolve_investment_history_store_path(ticker, include_proxy=False)
                 should_refresh_live_cache = ticker in open_ticker_set
                 if path is None:
                     failures.append({
