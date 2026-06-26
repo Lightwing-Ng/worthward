@@ -22,6 +22,10 @@ import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
+from app.core.cash_equivalent_settings import (
+    load_cash_equivalent_tickers,
+    save_cash_equivalent_tickers,
+)
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.date_display_settings import (
     load_date_display_settings,
@@ -204,7 +208,7 @@ LEGACY_VIEW_ALIASES = {
 }
 SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "more", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
-                               "clear-caches", "style-tokens", "export-image"}
+                               "clear-caches", "style-tokens", "export-image", "cash-equivalents"}
 SUPPORTED_MORE_SECTIONS = {"investment", "live-trading"}
 LEGACY_MORE_SECTION_ALIASES = {
     "timing": "investment",
@@ -255,6 +259,7 @@ class WebRuntime:
     export_transactions_api: Any
     general_settings_action: Any
     backtest_settings_action: Any
+    cash_equivalents_action: Any
     email_smtp_action: Any
     broker_access_action: Any
     ibkr_gateway_start_api: Any
@@ -388,6 +393,17 @@ def build_web_runtime() -> WebRuntime:
 
     def is_configured_money_market_ticker(ticker: str) -> bool:
         return str(ticker).strip().upper() in configured_money_market_tickers
+
+    def get_cash_equivalent_tickers() -> set[str]:
+        try:
+            raw = load_cash_equivalent_tickers()
+            return {
+                str(value).strip().upper()
+                for value in raw
+                if str(value).strip()
+            }
+        except Exception:  # noqa: BLE001
+            return {"BOXX", "SGOV"}
 
     def apply_no_store_headers(response):
         response.headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate"
@@ -2786,6 +2802,7 @@ def build_web_runtime() -> WebRuntime:
         style_token_rows: list[dict[str, object]] = []
         export_image_rows: list[dict[str, object]] = []
         material_token_rows: list[dict[str, object]] = []
+        cash_equivalent_rows: list[dict[str, object]] = []
         font_token_rows: list[dict[str, object]] = []
         smtp_settings = sanitize_smtp_settings_for_view(load_smtp_settings())
         broker_settings = sanitize_broker_settings_for_view(load_broker_settings())
@@ -2843,6 +2860,8 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = "Style tokens"
             elif settings_section == "export-image":
                 settings_title = "Export image"
+            elif settings_section == "cash-equivalents":
+                settings_title = "Cash equivalents"
         elif current_view == "more":
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
@@ -3286,6 +3305,16 @@ def build_web_runtime() -> WebRuntime:
             style_token_rows = build_style_token_rows()
             export_image_rows = build_export_image_rows()
             material_token_rows = build_material_token_rows()
+            cash_equivalent_tickers = load_cash_equivalent_tickers()
+            cash_equivalent_rows = []
+            for t in cash_equivalent_tickers:
+                company = resolve_known_ticker_company_name(t) or t
+                logo = resolve_stored_logo_url(t) or ""
+                cash_equivalent_rows.append({
+                    "ticker": t,
+                    "company_name": company,
+                    "logo_url": logo,
+                })
             if settings_section == "local-market-store":
                 all_local_market_tickers = list_local_market_tickers()
                 local_store_current_page = local_store_page_value()
@@ -3378,6 +3407,7 @@ def build_web_runtime() -> WebRuntime:
             style_token_rows=style_token_rows,
             export_image_rows=export_image_rows,
             material_token_rows=material_token_rows,
+            cash_equivalent_rows=cash_equivalent_rows,
             backtest_execution_mode=backtest_execution_mode,
             date_display_full_format=date_display_settings.full_date_format,
             date_display_short_format=date_display_settings.short_date_format,
@@ -3400,7 +3430,7 @@ def build_web_runtime() -> WebRuntime:
             dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "more", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
-                            "style-tokens", "export-image")},
+                            "style-tokens", "export-image", "cash-equivalents")},
             more_urls={section_name: build_more_url(section_name) for section_name in ("investment", "live-trading")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
@@ -3768,6 +3798,44 @@ def build_web_runtime() -> WebRuntime:
                 selected_label = "Signal bar close" if selected_mode == "signal_close" else "Next bar open"
                 notice = f"Backtest execution model updated: {selected_label}."
         return _redirect_with_settings_feedback("backtest", notice=notice)
+
+    def cash_equivalents_action():
+        action = str(request.form.get("action", "save")).strip().lower()
+        current = load_cash_equivalent_tickers()
+        if action == "add":
+            raw = request.form.get("ticker", "") or request.form.get("tickers", "")
+            new_ticker = str(raw).strip().upper()
+            if new_ticker:
+                updated = list(dict.fromkeys(current + [new_ticker]))  # preserve order, dedup
+                save_cash_equivalent_tickers(updated)
+            return _redirect_with_settings_feedback("cash-equivalents", notice="Cash equivalent added.")
+        if action == "remove":
+            target = str(request.form.get("ticker", "")).strip().upper()
+            if target:
+                updated = [t for t in current if t != target]
+                save_cash_equivalent_tickers(updated)
+            return _redirect_with_settings_feedback("cash-equivalents", notice="Cash equivalent removed.")
+        if action == "set":
+            # accept repeated tickers or comma
+            raw_list = request.form.getlist("ticker") or []
+            if not raw_list:
+                csv = request.form.get("tickers", "")
+                raw_list = [x for x in csv.split(",") if x.strip()]
+            updated = _normalize_ticker_list_for_cash(raw_list)
+            save_cash_equivalent_tickers(updated)
+            return _redirect_with_settings_feedback("cash-equivalents", notice="Cash equivalents updated.")
+        # default: redirect
+        return _redirect_with_settings_feedback("cash-equivalents")
+
+    def _normalize_ticker_list_for_cash(raw_values: list) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for v in raw_values or []:
+            t = str(v or "").strip().upper()
+            if t and t not in seen:
+                seen.add(t)
+                result.append(t)
+        return result
 
     def email_smtp_action():
         action = request.form.get("action", "save").strip().lower()
@@ -4263,6 +4331,7 @@ def build_web_runtime() -> WebRuntime:
                 "price_history_by_ticker": {},
                 "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
+                "cash_equivalent_tickers": sorted(get_cash_equivalent_tickers()),
                 "ticker_lineage": investment_ticker_lineage_payload(),
                 "known_ticker_company_names": known_ticker_company_names_payload(),
                 "realtime_quotes": [],
@@ -4289,6 +4358,8 @@ def build_web_runtime() -> WebRuntime:
                     if isinstance(section_freshness, dict)
                     else []
                 )
+                cached_data["money_market_tickers"] = sorted(configured_money_market_tickers)
+                cached_data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
                 cached_data["success"] = True
                 cached_data["investment_cache"] = {
                     "status": "hit",
@@ -4321,6 +4392,7 @@ def build_web_runtime() -> WebRuntime:
             data["price_history_by_ticker"] = price_history_by_ticker
             data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
+            data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
             data["ticker_lineage"] = investment_ticker_lineage_payload()
             data["known_ticker_company_names"] = known_ticker_company_names_payload()
             data["realtime_quotes"] = load_investment_realtime_quotes(section_freshness["open_tickers"])
@@ -4995,6 +5067,7 @@ def build_web_runtime() -> WebRuntime:
         export_transactions_api=export_transactions_api,
         general_settings_action=general_settings_action,
         backtest_settings_action=backtest_settings_action,
+        cash_equivalents_action=cash_equivalents_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,
         ibkr_gateway_start_api=ibkr_gateway_start_api,

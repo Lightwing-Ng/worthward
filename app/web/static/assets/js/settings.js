@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.5.1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -2321,5 +2321,166 @@
         revealStyleTokenHashTarget();
         attachLocalStorePagination();
         attachSettingsSectionNavigation();
+        attachCashEquivalentsHandlers();
     };
+
+    function attachCashEquivalentsAddActionPosition() {
+        const actionShell = document.getElementById('cash_equivalents_add_action_shell');
+        const headingRow = document.querySelector('.settings-workspace-header > .settings-summary-card .report-heading-row');
+        if (!(actionShell instanceof HTMLElement)) return;
+        if (!(headingRow instanceof HTMLElement)) return;
+        if (actionShell.dataset.cashPositionBound === '1') return;
+        actionShell.dataset.cashPositionBound = '1';
+
+        let frameId = 0;
+        const syncPosition = () => {
+            frameId = 0;
+            const rect = headingRow.getBoundingClientRect();
+            if (!rect.height) return;
+            const centerY = rect.top + (rect.height / 2);
+            actionShell.style.setProperty('--cash-equivalents-add-top', `${centerY}px`);
+            actionShell.style.top = `${centerY}px`;
+        };
+        const schedulePositionSync = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(syncPosition);
+        };
+
+        schedulePositionSync();
+        window.addEventListener('resize', schedulePositionSync);
+        window.addEventListener('scroll', schedulePositionSync, true);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', schedulePositionSync);
+            window.visualViewport.addEventListener('scroll', schedulePositionSync);
+        }
+        if (typeof ResizeObserver === 'function') {
+            const resizeObserver = new ResizeObserver(schedulePositionSync);
+            resizeObserver.observe(headingRow);
+        }
+    }
+
+    function attachCashEquivalentsHandlers() {
+        const listEl = document.getElementById('cash_equivalents_list');
+        const addBtn = document.getElementById('add_ticker');
+        attachCashEquivalentsAddActionPosition();
+        if (!listEl || !addBtn) return;
+        if (addBtn.dataset.cashBound === '1') return;
+        addBtn.dataset.cashBound = '1';
+
+        const form = document.getElementById('cash_equiv_form');
+
+        function postUpdate(tickers) {
+            // Use fetch to update without hard reload if possible, fallback to form
+            fetch('/settings/cash-equivalents/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ action: 'set', tickers: (tickers || []).join(',') })
+            }).then(() => {
+                window.location.reload();
+            }).catch(() => {
+                if (form) {
+                    form.action = '/settings/cash-equivalents/action';
+                    const act = form.querySelector('input[name="action"]');
+                    if (act) act.value = 'set';
+                    // append tickers
+                    form.querySelectorAll('input[name="ticker"]').forEach(el => el.remove());
+                    (tickers || []).forEach(t => {
+                        const i = document.createElement('input');
+                        i.type = 'hidden';
+                        i.name = 'ticker';
+                        i.value = t;
+                        form.appendChild(i);
+                    });
+                    form.submit();
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+
+        function getCurrentTickers() {
+            return Array.from(listEl.querySelectorAll('.cash-equivalent-row[data-ticker]'))
+                .map(r => r.dataset.ticker)
+                .filter(Boolean);
+        }
+
+        listEl.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('.cash-equiv-remove, .ticker-remove');
+            if (!btn || !listEl.contains(btn)) return;
+            ev.preventDefault();
+            const ticker = btn.dataset.ticker || '';
+            if (!ticker) return;
+            const next = getCurrentTickers().filter(t => t !== ticker);
+            postUpdate(next);
+        });
+
+        addBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            if (listEl.querySelector('.cash-equiv-add-row')) return; // only one editor
+            const row = document.createElement('div');
+            row.className = 'cash-equiv-add-row ticker-input-row';
+            row.innerHTML = `
+                <div class="ticker-input-main">
+                    <label style="font-size: var(--font-form-label);">Add ticker</label>
+                    <div class="ticker-input-control">
+                        <span class="ticker-leading-slot" aria-hidden="true">
+                            <span class="ticker-logo-placeholder"></span>
+                            <img class="ticker-input-logo" alt="" hidden>
+                        </span>
+                        <input class="settings-form-control" data-ticker-input placeholder="e.g. BOXX" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" style="padding-left:44px;">
+                        <button type="button" class="ticker-clear" aria-label="Clear"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                    </div>
+                </div>
+                <button type="button" class="ticker-remove cash-equiv-cancel-add" aria-label="Cancel add"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+            `;
+            listEl.appendChild(row);
+            const input = row.querySelector('input[data-ticker-input]');
+            const cancel = row.querySelector('.cash-equiv-cancel-add');
+            if (cancel) cancel.addEventListener('click', () => row.remove());
+
+            const finishAdd = () => {
+                const val = (input.value || '').trim().toUpperCase();
+                if (!val) {
+                    row.remove();
+                    return;
+                }
+                const current = getCurrentTickers();
+                if (current.includes(val)) {
+                    row.remove();
+                    return;
+                }
+                postUpdate([...current, val]);
+            };
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    finishAdd();
+                } else if (e.key === 'Escape') {
+                    row.remove();
+                }
+            });
+            input.addEventListener('blur', () => {
+                // delay to allow click other
+                setTimeout(() => {
+                    if (row.parentNode) finishAdd();
+                }, 120);
+            });
+            setTimeout(() => input.focus(), 0);
+
+            // try to hook global ticker sync for logo if available
+            try {
+                if (typeof window.syncTickerIdentityState === 'function') {
+                    input.addEventListener('input', () => {
+                        window.syncTickerIdentityState(input);
+                    });
+                }
+            } catch (_) {}
+        });
+
+        // basic ticker sync for initial rows if logos missing
+        listEl.querySelectorAll('input[data-ticker-input]').forEach(inp => {
+            // no-op for static
+        });
+    }
 })();

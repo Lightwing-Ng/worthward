@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.19
+ * Code version: v1.55.20
+ * - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
  * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
  * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
  * - Fixed: Investment broker filter now unions payload and transaction broker codes and shows Longbridge (HK)/(SG) labels instead of identical logo-only tiles.
@@ -224,14 +225,14 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.45.11';
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.12';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.19',
+    entry: 'v1.55.20',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -692,6 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
         getMoneyMarketTickerSet,
+        getCashEquivalentTickerSet,
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
@@ -3258,6 +3260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentTradeSessionType,
         getInvestmentCanonicalTicker,
         getMoneyMarketTickerSet,
+        getCashEquivalentTickerSet,
         getNormalizedTransactionType,
         getSelectedInvestmentStockDetailsRange: () => selectedInvestmentStockDetailsRange,
         getTickerQuoteCurrency,
@@ -3879,13 +3882,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolvedTheme = resolveInvestmentTheme();
         if (!(investmentDummyChart instanceof HTMLElement) || !(investmentDummyLogoLayer instanceof HTMLElement) || !(investmentDummyDonut instanceof HTMLElement)) return;
         const holdingsMarketValues = pointRecord?.aggregate_holdings_market_values || pointRecord?.holdings_market_values || {};
-        const openComponents = Object.entries(holdingsMarketValues)
+        const cashEquivalentSet = getCashEquivalentTickerSet();
+        const allHoldings = Object.entries(holdingsMarketValues)
             .map(([ticker, value]) => ({ ticker: normalizeInvestmentTicker(ticker), marketValue: Number(value) || 0 }))
             .filter((entry) => entry.ticker && entry.marketValue > 1e-9)
             .sort((left, right) => right.marketValue - left.marketValue);
-        const openTotalValue = openComponents.reduce((sum, entry) => sum + entry.marketValue, 0);
+        const nonCashComponents = allHoldings.filter((entry) => !cashEquivalentSet.has(entry.ticker));
+        const holdingsTotalValue = allHoldings.reduce((sum, entry) => sum + entry.marketValue, 0);
         const cashValue = Math.max(0, Number(pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0);
-        const fallbackTotal = openTotalValue + cashValue;
+        const fallbackTotal = holdingsTotalValue + cashValue;
         const denominator = Math.max(Number(pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity) || 0, fallbackTotal, 0);
         if (denominator <= 1e-9) {
             syncAnimatedDonutLogos(investmentDummyLogoLayer, []);
@@ -3894,13 +3899,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const palette = buildInvestmentDummyPalette(openComponents.length);
+        const palette = buildInvestmentDummyPalette(nonCashComponents.length);
         const logoItems = [];
         const fillFragments = [];
         const gapDegrees = 1.2;
         let angle = 0;
+        let gradientIndex = 0;
 
-        openComponents.forEach((entry, index) => {
+        allHoldings.forEach((entry) => {
             const marketValue = entry.marketValue;
             if (marketValue <= 1e-9) return;
             const sweep = (marketValue / denominator) * 360;
@@ -3908,12 +3914,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const segmentStart = angle;
             const segmentEnd = Math.min(segmentStart + sweep, 360);
             if ((segmentEnd - segmentStart) > 1e-9) {
-                fillFragments.push(`${palette[index] || resolvedTheme.accentPrimary} ${segmentStart}deg ${segmentEnd}deg`);
-                const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const ticker = entry.ticker;
+                const isCashEquivalent = cashEquivalentSet.has(ticker);
+                const segmentColor = isCashEquivalent
+                    ? 'var(--theme-accent-positive)'
+                    : (palette[gradientIndex] || resolvedTheme.accentPrimary);
+                fillFragments.push(`${segmentColor} ${segmentStart}deg ${segmentEnd}deg`);
+                const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
                 const logoUrl = resolveInvestmentLogoUrl(profile, ticker);
                 logoItems.push({ ticker, logoUrl, midAngle });
+                if (!isCashEquivalent) {
+                    gradientIndex += 1;
+                }
             }
             const hasRemaining = segmentEnd < 360;
             const gapEnd = hasRemaining ? Math.min(segmentEnd + gapDegrees, 360) : segmentEnd;

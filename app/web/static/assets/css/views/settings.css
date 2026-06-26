@@ -2804,3 +2804,41 @@ div.style-token-modal-demo::-webkit-scrollbar,
     mask: url("/static/images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/externaldrive.fill.badge.checkmark.svg") center/contain no-repeat;
 }
+
+.cash-equivalents-card .cash-equivalent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.cash-equivalents-card .cash-equivalent-row .ticker-identity-item {
+    flex: 1 1 auto;
+}
+
+.cash-equivalents-card .cash-equivalent-row .ticker-remove {
+    margin-top: 0;
+    opacity: 1;
+}
+
+.cash-equivalents-add-action-shell {
+    position: fixed;
+    top: var(--cash-equivalents-add-top, var(--sidebar-toggle-center-offset));
+    right: calc(var(--global-quick-actions-right) + (var(--settings-round-icon-button-size) / 2));
+    transform: translate(50%, -50%);
+    z-index: var(--layer-fixed-dock);
+    width: var(--settings-round-icon-button-size);
+    height: var(--settings-round-icon-button-size);
+    margin: 0;
+    pointer-events: none;
+}
+
+.cash-equivalents-add-action-shell > #add_ticker {
+    pointer-events: auto;
+    margin: 0;
+}
+
+.cash-equivalents-card .cash-equiv-note {
+    margin-top: 8px;
+    opacity: 0.85;
+}

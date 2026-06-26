@@ -6,6 +6,7 @@
     'about',
     'backtest',
     'broker-access',
+    'cash-equivalents',
     'clear-caches',
     'email-smtp',
     'export-image',
@@ -35,6 +36,10 @@
     <a href="{{ settings_urls['broker-access'] }}" class="settings-nav-item settings-nav-item-broker{% if settings_section == 'broker-access' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
         <span class="settings-nav-label">Broker access</span>
+    </a>
+    <a href="{{ settings_urls['cash-equivalents'] }}" class="settings-nav-item settings-nav-item-cash-equivalents{% if settings_section == 'cash-equivalents' %} is-active{% endif %}">
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
+        <span class="settings-nav-label">{{ labels.cash_equivalents or 'Cash equivalents' }}</span>
     </a>
     <a href="{{ settings_urls['clear-caches'] }}" class="settings-nav-item settings-nav-item-clear-cache{% if settings_section == 'clear-caches' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
@@ -838,6 +843,39 @@
             </section>
             {% endfor %}
             </div>
+    </section>
+    {% elif settings_section == "cash-equivalents" %}
+    <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
+        <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="Add a ticker" title="Add a ticker"><span class="icon icon-plus" aria-hidden="true"></span></button>
+    </div>
+    <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
+        <p class="settings-service-note">Tickers in this list are treated as cash in the investment donut chart (at /more/investment) and use the standard green token instead of the gradient.</p>
+        <div class="cash-equivalents-list" id="cash_equivalents_list" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
+            {% for row in cash_equivalent_rows %}
+            <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">
+                <div class="ticker-identity-item">
+                    <div class="ticker-identity-row">
+                        {% if row.logo_url %}
+                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo" loading="lazy" decoding="async">
+                        {% else %}
+                        <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                        {% endif %}
+                        <span class="ticker-identity-copy">
+                            <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
+                            <span class="suggestion-name ticker-identity-name" title="{{ row.company_name }}">{{ row.company_name }}</span>
+                        </span>
+                    </div>
+                </div>
+                <button type="button" class="ticker-remove cash-equiv-remove" aria-label="Remove {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+            </div>
+            {% else %}
+            <div class="cash-equivalents-empty">No cash equivalents configured.</div>
+            {% endfor %}
+        </div>
+        <p class="settings-service-note cash-equiv-note">Defaults: BOXX, SGOV. Added tickers use green in the donut.</p>
+        <form id="cash_equiv_form" method="post" action="/settings/cash-equivalents/action" style="display:none;">
+            <input type="hidden" name="action" value="set">
+        </form>
     </section>
     {% elif settings_section == "style-tokens" %}
     <section class="style-token-shell" data-style-token-shell>

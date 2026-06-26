@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.11
+ * Code version: v1.45.12
+ * - Fixed: Cash equivalent ticker settings now preserve an explicitly empty configured list instead of falling back to money-market defaults.
  * - Added: KOL reward rows are classified as realized income instead of ordinary deposits for funding and P&L metrics.
  * - Fixed: Broker-imported buy/sell rows now keep authoritative share counts during holdings replay instead of rescaling quantities to match split-adjusted chart closes.
  * - Fixed: Zero-price grant rows now inherit same-day rendered split factors from sibling trades, preventing stale proxy histories from leaving phantom SPYM/SPLG shares.
@@ -962,6 +963,18 @@ export function createInvestmentDataUtils({
         );
     }
 
+    function getCashEquivalentTickerSet() {
+        let configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.cash_equivalent_tickers;
+        if (!Array.isArray(configuredTickers)) {
+            configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
+        }
+        return new Set(
+            (configuredTickers || [])
+                .map((ticker) => String(ticker || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+    }
+
     function getLatestDashboardEquity(processedTransactions, chartPoints = []) {
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length
             ? chartPoints[chartPoints.length - 1]
@@ -1825,6 +1838,7 @@ export function createInvestmentDataUtils({
         getInvestmentBaseCurrency,
         getTodayLedgerDate,
         getMoneyMarketTickerSet,
+        getCashEquivalentTickerSet,
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
