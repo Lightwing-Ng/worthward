@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.12
+ * Code version: v1.45.13
+ * - Fixed: IBKR forex trade component rows now display the acquired quote currency and a compact conversion description derived from the pair rate.
  * - Fixed: Cash equivalent ticker settings now preserve an explicitly empty configured list instead of falling back to money-market defaults.
  * - Added: KOL reward rows are classified as realized income instead of ordinary deposits for funding and P&L metrics.
  * - Fixed: Broker-imported buy/sell rows now keep authoritative share counts during holdings replay instead of rescaling quantities to match split-adjusted chart closes.
@@ -511,8 +512,8 @@ export function createInvestmentDataUtils({
         const normalizedType = getNormalizedTransactionType(txn);
         if (normalizedType === 'forex_trade_component') {
             const forexPair = String(txn?.ticker || '').trim();
-            const [baseCurrency] = forexPair.split('.');
-            if (baseCurrency) return baseCurrency;
+            const [, quoteCurrency] = forexPair.split('.');
+            if (quoteCurrency) return quoteCurrency;
             const explicitCurrency = String(txn?.currency || '').trim();
             if (explicitCurrency) return explicitCurrency;
             return '';
@@ -537,9 +538,12 @@ export function createInvestmentDataUtils({
             return txn.description || '--';
         }
 
-        const quantityText = Number.isInteger(quantity) ? `${quantity}` : String(txn.quantity_raw ?? txn.quantity_abs ?? txn.normalized?.display_quantity ?? quantity);
+        const acquiredQuantity = quantity * rate;
+        const quantityText = Number.isInteger(acquiredQuantity)
+            ? `${acquiredQuantity}`
+            : formatAmount(acquiredQuantity);
         const rateText = String(txn.price_raw ?? txn.normalized?.unit_price ?? rate);
-        return `Bought ${quantityText} ${baseCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
+        return `Bought ${quantityText} ${quoteCurrency} @ ${baseCurrency}.${quoteCurrency} ${rateText}`;
     }
 
     function normalizeTransactionDescriptionWhitespace(value) {
@@ -1864,4 +1868,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.11';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.13';

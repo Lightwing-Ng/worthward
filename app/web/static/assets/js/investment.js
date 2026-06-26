@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.20
+ * Code version: v1.55.21
+ * - Fixed: IBKR forex trade component rows now dedupe across overlapping CSV imports and display the acquired quote currency with a compact conversion description.
  * - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
  * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
  * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
@@ -225,14 +226,14 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.45.12';
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.13';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.20',
+    entry: 'v1.55.21',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
