@@ -310,6 +310,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const longbridgeHkHistoryOrdersStatus = document.getElementById('longbridge_hk_history_orders_xlsx_status');
     const investmentImportFutuhkFields = document.getElementById('investment_import_futuhk_fields');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
+    const investmentImportSchwabFields = document.getElementById('investment_import_schwab_fields');
+    const schwabTransactionsCsvInput = document.getElementById('schwab_transactions_csv');
+    const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
     const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
     const futuhkStatementPdfsStatus = document.getElementById('futuhk_statement_pdfs_status');
     const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
@@ -642,8 +645,14 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
             logoAlt: 'CMB Wing Lung Bank logo',
         },
+        schwab: {
+            code: 'schwab',
+            label: 'Charles Schwab',
+            logoUrl: '/market-store/logos/brokers/Charles%20Schwab.svg',
+            logoAlt: 'Charles Schwab logo',
+        },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -4544,6 +4553,7 @@ document.addEventListener('DOMContentLoaded', () => {
         longbridge_hk: 'longbridgehk',
         longbridge_sg: 'longbridgesg',
         futuhk: 'futuhk',
+        schwab: 'charlesschwab',
     };
     const investmentBrokerFilterCollator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true });
 
@@ -5298,6 +5308,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
+        const isSchwab = selectedBroker === 'schwab';
         const usesSyncAction = isIbkrGateway || isLongbridgeHk || isHsbc;
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
@@ -5315,6 +5326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportHsbcFields instanceof HTMLElement) {
             investmentImportHsbcFields.hidden = !isHsbc;
+        }
+        if (investmentImportSchwabFields instanceof HTMLElement) {
+            investmentImportSchwabFields.hidden = !isSchwab;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
             transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
@@ -5345,6 +5359,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (futuhkStatementPdfsInput instanceof HTMLInputElement) {
             futuhkStatementPdfsInput.required = isFutuhk;
         }
+        if (schwabTransactionsCsvInput instanceof HTMLInputElement) {
+            schwabTransactionsCsvInput.required = isSchwab;
+        }
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
@@ -5356,7 +5373,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
                         : (isIbkrGateway
                             ? 'Syncs IBKR PortfolioAnalyst transactions for the last 365 days, plus current positions and cash, into <code>settings_store/investment.json</code> without clearing existing records.'
-                            : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.'))));
+                            : (isSchwab
+                                ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.json</code> without clearing existing records.'
+                                : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -5364,6 +5383,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         seedLongbridgeImportDateRange();
     }
+
+    // Safety net: expose for the shared-select option click handler (especially with position:fixed dropdowns)
+    // so that picking a different broker in the import dropdown reliably switches the visible fields.
+    window.__forceSyncInvestmentImportMode = syncInvestmentImportMode;
 
     function getTransactionBrokerCode(txn) {
         return normalizeInvestmentBroker(
@@ -7074,6 +7097,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
+        const isSchwab = selectedBroker === 'schwab';
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
         const longbridgeSgFundDetailsFile = longbridgeSgFundDetailsInput?.files?.[0];
         const longbridgeSgHistoryOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
@@ -7097,6 +7121,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const futuhkStatementsReady = isFutuhk
             && futuhkStatementFiles.length > 0
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
+        const schwabCsvFile = schwabTransactionsCsvInput?.files?.[0];
+        const schwabReady = isSchwab && !!schwabCsvFile;
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
@@ -7105,6 +7131,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
+            || (isSchwab && Boolean(schwabReady))
         );
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
@@ -7121,6 +7148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
         setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
+        setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabReady));
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         syncActionButtonState(submitButton, {
@@ -7209,8 +7237,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 dd.style.position = '';
                 dd.style.left = '';
                 dd.style.top = '';
+                dd.style.bottom = '';
+                dd.style.right = '';
+                dd.style.width = '';
                 dd.style.minWidth = '';
                 dd.style.maxHeight = '';
+                dd.style.maxWidth = '';
+                dd.style.zIndex = '';
+                dd.style.overflowY = '';
+                dd.style.overscrollBehavior = '';
             }
             const tr = importBrokerField.querySelector('[data-shared-select-trigger]');
             if (tr instanceof HTMLElement) tr.setAttribute('aria-expanded', 'false');
@@ -7302,7 +7337,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7503,6 +7538,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('hsbc_portfolio_text', portfolioText);
                 formData.append('hsbc_order_status_text', orderStatusText);
                 formData.append('hsbc_cash_account_text', cashAccountText);
+            } else if (selectedBroker === 'schwab') {
+                const schwabFile = schwabTransactionsCsvInput?.files?.[0] || transactionsCsv?.files?.[0];
+                if (!schwabFile) {
+                    setImportFeedback('Please choose a Schwab CSV file before importing.', 'error');
+                    return;
+                }
+                formData.append('transactions_csv', schwabFile);
             }
 
             investmentImportInFlight = true;

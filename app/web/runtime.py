@@ -98,6 +98,7 @@ from app.services.investment_import import (
     build_investment_payload_from_longbridge,
     build_investment_payload_from_longbridge_hk_files,
     build_investment_payload_from_longbridge_sg_files,
+    build_investment_payload_from_schwab_csv,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
@@ -4524,6 +4525,23 @@ def build_web_runtime() -> WebRuntime:
                     "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
                     "merged incrementally into the local investment store without "
                     "clearing older data first."
+                )
+            elif broker == "schwab":
+                schwab_file = request.files.get("transactions_csv")
+                if schwab_file is None:
+                    schwab_file = request.files.get("schwab_transactions_csv")
+                if schwab_file is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Please upload the Schwab Order Status or Transactions CSV.",
+                    }), 400
+                schwab_payload = schwab_file.read()
+                if not schwab_payload:
+                    return jsonify({"success": False, "error": "The Schwab CSV file is empty."}), 400
+                imported_payload = build_investment_payload_from_schwab_csv(schwab_payload)
+                success_message = (
+                    "Charles Schwab import complete. Records were merged incrementally into the local investment store "
+                    "without clearing older data first."
                 )
             else:
                 return jsonify({

@@ -2783,6 +2783,10 @@
         dropdown.style.minWidth = "";
         dropdown.style.maxWidth = "";
         dropdown.style.maxHeight = "";
+        dropdown.style.zIndex = "";
+        dropdown.style.overflowY = "";
+        dropdown.style.maxWidth = "";
+        dropdown.style.overscrollBehavior = "";
     };
 
     const positionSidebarDropdownFromTrigger = (trigger, dropdown, container) => {
@@ -2813,16 +2817,28 @@
             || parts.field.classList.contains('investment-import-broker-field')
             || parts.field.dataset.sharedSelectKind === 'investment-import-broker';
         if (isInsideImportForm) {
+            // Use fixed positioning to escape the height-constrained floating #transaction_form_container.
+            // This ensures the full broker list (including Longbridge (SG) and Charles Schwab at the end)
+            // is visible and scrollable/selectable even when the browser window or form panel is short.
             const dropdownGap = 4;
-            dropdown.style.position = 'absolute';
-            dropdown.style.left = '0';
-            dropdown.style.top = `calc(100% + ${dropdownGap}px)`;
+            const viewportHeight = window.visualViewport?.height || window.innerHeight || 800;
+            const spaceBelow = Math.max(140, viewportHeight - triggerRect.bottom - dropdownGap - 12);
+            // Cap at a comfortable height but allow the list to be fully usable.
+            const maxH = Math.min(380, spaceBelow);
+
+            dropdown.style.position = 'fixed';
+            dropdown.style.left = `${Math.round(triggerRect.left)}px`;
+            dropdown.style.top = `${Math.round(triggerRect.bottom + dropdownGap)}px`;
             dropdown.style.bottom = 'auto';
-            dropdown.style.right = '0';
-            dropdown.style.minWidth = '';
-            dropdown.style.width = 'auto';
-            dropdown.style.maxWidth = '';
-            dropdown.style.maxHeight = 'min(320px, calc(100vh - 32px))';
+            dropdown.style.right = 'auto';
+            dropdown.style.width = `${Math.round(triggerRect.width)}px`;
+            dropdown.style.minWidth = `${Math.round(triggerRect.width)}px`;
+            dropdown.style.maxWidth = 'min(420px, 92vw)';
+            dropdown.style.maxHeight = `${Math.round(maxH)}px`;
+            dropdown.style.zIndex = '10002';
+
+            dropdown.style.overflowY = 'auto';
+            dropdown.style.overscrollBehavior = 'contain';
             return;
         }
         const container = dropdown.parentElement;
@@ -2959,6 +2975,13 @@
                 renderSharedSelectDropdown(field);
                 setSharedSelectDropdownOpen(field, false);
                 parts.select.dispatchEvent(new Event("change", {bubbles: true}));
+
+                // Extra safety for the investment import broker dropdown (uses fixed positioning in constrained form).
+                // Ensures the field groups (e.g. Schwab CSV using the reusable div) switch immediately.
+                if (field.classList.contains('investment-import-broker-field') &&
+                    typeof window.__forceSyncInvestmentImportMode === 'function') {
+                    window.__forceSyncInvestmentImportMode();
+                }
             });
             parts.dropdown.appendChild(optionButton);
         });

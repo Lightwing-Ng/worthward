@@ -462,6 +462,32 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="investment-import-field-group" id="investment_import_schwab_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="transactions">
+                                    <label class="trade-strategy-param-label" for="schwab_transactions_csv">
+                                    <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                          tabindex="0">
+                                        <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                        <span class="investment-import-label-text">Order Status / Transactions CSV</span>
+                                        <span class="investment-import-status-icon" id="schwab_transactions_csv_status"
+                                              aria-hidden="true"></span>
+                                        <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                              role="tooltip">
+                                            <span class="investment-import-help-title">How to download this file from Charles Schwab</span>
+                                            <span class="investment-import-help-step">🄌 Sign in to Schwab.com (or international.schwab.com).</span>
+                                            <span class="investment-import-help-step">➊ Go to Trade &gt; Order Status or Accounts &gt; Transaction History.</span>
+                                            <span class="investment-import-help-step">➋ Choose the desired date range and export/download as CSV.</span>
+                                            <span class="investment-import-help-step">➌ The filename often looks like <code>Individual..._Order_Status_YYYYMMDD-....csv</code>.</span>
+                                            <span class="investment-import-help-step">➍ Upload that CSV here.</span>
+                                        </span>
+                                    </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="schwab_transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv"
+                                               class="settings-form-control investment-import-file-input" required>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="investment-import-field-group" id="investment_import_hsbc_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_cash_account_display">

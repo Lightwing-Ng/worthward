@@ -35,6 +35,13 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="IBKR.png",
         description="Supported now for CSV import.",
     ),
+    "schwab": BrokerCatalogEntry(
+        code="schwab",
+        label="Charles Schwab",
+        pinyin_sort_key="charlesschwab",
+        icon_filename="Charles Schwab.svg",
+        description="Upload Schwab Order Status CSV (e.g. Individual..._Order_Status_....csv) or Transaction History CSV.",
+    ),
     "longbridge_hk": BrokerCatalogEntry(
         code="longbridge_hk",
         label="Longbridge (HK)",
@@ -67,7 +74,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
 
 SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
-INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge_hk", "longbridge_sg")
+INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge_hk", "longbridge_sg", "schwab")
 
 
 def broker_pinyin_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:

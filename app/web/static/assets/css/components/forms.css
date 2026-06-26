@@ -775,7 +775,7 @@
 	-webkit-backdrop-filter: var(--glass-popover-blur);
 	border: 1px solid var(--theme-glass-highlight);
 	z-index: var(--layer-inline-overlay);
-	max-height: min(320px, 48vh);
+	max-height: min(360px, 55vh);
 	overflow-x: hidden;
 	overflow-y: auto;
 	overscroll-behavior: contain;
