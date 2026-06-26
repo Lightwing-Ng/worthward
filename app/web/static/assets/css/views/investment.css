@@ -2917,10 +2917,10 @@
 }
 
 #transaction_form_container {
-    position: fixed;
-    top: max(16px, env(safe-area-inset-top, 0px));
-    left: var(--page-edge-pad);
-    right: var(--page-edge-pad);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     display: none;
     opacity: 0;
     transform: translate3d(0, -6px, 0) scale(0.98);
@@ -2935,7 +2935,7 @@
     border: var(--glass-surface-border);
     border-radius: 10px;
     box-shadow: var(--glass-surface-shadow);
-    max-height: calc(100dvh - 32px);
+    max-height: 70vh;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -3949,7 +3949,7 @@
     }
 
     #transaction_form_container {
-        max-height: calc(100dvh - 24px);
+        max-height: 65vh;
     }
 
     .live-trading-form-grid {
@@ -3995,7 +3995,7 @@
     }
 
     #transaction_form_container {
-        max-height: calc(100dvh - 24px);
+        max-height: 65vh;
     }
 
     .investment-history-table-scroll {

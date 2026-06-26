@@ -7129,43 +7129,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function syncInvestmentImportContainerHeight() {
-        if (!(formContainer instanceof HTMLElement) || formContainer.style.display === 'none') {
+        if (!(formContainer instanceof HTMLElement) || formContainer.style.display === 'none' || !investmentHistorySurface) {
             return;
         }
-        const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
-        const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
-        if (!Number.isFinite(viewportHeight) || viewportHeight <= 0 || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-            formContainer.style.removeProperty('top');
-            formContainer.style.removeProperty('left');
-            formContainer.style.removeProperty('right');
-            formContainer.style.removeProperty('max-height');
-            return;
-        }
-        const viewportHost = formContainer.closest('.workspace-header')
-            || formContainer.closest('.panel')
-            || formContainer.closest('.chart-surface');
-        const hostRect = viewportHost instanceof HTMLElement ? viewportHost.getBoundingClientRect() : null;
+        const surfaceRect = investmentHistorySurface.getBoundingClientRect();
         const toggleRect = toggleBtn instanceof HTMLElement ? toggleBtn.getBoundingClientRect() : null;
-        const edgeGap = window.innerWidth <= 767 ? 12 : 16;
-        const topInset = Math.max(
-            edgeGap,
-            Math.floor((hostRect?.top ?? 0) + edgeGap),
-            Math.floor((toggleRect?.bottom ?? 0) + edgeGap)
-        );
-        const leftInset = Math.max(edgeGap, Math.floor((hostRect?.left ?? 0) + edgeGap));
-        const rightInset = Math.max(edgeGap, Math.floor(viewportWidth - (hostRect?.right ?? viewportWidth) + edgeGap));
-        const bottomViewportGap = edgeGap;
-        const availableHeight = Math.floor(viewportHeight - topInset - bottomViewportGap);
-        if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+        if (!Number.isFinite(surfaceRect.height) || surfaceRect.height <= 0) {
             formContainer.style.removeProperty('top');
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
             formContainer.style.removeProperty('max-height');
             return;
         }
-        formContainer.style.top = `${topInset}px`;
-        formContainer.style.left = `${leftInset}px`;
-        formContainer.style.right = `${rightInset}px`;
+        const edgeGap = window.innerWidth <= 767 ? 8 : 10;
+        let relTop = edgeGap;
+        if (toggleRect) {
+            const toggleRelBottom = (toggleRect.bottom - surfaceRect.top) + edgeGap;
+            relTop = Math.max(relTop, toggleRelBottom);
+        } else {
+            relTop = Math.max(relTop, 42); // fallback for heading + button area
+        }
+        const availableHeight = Math.max(80, surfaceRect.height - relTop - edgeGap);
+        // left/right are managed in CSS (position:absolute + left:0; right:0 on the surface)
+        // only top + max-height are dynamic so form fits inside the surface
+        formContainer.style.top = `${relTop}px`;
         formContainer.style.maxHeight = `${availableHeight}px`;
     }
 
@@ -7178,6 +7165,9 @@ document.addEventListener('DOMContentLoaded', () => {
         clearImportFeedback();
         formContainer.style.display = 'block';
         formContainer.scrollTop = 0;
+        if (parentSection) {
+            parentSection.style.overflow = 'visible';
+        }
         syncInvestmentFormLayout();
         syncInvestmentImportContainerHeight();
         setTimeout(() => {
@@ -7204,6 +7194,9 @@ document.addEventListener('DOMContentLoaded', () => {
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
             formContainer.style.removeProperty('max-height');
+            if (parentSection) {
+                parentSection.style.removeProperty('overflow');
+            }
             syncInvestmentFormLayout();
             investmentFormHideTimer = null;
         }, 400);
@@ -7347,6 +7340,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.ResizeObserver) {
             const investmentFormResizeObserver = new ResizeObserver(handleInvestmentLayoutChange);
             investmentFormResizeObserver.observe(formContainer);
+            if (investmentHistorySurface) {
+                const surfaceResizeObserver = new ResizeObserver(() => {
+                    if (formContainer && formContainer.style.display === 'block') {
+                        syncInvestmentImportContainerHeight();
+                    }
+                });
+                surfaceResizeObserver.observe(investmentHistorySurface);
+            }
         }
     }
 
