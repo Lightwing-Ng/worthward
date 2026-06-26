@@ -1,4 +1,4 @@
-/* Code version: v0.3.10 */
+/* Code version: v0.3.12 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2774,10 +2774,14 @@
 
     const resetSidebarDropdownPosition = (dropdown) => {
         if (!(dropdown instanceof HTMLElement)) return;
+        dropdown.style.position = "";
         dropdown.style.left = "";
         dropdown.style.top = "";
+        dropdown.style.bottom = "";
         dropdown.style.right = "";
         dropdown.style.width = "";
+        dropdown.style.minWidth = "";
+        dropdown.style.maxWidth = "";
         dropdown.style.maxHeight = "";
     };
 
@@ -2800,8 +2804,29 @@
     const positionSharedSelectDropdown = (field) => {
         const parts = getSharedSelectParts(field);
         if (!parts || parts.dropdown.hidden) return;
-        const container = parts.dropdown.parentElement;
-        positionSidebarDropdownFromTrigger(parts.trigger, parts.dropdown, container instanceof HTMLElement ? container : parts.field);
+        const dropdown = parts.dropdown;
+        const trigger = parts.trigger;
+        const triggerRect = trigger.getBoundingClientRect();
+        // If this shared select lives inside the constrained import form container,
+        // open downward within the control row while the form temporarily allows overflow.
+        const isInsideImportForm = !!trigger.closest('#transaction_form_container')
+            || parts.field.classList.contains('investment-import-broker-field')
+            || parts.field.dataset.sharedSelectKind === 'investment-import-broker';
+        if (isInsideImportForm) {
+            const dropdownGap = 4;
+            dropdown.style.position = 'absolute';
+            dropdown.style.left = '0';
+            dropdown.style.top = `calc(100% + ${dropdownGap}px)`;
+            dropdown.style.bottom = 'auto';
+            dropdown.style.right = '0';
+            dropdown.style.minWidth = '';
+            dropdown.style.width = 'auto';
+            dropdown.style.maxWidth = '';
+            dropdown.style.maxHeight = 'min(320px, calc(100vh - 32px))';
+            return;
+        }
+        const container = dropdown.parentElement;
+        positionSidebarDropdownFromTrigger(trigger, dropdown, container instanceof HTMLElement ? container : field);
     };
 
     const setSharedSelectDropdownOpen = (field, isOpen) => {
@@ -4725,6 +4750,8 @@
         initializeTradeStrategyField();
         syncBacktestIntervalSegmentedControl();
     };
+
+    window.repairSidebarControlBindings = repairSidebarControlBindings;
 
     seedTickerValidationState();
     repairSidebarControlBindings();

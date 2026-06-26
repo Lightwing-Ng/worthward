@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.18
+ * Code version: v1.55.19
+ * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
  * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
  * - Fixed: Investment broker filter now unions payload and transaction broker codes and shows Longbridge (HK)/(SG) labels instead of identical logo-only tiles.
  * - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
@@ -230,7 +231,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.16',
+    entry: 'v1.55.19',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -7134,7 +7135,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const surfaceRect = investmentHistorySurface.getBoundingClientRect();
         const toggleRect = toggleBtn instanceof HTMLElement ? toggleBtn.getBoundingClientRect() : null;
-        if (!Number.isFinite(surfaceRect.height) || surfaceRect.height <= 0) {
+        const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
+        const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
+        if (!Number.isFinite(surfaceRect.width) || surfaceRect.width <= 0 || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
             formContainer.style.removeProperty('top');
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
@@ -7142,17 +7145,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const edgeGap = window.innerWidth <= 767 ? 8 : 10;
-        let relTop = edgeGap;
+        // Compute left/right from the surface rect so the form width always obeys the mother container (responds to sidebar etc.)
+        const leftInset = Math.max(edgeGap, Math.floor(surfaceRect.left) + edgeGap);
+        const rightInset = Math.max(edgeGap, Math.floor(viewportWidth - surfaceRect.right) + edgeGap);
+        let topInset = edgeGap;
         if (toggleRect) {
-            const toggleRelBottom = (toggleRect.bottom - surfaceRect.top) + edgeGap;
-            relTop = Math.max(relTop, toggleRelBottom);
+            topInset = Math.max(topInset, Math.floor(toggleRect.bottom) + edgeGap);
         } else {
-            relTop = Math.max(relTop, 42); // fallback for heading + button area
+            topInset = Math.max(topInset, 42);
         }
-        const availableHeight = Math.max(80, surfaceRect.height - relTop - edgeGap);
-        // left/right are managed in CSS (position:absolute + left:0; right:0 on the surface)
-        // only top + max-height are dynamic so form fits inside the surface
-        formContainer.style.top = `${relTop}px`;
+        const availableHeight = Math.max(80, viewportHeight - topInset - edgeGap);
+        formContainer.style.top = `${topInset}px`;
+        formContainer.style.left = `${leftInset}px`;
+        formContainer.style.right = `${rightInset}px`;
         formContainer.style.maxHeight = `${availableHeight}px`;
     }
 
@@ -7165,11 +7170,17 @@ document.addEventListener('DOMContentLoaded', () => {
         clearImportFeedback();
         formContainer.style.display = 'block';
         formContainer.scrollTop = 0;
-        if (parentSection) {
-            parentSection.style.overflow = 'visible';
-        }
         syncInvestmentFormLayout();
         syncInvestmentImportContainerHeight();
+        // Re-ensure the broker dropdown shared select is fully bound and labels synced
+        // when the form becomes visible. The shared binder is idempotent; preserving
+        // its bound flag avoids stacking duplicate click/change handlers.
+        if (typeof window.repairSidebarControlBindings === 'function') {
+            window.repairSidebarControlBindings();
+        }
+        if (investmentImportBrokerSelect) {
+            investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
+        }
         setTimeout(() => {
             formContainer.style.opacity = '1';
             formContainer.style.transform = 'scale(1)';
@@ -7188,15 +7199,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         formContainer.style.opacity = '0';
         formContainer.style.transform = 'scale(0.98)';
+        // ensure any open shared selects (e.g. broker dropdown) inside the form are closed so fixed popovers don't linger
+        const importBrokerField = formContainer.querySelector('[data-shared-select-field]');
+        if (importBrokerField instanceof HTMLElement) {
+            importBrokerField.classList.remove('is-open');
+            const dd = importBrokerField.querySelector('[data-shared-select-dropdown]');
+            if (dd instanceof HTMLElement) {
+                dd.hidden = true;
+                dd.style.position = '';
+                dd.style.left = '';
+                dd.style.top = '';
+                dd.style.minWidth = '';
+                dd.style.maxHeight = '';
+            }
+            const tr = importBrokerField.querySelector('[data-shared-select-trigger]');
+            if (tr instanceof HTMLElement) tr.setAttribute('aria-expanded', 'false');
+        }
         investmentFormHideTimer = window.setTimeout(() => {
             formContainer.style.display = 'none';
             formContainer.style.removeProperty('top');
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
             formContainer.style.removeProperty('max-height');
-            if (parentSection) {
-                parentSection.style.removeProperty('overflow');
-            }
             syncInvestmentFormLayout();
             investmentFormHideTimer = null;
         }, 400);
@@ -7269,6 +7293,15 @@ document.addEventListener('DOMContentLoaded', () => {
     syncInvestmentImportMode();
     syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
+    // Re-force shared select refresh (the broker dropdown uses the backtest-shared-select machinery).
+    // The binder is idempotent; keeping the bound flag prevents duplicate handlers from fighting.
+    if (typeof window.repairSidebarControlBindings === 'function') {
+        window.repairSidebarControlBindings();
+    }
+    // Force a change event on the broker native select so shared-select label/logo + import mode sync run.
+    if (investmentImportBrokerSelect) {
+        investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
+    }
     [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {

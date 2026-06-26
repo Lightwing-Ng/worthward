@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.31
+Code version: v0.3.32
 """
 
 from __future__ import annotations
@@ -10,7 +10,8 @@ from http.client import RemoteDisconnected
 import json
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -84,6 +85,7 @@ from app.core.config import (
     DEFAULT_TICKERS,
     COMPARE_PERIODS_1D,
     PERIOD_OFFSETS,
+    SETTINGS_STORE_DIR,
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
@@ -188,6 +190,10 @@ from app.infrastructure.storage import (
 MAX_TICKERS = 5
 MIN_TICKERS = 2
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v1"
+INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
+INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 15.0
+INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 10
 PORTFOLIO_BENCHMARK_COLORS = {
     "SPY": "#8e8e93",
     "QQQ": "#c7c7cc",
@@ -376,6 +382,8 @@ def build_web_runtime() -> WebRuntime:
         ]
 
     investment_daily_refresh_lock = threading.Lock()
+    investment_realtime_quote_cache_lock = threading.Lock()
+    investment_realtime_quote_cache: dict[tuple[str, ...], tuple[float, list[dict[str, object]]]] = {}
 
     def is_configured_money_market_ticker(ticker: str) -> bool:
         return str(ticker).strip().upper() in configured_money_market_tickers
@@ -385,6 +393,110 @@ def build_web_runtime() -> WebRuntime:
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
+
+    def ensure_investment_transactions_cache_dir() -> None:
+        INVESTMENT_TRANSACTIONS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    def invalidate_investment_transactions_cache() -> None:
+        ensure_investment_transactions_cache_dir()
+        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+            if INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
+                INVESTMENT_TRANSACTIONS_CACHE_PATH.unlink()
+
+    def build_file_fingerprint(path: Path) -> dict[str, object]:
+        if not path.exists():
+            return {
+                "exists": False,
+                "path": str(path),
+                "size": 0,
+                "mtime_ns": 0,
+            }
+        stat_result = path.stat()
+        return {
+            "exists": True,
+            "path": str(path),
+            "size": stat_result.st_size,
+            "mtime_ns": stat_result.st_mtime_ns,
+        }
+
+    def build_investment_price_store_fingerprints(
+            transactions: list[dict[str, Any]],
+            open_tickers: list[str] | set[str] | tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        open_ticker_set = {
+            normalize_ticker_input(str(ticker))
+            for ticker in (open_tickers or [])
+            if str(ticker or "").strip()
+        }
+        fingerprints: list[dict[str, object]] = []
+        for ticker in collect_investment_display_tickers(transactions):
+            if is_configured_money_market_ticker(ticker):
+                continue
+            path = resolve_investment_history_store_path(ticker)
+            fingerprints.append({
+                "ticker": ticker,
+                "is_open": ticker in open_ticker_set,
+                "store": build_file_fingerprint(path) if path is not None else {
+                    "exists": False,
+                    "path": "",
+                    "size": 0,
+                    "mtime_ns": 0,
+                },
+            })
+        return fingerprints
+
+    def read_investment_transactions_cache(
+            investment_store_fingerprint: dict[str, object],
+    ) -> dict[str, Any] | None:
+        ensure_investment_transactions_cache_dir()
+        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+            if not INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
+                return None
+            try:
+                with open(INVESTMENT_TRANSACTIONS_CACHE_PATH, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+            except (json.JSONDecodeError, OSError, TypeError):
+                return None
+
+        if cached.get("schema_version") != INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION:
+            return None
+        if cached.get("investment_store") != investment_store_fingerprint:
+            return None
+        payload = cached.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        section_freshness = payload.get("section_freshness")
+        if not isinstance(section_freshness, dict):
+            return None
+        target_trading_day = latest_completed_nyse_trading_day().strftime("%Y-%m-%d")
+        if section_freshness.get("target_trading_day") != target_trading_day:
+            return None
+        transactions = payload.get("transactions", [])
+        if not isinstance(transactions, list):
+            return None
+        price_store_fingerprints = build_investment_price_store_fingerprints(
+            cast(list[dict[str, Any]], transactions),
+            section_freshness.get("open_tickers") or [],
+        )
+        if cached.get("price_stores") != price_store_fingerprints:
+            return None
+        return cast(dict[str, Any], payload)
+
+    def write_investment_transactions_cache(
+            *,
+            investment_store_fingerprint: dict[str, object],
+            price_store_fingerprints: list[dict[str, object]],
+            payload: dict[str, Any],
+    ) -> None:
+        cache_payload = {
+            "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
+            "investment_store": investment_store_fingerprint,
+            "price_stores": price_store_fingerprints,
+            "payload": payload,
+        }
+        ensure_investment_transactions_cache_dir()
+        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+            write_json_atomic(INVESTMENT_TRANSACTIONS_CACHE_PATH, cache_payload)
 
     def load_normalized_investment_payload() -> dict[str, Any]:
         with market_store_file_lock(INVESTMENT_STORE_PATH):
@@ -400,6 +512,7 @@ def build_web_runtime() -> WebRuntime:
                 INVESTMENT_STORE_PATH,
                 cast(dict[str, Any], normalized_payload),
             )
+        invalidate_investment_transactions_cache()
 
     def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
         with market_store_file_lock(INVESTMENT_STORE_PATH):
@@ -416,7 +529,8 @@ def build_web_runtime() -> WebRuntime:
                 INVESTMENT_STORE_PATH,
                 cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
             )
-            return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
+        invalidate_investment_transactions_cache()
+        return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
 
     def refresh_investment_import_price_caches(
         imported_payload: dict[str, Any],
@@ -502,16 +616,45 @@ def build_web_runtime() -> WebRuntime:
         ))
         if not requested_tickers:
             return quotes
+        cache_key = tuple(sorted(requested_tickers))
+        now_monotonic = time.monotonic()
+        with investment_realtime_quote_cache_lock:
+            cached_entry = investment_realtime_quote_cache.get(cache_key)
+            if cached_entry is not None and now_monotonic - cached_entry[0] <= INVESTMENT_REALTIME_QUOTE_TTL_SECONDS:
+                return [dict(item) for item in cached_entry[1]]
         with ThreadPoolExecutor(max_workers=min(6, len(requested_tickers))) as executor:
             futures = {
                 executor.submit(fetch_yfinance_realtime_quote, ticker): ticker
                 for ticker in requested_tickers
             }
-            for future in as_completed(futures, timeout=30):
-                try:
-                    quotes.append(future.result())
-                except Exception:  # noqa: BLE001
-                    continue
+            processed_futures = set()
+            try:
+                completed_futures = as_completed(
+                    futures,
+                    timeout=INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS,
+                )
+                for future in completed_futures:
+                    processed_futures.add(future)
+                    try:
+                        quotes.append(future.result())
+                    except Exception:  # noqa: BLE001
+                        continue
+            except FuturesTimeoutError:
+                for future in futures:
+                    if future in processed_futures:
+                        continue
+                    if not future.done():
+                        future.cancel()
+                        continue
+                    try:
+                        quotes.append(future.result())
+                    except Exception:  # noqa: BLE001
+                        continue
+        with investment_realtime_quote_cache_lock:
+            investment_realtime_quote_cache[cache_key] = (
+                time.monotonic(),
+                [dict(item) for item in quotes],
+            )
         return quotes
 
     def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
@@ -3937,6 +4080,7 @@ def build_web_runtime() -> WebRuntime:
                         notice = "Cleared the local broker transaction record stored in settings_store/investment.json."
                     else:
                         notice = "No local broker transaction record was found in settings_store/investment.json."
+                invalidate_investment_transactions_cache()
             else:
                 cache_summary = clear_non_historical_market_cache()
                 reset_connectivity_caches()
@@ -4111,6 +4255,7 @@ def build_web_runtime() -> WebRuntime:
             },
         )
         if not INVESTMENT_STORE_PATH.exists():
+            invalidate_investment_transactions_cache()
             response = jsonify({
                 "transactions": [],
                 "ticker_profiles": {},
@@ -4134,8 +4279,38 @@ def build_web_runtime() -> WebRuntime:
             )
             return apply_no_store_headers(response)
         try:
+            investment_store_fingerprint = build_file_fingerprint(INVESTMENT_STORE_PATH)
+            cached_data = read_investment_transactions_cache(investment_store_fingerprint)
+            if cached_data is not None:
+                section_freshness = cached_data.get("section_freshness", {})
+                cached_data["realtime_quotes"] = load_investment_realtime_quotes(
+                    section_freshness.get("open_tickers", [])
+                    if isinstance(section_freshness, dict)
+                    else []
+                )
+                cached_data["success"] = True
+                cached_data["investment_cache"] = {
+                    "status": "hit",
+                    "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
+                }
+                response = jsonify(cached_data)
+                report_fetch_abort_debug_event(
+                    "E",
+                    "runtime.py:investment_get_transactions",
+                    "investment transactions returned cached payload",
+                    {
+                        "status": 200,
+                        "transaction_count": len(cached_data.get("transactions", [])),
+                    },
+                )
+                return apply_no_store_headers(response)
+
             data = load_normalized_investment_payload()
             section_freshness = build_investment_section_freshness(data)
+            freshness_refresh_failures = ensure_latest_investment_daily_caches(
+                section_freshness["open_tickers"]
+            )
+            investment_store_fingerprint = build_file_fingerprint(INVESTMENT_STORE_PATH)
             transactions = data.get("transactions", [])
             price_history_by_ticker, price_history_failures = load_investment_price_histories(
                 transactions,
@@ -4148,15 +4323,30 @@ def build_web_runtime() -> WebRuntime:
             data["ticker_lineage"] = investment_ticker_lineage_payload()
             data["known_ticker_company_names"] = known_ticker_company_names_payload()
             data["realtime_quotes"] = load_investment_realtime_quotes(section_freshness["open_tickers"])
-            data["freshness_refresh_failures"] = []
+            data["freshness_refresh_failures"] = freshness_refresh_failures
             data["section_freshness"] = section_freshness
             data["success"] = True
+            data["investment_cache"] = {
+                "status": "miss",
+                "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
+            }
+            price_store_fingerprints = build_investment_price_store_fingerprints(
+                transactions,
+                section_freshness["open_tickers"],
+            )
+            if not freshness_refresh_failures:
+                cacheable_data = dict(data)
+                cacheable_data["realtime_quotes"] = []
+                cacheable_data["investment_cache"] = {
+                    "status": "stored",
+                    "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
+                }
+                write_investment_transactions_cache(
+                    investment_store_fingerprint=investment_store_fingerprint,
+                    price_store_fingerprints=price_store_fingerprints,
+                    payload=cacheable_data,
+                )
             response = jsonify(data)
-            threading.Thread(
-                target=refresh_investment_open_tickers_in_background,
-                args=(section_freshness["open_tickers"],),
-                daemon=True,
-            ).start()
             report_fetch_abort_debug_event(
                 "E",
                 "runtime.py:investment_get_transactions",
@@ -4164,7 +4354,7 @@ def build_web_runtime() -> WebRuntime:
                 {
                     "status": 200,
                     "transaction_count": len(transactions),
-                    "freshness_refresh_failure_count": 0,
+                    "freshness_refresh_failure_count": len(freshness_refresh_failures),
                     "price_history_failure_count": len(price_history_failures),
                 },
             )
@@ -4417,6 +4607,7 @@ def build_web_runtime() -> WebRuntime:
                     INVESTMENT_STORE_PATH,
                     cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
                 )
+            invalidate_investment_transactions_cache()
             return jsonify({
                 "success": True,
                 "manual_internal_transfer_bindings": next_bindings,
@@ -4643,14 +4834,16 @@ def build_web_runtime() -> WebRuntime:
         quotes: list[dict[str, object]] = []
         failures: list[dict[str, str]] = []
         fetched_at = pd.Timestamp.now(tz="UTC")
-        for ticker in requested_tickers:
-            try:
-                quotes.append(fetch_yfinance_realtime_quote(ticker))
-            except Exception as exc:  # noqa: BLE001
-                failures.append({
+        try:
+            quotes = load_investment_realtime_quotes(requested_tickers)
+        except Exception as exc:  # noqa: BLE001
+            failures = [
+                {
                     "ticker": ticker,
                     "error": str(exc),
-                })
+                }
+                for ticker in requested_tickers
+            ]
 
         status_code = 200 if quotes else 502
         response = jsonify({

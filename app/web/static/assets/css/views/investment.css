@@ -2917,16 +2917,16 @@
 }
 
 #transaction_form_container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    left: var(--page-edge-pad);
+    right: var(--page-edge-pad);
     display: none;
     opacity: 0;
     transform: translate3d(0, -6px, 0) scale(0.98);
     transform-origin: top center;
     transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    z-index: var(--layer-global-popover);
+    z-index: 10000;
     margin-top: 0;
     padding: 15px;
     background: var(--glass-surface-background);
@@ -2935,7 +2935,7 @@
     border: var(--glass-surface-border);
     border-radius: 10px;
     box-shadow: var(--glass-surface-shadow);
-    max-height: 70vh;
+    max-height: calc(100dvh - 32px);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -2943,6 +2943,18 @@
     touch-action: pan-y;
     scrollbar-gutter: stable;
     scroll-padding: 16px;
+}
+
+#transaction_form_container .investment-import-broker-field.is-open .backtest-shared-select-dropdown {
+    z-index: 10001;
+}
+
+#transaction_form_container:has(.investment-import-broker-field.is-open) {
+    overflow: visible;
+}
+
+body:has(#transaction_form_container .investment-import-broker-field.is-open) canvas {
+    pointer-events: none;
 }
 
 .investment-form {
@@ -3949,7 +3961,7 @@
     }
 
     #transaction_form_container {
-        max-height: 65vh;
+        max-height: calc(100dvh - 24px);
     }
 
     .live-trading-form-grid {
@@ -3995,7 +4007,7 @@
     }
 
     #transaction_form_container {
-        max-height: 65vh;
+        max-height: calc(100dvh - 24px);
     }
 
     .investment-history-table-scroll {

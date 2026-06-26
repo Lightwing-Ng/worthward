@@ -142,11 +142,13 @@ The current `Settings` navigation includes:
 - `settings_store/smtp.json`
 - `settings_store/date_display.json`
 - `settings_store/investment.json`
+- `settings_store/investment_cache/`
 - `settings_store/search/`
 
 ## Investment ledger notes
 
 - Investment transactions are read from `settings_store/investment.json`
+- The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these files are ignored by Git and are rebuilt from `investment.json` plus local market history files
 - The `More -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
