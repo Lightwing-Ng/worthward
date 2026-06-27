@@ -372,23 +372,22 @@
 }
 
 .investment-broker-filter-dropdown {
+    /* Base styles; actual open state uses JS-driven position:fixed to escape clipping
+       from sticky <th> and scrollable table containers. */
+    position: absolute;
     width: max-content;
-    max-width: calc(100vw - 16px);
-    overflow: auto;
+    max-width: min(420px, calc(100vw - 16px));
+    max-height: min(380px, 55vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    z-index: var(--layer-global-popover);
 }
 
 .investment-broker-filter-dropdown .trade-strategy-dropdown-option {
     width: auto;
     min-width: 100%;
     white-space: nowrap;
-}
-
-.investment-broker-filter-dropdown .trade-strategy-dropdown-option.is-broker-logo-only.is-with-icon {
-    grid-template-columns: 16px 20px;
-}
-
-.investment-broker-filter-dropdown .trade-strategy-dropdown-option.is-broker-logo-only .trade-strategy-dropdown-copy {
-    display: none;
 }
 
 .live-trading-section-header-chart {

@@ -715,6 +715,7 @@ export function createInvestmentDataUtils({
             shares: 0,
             totalCost: 0,
             realizedPnl: 0,
+            lastCloseDate: null,
         };
     }
 
@@ -1703,11 +1704,17 @@ export function createInvestmentDataUtils({
 
             if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
                 applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                if (isFlatPosition(summary.shares)) {
+                    summary.lastCloseDate = ledgerDate;
+                }
                 return;
             }
 
             if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
                 summary.shares += quantity;
+                if (isFlatPosition(summary.shares)) {
+                    summary.lastCloseDate = ledgerDate;
+                }
                 return;
             }
 
@@ -1716,11 +1723,17 @@ export function createInvestmentDataUtils({
             // as fresh cost basis again in realized P&L reporting.
             if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
                 summary.shares += quantity;
+                if (isFlatPosition(summary.shares)) {
+                    summary.lastCloseDate = ledgerDate;
+                }
                 return;
             }
 
             if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
                 applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                if (isFlatPosition(summary.shares)) {
+                    summary.lastCloseDate = ledgerDate;
+                }
                 return;
             }
 
@@ -1826,6 +1839,13 @@ export function createInvestmentDataUtils({
             }
             if (left.hasOpenPosition && right.hasOpenPosition) {
                 return Math.abs(right.marketValue) - Math.abs(left.marketValue);
+            }
+            // Closed positions: sort by close time descending (most recent 清仓 first),
+            // matching the requested top-to-bottom order (newest exit at top).
+            const leftDate = left.lastCloseDate || '';
+            const rightDate = right.lastCloseDate || '';
+            if (leftDate !== rightDate) {
+                return rightDate.localeCompare(leftDate);
             }
             return left.ticker.localeCompare(right.ticker);
         });

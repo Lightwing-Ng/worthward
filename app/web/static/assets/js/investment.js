@@ -9,6 +9,7 @@
  * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
  * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
  * - Fixed: Investment broker filter now unions payload and transaction broker codes and shows Longbridge (HK)/(SG) labels instead of identical logo-only tiles.
+ * - Refactored: Broker filter dropdown always renders full names for every broker (matching "Longbridge (SG)" style) and uses fixed positioning + internal scrolling so the full list is reachable via scroll at any viewport height.
  * - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
  * - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
  * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
@@ -548,6 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedInvestmentStockTicker = '';
     let investmentProcessedTransactionsCache = [];
     let investmentTickerSummariesCache = [];
+    let investmentAvailableBrokerCodesCache = [];
+    let investmentAvailableBrokerCodesSet = new Set();
     let animatedHoldingsMarkerPoint = null;
     let animatedHoldingsMarkerTarget = null;
     let animatedHoldingsMarkerFrame = 0;
@@ -4651,13 +4654,10 @@ document.addEventListener('DOMContentLoaded', () => {
         )).sort(compareInvestmentBrokerFilterCodes);
     }
 
-    function shouldRenderInvestmentBrokerFilterLogoOnly(brokerCode) {
-        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
-        // Longbridge HK and SG share one logo asset, so logo-only tiles are indistinguishable.
-        return !['longbridge_hk', 'longbridge_sg'].includes(normalizedBrokerCode);
-    }
-
-    function getAvailableInvestmentBrokerCodes() {
+    function computeAvailableInvestmentBrokerCodes() {
+        // One-time (or on-data-change) derivation of the small set of broker codes present
+        // in the loaded data. Avoids brute-force rescanning the full transactions list on
+        // every dropdown click, filter toggle, or UI sync.
         const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
             ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
             : [];
@@ -4670,12 +4670,24 @@ document.addEventListener('DOMContentLoaded', () => {
         ]);
     }
 
+    function refreshInvestmentAvailableBrokerCodes() {
+        const codes = computeAvailableInvestmentBrokerCodes();
+        investmentAvailableBrokerCodesCache = codes;
+        investmentAvailableBrokerCodesSet = new Set(codes);
+    }
+
+    function getAvailableInvestmentBrokerCodes() {
+        if (investmentAvailableBrokerCodesCache.length === 0 && investmentProcessedTransactionsCache.length > 0) {
+            refreshInvestmentAvailableBrokerCodes();
+        }
+        return investmentAvailableBrokerCodesCache;
+    }
+
     function getInvestmentBrokerFilterSelectedCodes() {
-        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         return new Set(
             Array.from(investmentBrokerFilterSelectedCodes)
                 .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
-                .filter((brokerCode) => availableBrokerCodes.includes(brokerCode)),
+                .filter((brokerCode) => investmentAvailableBrokerCodesSet.has(brokerCode)),
         );
     }
 
@@ -4787,13 +4799,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function measureInvestmentBrokerFilterDropdownWidth(dropdown) {
         if (!(dropdown instanceof HTMLElement)) return 0;
-        const previousWidth = dropdown.style.width;
-        const previousMaxWidth = dropdown.style.maxWidth;
+        const prev = {
+            width: dropdown.style.width,
+            maxWidth: dropdown.style.maxWidth,
+            position: dropdown.style.position,
+            left: dropdown.style.left,
+            top: dropdown.style.top,
+            visibility: dropdown.style.visibility,
+        };
+        // Temporarily move offscreen + max-content to measure intrinsic width of options (with labels)
+        // without visual jump or depending on current fixed/absolute placement.
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = '-9999px';
+        dropdown.style.top = '0';
+        dropdown.style.visibility = 'hidden';
         dropdown.style.width = 'max-content';
         dropdown.style.maxWidth = 'none';
+        // force layout
+        void dropdown.offsetWidth;
         const measuredWidth = Math.ceil(dropdown.getBoundingClientRect().width);
-        dropdown.style.width = previousWidth;
-        dropdown.style.maxWidth = previousMaxWidth;
+        // restore
+        dropdown.style.width = prev.width;
+        dropdown.style.maxWidth = prev.maxWidth;
+        dropdown.style.position = prev.position;
+        dropdown.style.left = prev.left;
+        dropdown.style.top = prev.top;
+        dropdown.style.visibility = prev.visibility;
         return measuredWidth;
     }
 
@@ -4801,27 +4832,40 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(field instanceof HTMLElement)) return;
         const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
         const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
-        const row = field.querySelector('.investment-broker-filter-row');
         if (!(trigger instanceof HTMLElement)
             || !(dropdown instanceof HTMLElement)
-            || !(row instanceof HTMLElement)
             || dropdown.hidden) {
             return;
         }
         const triggerRect = trigger.getBoundingClientRect();
-        const rowRect = row.getBoundingClientRect();
         const viewportPadding = 16;
-        const viewportMaxWidth = Math.max(120, window.innerWidth - triggerRect.left - viewportPadding);
+        const viewportHeight = window.visualViewport?.height || window.innerHeight || 600;
+        const spaceBelow = viewportHeight - triggerRect.bottom - viewportPadding;
+        // Allow scrolling within a comfortable max; ensures even on short viewports or near-bottom triggers
+        // the list remains fully operable via internal scroll (matching the pattern used for import broker dropdown).
+        const maxH = Math.max(120, Math.min(380, spaceBelow));
+
         const contentWidth = Math.max(
             Math.ceil(triggerRect.width),
             measureInvestmentBrokerFilterDropdownWidth(dropdown),
         );
-        dropdown.style.left = `${Math.round(triggerRect.left - rowRect.left)}px`;
-        dropdown.style.top = `${Math.round(triggerRect.bottom - rowRect.top + 4)}px`;
+        const viewportMaxWidth = Math.max(140, window.innerWidth - triggerRect.left - viewportPadding);
+        const finalWidth = Math.min(contentWidth, viewportMaxWidth);
+
+        // Use fixed positioning so the dropdown escapes sticky table headers and any
+        // scrollable table shells (e.g. .scrollable-data-table-scroll with overflow:auto).
+        // This guarantees the full broker list is never clipped/truncated and is always scrollable.
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = `${Math.round(triggerRect.left)}px`;
+        dropdown.style.top = `${Math.round(triggerRect.bottom + 4)}px`;
         dropdown.style.right = 'auto';
-        dropdown.style.width = `${Math.min(contentWidth, viewportMaxWidth)}px`;
+        dropdown.style.bottom = 'auto';
+        dropdown.style.width = `${finalWidth}px`;
         dropdown.style.maxWidth = `${viewportMaxWidth}px`;
-        dropdown.style.maxHeight = `${Math.round(Math.max(120, window.innerHeight - triggerRect.bottom - viewportPadding))}px`;
+        dropdown.style.maxHeight = `${Math.round(maxH)}px`;
+        dropdown.style.zIndex = '10002';
+        dropdown.style.overflowY = 'auto';
+        dropdown.style.overscrollBehavior = 'contain';
     }
 
     function setInvestmentBrokerFilterDropdownOpen(field, isOpen) {
@@ -4835,12 +4879,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isOpen) {
             positionInvestmentBrokerFilterDropdown(field);
         } else {
+            dropdown.style.position = '';
             dropdown.style.left = '';
             dropdown.style.top = '';
             dropdown.style.right = '';
+            dropdown.style.bottom = '';
             dropdown.style.width = '';
             dropdown.style.maxWidth = '';
             dropdown.style.maxHeight = '';
+            dropdown.style.zIndex = '';
+            dropdown.style.overflowY = '';
+            dropdown.style.overscrollBehavior = '';
         }
     }
 
@@ -4955,13 +5004,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         availableBrokerCodes.forEach((brokerCode) => {
             const brokerMeta = getInvestmentBrokerMeta(brokerCode);
-            const logoOnly = shouldRenderInvestmentBrokerFilterLogoOnly(brokerCode);
+            // Always show the broker name text (e.g. "Longbridge (SG)", "CMB Wing Lung Bank")
+            // alongside the logo so every option is clearly labeled regardless of logo uniqueness.
             dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
                 value: brokerCode,
                 label: brokerMeta.label,
                 iconUrl: brokerMeta.logoUrl,
                 iconAlt: brokerMeta.logoAlt,
-                logoOnly,
+                logoOnly: false,
                 isSelected: allSelected || selectedBrokerCodes.has(brokerCode),
                 onClick: () => {
                     const nextSelection = new Set(getInvestmentBrokerFilterSelectedCodes());
@@ -5029,6 +5079,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 positionInvestmentBrokerFilterDropdown(field);
             });
         });
+        // Reposition on scroll (capture) so the fixed dropdown stays aligned with its trigger
+        // when the page, table body, or sticky header context scrolls.
+        document.addEventListener('scroll', () => {
+            document.querySelectorAll('[data-investment-broker-filter].is-open').forEach((field) => {
+                positionInvestmentBrokerFilterDropdown(field);
+            });
+        }, true);
     }
 
     function mountInvestmentBrokerFilterHeaders(root = document) {
@@ -7125,6 +7182,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedInvestmentStockTicker = '';
         investmentProcessedTransactionsCache = [];
         investmentTickerSummariesCache = [];
+        refreshInvestmentAvailableBrokerCodes();
         clearInvestmentStockDetailHighlights();
         if (holdingsPanel) {
             holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
@@ -9483,6 +9541,8 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentRawTransactionsCache = Array.isArray(transactions) ? [...transactions] : [];
 
         if (!transactions.length) {
+            investmentProcessedTransactionsCache = [];
+            refreshInvestmentAvailableBrokerCodes();
             setInvestmentExportButtonVisibility(false);
             syncHoldingsChartHoverState('', 0);
             resetInvestmentDashboard();
@@ -9948,6 +10008,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
+        refreshInvestmentAvailableBrokerCodes();
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
 
@@ -10024,6 +10085,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fundingMetrics = getUsdFundingMetrics(processed);
         const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
+        refreshInvestmentAvailableBrokerCodes();
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
         const AGGREGATE_CASH = Number(last?.aggregate_running_cash ?? last?.running_cash);
