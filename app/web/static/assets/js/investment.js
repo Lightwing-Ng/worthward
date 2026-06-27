@@ -1956,6 +1956,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const brokerMarketValue = Number(lastBrokerTxn.broker_market_value) || 0;
             lastBrokerTxn.broker_total_equity = normalizedEndingCash + brokerMarketValue;
         });
+
+        const isSingleBroker = brokerCodes.length <= 1;
+        if (!isSingleBroker) {
+            const latestProcessed = transactions[transactions.length - 1];
+            if (latestProcessed) {
+                let finalAggregateCash = 0;
+                brokerCodes.forEach((brokerCode) => {
+                    const normBroker = normalizeInvestmentBroker(brokerCode);
+                    const authEndingCash = getInvestmentBrokerEndingCash(normBroker);
+                    const lastBrokerTxn = [...transactions].reverse().find(
+                        (txn) => normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normBroker
+                    );
+                    let brokerEndingCash = 0;
+                    if (authEndingCash !== null) {
+                        brokerEndingCash = Math.max(0, authEndingCash);
+                    } else if (lastBrokerTxn) {
+                        brokerEndingCash = Number(lastBrokerTxn.broker_running_cash) || 0;
+                    }
+                    finalAggregateCash += brokerEndingCash;
+                });
+                latestProcessed.running_cash = finalAggregateCash;
+                latestProcessed.aggregate_running_cash = finalAggregateCash;
+                latestProcessed.cash_by_currency = createCashLedger(
+                    finalAggregateCash,
+                    getInvestmentBaseCurrency(),
+                );
+                latestProcessed.aggregate_cash_by_currency = latestProcessed.cash_by_currency;
+                const marketVal = Number(latestProcessed.market_value) || 0;
+                latestProcessed.total_equity = finalAggregateCash + marketVal;
+                latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
+            }
+        }
     }
 
     function applyInvestmentInternalTransferBindings(processedTransactions = []) {
