@@ -1,12 +1,13 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.5.2
+    Code version: v0.5.6
 """
 
 from __future__ import annotations
 
 import base64
+import os
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -25,14 +26,23 @@ import pandas as pd
 
 from app.core.broker_settings import (
     BrokerSettings,
+    has_ibkr_flex_activity_query_id,
+    has_ibkr_flex_token,
     has_longbridge_market_data_source,
     has_longbridge_credentials,
     load_broker_settings,
     normalize_longbridge_access_token,
+    resolve_ibkr_flex_lookback_days,
     uses_longbridge_cli_oauth,
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
-from app.infrastructure.ibkr_gateway import read_recent_gateway_cp_login_failure
+# (ibkr_gateway import removed - reporting-only Flex)
+from app.infrastructure.ibkr_flex import (
+    DEFAULT_FLEX_SEND_REQUEST_URL,
+    fetch_ibkr_flex_statement,
+    IbkrFlexError,
+    redact_flex_token_from_url,
+)
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.storage import (
     ensure_market_store_dir,
@@ -235,7 +245,8 @@ def _ibkr_cp_validate_failed(settings: BrokerSettings) -> bool:
 
 
 def _ibkr_auth_not_ready_message(settings: BrokerSettings | None = None) -> str:
-    cp_failure = read_recent_gateway_cp_login_failure()
+    # Gateway removed
+    return "IBKR Client Portal Gateway has been removed. Use Flex for ledger import (reporting-only)."
     if cp_failure:
         return (
             "IBKR showed Client login succeeds in the browser, but the local Gateway could not validate "
@@ -460,9 +471,82 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             return False, f"Connection failed: {message}"
 
     if settings.selected_broker == "ibkr":
-        return test_ibkr_client_portal_connection(settings)
+        return _test_ibkr_flex_connection(settings)
 
     return False, f"Unsupported broker: {settings.selected_broker}"
+
+
+# Note: All old Gateway-specific test functions below are no longer used for
+# IBKR when using Flex Web Service (reporting-only). They remain for reference
+# only and should not be called for ibkr broker.
+
+
+def _test_ibkr_flex_connection(settings: BrokerSettings) -> tuple[bool, str]:
+    """
+    Test IBKR Flex Web Service configuration (reporting-only).
+    Prefers values stored directly in settings (via web UI at /settings/broker-access),
+    falls back to named env vars. No terminal export required for secrets.
+    """
+    token = settings.ibkr_flex_token.strip()
+    if not token:
+        token_env = (settings.ibkr_flex_token_env or "IBKR_FLEX_TOKEN").strip() or "IBKR_FLEX_TOKEN"
+        token = (os.environ.get(token_env) or "").strip()
+
+    query_id = settings.ibkr_flex_activity_query_id.strip()
+    if not query_id:
+        query_env = (settings.ibkr_flex_activity_query_id_env or "IBKR_FLEX_ACTIVITY_QUERY_ID").strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID"
+        query_id = (os.environ.get(query_env) or "").strip()
+
+    if not token:
+        token_env = (settings.ibkr_flex_token_env or "IBKR_FLEX_TOKEN").strip() or "IBKR_FLEX_TOKEN"
+        return False, f"IBKR Flex token not set. Enter it directly in Broker Access page or set env '{token_env}'."
+    if not query_id:
+        query_env = (settings.ibkr_flex_activity_query_id_env or "IBKR_FLEX_ACTIVITY_QUERY_ID").strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID"
+        return False, f"IBKR Flex Activity Query ID not set. Enter it directly in Broker Access page or set env '{query_env}'."
+
+    send_url = (settings.ibkr_flex_send_request_url or DEFAULT_FLEX_SEND_REQUEST_URL).strip()
+
+    # For Test connection we use a minimal 1-day range for validation (avoids rate limits on repeated clicks,
+    # and large data). The full configured lookback is used for actual import/sync in the Investment page.
+    # Both fd and td required. Disclose that a (small) statement request is issued.
+    from_date = None
+    to_date = None
+    try:
+        from datetime import date, timedelta
+        today = date.today()
+        to_date = today.strftime("%Y%m%d")
+        from_date = (today - timedelta(days=1)).strftime("%Y%m%d")
+    except Exception:
+        pass
+
+    try:
+        _ = fetch_ibkr_flex_statement(
+            token=token,
+            query_id=query_id,
+            send_request_url=send_url,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return True, "IBKR Flex Web Service connection successful (SendRequest + minimal 1-day validation statement retrieved). Note: a real (small) Flex statement request was issued. Use the Investment page Flex option with your Lookback for full data."
+    except IbkrFlexError as exc:
+        redacted = redact_flex_token_from_url(str(exc))
+        if "1003" in str(exc) or "Statement is not available" in str(exc):
+            return True, (
+                "IBKR Flex configuration looks valid (SendRequest succeeded), "
+                "but no statement data for the minimal validation window. "
+                "This is normal with no recent activity. Try the manual Flex sync in Investment page (uses your full Lookback). A real Flex request was issued."
+            )
+        if "1025" in str(exc) or "Too many failed attempts" in str(exc):
+            return False, (
+                "IBKR Flex error 1025: Too many failed attempts (likely from prior tests with bad ranges or no-data). "
+                "Wait 30-60+ minutes, or bypass this lockout by downloading your statement XML manually from Client Portal "
+                "and uploading it using the 'Flex XML' option in the My investment import form. "
+                f"Error: {redacted}"
+            )
+        return False, f"IBKR Flex error: {redacted}"
+    except Exception as exc:
+        redacted = redact_flex_token_from_url(str(exc))
+        return False, f"IBKR Flex request failed: {redacted}"
 
 
 def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:

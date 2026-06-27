@@ -1,7 +1,7 @@
 """
 IBKR Flex Web Service v3 client (reporting-only).
 
-Code version: v1.0.1
+Code version: v1.0.2
 
 This module implements read-only import via IBKR Flex Web Service version 3.
 It provides no trading, order placement, market data, realtime positions,
@@ -73,13 +73,14 @@ FLEX_ERROR_MESSAGES: dict[str, str] = {
     "1019": "Statement generation in progress.",
     "1020": "Invalid request or request validation failure. Check parameters and query configuration.",
     "1021": "Statement could not be retrieved. The reference may have expired; retry the SendRequest.",
+    "1025": "Too many failed attempts. Please wait (e.g. 30-60 minutes), review your Flex token, query configuration, date range (max 365 days), and try again. This is a temporary lockout from repeated invalid requests.",
 }
 
 RETRYABLE_FLEX_CODES: frozenset[str] = frozenset({"1018", "1019"})
 """Transient conditions that warrant retry with backoff (rate limit and in-progress)."""
 
 PERMANENT_FLEX_CODES: frozenset[str] = frozenset({
-    "1003", "1012", "1013", "1014", "1015", "1016", "1017", "1020", "1021",
+    "1003", "1012", "1013", "1014", "1015", "1016", "1017", "1020", "1021", "1025",
 })
 """Authentication, configuration, and validation errors that must fail fast."""
 

@@ -167,9 +167,18 @@ The current `Settings` navigation includes:
 
 ### IBKR
 
-- The UI exposes IBKR configuration status
-- Historical `1m` fetching is not implemented yet
-- IBKR CSV imports are supported for rebuilding the local investment ledger
+- IBKR integration is **reporting-only** via the official Flex Web Service v3. No trading, order placement, real-time market data, or brokerage sessions.
+- Two import paths:
+  - **Flex** (recommended for incremental sync): uses environment variables `IBKR_FLEX_TOKEN` and `IBKR_FLEX_ACTIVITY_QUERY_ID`. Lookback 1-365 days. Activity Flex query is authoritative.
+  - **CSV** (manual historical backfill): Transaction History + Realized Summary exports. Preserved for full history and closed positions.
+- Configure in IBKR Client Portal: Performance & Reports > Flex Queries. Create an Activity Flex query (XML output) and enable Web Service access to generate a token.
+- Required query fields (at minimum): account id, dates, symbol, conid, buy/sell or transaction type, quantity, price, proceeds/gross, commission, net amount, trade/settle/report dates, currency, and cash transaction types (deposits, dividends, withholding, interest, fees, forex, corporate actions).
+- Environment variables (names configurable in Broker Access):
+  - `IBKR_FLEX_TOKEN`
+  - `IBKR_FLEX_ACTIVITY_QUERY_ID`
+  - Optional `IBKR_FLEX_TRADE_CONFIRM_QUERY_ID` (deferred)
+- The Flex client validates response URLs, redacts tokens, bounds responses, and uses safe XML parsing. Secrets are never persisted.
+- Gateway (Client Portal local Java) has been fully removed. Historical Gateway-origin records in your ledger remain mergeable.
 
 ### Outlook SMTP
 

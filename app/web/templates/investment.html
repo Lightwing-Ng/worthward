@@ -179,9 +179,10 @@
                                     "csv",
                                     [
                                         {"id": "ibkr_import_mode_csv", "value": "csv", "label": "CSV"},
-                                        {"id": "ibkr_import_mode_gateway", "value": "gateway", "label": "Gateway"},
+                                        {"id": "ibkr_import_mode_flex", "value": "flex", "label": "Flex API"},
+                                        {"id": "ibkr_import_mode_flex_xml", "value": "flex_xml", "label": "Flex XML"},
                                     ],
-                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: 0;" aria-labelledby="investment_import_ibkr_mode_label"'
+                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="3" style="--segmented-option-count: 3; --segmented-active-index: 0;" aria-labelledby="investment_import_ibkr_mode_label"'
                                 ) }}
                             </div>
                             <div data-ibkr-import-mode-panel="csv">
@@ -234,6 +235,32 @@
                                 <div class="investment-import-plain-control-row">
                                     <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
                                            class="settings-form-control investment-import-file-input" required>
+                                </div>
+                            </div>
+                            </div>
+                            <div data-ibkr-import-mode-panel="flex_xml" hidden>
+                            <div class="investment-import-field investment-import-bridge-field investment-import-plain-field" data-import-field="flex_xml">
+                                <label class="trade-strategy-param-label" for="flex_xml">
+                                <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                      tabindex="0">
+                                    <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                    <span class="investment-import-label-text">Flex Query XML File</span>
+                                    <span class="investment-import-status-icon" id="flex_xml_status"
+                                          aria-hidden="true"></span>
+                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                          role="tooltip">
+                                        <span class="investment-import-help-title">How to download this file in IBKR</span>
+                                        <span class="investment-import-help-step">🄌 Sign in to IBKR Client Portal.</span>
+                                        <span class="investment-import-help-step">➊ Open Performance &amp; Reports > Flex Queries.</span>
+                                        <span class="investment-import-help-step">➋ Under Activity Flex Queries, click the Run button next to your query.</span>
+                                        <span class="investment-import-help-step">➌ Download the generated XML statement file.</span>
+                                        <span class="investment-import-help-step">➍ Upload that XML file here.</span>
+                                    </span>
+                                </span>
+                                </label>
+                                <div class="investment-import-plain-control-row">
+                                    <input id="flex_xml" name="flex_xml" type="file" accept=".xml,text/xml"
+                                           class="settings-form-control investment-import-file-input">
                                 </div>
                             </div>
                             </div>

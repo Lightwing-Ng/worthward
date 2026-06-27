@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.4.2
+Code version: v0.4.4
 """
 
 from json import JSONDecodeError
@@ -24,14 +24,6 @@ DEFAULT_PORT = 8688
 
 def _log_startup(message: str) -> None:
     print(f"{LOG_PREFIX} {message}")
-
-
-def _should_manage_ibkr_gateway_as_long_lived() -> bool:
-    try:
-        broker_settings = load_broker_settings()
-    except (OSError, JSONDecodeError):
-        return False
-    return broker_settings.selected_broker == "ibkr"
 
 
 def _should_manage_longbridge_as_long_lived() -> bool:
@@ -70,9 +62,7 @@ def _build_run_options(config: dict) -> dict:
     if use_reloader and _should_manage_longbridge_as_long_lived():
         _log_startup("Disabled Flask reloader to keep the Longbridge quote context long-lived.")
         use_reloader = False
-    if use_reloader and _should_manage_ibkr_gateway_as_long_lived():
-        _log_startup("Disabled Flask reloader to keep the local IBKR Gateway process stable.")
-        use_reloader = False
+    # Note: IBKR is reporting-only via Flex Web Service; no local Gateway process is managed.
     return {
         "debug": debug_enabled,
         "host": config["server"].get("host", DEFAULT_HOST),

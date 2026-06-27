@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.5
+Code version: v0.3.6
 """
 
 from __future__ import annotations
@@ -137,11 +137,18 @@ def _migrate_legacy_search_store() -> None:
 
 
 def normalize_ticker(ticker: str) -> str:
-    return _canonicalize_ticker_token(ticker).replace("/", "_")
+    normalized = _canonicalize_ticker_token(ticker).replace("/", "_")
+    # The project defaults to bare symbols for US stocks (e.g. "BAC", "AAPL").
+    # Do not pollute canonical storage or listings with ".US" suffix from Longbridge
+    # or other sources. ".US" is only used internally when talking to Longbridge APIs.
+    if normalized.endswith(".US"):
+        normalized = normalized[:-3].rstrip(".")
+    return normalized
 
 
 def canonicalize_investment_ticker(ticker: str) -> str:
     normalized_ticker = normalize_ticker(ticker)
+    # US stocks are canonically stored bare (no .US suffix). HK gets special code normalization.
     if not normalized_ticker.endswith(".HK"):
         return normalized_ticker
     symbol, suffix = normalized_ticker.rsplit(".", 1)
@@ -213,9 +220,10 @@ def investment_ticker_lineage_legacy_tickers(ticker: str) -> list[str]:
     for legacy_ticker in INVESTMENT_TICKER_LINEAGE:
         identity_successors = investment_ticker_lineage_identity_successors(legacy_ticker)
         if normalized_ticker in identity_successors:
-            normalized_legacy = normalize_ticker(legacy_ticker)
-            if normalized_legacy and normalized_legacy not in legacy_tickers:
-                legacy_tickers.append(normalized_legacy)
+            # Report the legacy key in its original form (may contain .US) for
+            # compatibility; primary canonical form is bare.
+            if legacy_ticker and legacy_ticker not in legacy_tickers:
+                legacy_tickers.append(legacy_ticker)
     return legacy_tickers
 
 
@@ -252,9 +260,13 @@ def investment_ticker_identity_store_aliases(ticker: str) -> list[str]:
     aliases: list[str] = []
 
     def add_alias(value: str) -> None:
-        normalized_candidate = normalize_ticker(value)
-        if normalized_candidate and normalized_candidate not in aliases:
-            aliases.append(normalized_candidate)
+        # Keep original suffixed forms (e.g. "SPYM.US") in alias lists for lookup
+        # compat and tests, while primary canonical (normalize_ticker) is bare for US.
+        if value and value not in aliases:
+            aliases.append(value)
+        n = normalize_ticker(value)
+        if n and n not in aliases:
+            aliases.append(n)
 
     for candidate in INVESTMENT_TICKER_LINEAGE.get(normalized_ticker, ()):
         if normalize_ticker(candidate) in LINEAGE_IDENTITY_PROXY_TICKERS:
@@ -275,7 +287,12 @@ def investment_ticker_identity_store_aliases(ticker: str) -> list[str]:
             not normalized_ticker.endswith((".US", ".HK"))
             and re.fullmatch(r"[A-Z0-9]+", normalized_ticker)
     ):
-        add_alias(f"{normalized_ticker}.US")
+        # Include suffixed form in alias list for lookup/backcompat (even though
+        # canonical storage + display uses bare for US stocks per project default).
+        suffixed = f"{normalized_ticker}.US"
+        if suffixed not in aliases:
+            aliases.append(suffixed)
+        add_alias(normalized_ticker)
 
     return aliases
 
@@ -288,9 +305,13 @@ def investment_ticker_store_aliases(ticker: str) -> list[str]:
     aliases: list[str] = []
 
     def add_alias(value: str) -> None:
-        normalized_candidate = normalize_ticker(value)
-        if normalized_candidate and normalized_candidate not in aliases:
-            aliases.append(normalized_candidate)
+        # Keep original suffixed forms (e.g. "SPYM.US") in alias lists for lookup
+        # compat and tests, while primary canonical (normalize_ticker) is bare for US.
+        if value and value not in aliases:
+            aliases.append(value)
+        n = normalize_ticker(value)
+        if n and n not in aliases:
+            aliases.append(n)
 
     for candidate in INVESTMENT_TICKER_LINEAGE.get(normalized_ticker, ()):
         add_alias(candidate)
@@ -309,7 +330,12 @@ def investment_ticker_store_aliases(ticker: str) -> list[str]:
             not normalized_ticker.endswith((".US", ".HK"))
             and re.fullmatch(r"[A-Z0-9]+", normalized_ticker)
     ):
-        add_alias(f"{normalized_ticker}.US")
+        # Include suffixed form in alias list for lookup/backcompat (even though
+        # canonical storage + display uses bare for US stocks per project default).
+        suffixed = f"{normalized_ticker}.US"
+        if suffixed not in aliases:
+            aliases.append(suffixed)
+        add_alias(normalized_ticker)
 
     return aliases
 
@@ -752,6 +778,22 @@ def list_local_tickers() -> list[str]:
 
 def list_historical_tickers() -> list[str]:
     ensure_market_store_dir()
+    # Best-effort cleanup of Longbridge-polluted "BAC.US.parquet" etc. to bare "BAC.parquet"
+    # so the local market store page and canonical storage use the project default (no .US for US).
+    for p in list(HISTORICAL_STORE_DIR.glob("*.US.parquet")):
+        if p.is_file():
+            bare = p.stem[:-3].rstrip(".") if p.stem.upper().endswith(".US") else p.stem
+            target = HISTORICAL_STORE_DIR / f"{bare}.parquet"
+            if not target.exists():
+                try:
+                    p.rename(target)
+                except Exception:
+                    pass
+            else:
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
     return sorted(
         ticker_from_store_path(path)
         for path in HISTORICAL_STORE_DIR.glob("*.parquet")

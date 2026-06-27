@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.21
+ * Code version: v1.55.22
+ * - Removed IBKR Gateway; added Flex Web Service v3 import mode and dry-run support.
  * - Fixed: IBKR forex trade component rows now dedupe across overlapping CSV imports and display the acquired quote currency with a compact conversion description.
  * - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
  * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
@@ -293,6 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const workspaceModalOverlayClose = document.getElementById('workspace_modal_overlay_close');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
+    const flexXmlInput = document.getElementById('flex_xml');
+    const flexXmlStatus = document.getElementById('flex_xml_status');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
@@ -5048,15 +5051,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function getSelectedIbkrImportMode() {
         const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
-        return value === 'gateway' ? 'gateway' : 'csv';
+        if (value === 'flex') return 'flex';
+        if (value === 'flex_xml') return 'flex_xml';
+        return 'csv';
     }
 
     function syncIbkrImportModePanels() {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
             investmentImportIbkrMode.dataset.active = selectedMode;
-            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '2');
-            investmentImportIbkrMode.style.setProperty('--segmented-active-index', selectedMode === 'gateway' ? '1' : '0');
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
+            const activeIndex = selectedMode === 'flex' ? '1' : (selectedMode === 'flex_xml' ? '2' : '0');
+            investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
         }
         document.querySelectorAll('[data-ibkr-import-mode-panel]').forEach((panel) => {
             if (!(panel instanceof HTMLElement)) return;
@@ -5317,13 +5323,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
-        const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
+        const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
         const isSchwab = selectedBroker === 'schwab';
-        const usesSyncAction = isIbkrGateway || isLongbridgeHk || isHsbc;
+        const usesSyncAction = isIbkrFlex || isLongbridgeHk || isHsbc;
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
@@ -5385,8 +5391,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.json</code> without clearing existing records.'
                         : (isFutuhk
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
-                        : (isIbkrGateway
-                            ? 'Syncs IBKR PortfolioAnalyst transactions for the last 365 days, plus current positions and cash, into <code>settings_store/investment.json</code> without clearing existing records.'
+                        : (isIbkrFlex
+                            ? 'Fetches IBKR Activity Flex via Flex Web Service v3 (reporting-only) and merges into the local ledger. Use CSV for historical backfills.'
+
                             : (isSchwab
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.json</code> without clearing existing records.'
                                 : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))));
@@ -7106,7 +7113,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
-        const isIbkrGateway = isIbkr && ibkrImportMode === 'gateway';
+        const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
+        const isIbkrFlexXml = isIbkr && ibkrImportMode === 'flex_xml';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -7117,6 +7125,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const longbridgeSgHistoryOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
         const transactionReady = isIbkrCsv ? isLikelyTransactionHistoryFile(transactionFile) : false;
         const positionsReady = isIbkrCsv ? isLikelyPositionsFile(positionsFile) : false;
+        const flexXmlFile = flexXmlInput?.files?.[0];
+        const flexXmlReady = isIbkrFlexXml && !!flexXmlFile;
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
@@ -7140,7 +7150,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
-            || isIbkrGateway
+            || isIbkrFlex
+            || flexXmlReady
             || (isLongbridgeHk && (Boolean(sharedRangeReady) || Boolean(longbridgeHkFilesReady)))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
@@ -7150,6 +7161,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
+        setImportStatusIcon(flexXmlStatus, flexXmlReady);
         setImportStatusIcon(longbridgeStartDateStatus, Boolean(isLongbridgeHk && String(longbridgeStartDateInput?.value || '').trim()));
         setImportStatusIcon(longbridgeEndDateStatus, Boolean(isLongbridgeHk && String(longbridgeEndDateInput?.value || '').trim()));
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
@@ -7351,7 +7363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7453,8 +7465,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (selectedBroker === 'ibkr') {
                 formData.append('ibkr_import_mode', ibkrImportMode);
-                if (ibkrImportMode === 'gateway') {
-                    formData.append('ibkr_gateway_sync', '1');
+                if (ibkrImportMode === 'flex') {
+                    // Flex config comes from Broker Access; no additional per-import UI
+                } else if (ibkrImportMode === 'flex_xml') {
+                    const flexXmlFile = flexXmlInput?.files?.[0];
+                    if (!flexXmlFile) {
+                        setImportFeedback('Please choose an IBKR Flex XML file before importing.', 'error');
+                        return;
+                    }
+                    formData.append('flex_xml', flexXmlFile);
                 } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                     return;

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.32
+Code version: v0.3.35
 """
 
 from __future__ import annotations
@@ -40,15 +40,9 @@ from app.infrastructure.broker_market_data import (
     one_minute_lookback_start,
     test_broker_connection,
 )
-from app.infrastructure.ibkr_gateway import (
-    get_ibkr_gateway_runtime_status,
-    start_ibkr_gateway,
-)
 from app.infrastructure.longbridge_cli import authenticate_longbridge_cli_with_auth_code
 from app.core.broker_settings import (
     BrokerSettings,
-    build_ibkr_base_url_from_port,
-    extract_ibkr_port_from_base_url,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
@@ -88,6 +82,7 @@ from app.core.config import (
     DEFAULT_PERIOD,
     DEFAULT_TICKERS,
     COMPARE_PERIODS_1D,
+    MARKET_STORE_DIR,
     PERIOD_OFFSETS,
     SETTINGS_STORE_DIR,
     SUPPORTED_PERIODS_1M,
@@ -98,7 +93,8 @@ from app.services.investment_import import (
     build_investment_payload_from_futuhk_statement_pdfs,
     build_investment_payload_from_hsbc_pasted_text,
     build_investment_payload_from_ibkr_csvs,
-    build_investment_payload_from_ibkr_gateway,
+    build_investment_payload_from_ibkr_flex,
+    build_investment_payload_from_ibkr_flex_xml,
     build_investment_payload_from_longbridge,
     build_investment_payload_from_longbridge_hk_files,
     build_investment_payload_from_longbridge_sg_files,
@@ -263,9 +259,8 @@ class WebRuntime:
     cash_equivalents_action: Any
     email_smtp_action: Any
     broker_access_action: Any
-    ibkr_gateway_start_api: Any
-    ibkr_gateway_status_api: Any
-    ibkr_gateway_test_api: Any
+    ibkr_flex_test_api: Any
+    # IBKR Gateway APIs removed (Flex Web Service is reporting-only)
     local_market_store_action: Any
     settings_cache_action: Any
     market_store_logo: Any
@@ -2184,10 +2179,20 @@ def build_web_runtime() -> WebRuntime:
         return has_logo_asset(ticker)
 
     def list_local_market_tickers() -> list[str]:
+        # Project canonical form for US stocks is bare symbol (e.g. "BAC").
+        # Support legacy files named "XXX.US.parquet" coming from Longbridge imports
+        # without polluting the displayed symbol.
+        def _has_usable_history(t: str) -> bool:
+            p = history_store_path_for(t)
+            if p.exists() and p.stat().st_size > 0:
+                return True
+            # legacy polluted name from Longbridge
+            legacy = MARKET_STORE_DIR / "historical" / f"{normalize_ticker(t)}.US.parquet"
+            return legacy.exists() and legacy.stat().st_size > 0
         return [
             ticker
             for ticker in list_local_tickers()
-            if history_store_path_for(ticker).exists() and history_store_path_for(ticker).stat().st_size > 0
+            if _has_usable_history(ticker)
                and has_local_profile_snapshot(ticker) and has_local_logo_snapshot(ticker)
         ]
 
@@ -2258,7 +2263,12 @@ def build_web_runtime() -> WebRuntime:
         for ticker in tickers:
             history_path = history_store_path_for(ticker)
             if not history_path.exists() or history_path.stat().st_size == 0:
-                continue
+                # fallback for Longbridge-polluted "BAC.US.parquet" etc.
+                legacy_path = MARKET_STORE_DIR / "historical" / f"{normalize_ticker(ticker)}.US.parquet"
+                if legacy_path.exists() and legacy_path.stat().st_size > 0:
+                    history_path = legacy_path
+                else:
+                    continue
             profile_snapshot = load_local_profile_snapshot(ticker)
             if profile_snapshot is None:
                 continue
@@ -3468,9 +3478,8 @@ def build_web_runtime() -> WebRuntime:
                 "dateConstraints": "/api/date-constraints",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
-                "ibkrGatewayStart": "/api/settings/ibkr-gateway/start",
-                "ibkrGatewayStatus": "/api/settings/ibkr-gateway/status",
-                "ibkrGatewayTest": "/api/settings/ibkr-gateway/test",
+                # IBKR Gateway endpoints removed (Flex is reporting-only)
+                "ibkrFlexTest": "/api/settings/ibkr-flex/test",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
                 "investmentIntraday": "/api/investment/intraday",
@@ -3912,12 +3921,8 @@ def build_web_runtime() -> WebRuntime:
         ).strip().lower() or current_settings.longbridge_auth_mode
         if selected_broker == "longbridge" and longbridge_auth_code:
             longbridge_auth_mode = "cli_oauth"
-        ibkr_port = str(request.form.get("ibkr_port", "")).strip()
-        ibkr_base_url = (
-            build_ibkr_base_url_from_port(ibkr_port)
-            if ibkr_port
-            else str(request.form.get("ibkr_base_url", "")).strip() or current_settings.ibkr_base_url
-        )
+
+        # IBKR settings are now Flex Web Service (reporting-only). Only account filter and Flex config are persisted.
         updated_settings = BrokerSettings(
             selected_broker=selected_broker,
             longbridge_auth_mode=longbridge_auth_mode,
@@ -3926,9 +3931,22 @@ def build_web_runtime() -> WebRuntime:
             longbridge_app_key=str(request.form.get("longbridge_app_key", "")).strip() or current_settings.longbridge_app_key,
             longbridge_app_secret=str(request.form.get("longbridge_app_secret", "")).strip() or current_settings.longbridge_app_secret,
             longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
-            ibkr_base_url=ibkr_base_url,
             ibkr_account_id=str(request.form.get("ibkr_account_id", "")).strip() or current_settings.ibkr_account_id,
-            ibkr_verify_ssl=request.form.getlist("ibkr_verify_ssl")[-1] == "1" if request.form.getlist("ibkr_verify_ssl") else False,
+            # Actual secrets: if blank in form, keep existing (like Longbridge password fields)
+            ibkr_flex_token=str(request.form.get("ibkr_flex_token", "")).strip() or current_settings.ibkr_flex_token,
+            ibkr_flex_activity_query_id=str(request.form.get("ibkr_flex_activity_query_id", "")).strip() or current_settings.ibkr_flex_activity_query_id,
+            ibkr_flex_trade_confirm_query_id=str(request.form.get("ibkr_flex_trade_confirm_query_id", "")).strip() or current_settings.ibkr_flex_trade_confirm_query_id,
+            ibkr_flex_token_env=str(request.form.get("ibkr_flex_token_env", current_settings.ibkr_flex_token_env)).strip() or "IBKR_FLEX_TOKEN",
+            ibkr_flex_activity_query_id_env=str(
+                request.form.get("ibkr_flex_activity_query_id_env", current_settings.ibkr_flex_activity_query_id_env)
+            ).strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID",
+            ibkr_flex_trade_confirm_query_id_env=str(
+                request.form.get("ibkr_flex_trade_confirm_query_id_env", current_settings.ibkr_flex_trade_confirm_query_id_env)
+            ).strip() or "IBKR_FLEX_TRADE_CONFIRM_QUERY_ID",
+            ibkr_flex_send_request_url=str(
+                request.form.get("ibkr_flex_send_request_url", current_settings.ibkr_flex_send_request_url)
+            ).strip() or current_settings.ibkr_flex_send_request_url,
+            ibkr_flex_lookback_days=request.form.get("ibkr_flex_lookback_days", current_settings.ibkr_flex_lookback_days),
         )
         save_broker_settings(updated_settings)
         action = request.form.get("action", "save")
@@ -3973,8 +3991,7 @@ def build_web_runtime() -> WebRuntime:
 
     def _build_ibkr_settings_from_request() -> BrokerSettings:
         current_settings = load_broker_settings()
-        ibkr_port = str(request.form.get("ibkr_port", request.args.get("port", ""))).strip()
-        ibkr_base_url = build_ibkr_base_url_from_port(ibkr_port) if ibkr_port else current_settings.ibkr_base_url
+        # Build a minimal IBKR Flex settings object for test flows. No Gateway fields.
         return BrokerSettings(
             selected_broker="ibkr",
             longbridge_auth_mode=current_settings.longbridge_auth_mode,
@@ -3983,31 +4000,31 @@ def build_web_runtime() -> WebRuntime:
             longbridge_app_key=current_settings.longbridge_app_key,
             longbridge_app_secret=current_settings.longbridge_app_secret,
             longbridge_access_token=current_settings.longbridge_access_token,
-            ibkr_base_url=ibkr_base_url,
-            ibkr_account_id=str(request.form.get("ibkr_account_id", current_settings.ibkr_account_id)).strip(),
-            ibkr_verify_ssl=(
-                request.form.getlist("ibkr_verify_ssl")[-1] == "1"
-                if request.form.getlist("ibkr_verify_ssl")
-                else current_settings.ibkr_verify_ssl
-            ),
+            ibkr_account_id=str(request.form.get("ibkr_account_id", current_settings.ibkr_account_id) or request.args.get("ibkr_account_id", "")).strip(),
+            ibkr_flex_token=str(request.form.get("ibkr_flex_token", "")).strip() or current_settings.ibkr_flex_token,
+            ibkr_flex_activity_query_id=str(request.form.get("ibkr_flex_activity_query_id", "")).strip() or current_settings.ibkr_flex_activity_query_id,
+            ibkr_flex_trade_confirm_query_id=str(request.form.get("ibkr_flex_trade_confirm_query_id", "")).strip() or current_settings.ibkr_flex_trade_confirm_query_id,
+            ibkr_flex_token_env=str(request.form.get("ibkr_flex_token_env", current_settings.ibkr_flex_token_env)).strip() or "IBKR_FLEX_TOKEN",
+            ibkr_flex_activity_query_id_env=str(
+                request.form.get("ibkr_flex_activity_query_id_env", current_settings.ibkr_flex_activity_query_id_env)
+            ).strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID",
+            ibkr_flex_trade_confirm_query_id_env=str(
+                request.form.get("ibkr_flex_trade_confirm_query_id_env", current_settings.ibkr_flex_trade_confirm_query_id_env)
+            ).strip() or "IBKR_FLEX_TRADE_CONFIRM_QUERY_ID",
+            ibkr_flex_send_request_url=str(
+                request.form.get("ibkr_flex_send_request_url", current_settings.ibkr_flex_send_request_url)
+            ).strip() or current_settings.ibkr_flex_send_request_url,
+            ibkr_flex_lookback_days=request.form.get("ibkr_flex_lookback_days", current_settings.ibkr_flex_lookback_days),
         )
 
-    def ibkr_gateway_start_api():
+    def ibkr_flex_test_api():
+        """Reporting-only Flex configuration and connectivity validation.
+        Delegates to the shared Flex test logic (same as the generic "Test connection" button).
+        """
         settings = _build_ibkr_settings_from_request()
         save_broker_settings(settings)
-        status = start_ibkr_gateway(settings, port=request.form.get("ibkr_port"))
-        return jsonify({"success": status.running or status.reachable, **status.to_json()})
-
-    def ibkr_gateway_status_api():
-        current_settings = load_broker_settings()
-        port = request.args.get("port") or request.form.get("ibkr_port")
-        status = get_ibkr_gateway_runtime_status(port or extract_ibkr_port_from_base_url(current_settings.ibkr_base_url))
-        return jsonify({"success": True, **status.to_json()})
-
-    def ibkr_gateway_test_api():
-        settings = _build_ibkr_settings_from_request()
-        save_broker_settings(settings)
-        success, message = test_broker_connection(settings)
+        from app.infrastructure.broker_market_data import _test_ibkr_flex_connection
+        success, message = _test_ibkr_flex_connection(settings)
         checked_at = datetime.now().astimezone()
         checked_at_label = format_display_datetime(
             checked_at,
@@ -4470,18 +4487,51 @@ def build_web_runtime() -> WebRuntime:
             )
             transactions_file = request.files.get("transactions_csv")
             positions_file = request.files.get("positions_csv")
+            dry_run = False
             if broker == "ibkr":
                 ibkr_import_mode = str(request.form.get("ibkr_import_mode", "csv")).strip().lower()
-                if ibkr_import_mode == "gateway":
-                    imported_payload = build_investment_payload_from_ibkr_gateway(
+                if ibkr_import_mode == "flex":
+                    # Dry-run support for Flex
+                    dry_run = str(request.form.get("dry_run", "")).strip().lower() in {"1", "true", "yes", "on"}
+                    imported_payload = build_investment_payload_from_ibkr_flex(
                         load_broker_settings(),
+                        dry_run=dry_run,
                     )
                     success_message = (
-                        "IBKR Gateway sync complete. PortfolioAnalyst transactions for the current position conids "
-                        "were requested for the last 365 days, and current positions plus cash ledger were refreshed "
-                        "through the authenticated Client Portal Gateway session. Matching records were merged "
-                        "incrementally into the local investment store without clearing older data first. Use CSV "
-                        "import for full historical backfills, including fully closed symbols."
+                        "IBKR Flex import complete. Activity Flex records were fetched via the IBKR Flex Web Service v3, "
+                        "mapped to the canonical ledger, and merged incrementally. This integration is reporting-only. "
+                        "No trading or live market data is used. Use CSV for historical backfills when needed. "
+                        "Dry-run was performed; nothing was written." if dry_run else
+                        "IBKR Flex import complete. Activity Flex records were fetched via the IBKR Flex Web Service v3, "
+                        "mapped to the canonical ledger, and merged incrementally into the local investment store "
+                        "without clearing older data first. This integration is reporting-only."
+                    )
+                elif ibkr_import_mode == "flex_xml":
+                    flex_xml_file = request.files.get("flex_xml")
+                    if flex_xml_file is None:
+                        return jsonify({
+                            "success": False,
+                            "error": "Please upload the IBKR Flex Query XML file.",
+                        }), 400
+                    flex_xml_payload = flex_xml_file.read()
+                    if not flex_xml_payload:
+                        return jsonify({
+                            "success": False,
+                            "error": "The uploaded XML file must not be empty.",
+                        }), 400
+                    dry_run = str(request.form.get("dry_run", "")).strip().lower() in {"1", "true", "yes", "on"}
+                    imported_payload = build_investment_payload_from_ibkr_flex_xml(
+                        flex_xml_payload,
+                        load_broker_settings(),
+                        dry_run=dry_run,
+                    )
+                    success_message = (
+                        "IBKR Flex XML import complete. Activity Flex records were parsed from the uploaded XML file, "
+                        "mapped to the canonical ledger, and merged incrementally. "
+                        "Dry-run was performed; nothing was written." if dry_run else
+                        "IBKR Flex XML import complete. Activity Flex records were parsed from the uploaded XML file, "
+                        "mapped to the canonical ledger, and merged incrementally into the local investment store "
+                        "without clearing older data first."
                     )
                 else:
                     if transactions_file is None or positions_file is None:
@@ -4628,16 +4678,20 @@ def build_web_runtime() -> WebRuntime:
                     "error": f"{broker.upper()} investment import is not implemented yet.",
                 }), 400
 
-            investment_payload = merge_and_write_investment_payload(imported_payload)
+            if dry_run:
+                investment_payload = imported_payload
+            else:
+                investment_payload = merge_and_write_investment_payload(imported_payload)
             
-            # Run the price cache refresh in the background so we don't block the UI with network requests
-            def background_refresh(payload: dict[str, Any]) -> None:
-                try:
-                    refresh_investment_import_price_caches(payload)
-                except Exception:
-                    pass
-            
-            threading.Thread(target=background_refresh, args=(imported_payload,), daemon=True).start()
+            # Run the price cache refresh in the background (skip for dry-run)
+            if not dry_run:
+                def background_refresh(payload: dict[str, Any]) -> None:
+                    try:
+                        refresh_investment_import_price_caches(payload)
+                    except Exception:
+                        pass
+                
+                threading.Thread(target=background_refresh, args=(imported_payload,), daemon=True).start()
             freshness_refresh_failures: list[str] = []
 
             return jsonify({
@@ -5077,9 +5131,7 @@ def build_web_runtime() -> WebRuntime:
         cash_equivalents_action=cash_equivalents_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,
-        ibkr_gateway_start_api=ibkr_gateway_start_api,
-        ibkr_gateway_status_api=ibkr_gateway_status_api,
-        ibkr_gateway_test_api=ibkr_gateway_test_api,
+        ibkr_flex_test_api=ibkr_flex_test_api,
         local_market_store_action=local_market_store_action,
         settings_cache_action=settings_cache_action,
         market_store_logo=market_store_logo,

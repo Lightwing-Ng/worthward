@@ -1,4 +1,4 @@
-/* Code version: v0.3.12 */
+/* Code version: v0.4.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -69,7 +69,8 @@
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
     let pendingWorkspaceChartTransition = null;
-    let optimisticNavigationTimer = 0;
+    let optimisticNavigationFrame = 0;
+    let optimisticNavigationSnapshot = null;
     const datePickerState = [];
     let validTradingDateSet = null;
     const portfolioWeightState = {
@@ -83,7 +84,6 @@
     const workspaceModalOverlayCopy = workspaceModalOverlay?.querySelector(".workspace-modal-copy");
     const workspaceModalOverlayIcon = $("#workspace_modal_overlay_icon");
     const canTransitionDom = typeof document.startViewTransition === "function";
-    const dockPrefetchCache = new Map();
     const progressiveResourceCache = new Map();
     const progressiveViewRegistry = {
         tickers: {
@@ -141,8 +141,6 @@
         return progressiveViewRegistry[view] || {masks: []};
     };
 
-    const getProgressiveMaskSelectors = (view, section = null) => getProgressiveManifest(view, section).masks || [];
-
     const resolveSettingsSectionFromUrl = (url) => {
         try {
             const parsedUrl = new URL(url, window.location.origin);
@@ -152,6 +150,307 @@
             return "about";
         }
     };
+
+    const resolveMoreSectionFromUrl = (url) => {
+        try {
+            const parsedUrl = new URL(url, window.location.origin);
+            const pathMatch = parsedUrl.pathname.match(/^\/more\/([^/?#]+)/);
+            if (pathMatch?.[1] === "live-trading") return "live-trading";
+            return "investment";
+        } catch (_error) {
+            return "investment";
+        }
+    };
+
+    const SETTINGS_NAVIGATION_PROFILES = Object.freeze({
+        about: {title: "About", layout: "reading"},
+        backtest: {title: "Backtest", layout: "options"},
+        "broker-access": {title: "Broker access", layout: "broker"},
+        "cash-equivalents": {title: labels.cash_equivalents || "Cash equivalents", layout: "actions"},
+        "clear-caches": {title: "Clear caches", layout: "actions"},
+        "email-smtp": {title: labels.email_smtp || "Email (SMTP)", layout: "form"},
+        "export-image": {title: "Export image", layout: "tokens"},
+        "font-tokens": {title: "Font tokens", layout: "tokens"},
+        general: {title: "General", layout: "options"},
+        "local-market-store": {title: labels.local_market_store || "Local market store", layout: "table"},
+        "material-tokens": {title: "Material tokens", layout: "tokens"},
+        network: {title: labels.network_self_check || "Network self-check", layout: "actions"},
+        strategies: {title: labels.strategy_settings || "Strategy settings", layout: "actions"},
+        "style-tokens": {title: "Style tokens", layout: "tokens"},
+    });
+    const SETTINGS_NAVIGATION_ORDER = Object.freeze(Object.keys(SETTINGS_NAVIGATION_PROFILES));
+    const MORE_NAVIGATION_PROFILES = Object.freeze({
+        investment: {title: "Investment"},
+        "live-trading": {title: "Live trading"},
+    });
+    const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({
+        tickers: {title: labels.dock_tickers || "Compare stocks"},
+        portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
+        dca: {title: labels.dock_dca || "Dollar-cost averaging"},
+        backtest: {title: labels.dock_backtest || "Backtest"},
+    });
+
+    const escapeSkeletonText = (value) => String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+    const navigationSkeletonLine = (width = "100%", className = "") => `
+        <span class="navigation-skeleton-line${className ? ` ${className}` : ""}"
+              style="--navigation-skeleton-width: ${width};"></span>
+    `;
+
+    const navigationSkeletonLines = (widths) => `
+        <div class="navigation-skeleton-copy">
+            ${widths.map((width) => navigationSkeletonLine(width)).join("")}
+        </div>
+    `;
+
+    const buildNavigationSidebar = (targetView, targetSection) => {
+        let title = "Workspaces";
+        let items = Object.entries(WORKSPACE_NAVIGATION_PROFILES).map(([key, profile]) => ({
+            key,
+            label: profile.title,
+        }));
+        let activeKey = targetView;
+        if (targetView === "settings") {
+            title = labels.settings_title || "Settings";
+            items = SETTINGS_NAVIGATION_ORDER.map((key) => ({key, label: SETTINGS_NAVIGATION_PROFILES[key].title}));
+            activeKey = SETTINGS_NAVIGATION_PROFILES[targetSection] ? targetSection : "about";
+        } else if (targetView === "more") {
+            title = labels.dock_more || "More";
+            items = Object.entries(MORE_NAVIGATION_PROFILES).map(([key, profile]) => ({key, label: profile.title}));
+            activeKey = MORE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
+        }
+        const activeIndex = Math.max(items.findIndex((item) => item.key === activeKey), 0);
+        return `
+            <section class="hero"><h1>${escapeSkeletonText(title)}</h1></section>
+            <nav class="settings-nav navigation-skeleton-sidebar-nav"
+                 style="--settings-active-index: ${activeIndex};"
+                 aria-hidden="true">
+                ${items.map((item) => `
+                    <div class="settings-nav-item${item.key === activeKey ? " is-active" : ""}">
+                        <span class="settings-nav-icon-shell navigation-skeleton-icon"></span>
+                        <span class="settings-nav-label">${escapeSkeletonText(item.label)}</span>
+                    </div>
+                `).join("")}
+            </nav>
+        `;
+    };
+
+    const buildNavigationTitleCard = (title) => `
+        <article class="report-card workspace-article-card workspace-summary-card navigation-skeleton-title-card">
+            <div class="report-heading-row"><p class="report-heading">${escapeSkeletonText(title)}</p></div>
+        </article>
+    `;
+
+    const buildWorkspaceNavigationSkeleton = (targetView) => {
+        const profile = WORKSPACE_NAVIGATION_PROFILES[targetView] || WORKSPACE_NAVIGATION_PROFILES.backtest;
+        if (targetView === "tickers") {
+            return `
+                <section class="workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
+                    ${buildNavigationTitleCard(profile.title)}
+                    <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-summary-grid">
+                        ${["72%", "56%", "68%"].map((width) => `<div class="navigation-skeleton-metric">${navigationSkeletonLines([width, "42%"])}</div>`).join("")}
+                    </article>
+                    <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["30%"])}</article>
+                </section>
+            `;
+        }
+        if (targetView === "portfolio") {
+            return `
+                <section class="workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
+                    ${buildNavigationTitleCard(profile.title)}
+                    <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-portfolio">
+                        <span class="navigation-skeleton-orbit"></span>
+                        <span class="navigation-skeleton-orbit"></span>
+                        ${navigationSkeletonLines(["46%", "62%"]) }
+                    </article>
+                    <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["34%"])}</article>
+                </section>
+            `;
+        }
+        const metricCount = targetView === "dca" ? 9 : 10;
+        return `
+            <section class="workspace-mode-shell navigation-skeleton-page">
+                ${buildNavigationTitleCard(profile.title)}
+                <div class="workspace-mode-layout navigation-skeleton-workspace-layout">
+                    <article class="chart-surface workspace-mode-controls-surface navigation-skeleton-card navigation-skeleton-controls">
+                        ${navigationSkeletonLines(["42%", "100%", "72%", "100%", "56%", "100%"]) }
+                    </article>
+                    <article class="workspace-mode-main navigation-skeleton-results">
+                        <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-metrics-grid">
+                            ${Array.from({length: metricCount}, () => `<div class="navigation-skeleton-metric">${navigationSkeletonLines(["68%", "42%"])}</div>`).join("")}
+                        </article>
+                        <article class="chart-surface navigation-skeleton-card navigation-skeleton-chart">${navigationSkeletonLines(["36%"])}</article>
+                    </article>
+                </div>
+            </section>
+        `;
+    };
+
+    const buildMoreNavigationSkeleton = (targetSection) => {
+        const section = MORE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
+        const title = MORE_NAVIGATION_PROFILES[section].title;
+        if (section === "live-trading") {
+            return `
+                <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
+                    ${buildNavigationTitleCard(title)}
+                    <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-live-trading">
+                        ${navigationSkeletonLines(["26%", "58%", "34%", "100%", "42%", "100%"]) }
+                        <div class="navigation-skeleton-action-row">${navigationSkeletonLine("38%")} ${navigationSkeletonLine("28%")}</div>
+                    </article>
+                </section>
+            `;
+        }
+        return `
+            <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
+                ${buildNavigationTitleCard(title)}
+                <article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-investment">
+                    <div class="navigation-skeleton-segments">${Array.from({length: 4}, () => navigationSkeletonLine("100%")).join("")}</div>
+                    <div class="navigation-skeleton-chart navigation-skeleton-chart-compact"></div>
+                </article>
+                <article class="chart-surface navigation-skeleton-card navigation-skeleton-table">
+                    ${navigationSkeletonLines(["28%", "100%", "100%", "92%", "100%", "84%"]) }
+                </article>
+            </section>
+        `;
+    };
+
+    const buildSettingsNavigationContent = (layout) => {
+        if (layout === "broker") {
+            return `
+                <section class="settings-action-package navigation-skeleton-card navigation-skeleton-callout">
+                    <span class="navigation-skeleton-icon navigation-skeleton-icon-large"></span>
+                    ${navigationSkeletonLines(["92%", "76%"]) }
+                </section>
+                <section class="settings-stack-form settings-form-shell navigation-skeleton-form">
+                    ${["Broker", "Authentication", "Credential", "Account"].map((label) => `
+                        <div class="navigation-skeleton-field">
+                            <span class="settings-form-label">${label}</span>
+                            ${navigationSkeletonLine("100%", "navigation-skeleton-control")}
+                        </div>
+                    `).join("")}
+                    <section class="settings-action-package navigation-skeleton-card navigation-skeleton-form-action">
+                        ${navigationSkeletonLines(["78%", "58%"]) }
+                        ${navigationSkeletonLine("34%", "navigation-skeleton-button")}
+                    </section>
+                </section>
+            `;
+        }
+        if (layout === "table") {
+            return `<section class="navigation-skeleton-card navigation-skeleton-table">${navigationSkeletonLines(["100%", "96%", "100%", "90%", "100%", "94%", "100%"])}</section>`;
+        }
+        if (layout === "tokens") {
+            return `<section class="navigation-skeleton-token-grid">${Array.from({length: 8}, (_, index) => `<article class="navigation-skeleton-card navigation-skeleton-token">${navigationSkeletonLines([index % 2 ? "54%" : "68%", "88%", "44%"])}</article>`).join("")}</section>`;
+        }
+        if (layout === "options") {
+            return `<section class="navigation-skeleton-option-stack">${Array.from({length: 5}, () => `<article class="navigation-skeleton-card navigation-skeleton-option">${navigationSkeletonLines(["38%", "86%", "64%"])}</article>`).join("")}</section>`;
+        }
+        if (layout === "actions") {
+            return `<section class="navigation-skeleton-option-stack">${Array.from({length: 4}, () => `<article class="settings-action-package navigation-skeleton-card navigation-skeleton-action">${navigationSkeletonLines(["46%", "92%", "70%"])}</article>`).join("")}</section>`;
+        }
+        if (layout === "form") {
+            return `<section class="settings-stack-form settings-form-shell navigation-skeleton-form">${Array.from({length: 5}, () => `<div class="navigation-skeleton-field">${navigationSkeletonLine("32%")} ${navigationSkeletonLine("100%", "navigation-skeleton-control")}</div>`).join("")}</section>`;
+        }
+        return `<article class="report-card workspace-content-card navigation-skeleton-card navigation-skeleton-reading">${navigationSkeletonLines(["38%", "96%", "88%", "92%", "74%", "86%"])}</article>`;
+    };
+
+    const buildSettingsNavigationSkeleton = (targetSection) => {
+        const section = SETTINGS_NAVIGATION_PROFILES[targetSection] ? targetSection : "about";
+        const profile = SETTINGS_NAVIGATION_PROFILES[section];
+        return `
+            <section class="workspace-header settings-workspace-header settings-shell-${section} navigation-skeleton-page"
+                     id="settings_workspace_shell"
+                     data-settings-workspace-region
+                     data-settings-section="${section}">
+                ${buildNavigationTitleCard(profile.title)}
+                ${buildSettingsNavigationContent(profile.layout)}
+            </section>
+        `;
+    };
+
+    const renderOptimisticNavigationSkeleton = ({view, section = null} = {}) => {
+        const targetView = view || state.currentView;
+        const workspacePanel = document.getElementById("workspace_panel");
+        const sidebar = document.getElementById("app_sidebar");
+        if (!(workspacePanel instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) return false;
+        let normalizedSection = section;
+        let workspaceMarkup = "";
+        if (targetView === "settings") {
+            normalizedSection = SETTINGS_NAVIGATION_PROFILES[section] ? section : "about";
+            workspaceMarkup = buildSettingsNavigationSkeleton(normalizedSection);
+        } else if (targetView === "more") {
+            normalizedSection = MORE_NAVIGATION_PROFILES[section] ? section : "investment";
+            workspaceMarkup = buildMoreNavigationSkeleton(normalizedSection);
+        } else if (WORKSPACE_VIEWS.has(targetView)) {
+            workspaceMarkup = buildWorkspaceNavigationSkeleton(targetView);
+        } else {
+            return false;
+        }
+        if (targetView !== state.currentView) {
+            sidebar.innerHTML = buildNavigationSidebar(targetView, normalizedSection);
+        }
+        workspacePanel.innerHTML = `
+            <div class="navigation-skeleton-status sr-only" role="status" aria-live="polite">Loading ${escapeSkeletonText(targetView === "settings" ? SETTINGS_NAVIGATION_PROFILES[normalizedSection].title : targetView === "more" ? MORE_NAVIGATION_PROFILES[normalizedSection].title : WORKSPACE_NAVIGATION_PROFILES[targetView].title)}</div>
+            <div class="navigation-skeleton-root" data-navigation-skeleton aria-hidden="true">${workspaceMarkup}</div>
+        `;
+        workspacePanel.dataset.navigationSkeleton = "1";
+        workspacePanel.setAttribute("aria-busy", "true");
+        scheduleMobilePageBottomPaddingSync();
+        return true;
+    };
+    const clearOptimisticNavigationSkeleton = () => {
+        const workspacePanel = document.getElementById("workspace_panel");
+        if (!(workspacePanel instanceof HTMLElement)) return;
+        delete workspacePanel.dataset.navigationSkeleton;
+        workspacePanel.removeAttribute("aria-busy");
+    };
+    const captureOptimisticNavigationSnapshot = () => {
+        if (optimisticNavigationSnapshot) return;
+        const sidebar = document.getElementById("app_sidebar");
+        const workspacePanel = document.getElementById("workspace_panel");
+        const dock = document.querySelector(".sidebar-dock");
+        if (!(sidebar instanceof HTMLElement) || !(workspacePanel instanceof HTMLElement)) return;
+        optimisticNavigationSnapshot = {
+            sidebarNodes: Array.from(sidebar.childNodes),
+            workspaceNodes: Array.from(workspacePanel.childNodes),
+            dockState: Array.from(dock?.querySelectorAll(".sidebar-dock-item") || []).map((item) => ({
+                className: item.className,
+                ariaCurrent: item.getAttribute("aria-current"),
+            })),
+        };
+    };
+    const restoreOptimisticNavigationSnapshot = () => {
+        if (!optimisticNavigationSnapshot) return false;
+        const sidebar = document.getElementById("app_sidebar");
+        const workspacePanel = document.getElementById("workspace_panel");
+        const dock = document.querySelector(".sidebar-dock");
+        if (!(sidebar instanceof HTMLElement) || !(workspacePanel instanceof HTMLElement)) return false;
+        sidebar.replaceChildren(...optimisticNavigationSnapshot.sidebarNodes);
+        workspacePanel.replaceChildren(...optimisticNavigationSnapshot.workspaceNodes);
+        if (dock instanceof HTMLElement) {
+            Array.from(dock.querySelectorAll(".sidebar-dock-item")).forEach((item, index) => {
+                const itemState = optimisticNavigationSnapshot.dockState[index];
+                if (!itemState) return;
+                item.className = itemState.className;
+                if (itemState.ariaCurrent) {
+                    item.setAttribute("aria-current", itemState.ariaCurrent);
+                } else {
+                    item.removeAttribute("aria-current");
+                }
+            });
+        }
+        optimisticNavigationSnapshot = null;
+        clearOptimisticNavigationSkeleton();
+        scheduleDockPosition();
+        scheduleMobilePageBottomPaddingSync();
+        return true;
+    };
+    bootstrap.renderOptimisticNavigationSkeleton = renderOptimisticNavigationSkeleton;
+    bootstrap.clearOptimisticNavigationSkeleton = clearOptimisticNavigationSkeleton;
 
     const resolveViewFromUrl = (url) => {
         try {
@@ -200,23 +499,6 @@
         }
     };
 
-    const applyOptimisticMaskForTarget = (targetView, targetSection = null) => {
-        const selectors = getProgressiveMaskSelectors(targetView || state.currentView, targetSection);
-        const maskedNodes = new Set();
-        selectors.forEach((selector) => {
-            document.querySelectorAll(selector).forEach((node) => maskedNodes.add(node));
-        });
-        // Fallback: mask all workspace elements only when navigating within a workspace view.
-        // Views like "settings" and "more" intentionally have empty mask lists — do not trigger
-        // the catch-all fallback for them, as it would bleed masks from the departing page.
-        if (!maskedNodes.size && WORKSPACE_VIEWS.has(targetView || state.currentView)) {
-            document.querySelectorAll("[data-workspace-mask]").forEach((node) => maskedNodes.add(node));
-        }
-        maskedNodes.forEach((node) => {
-            node.classList.add("is-masked-during-switch");
-        });
-    };
-
     const syncDockPreviewTarget = (targetDockGroup) => {
         if (!targetDockGroup) return;
         const dockGroupByIndex = ["workspace", "more", "settings"];
@@ -260,20 +542,35 @@
     };
 
     const beginOptimisticPageNavigation = (nextUrl, {link = null, targetDockGroup = null} = {}) => {
-        if (optimisticNavigationTimer) window.clearTimeout(optimisticNavigationTimer);
+        if (optimisticNavigationFrame) window.cancelAnimationFrame(optimisticNavigationFrame);
         const targetView = resolveViewFromUrl(nextUrl);
-        const targetSection = targetView === "settings" ? resolveSettingsSectionFromUrl(nextUrl) : null;
+        const targetSection = targetView === "settings"
+            ? resolveSettingsSectionFromUrl(nextUrl)
+            : targetView === "more"
+                ? resolveMoreSectionFromUrl(nextUrl)
+                : null;
         const dockGroup = targetDockGroup || resolveDockGroupFromView(targetView);
+        captureOptimisticNavigationSnapshot();
         document.body.classList.add("is-workspace-switching", "is-page-navigating");
         document.documentElement.dataset.navigationTarget = targetView || "page";
         document.documentElement.setAttribute("aria-busy", "true");
         syncDockPreviewTarget(dockGroup);
         syncLocalPreviewTarget(link);
-        applyOptimisticMaskForTarget(targetView, targetSection);
-        optimisticNavigationTimer = window.setTimeout(() => {
-            optimisticNavigationTimer = 0;
+        renderOptimisticNavigationSkeleton({view: targetView, section: targetSection});
+        let navigationCommitted = false;
+        const commitNavigation = () => {
+            if (navigationCommitted) return;
+            navigationCommitted = true;
+            optimisticNavigationFrame = 0;
             window.location.assign(nextUrl);
-        }, 70);
+        };
+        const fallbackTimer = window.setTimeout(commitNavigation, 120);
+        optimisticNavigationFrame = window.requestAnimationFrame(() => {
+            window.setTimeout(() => {
+                window.clearTimeout(fallbackTimer);
+                commitNavigation();
+            }, 0);
+        });
     };
 
     const fetchJsonCached = async (cacheKey, url, {ttlMs = 30000} = {}) => {
@@ -692,6 +989,8 @@
             canTransitionDom,
             rememberCurrentViewUrl,
             getProgressiveManifest,
+            renderOptimisticNavigationSkeleton,
+            clearOptimisticNavigationSkeleton,
             fetchJsonCached,
             progressiveResourceCache,
         });
@@ -5026,6 +5325,7 @@
     workspaceModalOverlayClose?.addEventListener("click", hideWorkspaceModal);
     window.addEventListener("pageshow", hideWorkspaceModal);
     window.addEventListener("pageshow", () => {
+        restoreOptimisticNavigationSnapshot();
         document.body.classList.remove("is-workspace-switching", "is-page-navigating");
         document.documentElement.removeAttribute("data-navigation-target");
         document.documentElement.removeAttribute("aria-busy");

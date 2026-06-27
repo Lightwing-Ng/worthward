@@ -720,26 +720,15 @@
 
                 <div data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
                     <div class="settings-form-row">
-                        <label class="settings-form-label" for="ibkr_port">Gateway port</label>
-                        <input type="number" id="ibkr_port" name="ibkr_port" class="settings-form-control settings-form-control-numeric" value="{{ broker_settings.ibkr_port or 8689 }}" min="1" max="65535" step="1" inputmode="numeric" autocomplete="off">
-                        <input type="hidden" id="ibkr_base_url" name="ibkr_base_url" value="{{ broker_settings.ibkr_base_url }}" data-ibkr-base-url>
-                        <input type="hidden" name="ibkr_account_id" value="{{ broker_settings.ibkr_account_id }}">
+                        <label class="settings-form-label">IBKR Flex Token</label>
+                        <input type="password" name="ibkr_flex_token" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.ibkr_flex_token_present %}••••••••••••{% else %}Paste your Flex token{% endif %}">
+                        <span class="settings-general-option-desc">Presence: {% if broker_settings.ibkr_flex_token_present %}set{% else %}missing{% endif %}</span>
                     </div>
-                    <div class="settings-ibkr-gateway-status" data-ibkr-gateway-status role="status" aria-live="polite" hidden>
-                        <span class="settings-ibkr-gateway-status-dot" aria-hidden="true"></span>
-                        <span data-ibkr-gateway-status-text></span>
+                    <div class="settings-form-row">
+                        <label class="settings-form-label">Activity Query ID</label>
+                        <input type="text" name="ibkr_flex_activity_query_id" class="settings-form-control" value="{{ broker_settings.ibkr_flex_activity_query_id or '' }}" placeholder="Enter Query ID (or leave to use env)">
+                        <span class="settings-general-option-desc">Presence: {% if broker_settings.ibkr_flex_activity_query_id_present %}set{% else %}missing{% endif %}</span>
                     </div>
-                    <div class="settings-ibkr-gateway-actions">
-                        <button type="button" class="settings-inline-button settings-inline-button-primary settings-ibkr-gateway-start-button" data-ibkr-gateway-start disabled>Start gateway to logon</button>
-                    </div>
-                    <label class="settings-general-option settings-general-option--action settings-broker-checkbox-row">
-                        <input type="hidden" name="ibkr_verify_ssl" value="0">
-                        <input type="checkbox" name="ibkr_verify_ssl" value="1" {% if broker_settings.ibkr_verify_ssl %}checked{% endif %}>
-                        <span class="settings-general-option-copy">
-                            <span class="settings-general-option-title">Verify SSL certificate</span>
-                            <span class="settings-general-option-desc">Keep this off for the local Gateway's self-signed certificate. Turn it on only when your Gateway URL uses a trusted certificate.</span>
-                        </span>
-                    </label>
                 </div>
 
                 <div class="settings-action-package-grid">
