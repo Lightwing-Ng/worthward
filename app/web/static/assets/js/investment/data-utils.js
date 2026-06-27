@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.46.0
+ * Code version: v1.47.0
+ * - Added: Broker-scoped authoritative P&L calibration so Longbridge HK and SG can coexist without overwriting each other's ticker results.
  * - Added: Authoritative broker performance snapshots can calibrate selected Holdings P&L rows without changing the transaction cash ledger.
  * - Fixed: Broker P&L-excluded correction rows retain their cash impact without inflating per-symbol realized P&L.
  * - Fixed: Longbridge HK money-market placements and redemptions display their actual transfer amount while ledger equity uses only the importer-provided interest delta.
@@ -790,11 +791,7 @@ export function createInvestmentDataUtils({
         return normalizedSnapshot;
     }
 
-    function getAuthoritativePerformanceSnapshot() {
-        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.performance_snapshot_authoritative !== true) {
-            return null;
-        }
-        const rawSnapshot = window.ANTIGRAVITY_INVESTMENT_DATA?.performance_snapshot;
+    function normalizeAuthoritativePerformanceSnapshot(rawSnapshot) {
         if (!rawSnapshot || typeof rawSnapshot !== 'object') {
             return {};
         }
@@ -810,6 +807,31 @@ export function createInvestmentDataUtils({
             };
         });
         return normalizedSnapshot;
+    }
+
+    function getAuthoritativePerformanceSnapshot() {
+        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.performance_snapshot_authoritative !== true) {
+            return null;
+        }
+        return normalizeAuthoritativePerformanceSnapshot(
+            window.ANTIGRAVITY_INVESTMENT_DATA?.performance_snapshot,
+        );
+    }
+
+    function getAuthoritativeBrokerPerformanceSnapshots() {
+        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') return {};
+        const snapshots = {};
+        Object.entries(brokerSummaries).forEach(([broker, summary]) => {
+            if (!summary || typeof summary !== 'object') return;
+            if (summary.performance_snapshot_authoritative !== true) return;
+            const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
+            if (!normalizedBroker) return;
+            snapshots[normalizedBroker] = normalizeAuthoritativePerformanceSnapshot(
+                summary.performance_snapshot,
+            );
+        });
+        return snapshots;
     }
 
     function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
@@ -1669,6 +1691,7 @@ export function createInvestmentDataUtils({
 
     function buildTickerSummaries(transactions, latestPrices, totalEquity, tickerClosePrices = {}) {
         const tickerMap = new Map();
+        const brokerTickerMap = new Map();
         const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
@@ -1676,6 +1699,7 @@ export function createInvestmentDataUtils({
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
         const authoritativePerformanceSnapshot = getAuthoritativePerformanceSnapshot();
+        const authoritativeBrokerPerformanceSnapshots = getAuthoritativeBrokerPerformanceSnapshots();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
         const canonicalAuthoritativePositionSnapshot = {};
         if (useAuthoritativePositionSnapshot) {
@@ -1711,6 +1735,36 @@ export function createInvestmentDataUtils({
             });
         }
 
+        function applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate) {
+            if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
+                applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            // Dividend reinvestment is funded by a separate dividend cash flow.
+            if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
+                applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            if (
+                ['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)
+                && txn?.source?.excluded_from_broker_pnl !== true
+            ) {
+                summary.realizedPnl += amount;
+            }
+        }
+
         orderedTransactions.forEach((txn) => {
             if (!shouldTrackHoldingTicker(txn)) return;
             const ticker = getInvestmentCanonicalTicker(txn.ticker);
@@ -1722,51 +1776,24 @@ export function createInvestmentDataUtils({
             if (!tickerMap.has(ticker)) {
                 tickerMap.set(ticker, createPositionState(ticker));
             }
-
             const summary = tickerMap.get(ticker);
             const ledgerDate = normalizeLedgerDate(txn?.date);
-            const quoteCurrency = getTickerQuoteCurrency(ticker);
+            applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate);
 
-            if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                if (isFlatPosition(summary.shares)) {
-                    summary.lastCloseDate = ledgerDate;
+            const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
+            if (broker) {
+                const brokerTickerKey = `${broker}|${ticker}`;
+                if (!brokerTickerMap.has(brokerTickerKey)) {
+                    brokerTickerMap.set(brokerTickerKey, createPositionState(ticker));
                 }
-                return;
-            }
-
-            if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                if (isFlatPosition(summary.shares)) {
-                    summary.lastCloseDate = ledgerDate;
-                }
-                return;
-            }
-
-            // Dividend reinvestment adds shares that were funded by a separate
-            // dividend cash flow, so we should not count the reinvested amount
-            // as fresh cost basis again in realized P&L reporting.
-            if (normalizedType === 'dividend_reinvestment' && quantity !== null && !Number.isNaN(quantity)) {
-                summary.shares += quantity;
-                if (isFlatPosition(summary.shares)) {
-                    summary.lastCloseDate = ledgerDate;
-                }
-                return;
-            }
-
-            if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
-                if (isFlatPosition(summary.shares)) {
-                    summary.lastCloseDate = ledgerDate;
-                }
-                return;
-            }
-
-            if (
-                ['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)
-                && txn?.source?.excluded_from_broker_pnl !== true
-            ) {
-                summary.realizedPnl += amount;
+                applyTickerTransaction(
+                    brokerTickerMap.get(brokerTickerKey),
+                    txn,
+                    normalizedType,
+                    quantity,
+                    amount,
+                    ledgerDate,
+                );
             }
         });
 
@@ -1826,6 +1853,29 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
+            } else {
+                Object.entries(authoritativeBrokerPerformanceSnapshots).forEach(([broker, snapshot]) => {
+                    const brokerPerformanceEntry = snapshot?.[summary.ticker] ?? null;
+                    if (!brokerPerformanceEntry || !Number.isFinite(brokerPerformanceEntry.realizedTotal)) return;
+                    const brokerSummary = brokerTickerMap.get(`${broker}|${summary.ticker}`);
+                    const brokerRealizedPnlLocal = Number(brokerSummary?.realizedPnl) || 0;
+                    const brokerRealizedPnl = convertAmountToBaseCurrencyAtLatestRate(
+                        brokerRealizedPnlLocal,
+                        quoteCurrency,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    const calibratedBrokerRealizedPnl = convertAmountToBaseCurrencyAtLatestRate(
+                        brokerPerformanceEntry.realizedTotal,
+                        brokerPerformanceEntry.currency,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    realizedPnl += calibratedBrokerRealizedPnl - brokerRealizedPnl;
+                    if (brokerPerformanceEntry.currency === quoteCurrency) {
+                        realizedPnlLocal += brokerPerformanceEntry.realizedTotal - brokerRealizedPnlLocal;
+                    }
+                });
             }
             const marketValueLocal = hasOpenPosition
                 ? (marketValueFromSnapshot !== null
@@ -1934,6 +1984,7 @@ export function createInvestmentDataUtils({
         getInvestmentBrokerEndingCash,
         getInvestmentEndingCash,
         getAuthoritativePerformanceSnapshot,
+        getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
@@ -1969,4 +2020,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.46.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.0';

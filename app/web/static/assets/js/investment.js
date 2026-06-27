@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.24
+ * Code version: v1.56.0
+ * - Added: Broker-scoped Holdings P&L calibration keeps Longbridge HK and SG additive when both accounts are imported.
  * - Fixed: Investment Holdings now loads authoritative broker P&L calibrations from the refreshed data-utils module.
  * - Fixed: Longbridge HK money-market transfers preserve cash-equivalent equity through placements and recognize only redemption interest while retaining actual transfer amounts in history.
  * - Removed IBKR Gateway; added Flex Web Service v3 import mode and dry-run support.
@@ -230,14 +231,14 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.46.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.47.0';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.55.24',
+    entry: 'v1.56.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
