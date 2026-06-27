@@ -321,12 +321,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
     const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
     const futuhkStatementPdfsStatus = document.getElementById('futuhk_statement_pdfs_status');
-    const longbridgeStartDateInput = document.getElementById('longbridge_start_date');
-    const longbridgeStartDateStatus = document.getElementById('longbridge_start_date_status');
+    const longbridgeStartDateInput = null;
+    const longbridgeStartDateStatus = null;
     const hsbcPortfolioTextInput = document.getElementById('hsbc_portfolio_text');
     const hsbcOrderStatusTextInput = document.getElementById('hsbc_order_status_text');
     const hsbcCashAccountTextInput = document.getElementById('hsbc_cash_account_text');
-    const longbridgeEndDateStatus = document.getElementById('longbridge_end_date_status');
+    const longbridgeEndDateStatus = null;
     const hsbcPortfolioTextDisplay = document.getElementById('hsbc_portfolio_text_display');
     const hsbcOrderStatusDisplay = document.getElementById('hsbc_order_status_display');
     const hsbcCashAccountDisplay = document.getElementById('hsbc_cash_account_display');
@@ -367,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     window.addEventListener('pagehide', markInvestmentPageDisposed, { once: true });
     window.addEventListener('beforeunload', markInvestmentPageDisposed, { once: true });
-    const longbridgeEndDateInput = document.getElementById('longbridge_end_date');
+    const longbridgeEndDateInput = null;
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
@@ -5410,25 +5410,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (positionsCsvInput instanceof HTMLInputElement) {
             positionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
         }
-        if (longbridgeStartDateInput instanceof HTMLInputElement) {
-            longbridgeStartDateInput.required = false;  // HK supports files as alternative; submit validates
-        }
-        if (longbridgeEndDateInput instanceof HTMLInputElement) {
-            longbridgeEndDateInput.required = false;
-        }
         if (longbridgeSgFundDetailsInput instanceof HTMLInputElement) {
             longbridgeSgFundDetailsInput.required = isLongbridgeSg;
         }
         if (longbridgeSgHistoryOrdersInput instanceof HTMLInputElement) {
             longbridgeSgHistoryOrdersInput.required = isLongbridgeSg;
         }
-        // For Longbridge HK, files are optional alternative to dates (CLI). Do not force required on files.
-        // Keep date required only if we decide pure CLI; allow files to bypass in submit validation.
         if (longbridgeHkFundDetailsInput instanceof HTMLInputElement) {
-            longbridgeHkFundDetailsInput.required = false;
+            longbridgeHkFundDetailsInput.required = isLongbridgeHk;
         }
         if (longbridgeHkHistoryOrdersInput instanceof HTMLInputElement) {
-            longbridgeHkHistoryOrdersInput.required = false;
+            longbridgeHkHistoryOrdersInput.required = isLongbridgeHk;
         }
         if (futuhkStatementPdfsInput instanceof HTMLInputElement) {
             futuhkStatementPdfsInput.required = isFutuhk;
@@ -5440,7 +5432,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportNote.innerHTML = isHsbc
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
                 : (isLongbridgeHk
-                    ? 'Imports Longbridge (HK) via date range (CLI) or Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
+                    ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
                     : (isLongbridgeSg
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.json</code> without clearing existing records.'
                         : (isFutuhk
@@ -7184,10 +7176,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
-        const sharedRangeReady = isLongbridgeHk
-            && String(longbridgeStartDateInput?.value || '').trim()
-            && String(longbridgeEndDateInput?.value || '').trim()
-            && String(longbridgeStartDateInput?.value || '') <= String(longbridgeEndDateInput?.value || '');
         const longbridgeHkFundDetailsFile = longbridgeHkFundDetailsInput?.files?.[0];
         const longbridgeHkHistoryOrdersFile = longbridgeHkHistoryOrdersInput?.files?.[0];
         const longbridgeHkFilesReady = isLongbridgeHk && isLikelyLongbridgeSgFundDetailsFile(longbridgeHkFundDetailsFile) && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeHkHistoryOrdersFile);
@@ -7206,7 +7194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (isIbkrCsv && transactionReady && positionsReady)
             || isIbkrFlex
             || flexXmlReady
-            || (isLongbridgeHk && (Boolean(sharedRangeReady) || Boolean(longbridgeHkFilesReady)))
+            || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
@@ -7216,8 +7204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
         setImportStatusIcon(flexXmlStatus, flexXmlReady);
-        setImportStatusIcon(longbridgeStartDateStatus, Boolean(isLongbridgeHk && String(longbridgeStartDateInput?.value || '').trim()));
-        setImportStatusIcon(longbridgeEndDateStatus, Boolean(isLongbridgeHk && String(longbridgeEndDateInput?.value || '').trim()));
+
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
         setImportStatusIcon(longbridgeSgHistoryOrdersStatus, Boolean(longbridgeSgHistoryOrdersReady));
         const longbridgeHkFundDetailsReady = !!(longbridgeHkFundDetailsInput && longbridgeHkFundDetailsInput.files && longbridgeHkFundDetailsInput.files.length > 0);
@@ -7417,7 +7404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, longbridgeStartDateInput, longbridgeEndDateInput, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7541,30 +7528,19 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (selectedBroker === 'longbridge_hk') {
                 const hkFundFile = longbridgeHkFundDetailsInput?.files?.[0];
                 const hkOrdersFile = longbridgeHkHistoryOrdersInput?.files?.[0];
-                if (hkFundFile && hkOrdersFile) {
-                    if (
-                        !isLikelyLongbridgeSgFundDetailsFile(hkFundFile)
-                        || !isLikelyLongbridgeSgHistoryOrdersFile(hkOrdersFile)
-                    ) {
-                        setImportFeedback('Please upload a Fund Details .txt and History Orders .xlsx for Longbridge (HK).', 'error');
-                        return;
-                    }
-                    formData.append('longbridge_hk_fund_details_txt', hkFundFile);
-                    formData.append('longbridge_hk_history_orders_xlsx', hkOrdersFile);
-                } else {
-                    const startDate = String(longbridgeStartDateInput?.value || '').trim();
-                    const endDate = String(longbridgeEndDateInput?.value || '').trim();
-                    if (!startDate || !endDate) {
-                        setImportFeedback('Please choose both Longbridge (HK) start and end dates before syncing, or upload HK Fund Details + History Orders files.', 'error');
-                        return;
-                    }
-                    if (startDate > endDate) {
-                        setImportFeedback('Longbridge (HK) start date must be on or before the end date.', 'error');
-                        return;
-                    }
-                    formData.append('longbridge_start_date', startDate);
-                    formData.append('longbridge_end_date', endDate);
+                if (!hkFundFile || !hkOrdersFile) {
+                    setImportFeedback('Please upload both the Fund Details text file and the History Orders spreadsheet.', 'error');
+                    return;
                 }
+                if (
+                    !isLikelyLongbridgeSgFundDetailsFile(hkFundFile)
+                    || !isLikelyLongbridgeSgHistoryOrdersFile(hkOrdersFile)
+                ) {
+                    setImportFeedback('Please upload a Fund Details .txt and History Orders .xlsx for Longbridge (HK).', 'error');
+                    return;
+                }
+                formData.append('longbridge_hk_fund_details_txt', hkFundFile);
+                formData.append('longbridge_hk_history_orders_xlsx', hkOrdersFile);
             } else if (selectedBroker === 'longbridge_sg') {
                 const fundDetailsFile = longbridgeSgFundDetailsInput?.files?.[0];
                 const historyOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
