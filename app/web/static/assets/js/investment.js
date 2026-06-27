@@ -1115,17 +1115,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean),
         ));
         if (!normalizedTickers.length) return [];
-        const params = new URLSearchParams();
-        normalizedTickers.forEach((ticker) => params.append('ticker', ticker));
-        const response = await fetch(
-            `${getInvestmentRealtimeQuoteEndpoint()}?${params.toString()}`,
-            buildInvestmentRequestOptions({ signal }),
-        );
-        const payload = await response.json().catch(() => ({}));
-        if (response.ok && payload?.success !== false && Array.isArray(payload?.quotes)) {
-            return payload.quotes;
+        const BATCH_SIZE = 8;
+        const batches = [];
+        for (let i = 0; i < normalizedTickers.length; i += BATCH_SIZE) {
+            batches.push(normalizedTickers.slice(i, i + BATCH_SIZE));
         }
-        return [];
+        const batchResults = await Promise.all(
+            batches.map(async (batch) => {
+                if (!batch.length) return [];
+                const params = new URLSearchParams();
+                batch.forEach((ticker) => params.append("ticker", ticker));
+                try {
+                    const response = await fetch(
+                        `${getInvestmentRealtimeQuoteEndpoint()}?${params.toString()}`,
+                        buildInvestmentRequestOptions({ signal }),
+                    );
+                    const payload = await response.json().catch(() => ({}));
+                    if (response.ok && payload?.success !== false && Array.isArray(payload?.quotes)) {
+                        return payload.quotes;
+                    }
+                    return [];
+                } catch (err) {
+                    if (isLifecycleInterruptedFetch(err)) throw err;
+                    return [];
+                }
+            }),
+        );
+        return batchResults.flat();
     }
 
     function applyInvestmentSessionRealtimePrices(latestPrices, quotes = []) {
@@ -10012,10 +10028,12 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
 
-        const bootstrapRealtimeQuotes = mergeInvestmentRealtimeQuotePayloads(
-            getInvestmentEmbeddedRealtimeQuotes(),
-            await bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot),
-        );
+        // Use server-preloaded realtime quotes (now using efficient batched yfinance download)
+        // for immediate render. The additional client-side bootstrap (for freshest possible)
+        // is fired without await so a large number of holdings after IBKR import does not
+        // block the UI / import completion feedback.
+        const embeddedQuotes = getInvestmentEmbeddedRealtimeQuotes();
+        const bootstrapRealtimeQuotes = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes);
         const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (bootstrapSessionQuotes.length) {
             applyInvestmentSessionRealtimePrices(latestPrices, bootstrapSessionQuotes);
@@ -10027,6 +10045,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
+
+        // Fire-and-forget fresher quotes (using efficient batched yfinance).
+        // The main render uses the server-preloaded quotes so import doesn't block on this.
+        // Subsequent poll / interactions will pick up fresher data via caches.
+        bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot).then((fresh) => {
+            const merged = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes, fresh);
+            const sessionQuotes = merged.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
+            if (sessionQuotes.length) {
+                applyInvestmentSessionRealtimePrices(latestPrices, sessionQuotes);
+                if (isInvestmentDailyEquityLiveRange()) {
+                    const livePoints = buildInvestmentRealtimeChartPoints(sessionQuotes);
+                    if (livePoints.length) {
+                        investmentChartPointsCache = [...livePoints];
+                    }
+                }
+            }
+        }).catch((err) => {
+            if (!isLifecycleInterruptedFetch(err)) {
+                console.warn('Post-import realtime bootstrap failed', err);
+            }
+        });
 
         const valuationStatus = buildValuationStatus({
             backendFailures: priceHistoryFailures,

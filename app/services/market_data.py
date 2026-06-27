@@ -322,6 +322,84 @@ def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
     }
 
 
+def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
+    """
+    Efficient batch version: performs a single yfinance download for the list of tickers
+    (instead of N separate calls). This dramatically speeds up the case of many holdings
+    after an IBKR (or other) import that produces a large number of open positions.
+    """
+    if not tickers:
+        return []
+    normalized_list = [
+        normalize_ticker(t) for t in tickers if str(t or "").strip()
+    ]
+    if not normalized_list:
+        return []
+    try:
+        history = _download_daily_history_with_yfinance(
+            normalized_list,
+            period="1d",
+            interval="1m",
+            prepost=True,
+        )
+        if history is None or history.empty:
+            return []
+        is_multi = isinstance(history.columns, pd.MultiIndex)
+        results: list[dict[str, object]] = []
+        for normalized_ticker in normalized_list:
+            try:
+                if is_multi:
+                    # yfinance multi-ticker result usually has MultiIndex columns:
+                    # level 0 = field (Close, etc), level 1 = ticker
+                    try:
+                        tdf = history.xs(normalized_ticker, level=1, axis=1)
+                    except (KeyError, AttributeError):
+                        try:
+                            tdf = history[normalized_ticker]
+                        except (KeyError, TypeError):
+                            continue
+                else:
+                    tdf = history
+                if tdf.empty:
+                    continue
+                normalized = normalize_history_frame(tdf, normalized_ticker, interval="1m")
+                if normalized.empty:
+                    continue
+                latest_row = normalized.sort_values("Date").iloc[-1]
+                latest_timestamp = pd.to_datetime(latest_row["Date"], errors="coerce")
+                latest_close = float(latest_row["Close"])
+                if pd.isna(latest_timestamp) or not math.isfinite(latest_close):
+                    continue
+                market = infer_ticker_market(normalized_ticker)
+                if market == "HK":
+                    localized_timestamp = (
+                        pd.Timestamp(latest_timestamp)
+                        .tz_localize(NEW_YORK_TIMEZONE)
+                        .tz_convert(HONG_KONG_TIMEZONE)
+                    )
+                    session = classify_hk_equity_session(localized_timestamp)
+                    display_timestamp = localized_timestamp.strftime("%Y-%m-%d %H:%M")
+                    session_date = localized_timestamp.strftime("%Y-%m-%d")
+                else:
+                    session = classify_us_equity_session(latest_timestamp)
+                    display_timestamp = pd.Timestamp(latest_timestamp).strftime("%Y-%m-%d %H:%M")
+                    session_date = pd.Timestamp(latest_timestamp).strftime("%Y-%m-%d")
+                results.append({
+                    "ticker": normalized_ticker,
+                    "price": latest_close,
+                    "timestamp": display_timestamp,
+                    "session": session,
+                    "session_date": session_date,
+                    "market": market,
+                    "source": "yfinance",
+                })
+            except Exception:  # noqa: BLE001
+                continue
+        return results
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
     normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()

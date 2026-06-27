@@ -140,6 +140,7 @@ from app.services.logos import fetch_quote_profile, has_valid_ticker_format, nor
 from app.services.market_data import (
     fetch_history,
     fetch_yfinance_realtime_quote,
+    fetch_yfinance_realtime_quotes,
     list_available_market_intervals,
     refresh_history_store,
     refresh_one_minute_store,
@@ -195,7 +196,8 @@ PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
 INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v2"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 15.0
-INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 10
+INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
+REALTIME_BATCH_SIZE = 8
 PORTFOLIO_BENCHMARK_COLORS = {
     "SPY": "#8e8e93",
     "QQQ": "#c7c7cc",
@@ -621,48 +623,23 @@ def build_web_runtime() -> WebRuntime:
         return fallback_candidate
 
     def load_investment_realtime_quotes(open_tickers: list[str] | set[str] | tuple[str, ...]) -> list[dict[str, object]]:
-        quotes: list[dict[str, object]] = []
         requested_tickers = list(dict.fromkeys(
             str(ticker).strip().upper()
             for ticker in (open_tickers or [])
             if str(ticker or "").strip()
         ))
         if not requested_tickers:
-            return quotes
+            return []
         cache_key = tuple(sorted(requested_tickers))
         now_monotonic = time.monotonic()
         with investment_realtime_quote_cache_lock:
             cached_entry = investment_realtime_quote_cache.get(cache_key)
             if cached_entry is not None and now_monotonic - cached_entry[0] <= INVESTMENT_REALTIME_QUOTE_TTL_SECONDS:
                 return [dict(item) for item in cached_entry[1]]
-        with ThreadPoolExecutor(max_workers=min(6, len(requested_tickers))) as executor:
-            futures = {
-                executor.submit(fetch_yfinance_realtime_quote, ticker): ticker
-                for ticker in requested_tickers
-            }
-            processed_futures = set()
-            try:
-                completed_futures = as_completed(
-                    futures,
-                    timeout=INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS,
-                )
-                for future in completed_futures:
-                    processed_futures.add(future)
-                    try:
-                        quotes.append(future.result())
-                    except Exception:  # noqa: BLE001
-                        continue
-            except FuturesTimeoutError:
-                for future in futures:
-                    if future in processed_futures:
-                        continue
-                    if not future.done():
-                        future.cancel()
-                        continue
-                    try:
-                        quotes.append(future.result())
-                    except Exception:  # noqa: BLE001
-                        continue
+        # Use the efficient batch implementation: single yfinance.download call for
+        # the (possibly large) list of tickers. This is much faster than many individual
+        # calls, especially after an import that brings in a large number of holdings.
+        quotes = fetch_yfinance_realtime_quotes(requested_tickers)
         with investment_realtime_quote_cache_lock:
             investment_realtime_quote_cache[cache_key] = (
                 time.monotonic(),
@@ -4991,16 +4968,18 @@ def build_web_runtime() -> WebRuntime:
                 for ticker in requested_tickers
             ]
 
-        status_code = 200 if quotes else 502
+        # Always return 200 with whatever we got (partial is common for large ticker sets
+        # or slow symbols). The 502 was causing visible errors and making import feel stuck.
+        # Failures are reported to the caller for diagnostics.
         response = jsonify({
-            "success": bool(quotes),
+            "success": bool(quotes) or (len(requested_tickers) == 0),
             "quotes": quotes,
             "failures": failures,
             "count": len(quotes),
             "source": "yfinance",
             "fetched_at": fetched_at.strftime("%Y-%m-%d %H:%M:%S%z"),
         })
-        response.status_code = status_code
+        response.status_code = 200
         return apply_no_store_headers(response)
 
     def live_trading_get_positions():
