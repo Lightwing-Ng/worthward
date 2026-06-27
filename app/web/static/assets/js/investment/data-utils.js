@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.15
+ * Code version: v1.46.0
+ * - Added: Authoritative broker performance snapshots can calibrate selected Holdings P&L rows without changing the transaction cash ledger.
+ * - Fixed: Broker P&L-excluded correction rows retain their cash impact without inflating per-symbol realized P&L.
  * - Fixed: Longbridge HK money-market placements and redemptions display their actual transfer amount while ledger equity uses only the importer-provided interest delta.
  * - Fixed: IBKR forex trade component rows now display the acquired quote currency and a compact conversion description derived from the pair rate.
  * - Fixed: Cash equivalent ticker settings now preserve an explicitly empty configured list instead of falling back to money-market defaults.
@@ -783,6 +785,28 @@ export function createInvestmentDataUtils({
                 costPrice: Number.isFinite(costPrice) ? costPrice : null,
                 marketValue: Number.isFinite(marketValue) ? marketValue : null,
                 lastPrice: Number.isFinite(lastPrice) ? lastPrice : null,
+            };
+        });
+        return normalizedSnapshot;
+    }
+
+    function getAuthoritativePerformanceSnapshot() {
+        if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.performance_snapshot_authoritative !== true) {
+            return null;
+        }
+        const rawSnapshot = window.ANTIGRAVITY_INVESTMENT_DATA?.performance_snapshot;
+        if (!rawSnapshot || typeof rawSnapshot !== 'object') {
+            return {};
+        }
+        const normalizedSnapshot = {};
+        Object.entries(rawSnapshot).forEach(([ticker, snapshot]) => {
+            const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+            if (!normalizedTicker || !snapshot || typeof snapshot !== 'object') return;
+            const realizedTotal = Number(snapshot.realized_total);
+            if (!Number.isFinite(realizedTotal)) return;
+            normalizedSnapshot[normalizedTicker] = {
+                realizedTotal,
+                currency: String(snapshot.currency || getTickerQuoteCurrency(normalizedTicker)).trim().toUpperCase(),
             };
         });
         return normalizedSnapshot;
@@ -1651,6 +1675,7 @@ export function createInvestmentDataUtils({
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
+        const authoritativePerformanceSnapshot = getAuthoritativePerformanceSnapshot();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
         const canonicalAuthoritativePositionSnapshot = {};
         if (useAuthoritativePositionSnapshot) {
@@ -1737,7 +1762,10 @@ export function createInvestmentDataUtils({
                 return;
             }
 
-            if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
+            if (
+                ['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)
+                && txn?.source?.excluded_from_broker_pnl !== true
+            ) {
                 summary.realizedPnl += amount;
             }
         });
@@ -1782,13 +1810,23 @@ export function createInvestmentDataUtils({
                         : null));
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
-            const realizedPnlLocal = Number(summary.realizedPnl) || 0;
-            const realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
+            const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
+            let realizedPnlLocal = Number(summary.realizedPnl) || 0;
+            let realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
                 realizedPnlLocal,
                 quoteCurrency,
                 fxTimeline,
                 baseCurrency,
             );
+            if (performanceEntry && Number.isFinite(performanceEntry.realizedTotal)) {
+                realizedPnlLocal = performanceEntry.realizedTotal;
+                realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
+                    performanceEntry.realizedTotal,
+                    performanceEntry.currency,
+                    fxTimeline,
+                    baseCurrency,
+                );
+            }
             const marketValueLocal = hasOpenPosition
                 ? (marketValueFromSnapshot !== null
                     ? marketValueFromSnapshot
@@ -1895,6 +1933,7 @@ export function createInvestmentDataUtils({
         getInvestmentEquityRangeLabels,
         getInvestmentBrokerEndingCash,
         getInvestmentEndingCash,
+        getAuthoritativePerformanceSnapshot,
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
@@ -1930,4 +1969,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.15';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.46.0';
