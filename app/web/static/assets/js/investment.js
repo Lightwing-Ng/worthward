@@ -7339,7 +7339,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentFormHideTimer = null;
         }
         clearImportFeedback();
-        formContainer.style.display = 'block';
+        formContainer.style.display = 'flex';
         formContainer.scrollTop = 0;
         syncInvestmentFormLayout();
         syncInvestmentImportContainerHeight();
@@ -7534,7 +7534,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleIcon = document.getElementById('toggle_form_icon');
     if (toggleBtn && formContainer && parentSection && toggleIcon) {
         toggleBtn.addEventListener('click', () => {
-            const isVisible = formContainer.style.display === 'block';
+            const isVisible = formContainer.style.display === 'flex';
             if (isVisible) {
                 closeInvestmentImportForm();
             } else {
@@ -7553,9 +7553,11 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentFormResizeObserver.observe(formContainer);
             if (investmentHistorySurface) {
                 const surfaceResizeObserver = new ResizeObserver(() => {
-                    if (formContainer && formContainer.style.display === 'block') {
-                        syncInvestmentImportContainerHeight();
-                    }
+                    requestAnimationFrame(() => {
+                        if (formContainer && formContainer.style.display === 'flex') {
+                            syncInvestmentImportContainerHeight();
+                        }
+                    });
                 });
                 surfaceResizeObserver.observe(investmentHistorySurface);
             }

@@ -2921,6 +2921,7 @@
     left: var(--page-edge-pad);
     right: var(--page-edge-pad);
     display: none;
+    flex-direction: column;
     opacity: 0;
     transform: translate3d(0, -6px, 0) scale(0.98);
     transform-origin: top center;
@@ -2961,14 +2962,16 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-form {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     gap: 0;
     min-height: 0;
 }
 
 .investment-import-stack {
     display: grid;
+    flex: 1 1 auto;
     gap: 10px;
     width: min(100%, var(--settings-action-package-max-width));
     max-width: var(--settings-action-package-max-width);
@@ -3256,6 +3259,14 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     justify-self: center;
 }
 
+.investment-import-label-trigger:hover .investment-import-help,
+.investment-import-label-trigger:focus .investment-import-help,
+.investment-import-label-trigger:focus-within .investment-import-help {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
 .investment-import-help {
     position: absolute;
     left: 0;
@@ -3391,6 +3402,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     max-width: none;
     margin-top: 0;
     align-self: start;
+    flex: 0 0 auto;
     position: sticky;
     bottom: 0;
     z-index: 2;

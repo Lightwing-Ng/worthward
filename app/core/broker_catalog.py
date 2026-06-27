@@ -47,7 +47,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         label="Longbridge (HK)",
         pinyin_sort_key="longbridgehk",
         icon_filename="Longbridge.png",
-        description="Uses the configured authentication session to pull historical orders and cash flow.",
+        description="Upload Fund Details plain text and History Orders XLSX exports.",
     ),
     "longbridge_sg": BrokerCatalogEntry(
         code="longbridge_sg",
