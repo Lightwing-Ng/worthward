@@ -2997,8 +2997,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-method-segmented {
-    width: min(100%, 280px);
+    width: fit-content;
     margin-inline: 0;
+}
+.investment-import-method-segmented .segmented-control-option span {
+	white-space: nowrap;
 }
 
 [data-ibkr-import-mode-panel="csv"] {
@@ -3024,6 +3027,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     display: grid;
     gap: 4px;
     align-content: start;
+    width: 100%;
     min-width: 0;
     padding: var(--investment-import-field-pad-block) var(--investment-import-field-pad-inline);
     border-radius: 12px;
@@ -3056,12 +3060,13 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-plain-field .investment-import-label-trigger {
-    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) 14px;
+    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--settings-round-icon-button-size);
 }
 
 .investment-import-plain-control-row {
     display: block;
     padding-left: calc(var(--investment-import-step-track-width) + var(--investment-import-step-gap));
+    padding-right: calc(var(--settings-round-icon-button-size) + var(--investment-import-step-gap));
     margin-top: 0;
 }
 
@@ -3129,6 +3134,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-import-paste-display {
     width: 100%;
     min-width: 0;
+    max-width: none;
     padding-right: var(--settings-text-input-pad-inline);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3294,7 +3300,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     display: block;
     width: 100%;
     min-width: 0;
-    max-width: 100%;
+    max-width: none;
     min-height: 44px;
     padding: 10px 14px;
     border-radius: 999px;

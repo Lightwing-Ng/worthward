@@ -1363,6 +1363,9 @@
 .range-mode-option input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
 .range-mode-option span { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: normal; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms ease; }
+.segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
+	white-space: nowrap;
+}
 .segmented-control-option:hover span,
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,

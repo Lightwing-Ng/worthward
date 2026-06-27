@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.45.14
+ * Code version: v1.45.15
+ * - Fixed: Longbridge HK money-market placements and redemptions display their actual transfer amount while ledger equity uses only the importer-provided interest delta.
  * - Fixed: IBKR forex trade component rows now display the acquired quote currency and a compact conversion description derived from the pair rate.
  * - Fixed: Cash equivalent ticker settings now preserve an explicitly empty configured list instead of falling back to money-market defaults.
  * - Added: KOL reward rows are classified as realized income instead of ordinary deposits for funding and P&L metrics.
@@ -420,6 +421,15 @@ export function createInvestmentDataUtils({
     }
 
     function getTransactionEconomicAmount(txn) {
+        if (txn?.normalized?.cash_equivalent_transfer === true) {
+            const transferAmount = Number(
+                txn?.normalized?.display_amount
+                ?? txn?.gross_amount_raw
+                ?? txn?.source?.cash_equivalent_transfer_amount_raw
+                ?? 0
+            );
+            return Number.isFinite(transferAmount) ? transferAmount : 0;
+        }
         const amount = getTransactionAmount(txn);
         if (Math.abs(amount) > 1e-9) return amount;
 
@@ -1900,4 +1910,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.14';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.45.15';

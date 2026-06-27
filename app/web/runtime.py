@@ -181,6 +181,7 @@ from app.infrastructure.storage import (
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
     known_ticker_company_names_payload,
+    normalize_ticker,
     propagate_investment_lineage_identity_profiles,
     resolve_known_ticker_company_name,
     record_ticker_usage,

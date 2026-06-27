@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.55.22
+ * Code version: v1.55.23
+ * - Fixed: Longbridge HK money-market transfers preserve cash-equivalent equity through placements and recognize only redemption interest while retaining actual transfer amounts in history.
  * - Removed IBKR Gateway; added Flex Web Service v3 import mode and dry-run support.
  * - Fixed: IBKR forex trade component rows now dedupe across overlapping CSV imports and display the acquired quote currency with a compact conversion description.
  * - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
@@ -227,7 +228,7 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.45.14';
+} from './investment/data-utils.js?v=investment-data-utils-v1.45.15';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
@@ -507,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentFormHideTimer = null;
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
+    let investmentIbkrModeMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
     let activeInvestmentStockDetailRowIds = [];
     const INVESTMENT_MANUAL_SCROLL_SUPPRESS_MS = 1400;
@@ -2211,6 +2213,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function updateIbkrImportSegmentedPill() {
+        if (!(investmentImportIbkrMode instanceof HTMLElement)) return;
+        const activeLabel = investmentImportIbkrMode.querySelector('input[type="radio"]:checked + span');
+        if (!activeLabel) {
+            investmentImportIbkrMode.classList.remove('is-pill-ready');
+            return;
+        }
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(investmentImportIbkrMode, activeLabel);
+        if (!pillGeometry) {
+            investmentImportIbkrMode.classList.remove('is-pill-ready');
+            return;
+        }
+        investmentImportIbkrMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
+        investmentImportIbkrMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        investmentImportIbkrMode.classList.add('is-pill-ready');
+    }
+
+    function scheduleIbkrImportSegmentedPillUpdate() {
+        if (!(investmentImportIbkrMode instanceof HTMLElement)) return;
+        investmentImportIbkrMode.classList.remove('is-pill-ready');
+        if (investmentIbkrModeMeasureRaf) {
+            window.cancelAnimationFrame(investmentIbkrModeMeasureRaf);
+            investmentIbkrModeMeasureRaf = 0;
+        }
+        investmentIbkrModeMeasureRaf = window.requestAnimationFrame(() => {
+            investmentIbkrModeMeasureRaf = window.requestAnimationFrame(() => {
+                investmentIbkrModeMeasureRaf = 0;
+                updateIbkrImportSegmentedPill();
+            });
+        });
+    }
+
     function getInvestmentStockDetailsRangeControl() {
         const control = investmentStockDetailsPanel?.querySelector('[data-investment-stock-details-range-segmented]');
         return control instanceof HTMLElement ? control : null;
@@ -3614,15 +3648,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         rememberInvestmentPageState({ view: activeInvestmentView || rememberedView || checkedRadio?.value || 'chart' });
         scheduleInvestmentSegmentedPillUpdate();
+        scheduleIbkrImportSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
 
         if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
             document.fonts.ready.then(() => {
                 scheduleInvestmentSegmentedPillUpdate();
+                scheduleIbkrImportSegmentedPillUpdate();
             }).catch(() => {});
         }
 
-        window.addEventListener('resize', scheduleInvestmentSegmentedPillUpdate);
+        window.addEventListener('resize', () => {
+            scheduleInvestmentSegmentedPillUpdate();
+            scheduleIbkrImportSegmentedPillUpdate();
+        });
 
         if (window.ResizeObserver) {
             const segmentedResizeObserver = new ResizeObserver(() => {
@@ -3633,6 +3672,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const optionLabel = radio.nextElementSibling;
                 if (optionLabel instanceof HTMLElement) {
                     segmentedResizeObserver.observe(optionLabel);
+                }
+            });
+        }
+
+        if (window.ResizeObserver && investmentImportIbkrMode instanceof HTMLElement) {
+            const ibkrResizeObserver = new ResizeObserver(() => {
+                scheduleIbkrImportSegmentedPillUpdate();
+            });
+            ibkrResizeObserver.observe(investmentImportIbkrMode);
+            const ibkrRadios = investmentImportIbkrMode.querySelectorAll('input[type="radio"]');
+            ibkrRadios.forEach((radio) => {
+                const optionLabel = radio.nextElementSibling;
+                if (optionLabel instanceof HTMLElement) {
+                    ibkrResizeObserver.observe(optionLabel);
                 }
             });
         }
@@ -5063,6 +5116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
             const activeIndex = selectedMode === 'flex' ? '1' : (selectedMode === 'flex_xml' ? '2' : '0');
             investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
+            scheduleIbkrImportSegmentedPillUpdate();
         }
         document.querySelectorAll('[data-ibkr-import-mode-panel]').forEach((panel) => {
             if (!(panel instanceof HTMLElement)) return;
