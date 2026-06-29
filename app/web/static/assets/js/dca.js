@@ -1,6 +1,7 @@
-/* Code version: v0.1.6 */
+/* Code version: v0.1.8 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
+    const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
 
     const readThemeTokens = () => {
         const theme = window.ANTIGRAVITY_APP?.theme || {};
@@ -15,9 +16,24 @@
     };
 
     const bindColorSchemeRefresh = (callback) => {
+        if (dcaThemeState.mediaCleanup) {
+            dcaThemeState.mediaCleanup();
+            dcaThemeState.mediaCleanup = null;
+        }
         const media = window.matchMedia("(prefers-color-scheme: dark)");
-        media.addEventListener?.("change", callback);
-        return () => media.removeEventListener?.("change", callback);
+        const handler = () => window.requestAnimationFrame(callback);
+        const cleanups = [];
+        if (typeof media.addEventListener === "function") {
+            media.addEventListener("change", handler);
+            cleanups.push(() => media.removeEventListener("change", handler));
+        } else if (typeof media.addListener === "function") {
+            media.addListener(handler);
+            cleanups.push(() => media.removeListener(handler));
+        }
+        window.addEventListener("antigravity:theme-mode-change", handler);
+        cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+        dcaThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
+        return dcaThemeState.mediaCleanup;
     };
 
     const buildTableAlignmentSync = (tableShell, scrollContainer, scrollbarVariableName) => {

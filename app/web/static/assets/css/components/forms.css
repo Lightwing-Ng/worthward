@@ -2,7 +2,7 @@
 .ticker-form-controls,
 .ticker-controls {
 	--trade-control-height: max(var(--sidebar-form-field-min-height), calc(var(--trade-control-label-height) + var(--trade-control-label-gap) + var(--trade-control-input-height)));
-	--trade-control-label-height: 14px;
+	--trade-control-label-height: 16.8px;
 	--trade-control-label-gap: var(--sidebar-form-field-label-gap);
 	--trade-control-input-height: var(--sidebar-form-control-min-height);
 	--trade-control-inline-gap: var(--sidebar-form-inline-gap);
@@ -18,8 +18,8 @@
 .ticker-input-row { display: flex; align-items: flex-start; gap: var(--sidebar-form-inline-gap); padding: var(--sidebar-form-popover-gap); margin: calc(var(--sidebar-form-popover-gap) * -1); border-radius: var(--radius-panel); transition: box-shadow 160ms var(--motion-standard), background 160ms var(--motion-standard); }
 .ticker-input-main { flex: 1 1 auto; min-width: 0; position: relative; }
 .portfolio-weight-field { flex: 0 0 56px; align-self: flex-start; display: block; min-width: 56px; padding-top: 24px; position: relative; }
-.portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: 29px; }
-.portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: 29px; appearance: textfield; -moz-appearance: textfield; }
+.portfolio-weight-row { position: relative; display: flex; align-items: center; min-height: var(--trade-control-input-height); }
+.portfolio-weight-input { padding-left: 6px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--font-form-label); line-height: 1; min-height: var(--trade-control-input-height); appearance: textfield; -moz-appearance: textfield; }
 .portfolio-weight-field.is-open .portfolio-weight-input,
 .portfolio-weight-field:focus-within .portfolio-weight-input,
 .portfolio-weight-input:hover,
@@ -30,6 +30,38 @@
 .settings-stack-form input[type="number"]::-webkit-outer-spin-button,
 .settings-stack-form input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .portfolio-weight-unit { position: absolute; right: 0; color: var(--text); font-size: var(--font-form-label); line-height: 1; font-weight: var(--font-weight-semibold); pointer-events: none; }
+.portfolio-share-stepper {
+	--portfolio-share-stepper-button-size: 28px;
+	display: none;
+	align-items: center;
+	box-sizing: border-box;
+	width: 100%;
+	height: var(--trade-control-input-height);
+	min-height: var(--trade-control-input-height);
+	border: var(--control-liquid-border);
+	border-radius: var(--radius-pill);
+	background: var(--control-liquid-background);
+	box-shadow: var(--control-liquid-shadow);
+	backdrop-filter: var(--control-liquid-blur);
+	-webkit-backdrop-filter: var(--control-liquid-blur);
+	overflow: hidden;
+}
+.portfolio-share-stepper-button { position: relative; box-sizing: border-box; flex: 0 0 var(--portfolio-share-stepper-button-size); display: grid; place-items: center; width: var(--portfolio-share-stepper-button-size); height: var(--portfolio-share-stepper-button-size); min-height: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text); font-size: var(--font-form-label); font-weight: var(--font-weight-bold); line-height: 1; cursor: pointer; isolation: isolate; }
+.portfolio-share-stepper-button::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--control-glass-background-hover); opacity: 0; transition: opacity 160ms var(--motion-standard); z-index: -1; }
+.portfolio-share-stepper-button:hover,
+.portfolio-share-stepper-button:focus-visible { background: transparent; }
+.portfolio-share-stepper-button:hover::before,
+.portfolio-share-stepper-button:focus-visible::before { opacity: 1; }
+.portfolio-share-stepper-button:disabled,
+.portfolio-share-input:disabled { opacity: 0.45; cursor: not-allowed; }
+.portfolio-share-input { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; text-align: center; font-size: var(--font-form-label); line-height: 1; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
+.portfolio-share-input::-webkit-outer-spin-button,
+.portfolio-share-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.portfolio-controls[data-portfolio-allocation="shares"] .portfolio-weight-input,
+.portfolio-controls[data-portfolio-allocation="shares"] .portfolio-weight-unit { display: none; }
+.portfolio-controls[data-portfolio-allocation="shares"] .portfolio-share-stepper { display: flex; }
+.portfolio-controls[data-portfolio-allocation="shares"] .portfolio-weight-slider-shell { display: none; }
+.portfolio-controls[data-portfolio-allocation="weight"] .portfolio-share-input { pointer-events: none; }
 .portfolio-weight-slider-shell {
 	--portfolio-weight-slider-track-height: 4px;
 	--portfolio-weight-slider-thumb-size: 16px;
@@ -643,7 +675,7 @@
 .portfolio-controls .portfolio-weight-field {
 	align-self: stretch;
 	height: 100%;
-	padding-top: var(--trade-control-label-height);
+	padding-top: calc(var(--trade-control-label-height) + var(--trade-control-label-gap));
 	display: block;
 	flex: 0 0 90px;
 	min-width: 90px;
@@ -657,7 +689,7 @@
 	position: absolute;
 	left: 0;
 	right: 0;
-	top: calc(var(--trade-control-label-height) + var(--trade-control-input-height));
+	top: calc(var(--trade-control-label-height) + var(--trade-control-label-gap) + var(--trade-control-input-height));
 }
 .portfolio-controls .portfolio-weight-row {
 	min-height: var(--trade-control-input-height);
@@ -1325,7 +1357,37 @@
 .icon-plus { background-color: var(--accent-fill); mask: url("/static/images/plus.svg") center/contain no-repeat; -webkit-mask: url("/static/images/plus.svg") center/contain no-repeat; }
 .icon-plus-circle { background-color: currentColor; mask: url("/static/images/plus.circle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/plus.circle.svg") center/contain no-repeat; }
 .segmented-control,
-.range-mode-shell { position: relative; padding: var(--mode-switch-pad); border-radius: var(--mode-switch-radius); background: var(--control-glass-background); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mode-switch-gap); overflow: hidden; isolation: isolate; transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard); align-items: stretch; backdrop-filter: saturate(200%) blur(26px); -webkit-backdrop-filter: saturate(200%) blur(26px); box-shadow: inset 0 1px 0 var(--theme-glass-highlight), inset 0 -1px 0 var(--theme-glass-border), 0 10px 28px var(--theme-shadow-ambient); margin-inline: auto; }
+.range-mode-shell {
+	--segmented-option-count: 2;
+	--segmented-option-min-width: 0px;
+	position: relative;
+	padding: var(--mode-switch-pad);
+	border-radius: var(--mode-switch-radius);
+	background: var(--control-glass-background);
+	display: grid;
+	grid-template-columns: repeat(var(--segmented-option-count), minmax(var(--segmented-option-min-width), 1fr));
+	gap: var(--mode-switch-gap);
+	overflow-x: auto;
+	overflow-y: hidden;
+	isolation: isolate;
+	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard);
+	align-items: stretch;
+	backdrop-filter: saturate(200%) blur(26px);
+	-webkit-backdrop-filter: saturate(200%) blur(26px);
+	box-shadow: inset 0 1px 0 var(--theme-glass-highlight), inset 0 -1px 0 var(--theme-glass-border), 0 10px 28px var(--theme-shadow-ambient);
+	margin-inline: auto;
+	scrollbar-width: none;
+	overscroll-behavior-x: contain;
+	-webkit-overflow-scrolling: touch;
+}
+.segmented-control::-webkit-scrollbar,
+.range-mode-shell::-webkit-scrollbar { display: none; }
+.segmented-control[data-segmented-overflow="1"],
+.range-mode-shell[data-segmented-overflow="1"] {
+	--segmented-option-min-width: 92px;
+	mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+	-webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
 .segmented-control,
 .range-mode-shell { min-height: var(--mode-switch-min-height); }
 .segmented-control[data-segmented-align="start"],
@@ -1338,7 +1400,15 @@
 .range-mode-shell:hover { background: var(--control-glass-background-hover); }
 .segmented-control::before,
 .range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform 260ms var(--motion-standard), width 260ms var(--motion-standard), box-shadow 220ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; z-index: var(--layer-decorative-backdrop); }
-.segmented-control[data-option-count]::before { width: calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)); transform: translateX(calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))); }
+.segmented-control[data-option-count]::before,
+.range-mode-shell[data-option-count]::before { width: calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)); transform: translateX(calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))); }
+.segmented-control[data-segmented-overflow="1"][data-option-count]::before,
+.range-mode-shell[data-segmented-overflow="1"][data-option-count]::before,
+.segmented-control[data-segmented-pill="measured"][data-option-count]::before,
+.range-mode-shell[data-segmented-pill="measured"][data-option-count]::before {
+	width: var(--segmented-pill-width, calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)));
+	transform: translateX(var(--segmented-pill-left, calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))));
+}
 .segmented-control[data-segmented-pill="measured"][data-option-count]::before {
 	width: var(--segmented-pill-width, calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)));
 	transform: translateX(var(--segmented-pill-left, calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))));
@@ -1349,7 +1419,8 @@
 		opacity 140ms ease,
 		box-shadow 220ms var(--motion-standard);
 }
-.segmented-control[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before {
+.segmented-control[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before,
+.range-mode-shell[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before {
 	opacity: 1;
 }
 .segmented-control::after,
@@ -1362,7 +1433,7 @@
 .segmented-control-option input,
 .range-mode-option input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
-.range-mode-option span { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: normal; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms ease; }
+.range-mode-option span { box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms ease; overflow-wrap: anywhere; text-wrap: balance; }
 .segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
 	white-space: nowrap;
 }

@@ -250,13 +250,9 @@
 		};
 		window.addEventListener("antigravity:portfolio-preview", window.__antigravityPortfolioPreviewHandler);
 
-		if (window.__antigravityPortfolioThemeMedia && window.__antigravityPortfolioThemeHandler) {
-			const { media, handler } = window.__antigravityPortfolioThemeMedia;
-			if (typeof media.removeEventListener === "function") {
-				media.removeEventListener("change", handler);
-			} else if (typeof media.removeListener === "function") {
-				media.removeListener(handler);
-			}
+		if (typeof window.__antigravityPortfolioThemeCleanup === "function") {
+			window.__antigravityPortfolioThemeCleanup();
+			window.__antigravityPortfolioThemeCleanup = null;
 		}
 		const portfolioThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 		const handlePortfolioThemeChange = () => {
@@ -271,7 +267,15 @@
 		} else if (typeof portfolioThemeMedia.addListener === "function") {
 			portfolioThemeMedia.addListener(handlePortfolioThemeChange);
 		}
-		window.__antigravityPortfolioThemeMedia = { media: portfolioThemeMedia, handler: handlePortfolioThemeChange };
+		window.addEventListener("antigravity:theme-mode-change", handlePortfolioThemeChange);
+		window.__antigravityPortfolioThemeCleanup = () => {
+			if (typeof portfolioThemeMedia.removeEventListener === "function") {
+				portfolioThemeMedia.removeEventListener("change", handlePortfolioThemeChange);
+			} else if (typeof portfolioThemeMedia.removeListener === "function") {
+				portfolioThemeMedia.removeListener(handlePortfolioThemeChange);
+			}
+			window.removeEventListener("antigravity:theme-mode-change", handlePortfolioThemeChange);
+		};
 
 		if (window.__antigravityPortfolioGeometrySync) {
 			const { observer, resizeHandler, cancelFrame } = window.__antigravityPortfolioGeometrySync;

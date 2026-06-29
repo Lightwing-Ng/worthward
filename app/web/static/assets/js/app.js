@@ -1,4 +1,4 @@
-/* Code version: v0.4.0 */
+/* Code version: v0.5.2 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -638,7 +638,11 @@
     };
 
     const didPortfolioRequestChangeXAxis = (currentParams, nextParams) => {
-        const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end"];
+        const currentTickers = Array.from(currentParams.getAll("ticker")).sort().join(",");
+        const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
+        if (currentTickers !== nextTickers) return true;
+
+        const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "dividends", "include_dividends"];
         for (const key of xAxisKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -749,9 +753,17 @@
         field,
         number: field.querySelector('.portfolio-weight-input'),
         slider: field.querySelector('.portfolio-weight-slider'),
+        shares: field.querySelector('.portfolio-share-input'),
         tickerInput: field.querySelector("[data-ticker-input]"),
         tooltip: field.querySelector('.portfolio-weight-tooltip'),
     })).filter((item) => item.number && item.slider && item.tickerInput);
+    const getPortfolioAllocationInputs = () => Array.from(document.querySelectorAll("[data-portfolio-allocation-input]"))
+        .filter((input) => input instanceof HTMLInputElement);
+    const getPortfolioAllocationMode = () => {
+        const checked = getPortfolioAllocationInputs().find((input) => input.checked);
+        return checked?.value === "shares" ? "shares" : "weight";
+    };
+    const isPortfolioShareMode = () => isPortfolioView && getPortfolioAllocationMode() === "shares";
 
     const attachNoticeHandlers = () => {
         $$("[data-dismissible-notice]").forEach((noticeElement) => {
@@ -1179,6 +1191,22 @@
         workspacePanel.dataset.workspacePending = "1";
     };
 
+    const hydrateWorkspaceModeMain = (workspacePanel, nextWorkspacePanel) => {
+        const currentMain = workspacePanel.querySelector(".workspace-mode-main");
+        const nextMain = nextWorkspacePanel.querySelector(".workspace-mode-main");
+        if (!currentMain || !nextMain) {
+            workspacePanel.querySelectorAll("canvas").forEach((canvas) => {
+                window.Chart?.getChart?.(canvas)?.destroy();
+            });
+            workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
+            return;
+        }
+        currentMain.querySelectorAll("canvas").forEach((canvas) => {
+            window.Chart?.getChart?.(canvas)?.destroy();
+        });
+        currentMain.replaceWith(nextMain.cloneNode(true));
+    };
+
     const applyPendingWorkspaceMarkup = () => {
         if (state.currentView === "tickers") {
             applyComparePendingState();
@@ -1188,7 +1216,7 @@
             applyPortfolioPendingState();
             return;
         }
-        if (state.currentView === "backtest") {
+        if (state.currentView === "backtest" || state.currentView === "dca") {
             applyBacktestPendingState();
             return;
         }
@@ -1352,6 +1380,8 @@
                 replaceDomRegion(currentChartRegion, nextChartRegion);
                 workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
             }
+        } else if (state.currentView === "backtest" || state.currentView === "dca") {
+            hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
         } else {
             workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
         }
@@ -1839,10 +1869,15 @@
             }
             const weightInput = field.querySelector(".portfolio-weight-input");
             const weightSlider = field.querySelector(".portfolio-weight-slider");
+            const shareInput = field.querySelector(".portfolio-share-input");
             if (weightInput && weightSlider) {
                 weightInput.id = `weight_${index}`;
                 weightInput.name = "weight";
                 weightSlider.dataset.index = String(index);
+            }
+            if (shareInput) {
+                shareInput.id = `shares_${index}`;
+                shareInput.name = "shares";
             }
             if (suggestions) suggestions.id = `ticker_${index}_suggestions`;
             const removeButton = field.querySelector(".ticker-remove");
@@ -1857,13 +1892,18 @@
 
     const syncPortfolioWeightDisabledState = () => {
         if (!isPortfolioView) return;
-        getWeightFields().forEach(({tickerInput, number, slider}) => {
+        getWeightFields().forEach(({field, tickerInput, number, slider, shares}) => {
             const isFilled = Boolean(sanitizeTicker(tickerInput.value.trim()));
             number.disabled = !isFilled;
             slider.disabled = !isFilled;
+            if (shares) shares.disabled = !isFilled;
+            field.querySelectorAll(".portfolio-share-stepper-button").forEach((button) => {
+                button.disabled = !isFilled;
+            });
             if (!isFilled) {
                 number.value = "0";
                 slider.value = "0";
+                if (shares) shares.value = "0";
             }
         });
     };
@@ -1883,6 +1923,12 @@
         const normalized = Math.min(100, Math.max(0, Number.parseInt(String(value || 0), 10) || 0));
         entry.number.value = String(normalized);
         entry.slider.value = String(normalized);
+    };
+
+    const syncPortfolioShareInput = (entry, value) => {
+        if (!entry?.shares) return;
+        const normalized = Math.max(0, Number.parseInt(String(value || 0), 10) || 0);
+        entry.shares.value = String(normalized);
     };
 
     const resolveOrderedPortfolioPeer = (referenceIndex, filledEntries, {preferPrevious = true} = {}) => {
@@ -2023,9 +2069,24 @@
     const validatePortfolioWeightInputs = () => {
         if (!isPortfolioView) return true;
         let isValid = true;
+        const shareMode = isPortfolioShareMode();
         getWeightFields().forEach((entry) => {
-            const {tickerInput, number} = entry;
+            const {tickerInput, number, shares} = entry;
             const ticker = sanitizeTicker(tickerInput.value.trim());
+            if (shareMode) {
+                const shareCount = Number.parseInt(shares?.value || "0", 10) || 0;
+                if (ticker && shareCount <= 0) {
+                    shares?.classList.add("is-invalid");
+                    if (!entry.tooltip?.textContent) {
+                        showPortfolioWeightTooltip(entry, "Each selected ticker must have at least 1 share.");
+                    }
+                    isValid = false;
+                    return;
+                }
+                shares?.classList.remove("is-invalid");
+                number.classList.remove("is-invalid");
+                return;
+            }
             const weight = Number.parseInt(number.value, 10) || 0;
             if (ticker && weight <= 0) {
                 number.classList.add("is-invalid");
@@ -2036,6 +2097,7 @@
                 return;
             }
             number.classList.remove("is-invalid");
+            shares?.classList.remove("is-invalid");
         });
         return isValid;
     };
@@ -2097,9 +2159,10 @@
 
     const attachPortfolioWeightHandlers = () => {
         if (!isPortfolioView) return;
-        getWeightFields().forEach(({field, number, slider, tickerInput, index}) => {
+        getWeightFields().forEach(({field, number, slider, shares, tickerInput, index}) => {
             if (number.dataset.bound === "1") return;
             number.dataset.bound = "1";
+            if (shares) shares.dataset.bound = "1";
             if (tickerInput) tickerInput.dataset.lastTicker = sanitizeTicker(tickerInput.value.trim());
             const syncAndRefresh = (source) => {
                 const value = Math.min(100, Math.max(0, Number.parseInt(String(source.value || 0), 10) || 0));
@@ -2111,7 +2174,18 @@
                 requestWorkspaceChartTransition("portfolio-weight");
                 scheduleAutoSubmit(180);
             };
-            const openSlider = () => field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
+            const syncSharesAndRefresh = (source) => {
+                const value = Math.max(0, Number.parseInt(String(source.value || 0), 10) || 0);
+                if (shares) shares.value = String(value);
+                dispatchPortfolioPreviewUpdate();
+                validatePortfolioWeightInputs();
+                requestWorkspaceChartTransition("portfolio-shares");
+                if (isPortfolioShareMode()) scheduleAutoSubmit(180);
+            };
+            const openSlider = () => {
+                if (isPortfolioShareMode()) return;
+                field.querySelector(".portfolio-weight-field")?.classList.add("is-open");
+            };
             const closeSlider = () => window.setTimeout(() => {
                 if (field.matches(":focus-within")) return;
                 field.querySelector(".portfolio-weight-field")?.classList.remove("is-open");
@@ -2122,6 +2196,17 @@
             field.addEventListener("focusout", closeSlider);
             number.addEventListener("input", () => syncAndRefresh(number));
             slider.addEventListener("input", () => syncAndRefresh(slider));
+            shares?.addEventListener("input", () => syncSharesAndRefresh(shares));
+            field.querySelectorAll(".portfolio-share-stepper-button").forEach((button) => {
+                if (button.dataset.bound === "1") return;
+                button.dataset.bound = "1";
+                button.addEventListener("click", () => {
+                    if (!shares || shares.disabled) return;
+                    const step = Number.parseInt(button.dataset.shareStep || "0", 10) || 0;
+                    syncPortfolioShareInput({shares}, (Number.parseInt(shares.value || "0", 10) || 0) + step);
+                    syncSharesAndRefresh(shares);
+                });
+            });
             tickerInput?.addEventListener("input", () => {
                 handlePortfolioTickerValueChange(tickerInput);
             });
@@ -2914,6 +2999,11 @@
 					<div class="portfolio-weight-row">
 						<input id="weight_${index}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="0" placeholder="${labels.portfolio_weight}" aria-label="${labels.portfolio_weight}">
 						<span class="portfolio-weight-unit">%</span>
+						<div class="portfolio-share-stepper" role="group" aria-label="Shares">
+							<button type="button" class="portfolio-share-stepper-button" data-share-step="-1" aria-label="Decrease shares">-</button>
+							<input id="shares_${index}" name="shares" class="portfolio-share-input" type="number" min="0" step="1" value="0" placeholder="0" aria-label="Shares">
+							<button type="button" class="portfolio-share-stepper-button" data-share-step="1" aria-label="Increase shares">+</button>
+						</div>
 					</div>
 					<div class="portfolio-weight-slider-shell" aria-hidden="true">
 						<input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="0" aria-label="${labels.portfolio_weight}">
@@ -2946,6 +3036,7 @@
                 .map((item) => ({
                     ticker: sanitizeTicker(item.tickerInput.value.trim()),
                     weight: Number.parseInt(item.number.value, 10) || 0,
+                    shares: Number.parseInt(item.shares?.value || "0", 10) || 0,
                 }))
                 .filter((item) => item.ticker)
             : [];
@@ -2960,6 +3051,7 @@
         if (isPortfolioView) {
             getWeightFields().forEach((entry, index) => {
                 syncPortfolioWeightPair(entry, portfolioEntries[index]?.weight || 0);
+                syncPortfolioShareInput(entry, portfolioEntries[index]?.shares || 0);
             });
         }
         while (getTickerFields().length < Math.max(minimumRequiredTickers, values.length)) {
@@ -3384,43 +3476,107 @@
         const selectedInput = getDcaFrequencyInputs().find((input) => input.checked && !input.disabled);
         return selectedInput?.value === "weekly" ? "weekly" : "monthly";
     };
+    const getVisibleSegmentedOptions = (shell) => Array.from(shell.querySelectorAll(".segmented-control-option, .range-mode-option"))
+        .filter((option) => option instanceof HTMLElement)
+        .filter((option) => {
+            const input = option.querySelector("input");
+            return !option.hidden && (!(input instanceof HTMLInputElement) || !input.disabled);
+        });
+    const syncSegmentedControlLayout = (shell, {
+        activeValue = "",
+        activeIndex = -1,
+        options = null,
+    } = {}) => {
+        if (!(shell instanceof HTMLElement)) return;
+        const resolvedOptions = Array.isArray(options) ? options : getVisibleSegmentedOptions(shell);
+        const optionCount = Math.max(resolvedOptions.length, 1);
+        let resolvedActiveIndex = activeIndex;
+        if (resolvedActiveIndex < 0) {
+            resolvedActiveIndex = resolvedOptions.findIndex((option) => {
+                const input = option.querySelector("input");
+                return input instanceof HTMLInputElement && input.checked;
+            });
+        }
+        resolvedActiveIndex = Math.max(0, Math.min(optionCount - 1, resolvedActiveIndex));
+        if (activeValue) shell.dataset.active = activeValue;
+        shell.dataset.optionCount = String(optionCount);
+        shell.style.setProperty("--segmented-option-count", String(optionCount));
+        shell.style.setProperty("--segmented-active-index", String(resolvedActiveIndex));
+        const shouldOverflow = optionCount > 3 || shell.scrollWidth > shell.clientWidth + 1;
+        shell.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
+        if (shouldOverflow || shell.dataset.segmentedPill === "measured") {
+            const activeOption = resolvedOptions[resolvedActiveIndex];
+            if (activeOption instanceof HTMLElement) {
+                const shellStyles = window.getComputedStyle(shell);
+                const paddingLeft = Number.parseFloat(shellStyles.paddingLeft) || 0;
+                shell.style.setProperty("--segmented-pill-left", `${Math.max(0, activeOption.offsetLeft - paddingLeft)}px`);
+                shell.style.setProperty("--segmented-pill-width", `${Math.max(1, activeOption.offsetWidth)}px`);
+                shell.classList.add("is-pill-ready");
+            }
+        } else if (shell.dataset.segmentedPill !== "measured") {
+            shell.classList.remove("is-pill-ready");
+            shell.style.removeProperty("--segmented-pill-left");
+            shell.style.removeProperty("--segmented-pill-width");
+        }
+    };
+    const syncAllSegmentedControlLayouts = () => {
+        $$(".segmented-control, .range-mode-shell").forEach((shell) => {
+            if (!(shell instanceof HTMLElement)) return;
+            syncSegmentedControlLayout(shell, {activeValue: shell.dataset.active || ""});
+        });
+    };
     const syncRangeModeSegmentedControl = () => {
         const shell = $(".range-mode-shell");
         if (!(shell instanceof HTMLElement)) return;
-        const options = Array.from(shell.querySelectorAll(".segmented-control-option, .range-mode-option"))
-            .filter((option) => option instanceof HTMLElement)
-            .filter((option) => {
-                const input = option.querySelector("input");
-                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
-            });
+        const options = getVisibleSegmentedOptions(shell);
         const activeInput = rangeModeInputs.find((input) => input.checked && !input.disabled);
         const activeValue = activeInput?.value || defaults.range_mode || "period";
         const activeIndex = Math.max(0, options.findIndex((option) => {
             const input = option.querySelector("input");
             return input instanceof HTMLInputElement && input.checked;
         }));
-        shell.dataset.active = activeValue;
-        shell.dataset.optionCount = String(Math.max(options.length, 1));
-        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
-        shell.style.setProperty("--segmented-active-index", String(activeIndex));
+        syncSegmentedControlLayout(shell, {activeValue, activeIndex, options});
+    };
+
+    const syncPortfolioAllocationSegmentedControl = () => {
+        if (!isPortfolioView) return;
+        const shell = $(".portfolio-allocation-shell");
+        if (!(shell instanceof HTMLElement)) return;
+        const inputs = getPortfolioAllocationInputs();
+        const activeValue = getPortfolioAllocationMode();
+        const activeIndex = Math.max(0, inputs.findIndex((input) => input.checked));
+        syncSegmentedControlLayout(shell, {activeValue, activeIndex});
+        form?.dataset && (form.dataset.portfolioAllocation = activeValue);
+        if (activeValue === "shares") {
+            document.querySelectorAll(".portfolio-weight-field.is-open").forEach((field) => {
+                field.classList.remove("is-open");
+            });
+        }
+        validatePortfolioWeightInputs();
+        dispatchPortfolioPreviewUpdate();
+    };
+
+    const attachPortfolioAllocationHandlers = () => {
+        if (!isPortfolioView) return;
+        getPortfolioAllocationInputs().forEach((input) => {
+            if (input.dataset.bound === "1") return;
+            input.dataset.bound = "1";
+            input.addEventListener("change", () => {
+                syncPortfolioAllocationSegmentedControl();
+                requestWorkspaceChartTransition("portfolio-allocation");
+            });
+        });
+        syncPortfolioAllocationSegmentedControl();
     };
     const syncDcaFrequencySegmentedControl = () => {
         const shell = getDcaFrequencyShell();
         if (!(shell instanceof HTMLElement)) return;
-        const options = Array.from(shell.querySelectorAll(".segmented-control-option"))
-            .filter((option) => option instanceof HTMLElement)
-            .filter((option) => {
-                const input = option.querySelector("input");
-                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
-            });
+        const options = getVisibleSegmentedOptions(shell);
         const activeIndex = Math.max(0, options.findIndex((option) => {
             const input = option.querySelector("input");
             return input instanceof HTMLInputElement && input.checked;
         }));
-        shell.dataset.active = getSelectedDcaFrequency();
-        shell.dataset.optionCount = String(Math.max(options.length, 1));
-        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
-        shell.style.setProperty("--segmented-active-index", String(activeIndex));
+        syncSegmentedControlLayout(shell, {activeValue: getSelectedDcaFrequency(), activeIndex, options});
     };
     const updateDcaSchedulePanels = () => {
         const frequency = getSelectedDcaFrequency();
@@ -3454,20 +3610,12 @@
     const syncBacktestIntervalSegmentedControl = () => {
         const shell = getBacktestIntervalShell();
         if (!(shell instanceof HTMLElement)) return;
-        const options = Array.from(shell.querySelectorAll(".segmented-control-option"))
-            .filter((option) => option instanceof HTMLElement)
-            .filter((option) => {
-                const input = option.querySelector("input");
-                return input instanceof HTMLInputElement && !option.hidden && !input.disabled;
-            });
+        const options = getVisibleSegmentedOptions(shell);
         const activeIndex = Math.max(0, options.findIndex((option) => {
             const input = option.querySelector("input");
             return input instanceof HTMLInputElement && input.checked;
         }));
-        shell.dataset.active = getSelectedBacktestInterval();
-        shell.dataset.optionCount = String(Math.max(options.length, 1));
-        shell.style.setProperty("--segmented-option-count", String(Math.max(options.length, 1)));
-        shell.style.setProperty("--segmented-active-index", String(activeIndex));
+        syncSegmentedControlLayout(shell, {activeValue: getSelectedBacktestInterval(), activeIndex, options});
     };
     const setBacktestIntervalAvailability = (has1m) => {
         getBacktestIntervalInputs().forEach((input) => {
@@ -4253,9 +4401,17 @@
         if (includeDividendsInput?.checked) params.set("dividends", "1");
 
         if (isPortfolioView) {
-            getFilledWeightEntries().forEach((entry) => {
-                params.append("weight", String(Number.parseInt(entry.number.value, 10) || 0));
-            });
+            const allocationMode = getPortfolioAllocationMode();
+            if (allocationMode === "shares") {
+                params.set("allocation", "shares");
+                getFilledWeightEntries().forEach((entry) => {
+                    params.append("shares", String(Number.parseInt(entry.shares?.value || "0", 10) || 0));
+                });
+            } else {
+                getFilledWeightEntries().forEach((entry) => {
+                    params.append("weight", String(Number.parseInt(entry.number.value, 10) || 0));
+                });
+            }
         }
 
         if (isBacktestView) {
@@ -4411,6 +4567,7 @@
     attachOptimisticInternalNavigation();
     attachRemoveHandlers();
     attachTickerClearHandlers();
+    attachPortfolioAllocationHandlers();
     attachPortfolioWeightHandlers();
     reindexTickerFields();
     validateAllTickerInputs();
@@ -4422,9 +4579,13 @@
     updateRangePanels();
     syncBacktestIntervalSegmentedControl();
     syncDcaFrequencySegmentedControl();
+    syncAllSegmentedControlLayouts();
     updateDcaSchedulePanels();
     syncDateConstraints();
     scheduleDockPosition();
+    window.addEventListener("resize", () => {
+        window.requestAnimationFrame(syncAllSegmentedControlLayouts);
+    });
 
     $("#add_ticker")?.addEventListener("click", () => {
         if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
@@ -5152,9 +5313,11 @@
                 if (!areWeightsValid) {
                     return;
                 }
-                const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
-                if (totalWeight !== 100) {
-                    return;
+                if (!isPortfolioShareMode()) {
+                    const totalWeight = getFilledWeightEntries().reduce((sum, entry) => sum + (Number.parseInt(entry.number.value, 10) || 0), 0);
+                    if (totalWeight !== 100) {
+                        return;
+                    }
                 }
             }
             if (autoSubmitTimer) {

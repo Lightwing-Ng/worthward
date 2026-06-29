@@ -1,4 +1,4 @@
-/* Code version: v0.4.3 */
+/* Code version: v0.4.5 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -23,13 +23,17 @@
 		}
 		const media = window.matchMedia("(prefers-color-scheme: dark)");
 		const handler = () => window.requestAnimationFrame(callback);
+		const cleanups = [];
 		if (typeof media.addEventListener === "function") {
 			media.addEventListener("change", handler);
-			chartThemeState.mediaCleanup = () => media.removeEventListener("change", handler);
+			cleanups.push(() => media.removeEventListener("change", handler));
 		} else if (typeof media.addListener === "function") {
 			media.addListener(handler);
-			chartThemeState.mediaCleanup = () => media.removeListener(handler);
+			cleanups.push(() => media.removeListener(handler));
 		}
+		window.addEventListener("antigravity:theme-mode-change", handler);
+		cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+		chartThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
 	};
 	const consumeChartWorkspaceRefreshTransition = (viewName) => {
 		const transition = bootstrap.chartWorkspaceRefreshTransition;
@@ -139,6 +143,13 @@
 		const { series, profiles } = chartState;
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
+		["glowPlugin", "zeroBandPlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
+			try {
+				const registeredPlugin = Chart.registry?.plugins?.get?.(pluginId);
+				if (registeredPlugin) Chart.unregister(registeredPlugin);
+			} catch (_error) {
+			}
+		});
 		const logoSize = 20;
 		const logoGap = 8;
 		const logoRightPadding = 12;
@@ -282,12 +293,6 @@
 				});
 			},
 		};
-
-		try {
-			Chart.register(glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin);
-		} catch (e) {
-			// ignore registration error
-		}
 
 		const getOrCreateTooltip = (chart) => {
 			const parent = chart.canvas.parentNode;
@@ -497,6 +502,7 @@
 					},
 				},
 			},
+			plugins: [glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
 		});
 		bindColorSchemeRefresh(() => {
 			const nextTheme = readThemeTokens();

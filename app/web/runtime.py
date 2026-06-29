@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.36
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -920,6 +920,20 @@ def build_web_runtime() -> WebRuntime:
                 weights.append(min(max(parse_int_value(raw_value, 0), 0), 100))
         return weights
 
+    def parse_portfolio_allocation_mode() -> str:
+        return "shares" if request.args.get("allocation", "").strip().lower() == "shares" else "weight"
+
+    def parse_requested_shares(slot_count: int) -> list[int]:
+        repeated = request.args.getlist("shares")
+        raw_values = repeated[:slot_count] if repeated else [
+            request.args.get(f"shares_{index}", "")
+            for index in range(1, slot_count + 1)
+        ]
+        shares: list[int] = []
+        for raw_value in raw_values:
+            shares.append(max(parse_int_value(raw_value, 0), 0))
+        return shares
+
     def parse_bool_flag(*names: str, default: bool = False) -> bool:
         for name in names:
             values = request.args.getlist(name)
@@ -1013,6 +1027,43 @@ def build_web_runtime() -> WebRuntime:
             }
         )
         return build_series_payload("Portfolio", portfolio_frame, color=color)
+
+    def build_portfolio_series_payload_for_shares(datasets: list[pd.DataFrame], shares: list[int], color: str):
+        first_dataset = datasets[0]
+        portfolio_value = pd.Series(0.0, index=first_dataset.index)
+        if len(datasets) != len(shares):
+            raise ValueError("Portfolio datasets and shares must have the same length.")
+        for dataset, share_count in zip(datasets, shares):
+            portfolio_value += max(int(share_count), 0) * dataset["Close"]
+        if float(portfolio_value.iloc[0]) <= 0:
+            raise ValueError("Each selected ticker must have at least 1 share.")
+        portfolio_frame = pd.DataFrame(
+            {
+                "Date": first_dataset["Date"],
+                "Close": portfolio_value,
+            }
+        )
+        return build_series_payload("Portfolio", portfolio_frame, color=color)
+
+    def normalize_portfolio_share_weights(datasets: list[pd.DataFrame], shares: list[int]) -> list[int]:
+        if not datasets:
+            return []
+        initial_values = [
+            max(int(share_count), 0) * float(dataset["Close"].iloc[0])
+            for dataset, share_count in zip(datasets, shares)
+        ]
+        total = sum(initial_values)
+        if total <= 0:
+            return [0 for _value in initial_values]
+        scaled = [int((value * 100) / total) for value in initial_values]
+        remainder = 100 - sum(scaled)
+        order = sorted(range(len(initial_values)), key=lambda index: initial_values[index], reverse=True)
+        for index in order:
+            if remainder <= 0:
+                break
+            scaled[index] += 1
+            remainder -= 1
+        return scaled
 
     def build_portfolio_growth_multipliers(datasets: list[pd.DataFrame]) -> list[float]:
         return [
@@ -2432,7 +2483,15 @@ def build_web_runtime() -> WebRuntime:
         has_weight_args = bool(request.args.getlist("weight")) or any(
             key.startswith("weight_") for key in request.args.keys()
         )
-        if has_weight_args:
+        allocation_mode = parse_portfolio_allocation_mode()
+        has_share_args = bool(request.args.getlist("shares")) or any(
+            key.startswith("shares_") for key in request.args.keys()
+        )
+        if allocation_mode == "shares" and has_share_args:
+            pairs.append(("allocation", "shares"))
+            for share_count in parse_requested_shares(MAX_TICKERS):
+                pairs.append(("shares", str(share_count)))
+        elif has_weight_args:
             for weight in parse_requested_weights(MAX_TICKERS):
                 pairs.append(("weight", str(weight)))
 
@@ -2488,6 +2547,8 @@ def build_web_runtime() -> WebRuntime:
             "ticker",
             "tickers",
             "weight",
+            "allocation",
+            "shares",
             "period",
             "range",
             "range_mode",
@@ -2513,6 +2574,7 @@ def build_web_runtime() -> WebRuntime:
         }
         passthrough_keys.update({f"ticker_{index}" for index in range(1, MAX_TICKERS + 1)})
         passthrough_keys.update({f"weight_{index}" for index in range(1, MAX_TICKERS + 1)})
+        passthrough_keys.update({f"shares_{index}" for index in range(1, MAX_TICKERS + 1)})
 
         strategy_param_keys: set[str] = set()
         strategy_value = request.args.get("strategy", "").strip()
@@ -2720,6 +2782,8 @@ def build_web_runtime() -> WebRuntime:
         performance_items = []
         portfolio_items = []
         portfolio_weights = []
+        portfolio_shares = []
+        portfolio_allocation_mode = parse_portfolio_allocation_mode()
         portfolio_total_return = None
         validated_tickers: list[str] = []
         strategy_options = list_enabled_strategies()
@@ -2780,14 +2844,22 @@ def build_web_runtime() -> WebRuntime:
         backtest_market_refresh: dict[str, str | bool | None] | None = None
         ticker_slots = requested_tickers.copy() if requested_tickers else ["", ""]
         requested_weights = parse_requested_weights(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
+        requested_shares = parse_requested_shares(max(len(ticker_slots), MIN_TICKERS)) if current_view == "portfolio" else []
         has_weight_query = bool(request.args.getlist("weight")) or any(
             key.startswith("weight_") for key in request.args.keys()
+        )
+        has_share_query = bool(request.args.getlist("shares")) or any(
+            key.startswith("shares_") for key in request.args.keys()
         )
         if current_view == "portfolio" and not has_weight_query:
             requested_weights = [
                                     min(max(parse_int_value(value, 0), 0), 100)
                                     for value in defaults.get("portfolio_weights", [25, 25, 50])
                                 ][:max(len(requested_tickers), MIN_TICKERS)]
+        if current_view == "portfolio" and portfolio_allocation_mode != "shares":
+            requested_shares = [0] * max(len(ticker_slots), MIN_TICKERS)
+        if current_view == "portfolio" and portfolio_allocation_mode == "shares" and not has_share_query:
+            requested_shares = [0] * max(len(ticker_slots), MIN_TICKERS)
         period_label = format_period_label(period)
         page_title = labels["hero_title"]
         report_heading = labels["performance_summary"]
@@ -3049,8 +3121,19 @@ def build_web_runtime() -> WebRuntime:
                         ]
                         if current_view == "portfolio":
                             portfolio_weights = requested_weights or [0] * len(validated_tickers)
-                            portfolio_items = [{"ticker": t, "company_name": t, "logo_url": "", "weight": w, "growth_multiple": 1.0, "color": "transparent"} for t, w in
-                                               zip(validated_tickers, portfolio_weights)]
+                            portfolio_shares = requested_shares or [0] * len(validated_tickers)
+                            portfolio_items = [
+                                {
+                                    "ticker": t,
+                                    "company_name": t,
+                                    "logo_url": "",
+                                    "weight": w,
+                                    "shares": s,
+                                    "growth_multiple": 1.0,
+                                    "color": "transparent",
+                                }
+                                for t, w, s in zip(validated_tickers, portfolio_weights, portfolio_shares)
+                            ]
                             portfolio_total_return = 0.0
                         else:
                             series = [
@@ -3211,14 +3294,27 @@ def build_web_runtime() -> WebRuntime:
 
                         colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                         if current_view == "portfolio":
-                            ensure_positive_portfolio_weights(requested_weights, len(validated_tickers))
-                            portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                            portfolio_shares = requested_shares[:len(validated_tickers)]
+                            if len(portfolio_shares) < len(validated_tickers):
+                                portfolio_shares.extend([0] * (len(validated_tickers) - len(portfolio_shares)))
                             growth_multipliers = build_portfolio_growth_multipliers(aligned_datasets)
-                            portfolio_series = build_portfolio_series_payload(
-                                aligned_datasets,
-                                portfolio_weights,
-                                theme["accent_primary"],
-                            )
+                            if portfolio_allocation_mode == "shares":
+                                if any(share_count <= 0 for share_count in portfolio_shares):
+                                    raise ValueError("Each selected ticker must have at least 1 share.")
+                                portfolio_weights = normalize_portfolio_share_weights(aligned_datasets, portfolio_shares)
+                                portfolio_series = build_portfolio_series_payload_for_shares(
+                                    aligned_datasets,
+                                    portfolio_shares,
+                                    theme["accent_primary"],
+                                )
+                            else:
+                                ensure_positive_portfolio_weights(requested_weights, len(validated_tickers))
+                                portfolio_weights = normalize_portfolio_weights(requested_weights, len(validated_tickers))
+                                portfolio_series = build_portfolio_series_payload(
+                                    aligned_datasets,
+                                    portfolio_weights,
+                                    theme["accent_primary"],
+                                )
                             benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
                                 aligned_datasets[0]["Date"],
                                 include_dividends,
@@ -3232,13 +3328,15 @@ def build_web_runtime() -> WebRuntime:
                                     "company_name": profile.company_name,
                                     "logo_url": profile.logo_url,
                                     "weight": weight,
+                                    "shares": share_count,
                                     "growth_multiple": growth_multiple,
                                     "color": color,
                                 }
-                                for ticker, profile, weight, growth_multiple, color in zip(
+                                for ticker, profile, weight, share_count, growth_multiple, color in zip(
                                     validated_tickers,
                                     profiles[: len(validated_tickers)],
                                     portfolio_weights,
+                                    portfolio_shares,
                                     growth_multipliers,
                                     colors,
                                 )
@@ -3340,6 +3438,10 @@ def build_web_runtime() -> WebRuntime:
                 portfolio_weights = build_default_weights(len([ticker for ticker in ticker_slots if ticker]))
             while len(portfolio_weights) < len(ticker_slots):
                 portfolio_weights.append(0)
+            if not portfolio_shares:
+                portfolio_shares = requested_shares[:len(ticker_slots)] if requested_shares else []
+            while len(portfolio_shares) < len(ticker_slots):
+                portfolio_shares.append(0)
 
         template_name = {
             "tickers": "compare.html",
@@ -3371,6 +3473,8 @@ def build_web_runtime() -> WebRuntime:
             performance_items=performance_items,
             portfolio_items=portfolio_items,
             portfolio_weights=portfolio_weights,
+            portfolio_shares=portfolio_shares,
+            portfolio_allocation_mode=portfolio_allocation_mode,
             portfolio_total_return=portfolio_total_return,
             dca_result=dca_result,
             dca_amount=dca_amount,

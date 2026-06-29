@@ -1,5 +1,23 @@
-{% from "_macros.html" import render_range_controls with context %}
-<form class="controls sidebar-form ticker-controls ticker-form-controls {{ current_view }}-controls" method="get" action="{{ current_path }}">
+{% from "_macros.html" import render_range_controls, render_segmented_control with context %}
+{% set portfolio_allocation_mode = portfolio_allocation_mode if current_view == "portfolio" and portfolio_allocation_mode is defined else "weight" %}
+{% set portfolio_allocation_mode = "shares" if portfolio_allocation_mode == "shares" else "weight" %}
+{% set portfolio_share_slots = portfolio_shares if current_view == "portfolio" and portfolio_shares is defined else [] %}
+<form class="controls sidebar-form ticker-controls ticker-form-controls {{ current_view }}-controls" method="get" action="{{ current_path }}" data-portfolio-allocation="{{ portfolio_allocation_mode }}">
+    {% if current_view == "portfolio" %}
+    <div class="field portfolio-allocation-field">
+        <label for="portfolio_allocation_weight">Allocation</label>
+        {{ render_segmented_control(
+            "portfolio-allocation-shell segmented-control--compact-mobile",
+            "allocation",
+            portfolio_allocation_mode,
+            [
+                {"id": "portfolio_allocation_weight", "value": "weight", "label": "By weight", "input_attrs": "data-portfolio-allocation-input"},
+                {"id": "portfolio_allocation_shares", "value": "shares", "label": "By shares", "input_attrs": "data-portfolio-allocation-input"},
+            ],
+            'data-active="' ~ portfolio_allocation_mode ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if portfolio_allocation_mode == "shares" else 0) ~ ';"'
+        ) }}
+    </div>
+    {% endif %}
     <div id="ticker_fields">
         {% for index in range(1, ticker_slots | length + 1) %}
         <div class="field ticker-field" data-index="{{ index }}">
@@ -23,6 +41,11 @@
                     <div class="portfolio-weight-row">
                         <input id="weight_{{ index }}" name="weight" class="portfolio-weight-input" type="number" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" placeholder="{{ labels.portfolio_weight }}" aria-label="{{ labels.portfolio_weight }}">
                         <span class="portfolio-weight-unit">%</span>
+                        <div class="portfolio-share-stepper" role="group" aria-label="Shares">
+                            <button type="button" class="portfolio-share-stepper-button" data-share-step="-1" aria-label="Decrease shares">-</button>
+                            <input id="shares_{{ index }}" name="shares" class="portfolio-share-input" type="number" min="0" step="1" value="{{ portfolio_share_slots[index - 1] if index - 1 < portfolio_share_slots|length else 0 }}" placeholder="0" aria-label="Shares">
+                            <button type="button" class="portfolio-share-stepper-button" data-share-step="1" aria-label="Increase shares">+</button>
+                        </div>
                     </div>
                     <div class="portfolio-weight-slider-shell" aria-hidden="true">
                         <input class="portfolio-weight-slider" type="range" min="0" max="100" step="1" value="{{ portfolio_weights[index - 1] if index - 1 < portfolio_weights|length else 0 }}" aria-label="{{ labels.portfolio_weight }}">

@@ -251,7 +251,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.57.10',
+    entry: 'v1.57.12',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -10856,6 +10856,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderEquityChartWithEquity(inputPoints);
     }
+
+    window.addEventListener('antigravity:theme-mode-change', () => {
+        window.requestAnimationFrame(() => {
+            if (investmentEquityChartInstance?.canvas?.isConnected) {
+                renderEquityChartWithEquity(investmentChartPointsCache);
+            }
+            if (investmentStockDetailsPriceChartInstance?.canvas?.isConnected && selectedInvestmentStockTicker) {
+                renderInvestmentStockDetailsPriceChart(
+                    selectedInvestmentStockTicker,
+                    buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, selectedInvestmentStockTicker)
+                );
+            }
+        });
+    });
 
     function applyInvestmentOverviewIntradayLinePoints(chartPoints = [], overviewIntradayLinePoints = []) {
         if (!investmentEquityChartInstance || !window.Chart) return;

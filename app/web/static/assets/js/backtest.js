@@ -1,4 +1,4 @@
-/* Code version: v0.3.6 */
+/* Code version: v0.3.7 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -23,13 +23,17 @@
 		}
 		const media = window.matchMedia("(prefers-color-scheme: dark)");
 		const handler = () => window.requestAnimationFrame(callback);
+		const cleanups = [];
 		if (typeof media.addEventListener === "function") {
 			media.addEventListener("change", handler);
-			backtestThemeState.mediaCleanup = () => media.removeEventListener("change", handler);
+			cleanups.push(() => media.removeEventListener("change", handler));
 		} else if (typeof media.addListener === "function") {
 			media.addListener(handler);
-			backtestThemeState.mediaCleanup = () => media.removeListener(handler);
+			cleanups.push(() => media.removeListener(handler));
 		}
+		window.addEventListener("antigravity:theme-mode-change", handler);
+		cleanups.push(() => window.removeEventListener("antigravity:theme-mode-change", handler));
+		backtestThemeState.mediaCleanup = () => cleanups.forEach((cleanup) => cleanup());
 	};
 
 	const consumeBacktestRefreshTransition = () => {
