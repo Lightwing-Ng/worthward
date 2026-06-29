@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.57.4
+ * Code version: v1.57.8
+ * - Fixed: Money-market Holdings icons now use an aligned green CSS-mask token instead of loading the black SVG fill through an img tag.
+ * - Added: Cash-equivalent MMFs render as Holdings income rows with green dollar-token icons, while Franklin keeps its local fund logo.
+ * - Fixed: Longbridge HK MMF transfers now replay as real cash plus synthetic cash-equivalent valuation anchors, removing saw-tooth overnight equity.
+ * - Improved: Broker filter now uses a transaction broker index for large histories, avoiding full-list broker checks on every filter click while keeping options limited to brokers present in the loaded ledger.
  * - Refined: Tiger Trade and uSMART (HK) PDF import controls now reuse the shared bridge-field upload layout.
  * - Fixed: uSMART (HK) symbol-less fractional shares stay valued between purchase, withdrawal, and sale.
  * - Fixed: Tiger Trade Funds in Transit subscriptions no longer create false equity drawdowns.
@@ -236,7 +240,7 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.47.3';
+} from './investment/data-utils.js?v=investment-data-utils-v1.47.5';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
@@ -589,6 +593,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentHistoryCurrentPage = 1;
     let investmentBrokerFilterSelectedCodes = new Set();
     let investmentBrokerFilterDocumentListenersBound = false;
+    let investmentBrokerFilterApplyRaf = 0;
+    let investmentBrokerFilterTransactionIndex = {
+        source: null,
+        allRows: [],
+        byBroker: new Map(),
+        availableCodes: [],
+        availableSet: new Set(),
+    };
     let investmentHistoryVisibleTransactionsCache = [];
     let investmentRawTransactionsCache = [];
     let investmentTickerClosePricesCache = {};
@@ -729,6 +741,8 @@ document.addEventListener('DOMContentLoaded', () => {
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
         isSyntheticCashEquivalentTicker,
+        isLongbridgeHkCashEquivalentTransfer,
+        getLongbridgeHkCashEquivalentSyntheticTicker,
         isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
         getTransactionAmount,
@@ -749,6 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sumKolRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
+        LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
     } = createInvestmentDataUtils({
         noCommissionTransactionTypes: NO_COMMISSION_TRANSACTION_TYPES,
         investmentCommonSplitFactors: INVESTMENT_COMMON_SPLIT_FACTORS,
@@ -3928,11 +3943,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resolveInvestmentLogoUrl(profile, ticker) {
+        if (isDollarTokenMoneyMarketTicker(ticker)) {
+            return '/market-store/logos/dollarsign.ring.svg';
+        }
         const logoUrl = String(profile?.logo_url || '').trim();
         return logoUrl || buildMarketStoreLogoUrls(ticker)[0] || buildMarketStoreLogoUrl(ticker);
     }
 
     function resolveInvestmentLogoUrls(profile, ticker) {
+        if (isDollarTokenMoneyMarketTicker(ticker)) {
+            return ['/market-store/logos/dollarsign.ring.svg'];
+        }
         return normalizeInvestmentLogoUrlList([
             String(profile?.logo_url || '').trim(),
             ...buildMarketStoreLogoUrls(ticker),
@@ -4587,8 +4608,70 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(ticker || '').trim().toUpperCase();
     }
 
+    function isLongbridgeHkCashEquivalentSyntheticTicker(ticker) {
+        return normalizeInvestmentTicker(ticker).startsWith(`${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.`);
+    }
+
+    function isFranklinMoneyMarketTicker(ticker) {
+        return normalizeInvestmentTicker(ticker) === '005276756';
+    }
+
+    function isDollarTokenMoneyMarketTicker(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker || isFranklinMoneyMarketTicker(normalizedTicker)) return false;
+        if (isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) return true;
+        return getMoneyMarketTickerSet().has(normalizedTicker);
+    }
+
+    function getCashEquivalentFundDisplayName(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (isFranklinMoneyMarketTicker(normalizedTicker)) {
+            return 'Franklin Templeton U.S. Dollar Short-Term Money Market Fund';
+        }
+        if (!isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) {
+            if (normalizedTicker === 'HK0000369196.USD') return 'USD Money Market Fund (HK0000369196.USD)';
+            if (normalizedTicker === 'HK0001039582.USD') return 'USD Money Market Fund (HK0001039582.USD)';
+            if (isDollarTokenMoneyMarketTicker(normalizedTicker)) return 'Money Market Fund';
+            return '';
+        }
+        const parts = normalizedTicker.split('.');
+        const fundId = parts[1] || '';
+        const currency = parts[2] || '';
+        const fundNames = {
+            PING_AN_MONEY_MARKET_USD: 'Ping An Money Market Fund',
+            PING_AN_MONEY_MARKET_HKD: 'Ping An Money Market Fund',
+            GAOTENG_MONEY_MARKET_USD: 'GaoTeng WeValue USD Money Market Fund',
+            GAOTENG_MONEY_MARKET_HKD: 'GaoTeng WeValue HKD Money Market Fund',
+        };
+        const baseName = fundNames[fundId] || 'Money Market Fund';
+        return currency ? `${baseName} (${currency})` : baseName;
+    }
+
+    function getCashEquivalentTickerLabel(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (isFranklinMoneyMarketTicker(normalizedTicker)) return 'Franklin MMF';
+        if (normalizedTicker === 'HK0000369196.USD') return 'HK0000369196 USD MMF';
+        if (normalizedTicker === 'HK0001039582.USD') return 'HK0001039582 USD MMF';
+        if (!isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) return '';
+        const parts = normalizedTicker.split('.');
+        const fundId = parts[1] || '';
+        const currency = parts[2] || '';
+        const labels = {
+            PING_AN_MONEY_MARKET_USD: 'Ping An MMF',
+            PING_AN_MONEY_MARKET_HKD: 'Ping An MMF',
+            GAOTENG_MONEY_MARKET_USD: 'GaoTeng MMF',
+            GAOTENG_MONEY_MARKET_HKD: 'GaoTeng MMF',
+        };
+        const label = labels[fundId] || 'MMF';
+        return currency ? `${label} ${currency}` : label;
+    }
+
     function formatInvestmentTickerForDisplay(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const cashEquivalentLabel = getCashEquivalentTickerLabel(normalizedTicker);
+        if (cashEquivalentLabel) {
+            return cashEquivalentLabel;
+        }
         if (normalizedTicker.endsWith('.US')) {
             return normalizedTicker.slice(0, -3);
         }
@@ -4664,6 +4747,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resolveInvestmentTickerCompanyName(tickerProfiles, ticker) {
+        const cashEquivalentName = getCashEquivalentFundDisplayName(ticker);
+        if (cashEquivalentName) {
+            return cashEquivalentName;
+        }
         const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
         const companyName = String(profile.company_name || '').trim();
         if (companyName && !isInvestmentTickerFallbackCompanyName(companyName, ticker)) {
@@ -4735,23 +4822,61 @@ document.addEventListener('DOMContentLoaded', () => {
         )).sort(compareInvestmentBrokerFilterCodes);
     }
 
-    function computeAvailableInvestmentBrokerCodes() {
-        // One-time (or on-data-change) derivation of the small set of broker codes present
-        // in the loaded data. Avoids brute-force rescanning the full transactions list on
-        // every dropdown click, filter toggle, or UI sync.
+    function rebuildInvestmentBrokerFilterTransactionIndex(processedTransactions = investmentProcessedTransactionsCache) {
+        const source = Array.isArray(processedTransactions) ? processedTransactions : [];
+        const allRows = [];
+        const byBroker = new Map();
+
+        source.forEach((txn, index) => {
+            if (isInvestmentHistoryDisplayHidden(txn)) return;
+            const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+            if (!brokerCode) return;
+            const row = {
+                txn,
+                index,
+                brokerCode,
+                dateLabel: normalizeLedgerDate(txn?.date),
+            };
+            allRows.push(row);
+            if (!byBroker.has(brokerCode)) {
+                byBroker.set(brokerCode, []);
+            }
+            byBroker.get(brokerCode).push(row);
+        });
+
+        const ledgerBrokerCodes = sortInvestmentBrokerFilterCodes(Array.from(byBroker.keys()));
         const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
             ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
             : [];
-        const transactionBrokerCodes = Array.isArray(investmentProcessedTransactionsCache)
-            ? investmentProcessedTransactionsCache.map((txn) => getTransactionBrokerCode(txn))
-            : [];
-        return sortInvestmentBrokerFilterCodes([
-            ...payloadBrokerCodes,
-            ...transactionBrokerCodes,
-        ]);
+        // Prefer brokers proven by rendered ledger rows; use the server broker list only before
+        // processed transactions exist so the filter never advertises an empty broker in large ledgers.
+        const availableCodes = ledgerBrokerCodes.length
+            ? ledgerBrokerCodes
+            : sortInvestmentBrokerFilterCodes(payloadBrokerCodes);
+
+        investmentBrokerFilterTransactionIndex = {
+            source,
+            allRows,
+            byBroker,
+            availableCodes,
+            availableSet: new Set(availableCodes),
+        };
+    }
+
+    function ensureInvestmentBrokerFilterTransactionIndex(processedTransactions = investmentProcessedTransactionsCache) {
+        const source = Array.isArray(processedTransactions) ? processedTransactions : [];
+        if (investmentBrokerFilterTransactionIndex.source !== source) {
+            rebuildInvestmentBrokerFilterTransactionIndex(source);
+        }
+        return investmentBrokerFilterTransactionIndex;
+    }
+
+    function computeAvailableInvestmentBrokerCodes() {
+        return ensureInvestmentBrokerFilterTransactionIndex().availableCodes;
     }
 
     function refreshInvestmentAvailableBrokerCodes() {
+        rebuildInvestmentBrokerFilterTransactionIndex();
         const codes = computeAvailableInvestmentBrokerCodes();
         investmentAvailableBrokerCodesCache = codes;
         investmentAvailableBrokerCodesSet = new Set(codes);
@@ -4789,6 +4914,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return false;
         }
         return selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn)));
+    }
+
+    function getInvestmentBrokerFilteredTransactionRows(processedTransactions = []) {
+        const index = ensureInvestmentBrokerFilterTransactionIndex(processedTransactions);
+        const availableBrokerCodes = index.availableCodes;
+        if (!availableBrokerCodes.length) return [];
+
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        if (isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes)) {
+            return index.allRows;
+        }
+        if (!selectedBrokerCodes.size) {
+            return [];
+        }
+
+        const selectedBrokerList = availableBrokerCodes.filter((brokerCode) => selectedBrokerCodes.has(brokerCode));
+        if (selectedBrokerList.length === 1) {
+            return index.byBroker.get(selectedBrokerList[0]) || [];
+        }
+        if (selectedBrokerList.length > Math.max(1, availableBrokerCodes.length / 2)) {
+            return index.allRows.filter((row) => selectedBrokerCodes.has(row.brokerCode));
+        }
+        return selectedBrokerList
+            .flatMap((brokerCode) => index.byBroker.get(brokerCode) || [])
+            .sort((left, right) => left.index - right.index);
     }
 
     function initializeInvestmentBrokerFilterSelection() {
@@ -4880,6 +5030,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function measureInvestmentBrokerFilterDropdownWidth(dropdown) {
         if (!(dropdown instanceof HTMLElement)) return 0;
+        const widthSignature = String(dropdown.dataset.investmentBrokerFilterWidthSignature || '');
+        const measuredSignature = String(dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature || '');
+        const cachedWidth = Number(dropdown.dataset.investmentBrokerFilterMeasuredWidth || 0);
+        if (widthSignature && measuredSignature === widthSignature && Number.isFinite(cachedWidth) && cachedWidth > 0) {
+            return cachedWidth;
+        }
         const prev = {
             width: dropdown.style.width,
             maxWidth: dropdown.style.maxWidth,
@@ -4906,6 +5062,10 @@ document.addEventListener('DOMContentLoaded', () => {
         dropdown.style.left = prev.left;
         dropdown.style.top = prev.top;
         dropdown.style.visibility = prev.visibility;
+        if (widthSignature) {
+            dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature = widthSignature;
+            dropdown.dataset.investmentBrokerFilterMeasuredWidth = `${measuredWidth}`;
+        }
         return measuredWidth;
     }
 
@@ -5070,6 +5230,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+        const widthSignature = availableBrokerCodes
+            .map((brokerCode) => `${brokerCode}:${getInvestmentBrokerMeta(brokerCode).label}`)
+            .join('|');
+        if (dropdown.dataset.investmentBrokerFilterWidthSignature !== widthSignature) {
+            dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature = '';
+            dropdown.dataset.investmentBrokerFilterMeasuredWidth = '';
+        }
+        dropdown.dataset.investmentBrokerFilterWidthSignature = widthSignature;
 
         dropdown.innerHTML = '';
         dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
@@ -5079,7 +5247,6 @@ document.addEventListener('DOMContentLoaded', () => {
             onClick: () => {
                 investmentBrokerFilterSelectedCodes = new Set(availableBrokerCodes);
                 applyInvestmentBrokerFilterChange();
-                renderInvestmentBrokerFilterDropdown(field);
             },
         }));
 
@@ -5105,7 +5272,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     investmentBrokerFilterSelectedCodes = nextSelection;
                     applyInvestmentBrokerFilterChange();
-                    renderInvestmentBrokerFilterDropdown(field);
                 },
             }));
         });
@@ -5187,14 +5353,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyInvestmentBrokerFilterChange() {
         syncAllInvestmentBrokerFilterUi();
-        renderInvestmentHistoryTableRows(
-            investmentProcessedTransactionsCache,
-            investmentChartPointsCache,
-            { resetPage: true, scrollToTop: true },
-        );
-        if (activeInvestmentView === 'stock_details') {
-            refreshInvestmentStockDetailsTableRows();
+        if (investmentBrokerFilterApplyRaf) {
+            window.cancelAnimationFrame(investmentBrokerFilterApplyRaf);
         }
+        investmentBrokerFilterApplyRaf = window.requestAnimationFrame(() => {
+            investmentBrokerFilterApplyRaf = 0;
+            renderInvestmentHistoryTableRows(
+                investmentProcessedTransactionsCache,
+                investmentChartPointsCache,
+                { resetPage: true, scrollToTop: true },
+            );
+            if (activeInvestmentView === 'stock_details') {
+                refreshInvestmentStockDetailsTableRows();
+            }
+        });
     }
 
     function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
@@ -7970,6 +8142,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const tickerLabel = formatInvestmentTickerForDisplay(summary.ticker);
             const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, summary.ticker);
             const logoUrls = resolveInvestmentLogoUrls(profile, summary.ticker);
+            const usesCashEquivalentTokenLogo = isDollarTokenMoneyMarketTicker(summary.ticker);
+            const logoHtml = usesCashEquivalentTokenLogo
+                ? '<span class="ticker-identity-logo investment-cash-equivalent-token-logo" aria-hidden="true"></span>'
+                : `
+                                    <img class="ticker-identity-logo"
+                                         alt=""
+                                         hidden
+                                         loading="lazy"
+                                         decoding="async"
+                                         data-investment-logo-image
+                                         data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
+                                         data-ticker="${escapeHtml(summary.ticker)}">
+                                    <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                `;
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
             const realizedClass = summary.realizedPnl >= 0
                 ? ' investment-holdings-value-positive'
@@ -7988,15 +8174,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <a class="investment-holdings-ticker-anchor" href="${escapeHtml(buildInvestmentStockDetailsHref(summary.ticker))}" data-investment-stock-link data-investment-stock-ticker="${escapeHtml(summary.ticker)}">
                             <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${escapeHtml(summary.ticker)}">
                                 <div class="ticker-identity-row">
-                                    <img class="ticker-identity-logo"
-                                         alt=""
-                                         hidden
-                                         loading="lazy"
-                                         decoding="async"
-                                         data-investment-logo-image
-                                         data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
-                                         data-ticker="${escapeHtml(summary.ticker)}">
-                                    <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                                    ${logoHtml}
                                     <span class="ticker-identity-copy">
                                         <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(tickerLabel)}</span>
                                         ${renderInvestmentTickerIdentityNameHtml(companyName)}
@@ -9480,12 +9658,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
-        const normalizedTransactions = Array.isArray(processedTransactions)
-            ? processedTransactions.filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
-            : [];
-        const brokerFilteredTransactions = normalizedTransactions.filter((txn) => matchesInvestmentBrokerFilter(txn));
+        const brokerFilteredRows = getInvestmentBrokerFilteredTransactionRows(processedTransactions);
         if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === 'max') {
-            return brokerFilteredTransactions;
+            return brokerFilteredRows.map((row) => row.txn);
         }
         const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
         const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
@@ -9493,9 +9668,11 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedInvestmentEquityRange,
         ));
         if (!visibleRangeLabels.size) {
-            return brokerFilteredTransactions;
+            return brokerFilteredRows.map((row) => row.txn);
         }
-        return brokerFilteredTransactions.filter((txn) => visibleRangeLabels.has(normalizeLedgerDate(txn?.date)));
+        return brokerFilteredRows
+            .filter((row) => visibleRangeLabels.has(row.dateLabel))
+            .map((row) => row.txn);
     }
 
     function getInvestmentHistoryTotalPages(totalRows = 0) {
@@ -9758,6 +9935,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function applyHoldingStateUpdate(state, txn, normalizedType, valuationQty, price) {
+            if (isLongbridgeHkCashEquivalentTransfer(txn)) {
+                const syntheticTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
+                if (!syntheticTicker) return;
+                const valueAfter = Number(
+                    txn?.normalized?.cash_equivalent_value_after
+                    ?? txn?.source?.cash_equivalent_cost_basis_after_raw
+                    ?? 0
+                );
+                if (!Number.isFinite(valueAfter) || valueAfter <= 1e-9) {
+                    delete state.holdings[syntheticTicker];
+                    delete state.moneyMarketAnchors[syntheticTicker];
+                    return;
+                }
+                state.holdings[syntheticTicker] = valueAfter;
+                state.moneyMarketAnchors[syntheticTicker] = 1;
+                return;
+            }
             const isSyntheticFractional = isUsmartHkFractionalSharesTransaction(txn);
             if (!txn.ticker && !isSyntheticFractional) return;
             const rawTicker = isSyntheticFractional

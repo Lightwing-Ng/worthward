@@ -2568,6 +2568,12 @@
     background: var(--ticker-identity-background-hover);
 }
 
+.investment-holdings-ticker-link .investment-cash-equivalent-token-logo {
+    background-color: var(--theme-accent-positive);
+    mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+}
+
 .investment-holdings-table th:nth-child(1),
 .investment-holdings-table td:nth-child(1) {
     width: 8%;

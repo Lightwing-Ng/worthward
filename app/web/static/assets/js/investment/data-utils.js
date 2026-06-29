@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.47.3
+ * Code version: v1.47.5
+ * - Added: Longbridge HK cash-equivalent MMF income is summarized as Holdings rows even after the funds are fully redeemed.
+ * - Fixed: Longbridge HK cash-equivalent transfers now expose actual cash deltas and synthetic valuation tickers so MMF placements/redemptions do not create saw-tooth overnight equity.
  * - Fixed: uSMART (HK) symbol-less fractional-share rows keep a synthetic valuation anchor until the matching sale closes them.
  * - Fixed: Tiger Trade Funds in Transit rows preserve equity instead of appearing as external cash losses.
  * - Fixed: Daily equity valuation now reads imported normalized unit prices when a closed fund has no cached market history.
@@ -37,6 +39,7 @@ export function createInvestmentDataUtils({
 }) {
     const INVESTMENT_BASE_CURRENCY = 'USD';
     const USMART_HK_FRACTIONAL_SYNTHETIC_TICKER = 'USMART_HK_FRACTIONAL_SHARES';
+    const LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX = 'LONGBRIDGE_HK_CASH_EQUIVALENT';
     const INVESTMENT_MARKET_CURRENCY_BY_SUFFIX = {
         US: 'USD',
         HK: 'HKD',
@@ -73,12 +76,53 @@ export function createInvestmentDataUtils({
     }
 
     function isSyntheticCashEquivalentTicker(ticker) {
-        return String(ticker || '').trim().toUpperCase() === USMART_HK_FRACTIONAL_SYNTHETIC_TICKER;
+        const normalizedTicker = String(ticker || '').trim().toUpperCase();
+        return (
+            normalizedTicker === USMART_HK_FRACTIONAL_SYNTHETIC_TICKER
+            || normalizedTicker.startsWith(`${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.`)
+        );
+    }
+
+    function isLongbridgeHkCashEquivalentTransfer(txn) {
+        return (
+            String(txn?.broker || '').trim().toLowerCase() === 'longbridge_hk'
+            && (
+                txn?.normalized?.cash_equivalent_transfer === true
+                || txn?.source?.cash_equivalent_transfer === true
+            )
+        );
+    }
+
+    function getLongbridgeHkCashEquivalentSyntheticTicker(txn) {
+        if (!isLongbridgeHkCashEquivalentTransfer(txn)) return '';
+        const fundId = String(
+            txn?.normalized?.cash_equivalent_fund_id
+            ?? txn?.source?.cash_equivalent_fund_id
+            ?? 'longbridge_money_market'
+        ).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        const currency = normalizeCurrencyCode(formatTransactionCurrency(txn)) || INVESTMENT_BASE_CURRENCY;
+        return `${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.${fundId || 'LONG_BRIDGE_MONEY_MARKET'}.${currency}`;
+    }
+
+    function getLongbridgeHkCashEquivalentTransferAmount(txn) {
+        const transferAmount = Number(
+            txn?.normalized?.cash_equivalent_cash_delta
+            ?? txn?.normalized?.display_amount
+            ?? txn?.gross_amount_raw
+            ?? txn?.source?.cash_equivalent_transfer_amount_raw
+            ?? txn?.normalized?.cash_flow_amount
+            ?? txn?.normalized?.net_amount
+            ?? 0
+        );
+        return Number.isFinite(transferAmount) ? transferAmount : 0;
     }
 
     function getTransactionAmount(txn) {
         if (isTigerFundsInTransitTransfer(txn)) {
             return 0;
+        }
+        if (isLongbridgeHkCashEquivalentTransfer(txn)) {
+            return getLongbridgeHkCashEquivalentTransferAmount(txn);
         }
         if (txn?.normalized?.cash_equivalent_transfer === true) {
             const equityDelta = Number(
@@ -206,6 +250,10 @@ export function createInvestmentDataUtils({
     function getTickerQuoteCurrency(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
+        if (normalizedTicker.startsWith(`${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.`)) {
+            const currency = normalizeCurrencyCode(normalizedTicker.split('.').pop());
+            return currency || INVESTMENT_BASE_CURRENCY;
+        }
         if (isSyntheticCashEquivalentTicker(normalizedTicker)) return INVESTMENT_BASE_CURRENCY;
         if (isForexPairTicker(normalizedTicker)) {
             const [baseCurrency] = normalizedTicker.split('.');
@@ -463,7 +511,8 @@ export function createInvestmentDataUtils({
 
     function getTransactionEconomicAmount(txn) {
         if (
-            txn?.normalized?.cash_equivalent_transfer === true
+            isLongbridgeHkCashEquivalentTransfer(txn)
+            || txn?.normalized?.cash_equivalent_transfer === true
             || isTigerFundsInTransitTransfer(txn)
         ) {
             const transferAmount = Number(
@@ -1810,8 +1859,12 @@ export function createInvestmentDataUtils({
         }
 
         orderedTransactions.forEach((txn) => {
-            if (!shouldTrackHoldingTicker(txn)) return;
-            const ticker = getInvestmentCanonicalTicker(txn.ticker);
+            const syntheticCashEquivalentTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
+            const ticker = syntheticCashEquivalentTicker || (
+                shouldTrackHoldingTicker(txn)
+                    ? getInvestmentCanonicalTicker(txn.ticker)
+                    : ''
+            );
             if (!ticker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
@@ -1822,7 +1875,28 @@ export function createInvestmentDataUtils({
             }
             const summary = tickerMap.get(ticker);
             const ledgerDate = normalizeLedgerDate(txn?.date);
-            applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate);
+            if (syntheticCashEquivalentTicker) {
+                const valueAfter = Number(
+                    txn?.normalized?.cash_equivalent_value_after
+                    ?? txn?.source?.cash_equivalent_cost_basis_after_raw
+                    ?? 0
+                );
+                const interestAmount = Number(
+                    txn?.normalized?.cash_equivalent_interest_amount
+                    ?? txn?.source?.cash_equivalent_interest_raw
+                    ?? 0
+                );
+                summary.shares = Number.isFinite(valueAfter) ? Math.max(0, valueAfter) : 0;
+                summary.totalCost = summary.shares;
+                if (Number.isFinite(interestAmount)) {
+                    summary.realizedPnl += interestAmount;
+                }
+                if (isFlatPosition(summary.shares)) {
+                    summary.lastCloseDate = ledgerDate;
+                }
+            } else {
+                applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate);
+            }
 
             const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
             if (broker) {
@@ -1871,7 +1945,9 @@ export function createInvestmentDataUtils({
             const snapshotLastPrice = snapshotEntry && Number.isFinite(snapshotEntry.lastPrice)
                 ? snapshotEntry.lastPrice
                 : null;
-            const computedLastPrice = latestPrices[summary.ticker] ?? null;
+            const computedLastPrice = isSyntheticCashEquivalentTicker(summary.ticker)
+                ? 1
+                : (latestPrices[summary.ticker] ?? null);
             const lastPrice = snapshotLastPrice !== null
                 ? snapshotLastPrice
                 : (computedLastPrice !== null
@@ -2040,6 +2116,8 @@ export function createInvestmentDataUtils({
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
         isSyntheticCashEquivalentTicker,
+        isLongbridgeHkCashEquivalentTransfer,
+        getLongbridgeHkCashEquivalentSyntheticTicker,
         isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
         getTransactionAmount,
@@ -2064,7 +2142,8 @@ export function createInvestmentDataUtils({
         isKolRewardTransaction,
         addCashLedgerDelta,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
+        LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.3';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.5';
