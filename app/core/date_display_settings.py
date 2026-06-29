@@ -1,15 +1,15 @@
 """
 Date display preference persistence and formatting helpers.
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from typing import Literal
 
 from app.core.config import SETTINGS_STORE_DIR
+from app.core.settings_store import LEGACY_SECTION_PATHS, load_settings_section, save_settings_section
 
 FullDateDisplayFormat = Literal[
     "d_mmm_yyyy",
@@ -22,7 +22,7 @@ ShortDateDisplayFormat = Literal[
     "dd_mm_yyyy",
 ]
 
-DATE_DISPLAY_SETTINGS_PATH = SETTINGS_STORE_DIR / "date_display.json"
+DATE_DISPLAY_SETTINGS_PATH = LEGACY_SECTION_PATHS["date_display"]
 DEFAULT_FULL_DATE_DISPLAY_FORMAT: FullDateDisplayFormat = "d_mmm_yyyy"
 DEFAULT_SHORT_DATE_DISPLAY_FORMAT: ShortDateDisplayFormat = "yyyy_mm_dd"
 MONTH_ABBREVIATIONS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -54,8 +54,8 @@ def _normalize_short_date_format(value: str | None) -> ShortDateDisplayFormat:
 
 def load_date_display_settings() -> DateDisplaySettings:
     try:
-        payload = json.loads(DATE_DISPLAY_SETTINGS_PATH.read_text()) if DATE_DISPLAY_SETTINGS_PATH.exists() else {}
-    except (json.JSONDecodeError, OSError):
+        payload = load_settings_section("date_display")
+    except OSError:
         return DateDisplaySettings()
     return DateDisplaySettings(
         full_date_format=_normalize_full_date_format(payload.get("full_date_format")),
@@ -74,15 +74,12 @@ def save_date_display_settings(
         short_date_format=_normalize_short_date_format(short_date_format or current.short_date_format),
     )
     SETTINGS_STORE_DIR.mkdir(parents=True, exist_ok=True)
-    DATE_DISPLAY_SETTINGS_PATH.write_text(
-        json.dumps(
-            {
-                "full_date_format": next_settings.full_date_format,
-                "short_date_format": next_settings.short_date_format,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+    save_settings_section(
+        "date_display",
+        {
+            "full_date_format": next_settings.full_date_format,
+            "short_date_format": next_settings.short_date_format,
+        },
     )
     return next_settings
 

@@ -138,9 +138,7 @@ The current `Settings` navigation includes:
 
 `settings_store/` is created locally at runtime and is ignored by Git. It is used for device-local data such as:
 
-- `settings_store/brokers.json`
-- `settings_store/smtp.json`
-- `settings_store/date_display.json`
+- `settings_store/settings.json`
 - `settings_store/investment.json`
 - `settings_store/investment_cache/`
 - `settings_store/search/`

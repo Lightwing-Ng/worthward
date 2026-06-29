@@ -1,7 +1,7 @@
 """
 SMTP settings persistence and Outlook OAuth checks.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -19,9 +19,15 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.core.config import BASE_DIR
+from app.core.settings_store import (
+    LEGACY_SECTION_PATHS,
+    ensure_settings_store_dir,
+    load_settings_section,
+    save_settings_section,
+)
 
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
-SMTP_SETTINGS_PATH = SETTINGS_STORE_DIR / "smtp.json"
+SMTP_SETTINGS_PATH = LEGACY_SECTION_PATHS["smtp"]
 OUTLOOK_SMTP_HOST = "smtp-mail.outlook.com"
 OUTLOOK_SMTP_PORT = 587
 OUTLOOK_SMTP_SCOPE = "offline_access https://outlook.office.com/SMTP.Send"
@@ -58,15 +64,11 @@ class SmtpSettings:
     oauth_device_interval_seconds: float = 5.0
 
 
-def ensure_settings_store_dir() -> None:
-    SETTINGS_STORE_DIR.mkdir(parents=True, exist_ok=True)
-
-
 def load_smtp_settings() -> SmtpSettings:
     ensure_settings_store_dir()
-    if not SMTP_SETTINGS_PATH.exists():
+    payload = load_settings_section("smtp")
+    if not payload:
         return SmtpSettings()
-    payload = json.loads(SMTP_SETTINGS_PATH.read_text())
     return SmtpSettings(
         host=str(payload.get("host", OUTLOOK_SMTP_HOST)).strip() or OUTLOOK_SMTP_HOST,
         port=int(payload.get("port", OUTLOOK_SMTP_PORT)),
@@ -109,7 +111,7 @@ def save_smtp_settings(settings: SmtpSettings) -> None:
         "oauth_device_expires_at": settings.oauth_device_expires_at,
         "oauth_device_interval_seconds": settings.oauth_device_interval_seconds,
     }
-    SMTP_SETTINGS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    save_settings_section("smtp", payload)
 
 
 def smtp_mailbox(settings: SmtpSettings) -> str:

@@ -1,19 +1,24 @@
 """
 Broker credential persistence for local integrations.
 
-Code version: v0.7.1
+Code version: v0.8.0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import os
 
 from app.core.config import BASE_DIR
+from app.core.settings_store import (
+    LEGACY_SECTION_PATHS,
+    ensure_settings_store_dir,
+    load_settings_section,
+    save_settings_section,
+)
 
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
-BROKER_SETTINGS_PATH = SETTINGS_STORE_DIR / "brokers.json"
+BROKER_SETTINGS_PATH = LEGACY_SECTION_PATHS["brokers"]
 DEFAULT_LONGBRIDGE_CLI_HOME = str(BASE_DIR / ".lb-home")
 
 SUPPORTED_BROKERS = ("longbridge", "ibkr")
@@ -88,10 +93,6 @@ class BrokerSettings:
         self.ibkr_flex_lookback_days = max(1, min(365, lb))
 
 
-def ensure_settings_store_dir() -> None:
-    SETTINGS_STORE_DIR.mkdir(parents=True, exist_ok=True)
-
-
 def _normalize_selected_broker(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in SUPPORTED_BROKERS:
@@ -123,9 +124,9 @@ def normalize_longbridge_access_token(value: str | None) -> str:
 
 def load_broker_settings() -> BrokerSettings:
     ensure_settings_store_dir()
-    if not BROKER_SETTINGS_PATH.exists():
+    payload = load_settings_section("brokers")
+    if not payload:
         return BrokerSettings()
-    payload = json.loads(BROKER_SETTINGS_PATH.read_text())
     # Backward compat: ignore legacy Gateway keys (ibkr_base_url, ibkr_port, ibkr_verify_ssl).
     # New Flex fields use environment variables for secrets.
     return BrokerSettings(
@@ -175,7 +176,7 @@ def save_broker_settings(settings: BrokerSettings) -> None:
         "ibkr_flex_send_request_url": settings.ibkr_flex_send_request_url,
         "ibkr_flex_lookback_days": settings.ibkr_flex_lookback_days,
     }
-    BROKER_SETTINGS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    save_settings_section("brokers", payload)
 
 
 def has_longbridge_credentials(settings: BrokerSettings) -> bool:
