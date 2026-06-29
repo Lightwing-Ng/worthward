@@ -1,4 +1,4 @@
-{# Code version: v1.3.1 #}
+{# Code version: v1.4.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
@@ -464,6 +464,20 @@
                                 </div>
                             </div>
                             <div class="investment-import-field-group" id="investment_import_hsbc_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field investment-import-mode-field">
+                                    <label class="settings-form-label" id="investment_import_hsbc_mode_label">Import method</label>
+                                    {{ render_segmented_control(
+                                        "segmented-control--compact investment-import-method-segmented",
+                                        "hsbc_import_mode",
+                                        "paste",
+                                        [
+                                            {"id": "hsbc_import_mode_paste", "value": "paste", "label": "Copy/paste"},
+                                            {"id": "hsbc_import_mode_statement_pdf", "value": "statement_pdf", "label": "Statements"},
+                                        ],
+                                        'id="investment_import_hsbc_mode" data-active="paste" data-option-count="2" data-segmented-pill="measured" aria-labelledby="investment_import_hsbc_mode_label"'
+                                    ) }}
+                                </div>
+                                <div data-hsbc-import-mode-panel="paste">
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_cash_account_display">
                                         <span class="investment-import-label-trigger">
@@ -550,6 +564,26 @@
                                               name="hsbc_order_status_text"
                                               hidden
                                               spellcheck="false"></textarea>
+                                </div>
+                                </div>
+                                <div data-hsbc-import-mode-panel="statement_pdf" hidden>
+                                    <div class="investment-import-field investment-import-bridge-field investment-import-plain-field">
+                                        <label class="trade-strategy-param-label" for="hsbc_statement_pdfs">
+                                            <span class="investment-import-label-trigger">
+                                                <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                                <span class="investment-import-label-text">HSBC statement PDFs</span>
+                                                <span class="investment-import-status-icon" id="hsbc_statement_pdfs_status" aria-hidden="true"></span>
+                                            </span>
+                                        </label>
+                                        <div class="investment-import-plain-control-row">
+                                            <input id="hsbc_statement_pdfs"
+                                                   name="hsbc_statement_pdfs"
+                                                   type="file"
+                                                   accept=".pdf,application/pdf"
+                                                   multiple
+                                                   class="settings-form-control investment-import-file-input">
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

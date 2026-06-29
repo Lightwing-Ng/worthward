@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.0
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -92,6 +92,7 @@ from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
     build_investment_payload_from_futuhk_statement_pdfs,
     build_investment_payload_from_hsbc_pasted_text,
+    build_investment_payload_from_hsbc_statement_pdfs,
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_flex,
     build_investment_payload_from_ibkr_flex_xml,
@@ -879,19 +880,21 @@ def build_web_runtime() -> WebRuntime:
             return fallback
 
     def parse_requested_tickers() -> list[str]:
+        def compact_tickers(raw_values: list[str]) -> list[str]:
+            compacted: list[str] = []
+            for raw_value in raw_values:
+                normalized = normalize_ticker_input(str(raw_value or ""))
+                if normalized:
+                    compacted.append(normalized)
+            return compacted[:MAX_TICKERS]
+
         repeated = request.args.getlist("ticker")
         if repeated:
-            compacted = [normalize_ticker_input(value) for value in repeated if normalize_ticker_input(value)]
-            return compacted[:MAX_TICKERS]
+            return compact_tickers(repeated)
 
         csv_tickers = request.args.get("tickers", "").strip()
         if csv_tickers:
-            compacted = [
-                normalize_ticker_input(value)
-                for value in csv_tickers.split(",")
-                if normalize_ticker_input(value)
-            ]
-            return compacted[:MAX_TICKERS]
+            return compact_tickers(csv_tickers.split(","))
 
         numbered = [request.args.get(f"ticker_{index}", "") for index in range(1, MAX_TICKERS + 1)]
         has_numbered = any(value.strip() for value in numbered) or any(
@@ -903,8 +906,7 @@ def build_web_runtime() -> WebRuntime:
             raw_tickers = [request.args.get("ticker_a", ""), request.args.get("ticker_b", "")]
         else:
             return []
-        compacted = [normalize_ticker_input(value) for value in raw_tickers if normalize_ticker_input(value)]
-        return compacted[:MAX_TICKERS]
+        return compact_tickers(raw_tickers)
 
     def parse_requested_weights(slot_count: int) -> list[int]:
         repeated = request.args.getlist("weight")
@@ -4717,22 +4719,51 @@ def build_web_runtime() -> WebRuntime:
                     "incrementally into the local investment store without clearing older data first."
                 )
             elif broker == "hsbc":
-                imported_payload = build_investment_payload_from_hsbc_pasted_text(
-                    portfolio_text=str(
-                        request.form.get("hsbc_portfolio_text", "")
-                    ).strip(),
-                    order_status_text=str(
-                        request.form.get("hsbc_order_status_text", "")
-                    ).strip(),
-                    cash_account_text=str(
-                        request.form.get("hsbc_cash_account_text", "")
-                    ).strip(),
-                )
-                success_message = (
-                    "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
-                    "merged incrementally into the local investment store without "
-                    "clearing older data first."
-                )
+                hsbc_import_mode = str(request.form.get("hsbc_import_mode", "paste")).strip().lower()
+                if hsbc_import_mode == "statement_pdf":
+                    statement_pdf_payloads: list[tuple[bytes, str]] = []
+                    for statement_pdf_file in request.files.getlist("hsbc_statement_pdfs"):
+                        if statement_pdf_file is None:
+                            continue
+                        pdf_bytes = statement_pdf_file.read()
+                        if not pdf_bytes:
+                            continue
+                        statement_pdf_payloads.append((
+                            pdf_bytes,
+                            str(getattr(statement_pdf_file, "filename", "") or "").strip(),
+                        ))
+                    imported_payload = build_investment_payload_from_hsbc_statement_pdfs(
+                        statement_pdf_payloads,
+                    )
+                    if not imported_payload.get("transactions"):
+                        dry_run = True
+                        success_message = (
+                            "HSBC statement import complete. The uploaded PDFs were parsed in memory, but no USD "
+                            "Foreign Currency Savings rows were found, so the local investment store was left unchanged."
+                        )
+                    else:
+                        success_message = (
+                            "HSBC statement import complete. USD Foreign Currency Savings rows were parsed in memory "
+                            "from the uploaded PDFs and merged incrementally into the local investment store without "
+                            "clearing older data first."
+                        )
+                else:
+                    imported_payload = build_investment_payload_from_hsbc_pasted_text(
+                        portfolio_text=str(
+                            request.form.get("hsbc_portfolio_text", "")
+                        ).strip(),
+                        order_status_text=str(
+                            request.form.get("hsbc_order_status_text", "")
+                        ).strip(),
+                        cash_account_text=str(
+                            request.form.get("hsbc_cash_account_text", "")
+                        ).strip(),
+                    )
+                    success_message = (
+                        "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
+                        "merged incrementally into the local investment store without "
+                        "clearing older data first."
+                    )
             elif broker == "schwab":
                 schwab_file = request.files.get("transactions_csv")
                 if schwab_file is None:
@@ -5069,26 +5100,41 @@ def build_web_runtime() -> WebRuntime:
 
     def investment_get_realtime_quotes():
         """Get latest yfinance pre-market, regular-session, and post-market quotes."""
-        requested_tickers = [
-            validate_ticker_or_raise(ticker)
-            for ticker in request.args.getlist("ticker")
-            if str(ticker or "").strip()
-        ]
-        if not requested_tickers:
+        failures: list[dict[str, str]] = []
+
+        def collect_valid_tickers(raw_values: list[str]) -> list[str]:
+            valid_tickers: list[str] = []
+            for raw_value in raw_values:
+                raw_ticker = str(raw_value or "").strip()
+                if not raw_ticker:
+                    continue
+                try:
+                    valid_tickers.append(validate_ticker_or_raise(raw_ticker))
+                except ValueError as exc:
+                    failures.append({
+                        "ticker": raw_ticker,
+                        "error": str(exc),
+                    })
+            return valid_tickers
+
+        requested_tickers = collect_valid_tickers(request.args.getlist("ticker"))
+        if not requested_tickers and not failures:
             repeated = str(request.args.get("tickers", "")).strip()
-            requested_tickers = [
-                validate_ticker_or_raise(ticker)
-                for ticker in repeated.split(",")
-                if str(ticker or "").strip()
-            ]
+            requested_tickers = collect_valid_tickers(repeated.split(","))
         requested_tickers = list(dict.fromkeys(requested_tickers))
         if not requested_tickers:
-            response = jsonify({"success": False, "error": "No tickers provided"})
+            response = jsonify({
+                "success": False,
+                "error": "No valid tickers provided" if failures else "No tickers provided",
+                "quotes": [],
+                "failures": failures,
+                "count": 0,
+                "source": "yfinance",
+            })
             response.status_code = 400
             return apply_no_store_headers(response)
 
         quotes: list[dict[str, object]] = []
-        failures: list[dict[str, str]] = []
         fetched_at = pd.Timestamp.now(tz="UTC")
         try:
             quotes = load_investment_realtime_quotes(requested_tickers)

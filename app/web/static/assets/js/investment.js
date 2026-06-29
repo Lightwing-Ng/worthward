@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.57.10
+ * Code version: v1.58.1
+ * - Fixed: HSBC import validation now declares the selected statement/copy-paste mode before checking readiness, restoring Investment page initialization.
+ * - Added: HSBC import mode now supports multi-file statement PDF upload for USD Foreign Currency Savings backfills while keeping copy/paste as the default path.
  * - Added: Investment Metrics now include Total offshore gain, combining holdings P&L with converted broker cash benefits without double-counting stock grants already inside holdings P&L.
  * - Fixed: Investment Metrics realized and cumulative P&L now exclude broker reward rows because broker benefits are reported in dedicated cards.
  * - Added: Investment Metrics now split broker benefits into coupon rebates, cash rewards, KOL rewards, and realized/unrealized stock-grant P&L.
@@ -251,7 +253,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.57.12',
+    entry: 'v1.58.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -332,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const longbridgeHkHistoryOrdersStatus = document.getElementById('longbridge_hk_history_orders_xlsx_status');
     const investmentImportFutuhkFields = document.getElementById('investment_import_futuhk_fields');
     const investmentImportHsbcFields = document.getElementById('investment_import_hsbc_fields');
+    const investmentImportHsbcMode = document.getElementById('investment_import_hsbc_mode');
     const investmentImportSchwabFields = document.getElementById('investment_import_schwab_fields');
     const schwabTransactionsCsvInput = document.getElementById('schwab_transactions_csv');
     const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
@@ -358,6 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const hsbcPortfolioTextStatus = document.getElementById('hsbc_portfolio_text_status');
     const hsbcOrderStatusTextStatus = document.getElementById('hsbc_order_status_text_status');
     const hsbcCashAccountTextStatus = document.getElementById('hsbc_cash_account_text_status');
+    const hsbcStatementPdfsInput = document.getElementById('hsbc_statement_pdfs');
+    const hsbcStatementPdfsStatus = document.getElementById('hsbc_statement_pdfs_status');
     const HSBC_EXPECTED_ACCOUNT_NUMBER = '103-555700-329';
     const HSBC_ACCOUNT_NUMBER_PATTERN = /\d{3}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{6}\s*[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]\s*\d{3}/g;
     const HSBC_PASTE_CHUNK_MARKER = '===== HSBC PASTE CHUNK =====';
@@ -607,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
     let investmentIbkrModeMeasureRaf = 0;
+    let investmentHsbcModeMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
     let activeInvestmentStockDetailRowIds = [];
     const INVESTMENT_MANUAL_SCROLL_SUPPRESS_MS = 1400;
@@ -2415,6 +2421,38 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentIbkrModeMeasureRaf = window.requestAnimationFrame(() => {
                 investmentIbkrModeMeasureRaf = 0;
                 updateIbkrImportSegmentedPill();
+            });
+        });
+    }
+
+    function updateHsbcImportSegmentedPill() {
+        if (!(investmentImportHsbcMode instanceof HTMLElement)) return;
+        const activeLabel = investmentImportHsbcMode.querySelector('input[type="radio"]:checked + span');
+        if (!activeLabel) {
+            investmentImportHsbcMode.classList.remove('is-pill-ready');
+            return;
+        }
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(investmentImportHsbcMode, activeLabel);
+        if (!pillGeometry) {
+            investmentImportHsbcMode.classList.remove('is-pill-ready');
+            return;
+        }
+        investmentImportHsbcMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
+        investmentImportHsbcMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        investmentImportHsbcMode.classList.add('is-pill-ready');
+    }
+
+    function scheduleHsbcImportSegmentedPillUpdate() {
+        if (!(investmentImportHsbcMode instanceof HTMLElement)) return;
+        investmentImportHsbcMode.classList.remove('is-pill-ready');
+        if (investmentHsbcModeMeasureRaf) {
+            window.cancelAnimationFrame(investmentHsbcModeMeasureRaf);
+            investmentHsbcModeMeasureRaf = 0;
+        }
+        investmentHsbcModeMeasureRaf = window.requestAnimationFrame(() => {
+            investmentHsbcModeMeasureRaf = window.requestAnimationFrame(() => {
+                investmentHsbcModeMeasureRaf = 0;
+                updateHsbcImportSegmentedPill();
             });
         });
     }
@@ -5499,6 +5537,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'csv';
     }
 
+    function getSelectedHsbcImportMode() {
+        const checkedMode = document.querySelector('input[name="hsbc_import_mode"]:checked');
+        const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'paste';
+        return value === 'statement_pdf' ? 'statement_pdf' : 'paste';
+    }
+
     function syncIbkrImportModePanels() {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
@@ -5511,6 +5555,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('[data-ibkr-import-mode-panel]').forEach((panel) => {
             if (!(panel instanceof HTMLElement)) return;
             panel.hidden = panel.dataset.ibkrImportModePanel !== selectedMode;
+        });
+    }
+
+    function syncHsbcImportModePanels() {
+        const selectedMode = getSelectedHsbcImportMode();
+        if (investmentImportHsbcMode instanceof HTMLElement) {
+            investmentImportHsbcMode.dataset.active = selectedMode;
+            investmentImportHsbcMode.style.setProperty('--segmented-option-count', '2');
+            investmentImportHsbcMode.style.setProperty(
+                '--segmented-active-index',
+                selectedMode === 'statement_pdf' ? '1' : '0',
+            );
+            scheduleHsbcImportSegmentedPillUpdate();
+        }
+        document.querySelectorAll('[data-hsbc-import-mode-panel]').forEach((panel) => {
+            if (!(panel instanceof HTMLElement)) return;
+            panel.hidden = panel.dataset.hsbcImportModePanel !== selectedMode;
         });
     }
 
@@ -5767,15 +5828,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
+        const hsbcImportMode = getSelectedHsbcImportMode();
         const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
+        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
+        const isHsbcStatementPdf = isHsbc && hsbcImportMode === 'statement_pdf';
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
-        const usesSyncAction = isIbkrFlex || isLongbridgeHk || isHsbc;
+        const usesSyncAction = isIbkrFlex || isLongbridgeHk || (isHsbc && hsbcImportMode === 'paste');
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
@@ -5792,6 +5856,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportHsbcFields instanceof HTMLElement) {
             investmentImportHsbcFields.hidden = !isHsbc;
+            syncHsbcImportModePanels();
         }
         if (investmentImportSchwabFields instanceof HTMLElement) {
             investmentImportSchwabFields.hidden = !isSchwab;
@@ -5832,9 +5897,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (usmartHkStatementPdfsInput instanceof HTMLInputElement) {
             usmartHkStatementPdfsInput.required = isUsmartHk;
         }
+        if (hsbcStatementPdfsInput instanceof HTMLInputElement) {
+            hsbcStatementPdfsInput.required = isHsbc && hsbcImportMode === 'statement_pdf';
+        }
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
-                ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
+                ? (hsbcImportMode === 'statement_pdf'
+                    ? 'Imports HSBC statement PDFs and only records USD Foreign Currency Savings rows into <code>settings_store/investment.json</code> without clearing existing records.'
+                    : 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
                     : (isLongbridgeSg
@@ -7598,10 +7668,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
+        const hsbcImportMode = getSelectedHsbcImportMode();
+        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
+        const isHsbcStatementPdf = isHsbc && hsbcImportMode === 'statement_pdf';
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
+        const hsbcStatementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
         const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
         const usmartHkStatementFiles = getSelectedStatementPdfFiles(usmartHkStatementPdfsInput);
         const longbridgeSgFundDetailsFile = longbridgeSgFundDetailsInput?.files?.[0];
@@ -7618,9 +7692,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const longbridgeHkFilesReady = isLongbridgeHk && isLikelyLongbridgeSgFundDetailsFile(longbridgeHkFundDetailsFile) && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeHkHistoryOrdersFile);
         const longbridgeSgFundDetailsReady = isLongbridgeSg && isLikelyLongbridgeSgFundDetailsFile(longbridgeSgFundDetailsFile);
         const longbridgeSgHistoryOrdersReady = isLongbridgeSg && isLikelyLongbridgeSgHistoryOrdersFile(longbridgeSgHistoryOrdersFile);
-        const hsbcPortfolioReady = isHsbc && isLikelyHsbcPortfolioText(hsbcPortfolioText);
-        const hsbcOrderStatusReady = isHsbc && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
-        const hsbcCashAccountReady = isHsbc && isLikelyHsbcCashAccountText(hsbcCashAccountText);
+        const hsbcPortfolioReady = isHsbcPaste && isLikelyHsbcPortfolioText(hsbcPortfolioText);
+        const hsbcOrderStatusReady = isHsbcPaste && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
+        const hsbcCashAccountReady = isHsbcPaste && isLikelyHsbcCashAccountText(hsbcCashAccountText);
+        const hsbcStatementsReady = isHsbcStatementPdf
+            && hsbcStatementFiles.length > 0
+            && hsbcStatementFiles.every((file) => isLikelyPdfFile(file));
         const futuhkStatementsReady = isFutuhk
             && futuhkStatementFiles.length > 0
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
@@ -7640,7 +7717,8 @@ document.addEventListener('DOMContentLoaded', () => {
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
-            || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
+            || (isHsbcPaste && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
+            || (isHsbcStatementPdf && Boolean(hsbcStatementsReady))
             || (isSchwab && Boolean(schwabReady))
             || (isTigertrade && Boolean(tigertradeStatementsReady))
             || (isUsmartHk && Boolean(usmartHkStatementsReady))
@@ -7659,6 +7737,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(hsbcPortfolioTextStatus, Boolean(hsbcPortfolioReady));
         setImportStatusIcon(hsbcOrderStatusTextStatus, Boolean(hsbcOrderStatusReady));
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
+        setImportStatusIcon(hsbcStatementPdfsStatus, Boolean(hsbcStatementsReady));
         setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
         setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabReady));
         setImportStatusIcon(tigertradeStatementPdfsStatus, Boolean(tigertradeStatementsReady));
@@ -7851,7 +7930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7864,6 +7943,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     document.querySelectorAll('input[name="ibkr_import_mode"]').forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        input.addEventListener('change', () => {
+            clearImportFeedback();
+            syncInvestmentImportMode();
+            syncImportValidationState();
+            syncInvestmentImportContainerHeight();
+        });
+    });
+    document.querySelectorAll('input[name="hsbc_import_mode"]').forEach((input) => {
         if (!(input instanceof HTMLInputElement)) return;
         input.addEventListener('change', () => {
             clearImportFeedback();
@@ -8020,36 +8108,53 @@ document.addEventListener('DOMContentLoaded', () => {
                     formData.append('futuhk_statement_pdfs', file);
                 });
             } else if (selectedBroker === 'hsbc') {
-                const portfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
-                const orderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
-                const cashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
-                if (!cashAccountText) {
-                    setImportFeedback('Please paste the HSBC USD Savings page text before syncing.', 'error');
-                    return;
+                const hsbcImportMode = getSelectedHsbcImportMode();
+                formData.append('hsbc_import_mode', hsbcImportMode);
+                if (hsbcImportMode === 'statement_pdf') {
+                    const statementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
+                    if (!statementFiles.length) {
+                        setImportFeedback('Please choose at least one HSBC statement PDF before importing.', 'error');
+                        return;
+                    }
+                    if (!statementFiles.every((file) => isLikelyPdfFile(file))) {
+                        setImportFeedback('Please upload valid HSBC statement PDF files.', 'error');
+                        return;
+                    }
+                    statementFiles.forEach((file) => {
+                        formData.append('hsbc_statement_pdfs', file);
+                    });
+                } else {
+                    const portfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
+                    const orderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
+                    const cashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
+                    if (!cashAccountText) {
+                        setImportFeedback('Please paste the HSBC USD Savings page text before syncing.', 'error');
+                        return;
+                    }
+                    if (!portfolioText) {
+                        setImportFeedback('Please paste the HSBC Portfolio page text before syncing.', 'error');
+                        return;
+                    }
+                    if (!orderStatusText) {
+                        setImportFeedback('Please paste the HSBC Order Status page text before syncing.', 'error');
+                        return;
+                    }
+                    if (!isLikelyHsbcCashAccountText(cashAccountText)) {
+                        setImportFeedback('The HSBC USD Savings page text is missing required details or belongs to the wrong account.', 'error');
+                        return;
+                    }
+                    if (!isLikelyHsbcPortfolioText(portfolioText)) {
+                        setImportFeedback('The HSBC Portfolio page text is missing required details or belongs to the wrong account.', 'error');
+                        return;
+                    }
+                    if (!isLikelyHsbcOrderStatusText(orderStatusText)) {
+                        setImportFeedback('The HSBC Order Status page text is missing required details or belongs to the wrong account.', 'error');
+                        return;
+                    }
+                    formData.append('hsbc_portfolio_text', portfolioText);
+                    formData.append('hsbc_order_status_text', orderStatusText);
+                    formData.append('hsbc_cash_account_text', cashAccountText);
                 }
-                if (!portfolioText) {
-                    setImportFeedback('Please paste the HSBC Portfolio page text before syncing.', 'error');
-                    return;
-                }
-                if (!orderStatusText) {
-                    setImportFeedback('Please paste the HSBC Order Status page text before syncing.', 'error');
-                    return;
-                }
-                if (!isLikelyHsbcCashAccountText(cashAccountText)) {
-                    setImportFeedback('The HSBC USD Savings page text is missing required details or belongs to the wrong account.', 'error');
-                    return;
-                }
-                if (!isLikelyHsbcPortfolioText(portfolioText)) {
-                    setImportFeedback('The HSBC Portfolio page text is missing required details or belongs to the wrong account.', 'error');
-                    return;
-                }
-                if (!isLikelyHsbcOrderStatusText(orderStatusText)) {
-                    setImportFeedback('The HSBC Order Status page text is missing required details or belongs to the wrong account.', 'error');
-                    return;
-                }
-                formData.append('hsbc_portfolio_text', portfolioText);
-                formData.append('hsbc_order_status_text', orderStatusText);
-                formData.append('hsbc_cash_account_text', cashAccountText);
             } else if (selectedBroker === 'schwab') {
                 const schwabFile = schwabTransactionsCsvInput?.files?.[0] || transactionsCsv?.files?.[0];
                 if (!schwabFile) {

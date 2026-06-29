@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.6
+Code version: v0.3.7
 """
 
 from __future__ import annotations
@@ -137,7 +137,9 @@ def _migrate_legacy_search_store() -> None:
 
 
 def normalize_ticker(ticker: str) -> str:
-    normalized = _canonicalize_ticker_token(ticker).replace("/", "_")
+    normalized = _canonicalize_ticker_token(ticker)
+    normalized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip(" ._")
     # The project defaults to bare symbols for US stocks (e.g. "BAC", "AAPL").
     # Do not pollute canonical storage or listings with ".US" suffix from Longbridge
     # or other sources. ".US" is only used internally when talking to Longbridge APIs.
