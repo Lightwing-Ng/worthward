@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.57.8
+ * Code version: v1.57.10
+ * - Added: Investment Metrics now include Total offshore gain, combining holdings P&L with converted broker cash benefits without double-counting stock grants already inside holdings P&L.
+ * - Fixed: Investment Metrics realized and cumulative P&L now exclude broker reward rows because broker benefits are reported in dedicated cards.
+ * - Added: Investment Metrics now split broker benefits into coupon rebates, cash rewards, KOL rewards, and realized/unrealized stock-grant P&L.
+ * - Fixed: Investment entry module version metadata now matches the loaded frontend file version.
  * - Fixed: Money-market Holdings icons now use an aligned green CSS-mask token instead of loading the black SVG fill through an img tag.
  * - Added: Cash-equivalent MMFs render as Holdings income rows with green dollar-token icons, while Franklin keeps its local fund logo.
  * - Fixed: Longbridge HK MMF transfers now replay as real cash plus synthetic cash-equivalent valuation anchors, removing saw-tooth overnight equity.
@@ -247,7 +251,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.57.0',
+    entry: 'v1.57.10',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -488,6 +492,82 @@ document.addEventListener('DOMContentLoaded', () => {
             valueClass: (metrics) => getNegativeMetricClass(metrics?.interestCharged),
         },
     ];
+    const BROKER_BENEFIT_METRIC_DEFINITIONS = [
+        {
+            key: 'coupon-rebates-hkd',
+            label: 'Coupon rebates HKD',
+            summary: 'Broker coupon and fee-rebate benefits whose economic notional is denominated in HKD.',
+            valueKey: 'couponRebateHkd',
+            rowsKey: 'couponRebateHkdRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateHkd, 'HKD'),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.couponRebateHkd),
+        },
+        {
+            key: 'coupon-rebates-usd',
+            label: 'Coupon rebates USD',
+            summary: 'Broker coupon and fee-rebate benefits denominated in USD.',
+            valueKey: 'couponRebateUsd',
+            rowsKey: 'couponRebateUsdRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateUsd, 'USD', { showUsdSymbol: false }),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.couponRebateUsd),
+        },
+        {
+            key: 'cash-rewards-hkd',
+            label: 'Cash rewards HKD',
+            summary: 'Cash cards, stock-cash coupons, task rewards, and signup or funding rewards denominated in HKD.',
+            valueKey: 'cashRewardHkd',
+            rowsKey: 'cashRewardHkdRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardHkd, 'HKD'),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.cashRewardHkd),
+        },
+        {
+            key: 'cash-rewards-usd',
+            label: 'Cash rewards USD',
+            summary: 'Cash cards, stock-cash coupons, task rewards, and signup or funding rewards denominated in USD.',
+            valueKey: 'cashRewardUsd',
+            rowsKey: 'cashRewardUsdRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardUsd, 'USD', { showUsdSymbol: false }),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.cashRewardUsd),
+        },
+        {
+            key: 'kol-rewards',
+            label: 'KOL rewards',
+            summary: 'KOL reward income converted to the workspace base currency at the ledger-date FX rate.',
+            valueKey: 'kolRewardIncome',
+            rowsKey: 'kolRewardRows',
+            formatValue: (metrics) => formatAmountWithCurrency(metrics?.kolRewardIncome, getInvestmentBaseCurrency(), { showUsdSymbol: false }),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.kolRewardIncome),
+        },
+        {
+            key: 'stock-grant-realized-pnl',
+            label: 'Stock grant realized P&L',
+            summary: 'Sale proceeds attributed to zero-cost broker stock grants using the same ledger ordering as holdings replay.',
+            valueKey: 'stockGrantRealizedPnl',
+            rowsKey: 'stockGrantRealizedRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.stockGrantRealizedPnl),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.stockGrantRealizedPnl),
+        },
+        {
+            key: 'stock-grant-unrealized-pnl',
+            label: 'Stock grant unrealized P&L',
+            summary: 'Current mark-to-market value attributed to still-open zero-cost broker stock grants.',
+            valueKey: 'stockGrantUnrealizedPnl',
+            rowsKey: 'stockGrantUnrealizedRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.stockGrantUnrealizedPnl),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.stockGrantUnrealizedPnl),
+        },
+    ];
+    const OFFSHORE_GAIN_METRIC_DEFINITIONS = [
+        {
+            key: 'total-offshore-gain',
+            label: 'Total offshore gain',
+            summary: 'Mainland-resident offshore gain view: holdings cumulative P&L plus converted broker coupon, cash, and KOL benefits. Stock-grant P&L is included once through holdings P&L, not added again.',
+            valueKey: 'totalOffshoreGain',
+            rowsKey: 'totalOffshoreGainRows',
+            formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalOffshoreGain),
+            valueClass: (metrics) => getSignedMetricClass(metrics?.totalOffshoreGain),
+        },
+    ];
     const HOLDINGS_SUMMARY_METRIC_DEFINITIONS = [
         {
             key: 'cumulative-pnl',
@@ -503,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Realized profit and loss from holdings activity plus KOL reward income.',
+            summary: 'Realized profit and loss from holdings activity, excluding broker coupons, cash rewards, and KOL rewards that are shown separately.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
@@ -738,6 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentStartingCash,
         getInvestmentStockDetailsRangeLabels,
         getLatestDashboardEquity,
+        getTodayLedgerDate,
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
         isSyntheticCashEquivalentTicker,
@@ -760,7 +841,6 @@ document.addEventListener('DOMContentLoaded', () => {
         normalizePriceHistoryPayload,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
-        sumKolRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
         LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX,
@@ -7437,10 +7517,33 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    function renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics) {
+    function getTotalOffshoreGainMetrics(holdingsSummaryMetrics, brokerBenefitMetrics) {
+        const cumulativePnl = Number(holdingsSummaryMetrics?.cumulativePnl) || 0;
+        const cashBenefitIncome = Number(brokerBenefitMetrics?.couponRebateIncome) || 0;
+        const cashRewardIncome = Number(brokerBenefitMetrics?.cashRewardIncome) || 0;
+        const kolRewardIncome = Number(brokerBenefitMetrics?.kolRewardIncome) || 0;
+        return {
+            totalOffshoreGain: cumulativePnl + cashBenefitIncome + cashRewardIncome + kolRewardIncome,
+            totalOffshoreGainRows: Array.from(new Set([
+                ...(Array.isArray(holdingsSummaryMetrics?.cumulativePnlRows) ? holdingsSummaryMetrics.cumulativePnlRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.couponRebateHkdRows) ? brokerBenefitMetrics.couponRebateHkdRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.couponRebateUsdRows) ? brokerBenefitMetrics.couponRebateUsdRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.cashRewardHkdRows) ? brokerBenefitMetrics.cashRewardHkdRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.cashRewardUsdRows) ? brokerBenefitMetrics.cashRewardUsdRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.kolRewardRows) ? brokerBenefitMetrics.kolRewardRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.stockGrantRealizedRows) ? brokerBenefitMetrics.stockGrantRealizedRows : []),
+                ...(Array.isArray(brokerBenefitMetrics?.stockGrantUnrealizedRows) ? brokerBenefitMetrics.stockGrantUnrealizedRows : []),
+            ])),
+        };
+    }
+
+    function renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics) {
+        const offshoreGainMetrics = getTotalOffshoreGainMetrics(holdingsSummaryMetrics, brokerBenefitMetrics);
         return [
+            renderMetricCards(OFFSHORE_GAIN_METRIC_DEFINITIONS, offshoreGainMetrics),
             renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics),
             renderMetricCards(FUNDING_METRIC_DEFINITIONS, fundingMetrics),
+            renderMetricCards(BROKER_BENEFIT_METRIC_DEFINITIONS, brokerBenefitMetrics),
         ].join('');
     }
 
@@ -7461,7 +7564,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metricsPanel) {
             metricsPanel.innerHTML = renderFundingMetricCards(
                 getUsdFundingMetrics([]),
-                getHoldingsSummaryMetrics([], {}, 0)
+                getHoldingsSummaryMetrics([], {}, 0),
+                getBrokerBenefitMetrics([], {}, 0)
             );
             bindInvestmentMetricTooltipInteractions(metricsPanel);
         }
@@ -10465,6 +10569,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tickerSummaries = buildTickerSummaries(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY, tickerClosePrices);
         const fundingMetrics = getUsdFundingMetrics(processed);
         const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
+        const brokerBenefitMetrics = getBrokerBenefitMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
         investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
         refreshInvestmentAvailableBrokerCodes();
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
@@ -10490,7 +10595,7 @@ document.addEventListener('DOMContentLoaded', () => {
             holdings_market_values: {},
         }, tickerProfiles);
 
-        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics);
+        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
@@ -11457,15 +11562,8 @@ document.addEventListener('DOMContentLoaded', () => {
             TOTAL_EQUITY,
             normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
         );
-        const baseCurrency = getInvestmentBaseCurrency();
-        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
-        const kolRewardRealizedIncome = sumKolRewardRealizedIncomeInBaseCurrency(
-            safeTransactions,
-            fxTimeline,
-            baseCurrency,
-        );
         const holdingsRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
-        const totalRealizedPnl = holdingsRealizedPnl + kolRewardRealizedIncome;
+        const totalRealizedPnl = holdingsRealizedPnl;
         const totalUnrealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const openTickers = new Set(
@@ -11485,10 +11583,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const unrealizedPnlRows = [];
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
-            if (isKolRewardTransaction(txn)) {
-                realizedPnlRows.push(ledgerNo);
-                return;
-            }
             if (!shouldTrackHoldingTicker(txn)) return;
             realizedPnlRows.push(ledgerNo);
             const normalizedTicker = getInvestmentCanonicalTicker(txn?.ticker);
@@ -11507,6 +11601,298 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...realizedPnlRows,
                 ...unrealizedPnlRows,
             ])),
+        };
+    }
+
+    function getSortedInvestmentMetricTransactions(transactions) {
+        return (Array.isArray(transactions) ? transactions : [])
+            .map((txn, index) => ({ txn, index }))
+            .sort((left, right) => compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
+            .map(({ txn }, sortedIndex) => ({
+                txn,
+                ledgerNo: sortedIndex + 1,
+            }));
+    }
+
+    function getLatestInvestmentMetricPrice(ticker, latestPrices) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const candidates = [
+            ticker,
+            normalizedTicker,
+            getInvestmentCanonicalTicker(normalizedTicker),
+            normalizedTicker.endsWith('.US') ? normalizedTicker.slice(0, -3) : '',
+        ].filter(Boolean);
+        const priceStore = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
+        for (const candidate of candidates) {
+            const rawValue = priceStore[candidate];
+            const numericValue = Number(
+                rawValue && typeof rawValue === 'object'
+                    ? rawValue.price ?? rawValue.last ?? rawValue.close ?? rawValue.value
+                    : rawValue
+            );
+            if (Number.isFinite(numericValue) && numericValue > 0) {
+                return numericValue;
+            }
+        }
+        return null;
+    }
+
+    function classifyBrokerBenefitTransaction(txn) {
+        if (!isKolRewardTransaction(txn)) return '';
+        const broker = String(txn?.broker || '').trim().toLowerCase();
+        const description = String(txn?.description || '').trim();
+        const rawItem = String(txn?.source?.statement_item_raw || '').trim();
+        const normalizedText = `${description} ${rawItem}`.toLowerCase();
+        const amount = Math.abs(getTransactionAmount(txn));
+
+        if (/\bkol\b/i.test(description)) return 'kol_reward';
+        if (broker === 'longbridge_sg') return 'kol_reward';
+        if (broker === 'tigertrade' && description === 'Order Rebate' && amount >= 12) {
+            return 'coupon_hkd_notional';
+        }
+        if (broker === 'tigertrade') {
+            return 'coupon_usd';
+        }
+        if (
+            normalizedText.includes('cash card')
+            || normalizedText.includes('cash coupon')
+            || normalizedText.includes('cash reward')
+            || normalizedText.includes('stock cash')
+            || normalizedText.includes('rewards center')
+            || normalizedText.includes('股票卡')
+            || normalizedText.includes('现金卡')
+            || normalizedText.includes('現金卡')
+            || normalizedText.includes('任务中心')
+            || normalizedText.includes('任務中心')
+            || normalizedText.includes('开户礼')
+            || normalizedText.includes('開戶禮')
+            || normalizedText.includes('入金礼')
+            || normalizedText.includes('入金禮')
+        ) {
+            return 'cash_reward';
+        }
+        if (
+            normalizedText.includes('coupon')
+            || normalizedText.includes('rebate')
+            || normalizedText.includes('优惠券')
+            || normalizedText.includes('優惠券')
+            || normalizedText.includes('抵扣卡')
+        ) {
+            return 'coupon';
+        }
+        return 'cash_reward';
+    }
+
+    function getStockGrantBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const priceHistory = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
+        const tickerPriceIndex = buildTickerPriceIndex(priceHistory);
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(safeTransactions, tickerPriceIndex);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
+        const sortedTransactions = getSortedInvestmentMetricTransactions(safeTransactions);
+        const lotStates = new Map();
+        let stockGrantRealizedPnl = 0;
+        let stockGrantUnrealizedPnl = 0;
+        const stockGrantRealizedRowSet = new Set();
+        const stockGrantUnrealizedRowSet = new Set();
+
+        const getStateKey = (txn) => [
+            String(txn?.broker || '').trim().toLowerCase(),
+            String(txn?.account || '').trim(),
+            getInvestmentCanonicalTicker(txn?.ticker),
+        ].join('|');
+
+        sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            if (!shouldTrackHoldingTicker(txn)) return;
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (!['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)) return;
+            const stateKey = getStateKey(txn);
+            if (!stateKey.endsWith(`|${getInvestmentCanonicalTicker(txn?.ticker)}`)) return;
+            const quantity = Math.abs(Number(getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints)));
+            if (!Number.isFinite(quantity) || quantity <= 0) return;
+            const currency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            if (!lotStates.has(stateKey)) {
+                lotStates.set(stateKey, []);
+            }
+            const lots = lotStates.get(stateKey);
+
+            if (['buy', 'grant', 'dividend_reinvestment'].includes(normalizedType)) {
+                lots.push({
+                    remainingQuantity: quantity,
+                    isGrant: normalizedType === 'grant',
+                    rowNo: ledgerNo,
+                    ticker: getInvestmentCanonicalTicker(txn?.ticker),
+                    currency,
+                });
+                return;
+            }
+
+            const grossAmount = Math.abs(getTransactionEconomicAmount(txn));
+            const unitProceeds = quantity > 0 ? grossAmount / quantity : 0;
+            let remainingToClose = quantity;
+            while (remainingToClose > 1e-9 && lots.length) {
+                const lot = lots[0];
+                const consumedQuantity = Math.min(remainingToClose, lot.remainingQuantity);
+                if (lot.isGrant && unitProceeds > 0) {
+                    const realizedLocal = consumedQuantity * unitProceeds;
+                    stockGrantRealizedPnl += convertAmountToBaseCurrency(
+                        realizedLocal,
+                        currency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    stockGrantRealizedRowSet.add(ledgerNo);
+                    stockGrantRealizedRowSet.add(lot.rowNo);
+                }
+                lot.remainingQuantity -= consumedQuantity;
+                remainingToClose -= consumedQuantity;
+                if (lot.remainingQuantity <= 1e-9) {
+                    lots.shift();
+                }
+            }
+        });
+
+        lotStates.forEach((lots) => {
+            lots.forEach((lot) => {
+                if (!lot.isGrant || !(lot.remainingQuantity > 1e-9)) return;
+                const latestPrice = getLatestInvestmentMetricPrice(lot.ticker, latestPrices);
+                if (!(latestPrice > 0)) return;
+                stockGrantUnrealizedPnl += convertAmountToBaseCurrency(
+                    lot.remainingQuantity * latestPrice,
+                    lot.currency,
+                    getTodayLedgerDate(),
+                    fxTimeline,
+                    baseCurrency,
+                );
+                stockGrantUnrealizedRowSet.add(lot.rowNo);
+            });
+        });
+
+        return {
+            stockGrantRealizedPnl,
+            stockGrantUnrealizedPnl,
+            stockGrantRealizedRows: Array.from(stockGrantRealizedRowSet),
+            stockGrantUnrealizedRows: Array.from(stockGrantUnrealizedRowSet),
+        };
+    }
+
+    function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const sortedTransactions = getSortedInvestmentMetricTransactions(safeTransactions);
+        const baseCurrency = getInvestmentBaseCurrency();
+        const fxTimeline = buildInvestmentFxRateTimeline(safeTransactions, baseCurrency);
+        let couponRebateHkd = 0;
+        let couponRebateUsd = 0;
+        let cashRewardHkd = 0;
+        let cashRewardUsd = 0;
+        let kolRewardIncome = 0;
+        let couponRebateIncome = 0;
+        let cashRewardIncome = 0;
+        const couponRebateHkdRowSet = new Set();
+        const couponRebateUsdRowSet = new Set();
+        const cashRewardHkdRowSet = new Set();
+        const cashRewardUsdRowSet = new Set();
+        const kolRewardRowSet = new Set();
+
+        sortedTransactions.forEach(({ txn, ledgerNo }) => {
+            const benefitType = classifyBrokerBenefitTransaction(txn);
+            if (!benefitType) return;
+            const amount = Math.abs(getTransactionAmount(txn));
+            if (!(amount > 1e-9)) return;
+            const currency = formatTransactionCurrency(txn) || baseCurrency;
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+
+            if (benefitType === 'kol_reward') {
+                kolRewardIncome += convertAmountToBaseCurrency(
+                    amount,
+                    currency,
+                    ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+                kolRewardRowSet.add(ledgerNo);
+                return;
+            }
+
+            if (benefitType === 'coupon_hkd_notional') {
+                couponRebateHkd += 100;
+                couponRebateIncome += convertAmountToBaseCurrency(
+                    100,
+                    'HKD',
+                    ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+                couponRebateHkdRowSet.add(ledgerNo);
+                return;
+            }
+
+            if (benefitType === 'coupon_usd' || currency === 'USD') {
+                if (benefitType === 'cash_reward') {
+                    cashRewardUsd += amount;
+                    cashRewardIncome += convertAmountToBaseCurrency(
+                        amount,
+                        currency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    cashRewardUsdRowSet.add(ledgerNo);
+                } else {
+                    couponRebateUsd += amount;
+                    couponRebateIncome += convertAmountToBaseCurrency(
+                        amount,
+                        currency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    );
+                    couponRebateUsdRowSet.add(ledgerNo);
+                }
+                return;
+            }
+
+            if (benefitType === 'cash_reward') {
+                cashRewardHkd += amount;
+                cashRewardIncome += convertAmountToBaseCurrency(
+                    amount,
+                    currency,
+                    ledgerDate,
+                    fxTimeline,
+                    baseCurrency,
+                );
+                cashRewardHkdRowSet.add(ledgerNo);
+                return;
+            }
+
+            couponRebateHkd += amount;
+            couponRebateIncome += convertAmountToBaseCurrency(
+                amount,
+                currency,
+                ledgerDate,
+                fxTimeline,
+                baseCurrency,
+            );
+            couponRebateHkdRowSet.add(ledgerNo);
+        });
+
+        return {
+            couponRebateHkd,
+            couponRebateUsd,
+            cashRewardHkd,
+            cashRewardUsd,
+            kolRewardIncome,
+            couponRebateIncome,
+            cashRewardIncome,
+            couponRebateHkdRows: Array.from(couponRebateHkdRowSet),
+            couponRebateUsdRows: Array.from(couponRebateUsdRowSet),
+            cashRewardHkdRows: Array.from(cashRewardHkdRowSet),
+            cashRewardUsdRows: Array.from(cashRewardUsdRowSet),
+            kolRewardRows: Array.from(kolRewardRowSet),
+            ...getStockGrantBenefitMetrics(safeTransactions, latestPrices, TOTAL_EQUITY),
         };
     }
 
