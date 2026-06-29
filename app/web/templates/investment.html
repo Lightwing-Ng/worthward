@@ -1,4 +1,4 @@
-{# Code version: v1.2.5 #}
+{# Code version: v1.3.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
@@ -404,6 +404,39 @@
                                     </div>
                                 </div>
                             </div>
+
+                            {% for statement_broker in [
+                                {"code": "tigertrade", "label": "Tiger Trade", "help": "activity statement"},
+                                {"code": "usmart_hk", "label": "uSMART (HK)", "help": "monthly statement"}
+                            ] %}
+                            <div class="investment-import-field-group" id="investment_import_{{ statement_broker.code }}_fields" hidden>
+                                <div class="investment-import-field investment-import-bridge-field" data-import-field="{{ statement_broker.code }}-statements">
+                                    <label class="trade-strategy-param-label" for="{{ statement_broker.code }}_statement_pdfs">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">{{ statement_broker.label }} statement PDFs</span>
+                                            <span class="investment-import-status-icon" id="{{ statement_broker.code }}_statement_pdfs_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">How to import {{ statement_broker.label }}</span>
+                                                <span class="investment-import-help-step">➊ Download one or more {{ statement_broker.label }} {{ statement_broker.help }} PDFs from the broker portal or app.</span>
+                                                <span class="investment-import-help-step">➋ Upload the PDFs here. Multiple files can be selected together for a backfill.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="{{ statement_broker.code }}_statement_pdfs"
+                                               name="{{ statement_broker.code }}_statement_pdfs"
+                                               type="file"
+                                               accept=".pdf,application/pdf"
+                                               multiple
+                                               class="settings-form-control investment-import-file-input">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
                             <div class="investment-import-field-group" id="investment_import_schwab_fields" hidden>
                                 <div class="investment-import-field investment-import-bridge-field" data-import-field="transactions">
                                     <label class="trade-strategy-param-label" for="schwab_transactions_csv">
@@ -605,5 +638,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.56.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.57.4') }}"></script>
 {% endblock %}

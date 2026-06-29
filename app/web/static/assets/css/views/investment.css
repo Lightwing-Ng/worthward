@@ -3067,11 +3067,15 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-plain-control-row {
     display: block;
+    width: 100%;
+    min-width: 0;
     padding-left: calc(var(--investment-import-step-track-width) + var(--investment-import-step-gap));
     padding-right: calc(var(--settings-round-icon-button-size) + var(--investment-import-step-gap));
     margin-top: 0;
 }
 
+.investment-import-plain-control-row .date-picker-trigger,
+.investment-import-plain-control-row .investment-import-file-input,
 .investment-import-plain-field .date-picker-trigger,
 .investment-import-plain-field .investment-import-file-input {
     width: 100%;
@@ -3108,6 +3112,9 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-textarea {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
     min-height: 132px;
     resize: vertical;
     font: inherit;
@@ -3130,6 +3137,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-import-paste-shell {
     position: static;
     width: 100%;
+    max-width: none;
+    min-width: 0;
     grid-column: 2;
 }
 

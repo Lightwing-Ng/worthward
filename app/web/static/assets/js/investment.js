@@ -1,7 +1,12 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.56.0
+ * Code version: v1.57.4
+ * - Refined: Tiger Trade and uSMART (HK) PDF import controls now reuse the shared bridge-field upload layout.
+ * - Fixed: uSMART (HK) symbol-less fractional shares stay valued between purchase, withdrawal, and sale.
+ * - Fixed: Tiger Trade Funds in Transit subscriptions no longer create false equity drawdowns.
+ * - Fixed: Tiger Trade bond and money-market fund holdings retain statement-price equity between subscription and redemption.
+ * - Added: uSMART (HK) and Tiger Trade statement PDF imports with multi-file validation and idempotent submission.
  * - Added: Broker-scoped Holdings P&L calibration keeps Longbridge HK and SG additive when both accounts are imported.
  * - Fixed: Investment Holdings now loads authoritative broker P&L calibrations from the refreshed data-utils module.
  * - Fixed: Longbridge HK money-market transfers preserve cash-equivalent equity through placements and recognize only redemption interest while retaining actual transfer amounts in history.
@@ -231,14 +236,14 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.47.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.47.3';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.56.0',
+    entry: 'v1.57.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -324,6 +329,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
     const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
     const futuhkStatementPdfsStatus = document.getElementById('futuhk_statement_pdfs_status');
+    const investmentImportTigertradeFields = document.getElementById('investment_import_tigertrade_fields');
+    const tigertradeStatementPdfsInput = document.getElementById('tigertrade_statement_pdfs');
+    const tigertradeStatementPdfsStatus = document.getElementById('tigertrade_statement_pdfs_status');
+    const investmentImportUsmartHkFields = document.getElementById('investment_import_usmart_hk_fields');
+    const usmartHkStatementPdfsInput = document.getElementById('usmart_hk_statement_pdfs');
+    const usmartHkStatementPdfsStatus = document.getElementById('usmart_hk_statement_pdfs_status');
     const longbridgeStartDateInput = null;
     const longbridgeStartDateStatus = null;
     const hsbcPortfolioTextInput = document.getElementById('hsbc_portfolio_text');
@@ -663,8 +674,20 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/Charles%20Schwab.svg',
             logoAlt: 'Charles Schwab logo',
         },
+        tigertrade: {
+            code: 'tigertrade',
+            label: 'Tiger Trade',
+            logoUrl: '/market-store/logos/brokers/TigerTrade.png',
+            logoAlt: 'Tiger Trade logo',
+        },
+        usmart_hk: {
+            code: 'usmart_hk',
+            label: 'uSMART (HK)',
+            logoUrl: '/market-store/logos/brokers/uSAMRT.png',
+            logoAlt: 'uSMART (HK) logo',
+        },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -705,6 +728,8 @@ document.addEventListener('DOMContentLoaded', () => {
         getLatestDashboardEquity,
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
+        isSyntheticCashEquivalentTicker,
+        isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
@@ -723,6 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sumCashLedgerInBaseCurrency,
         sumKolRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
+        USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
     } = createInvestmentDataUtils({
         noCommissionTransactionTypes: NO_COMMISSION_TRANSACTION_TYPES,
         investmentCommonSplitFactors: INVESTMENT_COMMON_SPLIT_FACTORS,
@@ -4529,6 +4555,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(futuhkStatementPdfsInput.files || []).filter((file) => file instanceof File);
     }
 
+    function getSelectedStatementPdfFiles(input) {
+        if (!(input instanceof HTMLInputElement)) return [];
+        return Array.from(input.files || []).filter((file) => file instanceof File);
+    }
+
     function setImportStatusIcon(icon, visible) {
         if (!icon) return;
         icon.classList.toggle('is-visible', Boolean(visible));
@@ -5490,6 +5521,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
         const isSchwab = selectedBroker === 'schwab';
+        const isTigertrade = selectedBroker === 'tigertrade';
+        const isUsmartHk = selectedBroker === 'usmart_hk';
         const usesSyncAction = isIbkrFlex || isLongbridgeHk || isHsbc;
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
@@ -5510,6 +5543,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportSchwabFields instanceof HTMLElement) {
             investmentImportSchwabFields.hidden = !isSchwab;
+        }
+        if (investmentImportTigertradeFields instanceof HTMLElement) {
+            investmentImportTigertradeFields.hidden = !isTigertrade;
+        }
+        if (investmentImportUsmartHkFields instanceof HTMLElement) {
+            investmentImportUsmartHkFields.hidden = !isUsmartHk;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
             transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
@@ -5535,6 +5574,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (schwabTransactionsCsvInput instanceof HTMLInputElement) {
             schwabTransactionsCsvInput.required = isSchwab;
         }
+        if (tigertradeStatementPdfsInput instanceof HTMLInputElement) {
+            tigertradeStatementPdfsInput.required = isTigertrade;
+        }
+        if (usmartHkStatementPdfsInput instanceof HTMLInputElement) {
+            usmartHkStatementPdfsInput.required = isUsmartHk;
+        }
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.'
@@ -5547,9 +5592,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (isIbkrFlex
                             ? 'Fetches IBKR Activity Flex via Flex Web Service v3 (reporting-only) and merges into the local ledger. Use CSV for historical backfills.'
 
-                            : (isSchwab
+                            : (isTigertrade
+                                ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                                : (isUsmartHk
+                                    ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                                    : (isSchwab
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.json</code> without clearing existing records.'
-                                : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))));
+                                : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -7274,7 +7323,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const isFutuhk = selectedBroker === 'futuhk';
         const isHsbc = selectedBroker === 'hsbc';
         const isSchwab = selectedBroker === 'schwab';
+        const isTigertrade = selectedBroker === 'tigertrade';
+        const isUsmartHk = selectedBroker === 'usmart_hk';
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
+        const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
+        const usmartHkStatementFiles = getSelectedStatementPdfFiles(usmartHkStatementPdfsInput);
         const longbridgeSgFundDetailsFile = longbridgeSgFundDetailsInput?.files?.[0];
         const longbridgeSgHistoryOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
         const transactionReady = isIbkrCsv ? isLikelyTransactionHistoryFile(transactionFile) : false;
@@ -7297,6 +7350,12 @@ document.addEventListener('DOMContentLoaded', () => {
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
         const schwabCsvFile = schwabTransactionsCsvInput?.files?.[0];
         const schwabReady = isSchwab && !!schwabCsvFile;
+        const tigertradeStatementsReady = isTigertrade
+            && tigertradeStatementFiles.length > 0
+            && tigertradeStatementFiles.every((file) => isLikelyPdfFile(file));
+        const usmartHkStatementsReady = isUsmartHk
+            && usmartHkStatementFiles.length > 0
+            && usmartHkStatementFiles.every((file) => isLikelyPdfFile(file));
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
@@ -7307,6 +7366,8 @@ document.addEventListener('DOMContentLoaded', () => {
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isHsbc && Boolean(hsbcCashAccountReady) && Boolean(hsbcPortfolioReady) && Boolean(hsbcOrderStatusReady))
             || (isSchwab && Boolean(schwabReady))
+            || (isTigertrade && Boolean(tigertradeStatementsReady))
+            || (isUsmartHk && Boolean(usmartHkStatementsReady))
         );
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
@@ -7324,6 +7385,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
         setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
         setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabReady));
+        setImportStatusIcon(tigertradeStatementPdfsStatus, Boolean(tigertradeStatementsReady));
+        setImportStatusIcon(usmartHkStatementPdfsStatus, Boolean(usmartHkStatementsReady));
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         syncActionButtonState(submitButton, {
@@ -7512,7 +7575,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -7718,6 +7781,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 formData.append('transactions_csv', schwabFile);
+            } else if (selectedBroker === 'tigertrade' || selectedBroker === 'usmart_hk') {
+                const input = selectedBroker === 'tigertrade'
+                    ? tigertradeStatementPdfsInput
+                    : usmartHkStatementPdfsInput;
+                const brokerLabel = selectedBroker === 'tigertrade' ? 'Tiger Trade' : 'uSMART (HK)';
+                const statementFiles = getSelectedStatementPdfFiles(input);
+                if (!statementFiles.length) {
+                    setImportFeedback(`Please choose at least one ${brokerLabel} statement PDF before importing.`, 'error');
+                    return;
+                }
+                if (!statementFiles.every((file) => isLikelyPdfFile(file))) {
+                    setImportFeedback(`Please upload valid ${brokerLabel} statement PDF files.`, 'error');
+                    return;
+                }
+                statementFiles.forEach((file) => {
+                    formData.append(`${selectedBroker}_statement_pdfs`, file);
+                });
             }
 
             investmentImportInFlight = true;
@@ -9678,29 +9758,55 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function applyHoldingStateUpdate(state, txn, normalizedType, valuationQty, price) {
-            if (!txn.ticker || valuationQty === null || Number.isNaN(valuationQty)) return;
-            const rawTicker = String(txn.ticker).trim().toUpperCase();
+            const isSyntheticFractional = isUsmartHkFractionalSharesTransaction(txn);
+            if (!txn.ticker && !isSyntheticFractional) return;
+            const rawTicker = isSyntheticFractional
+                ? USMART_HK_FRACTIONAL_SYNTHETIC_TICKER
+                : String(txn.ticker).trim().toUpperCase();
             const normalizedTicker = getInvestmentCanonicalTicker(rawTicker);
             if (isForexPairTicker(normalizedTicker)) return;
             if (!normalizedTicker) return;
+            let effectiveValuationQty = valuationQty;
+            let effectivePrice = price;
+            if (
+                isSyntheticFractional
+                && (effectiveValuationQty === null || Number.isNaN(effectiveValuationQty))
+            ) {
+                const existingQuantity = Number(state.holdings[normalizedTicker]) || 0;
+                const notionalAmount = Math.abs(Number(getTransactionAmount(txn)) || 0);
+                effectiveValuationQty = normalizedType === 'sell' && existingQuantity > 0
+                    ? existingQuantity
+                    : notionalAmount;
+            }
+            if (effectiveValuationQty === null || Number.isNaN(effectiveValuationQty)) return;
+            if (isSyntheticFractional && (!Number.isFinite(effectivePrice) || effectivePrice <= 0)) {
+                const notionalAmount = Math.abs(Number(getTransactionAmount(txn)) || 0);
+                effectivePrice = notionalAmount > 0 && effectiveValuationQty > 0
+                    ? notionalAmount / effectiveValuationQty
+                    : 1;
+            }
             if (!state.holdings[normalizedTicker]) state.holdings[normalizedTicker] = 0;
-            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker) || moneyMarketTickers.has(rawTicker);
+            const isMoneyMarketTicker = (
+                moneyMarketTickers.has(normalizedTicker)
+                || moneyMarketTickers.has(rawTicker)
+                || isSyntheticCashEquivalentTicker(normalizedTicker)
+            );
             if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
-                if (isMoneyMarketTicker && price !== null && !Number.isNaN(price)) {
+                if (isMoneyMarketTicker && effectivePrice !== null && !Number.isNaN(effectivePrice)) {
                     const previousQuantity = state.holdings[normalizedTicker];
-                    const previousAnchor = state.moneyMarketAnchors[normalizedTicker] ?? price;
-                    const nextQuantity = previousQuantity + valuationQty;
+                    const previousAnchor = state.moneyMarketAnchors[normalizedTicker] ?? effectivePrice;
+                    const nextQuantity = previousQuantity + effectiveValuationQty;
                     state.moneyMarketAnchors[normalizedTicker] = nextQuantity > 0
-                        ? (((previousQuantity * previousAnchor) + (valuationQty * price)) / nextQuantity)
-                        : price;
+                        ? (((previousQuantity * previousAnchor) + (effectiveValuationQty * effectivePrice)) / nextQuantity)
+                        : effectivePrice;
                 }
-                state.holdings[normalizedTicker] += valuationQty;
+                state.holdings[normalizedTicker] += effectiveValuationQty;
                 return;
             }
             if (normalizedType !== 'sell') return;
-            state.holdings[normalizedTicker] -= valuationQty;
-            if (isMoneyMarketTicker && state.holdings[normalizedTicker] > 0 && price !== null && !Number.isNaN(price)) {
-                state.moneyMarketAnchors[normalizedTicker] = state.moneyMarketAnchors[normalizedTicker] ?? price;
+            state.holdings[normalizedTicker] -= effectiveValuationQty;
+            if (isMoneyMarketTicker && state.holdings[normalizedTicker] > 0 && effectivePrice !== null && !Number.isNaN(effectivePrice)) {
+                state.moneyMarketAnchors[normalizedTicker] = state.moneyMarketAnchors[normalizedTicker] ?? effectivePrice;
             }
             if (state.holdings[normalizedTicker] <= 0) {
                 delete state.moneyMarketAnchors[normalizedTicker];
@@ -9963,11 +10069,17 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.entries(holdingsSnapshot || {}).forEach(([ticker, quantity]) => {
                 const normalizedTicker = String(ticker).trim().toUpperCase();
                 if (isForexPairTicker(normalizedTicker)) return;
-                const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+                const isMoneyMarketTicker = (
+                    moneyMarketTickers.has(normalizedTicker)
+                    || isSyntheticCashEquivalentTicker(normalizedTicker)
+                );
                 const valuationDate = normalizeLedgerDate(txn.date);
                 let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex[normalizedTicker], valuationDate);
                 if (isMoneyMarketTicker) {
-                    const sameDaySellPrice = normalizedTicker === getInvestmentCanonicalTicker(txn.ticker)
+                    const transactionValuationTicker = isUsmartHkFractionalSharesTransaction(txn)
+                        ? USMART_HK_FRACTIONAL_SYNTHETIC_TICKER
+                        : getInvestmentCanonicalTicker(txn.ticker);
+                    const sameDaySellPrice = normalizedTicker === transactionValuationTicker
                         && getNormalizedTransactionType(txn) === 'sell'
                         ? getTransactionPrice(txn)
                         : null;

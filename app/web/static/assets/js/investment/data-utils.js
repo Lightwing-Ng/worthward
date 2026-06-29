@@ -1,7 +1,10 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.47.0
+ * Code version: v1.47.3
+ * - Fixed: uSMART (HK) symbol-less fractional-share rows keep a synthetic valuation anchor until the matching sale closes them.
+ * - Fixed: Tiger Trade Funds in Transit rows preserve equity instead of appearing as external cash losses.
+ * - Fixed: Daily equity valuation now reads imported normalized unit prices when a closed fund has no cached market history.
  * - Added: Broker-scoped authoritative P&L calibration so Longbridge HK and SG can coexist without overwriting each other's ticker results.
  * - Added: Authoritative broker performance snapshots can calibrate selected Holdings P&L rows without changing the transaction cash ledger.
  * - Fixed: Broker P&L-excluded correction rows retain their cash impact without inflating per-symbol realized P&L.
@@ -33,6 +36,7 @@ export function createInvestmentDataUtils({
     normalizeInvestmentEquityRange,
 }) {
     const INVESTMENT_BASE_CURRENCY = 'USD';
+    const USMART_HK_FRACTIONAL_SYNTHETIC_TICKER = 'USMART_HK_FRACTIONAL_SHARES';
     const INVESTMENT_MARKET_CURRENCY_BY_SUFFIX = {
         US: 'USD',
         HK: 'HKD',
@@ -50,7 +54,40 @@ export function createInvestmentDataUtils({
         return quantity === undefined || quantity === null ? null : Number(quantity);
     }
 
+    function isTigerFundsInTransitTransfer(txn) {
+        return (
+            String(txn?.broker || '').trim().toLowerCase() === 'tigertrade'
+            && String(txn?.source?.statement_section || '').trim() === 'Funds in Transit'
+            && ['Fund Subscription', 'Fund Subscription Returned'].includes(
+                String(txn?.description || '').trim(),
+            )
+        );
+    }
+
+    function isUsmartHkFractionalSharesTransaction(txn) {
+        if (String(txn?.broker || '').trim().toLowerCase() !== 'usmart_hk') return false;
+        if (String(txn?.ticker || '').trim()) return false;
+        const rawItem = String(txn?.source?.statement_item_raw || '').trim();
+        if (['買碎股', '买碎股', '賣碎股', '卖碎股'].includes(rawItem)) return true;
+        return /^Fractional Shares (Purchase|Sale)/i.test(String(txn?.description || '').trim());
+    }
+
+    function isSyntheticCashEquivalentTicker(ticker) {
+        return String(ticker || '').trim().toUpperCase() === USMART_HK_FRACTIONAL_SYNTHETIC_TICKER;
+    }
+
     function getTransactionAmount(txn) {
+        if (isTigerFundsInTransitTransfer(txn)) {
+            return 0;
+        }
+        if (txn?.normalized?.cash_equivalent_transfer === true) {
+            const equityDelta = Number(
+                txn?.normalized?.cash_equivalent_equity_delta
+                ?? txn?.normalized?.net_amount
+                ?? 0
+            );
+            return Number.isFinite(equityDelta) ? equityDelta : 0;
+        }
         if (txn.normalized?.net_amount !== undefined && txn.normalized?.net_amount !== null) {
             return Number(txn.normalized.net_amount);
         }
@@ -169,6 +206,7 @@ export function createInvestmentDataUtils({
     function getTickerQuoteCurrency(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
+        if (isSyntheticCashEquivalentTicker(normalizedTicker)) return INVESTMENT_BASE_CURRENCY;
         if (isForexPairTicker(normalizedTicker)) {
             const [baseCurrency] = normalizedTicker.split('.');
             return normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
@@ -424,7 +462,10 @@ export function createInvestmentDataUtils({
     }
 
     function getTransactionEconomicAmount(txn) {
-        if (txn?.normalized?.cash_equivalent_transfer === true) {
+        if (
+            txn?.normalized?.cash_equivalent_transfer === true
+            || isTigerFundsInTransitTransfer(txn)
+        ) {
             const transferAmount = Number(
                 txn?.normalized?.display_amount
                 ?? txn?.gross_amount_raw
@@ -1497,7 +1538,10 @@ export function createInvestmentDataUtils({
 
             let closePrice = getIndexedClosePriceOnOrBefore(tickerPriceIndex?.[ticker], valuationDate);
             const normalizedTicker = String(ticker).trim().toUpperCase();
-            const isMoneyMarketTicker = moneyMarketTickers.has(normalizedTicker);
+            const isMoneyMarketTicker = (
+                moneyMarketTickers.has(normalizedTicker)
+                || isSyntheticCashEquivalentTicker(normalizedTicker)
+            );
 
             if (isMoneyMarketTicker) {
                 const anchoredPrice = snapshot.money_market_anchors?.[ticker] ?? snapshot.money_market_anchors?.[normalizedTicker];
@@ -1505,7 +1549,7 @@ export function createInvestmentDataUtils({
             }
 
             if ((!Number.isFinite(closePrice) || closePrice === 0) && String(snapshot.ticker || '').trim().toUpperCase() === normalizedTicker) {
-                const fallbackPrice = Number(snapshot.price);
+                const fallbackPrice = getTransactionPrice(snapshot);
                 if (Number.isFinite(fallbackPrice) && fallbackPrice > 0) {
                     closePrice = fallbackPrice;
                 }
@@ -1995,6 +2039,8 @@ export function createInvestmentDataUtils({
         getTodayLedgerDate,
         getMoneyMarketTickerSet,
         getCashEquivalentTickerSet,
+        isSyntheticCashEquivalentTicker,
+        isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
@@ -2017,7 +2063,8 @@ export function createInvestmentDataUtils({
         sumKolRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         addCashLedgerDelta,
+        USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.3';

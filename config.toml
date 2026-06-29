@@ -1,8 +1,8 @@
 [app]
 name = "antigravity"
-version = "v2.14.0"
+version = "v2.15.4"
 debug = true
-updated_on = "27 Jun 2026"
+updated_on = "29 Jun 2026"
 
 [server]
 host = "0.0.0.0"
@@ -219,6 +219,6 @@ default_screener = "america"
 default_exchange = "NASDAQ"
 
 [investment.money_market_funds]
-tickers = ["005276756"]
+tickers = ["005276756", "HK0000369196.USD", "HK0001039582.USD"]
 name_from_description = true
 description_keywords = ["MONEY MARKET", "SHORT-TERM MONEY MARKET"]

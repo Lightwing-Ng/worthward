@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.3.35
+Code version: v0.3.36
 """
 
 from __future__ import annotations
@@ -98,6 +98,8 @@ from app.services.investment_import import (
     build_investment_payload_from_longbridge_hk_files,
     build_investment_payload_from_longbridge_sg_files,
     build_investment_payload_from_schwab_csv,
+    build_investment_payload_from_tigertrade_statement_pdfs,
+    build_investment_payload_from_usmart_hk_statement_pdfs,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
@@ -4643,6 +4645,33 @@ def build_web_runtime() -> WebRuntime:
                 success_message = (
                     "Charles Schwab import complete. Records were merged incrementally into the local investment store "
                     "without clearing older data first."
+                )
+            elif broker in {"tigertrade", "usmart_hk"}:
+                field_name = f"{broker}_statement_pdfs"
+                statement_pdf_payloads: list[tuple[bytes, str]] = []
+                for statement_pdf_file in request.files.getlist(field_name):
+                    if statement_pdf_file is None:
+                        continue
+                    pdf_bytes = statement_pdf_file.read()
+                    if not pdf_bytes:
+                        continue
+                    statement_pdf_payloads.append((
+                        pdf_bytes,
+                        str(getattr(statement_pdf_file, "filename", "") or "").strip(),
+                    ))
+                if broker == "tigertrade":
+                    imported_payload = build_investment_payload_from_tigertrade_statement_pdfs(
+                        statement_pdf_payloads,
+                    )
+                    broker_label = "Tiger Trade"
+                else:
+                    imported_payload = build_investment_payload_from_usmart_hk_statement_pdfs(
+                        statement_pdf_payloads,
+                    )
+                    broker_label = "uSMART (HK)"
+                success_message = (
+                    f"{broker_label} import complete. Statement PDFs were parsed in memory and merged "
+                    "incrementally into the local investment store without clearing older data first."
                 )
             else:
                 return jsonify({

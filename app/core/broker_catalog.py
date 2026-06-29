@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and pinyin-initial sort order.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -42,6 +42,20 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="Charles Schwab.svg",
         description="Upload Schwab Order Status CSV (e.g. Individual..._Order_Status_....csv) or Transaction History CSV.",
     ),
+    "tigertrade": BrokerCatalogEntry(
+        code="tigertrade",
+        label="Tiger Trade",
+        pinyin_sort_key="tigertrade",
+        icon_filename="TigerTrade.png",
+        description="Upload one or more Tiger Trade activity statement PDFs.",
+    ),
+    "usmart_hk": BrokerCatalogEntry(
+        code="usmart_hk",
+        label="uSMART (HK)",
+        pinyin_sort_key="usmarthk",
+        icon_filename="uSAMRT.png",
+        description="Upload one or more uSMART Securities (HK) monthly statement PDFs.",
+    ),
     "longbridge_hk": BrokerCatalogEntry(
         code="longbridge_hk",
         label="Longbridge (HK)",
@@ -74,7 +88,17 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
 
 SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
-INVESTMENT_IMPORT_BROKER_CODES = ("cmbwl", "hsbc", "futuhk", "ibkr", "longbridge_hk", "longbridge_sg", "schwab")
+INVESTMENT_IMPORT_BROKER_CODES = (
+    "cmbwl",
+    "hsbc",
+    "futuhk",
+    "ibkr",
+    "longbridge_hk",
+    "longbridge_sg",
+    "schwab",
+    "tigertrade",
+    "usmart_hk",
+)
 
 
 def broker_pinyin_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:
