@@ -539,8 +539,8 @@ def _test_ibkr_flex_connection(settings: BrokerSettings) -> tuple[bool, str]:
         if "1025" in str(exc) or "Too many failed attempts" in str(exc):
             return False, (
                 "IBKR Flex error 1025: Too many failed attempts (likely from prior tests with bad ranges or no-data). "
-                "Wait 30-60+ minutes, or bypass this lockout by downloading your statement XML manually from Client Portal "
-                "and uploading it using the 'Flex XML' option in the My investment import form. "
+                "Wait 30-60+ minutes before retrying Flex Web Service. "
+                "Use CSV or GainsKeeper files in the Investment import form for manual backfills. "
                 f"Error: {redacted}"
             )
         return False, f"IBKR Flex error: {redacted}"

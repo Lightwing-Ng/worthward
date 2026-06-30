@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.2
+ * Code version: v1.59.3
+ * - Removed: IBKR manual Flex file upload mode from the import UI and submit path.
  * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
  * - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
  * - Added: IBKR GainsKeeper OFX/GKX multi-file import mode with idempotent precision upgrades for older CSV records.
@@ -319,8 +320,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const positionsCsvInput = document.getElementById('positions_csv');
     const gainskeeperFilesInput = document.getElementById('gainskeeper_files');
     const gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
-    const flexXmlInput = document.getElementById('flex_xml');
-    const flexXmlStatus = document.getElementById('flex_xml_status');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
@@ -5588,7 +5587,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
         if (value === 'flex') return 'flex';
-        if (value === 'flex_xml') return 'flex_xml';
         if (value === 'gainskeeper') return 'gainskeeper';
         return 'csv';
     }
@@ -5603,10 +5601,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
             investmentImportIbkrMode.dataset.active = selectedMode;
-            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '4');
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
             const activeIndex = selectedMode === 'gainskeeper'
                 ? '1'
-                : (selectedMode === 'flex' ? '2' : (selectedMode === 'flex_xml' ? '3' : '0'));
+                : (selectedMode === 'flex' ? '2' : '0');
             investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
             scheduleIbkrImportSegmentedPillUpdate();
         }
@@ -7728,7 +7726,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ibkrImportMode = getSelectedIbkrImportMode();
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
         const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
-        const isIbkrFlexXml = isIbkr && ibkrImportMode === 'flex_xml';
         const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
@@ -7748,8 +7745,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const longbridgeSgHistoryOrdersFile = longbridgeSgHistoryOrdersInput?.files?.[0];
         const transactionReady = isIbkrCsv ? isLikelyTransactionHistoryFile(transactionFile) : false;
         const positionsReady = isIbkrCsv ? isLikelyPositionsFile(positionsFile) : false;
-        const flexXmlFile = flexXmlInput?.files?.[0];
-        const flexXmlReady = isIbkrFlexXml && !!flexXmlFile;
         const gainskeeperFiles = gainskeeperFilesInput?.files ? Array.from(gainskeeperFilesInput.files) : [];
         const gainskeeperReady = isIbkrGainskeeper
             && gainskeeperFiles.length > 0
@@ -7783,7 +7778,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
             || isIbkrFlex
-            || flexXmlReady
             || gainskeeperReady
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
@@ -7797,7 +7791,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
-        setImportStatusIcon(flexXmlStatus, flexXmlReady);
         setImportStatusIcon(gainskeeperFilesStatus, gainskeeperReady);
 
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
@@ -8002,7 +7995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, flexXmlInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -8130,13 +8123,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     gainskeeperFiles.forEach((file) => {
                         formData.append('gainskeeper_files', file);
                     });
-                } else if (ibkrImportMode === 'flex_xml') {
-                    const flexXmlFile = flexXmlInput?.files?.[0];
-                    if (!flexXmlFile) {
-                        setImportFeedback('Please choose an IBKR Flex XML file before importing.', 'error');
-                        return;
-                    }
-                    formData.append('flex_xml', flexXmlFile);
                 } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                     return;

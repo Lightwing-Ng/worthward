@@ -95,7 +95,6 @@ from app.services.investment_import import (
     build_investment_payload_from_hsbc_statement_pdfs,
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_flex,
-    build_investment_payload_from_ibkr_flex_xml,
     build_investment_payload_from_ibkr_gainskeeper_files,
     build_investment_payload_from_longbridge_hk_files,
     build_investment_payload_from_longbridge_sg_files,
@@ -4591,33 +4590,6 @@ def build_web_runtime() -> WebRuntime:
                         "IBKR Flex import complete. Activity Flex records were fetched via the IBKR Flex Web Service v3, "
                         "mapped to the canonical ledger, and merged incrementally into the local investment store "
                         "without clearing older data first. This integration is reporting-only."
-                    )
-                elif ibkr_import_mode == "flex_xml":
-                    flex_xml_file = request.files.get("flex_xml")
-                    if flex_xml_file is None:
-                        return jsonify({
-                            "success": False,
-                            "error": "Please upload the IBKR Flex Query XML file.",
-                        }), 400
-                    flex_xml_payload = flex_xml_file.read()
-                    if not flex_xml_payload:
-                        return jsonify({
-                            "success": False,
-                            "error": "The uploaded XML file must not be empty.",
-                        }), 400
-                    dry_run = str(request.form.get("dry_run", "")).strip().lower() in {"1", "true", "yes", "on"}
-                    imported_payload = build_investment_payload_from_ibkr_flex_xml(
-                        flex_xml_payload,
-                        load_broker_settings(),
-                        dry_run=dry_run,
-                    )
-                    success_message = (
-                        "IBKR Flex XML import complete. Activity Flex records were parsed from the uploaded XML file, "
-                        "mapped to the canonical ledger, and merged incrementally. "
-                        "Dry-run was performed; nothing was written." if dry_run else
-                        "IBKR Flex XML import complete. Activity Flex records were parsed from the uploaded XML file, "
-                        "mapped to the canonical ledger, and merged incrementally into the local investment store "
-                        "without clearing older data first."
                     )
                 elif ibkr_import_mode == "gainskeeper":
                     gainskeeper_files = request.files.getlist("gainskeeper_files")
