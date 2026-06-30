@@ -1,7 +1,7 @@
 """
 Shared local settings persistence.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -64,4 +64,10 @@ def load_settings_section(section: str) -> dict[str, Any]:
 def save_settings_section(section: str, section_payload: dict[str, Any]) -> None:
     payload = load_all_settings()
     payload[section] = section_payload
+    _write_settings(payload)
+
+
+def save_setting_value(key: str, value: Any) -> None:
+    payload = load_all_settings()
+    payload[key] = value
     _write_settings(payload)
