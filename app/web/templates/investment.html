@@ -1,4 +1,4 @@
-{# Code version: v1.4.0 #}
+{# Code version: v1.4.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "More" %}
@@ -179,10 +179,11 @@
                                     "csv",
                                     [
                                         {"id": "ibkr_import_mode_csv", "value": "csv", "label": "CSV"},
+                                        {"id": "ibkr_import_mode_gainskeeper", "value": "gainskeeper", "label": "GainsKeeper"},
                                         {"id": "ibkr_import_mode_flex", "value": "flex", "label": "Flex API"},
                                         {"id": "ibkr_import_mode_flex_xml", "value": "flex_xml", "label": "Flex XML"},
                                     ],
-                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="3" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
+                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="4" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
                                 ) }}
                             </div>
                             <div data-ibkr-import-mode-panel="csv">
@@ -196,13 +197,12 @@
                                           aria-hidden="true"></span>
                                     <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
                                           role="tooltip">
-                                        <span class="investment-import-help-title">How to download this file in IBKR</span>
-                                        <span class="investment-import-help-step">🄌 Sign in to IBKR Client Portal.</span>
-                                        <span class="investment-import-help-step">➊ Open Performance &amp; Reports > Transaction History.</span>
-                                        <span class="investment-import-help-step">➋ Set the range to 1Y or choose Custom so the full import window is covered.</span>
-                                        <span class="investment-import-help-step">➌ Leave the full history visible unless you intentionally want a partial import.</span>
-                                        <span class="investment-import-help-step">➍ Download the page as a CSV file. In many portal variants, the filename looks similar to <code>Uxxxx.TRANSACTIONS.1Y.csv</code>.</span>
-                                        <span class="investment-import-help-step">➎ Upload that CSV here.</span>
+                                        <span class="investment-import-help-title">Get the IBKR Transaction History CSV</span>
+                                        <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
+                                        <span class="investment-import-help-step">2. Go to Performance &amp; Reports, then Transaction History.</span>
+                                        <span class="investment-import-help-step">3. Select a date range that covers the activity you want to import.</span>
+                                        <span class="investment-import-help-step">4. Download the report as CSV. The filename often looks like <code>Uxxxx.TRANSACTIONS.1Y.csv</code>.</span>
+                                        <span class="investment-import-help-step">5. Upload it here with the Realized Summary CSV for the same account.</span>
                                     </span>
                                 </span>
                                 </label>
@@ -221,20 +221,46 @@
                                           aria-hidden="true"></span>
                                     <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
                                           role="tooltip">
-                                        <span class="investment-import-help-title">How to download this file in IBKR</span>
-                                        <span class="investment-import-help-step">🄌 Sign in to IBKR Client Portal.</span>
-                                        <span class="investment-import-help-step">➊ Open Performance &amp; Reports > Statements.</span>
-                                        <span class="investment-import-help-step">➋ In the Run a Statement panel, click the blue run arrow next to Realized Summary.</span>
-                                        <span class="investment-import-help-step">➌ Pick Annually or Custom Date Range so the statement matches the import window.</span>
-                                        <span class="investment-import-help-step">➍ Set Format to CSV.</span>
-                                        <span class="investment-import-help-step">➎ Run the statement and save the CSV file.</span>
-                                        <span class="investment-import-help-step">➏ Upload that CSV here.</span>
+                                        <span class="investment-import-help-title">Get the IBKR Realized Summary CSV</span>
+                                        <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
+                                        <span class="investment-import-help-step">2. Go to Performance &amp; Reports, then Statements.</span>
+                                        <span class="investment-import-help-step">3. In Run a Statement, run Realized Summary.</span>
+                                        <span class="investment-import-help-step">4. Choose Annually or Custom Date Range so the period matches the Transaction History CSV.</span>
+                                        <span class="investment-import-help-step">5. Set Format to CSV, then save the file and upload it here.</span>
                                     </span>
                                 </span>
                                 </label>
                                 <div class="investment-import-plain-control-row">
                                     <input id="positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
                                            class="settings-form-control investment-import-file-input" required>
+                                </div>
+                            </div>
+                            </div>
+                            <div data-ibkr-import-mode-panel="gainskeeper" hidden>
+                            <div class="investment-import-field investment-import-bridge-field" data-import-field="gainskeeper">
+                                <label class="trade-strategy-param-label" for="gainskeeper_files">
+                                <span class="investment-import-label-trigger"
+                                      tabindex="0">
+                                    <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                    <span class="investment-import-label-text">GainsKeeper OFX/GKX files</span>
+                                    <span class="investment-import-status-icon" id="gainskeeper_files_status"
+                                          aria-hidden="true"></span>
+                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                          role="tooltip">
+                                        <span class="investment-import-help-title">Get IBKR GainsKeeper files</span>
+                                        <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
+                                        <span class="investment-import-help-step">2. Go to Performance &amp; Reports, then Third-Party Reports.</span>
+                                        <span class="investment-import-help-step">3. Open Third-Party Downloads and choose GainsKeeper.</span>
+                                        <span class="investment-import-help-step">4. Download as many yearly OFX/GKX files as IBKR allows.</span>
+                                        <span class="investment-import-help-step">5. Select all files and upload them together. Overlapping dates are allowed.</span>
+                                        <span class="investment-import-help-step">6. Matching CSV rows are upgraded with GainsKeeper FITID and intraday trade times.</span>
+                                    </span>
+                                </span>
+                                </label>
+                                <div class="investment-import-plain-control-row">
+                                    <input id="gainskeeper_files" name="gainskeeper_files" type="file" accept=".gkx,.ofx,application/x-ofx,text/plain"
+                                           multiple
+                                           class="settings-form-control investment-import-file-input">
                                 </div>
                             </div>
                             </div>
@@ -480,10 +506,19 @@
                                 <div data-hsbc-import-mode-panel="paste">
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_cash_account_display">
-                                        <span class="investment-import-label-trigger">
+                                        <span class="investment-import-label-trigger"
+                                              tabindex="0">
                                             <span class="investment-import-label-step" aria-hidden="true">➊</span>
                                             <span class="investment-import-label-text">USD Savings plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_cash_account_text_status" aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">Copy the HSBC USD Savings page</span>
+                                                <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
+                                                <span class="investment-import-help-step">2. Open the USD Foreign Currency Savings account.</span>
+                                                <span class="investment-import-help-step">3. Copy the full page text, including account number, available balance, transactions, and dates.</span>
+                                                <span class="investment-import-help-step">4. Paste it here. You may paste more than one capture; duplicate chunks are ignored.</span>
+                                            </span>
                                         </span>
                                     </label>
                                     <div class="trade-capital-row investment-import-paste-row">
@@ -509,10 +544,19 @@
                                 </div>
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_portfolio_text_display">
-                                        <span class="investment-import-label-trigger">
+                                        <span class="investment-import-label-trigger"
+                                              tabindex="0">
                                             <span class="investment-import-label-step" aria-hidden="true">➋</span>
                                             <span class="investment-import-label-text">Portfolio plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_portfolio_text_status" aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">Copy the HSBC Portfolio page</span>
+                                                <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
+                                                <span class="investment-import-help-step">2. Open Investments, then Portfolio.</span>
+                                                <span class="investment-import-help-step">3. Copy the full page text, including holdings, quantities, market value, and currency.</span>
+                                                <span class="investment-import-help-step">4. Paste it here. This page is used as the current HSBC holding snapshot.</span>
+                                            </span>
                                         </span>
                                     </label>
                                     <div class="trade-capital-row investment-import-paste-row">
@@ -538,10 +582,19 @@
                                 </div>
                                 <div class="investment-import-field investment-import-bridge-field">
                                     <label class="trade-strategy-param-label" for="hsbc_order_status_display">
-                                        <span class="investment-import-label-trigger">
+                                        <span class="investment-import-label-trigger"
+                                              tabindex="0">
                                             <span class="investment-import-label-step" aria-hidden="true">➌</span>
                                             <span class="investment-import-label-text">Order Status plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_order_status_text_status" aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">Copy the HSBC Order Status page</span>
+                                                <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
+                                                <span class="investment-import-help-step">2. Open Investments, then Order Status.</span>
+                                                <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import.</span>
+                                                <span class="investment-import-help-step">4. Paste it here. Use supplementary captures if HSBC splits the history across pages.</span>
+                                            </span>
                                         </span>
                                     </label>
                                     <div class="trade-capital-row investment-import-paste-row">
@@ -672,5 +725,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.58.2') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.59.2') }}"></script>
 {% endblock %}

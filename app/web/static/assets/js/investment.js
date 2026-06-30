@@ -1,7 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.58.2
+ * Code version: v1.59.2
+ * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
+ * - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
+ * - Added: IBKR GainsKeeper OFX/GKX multi-file import mode with idempotent precision upgrades for older CSV records.
  * - Fixed: IBKR CSV import now reports success as soon as the server commit finishes, then refreshes the large investment dataset in the background.
  * - Fixed: HSBC import validation now declares the selected statement/copy-paste mode before checking readiness, restoring Investment page initialization.
  * - Added: HSBC import mode now supports multi-file statement PDF upload for USD Foreign Currency Savings backfills while keeping copy/paste as the default path.
@@ -314,6 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const workspaceModalOverlayClose = document.getElementById('workspace_modal_overlay_close');
     const transactionsCsvInput = document.getElementById('transactions_csv');
     const positionsCsvInput = document.getElementById('positions_csv');
+    const gainskeeperFilesInput = document.getElementById('gainskeeper_files');
+    const gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
     const flexXmlInput = document.getElementById('flex_xml');
     const flexXmlStatus = document.getElementById('flex_xml_status');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
@@ -2339,14 +2344,54 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalControlWidth = controlPaddingInline
             + (optionWidth * optionCount)
             + (columnGap * Math.max(0, optionCount - 1));
+        const parentWidth = control.parentElement instanceof HTMLElement
+            ? Math.floor(control.parentElement.getBoundingClientRect().width)
+            : 0;
+        const computedMaxWidth = Number.parseFloat(controlStyles.maxWidth);
+        const cssMaxWidth = Number.isFinite(computedMaxWidth) && computedMaxWidth > 0
+            ? Math.floor(computedMaxWidth)
+            : 0;
+        const maxControlWidth = Math.max(
+            optionWidth + controlPaddingInline,
+            Math.min(
+                ...[parentWidth, cssMaxWidth, totalControlWidth].filter((value) => value > 0),
+            ),
+        );
+        const visibleControlWidth = Math.min(totalControlWidth, maxControlWidth);
         control.style.setProperty('--segmented-option-width', `${optionWidth}px`);
         control.style.setProperty('--segmented-option-count', String(optionCount));
         control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
-        control.style.width = `${totalControlWidth}px`;
+        control.style.width = `${visibleControlWidth}px`;
+        control.dataset.segmentedOverflow = totalControlWidth > visibleControlWidth + 1 ? '1' : '0';
         return {
             left: activeIndex * (optionWidth + columnGap),
             width: optionWidth,
+            totalWidth: totalControlWidth,
+            visibleWidth: visibleControlWidth,
         };
+    }
+
+    function keepSegmentedActiveOptionVisible(control, pillGeometry) {
+        if (!(control instanceof HTMLElement) || !pillGeometry) return;
+        const maxScrollLeft = Math.max(0, control.scrollWidth - control.clientWidth);
+        if (maxScrollLeft <= 0) {
+            control.scrollLeft = 0;
+            return;
+        }
+        const leftSafety = Math.max(0, Math.round(Number.parseFloat(getComputedStyle(control).paddingLeft) || 0));
+        const rightSafety = Math.max(
+            leftSafety,
+            Math.round(Number.parseFloat(getComputedStyle(control).paddingRight) || 0),
+        );
+        const activeLeft = pillGeometry.left;
+        const activeRight = pillGeometry.left + pillGeometry.width;
+        let nextScrollLeft = control.scrollLeft;
+        if (activeLeft < control.scrollLeft + leftSafety) {
+            nextScrollLeft = activeLeft - leftSafety;
+        } else if (activeRight > control.scrollLeft + control.clientWidth - rightSafety) {
+            nextScrollLeft = activeRight - control.clientWidth + rightSafety;
+        }
+        control.scrollLeft = Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
     }
 
     function syncInvestmentShareActionsPosition() {
@@ -2378,6 +2423,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         segmentedControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         segmentedControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        keepSegmentedActiveOptionVisible(segmentedControl, pillGeometry);
         segmentedControl.classList.add('is-pill-ready');
         syncInvestmentShareActionsPosition();
     }
@@ -2408,6 +2454,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         investmentImportIbkrMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         investmentImportIbkrMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        keepSegmentedActiveOptionVisible(investmentImportIbkrMode, pillGeometry);
         investmentImportIbkrMode.classList.add('is-pill-ready');
     }
 
@@ -2440,6 +2487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         investmentImportHsbcMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         investmentImportHsbcMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        keepSegmentedActiveOptionVisible(investmentImportHsbcMode, pillGeometry);
         investmentImportHsbcMode.classList.add('is-pill-ready');
     }
 
@@ -4657,6 +4705,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return !upperName.includes('TRANSACTIONS');
     }
 
+    function isLikelyGainskeeperFile(file) {
+        if (!(file instanceof File)) return false;
+        const lowerName = String(file.name || '').trim().toLowerCase();
+        return lowerName.endsWith('.gkx') || lowerName.endsWith('.ofx');
+    }
+
     function isLikelyPdfFile(file) {
         if (!(file instanceof File)) return false;
         const lowerName = String(file.name || '').trim().toLowerCase();
@@ -5535,6 +5589,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
         if (value === 'flex') return 'flex';
         if (value === 'flex_xml') return 'flex_xml';
+        if (value === 'gainskeeper') return 'gainskeeper';
         return 'csv';
     }
 
@@ -5548,8 +5603,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
             investmentImportIbkrMode.dataset.active = selectedMode;
-            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
-            const activeIndex = selectedMode === 'flex' ? '1' : (selectedMode === 'flex_xml' ? '2' : '0');
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '4');
+            const activeIndex = selectedMode === 'gainskeeper'
+                ? '1'
+                : (selectedMode === 'flex' ? '2' : (selectedMode === 'flex_xml' ? '3' : '0'));
             investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
             scheduleIbkrImportSegmentedPillUpdate();
         }
@@ -5831,6 +5888,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ibkrImportMode = getSelectedIbkrImportMode();
         const hsbcImportMode = getSelectedHsbcImportMode();
         const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
+        const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -5874,6 +5932,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (positionsCsvInput instanceof HTMLInputElement) {
             positionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
         }
+        if (gainskeeperFilesInput instanceof HTMLInputElement) {
+            gainskeeperFilesInput.required = isIbkrGainskeeper;
+        }
         if (longbridgeSgFundDetailsInput instanceof HTMLInputElement) {
             longbridgeSgFundDetailsInput.required = isLongbridgeSg;
         }
@@ -5904,8 +5965,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
-                    ? 'Imports HSBC statement PDFs and only records USD Foreign Currency Savings rows into <code>settings_store/investment.json</code> without clearing existing records.'
-                    : 'Syncs the pasted HSBC USD Savings, Portfolio, and Order Status text into <code>settings_store/investment.json</code> without clearing existing records.')
+                    ? 'Upload one or more HSBC statement PDFs. The import records USD Foreign Currency Savings rows and keeps existing records.'
+                    : 'Paste the HSBC USD Savings, Portfolio, and Order Status pages. Supplementary captures are allowed; duplicate chunks are ignored.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
                     : (isLongbridgeSg
@@ -5914,14 +5975,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
                         : (isIbkrFlex
                             ? 'Fetches IBKR Activity Flex via Flex Web Service v3 (reporting-only) and merges into the local ledger. Use CSV for historical backfills.'
-
+                            : (isIbkrGainskeeper
+                                ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
                                 ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
                                 : (isUsmartHk
                                     ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
                                     : (isSchwab
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.json</code> without clearing existing records.'
-                                : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))))));
+                                : (isIbkr
+                                    ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
+                                    : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -7665,6 +7729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
         const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
         const isIbkrFlexXml = isIbkr && ibkrImportMode === 'flex_xml';
+        const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -7685,6 +7750,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const positionsReady = isIbkrCsv ? isLikelyPositionsFile(positionsFile) : false;
         const flexXmlFile = flexXmlInput?.files?.[0];
         const flexXmlReady = isIbkrFlexXml && !!flexXmlFile;
+        const gainskeeperFiles = gainskeeperFilesInput?.files ? Array.from(gainskeeperFilesInput.files) : [];
+        const gainskeeperReady = isIbkrGainskeeper
+            && gainskeeperFiles.length > 0
+            && gainskeeperFiles.every((file) => isLikelyGainskeeperFile(file));
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
@@ -7715,6 +7784,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (isIbkrCsv && transactionReady && positionsReady)
             || isIbkrFlex
             || flexXmlReady
+            || gainskeeperReady
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
@@ -7728,6 +7798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
         setImportStatusIcon(flexXmlStatus, flexXmlReady);
+        setImportStatusIcon(gainskeeperFilesStatus, gainskeeperReady);
 
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
         setImportStatusIcon(longbridgeSgHistoryOrdersStatus, Boolean(longbridgeSgHistoryOrdersReady));
@@ -7931,7 +8002,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, flexXmlInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, flexXmlInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -8046,6 +8117,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('ibkr_import_mode', ibkrImportMode);
                 if (ibkrImportMode === 'flex') {
                     // Flex config comes from Broker Access; no additional per-import UI
+                } else if (ibkrImportMode === 'gainskeeper') {
+                    const gainskeeperFiles = gainskeeperFilesInput?.files ? Array.from(gainskeeperFilesInput.files) : [];
+                    if (!gainskeeperFiles.length) {
+                        setImportFeedback('Please choose at least one IBKR GainsKeeper .gkx file before importing.', 'error');
+                        return;
+                    }
+                    if (!gainskeeperFiles.every((file) => isLikelyGainskeeperFile(file))) {
+                        setImportFeedback('Please upload IBKR GainsKeeper files with .gkx or .ofx filenames.', 'error');
+                        return;
+                    }
+                    gainskeeperFiles.forEach((file) => {
+                        formData.append('gainskeeper_files', file);
+                    });
                 } else if (ibkrImportMode === 'flex_xml') {
                     const flexXmlFile = flexXmlInput?.files?.[0];
                     if (!flexXmlFile) {

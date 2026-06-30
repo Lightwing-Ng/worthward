@@ -1399,7 +1399,7 @@
 .segmented-control:hover,
 .range-mode-shell:hover { background: var(--control-glass-background-hover); }
 .segmented-control::before,
-.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform 260ms var(--motion-standard), width 260ms var(--motion-standard), box-shadow 220ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; z-index: var(--layer-decorative-backdrop); }
+.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform 260ms var(--motion-standard), width 260ms var(--motion-standard), box-shadow 220ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; pointer-events: none; z-index: 0; }
 .segmented-control[data-option-count]::before,
 .range-mode-shell[data-option-count]::before { width: calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)); transform: translateX(calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))); }
 .segmented-control[data-segmented-overflow="1"][data-option-count]::before,
@@ -1429,18 +1429,18 @@
 .range-mode-shell[data-active="exact"]:not([data-option-count])::before { transform: translateX(calc(100% + 3px)); }
 .segmented-control[data-active="transactions"]:not([data-option-count])::before { transform: translateX(calc(100% + 3px)); }
 .segmented-control-option,
-.range-mode-option { position: relative; z-index: var(--layer-surface-content); flex: 1 1 0; display: flex; align-items: stretch; margin-bottom: 0; }
+.range-mode-option { position: relative; z-index: 1; flex: 1 1 0; display: flex; align-items: stretch; margin-bottom: 0; }
 .segmented-control-option input,
 .range-mode-option input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
-.range-mode-option span { box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms ease; overflow-wrap: anywhere; text-wrap: balance; }
+.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-bold); color: var(--theme-muted); transition: color 220ms ease; overflow-wrap: anywhere; text-wrap: balance; }
 .segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
 	white-space: nowrap;
 }
 .segmented-control-option:hover span,
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
-.range-mode-option input:checked + span { color: var(--color-white-adaptive); letter-spacing: 0; }
+.range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); letter-spacing: 0; }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
 .segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,
 .range-mode-shell[data-active="period"] > .segmented-control-option:nth-child(1) > span,

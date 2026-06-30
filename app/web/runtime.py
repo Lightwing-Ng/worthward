@@ -96,6 +96,7 @@ from app.services.investment_import import (
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_flex,
     build_investment_payload_from_ibkr_flex_xml,
+    build_investment_payload_from_ibkr_gainskeeper_files,
     build_investment_payload_from_longbridge_hk_files,
     build_investment_payload_from_longbridge_sg_files,
     build_investment_payload_from_schwab_csv,
@@ -4617,6 +4618,32 @@ def build_web_runtime() -> WebRuntime:
                         "IBKR Flex XML import complete. Activity Flex records were parsed from the uploaded XML file, "
                         "mapped to the canonical ledger, and merged incrementally into the local investment store "
                         "without clearing older data first."
+                    )
+                elif ibkr_import_mode == "gainskeeper":
+                    gainskeeper_files = request.files.getlist("gainskeeper_files")
+                    gainskeeper_payloads: list[tuple[bytes, str]] = []
+                    for gainskeeper_file in gainskeeper_files:
+                        if gainskeeper_file is None:
+                            continue
+                        file_payload = gainskeeper_file.read()
+                        if not file_payload:
+                            continue
+                        gainskeeper_payloads.append((
+                            file_payload,
+                            str(getattr(gainskeeper_file, "filename", "") or "").strip(),
+                        ))
+                    if not gainskeeper_payloads:
+                        return jsonify({
+                            "success": False,
+                            "error": "Please upload at least one IBKR GainsKeeper .gkx file.",
+                        }), 400
+                    imported_payload = build_investment_payload_from_ibkr_gainskeeper_files(
+                        gainskeeper_payloads,
+                    )
+                    success_message = (
+                        "IBKR GainsKeeper import complete. OFX/GKX records were parsed in memory, "
+                        "merged idempotently, and matching older CSV records were upgraded with "
+                        "intraday trade timestamps where available."
                     )
                 else:
                     if transactions_file is None or positions_file is None:

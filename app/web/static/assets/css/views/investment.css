@@ -1670,7 +1670,7 @@
 
 .investment-view-segmented {
     width: fit-content;
-    max-width: none;
+    max-width: min(100%, 480px);
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -3006,6 +3006,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-method-segmented {
     width: fit-content;
+    max-width: min(100%, 440px);
     margin-inline: 0;
 }
 .investment-import-method-segmented .segmented-control-option span {
@@ -3310,8 +3311,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-help-step {
     display: block;
-    padding-left: 1.6em;
-    text-indent: -1.6em;
+    padding-left: 1.45em;
+    text-indent: -1.45em;
     line-height: 1.55;
     color: var(--text);
     font-weight: var(--font-weight-regular);
@@ -3426,8 +3427,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-action-icon {
     background-color: var(--theme-accent-primary);
-    mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/arrow.up.document.fill.svg") center/contain no-repeat;
+    mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
 }
 
 .investment-form-grid {
