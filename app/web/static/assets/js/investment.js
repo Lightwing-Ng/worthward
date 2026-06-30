@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.58.1
+ * Code version: v1.58.2
+ * - Fixed: IBKR CSV import now reports success as soon as the server commit finishes, then refreshes the large investment dataset in the background.
  * - Fixed: HSBC import validation now declares the selected statement/copy-paste mode before checking readiness, restoring Investment page initialization.
  * - Added: HSBC import mode now supports multi-file statement PDF upload for USD Foreign Currency Savings backfills while keeping copy/paste as the default path.
  * - Added: Investment Metrics now include Total offshore gain, combining holdings P&L with converted broker cash benefits without double-counting stock grants already inside holdings P&L.
@@ -8210,34 +8211,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     const refreshNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
                         ? `Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.map((ticker) => formatInvestmentTickerForDisplay(ticker)).join(', ')}.`
                         : '';
-                    let valuationStatus = null;
-                    try {
-                        ({ valuationStatus } = await fetchInvestmentData());
-                    } catch (error) {
-                        if (isLifecycleInterruptedFetch(error)) return;
-                        throw error;
-                    }
-                    const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
-                    const feedbackVariant = valuationStatus?.isDegraded ? 'warning' : 'success';
                     const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
                     if (selectedBroker === 'ibkr') {
                         setImportFeedback(
                             buildIbkrImportFeedbackMessage({
                                 importSummary: result.summary,
                                 refreshNotice,
-                                valuationNotice,
+                                valuationNotice: '',
                                 pendingTransferCount,
                             }),
-                            feedbackVariant,
+                            'success',
                             { allowHtml: true }
                         );
                     } else {
                         setImportFeedback(
-                            `${result.message || 'Import complete.'}${refreshNotice ? ` ${refreshNotice}` : ''}${valuationNotice ? ` ${valuationNotice}` : ''}`,
-                            feedbackVariant
+                            `${result.message || 'Import complete.'}${refreshNotice ? ` ${refreshNotice}` : ''}`,
+                            'success'
                         );
                     }
                     closeInvestmentImportForm();
+                    try {
+                        const { valuationStatus } = await fetchInvestmentData();
+                        const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
+                        if (valuationNotice) {
+                            setImportFeedback(
+                                `${result.message || 'Import complete.'} ${valuationNotice}`,
+                                'warning'
+                            );
+                        }
+                    } catch (error) {
+                        if (isLifecycleInterruptedFetch(error)) return;
+                        throw error;
+                    }
                 } else {
                     setImportFeedback(result.error || 'Import failed.', 'error');
                 }
