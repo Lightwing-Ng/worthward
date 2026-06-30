@@ -1,4 +1,4 @@
-/* Code version: v0.3.9 */
+/* Code version: v0.3.10 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -259,8 +259,8 @@
 	--glass-mask-shadow: 0 12px 24px var(--theme-glass-border);
 	--glass-mask-blur: saturate(170%) blur(18px);
 	--apple-frosted-glass-background:
-		linear-gradient(90deg, rgba(232, 238, 235, 0.68) 0%, rgba(242, 234, 225, 0.62) 50%, rgba(235, 239, 243, 0.68) 100%),
-		rgba(245, 246, 246, 0.58);
+		linear-gradient(90deg, rgba(232, 238, 235, 0.54) 0%, rgba(242, 234, 225, 0.48) 50%, rgba(235, 239, 243, 0.54) 100%),
+		rgba(245, 246, 246, 0.38);
 	--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.44);
 	--apple-frosted-glass-shadow: 0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62);
 	--apple-frosted-glass-blur: saturate(180%) blur(30px);

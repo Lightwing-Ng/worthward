@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.4
+Code version: v0.4.5
 """
 
 from __future__ import annotations
@@ -2189,7 +2189,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_surface_shadow": "var(--apple-frosted-glass-shadow)",
                 "tokens": [
                     raw_token("--apple-frosted-glass-background",
-                              "linear-gradient(90deg, rgba(232, 238, 235, 0.68) 0%, rgba(242, 234, 225, 0.62) 50%, rgba(235, 239, 243, 0.68) 100%), rgba(245, 246, 246, 0.58)"),
+                              "linear-gradient(90deg, rgba(232, 238, 235, 0.54) 0%, rgba(242, 234, 225, 0.48) 50%, rgba(235, 239, 243, 0.54) 100%), rgba(245, 246, 246, 0.38)"),
                     raw_token("--apple-frosted-glass-border", "1px solid rgba(255, 255, 255, 0.44)"),
                     raw_token("--apple-frosted-glass-shadow", "0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62)"),
                     raw_token("--apple-frosted-glass-blur", "saturate(180%) blur(30px)"),
