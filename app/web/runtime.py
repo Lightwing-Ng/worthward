@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.2
+Code version: v0.4.4
 """
 
 from __future__ import annotations
@@ -1874,10 +1874,10 @@ def build_web_runtime() -> WebRuntime:
                     {"label": "vs all in", "value": "+492.83", "color": "var(--theme-accent-positive)"},
                 ],
                 "tokens": [
-                    material_reference_token("--tooltip-background", "Frosted glass extracted"),
-                    material_reference_token("--tooltip-border", "Frosted glass extracted"),
-                    material_reference_token("--tooltip-shadow", "Frosted glass extracted"),
-                    material_reference_token("--tooltip-blur", "Frosted glass extracted"),
+                    material_reference_token("--tooltip-background", "Apple frosted glass"),
+                    material_reference_token("--tooltip-border", "Apple frosted glass"),
+                    material_reference_token("--tooltip-shadow", "Apple frosted glass"),
+                    material_reference_token("--tooltip-blur", "Apple frosted glass"),
                     px_token("--chart-tooltip-min-width", 164, 1),
                     px_token("--chart-tooltip-max-width", 260, 1),
                     px_token("--chart-tooltip-padding-block", 10, 1),
@@ -2176,6 +2176,24 @@ def build_web_runtime() -> WebRuntime:
                     "0 18px 40px rgba(10, 14, 25, 0.12)",
                     "saturate(160%) blur(18px)",
                 ),
+            },
+            {
+                "id": material_token_id("Apple frosted glass"),
+                "name": "Apple frosted glass",
+                "sample_kind": "glass-surface",
+                "sample_title": sample_title,
+                "sample_copy": sample_copy,
+                "sample_surface_background": "var(--apple-frosted-glass-background)",
+                "sample_surface_border": "var(--apple-frosted-glass-border)",
+                "sample_surface_blur": "var(--apple-frosted-glass-blur)",
+                "sample_surface_shadow": "var(--apple-frosted-glass-shadow)",
+                "tokens": [
+                    raw_token("--apple-frosted-glass-background",
+                              "linear-gradient(90deg, rgba(232, 238, 235, 0.68) 0%, rgba(242, 234, 225, 0.62) 50%, rgba(235, 239, 243, 0.68) 100%), rgba(245, 246, 246, 0.58)"),
+                    raw_token("--apple-frosted-glass-border", "1px solid rgba(255, 255, 255, 0.44)"),
+                    raw_token("--apple-frosted-glass-shadow", "0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62)"),
+                    raw_token("--apple-frosted-glass-blur", "saturate(180%) blur(30px)"),
+                ],
             },
         ]
         return rows

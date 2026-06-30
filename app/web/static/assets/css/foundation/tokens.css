@@ -1,4 +1,4 @@
-/* Code version: v0.3.7 */
+/* Code version: v0.3.9 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -236,10 +236,10 @@
 	--glass-chip-shadow-hover: 0 12px 32px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-shadow-active: 0 6px 18px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 94%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-blur: saturate(180%) blur(28px);
-	--tooltip-background: var(--theme-tooltip-background);
-	--tooltip-border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 26%, transparent);
-	--tooltip-shadow: 0 18px 40px var(--theme-shadow-ambient);
-	--tooltip-blur: saturate(180%) blur(24px);
+	--tooltip-background: var(--apple-frosted-glass-background);
+	--tooltip-border: var(--apple-frosted-glass-border);
+	--tooltip-shadow: var(--apple-frosted-glass-shadow);
+	--tooltip-blur: var(--apple-frosted-glass-blur);
 	--chart-tooltip-min-width: 164px;
 	--chart-tooltip-max-width: 260px;
 	--chart-tooltip-padding-block: 10px;
@@ -258,6 +258,12 @@
 	--glass-mask-border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 36%, transparent);
 	--glass-mask-shadow: 0 12px 24px var(--theme-glass-border);
 	--glass-mask-blur: saturate(170%) blur(18px);
+	--apple-frosted-glass-background:
+		linear-gradient(90deg, rgba(232, 238, 235, 0.68) 0%, rgba(242, 234, 225, 0.62) 50%, rgba(235, 239, 243, 0.68) 100%),
+		rgba(245, 246, 246, 0.58);
+	--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.44);
+	--apple-frosted-glass-shadow: 0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+	--apple-frosted-glass-blur: saturate(180%) blur(30px);
 	--liquid-glass-background:
 		linear-gradient(180deg, color-mix(in srgb, var(--glass-surface-background-dense) 90%, var(--color-white-adaptive)) 0%, color-mix(in srgb, var(--glass-surface-background-soft) 90%, transparent) 100%),
 		radial-gradient(circle at top left, color-mix(in srgb, var(--theme-glass-highlight) 92%, transparent) 0%, transparent 44%);

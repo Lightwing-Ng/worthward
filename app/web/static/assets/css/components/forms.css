@@ -1,3 +1,4 @@
+/* Code version: v0.1.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1501,11 +1502,11 @@
 .chart-tooltip, .field-tooltip { background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); border-radius: var(--radius-soft); }
 .field-tooltip,
 .field-tooltip-validation {
-	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
-	border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
-	box-shadow: 0 24px 48px var(--theme-shadow-ambient), 0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
-	backdrop-filter: saturate(180%) blur(28px);
-	-webkit-backdrop-filter: saturate(180%) blur(28px);
+	background: var(--apple-frosted-glass-background);
+	border: var(--apple-frosted-glass-border);
+	box-shadow: var(--apple-frosted-glass-shadow);
+	backdrop-filter: var(--apple-frosted-glass-blur);
+	-webkit-backdrop-filter: var(--apple-frosted-glass-blur);
 	isolation: isolate;
 }
 .liquid-glass-surface {
@@ -1524,6 +1525,18 @@
 	inset: 0;
 	background: var(--liquid-glass-highlight);
 	pointer-events: none;
+}
+.field-tooltip.liquid-glass-surface,
+.field-tooltip-validation.liquid-glass-surface {
+	background: var(--apple-frosted-glass-background);
+	border: var(--apple-frosted-glass-border);
+	box-shadow: var(--apple-frosted-glass-shadow);
+	backdrop-filter: var(--apple-frosted-glass-blur);
+	-webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+}
+.field-tooltip.liquid-glass-surface::after,
+.field-tooltip-validation.liquid-glass-surface::after {
+	background: transparent;
 }
 .field-tooltip { margin-top: 8px; padding: 8px 10px; color: var(--muted); font-size: var(--font-tooltip); line-height: 1.35; }
 .field-tooltip-validation {
@@ -1553,11 +1566,11 @@
 	left: 18px;
 	width: var(--ticker-validation-arrow-size);
 	height: var(--ticker-validation-arrow-size);
-	border-top: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
-	border-left: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
-	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
+	border-top: var(--apple-frosted-glass-border);
+	border-left: var(--apple-frosted-glass-border);
+	background: var(--apple-frosted-glass-background);
 	transform: rotate(45deg);
-	box-shadow: -3px -3px 8px color-mix(in srgb, var(--theme-shadow-ambient) 52%, transparent);
+	box-shadow: -3px -3px 8px rgba(13, 18, 28, 0.12);
 }
 .field-tooltip-validation-icon {
 	width: 14px;

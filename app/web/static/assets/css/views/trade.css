@@ -258,7 +258,7 @@
     }
 }
 
-/* Code version: v1.0.1-p1 */
+/* Code version: v1.0.1-p2 */
 .trade-metric-card {
     --trade-metric-card-padding: 0;
     --trade-metric-card-radius: var(--workspace-metric-card-radius);
@@ -662,11 +662,11 @@
     border-radius: var(--radius-pill);
     min-height: 0;
     pointer-events: auto;
-    background: var(--glass-popover-background);
-    box-shadow: var(--glass-popover-shadow);
-    backdrop-filter: var(--glass-popover-blur);
-    -webkit-backdrop-filter: var(--glass-popover-blur);
-    border: var(--glass-popover-border);
+    background: var(--apple-frosted-glass-background);
+    box-shadow: var(--apple-frosted-glass-shadow);
+    backdrop-filter: var(--apple-frosted-glass-blur);
+    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+    border: var(--apple-frosted-glass-border);
     isolation: isolate;
 }
 
