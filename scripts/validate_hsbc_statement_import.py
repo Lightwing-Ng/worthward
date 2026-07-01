@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Validate HSBC statement PDF imports without writing investment.json.
+"""Validate HSBC statement PDF imports without writing investment.parquet.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.infrastructure.storage import INVESTMENT_STORE_PATH  # noqa: E402
+from app.infrastructure.storage import INVESTMENT_STORE_PATH, load_investment_store_payload  # noqa: E402
 from app.services.investment_import import (  # noqa: E402
     HSBC_STATEMENT_PDF_IMPORTER_VERSION,
     build_investment_payload_from_hsbc_statement_pdfs,
@@ -96,14 +96,12 @@ def _transaction_report(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_store(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
+    return load_investment_store_payload(path)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate HSBC statement PDF import output without writing investment.json."
+        description="Validate HSBC statement PDF import output without writing investment.parquet."
     )
     parser.add_argument(
         "inputs",
@@ -113,7 +111,7 @@ def main() -> int:
     parser.add_argument(
         "--store",
         default=str(INVESTMENT_STORE_PATH),
-        help="Existing investment.json path used for merge simulation.",
+        help="Existing investment.parquet path used for merge simulation.",
     )
     parser.add_argument(
         "--json",

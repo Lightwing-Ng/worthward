@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.3.7
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
+from typing import Any, Callable
 from uuid import uuid4
 
 try:
@@ -30,7 +31,8 @@ import pandas as pd
 from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
 from app.core.settings import get_settings
 
-INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
+LEGACY_INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
+INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.parquet"
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
 PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"
@@ -53,6 +55,7 @@ _PROFILE_COLUMNS = [
     "updated_at",
 ]
 _SEARCH_CACHE_COLUMNS = ["query", "symbol", "name", "asset_type", "logo_url", "source", "updated_at"]
+_INVESTMENT_STORE_COLUMNS = ["section", "row_index", "value_json", "updated_at"]
 _SHARE_CLASS_TICKER_PATTERN = re.compile(r"^([A-Z0-9]{1,4})[.\-\s]+([ABC])$")
 _INTRADAY_STORE_SUFFIX_PATTERN = re.compile(r"_[0-9]+[a-z]+$")
 
@@ -483,6 +486,163 @@ def write_json_atomic(path: Path, payload: object) -> None:
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+def _investment_parquet_path_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
+    return path if path.suffix.lower() == ".parquet" else path.with_suffix(".parquet")
+
+
+def _investment_legacy_json_path_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
+    if path.suffix.lower() == ".json":
+        return path
+    return path.with_suffix(".json")
+
+
+def _investment_payload_to_table(payload: dict[str, object]) -> pd.DataFrame:
+    now = _utc_iso_timestamp()
+    rows: list[dict[str, object]] = []
+    transactions = payload.get("transactions", [])
+    if isinstance(transactions, list):
+        for row_index, transaction in enumerate(transactions):
+            rows.append({
+                "section": "transactions",
+                "row_index": row_index,
+                "value_json": json.dumps(transaction, ensure_ascii=False, separators=(",", ":")),
+                "updated_at": now,
+            })
+
+    for key, value in payload.items():
+        if key == "transactions":
+            continue
+        rows.append({
+            "section": str(key),
+            "row_index": -1,
+            "value_json": json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+            "updated_at": now,
+        })
+
+    return pd.DataFrame(rows, columns=_INVESTMENT_STORE_COLUMNS)
+
+
+def _investment_table_to_payload(table: pd.DataFrame) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    transactions: list[object] = []
+    if table.empty:
+        return payload
+
+    normalized = table.copy()
+    for column in _INVESTMENT_STORE_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = "" if column != "row_index" else -1
+
+    transaction_rows = normalized.loc[normalized["section"] == "transactions"].copy()
+    if not transaction_rows.empty:
+        transaction_rows["row_index"] = pd.to_numeric(transaction_rows["row_index"], errors="coerce").fillna(0)
+        transaction_rows = transaction_rows.sort_values("row_index", ascending=True)
+        for _, row in transaction_rows.iterrows():
+            try:
+                value = json.loads(str(row.get("value_json") or "{}"))
+            except (json.JSONDecodeError, TypeError):
+                value = {}
+            if isinstance(value, dict):
+                transactions.append(value)
+        payload["transactions"] = transactions
+
+    metadata_rows = normalized.loc[normalized["section"] != "transactions"].copy()
+    if not metadata_rows.empty:
+        metadata_rows["row_index"] = pd.to_numeric(metadata_rows["row_index"], errors="coerce").fillna(-1)
+        metadata_rows = metadata_rows.sort_values(["section", "row_index"], ascending=[True, False])
+        for _, row in metadata_rows.drop_duplicates(subset=["section"], keep="first").iterrows():
+            section = str(row.get("section") or "").strip()
+            if not section:
+                continue
+            try:
+                payload[section] = json.loads(str(row.get("value_json") or "null"))
+            except (json.JSONDecodeError, TypeError):
+                payload[section] = None
+
+    return payload
+
+
+def investment_store_path_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
+    parquet_path = _investment_parquet_path_for(path)
+    if parquet_path.exists() and parquet_path.stat().st_size > 0:
+        return parquet_path
+    legacy_path = _investment_legacy_json_path_for(path)
+    if legacy_path.exists() and legacy_path.stat().st_size > 0:
+        return legacy_path
+    return parquet_path
+
+
+def investment_store_exists(path: Path = INVESTMENT_STORE_PATH) -> bool:
+    return investment_store_path_for(path).exists()
+
+
+def load_investment_store_payload(path: Path = INVESTMENT_STORE_PATH) -> dict[str, object]:
+    ensure_market_store_dir()
+    parquet_path = _investment_parquet_path_for(path)
+    legacy_path = _investment_legacy_json_path_for(path)
+    with market_store_file_lock(parquet_path):
+        if parquet_path.exists() and parquet_path.stat().st_size > 0:
+            return _investment_table_to_payload(_read_parquet_table(parquet_path, _INVESTMENT_STORE_COLUMNS))
+    if not legacy_path.exists() or legacy_path.stat().st_size == 0:
+        return {}
+    with market_store_file_lock(legacy_path):
+        if not legacy_path.exists() or legacy_path.stat().st_size == 0:
+            return {}
+        try:
+            payload = json.loads(legacy_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, TypeError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+    save_investment_store_payload(payload, path)
+    return payload
+
+
+def save_investment_store_payload(payload: dict[str, object], path: Path = INVESTMENT_STORE_PATH) -> None:
+    parquet_path = _investment_parquet_path_for(path)
+    with market_store_file_lock(parquet_path):
+        _write_parquet_table(parquet_path, _investment_payload_to_table(payload), _INVESTMENT_STORE_COLUMNS)
+
+
+def update_investment_store_payload(
+        updater: Callable[[dict[str, object]], tuple[dict[str, object], Any]],
+        path: Path = INVESTMENT_STORE_PATH,
+) -> Any:
+    ensure_market_store_dir()
+    parquet_path = _investment_parquet_path_for(path)
+    legacy_path = _investment_legacy_json_path_for(path)
+    with market_store_file_lock(parquet_path):
+        if parquet_path.exists() and parquet_path.stat().st_size > 0:
+            current_payload = _investment_table_to_payload(
+                _read_parquet_table(parquet_path, _INVESTMENT_STORE_COLUMNS)
+            )
+        elif legacy_path.exists() and legacy_path.stat().st_size > 0:
+            try:
+                legacy_payload = json.loads(legacy_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError, TypeError):
+                legacy_payload = {}
+            current_payload = legacy_payload if isinstance(legacy_payload, dict) else {}
+        else:
+            current_payload = {}
+
+        next_payload, result = updater(current_payload)
+        _write_parquet_table(parquet_path, _investment_payload_to_table(next_payload), _INVESTMENT_STORE_COLUMNS)
+        return result
+
+
+def clear_investment_store(path: Path = INVESTMENT_STORE_PATH) -> bool:
+    removed = False
+    for candidate in (
+            _investment_parquet_path_for(path),
+            _investment_legacy_json_path_for(path),
+    ):
+        with market_store_file_lock(candidate):
+            if candidate.exists():
+                candidate.unlink()
+                removed = True
+    return removed
 
 
 def _table_lock_path(path: Path) -> Path:

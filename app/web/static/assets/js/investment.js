@@ -5966,24 +5966,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? 'Upload one or more HSBC statement PDFs. The import records USD Foreign Currency Savings rows and keeps existing records.'
                     : 'Paste the HSBC USD Savings, Portfolio, and Order Status pages. Supplementary captures are allowed; duplicate chunks are ignored.')
                 : (isLongbridgeHk
-                    ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.json</code> without clearing existing records.'
+                    ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                     : (isLongbridgeSg
-                        ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.json</code> without clearing existing records.'
+                        ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.parquet</code> without clearing existing records.'
                         : (isFutuhk
-                        ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                        ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                         : (isIbkrFlex
                             ? 'Fetches IBKR Activity Flex via Flex Web Service v3 (reporting-only) and merges into the local ledger. Use CSV for historical backfills.'
                             : (isIbkrGainskeeper
                                 ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
-                                ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                                ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isUsmartHk
-                                    ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.json</code> without clearing existing records.'
+                                    ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                     : (isSchwab
-                                ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.json</code> without clearing existing records.'
+                                ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.json</code> without clearing existing records.')))))))));
+                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';

@@ -171,13 +171,17 @@ from app.infrastructure.storage import (
     INVESTMENT_STORE_PATH,
     LOGOS_STORE_DIR,
     clear_non_historical_market_cache,
+    clear_investment_store,
     delete_ticker_data,
     has_logo_asset,
     has_profile_record,
     history_store_path_for,
+    investment_store_exists,
+    investment_store_path_for,
     intraday_history_store_path_for,
     list_local_tickers,
     list_historical_tickers,
+    load_investment_store_payload,
     load_profile_record,
     market_store_file_lock,
     investment_ticker_identity_store_aliases,
@@ -189,7 +193,9 @@ from app.infrastructure.storage import (
     resolve_known_ticker_company_name,
     record_ticker_usage,
     record_strategy_usage,
+    save_investment_store_payload,
     top_used_strategies,
+    update_investment_store_payload,
     write_json_atomic,
 )
 
@@ -517,38 +523,30 @@ def build_web_runtime() -> WebRuntime:
             write_json_atomic(INVESTMENT_TRANSACTIONS_CACHE_PATH, cache_payload)
 
     def load_normalized_investment_payload() -> dict[str, Any]:
-        with market_store_file_lock(INVESTMENT_STORE_PATH):
-            if not INVESTMENT_STORE_PATH.exists():
-                return {}
-            with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-                return normalize_investment_payload_tickers(json.load(f))
+        return normalize_investment_payload_tickers(
+            load_investment_store_payload(INVESTMENT_STORE_PATH)
+        )
 
     def write_investment_payload(payload: dict[str, Any]) -> None:
         normalized_payload = normalize_investment_payload_tickers(payload)
-        with market_store_file_lock(INVESTMENT_STORE_PATH):
-            write_json_atomic(
-                INVESTMENT_STORE_PATH,
-                cast(dict[str, Any], normalized_payload),
-            )
+        save_investment_store_payload(cast(dict[str, Any], normalized_payload), INVESTMENT_STORE_PATH)
         invalidate_investment_transactions_cache()
 
     def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
-        with market_store_file_lock(INVESTMENT_STORE_PATH):
-            if INVESTMENT_STORE_PATH.exists():
-                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-                    current_payload = normalize_investment_payload_tickers(json.load(f))
-            else:
-                current_payload = {}
+        def merge_payload(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, Any]]:
             investment_payload = merge_investment_payloads(
-                current_payload,
+                normalize_investment_payload_tickers(current_payload),
                 imported_payload,
             )
-            write_json_atomic(
-                INVESTMENT_STORE_PATH,
-                cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
-            )
+            normalized_payload = cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
+            return normalized_payload, normalized_payload
+
+        investment_payload = cast(
+            dict[str, Any],
+            update_investment_store_payload(merge_payload, INVESTMENT_STORE_PATH),
+        )
         invalidate_investment_transactions_cache()
-        return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
+        return investment_payload
 
     def refresh_investment_import_price_caches(
         imported_payload: dict[str, Any],
@@ -4270,12 +4268,10 @@ def build_web_runtime() -> WebRuntime:
         action = str(request.form.get("action", "market-data")).strip().lower() or "market-data"
         try:
             if action == "investment-transactions":
-                with market_store_file_lock(INVESTMENT_STORE_PATH):
-                    if INVESTMENT_STORE_PATH.exists():
-                        INVESTMENT_STORE_PATH.unlink()
-                        notice = "Cleared the local broker transaction record stored in settings_store/investment.json."
-                    else:
-                        notice = "No local broker transaction record was found in settings_store/investment.json."
+                if clear_investment_store(INVESTMENT_STORE_PATH):
+                    notice = "Cleared the local broker transaction record stored in settings_store/investment.parquet."
+                else:
+                    notice = "No local broker transaction record was found in settings_store/investment.parquet."
                 invalidate_investment_transactions_cache()
             else:
                 cache_summary = clear_non_historical_market_cache()
@@ -4447,10 +4443,10 @@ def build_web_runtime() -> WebRuntime:
             "investment transactions request received",
             {
                 "path": request.path,
-                "store_exists": INVESTMENT_STORE_PATH.exists(),
+                "store_exists": investment_store_exists(INVESTMENT_STORE_PATH),
             },
         )
-        if not INVESTMENT_STORE_PATH.exists():
+        if not investment_store_exists(INVESTMENT_STORE_PATH):
             invalidate_investment_transactions_cache()
             response = jsonify({
                 "transactions": [],
@@ -4476,7 +4472,7 @@ def build_web_runtime() -> WebRuntime:
             )
             return apply_no_store_headers(response)
         try:
-            investment_store_fingerprint = build_file_fingerprint(INVESTMENT_STORE_PATH)
+            investment_store_fingerprint = build_file_fingerprint(investment_store_path_for(INVESTMENT_STORE_PATH))
             cached_data = read_investment_transactions_cache(investment_store_fingerprint)
             if cached_data is not None:
                 section_freshness = cached_data.get("section_freshness", {})
@@ -4509,7 +4505,7 @@ def build_web_runtime() -> WebRuntime:
             freshness_refresh_failures = ensure_latest_investment_daily_caches(
                 section_freshness["open_tickers"]
             )
-            investment_store_fingerprint = build_file_fingerprint(INVESTMENT_STORE_PATH)
+            investment_store_fingerprint = build_file_fingerprint(investment_store_path_for(INVESTMENT_STORE_PATH))
             transactions = data.get("transactions", [])
             price_history_by_ticker, price_history_failures = load_investment_price_histories(
                 transactions,
@@ -4887,15 +4883,14 @@ def build_web_runtime() -> WebRuntime:
                     "success": False,
                     "error": "A source transfer key is required.",
                 }), 400
-            if not INVESTMENT_STORE_PATH.exists():
+            if not investment_store_exists(INVESTMENT_STORE_PATH):
                 return jsonify({
                     "success": False,
                     "error": "No local investment store exists yet.",
                 }), 400
 
-            with market_store_file_lock(INVESTMENT_STORE_PATH):
-                with open(INVESTMENT_STORE_PATH, "r", encoding="utf-8") as f:
-                    investment_payload = normalize_investment_payload_tickers(json.load(f))
+            def update_bindings(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, str]]:
+                investment_payload = normalize_investment_payload_tickers(current_payload)
                 next_bindings = normalize_investment_internal_transfer_bindings(
                     investment_payload.get("manual_internal_transfer_bindings")
                 )
@@ -4907,10 +4902,12 @@ def build_web_runtime() -> WebRuntime:
                 else:
                     next_bindings.pop(source_key, None)
                 investment_payload["manual_internal_transfer_bindings"] = next_bindings
-                write_json_atomic(
-                    INVESTMENT_STORE_PATH,
-                    cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)),
-                )
+                return cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload)), next_bindings
+
+            next_bindings = cast(
+                dict[str, str],
+                update_investment_store_payload(update_bindings, INVESTMENT_STORE_PATH),
+            )
             invalidate_investment_transactions_cache()
             return jsonify({
                 "success": True,
