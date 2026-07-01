@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.3
+ * Code version: v1.59.4
  * - Removed: IBKR manual Flex file upload mode from the import UI and submit path.
  * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
  * - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
@@ -46,6 +46,7 @@
  * - Fixed: Investment realtime quote application now only marks holdings and chart points when the quote session matches the active New York clock session.
  * - Fixed: Investment transaction descriptions now display canonical tickers, matching holdings and stock details.
  * - Fixed: Holdings, stock details, exports, and valuation replay now aggregate canonical investment tickers so MSFT.US merges into MSFT and SPLG.US inherits SPYM.
+ * - Fixed: Investment cash replay now ignores IBKR FX Translation P&L accounting rows so broker cash stays aligned with the authoritative cash snapshot.
  * - Fixed: Investment cash replay now preallocates later same-currency funding to earlier broker-statement trades when missing intraday timestamps would otherwise create a false negative cash balance.
  * - Fixed: Investment history Max range and pagination now keep processed transaction caches current, so Gateway-ledger pages cannot render as empty while transactions exist.
  * - Added: Mixed-broker portfolios now calibrate each broker's latest history Balance from per-broker ending cash snapshots, so IBKR CSV Ending Cash can align with the broker app after HSBC merge
@@ -10332,6 +10333,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
             else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
             const normalizedType = getNormalizedTransactionType(txn);
+            if (normalizedType === 'fx_translation_pnl') {
+                return 0;
+            }
             if ((amount === 0 || amount === undefined) && qty !== null && price !== null && ['buy', 'sell'].includes(txn.type)) {
                 amount = qty * price;
             }
