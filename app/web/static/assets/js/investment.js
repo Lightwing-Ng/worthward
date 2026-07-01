@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.4
+ * Code version: v1.59.5
+ * - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
  * - Removed: IBKR manual Flex file upload mode from the import UI and submit path.
  * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
  * - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
@@ -686,6 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentBrokerFilterSelectedCodes = new Set();
     let investmentBrokerFilterDocumentListenersBound = false;
     let investmentBrokerFilterApplyRaf = 0;
+    let investmentBrokerFilterPositionRaf = 0;
     let investmentBrokerFilterTransactionIndex = {
         source: null,
         allRows: [],
@@ -5201,45 +5203,12 @@ document.addEventListener('DOMContentLoaded', () => {
         trigger.setAttribute('aria-label', `Broker filter: ${triggerTitle}`);
     }
 
-    function measureInvestmentBrokerFilterDropdownWidth(dropdown) {
-        if (!(dropdown instanceof HTMLElement)) return 0;
-        const widthSignature = String(dropdown.dataset.investmentBrokerFilterWidthSignature || '');
-        const measuredSignature = String(dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature || '');
-        const cachedWidth = Number(dropdown.dataset.investmentBrokerFilterMeasuredWidth || 0);
-        if (widthSignature && measuredSignature === widthSignature && Number.isFinite(cachedWidth) && cachedWidth > 0) {
-            return cachedWidth;
-        }
-        const prev = {
-            width: dropdown.style.width,
-            maxWidth: dropdown.style.maxWidth,
-            position: dropdown.style.position,
-            left: dropdown.style.left,
-            top: dropdown.style.top,
-            visibility: dropdown.style.visibility,
-        };
-        // Temporarily move offscreen + max-content to measure intrinsic width of options (with labels)
-        // without visual jump or depending on current fixed/absolute placement.
-        dropdown.style.position = 'fixed';
-        dropdown.style.left = '-9999px';
-        dropdown.style.top = '0';
-        dropdown.style.visibility = 'hidden';
-        dropdown.style.width = 'max-content';
-        dropdown.style.maxWidth = 'none';
-        // force layout
-        void dropdown.offsetWidth;
-        const measuredWidth = Math.ceil(dropdown.getBoundingClientRect().width);
-        // restore
-        dropdown.style.width = prev.width;
-        dropdown.style.maxWidth = prev.maxWidth;
-        dropdown.style.position = prev.position;
-        dropdown.style.left = prev.left;
-        dropdown.style.top = prev.top;
-        dropdown.style.visibility = prev.visibility;
-        if (widthSignature) {
-            dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature = widthSignature;
-            dropdown.dataset.investmentBrokerFilterMeasuredWidth = `${measuredWidth}`;
-        }
-        return measuredWidth;
+    function estimateInvestmentBrokerFilterDropdownWidth(availableBrokerCodes = getAvailableInvestmentBrokerCodes()) {
+        const labels = ['All', ...availableBrokerCodes.map((brokerCode) => getInvestmentBrokerMeta(brokerCode).label)];
+        const longestLabelLength = labels.reduce((maxLength, label) => (
+            Math.max(maxLength, Array.from(String(label || '')).length)
+        ), 0);
+        return Math.max(180, Math.min(360, 74 + (longestLabelLength * 8)));
     }
 
     function positionInvestmentBrokerFilterDropdown(field) {
@@ -5261,7 +5230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const contentWidth = Math.max(
             Math.ceil(triggerRect.width),
-            measureInvestmentBrokerFilterDropdownWidth(dropdown),
+            estimateInvestmentBrokerFilterDropdownWidth(),
         );
         const viewportMaxWidth = Math.max(140, window.innerWidth - triggerRect.left - viewportPadding);
         const finalWidth = Math.min(contentWidth, viewportMaxWidth);
@@ -5280,6 +5249,16 @@ document.addEventListener('DOMContentLoaded', () => {
         dropdown.style.zIndex = '10002';
         dropdown.style.overflowY = 'auto';
         dropdown.style.overscrollBehavior = 'contain';
+    }
+
+    function scheduleInvestmentBrokerFilterDropdownPosition() {
+        if (investmentBrokerFilterPositionRaf) return;
+        investmentBrokerFilterPositionRaf = window.requestAnimationFrame(() => {
+            investmentBrokerFilterPositionRaf = 0;
+            document.querySelectorAll('[data-investment-broker-filter].is-open').forEach((field) => {
+                positionInvestmentBrokerFilterDropdown(field);
+            });
+        });
     }
 
     function setInvestmentBrokerFilterDropdownOpen(field, isOpen) {
@@ -5403,17 +5382,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
-        const widthSignature = availableBrokerCodes
-            .map((brokerCode) => `${brokerCode}:${getInvestmentBrokerMeta(brokerCode).label}`)
-            .join('|');
-        if (dropdown.dataset.investmentBrokerFilterWidthSignature !== widthSignature) {
-            dropdown.dataset.investmentBrokerFilterMeasuredWidthSignature = '';
-            dropdown.dataset.investmentBrokerFilterMeasuredWidth = '';
-        }
-        dropdown.dataset.investmentBrokerFilterWidthSignature = widthSignature;
-
         dropdown.innerHTML = '';
-        dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
+        const fragment = document.createDocumentFragment();
+        fragment.appendChild(createInvestmentBrokerFilterOptionButton({
             value: '__all__',
             label: 'All',
             isSelected: allSelected,
@@ -5427,7 +5398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const brokerMeta = getInvestmentBrokerMeta(brokerCode);
             // Always show the broker name text (e.g. "Longbridge (SG)", "CMB Wing Lung Bank")
             // alongside the logo so every option is clearly labeled regardless of logo uniqueness.
-            dropdown.appendChild(createInvestmentBrokerFilterOptionButton({
+            fragment.appendChild(createInvestmentBrokerFilterOptionButton({
                 value: brokerCode,
                 label: brokerMeta.label,
                 iconUrl: brokerMeta.logoUrl,
@@ -5448,6 +5419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             }));
         });
+        dropdown.appendChild(fragment);
     }
 
     function syncInvestmentBrokerFilterField(field) {
@@ -5495,16 +5467,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         window.addEventListener('resize', () => {
-            document.querySelectorAll('[data-investment-broker-filter].is-open').forEach((field) => {
-                positionInvestmentBrokerFilterDropdown(field);
-            });
+            scheduleInvestmentBrokerFilterDropdownPosition();
         });
         // Reposition on scroll (capture) so the fixed dropdown stays aligned with its trigger
         // when the page, table body, or sticky header context scrolls.
         document.addEventListener('scroll', () => {
-            document.querySelectorAll('[data-investment-broker-filter].is-open').forEach((field) => {
-                positionInvestmentBrokerFilterDropdown(field);
-            });
+            scheduleInvestmentBrokerFilterDropdownPosition();
         }, true);
     }
 
@@ -5543,7 +5511,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
-        const filteredDetailRows = detailRows.filter((txn) => matchesInvestmentBrokerFilter(txn));
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+        const filteredDetailRows = allSelected
+            ? detailRows
+            : detailRows.filter((txn) => selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn))));
         if (!filteredDetailRows.length) {
             return `
                 <tr>
@@ -10656,7 +10629,7 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentChartPointsCache = isInvestmentDailyEquityLiveRange()
             ? ensureInvestmentLiveSessionChartSlot(investmentBaseChartPointsCache)
             : [...investmentBaseChartPointsCache];
-        investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
+        investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
         refreshInvestmentAvailableBrokerCodes();
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
@@ -10757,8 +10730,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const fundingMetrics = getUsdFundingMetrics(processed);
         const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
         const brokerBenefitMetrics = getBrokerBenefitMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
-        investmentProcessedTransactionsCache = Array.isArray(processed) ? [...processed] : [];
-        refreshInvestmentAvailableBrokerCodes();
+        if (investmentProcessedTransactionsCache !== processed) {
+            investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
+            refreshInvestmentAvailableBrokerCodes();
+        }
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
         const AGGREGATE_CASH = Number(last?.aggregate_running_cash ?? last?.running_cash);
