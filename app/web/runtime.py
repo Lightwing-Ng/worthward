@@ -56,12 +56,12 @@ from app.services.comparisons import (
 )
 from app.core.email_settings import (
     SmtpSettings,
-    build_oauth_settings_message,
-    finish_outlook_oauth_device_flow,
+    YAHOO_SMTP_HOST,
+    YAHOO_SMTP_PORT,
+    clear_oauth_settings,
     load_smtp_settings,
     sanitize_smtp_settings_for_view,
     save_smtp_settings,
-    start_outlook_oauth_device_flow,
     test_smtp_connection,
 )
 from strategies.backtest import run_single_ticker_backtest
@@ -1736,14 +1736,14 @@ def build_web_runtime() -> WebRuntime:
                 "id": style_token_id("Settings form input"),
                 "name": "Settings form input",
                 "sample_kind": "settings-form-input",
-                "sample_title": "Outlook OAuth client ID",
+                "sample_title": "Yahoo app password",
                 "sample_copy": "",
                 "sample_button": "",
                 "sample_button_class": "",
                 "sample_icon_class": "",
                 "sample_icon_shell_class": "",
-                "sample_placeholder": "Outlook OAuth client ID",
-                "sample_value": "8c4f9d21-6b73-4f1e-9a2c-3d7e5f8b1c42",
+                "sample_placeholder": "Yahoo Mail app password",
+                "sample_value": "abcd efgh ijkl mnop",
                 "tokens": [
                     px_token("--radius-control", 999, 0),
                     px_token("--settings-text-input-pad-block", 5, 0),
@@ -2041,7 +2041,7 @@ def build_web_runtime() -> WebRuntime:
                     {"token_name": "--font-size-2", "usage_label": "Tooltip copy", "sample_text": "Logo services reachable", "sample_value": "12px"},
                     {"token_name": "--font-size-3", "usage_label": "Table text", "sample_text": "Ticker  Full name  Available range", "sample_value": "13px"},
                     {"token_name": "--font-size-4", "usage_label": "Form label", "sample_text": "Ticker  Period  Reinvest cash dividends", "sample_value": "14px"},
-                    {"token_name": "--font-size-5", "usage_label": "Control text", "sample_text": "smtp-mail.outlook.com", "sample_value": "15px"},
+                    {"token_name": "--font-size-5", "usage_label": "Control text", "sample_text": "smtp.mail.yahoo.com", "sample_value": "15px"},
                     {"token_name": "--font-size-6", "usage_label": "Section title", "sample_text": labels["hero_title"], "sample_value": "24px"},
                     {"token_name": "--font-size-7", "usage_label": "Large metric", "sample_text": "+19.84%", "sample_value": "32px"},
                     {"token_name": "--font-size-8", "usage_label": "XL metric", "sample_text": "67.01%", "sample_value": "36px"},
@@ -2063,7 +2063,7 @@ def build_web_runtime() -> WebRuntime:
                 "description": "Intermediate aliases map the primitive scale to UI, title, and metric contexts before component-level tokens consume them.",
                 "samples": [
                     {"token_name": "--font-ui-xs", "usage_label": "Weekday labels", "sample_text": "Sun  Mon  Tue  Wed  Thu  Fri  Sat", "sample_value": "11px"},
-                    {"token_name": "--font-ui-sm", "usage_label": "Tooltip size", "sample_text": "Use smtp-mail.outlook.com:587 with STARTTLS.", "sample_value": "12px"},
+                    {"token_name": "--font-ui-sm", "usage_label": "Tooltip size", "sample_text": "Use smtp.mail.yahoo.com:587 with STARTTLS.", "sample_value": "12px"},
                     {"token_name": "--font-ui-md", "usage_label": "Standard label size", "sample_text": "Ticker  Period  Strategy", "sample_value": "14px"},
                     {"token_name": "--font-ui-lg", "usage_label": "Standard control size", "sample_text": "QQQ  NVDA  AAPL", "sample_value": "15px"},
                     {"token_name": "--font-title-md", "usage_label": "Workspace title", "sample_text": labels["portfolio_title"], "sample_value": "24px"},
@@ -3963,52 +3963,22 @@ def build_web_runtime() -> WebRuntime:
         current_settings = load_smtp_settings()
         mailbox = request.form.get("from_email", current_settings.from_email or current_settings.username).strip()
         updated_settings = SmtpSettings(
-            host=request.form.get("host", current_settings.host).strip() or current_settings.host,
-            port=max(parse_int_value(request.form.get("port"), current_settings.port), 1),
+            host=YAHOO_SMTP_HOST,
+            port=YAHOO_SMTP_PORT,
             username=mailbox,
             password=request.form.get("password", ""),
             from_email=mailbox,
             use_starttls=request.form.getlist("use_starttls")[-1] == "1" if request.form.getlist("use_starttls") else False,
-            oauth_client_id=request.form.get("oauth_client_id", current_settings.oauth_client_id).strip(),
-            oauth_tenant=request.form.get("oauth_tenant", current_settings.oauth_tenant).strip(),
-            oauth_access_token=current_settings.oauth_access_token,
-            oauth_refresh_token=current_settings.oauth_refresh_token,
-            oauth_token_expires_at=current_settings.oauth_token_expires_at,
-            oauth_device_code=current_settings.oauth_device_code,
-            oauth_user_code=current_settings.oauth_user_code,
-            oauth_verification_uri=current_settings.oauth_verification_uri,
-            oauth_verification_uri_complete=current_settings.oauth_verification_uri_complete,
-            oauth_device_expires_at=current_settings.oauth_device_expires_at,
-            oauth_device_interval_seconds=current_settings.oauth_device_interval_seconds,
         )
         if not updated_settings.password:
             updated_settings.password = current_settings.password
-        if (
-                updated_settings.oauth_client_id != current_settings.oauth_client_id
-                or updated_settings.oauth_tenant != current_settings.oauth_tenant
-                or updated_settings.from_email != current_settings.from_email
-        ):
-            updated_settings.oauth_access_token = ""
-            updated_settings.oauth_refresh_token = ""
-            updated_settings.oauth_token_expires_at = 0.0
-            updated_settings.oauth_device_code = ""
-            updated_settings.oauth_user_code = ""
-            updated_settings.oauth_verification_uri = ""
-            updated_settings.oauth_verification_uri_complete = ""
-            updated_settings.oauth_device_expires_at = 0.0
-            updated_settings.oauth_device_interval_seconds = 5.0
+        clear_oauth_settings(updated_settings)
         save_smtp_settings(updated_settings)
-        if action == "start-oauth":
-            updated_settings, success, message = start_outlook_oauth_device_flow(updated_settings)
-            save_smtp_settings(updated_settings)
-        elif action == "finish-oauth":
-            updated_settings, success, message = finish_outlook_oauth_device_flow(updated_settings)
-            save_smtp_settings(updated_settings)
-        elif action == "test":
+        if action == "test":
             success, message, updated_settings = test_smtp_connection(updated_settings)
             save_smtp_settings(updated_settings)
         else:
-            success, message = True, f"SMTP settings saved. {build_oauth_settings_message(updated_settings)}"
+            success, message = True, "Yahoo SMTP settings saved."
         return _redirect_with_settings_feedback(
             "email-smtp",
             notice=message if success else "",

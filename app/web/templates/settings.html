@@ -401,30 +401,28 @@
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-note">{% if smtp_settings.oauth_authorized %}Outlook OAuth is connected.{% elif smtp_settings.oauth_pending %}Authorization is waiting for confirmation.{% else %}Outlook OAuth is not connected yet. Use Outlook SMTP with Microsoft OAuth 2.0 for current Microsoft mailbox policies. Keep STARTTLS enabled, use `smtp-mail.outlook.com:587`, and connect this app with your own Microsoft Entra app client ID.{% endif %}</p>
+                <p class="settings-service-note">Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full <code>@yahoo.com</code> address with the generated app password.</p>
             </div>
     </section>
     <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
+            <input type="hidden" name="host" value="smtp.mail.yahoo.com">
+            <input type="hidden" name="port" value="587">
             <div class="settings-form-grid">
                 <div class="field">
-                    <label for="smtp_host">{{ labels.email_smtp_host }}</label>
-                    <input id="smtp_host" name="host" type="text" class="settings-form-control" value="{{ smtp_settings.host }}" placeholder="smtp-mail.outlook.com">
+                    <label>{{ labels.email_smtp_host }}</label>
+                    <input type="text" class="settings-form-control" value="smtp.mail.yahoo.com" readonly aria-readonly="true">
                 </div>
                 <div class="field">
-                    <label for="smtp_port">{{ labels.email_smtp_port }}</label>
-                    <input id="smtp_port" name="port" type="number" class="settings-form-control settings-form-control-numeric" min="1" max="65535" value="{{ smtp_settings.port }}" inputmode="numeric">
+                    <label>{{ labels.email_smtp_port }}</label>
+                    <input type="text" class="settings-form-control settings-form-control-numeric" value="587" readonly aria-readonly="true">
                 </div>
                 <div class="field">
                     <label for="smtp_from_email">{{ labels.email_smtp_from }}</label>
                     <input id="smtp_from_email" name="from_email" type="email" class="settings-form-control" value="{{ smtp_settings.from_email }}" autocomplete="username email" placeholder="your-name@example.invalid">
                 </div>
                 <div class="field settings-field-span-full">
-                    <label for="smtp_oauth_client_id">Outlook OAuth client ID</label>
-                    <input id="smtp_oauth_client_id" name="oauth_client_id" type="text" class="settings-form-control" value="{{ smtp_settings.oauth_client_id }}" autocomplete="off" placeholder="Azure app registration client ID">
-                </div>
-                <div class="field settings-field-span-full">
-                    <label for="smtp_oauth_tenant">Microsoft Entra tenant</label>
-                    <input id="smtp_oauth_tenant" name="oauth_tenant" type="text" class="settings-form-control" value="{{ smtp_settings.oauth_tenant }}" autocomplete="off" placeholder="{% if smtp_settings.oauth_mailbox_kind == 'personal' %}consumers{% else %}organizations{% endif %}">
+                    <label for="smtp_password">{{ labels.email_smtp_password }}</label>
+                    <input id="smtp_password" name="password" type="password" class="settings-form-control settings-form-control-secret" autocomplete="new-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}Yahoo Mail app password{% endif %}">
                 </div>
             </div>
             <div class="field-checkbox field-switch settings-field-span-full">
@@ -436,14 +434,11 @@
                     </span>
                 </label>
             </div>
-            {% if smtp_settings.oauth_pending %}
-            <div class="field-tooltip">Open <a href="{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}" target="_blank" rel="noopener noreferrer">{{ smtp_settings.oauth_verification_uri_complete or smtp_settings.oauth_verification_uri }}</a> and enter code <strong>{{ smtp_settings.oauth_user_code }}</strong>. If Microsoft opens the wrong account type, go back and switch the tenant above before restarting OAuth.</div>
-            {% endif %}
             <div class="settings-action-package-grid">
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Store the current Outlook SMTP and OAuth configuration on this device.</p>
+                        <p class="settings-service-note">Store the Yahoo SMTP endpoint, mailbox, app password, and STARTTLS setting on this device.</p>
                     </div>
                     <div class="settings-action-package-form">
                         <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">{{ labels.email_smtp_save }}</button>
@@ -452,25 +447,7 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Request a fresh Microsoft device code for this mailbox and tenant.</p>
-                    </div>
-                    <div class="settings-action-package-form">
-                        <button type="submit" name="action" value="start-oauth" class="settings-inline-button settings-inline-button-primary">Start Outlook OAuth</button>
-                    </div>
-                </section>
-                <section class="settings-action-package settings-callout-card-primary">
-                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
-                    <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Poll Microsoft for the completed device-flow authorization result.</p>
-                    </div>
-                    <div class="settings-action-package-form">
-                        <button type="submit" name="action" value="finish-oauth" class="settings-inline-button settings-inline-button-secondary-token">Finish Outlook OAuth</button>
-                    </div>
-                </section>
-                <section class="settings-action-package settings-callout-card-primary">
-                    <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
-                    <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Verify SMTP `XOAUTH2` login against Outlook with the saved settings.</p>
+                        <p class="settings-service-note">Verify SMTP login against Yahoo Mail with the saved app password.</p>
                     </div>
                     <div class="settings-action-package-form">
                         <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
