@@ -1,4 +1,4 @@
-/* Code version: v0.4.8 */
+/* Code version: v0.4.9 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -135,11 +135,7 @@
 		const centerX = drawX + (boxSize / 2);
 		const centerY = drawY + (boxSize / 2);
 		const radius = boxSize / 2;
-		const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-		glow.addColorStop(0, "rgba(255, 255, 255, 0.98)");
-		glow.addColorStop(0.55, "rgba(255, 255, 255, 0.74)");
-		glow.addColorStop(0.78, "rgba(255, 255, 255, 0)");
-		ctx.fillStyle = glow;
+		ctx.fillStyle = "#fff";
 		ctx.beginPath();
 		ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
 		ctx.fill();

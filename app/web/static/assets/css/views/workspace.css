@@ -1,4 +1,4 @@
-/* Code version: v1.1.6 */
+/* Code version: v1.1.8 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -309,17 +309,8 @@
 .timing-suggestion-logo,
 .chart-tooltip-logo,
 .portfolio-donut-logo {
-    --standard-logo-glow-core: rgba(255, 255, 255, 0.98);
-    --standard-logo-glow-mid: rgba(255, 255, 255, 0.74);
-    --standard-logo-glow-edge: rgba(255, 255, 255, 0);
     border-radius: 50%;
-    background:
-        radial-gradient(
-            circle at 50% 50%,
-            var(--standard-logo-glow-core) 0 36%,
-            var(--standard-logo-glow-mid) 55%,
-            var(--standard-logo-glow-edge) 78%
-        );
+    background: var(--color-white-adaptive);
     box-shadow: none;
 }
 
@@ -1304,11 +1295,11 @@
     pointer-events: auto;
     opacity: 1;
     border-radius: var(--workspace-modal-radius);
-    background: var(--liquid-glass-background);
-    box-shadow: var(--liquid-glass-shadow);
-    backdrop-filter: var(--liquid-glass-blur);
-    -webkit-backdrop-filter: var(--liquid-glass-blur);
-    border: var(--liquid-glass-border);
+    background: var(--apple-frosted-glass-background);
+    box-shadow: var(--apple-frosted-glass-shadow);
+    backdrop-filter: var(--apple-frosted-glass-blur);
+    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+    border: var(--apple-frosted-glass-border);
     overflow: hidden;
 }
 
@@ -1317,7 +1308,7 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: var(--liquid-glass-highlight);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-white-adaptive) 18%, transparent) 0%, transparent 68%);
     pointer-events: none;
 }
 
