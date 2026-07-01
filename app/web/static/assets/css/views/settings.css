@@ -1044,6 +1044,16 @@ div.style-token-modal-demo {
     word-break: break-word;
 }
 
+.font-token-sample-numeric-fraction {
+    display: inline-flex;
+    align-items: baseline;
+    width: fit-content;
+    font-size: var(--font-table-body);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    --workspace-metric-decimal-scale-local: var(--font-numeric-fraction-scale);
+}
+
 
 
 
@@ -1607,7 +1617,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     border: 1px solid var(--theme-accent-positive);
     background: transparent;
     color: var(--theme-accent-positive);
-    font-size: var(--font-caption);
+    font-size: var(--font-ui-xs);
     font-weight: var(--font-weight-bold);
     line-height: 1.2;
 }

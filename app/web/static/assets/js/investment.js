@@ -8442,6 +8442,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                 `;
             const averagePriceDisplay = summary.averagePrice === null ? '-' : formatHoldingsMoney(summary.averagePrice);
+            const positionDisplay = formatHoldingsPosition(summary.shares);
             const realizedClass = summary.realizedPnl >= 0
                 ? ' investment-holdings-value-positive'
                 : ' investment-holdings-value-negative';
@@ -8479,7 +8480,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             useSplitValue: true,
                         })}
                     </td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money">${formatHoldingsPosition(summary.shares)}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">
+                        <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(positionDisplay)}</span>
+                    </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
                         ${renderHoldingsDualCurrencyValue(
                             summary.realizedPnl,

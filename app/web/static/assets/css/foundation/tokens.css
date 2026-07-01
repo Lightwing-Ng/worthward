@@ -1,4 +1,4 @@
-/* Code version: v0.3.10 */
+/* Code version: v0.3.11 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -194,7 +194,8 @@
 	--workspace-metric-value-line-height: 1;
 	--workspace-metric-value-letter-spacing: -0.04em;
 	--workspace-metric-value-font-weight: var(--font-weight-regular);
-	--workspace-metric-decimal-scale: 0.76;
+	--font-numeric-fraction-scale: 0.76;
+	--workspace-metric-decimal-scale: var(--font-numeric-fraction-scale);
 	--workspace-metric-card-padding: 6px 8px 8px;
 	--workspace-metric-card-row-gap: 4px;
 	--workspace-metric-card-radius: var(--radius-panel);
@@ -322,6 +323,22 @@
 	--font-card-title: var(--font-title-md);
 	--font-card-subtitle: var(--font-ui-lg);
 	--font-metric-value: var(--font-metric-md);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme-override="light"]) {
+		--apple-frosted-glass-background:
+			linear-gradient(90deg, rgba(31, 38, 43, 0.58) 0%, rgba(39, 42, 37, 0.5) 50%, rgba(28, 35, 44, 0.58) 100%),
+			rgba(14, 18, 20, 0.62);
+		--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.16);
+		--apple-frosted-glass-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+	}
+}
+:root[data-theme-override="dark"] {
+	--apple-frosted-glass-background:
+		linear-gradient(90deg, rgba(31, 38, 43, 0.58) 0%, rgba(39, 42, 37, 0.5) 50%, rgba(28, 35, 44, 0.58) 100%),
+		rgba(14, 18, 20, 0.62);
+	--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.16);
+	--apple-frosted-glass-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 html {
 	height: 100%;

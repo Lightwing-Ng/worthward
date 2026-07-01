@@ -1615,6 +1615,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--workspace-metric-value-line-height", "1"),
                     raw_token("--workspace-metric-value-letter-spacing", "-0.04em"),
                     raw_token("--workspace-metric-value-font-weight", "var(--font-weight-regular)"),
+                    raw_token("--font-numeric-fraction-scale", "0.76"),
                     raw_token("--workspace-metric-card-padding", "6px 8px 8px"),
                     px_token("--workspace-metric-card-row-gap", 4, 1),
                     raw_token("--workspace-metric-card-radius", "var(--radius-panel)"),
@@ -2098,6 +2099,8 @@ def build_web_runtime() -> WebRuntime:
                     {"token_name": "--font-card-subtitle", "usage_label": "Card subtitle", "sample_text": "AAPL  MSFT  NVDA  META  AVGO  AMD  ORCL  QQQ  SPY  TLT",
                      "sample_value": "15px"},
                     {"token_name": "--font-metric-value", "usage_label": "Metric value", "sample_text": "67.01%", "sample_value": "24px"},
+                    {"token_name": "--font-numeric-fraction-scale", "usage_label": "Numeric fraction",
+                     "sample_text": "62.76", "sample_value": "0.76x", "sample_kind": "numeric-fraction"},
                 ],
                 "tokens": [
                     raw_token("--font-form-label", "var(--font-ui-md)"),
@@ -2108,6 +2111,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--font-card-title", "var(--font-title-md)"),
                     raw_token("--font-card-subtitle", "var(--font-ui-lg)"),
                     raw_token("--font-metric-value", "var(--font-metric-md)"),
+                    raw_token("--font-numeric-fraction-scale", "0.76"),
                 ],
             },
         ]

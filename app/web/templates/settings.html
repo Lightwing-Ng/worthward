@@ -265,10 +265,19 @@
                                 <p class="font-token-sample-name">{{ sample.token_name }}</p>
                             </div>
                             <div class="font-token-sample-preview">
+                                {% if sample.sample_kind == "numeric-fraction" %}
+                                <p
+                                    class="font-token-sample-text font-token-sample-numeric-fraction"
+                                    aria-label="{{ sample.sample_text }}"
+                                >
+                                    <span class="workspace-metric-value-major">{{ sample.sample_text.split('.')[0] }}.</span><span class="workspace-metric-value-minor">{{ sample.sample_text.split('.')[1] }}</span>
+                                </p>
+                                {% else %}
                                 <p
                                     class="font-token-sample-text"
                                     data-inline-font-size-token="{{ sample.token_name }}"
                                 >{{ sample.sample_text }}</p>
+                                {% endif %}
                                 <p class="font-token-sample-value">{{ sample.sample_value }}</p>
                             </div>
                         </div>
