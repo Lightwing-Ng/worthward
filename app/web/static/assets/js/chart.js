@@ -1,4 +1,4 @@
-/* Code version: v0.4.5 */
+/* Code version: v0.4.8 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -131,6 +131,20 @@
 		ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 	};
 
+	const drawStandardLogoBadge = (ctx, drawX, drawY, boxSize) => {
+		const centerX = drawX + (boxSize / 2);
+		const centerY = drawY + (boxSize / 2);
+		const radius = boxSize / 2;
+		const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+		glow.addColorStop(0, "rgba(255, 255, 255, 0.98)");
+		glow.addColorStop(0.55, "rgba(255, 255, 255, 0.74)");
+		glow.addColorStop(0.78, "rgba(255, 255, 255, 0)");
+		ctx.fillStyle = glow;
+		ctx.beginPath();
+		ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+		ctx.fill();
+	};
+
 	const renderReturnsChart = (config, data) => {
 		const canvas = config?.canvas;
 		const state = data?.state;
@@ -177,6 +191,7 @@
 		const formatFullDateParts = bootstrap.dateDisplay?.formatFullDateParts;
 		const formatFullDateLines = bootstrap.dateDisplay?.formatFullDateLines;
 		const portfolioLabelMap = {
+			PORTFOLIO: "Portfolio",
 			Portfolio: "Portfolio",
 			SPY: "SPX",
 			QQQ: "Nasdaq-100",
@@ -288,6 +303,7 @@
 					const drawY = centerY - (logoSize / 2);
 
 					ctx.save();
+					drawStandardLogoBadge(ctx, drawX, drawY, logoSize);
 					drawContainedImage(ctx, image, drawX, drawY, logoSize);
 					ctx.restore();
 				});
@@ -360,7 +376,7 @@
 			tooltipEl.style.top = `${top}px`;
 		};
 
-		const referenceLineWidth = 1.0;
+		const referenceLineWidth = 1.5;
 		const referenceShadowBlur = 0;
 
 		const baseDatasetStyle = {

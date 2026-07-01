@@ -1,4 +1,4 @@
-/* Code version: v0.5.2 */
+/* Code version: v0.5.3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -3548,6 +3548,7 @@
         syncSegmentedControlLayout(shell, {activeValue, activeIndex});
         form?.dataset && (form.dataset.portfolioAllocation = activeValue);
         if (activeValue === "shares") {
+            hidePortfolioWeightTooltips();
             document.querySelectorAll(".portfolio-weight-field.is-open").forEach((field) => {
                 field.classList.remove("is-open");
             });

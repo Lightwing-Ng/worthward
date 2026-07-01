@@ -1,7 +1,7 @@
 """
 Shared application configuration.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from pathlib import Path
@@ -15,7 +15,7 @@ DEFAULT_TICKERS = ("QQQ", "JEPQ")
 DEFAULT_PERIOD = "1y"
 DEFAULT_INTERVAL = "1d"
 SUPPORTED_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "10y", "max")
-COMPARE_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "max")
+COMPARE_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "10y", "max")
 SUPPORTED_PERIODS_1M = ("1d", "3d", "1w", "2w", "1mo")
 PERIOD_OFFSETS = {
     "1d": pd.Timedelta(days=1),

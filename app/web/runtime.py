@@ -3313,6 +3313,7 @@ def build_web_runtime() -> WebRuntime:
                             exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
                             exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                             period_label = format_period_label(period)
+                        supported_periods = list(COMPARE_PERIODS_1D)
 
                         colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                         if current_view == "portfolio":

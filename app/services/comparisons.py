@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -50,17 +50,13 @@ def build_compare_start_notice(effective_start: pd.Timestamp) -> str:
 def build_period_shortfall_notice(
         requested_period: str,
         effective_start: pd.Timestamp,
-        *,
-        fallback_period: str | None = None,
 ) -> str:
     period_label = format_period_label(requested_period)
-    notice = (
+    return (
         f"Requested period {period_label} exceeds the shared trading history. "
-        f"Comparison starts from {format_display_date(effective_start)}."
+        f"Using the latest available start date among the selected tickers: "
+        f"{format_display_date(effective_start)}."
     )
-    if fallback_period and fallback_period != requested_period:
-        notice = f"{notice} Automatically switched to {format_period_label(fallback_period)}."
-    return notice
 
 
 def resolve_effective_period(
@@ -95,10 +91,9 @@ def resolve_effective_period_for_datasets(
     if available_days <= 0:
         raise ValueError("The selected tickers do not have overlapping trading history.")
 
-    return "max", build_period_shortfall_notice(
+    return requested_period, build_period_shortfall_notice(
         requested_period,
         common_start,
-        fallback_period="max",
     )
 
 
