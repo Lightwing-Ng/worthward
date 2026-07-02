@@ -1,4 +1,4 @@
-/* Code version: v0.5.4 */
+/* Code version: v0.5.6 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -267,6 +267,9 @@
     border-radius: var(--settings-action-package-radius);
     background: var(--settings-action-package-background);
     border: var(--settings-action-package-border);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
     max-width: var(--settings-action-package-max-width);
 }
 
@@ -801,6 +804,11 @@ div.style-token-modal-demo {
     max-width: 420px;
     box-sizing: border-box;
     overflow: clip;
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
 }
 
 .style-token-demo .workspace-modal-dialog,
@@ -1161,16 +1169,18 @@ div.style-token-modal-demo::-webkit-scrollbar,
     height: 48px;
     transform: translate(-50%, -50%);
     border-radius: var(--radius-pill);
-    background: var(--glass-surface-background-dense);
-    box-shadow: 0 4px 12px var(--theme-shadow-ambient), inset 0 1px 0 var(--theme-glass-highlight);
-    border: 1px solid var(--theme-glass-border);
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    border: var(--frosted-glass-extracted-border);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
     will-change: top;
 }
 
 .style-token-resizer:hover::after,
 .style-token-resizer:focus-visible::after,
 .style-token-shell.is-resizing .style-token-resizer::after {
-    background: var(--glass-surface-background-dense);
+    background: var(--frosted-glass-extracted-background-hover);
     border-color: var(--accent-border-medium);
 }
 
@@ -1971,7 +1981,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     margin: 0;
 }
 
-.date-picker-nav,
 .report-info-button,
 .settings-action-button {
     padding: 0;
@@ -1982,8 +1991,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
     place-items: center;
 }
 
-.date-picker-nav:hover,
-.date-picker-nav:focus-visible,
 .report-info-button:hover,
 .report-info-button:focus-visible,
 .settings-action-button:hover,
@@ -2234,10 +2241,10 @@ div.style-token-modal-demo::-webkit-scrollbar,
     z-index: var(--layer-decorative-backdrop);
     transform: translate3d(0, 0, 0) scale(1);
     opacity: 0;
-    transition: transform 420ms var(--motion-inertial),
+    transition: transform var(--local-store-pagination-motion-duration) var(--local-store-pagination-motion-easing),
     opacity 180ms var(--motion-standard),
-    width 420ms var(--motion-inertial),
-    height 420ms var(--motion-inertial);
+    width var(--local-store-pagination-motion-duration) var(--local-store-pagination-motion-easing),
+    height var(--local-store-pagination-motion-duration) var(--local-store-pagination-motion-easing);
     will-change: transform, opacity, width, height;
 }
 
@@ -2264,26 +2271,33 @@ div.style-token-modal-demo::-webkit-scrollbar,
     border-radius: var(--local-store-pagination-button-radius);
     border: var(--local-store-pagination-button-border);
     color: var(--accent-text);
-    background: var(--glass-chip-background);
+    background: var(--local-store-pagination-button-background);
+    box-shadow: var(--local-store-pagination-button-shadow);
+    backdrop-filter: var(--local-store-pagination-button-blur);
+    -webkit-backdrop-filter: var(--local-store-pagination-button-blur);
     display: inline-grid;
     place-items: center;
     text-decoration: none;
     font-size: var(--font-table-body);
     line-height: 1;
     font-weight: var(--font-weight-medium);
-    transition: transform 180ms var(--motion-standard), color 180ms var(--motion-standard), border-color 180ms var(--motion-standard), background 180ms var(--motion-standard);
+    transition: transform var(--local-store-pagination-motion-duration) var(--local-store-pagination-motion-easing), color 180ms var(--motion-standard), border-color 180ms var(--motion-standard), background 180ms var(--motion-standard), box-shadow 180ms var(--motion-standard);
 }
 
 .local-store-page-button.is-active {
     background: var(--accent-fill);
     color: var(--accent-contrast);
     border-color: var(--accent-fill);
+    box-shadow: var(--local-store-pagination-indicator-shadow);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     font-weight: var(--font-weight-bold);
 }
 
 .local-store-pagination.is-animated .local-store-page-button.is-active {
     background: transparent;
     border-color: transparent;
+    box-shadow: none;
     color: var(--accent-contrast);
 }
 

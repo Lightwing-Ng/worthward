@@ -1,4 +1,4 @@
-/* Code version: v0.5.4 */
+/* Code version: v0.5.5 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1180,6 +1180,23 @@
         currentRegion.replaceChildren(...Array.from(nextRegion.childNodes).map((node) => node.cloneNode(true)));
     };
 
+    const syncGlobalNoticeBanners = (doc) => {
+        const pageRoot = document.querySelector(".page");
+        if (!(pageRoot instanceof HTMLElement) || !doc) return;
+        document.querySelectorAll(".notice-floating-banner-global").forEach((node) => node.remove());
+        const nextBanners = Array.from(doc.querySelectorAll(".notice-floating-banner-global"));
+        if (!nextBanners.length) return;
+        const anchor = pageRoot.querySelector(".app-shell");
+        nextBanners.forEach((banner) => {
+            const clonedBanner = banner.cloneNode(true);
+            if (anchor) {
+                pageRoot.insertBefore(clonedBanner, anchor);
+            } else {
+                pageRoot.prepend(clonedBanner);
+            }
+        });
+    };
+
     const applyComparePendingState = () => {
         bootstrap.applyComparePendingState?.();
     };
@@ -1370,6 +1387,7 @@
         const nextWorkspacePanel = doc.getElementById("workspace_panel");
         const workspacePanel = document.getElementById("workspace_panel");
         if (!nextWorkspacePanel || !workspacePanel) throw new Error("Workspace panel missing from response.");
+        syncGlobalNoticeBanners(doc);
         if (state.currentView === "tickers") {
             const hydratedCompareWorkspace = bootstrap.hydrateCompareWorkspace?.({
                 doc,

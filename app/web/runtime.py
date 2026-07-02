@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.9
+Code version: v0.4.10
 """
 
 from __future__ import annotations
@@ -1551,6 +1551,8 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-package-column-gap", 12),
                     px_token("--settings-action-package-row-gap", 8),
                     px_token("--settings-action-package-copy-gap", 4),
+                    raw_token("--settings-action-package-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--settings-action-package-border", "var(--frosted-glass-extracted-border)"),
                     px_token("--style-token-demo-width", 384),
                 ],
                 "related_styles": [
@@ -1873,7 +1875,12 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
                     raw_token("--local-store-pagination-indicator-shadow",
                               "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
-                    raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
+                    raw_token("--local-store-pagination-button-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--local-store-pagination-button-border", "var(--frosted-glass-extracted-border)"),
+                    raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-extracted-shadow)"),
+                    raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-extracted-blur)"),
+                    raw_token("--local-store-pagination-motion-duration", "325ms"),
+                    raw_token("--local-store-pagination-motion-easing", "var(--motion-bouncy)"),
                 ],
                 "related_styles": [],
             },

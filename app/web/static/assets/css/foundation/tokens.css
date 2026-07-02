@@ -1,4 +1,4 @@
-/* Code version: v0.3.13 */
+/* Code version: v0.3.14 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -79,8 +79,8 @@
 	--settings-action-package-column-gap: 12px;
 	--settings-action-package-row-gap: 8px;
 	--settings-action-package-copy-gap: 4px;
-	--settings-action-package-background: var(--settings-general-option-background);
-	--settings-action-package-border: var(--settings-general-option-border);
+	--settings-action-package-background: var(--frosted-glass-extracted-background);
+	--settings-action-package-border: var(--frosted-glass-extracted-border);
 	--settings-action-package-max-width: 680px;
 	--settings-action-button-radius: var(--radius-pill);
 	--settings-action-button-pad-block: 0px;
@@ -148,7 +148,12 @@
 	--local-store-pagination-indicator-radius: var(--radius-pill);
 	--local-store-pagination-indicator-background: var(--accent-fill);
 	--local-store-pagination-indicator-shadow: 0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
-	--local-store-pagination-button-border: 1px solid var(--accent-border-strong);
+	--local-store-pagination-button-background: var(--frosted-glass-extracted-background);
+	--local-store-pagination-button-border: var(--frosted-glass-extracted-border);
+	--local-store-pagination-button-shadow: var(--frosted-glass-extracted-shadow);
+	--local-store-pagination-button-blur: var(--frosted-glass-extracted-blur);
+	--local-store-pagination-motion-duration: 325ms;
+	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
 	--mode-switch-pad: 4px;
 	--mode-switch-gap: 4px;

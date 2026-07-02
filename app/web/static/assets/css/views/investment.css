@@ -1,4 +1,4 @@
-/* Code version: v1.16.0 */
+/* Code version: v1.16.1 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2306,12 +2306,14 @@
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
+    --scrollable-data-table-header-height: 28px;
     flex: 1 1 auto;
     width: 100%;
     min-height: 0;
     height: 100%;
     display: flex;
     flex-direction: column;
+    position: relative;
     overflow: hidden;
 }
 
@@ -2340,6 +2342,15 @@
     width: calc(100% - var(--investment-holdings-scrollbar-width));
 }
 
+.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"],
+.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: calc(var(--layer-surface-content) + 1);
+    pointer-events: none;
+}
+
 .scrollable-data-table-scroll,
 .investment-holdings-table-scroll {
     min-height: 0;
@@ -2352,6 +2363,7 @@
     background: var(--panel-strong);
     background-clip: padding-box;
     scrollbar-gutter: stable;
+    padding-top: var(--scrollable-data-table-header-height);
 }
 
 .investment-holdings-table-scroll.trade-transactions-wrap {
@@ -2395,15 +2407,16 @@
     position: sticky;
     top: 0;
     z-index: var(--layer-surface-content);
-    background: var(--panel-strong);
+    background: var(--frosted-glass-extracted-background);
     color: var(--scrollable-data-table-header-color);
     font-weight: 700;
     padding: var(--scrollable-data-table-header-padding);
     text-align: center;
     vertical-align: top;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    background-clip: padding-box;
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 }
 
 .scrollable-data-table thead th {

@@ -1,4 +1,4 @@
-/* Code version: v0.1.4 */
+/* Code version: v0.1.6 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -187,7 +187,7 @@
 	border-radius: inherit;
 	object-fit: contain;
 	object-position: center;
-	background: var(--color-white-adaptive);
+	background: radial-gradient(circle at center, var(--color-white-adaptive) calc(50% - 1px), transparent calc(50% - 1px));
 	box-shadow: none;
 }
 .ticker-input-logo[hidden] { display: none; }
@@ -1390,6 +1390,8 @@
 .range-mode-shell {
 	--segmented-option-count: 2;
 	--segmented-option-min-width: 0px;
+	--segmented-thumb-duration: 325ms;
+	--segmented-thumb-easing: var(--motion-bouncy);
 	position: relative;
 	padding: var(--mode-switch-pad);
 	border-radius: var(--mode-switch-radius);
@@ -1429,7 +1431,7 @@
 .segmented-control:hover,
 .range-mode-shell:hover { background: var(--control-glass-background-hover); }
 .segmented-control::before,
-.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform 260ms var(--motion-standard), width 260ms var(--motion-standard), box-shadow 220ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; pointer-events: none; z-index: 0; }
+.range-mode-shell::before { content: ""; position: absolute; top: var(--mode-switch-thumb-inset); bottom: var(--mode-switch-thumb-inset); left: var(--mode-switch-thumb-inset); width: calc(50% - var(--mode-switch-thumb-offset)); border-radius: var(--mode-switch-radius); background: var(--mode-switch-thumb-background); box-shadow: var(--mode-switch-thumb-shadow); transform: translate3d(0, 0, 0); transition: transform var(--segmented-thumb-duration) var(--segmented-thumb-easing), width var(--segmented-thumb-duration) var(--segmented-thumb-easing), box-shadow 275ms var(--motion-standard); will-change: transform, width; backface-visibility: hidden; pointer-events: none; z-index: 0; }
 .segmented-control[data-option-count]::before,
 .range-mode-shell[data-option-count]::before { width: calc((100% - (var(--mode-switch-thumb-inset) * 2) - (var(--mode-switch-gap) * (var(--segmented-option-count, 2) - 1))) / var(--segmented-option-count, 2)); transform: translateX(calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))); }
 .segmented-control[data-segmented-overflow="1"][data-option-count]::before,
@@ -1444,10 +1446,10 @@
 	transform: translateX(var(--segmented-pill-left, calc((100% + var(--mode-switch-gap)) * var(--segmented-active-index, 0))));
 	opacity: 0;
 	transition:
-		transform 320ms var(--motion-standard),
-		width 320ms var(--motion-standard),
+		transform 400ms var(--segmented-thumb-easing),
+		width 400ms var(--segmented-thumb-easing),
 		opacity 140ms ease,
-		box-shadow 220ms var(--motion-standard);
+		box-shadow 275ms var(--motion-standard);
 }
 .segmented-control[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before,
 .range-mode-shell[data-segmented-pill="measured"].is-pill-ready[data-option-count]::before {
@@ -1682,11 +1684,13 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-manual-input.is-invalid + .date-picker-feedback { color: var(--theme-error-strong); }
 .date-picker-toolbar { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; gap: 8px; margin-bottom: 10px; }
 .date-picker-month { margin: 0; font-size: var(--font-form-control); line-height: 1.2; font-weight: var(--font-weight-bold); text-align: center; }
-.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; background: var(--glass-chip-background); color: var(--accent-text); box-shadow: none; display: inline-grid; place-items: center; }
-.date-picker-nav:hover, .date-picker-nav:focus-visible { transform: none; box-shadow: none; background: var(--glass-chip-background-hover); }
+.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--settings-round-icon-button-radius); border: var(--settings-round-icon-button-border); background: var(--settings-round-icon-button-background); color: var(--settings-round-icon-button-color); box-shadow: var(--settings-round-icon-button-shadow); backdrop-filter: var(--frosted-glass-extracted-blur); -webkit-backdrop-filter: var(--frosted-glass-extracted-blur); display: inline-grid; place-items: center; }
+.date-picker-nav:hover, .date-picker-nav:focus-visible { transform: none; box-shadow: var(--settings-round-icon-button-shadow-hover); background: var(--settings-round-icon-button-background-hover); color: var(--settings-round-icon-button-color-hover); }
+.date-picker-nav:active { box-shadow: var(--settings-round-icon-button-shadow-active); }
+.date-picker-nav .icon { width: 14px; height: 14px; background-color: currentColor; }
 .date-picker-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 6px; color: var(--muted); font-size: var(--font-ui-xs); line-height: 1; font-weight: var(--font-weight-bold); text-align: center; }
 .date-picker-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.date-picker-day { width: 100%; min-width: 0; min-height: 34px; padding: 0; border-radius: var(--radius-soft); background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-size-3); font-weight: var(--font-weight-medium); }
+.date-picker-day { width: 34px; min-width: 34px; height: 34px; min-height: 34px; justify-self: center; padding: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-size-3); font-weight: var(--font-weight-medium); }
 .date-picker-day:hover, .date-picker-day:focus-visible { transform: none; box-shadow: none; background: var(--accent-surface-soft); color: var(--accent-text); }
 .date-picker-day.is-muted { color: var(--theme-muted); }
 .date-picker-day.is-disabled { color: var(--theme-muted); pointer-events: none; }
