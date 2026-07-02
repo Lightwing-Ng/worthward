@@ -1,4 +1,4 @@
-/* Code version: v1.15.1 */
+/* Code version: v1.16.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -762,7 +762,8 @@
 }
 
 .investment-share-preview-demo {
-    --investment-share-preview-scale: 0.45;
+    --investment-share-preview-shell-scale: 0.225;
+    --investment-share-preview-card-scale: 0.45;
     display: grid;
     gap: 12px;
     justify-items: center;
@@ -771,7 +772,7 @@
 }
 
 .investment-share-preview-toolbar {
-    width: min(100%, calc(var(--investment-community-share-shell-width, 540px) * var(--investment-share-preview-scale)));
+    width: min(100%, calc(var(--investment-community-share-shell-width, 1080px) * var(--investment-share-preview-shell-scale)));
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
@@ -814,17 +815,17 @@
 }
 
 .investment-share-preview-shell {
-    width: calc(var(--investment-community-share-shell-width, 540px) * var(--investment-share-preview-scale));
-    height: calc(var(--investment-community-share-shell-height, 856px) * var(--investment-share-preview-scale));
+    width: calc(var(--investment-community-share-shell-width, 1080px) * var(--investment-share-preview-shell-scale));
+    height: calc(var(--investment-community-share-shell-height, 1730px) * var(--investment-share-preview-shell-scale));
     display: block;
     max-width: 100%;
     overflow: visible;
 }
 
 .investment-share-preview-shell > .investment-community-share-card {
-    width: var(--investment-community-share-shell-width, 540px);
-    height: var(--investment-community-share-shell-height, 856px);
-    transform: scale(var(--investment-share-preview-scale));
+    width: var(--investment-community-share-logical-width, 540px);
+    height: var(--investment-community-share-logical-height, 865px);
+    transform: scale(var(--investment-share-preview-card-scale));
     transform-origin: top left;
 }
 
@@ -941,18 +942,28 @@
 }
 
 .investment-community-share-capture {
+    --investment-community-share-export-scale: 2;
     position: fixed;
     left: -200vw;
     top: 0;
-    width: var(--investment-community-share-shell-export-width, var(--investment-community-share-shell-width, 540px));
-    height: var(--investment-community-share-shell-export-height, var(--investment-community-share-shell-height, 856px));
+    width: var(--investment-community-share-shell-export-width, var(--investment-community-share-shell-width, 1080px));
+    height: var(--investment-community-share-shell-export-height, var(--investment-community-share-shell-height, 1730px));
     pointer-events: none;
     z-index: -1;
 }
 
+.investment-community-share-capture > .investment-community-share-card {
+    width: var(--investment-community-share-logical-width, 540px);
+    height: var(--investment-community-share-logical-height, 865px);
+    transform: scale(var(--investment-community-share-export-scale));
+    transform-origin: top left;
+}
+
 .investment-community-share-card {
+    --investment-community-share-logical-width: 540px;
+    --investment-community-share-logical-height: 865px;
     --investment-community-share-safe-padding: 10px;
-    --investment-community-share-chart-slot-width: calc(var(--investment-community-share-shell-width, 540px) - (2 * var(--investment-community-share-safe-padding, 10px)));
+    --investment-community-share-chart-slot-width: calc(var(--investment-community-share-logical-width, 540px) - (2 * var(--investment-community-share-safe-padding, 10px)));
     --investment-community-share-chart-slot-height-compare: 360px;
     --investment-community-share-chart-slot-height-trade-price: 150px;
     --investment-community-share-chart-slot-height-trade-equity: 220px;

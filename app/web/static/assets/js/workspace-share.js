@@ -1,4 +1,4 @@
-/* Code version: v0.2.1 */
+/* Code version: v0.3.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -120,8 +120,8 @@
 	const createWorkspaceShareTemplateFrame = ({ shareView, title }) => {
 		const host = document.createElement("div");
 		host.className = "investment-community-share-capture";
-		host.style.setProperty("--investment-community-share-shell-export-width", "var(--investment-community-share-shell-width, 540px)");
-		host.style.setProperty("--investment-community-share-shell-export-height", "var(--investment-community-share-shell-height, 856px)");
+		host.style.setProperty("--investment-community-share-shell-export-width", "var(--investment-community-share-shell-width, 1080px)");
+		host.style.setProperty("--investment-community-share-shell-export-height", "var(--investment-community-share-shell-height, 1730px)");
 
 		const card = document.createElement("article");
 		card.className = "investment-community-share-card";

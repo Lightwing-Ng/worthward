@@ -1,4 +1,4 @@
-/* Code version: v1.1.8 */
+/* Code version: v1.1.9 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -1295,11 +1295,11 @@
     pointer-events: auto;
     opacity: 1;
     border-radius: var(--workspace-modal-radius);
-    background: var(--apple-frosted-glass-background);
-    box-shadow: var(--apple-frosted-glass-shadow);
-    backdrop-filter: var(--apple-frosted-glass-blur);
-    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
-    border: var(--apple-frosted-glass-border);
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     overflow: hidden;
 }
 

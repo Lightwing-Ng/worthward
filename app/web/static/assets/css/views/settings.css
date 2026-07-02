@@ -1,4 +1,4 @@
-/* Code version: v0.5.1 */
+/* Code version: v0.5.3 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1266,7 +1266,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .style-token-investment-share-preview-toolbar {
-    width: min(100%, calc(var(--investment-community-share-shell-width, 540px) * var(--style-token-investment-share-preview-scale, 0.45)));
+    width: min(100%, calc(var(--investment-community-share-shell-width, 1080px) * var(--style-token-investment-share-preview-shell-scale, 0.225)));
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 12px;
@@ -1322,18 +1322,19 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .style-token-investment-share-preview-shell {
-    --style-token-investment-share-preview-scale: 0.45;
-    width: calc(var(--investment-community-share-shell-width, 540px) * var(--style-token-investment-share-preview-scale));
-    height: calc(var(--investment-community-share-shell-height, 856px) * var(--style-token-investment-share-preview-scale));
+    --style-token-investment-share-preview-shell-scale: 0.225;
+    --style-token-investment-share-preview-card-scale: 0.45;
+    width: calc(var(--investment-community-share-shell-width, 1080px) * var(--style-token-investment-share-preview-shell-scale));
+    height: calc(var(--investment-community-share-shell-height, 1730px) * var(--style-token-investment-share-preview-shell-scale));
     display: block;
     max-width: 100%;
     overflow: visible;
 }
 
 .style-token-investment-share-preview-shell > .investment-community-share-card {
-    width: var(--investment-community-share-shell-width, 540px);
-    height: var(--investment-community-share-shell-height, 856px);
-    transform: scale(var(--style-token-investment-share-preview-scale));
+    width: var(--investment-community-share-logical-width, 540px);
+    height: var(--investment-community-share-logical-height, 865px);
+    transform: scale(var(--style-token-investment-share-preview-card-scale));
     transform-origin: top left;
 }
 

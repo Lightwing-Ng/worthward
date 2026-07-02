@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.60.0
+ * Code version: v1.61.0
+ * - Changed: Community share PNG capture now uses a 1080 px by 1730 px 2x export shell grid.
  * - Changed: Community share PNG capture now reads export dimensions and footer sizing from the same CSS tokens used by the settings export-image preview.
  * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
  * - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
@@ -6859,8 +6860,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedView = normalizeInvestmentView(view);
         const host = document.createElement('div');
         host.className = 'investment-community-share-capture';
-        host.style.setProperty('--investment-community-share-shell-export-width', 'var(--investment-community-share-shell-width, 540px)');
-        host.style.setProperty('--investment-community-share-shell-export-height', 'var(--investment-community-share-shell-height, 856px)');
+        host.style.setProperty('--investment-community-share-shell-export-width', 'var(--investment-community-share-shell-width, 1080px)');
+        host.style.setProperty('--investment-community-share-shell-export-height', 'var(--investment-community-share-shell-height, 1730px)');
 
         const card = document.createElement('article');
         card.className = 'investment-community-share-card';
@@ -10393,10 +10394,15 @@ document.addEventListener('DOMContentLoaded', () => {
         function calculatePendingSettlementCashDelta(txn) {
             const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
             const normalizedType = getNormalizedTransactionType(txn);
+            const hasCashSettlement = (
+                txn?.source?.cash_settlement_amount_raw !== undefined
+                || txn?.source?.cash_settlement_balance_after_raw !== undefined
+            );
             if (
                 brokerCode !== 'hsbc'
                 || !['buy', 'sell'].includes(normalizedType)
                 || txn?.source?.cash_replay_pending_settlement !== true
+                || hasCashSettlement
             ) {
                 return 0;
             }
@@ -10422,6 +10428,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 brokerCode === 'hsbc'
                 && ['buy', 'sell'].includes(normalizedType)
                 && txn?.source?.cash_replay_pending_settlement === true
+                && txn?.source?.cash_settlement_amount_raw === undefined
+                && txn?.source?.cash_settlement_balance_after_raw === undefined
             ) {
                 return 0;
             }
@@ -10495,7 +10503,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
-        const lastProcessedBrokerCashForDisplay = new Map();
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -10545,14 +10552,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const shouldReplayPendingSettlement = (
                 normalizedBrokerCode === 'hsbc'
                 && txn?.source?.cash_replay_pending_settlement === true
+                && txn?.source?.cash_settlement_amount_raw === undefined
+                && txn?.source?.cash_settlement_balance_after_raw === undefined
             );
-            const rawBrokerDisplayCashBase = Number(lastProcessedBrokerCashForDisplay.get(normalizedBrokerCode));
-            const brokerDisplayCashBase = Number.isFinite(rawBrokerDisplayCashBase)
-                ? rawBrokerDisplayCashBase
-                : brokerLedgerState.runningCash;
-            const pendingAwareBrokerCashForDisplay = shouldReplayPendingSettlement
-                ? brokerDisplayCashBase + pendingSettlementDelta
-                : brokerLedgerState.runningCash;
             const transactionDate = normalizeLedgerDate(txn?.date);
             const hasWindowedAvailableCash = (
                 txn?.source?.available_cash_after_raw !== undefined
@@ -10589,9 +10591,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             const normalizedBrokerCashForDisplay = normalizeInvestmentBroker(brokerCode) === 'hsbc'
-                ? pendingAwareBrokerCashForDisplay
+                ? (
+                    shouldReplayPendingSettlement
+                        ? brokerLedgerState.runningCash + brokerLedgerState.pendingSettlementCash
+                        : brokerLedgerState.runningCash
+                )
                 : Number(brokerLedgerState.runningCash);
-            lastProcessedBrokerCashForDisplay.set(normalizedBrokerCode, normalizedBrokerCashForDisplay);
             const aggregateDisplayCash = aggregateLedgerState.runningCash + aggregateLedgerState.pendingSettlementCash;
             const aggregateCashByCurrency = cloneCashLedgerBalances(aggregateLedgerState.cashBalances);
             const brokerCashByCurrency = cloneCashLedgerBalances(brokerLedgerState.cashBalances);
