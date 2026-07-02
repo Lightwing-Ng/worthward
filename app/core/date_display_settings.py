@@ -1,6 +1,6 @@
 """
 Date display preference persistence and formatting helpers.
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ FullDateDisplayFormat = Literal[
     "dd_mmm_yyyy",
     "yyyy_mmm_d",
     "yyyy_mmm_dd",
+    "yyyy_mm_dd_cjk",
 ]
 ShortDateDisplayFormat = Literal[
     "yyyy_mm_dd",
@@ -42,6 +43,8 @@ def _normalize_full_date_format(value: str | None) -> FullDateDisplayFormat:
         return "yyyy_mmm_d"
     if normalized == "yyyy_mmm_dd":
         return "yyyy_mmm_dd"
+    if normalized == "yyyy_mm_dd_cjk":
+        return "yyyy_mm_dd_cjk"
     return DEFAULT_FULL_DATE_DISPLAY_FORMAT
 
 
@@ -100,6 +103,8 @@ def format_full_date_parts(year: int, month: int, day: int, date_format: FullDat
         return f"{year} {month_label} {day}"
     if date_format == "yyyy_mmm_dd":
         return f"{year} {month_label} {day:02d}"
+    if date_format == "yyyy_mm_dd_cjk":
+        return f"{year}年{month:02d}月{day:02d}日"
     return f"{day} {month_label} {year}"
 
 

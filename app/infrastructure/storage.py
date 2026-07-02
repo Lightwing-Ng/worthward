@@ -178,6 +178,7 @@ LINEAGE_IDENTITY_PROXY_TICKERS = frozenset({"SPY", "SPY.US"})
 # other remote profile providers. Keep ledger symbols unchanged; this only
 # affects display labels and profile refresh fallbacks.
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
+    "DRAM": "Roundhill Memory ETF",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
 }
 

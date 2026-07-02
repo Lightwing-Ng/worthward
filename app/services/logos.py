@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.4
+Code version: v0.3.5
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ YFINANCE_LOOKUP_LOCK = Lock()
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
     "JEPQ": "https://www.jpmorganchase.com",
+    "DRAM": "https://www.roundhillinvestments.com/etf/dram/",
     "RAM": "https://www.roundhillinvestments.com/etf/ram/",
 }
 

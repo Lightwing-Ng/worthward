@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.5.6
+    Code version: v0.5.7
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ ONE_MINUTE_CHUNK_SIZE = 500
 DAILY_CHUNK_SIZE = 500
 ONE_MINUTE_MIN_SPAN_DAYS = 150
 DAILY_MIN_SPAN_DAYS = 330
+NEW_LISTING_MAX_AGE_MONTHS = 1
 HONG_KONG_TIMEZONE = "Asia/Hong_Kong"
 NEW_YORK_TIMEZONE = "America/New_York"
 UTC_TIMEZONE = "UTC"
@@ -1327,10 +1328,32 @@ def is_daily_store_fresh(ticker: str) -> bool:
     return _is_market_data_fresh(date_values.max())
 
 
+def _has_new_listing_short_history(ticker: str, *, interval: str) -> bool:
+    path = intraday_history_store_path_for(ticker, "1m") if interval == "1m" else history_store_path_for(ticker)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        dataset = pd.read_parquet(path, columns=["Date"])
+    except Exception:
+        return False
+    if dataset.empty:
+        return False
+
+    date_values = _read_store_dates_as_new_york_naive(dataset["Date"]).dropna()
+    if date_values.empty:
+        return False
+
+    first_trading_day = date_values.min()
+    latest_trading_day = date_values.max()
+    target_trading_day = latest_completed_nyse_trading_day(pd.Timestamp.now(tz=timezone.utc))
+    new_listing_cutoff = pd.Timestamp(target_trading_day) - pd.DateOffset(months=NEW_LISTING_MAX_AGE_MONTHS)
+    return first_trading_day >= new_listing_cutoff and _is_market_data_fresh(latest_trading_day)
+
+
 def classify_one_minute_store_status(ticker: str) -> str:
     if is_one_minute_store_complete(ticker):
         return "fresh"
-    if is_one_minute_store_fresh(ticker):
+    if _has_new_listing_short_history(ticker, interval="1m"):
         return "short_history"
     return "missing"
 
@@ -1338,6 +1361,6 @@ def classify_one_minute_store_status(ticker: str) -> str:
 def classify_daily_store_status(ticker: str) -> str:
     if is_daily_store_complete(ticker):
         return "fresh"
-    if is_daily_store_fresh(ticker):
+    if _has_new_listing_short_history(ticker, interval="1d"):
         return "short_history"
     return "missing"

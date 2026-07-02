@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.47.5
+ * Code version: v1.47.7
+ * - Fixed: Daily equity chart points now preserve pending-settlement display cash so same-day HSBC pasted imports keep cash and equity aligned.
  * - Added: Longbridge HK cash-equivalent MMF income is summarized as Holdings rows even after the funds are fully redeemed.
  * - Fixed: Longbridge HK cash-equivalent transfers now expose actual cash deltas and synthetic valuation tickers so MMF placements/redemptions do not create saw-tooth overnight equity.
  * - Fixed: uSMART (HK) symbol-less fractional-share rows keep a synthetic valuation anchor until the matching sale closes them.
@@ -671,6 +672,10 @@ export function createInvestmentDataUtils({
     }
 
     function getHsbcOrderSequenceNumber(txn) {
+        const rawCashSettlementRow = Number(txn?.source?.cash_settlement_source_row_number);
+        if (Number.isFinite(rawCashSettlementRow) && rawCashSettlementRow > 0) {
+            return rawCashSettlementRow;
+        }
         const rawReference = String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim().toUpperCase();
         const match = rawReference.match(/^[PS]-(\d+)$/);
         return match ? Number(match[1]) : Number.NaN;
@@ -1743,8 +1748,13 @@ export function createInvestmentDataUtils({
                 baseCurrency,
             );
             const aggregateRunningCash = Number(activeSnapshot?.aggregate_running_cash ?? activeSnapshot?.running_cash) || 0;
+            const aggregatePendingSettlementCash = Number(activeSnapshot?.aggregate_pending_settlement_cash) || 0;
+            const rawAggregateDisplayCash = Number(activeSnapshot?.aggregate_display_cash);
+            const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
+                ? rawAggregateDisplayCash
+                : aggregateRunningCash + aggregatePendingSettlementCash;
             const aggregateMarketValue = valuation.marketValue;
-            const aggregateTotalEquity = aggregateRunningCash + aggregateMarketValue;
+            const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
             const ledgerEntry = ledgerDateMap.get(date);
             const anchorLedgerNos = Array.isArray(ledgerEntry?.ledgerNos)
                 ? ledgerEntry.ledgerNos.filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)
@@ -1759,6 +1769,7 @@ export function createInvestmentDataUtils({
                 date,
                 running_cash: aggregateRunningCash,
                 aggregate_running_cash: aggregateRunningCash,
+                aggregate_display_cash: aggregateDisplayCash,
                 market_value: aggregateMarketValue,
                 aggregate_market_value: aggregateMarketValue,
                 holdings_market_values: valuation.holdingsMarketValues,
@@ -2146,4 +2157,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.5';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.7';

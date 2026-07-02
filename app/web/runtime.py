@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.5
+Code version: v0.4.7
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 import hashlib
 import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
+from openpyxl import Workbook, load_workbook
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from app.core.cash_equivalent_settings import (
@@ -31,6 +32,17 @@ from app.core.date_display_settings import (
     load_date_display_settings,
     save_full_date_display_format,
     save_short_date_display_format,
+)
+from app.core.language_settings import (
+    HTML_LANG_BY_LANGUAGE,
+    LANGUAGE_LABELS,
+    SUPPORTED_LANGUAGE_CODES,
+    build_translation_map,
+    load_language_settings,
+    save_language_code,
+    save_language_settings,
+    translate_labels,
+    translate_text,
 )
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
@@ -266,6 +278,9 @@ class WebRuntime:
     settings_page: Any
     export_transactions_api: Any
     general_settings_action: Any
+    language_settings_api: Any
+    language_cycle_api: Any
+    language_download_api: Any
     backtest_settings_action: Any
     cash_equivalents_action: Any
     email_smtp_action: Any
@@ -340,7 +355,8 @@ def format_store_range_date_value(raw_value: object) -> str:
 def build_web_runtime() -> WebRuntime:
     settings = get_settings()
     defaults = settings["defaults"]
-    labels = settings["ui"]["labels"]
+    base_labels = settings["ui"]["labels"]
+    labels = base_labels
     theme_settings = settings["ui"]["theme"]
     theme_light = theme_settings["light"]
     theme_dark = theme_settings["dark"]
@@ -2734,6 +2750,18 @@ def build_web_runtime() -> WebRuntime:
     def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "investment"):
         backtest_execution_mode = load_backtest_execution_mode()
         date_display_settings = load_date_display_settings()
+        language_settings = load_language_settings()
+        labels = translate_labels(base_labels, language_settings)
+        language_translations = build_translation_map(language_settings)
+        translate_ui = lambda value: translate_text(value, language_settings.language, language_translations)
+        language_history_rows = [
+            {
+                "timestamp": str(entry.get("timestamp", "")),
+                "change": change,
+            }
+            for entry in reversed(language_settings.history)
+            for change in entry.get("changes", [])
+        ]
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         range_mode, period, exact_start, exact_end = parse_range_request_args()
@@ -2929,29 +2957,29 @@ def build_web_runtime() -> WebRuntime:
             if settings_section == "network":
                 settings_title = labels["network_self_check"]
             elif settings_section == "general":
-                settings_title = "General"
+                settings_title = translate_ui("General")
             elif settings_section == "backtest":
-                settings_title = "Backtest"
+                settings_title = translate_ui("Backtest")
             elif settings_section == "font-tokens":
-                settings_title = "Font tokens"
+                settings_title = translate_ui("Font tokens")
             elif settings_section == "material-tokens":
-                settings_title = "Material tokens"
+                settings_title = translate_ui("Material tokens")
             elif settings_section == "strategies":
                 settings_title = labels["strategy_settings"]
             elif settings_section == "email-smtp":
                 settings_title = labels["email_smtp"]
             elif settings_section == "broker-access":
-                settings_title = "Broker access"
+                settings_title = translate_ui("Broker access")
             elif settings_section == "local-market-store":
                 settings_title = labels["local_market_store"]
             elif settings_section == "clear-caches":
-                settings_title = "Clear caches"
+                settings_title = translate_ui("Clear caches")
             elif settings_section == "style-tokens":
-                settings_title = "Style tokens"
+                settings_title = translate_ui("Style tokens")
             elif settings_section == "export-image":
-                settings_title = "Export image"
+                settings_title = translate_ui("Export image")
             elif settings_section == "cash-equivalents":
-                settings_title = "Cash equivalents"
+                settings_title = translate_ui("Cash equivalents")
         elif current_view == "more":
             page_title = labels["more_title"]
             settings_title = labels["more_title"]
@@ -3534,6 +3562,13 @@ def build_web_runtime() -> WebRuntime:
             backtest_execution_mode=backtest_execution_mode,
             date_display_full_format=date_display_settings.full_date_format,
             date_display_short_format=date_display_settings.short_date_format,
+            language_code=language_settings.language,
+            language_labels=LANGUAGE_LABELS,
+            language_options=SUPPORTED_LANGUAGE_CODES,
+            language_translations=list(language_settings.translations),
+            language_history_rows=language_history_rows,
+            language_html_lang=HTML_LANG_BY_LANGUAGE[language_settings.language],
+            translate_ui=translate_ui,
             broker_settings=broker_settings,
             broker_test_status=broker_test_status,
             broker_test_message=broker_test_message,
@@ -3886,8 +3921,93 @@ def build_web_runtime() -> WebRuntime:
         )
         return render_workspace_page("settings", section_name)
 
+    def _language_rows_from_request_form() -> list[dict[str, str]]:
+        return [
+            {
+                "en": english,
+                "zh_hant_hk": zh_hant_hk,
+                "zh_hans_cn": zh_hans_cn,
+            }
+            for english, zh_hant_hk, zh_hans_cn in zip(
+                request.form.getlist("translation_en"),
+                request.form.getlist("translation_zh_hant_hk"),
+                request.form.getlist("translation_zh_hans_cn"),
+            )
+        ]
+
+    def _language_rows_from_xlsx_bytes(payload: bytes) -> list[dict[str, str]]:
+        workbook = load_workbook(filename=BytesIO(payload), data_only=True)
+        worksheet = workbook.active
+        headers = [
+            str(worksheet.cell(row=1, column=column_index).value or "").strip()
+            for column_index in range(1, 5)
+        ]
+        header_to_column = {header: index + 1 for index, header in enumerate(headers)}
+        english_column = header_to_column.get("English", 2)
+        traditional_column = header_to_column.get("繁體中文（香港）", 3)
+        simplified_column = header_to_column.get("简体中文（中国大陆）", 4)
+        rows: list[dict[str, str]] = []
+        for row_index in range(2, worksheet.max_row + 1):
+            english = str(worksheet.cell(row=row_index, column=english_column).value or "").strip()
+            if not english:
+                continue
+            rows.append(
+                {
+                    "en": english,
+                    "zh_hant_hk": str(worksheet.cell(row=row_index, column=traditional_column).value or "").strip(),
+                    "zh_hans_cn": str(worksheet.cell(row=row_index, column=simplified_column).value or "").strip(),
+                }
+            )
+        if not rows:
+            raise ValueError("The uploaded spreadsheet does not contain any language mapping rows.")
+        return rows
+
     def general_settings_action():
         notices: list[str] = []
+        language_action = str(request.form.get("language_action", "save")).strip()
+        language_file = request.files.get("language_mapping_xlsx")
+        if language_action == "upload" and language_file and language_file.filename:
+            try:
+                selected_language_settings = save_language_settings(
+                    language=request.form.get("language_code", load_language_settings().language),
+                    translations=_language_rows_from_xlsx_bytes(language_file.read()),
+                    history_label="Spreadsheet upload",
+                )
+                notices.append(f"Language translations imported from {language_file.filename}.")
+                if (
+                    selected_language_settings.language in {"zh_hant_hk", "zh_hans_cn"}
+                    and load_date_display_settings().full_date_format == "d_mmm_yyyy"
+                ):
+                    save_full_date_display_format("yyyy_mm_dd_cjk")
+                elif (
+                    selected_language_settings.language == "en"
+                    and load_date_display_settings().full_date_format == "yyyy_mm_dd_cjk"
+                ):
+                    save_full_date_display_format("d_mmm_yyyy")
+            except Exception as exc:  # noqa: BLE001
+                return _redirect_with_settings_feedback("general", error=f"Language spreadsheet import failed: {exc}")
+        elif "language_code" in request.form or "translation_en" in request.form:
+            current_language_settings = load_language_settings()
+            translation_rows = _language_rows_from_request_form()
+            selected_language_settings = save_language_settings(
+                language=request.form.get("language_code", current_language_settings.language),
+                translations=translation_rows if translation_rows else None,
+                history_label="Manual edit",
+            )
+            if (
+                selected_language_settings.language in {"zh_hant_hk", "zh_hans_cn"}
+                and load_date_display_settings().full_date_format == "d_mmm_yyyy"
+            ):
+                save_full_date_display_format("yyyy_mm_dd_cjk")
+            elif (
+                selected_language_settings.language == "en"
+                and load_date_display_settings().full_date_format == "yyyy_mm_dd_cjk"
+            ):
+                save_full_date_display_format("d_mmm_yyyy")
+            if selected_language_settings.language != current_language_settings.language:
+                notices.append(f"Language updated: {LANGUAGE_LABELS[selected_language_settings.language]}.")
+            elif translation_rows:
+                notices.append("Language translations updated.")
         if "full_date_format" in request.form:
             current_full = load_date_display_settings().full_date_format
             selected_full = save_full_date_display_format(request.form.get("full_date_format", current_full))
@@ -3897,6 +4017,7 @@ def build_web_runtime() -> WebRuntime:
                     "dd_mmm_yyyy": "DD Mmm yyyy",
                     "yyyy_mmm_d": "yyyy Mmm D",
                     "yyyy_mmm_dd": "yyyy Mmm DD",
+                    "yyyy_mm_dd_cjk": "yyyy年mm月dd日",
                 }
                 notices.append(f"Full date format updated: {full_labels[selected_full]}.")
         if "short_date_format" in request.form:
@@ -3910,6 +4031,72 @@ def build_web_runtime() -> WebRuntime:
                 notices.append(f"Compact date format updated: {short_labels[selected_short]}.")
         notice = " ".join(notices)
         return _redirect_with_settings_feedback("general", notice=notice)
+
+    def language_download_api():
+        settings = load_language_settings()
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "i18n mapping"
+        worksheet.append(["No.", "English", "繁體中文（香港）", "简体中文（中国大陆）"])
+        for index, row in enumerate(settings.translations, start=1):
+            worksheet.append([index, row["en"], row["zh_hant_hk"], row["zh_hans_cn"]])
+        worksheet.freeze_panes = "A2"
+        widths = {"A": 8, "B": 52, "C": 52, "D": 52}
+        for column_letter, width in widths.items():
+            worksheet.column_dimensions[column_letter].width = width
+        buffer = BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="antigravity-i18n-mapping.xlsx",
+        )
+
+    def language_settings_api():
+        payload = request.get_json(silent=True) or {}
+        language = str(payload.get("language", "")).strip()
+        current_language = load_language_settings().language
+        selected_language = save_language_code(language or current_language)
+        current_full_date_format = load_date_display_settings().full_date_format
+        if selected_language in {"zh_hant_hk", "zh_hans_cn"} and current_full_date_format == "d_mmm_yyyy":
+            save_full_date_display_format("yyyy_mm_dd_cjk")
+        elif selected_language == "en" and current_full_date_format == "yyyy_mm_dd_cjk":
+            save_full_date_display_format("d_mmm_yyyy")
+        response = jsonify({
+            "success": True,
+            "language": selected_language,
+            "htmlLang": HTML_LANG_BY_LANGUAGE[selected_language],
+            "label": LANGUAGE_LABELS[selected_language],
+            "dateDisplay": {
+                "full": load_date_display_settings().full_date_format,
+                "short": load_date_display_settings().short_date_format,
+            },
+        })
+        return apply_no_store_headers(response)
+
+    def language_cycle_api():
+        current_language = load_language_settings().language
+        current_index = SUPPORTED_LANGUAGE_CODES.index(current_language)
+        selected_language = SUPPORTED_LANGUAGE_CODES[(current_index + 1) % len(SUPPORTED_LANGUAGE_CODES)]
+        save_language_code(selected_language)
+        current_full_date_format = load_date_display_settings().full_date_format
+        if selected_language in {"zh_hant_hk", "zh_hans_cn"} and current_full_date_format == "d_mmm_yyyy":
+            save_full_date_display_format("yyyy_mm_dd_cjk")
+        elif selected_language == "en" and current_full_date_format == "yyyy_mm_dd_cjk":
+            save_full_date_display_format("d_mmm_yyyy")
+        response = jsonify({
+            "success": True,
+            "language": selected_language,
+            "htmlLang": HTML_LANG_BY_LANGUAGE[selected_language],
+            "label": LANGUAGE_LABELS[selected_language],
+            "dateDisplay": {
+                "full": load_date_display_settings().full_date_format,
+                "short": load_date_display_settings().short_date_format,
+            },
+        })
+        return apply_no_store_headers(response)
 
     def backtest_settings_action():
         notice = ""
@@ -4458,6 +4645,8 @@ def build_web_runtime() -> WebRuntime:
                 )
                 cached_data["money_market_tickers"] = sorted(configured_money_market_tickers)
                 cached_data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
+                cached_data["ticker_lineage"] = investment_ticker_lineage_payload()
+                cached_data["known_ticker_company_names"] = known_ticker_company_names_payload()
                 cached_data["success"] = True
                 cached_data["investment_cache"] = {
                     "status": "hit",
@@ -5269,6 +5458,9 @@ def build_web_runtime() -> WebRuntime:
         settings_page=settings_page,
         export_transactions_api=export_transactions_api,
         general_settings_action=general_settings_action,
+        language_settings_api=language_settings_api,
+        language_cycle_api=language_cycle_api,
+        language_download_api=language_download_api,
         backtest_settings_action=backtest_settings_action,
         cash_equivalents_action=cash_equivalents_action,
         email_smtp_action=email_smtp_action,

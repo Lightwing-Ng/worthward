@@ -1,4 +1,4 @@
-/* Code version: v0.6.0 */
+/* Code version: v0.6.2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -1980,6 +1980,121 @@
         });
     };
 
+    const attachLanguageMappingHandlers = () => {
+        const form = document.querySelector("[data-settings-language-form]");
+        if (!(form instanceof HTMLFormElement) || form.dataset.boundLanguageMapping === "1") return;
+        form.dataset.boundLanguageMapping = "1";
+        const actionInput = form.querySelector("[data-language-action-input]");
+        const uploadTrigger = form.querySelector("[data-language-upload-trigger]");
+        const uploadInput = form.querySelector("[data-language-upload-input]");
+        if (uploadTrigger instanceof HTMLButtonElement && uploadInput instanceof HTMLInputElement) {
+            uploadTrigger.addEventListener("click", () => {
+                uploadInput.click();
+            });
+            uploadInput.addEventListener("change", () => {
+                if (!uploadInput.files || uploadInput.files.length === 0) return;
+                if (actionInput instanceof HTMLInputElement) actionInput.value = "upload";
+                form.submit();
+            });
+        }
+        form.addEventListener("submit", () => {
+            if (actionInput instanceof HTMLInputElement && actionInput.value !== "upload") {
+                actionInput.value = "save";
+            }
+        });
+
+        const panels = Array.from(form.querySelectorAll("[data-language-panel]"))
+            .filter((panel) => panel instanceof HTMLElement);
+        const tabs = Array.from(form.querySelectorAll("[data-language-tab]"))
+            .filter((tab) => tab instanceof HTMLButtonElement);
+        const tabShell = form.querySelector(".settings-language-tabs");
+        const setActiveTab = (targetName) => {
+            tabs.forEach((tab, index) => {
+                const isActive = tab.dataset.languageTab === targetName;
+                tab.classList.toggle("is-active", isActive);
+                tab.setAttribute("aria-selected", String(isActive));
+                if (isActive && tabShell instanceof HTMLElement) {
+                    tabShell.style.setProperty("--language-tab-index", String(index));
+                }
+            });
+            panels.forEach((panel) => {
+                const isActive = panel.dataset.languagePanel === targetName;
+                panel.classList.toggle("is-active", isActive);
+                panel.hidden = !isActive;
+            });
+        };
+        tabs.forEach((tab) => {
+            tab.addEventListener("click", () => {
+                setActiveTab(tab.dataset.languageTab || "current");
+            });
+        });
+
+        const renderPagination = (pagination, body, page) => {
+            if (!(pagination instanceof HTMLElement) || !(body instanceof HTMLElement)) return;
+            const rows = Array.from(body.querySelectorAll("[data-language-row]"))
+                .filter((row) => row instanceof HTMLTableRowElement);
+            const pageSize = Math.max(Number.parseInt(body.dataset.languagePageSize || "10", 10) || 10, 1);
+            const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+            const currentPage = Math.min(Math.max(page, 1), totalPages);
+            rows.forEach((row, index) => {
+                const rowPage = Math.floor(index / pageSize) + 1;
+                row.hidden = rowPage !== currentPage;
+            });
+            if (totalPages <= 1) {
+                pagination.innerHTML = "";
+                pagination.style.removeProperty("--local-store-pagination-slots");
+                return;
+            }
+            const groupStart = (Math.floor((currentPage - 1) / 5) * 5) + 1;
+            const pageCount = Math.min(5, totalPages - groupStart + 1);
+            const pageSlots = Array.from({length: pageCount}, (_, index) => {
+                const pageNumber = groupStart + index;
+                return {label: String(pageNumber), page: pageNumber};
+            });
+            const slots = totalPages > 5
+                ? [
+                    {label: "‹", page: groupStart > 1 ? groupStart - 5 : null},
+                    ...pageSlots,
+                    {label: "›", page: groupStart + 5 <= totalPages ? groupStart + 5 : null},
+                ]
+                : pageSlots;
+            pagination.style.setProperty("--local-store-pagination-slots", String(slots.length));
+            pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${
+                slots.map((slot) => {
+                    if (!slot.page) {
+                        return `<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>`;
+                    }
+                    const active = slot.page === currentPage;
+                    return `<button type="button" class="local-store-page-button${active ? " is-active" : ""}" data-language-page="${slot.page}" data-pagination-current="${active ? "1" : "0"}"${active ? " aria-current=\"page\"" : ""}>${slot.label}</button>`;
+                }).join("")
+            }`;
+            pagination.querySelectorAll("[data-language-page]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const nextPage = Number.parseInt(button.dataset.languagePage || "1", 10) || 1;
+                    renderPagination(pagination, body, nextPage);
+                });
+            });
+            const activeButton = pagination.querySelector(".local-store-page-button.is-active");
+            if (activeButton instanceof HTMLElement) {
+                pagination.classList.add("is-animated");
+                const indicator = pagination.querySelector(".local-store-pagination-indicator");
+                if (indicator instanceof HTMLElement) {
+                    const buttonRect = activeButton.getBoundingClientRect();
+                    const paginationRect = pagination.getBoundingClientRect();
+                    indicator.style.transform = `translate3d(${buttonRect.left - paginationRect.left}px, ${buttonRect.top - paginationRect.top}px, 0)`;
+                }
+            }
+        };
+
+        form.querySelectorAll("[data-language-pagination]").forEach((pagination) => {
+            if (!(pagination instanceof HTMLElement)) return;
+            const panelName = pagination.dataset.languagePagination || "current";
+            const panel = form.querySelector(`[data-language-panel="${panelName}"]`);
+            const body = panel?.querySelector("[data-language-paginated-body]");
+            if (body instanceof HTMLElement) renderPagination(pagination, body, 1);
+        });
+    };
+
     bootstrap.hydrateSettingsNetworkStatuses = hydrateNetworkStatuses;
     bootstrap.hydrateSettingsLocalStoreRanges = hydrateLocalStoreRanges;
     bootstrap.initSettingsWorkspace = (context = {}) => {
@@ -2002,6 +2117,7 @@
         revealStyleTokenHashTarget();
         attachLocalStorePagination();
         attachSettingsSectionNavigation();
+        attachLanguageMappingHandlers();
         attachCashEquivalentsHandlers();
     };
 

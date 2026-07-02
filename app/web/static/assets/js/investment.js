@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.5
+ * Code version: v1.59.9
+ * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
+ * - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
  * - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
  * - Removed: IBKR manual Flex file upload mode from the import UI and submit path.
  * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
@@ -253,7 +255,7 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.47.5';
+} from './investment/data-utils.js?v=investment-data-utils-v1.47.7';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
@@ -1487,6 +1489,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const aggregateRunningCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash) || 0;
+        const aggregatePendingSettlementCash = Number(latestSnapshot?.aggregate_pending_settlement_cash) || 0;
+        const rawAggregateDisplayCash = Number(latestSnapshot?.aggregate_display_cash);
+        const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
+            ? rawAggregateDisplayCash
+            : aggregateRunningCash + aggregatePendingSettlementCash;
         const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
         const realtimeDateKey = normalizeLedgerDate(realtimeTimestamp)
             || getInvestmentDailyEquityLiveSessionDateKey()
@@ -1500,12 +1507,13 @@ document.addEventListener('DOMContentLoaded', () => {
             realtime_timestamp: realtimeTimestamp,
             running_cash: aggregateRunningCash,
             aggregate_running_cash: aggregateRunningCash,
+            aggregate_display_cash: aggregateDisplayCash,
             market_value: aggregateMarketValue,
             aggregate_market_value: aggregateMarketValue,
             holdings_market_values: holdingsMarketValues,
             aggregate_holdings_market_values: holdingsMarketValues,
-            total_equity: aggregateRunningCash + aggregateMarketValue,
-            aggregate_total_equity: aggregateRunningCash + aggregateMarketValue,
+            total_equity: aggregateDisplayCash + aggregateMarketValue,
+            aggregate_total_equity: aggregateDisplayCash + aggregateMarketValue,
             anchor_ledger_date: '',
             anchor_ledger_nos: [],
             cash_in_amount: 0,
@@ -2089,7 +2097,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 getInvestmentBaseCurrency(),
             );
             const brokerMarketValue = Number(lastBrokerTxn.broker_market_value) || 0;
-            lastBrokerTxn.broker_total_equity = normalizedEndingCash + brokerMarketValue;
+            const brokerPendingSettlementCash = Number(lastBrokerTxn.broker_pending_settlement_cash) || 0;
+            lastBrokerTxn.broker_display_cash = normalizedEndingCash + brokerPendingSettlementCash;
+            lastBrokerTxn.broker_total_equity = normalizedEndingCash + brokerMarketValue + brokerPendingSettlementCash;
         });
 
         const isSingleBroker = brokerCodes.length <= 1;
@@ -2119,7 +2129,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
                 latestProcessed.aggregate_cash_by_currency = latestProcessed.cash_by_currency;
                 const marketVal = Number(latestProcessed.market_value) || 0;
-                latestProcessed.total_equity = finalAggregateCash + marketVal;
+                const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
+                latestProcessed.aggregate_display_cash = finalAggregateCash + aggregatePendingSettlementCash;
+                latestProcessed.total_equity = finalAggregateCash + marketVal + aggregatePendingSettlementCash;
                 latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
             }
         }
@@ -2132,13 +2144,19 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentInternalTransferResolvedBindingsBySourceKey = context.resolvedBindingsBySourceKey;
         transactions.forEach((txn) => {
             const rawRunningCash = Number(txn?.aggregate_raw_running_cash ?? txn?.aggregate_running_cash ?? txn?.running_cash) || 0;
+            const rawPendingSettlementCash = Number(txn?.aggregate_pending_settlement_cash) || 0;
+            const rawDisplayCash = Number.isFinite(Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash))
+                ? Number(txn?.aggregate_raw_display_cash ?? txn?.aggregate_display_cash)
+                : rawRunningCash + rawPendingSettlementCash;
             const rawMarketValue = Number(txn?.aggregate_raw_market_value ?? txn?.aggregate_market_value ?? txn?.market_value) || 0;
             txn.aggregate_raw_running_cash = rawRunningCash;
+            txn.aggregate_raw_display_cash = rawDisplayCash;
             txn.aggregate_raw_market_value = rawMarketValue;
-            txn.aggregate_raw_total_equity = rawRunningCash + rawMarketValue;
+            txn.aggregate_raw_total_equity = rawDisplayCash + rawMarketValue;
             txn.aggregate_running_cash = rawRunningCash;
+            txn.aggregate_display_cash = rawDisplayCash;
             txn.aggregate_market_value = rawMarketValue;
-            txn.aggregate_total_equity = rawRunningCash + rawMarketValue;
+            txn.aggregate_total_equity = rawDisplayCash + rawMarketValue;
             txn.running_cash = txn.aggregate_running_cash;
             txn.market_value = txn.aggregate_market_value;
             txn.total_equity = txn.aggregate_total_equity;
@@ -2220,11 +2238,13 @@ document.addEventListener('DOMContentLoaded', () => {
         transactions.forEach((txn, index) => {
             cumulativeBridgeAdjustment += Number(bridgeDeltasByIndex.get(index)) || 0;
             const rawRunningCash = Number(txn?.aggregate_raw_running_cash) || 0;
+            const rawDisplayCash = Number(txn?.aggregate_raw_display_cash) || rawRunningCash;
             const rawMarketValue = Number(txn?.aggregate_raw_market_value) || 0;
             txn.aggregate_bridge_adjustment = cumulativeBridgeAdjustment;
             txn.aggregate_running_cash = rawRunningCash + cumulativeBridgeAdjustment;
+            txn.aggregate_display_cash = rawDisplayCash + cumulativeBridgeAdjustment;
             txn.aggregate_market_value = rawMarketValue;
-            txn.aggregate_total_equity = txn.aggregate_running_cash + rawMarketValue;
+            txn.aggregate_total_equity = txn.aggregate_display_cash + rawMarketValue;
             txn.running_cash = txn.aggregate_running_cash;
             txn.market_value = txn.aggregate_market_value;
             txn.total_equity = txn.aggregate_total_equity;
@@ -2988,6 +3008,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const holdings = snapshot?.aggregate_holdings || snapshot?.holdings || {};
             const aggregateRunningCash = Number(snapshot?.aggregate_running_cash ?? snapshot?.running_cash) || 0;
+            const rawAggregateDisplayCash = Number(snapshot?.aggregate_display_cash);
+            const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
+                ? rawAggregateDisplayCash
+                : aggregateRunningCash + (Number(snapshot?.aggregate_pending_settlement_cash) || 0);
             return minuteKeys.map((minuteKey) => {
                 if (!availableMinuteKeys.has(minuteKey)) {
                     return {
@@ -3020,11 +3044,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         holdingsMarketValues[normalizedTicker] = marketValue;
                     }
                 });
-                const aggregateTotalEquity = aggregateRunningCash + aggregateMarketValue;
+                const aggregateTotalEquity = aggregateDisplayCash + aggregateMarketValue;
                 const point = {
                     date: minuteKey,
                     running_cash: aggregateRunningCash,
                     aggregate_running_cash: aggregateRunningCash,
+                    aggregate_display_cash: aggregateDisplayCash,
                     market_value: aggregateMarketValue,
                     aggregate_market_value: aggregateMarketValue,
                     holdings_market_values: holdingsMarketValues,
@@ -3199,6 +3224,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const fxTimeline = buildInvestmentFxRateTimeline(investmentProcessedTransactionsCache, baseCurrency);
         const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
         const aggregateRunningCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash) || 0;
+        const rawAggregateDisplayCash = Number(latestSnapshot?.aggregate_display_cash);
+        const aggregateDisplayCash = Number.isFinite(rawAggregateDisplayCash)
+            ? rawAggregateDisplayCash
+            : aggregateRunningCash + (Number(latestSnapshot?.aggregate_pending_settlement_cash) || 0);
         const intradayTickerSet = new Set(openTickers);
         const holdingQuantityByTicker = new Map(
             Object.entries(holdings)
@@ -3238,7 +3267,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return minuteKeys.map((minuteKey) => {
             const valuationDate = normalizeLedgerDate(minuteKey) || normalizeLedgerDate(minuteKeys[minuteKeys.length - 1]);
-            const totals = { open: aggregateRunningCash + fixedHoldingValue, high: aggregateRunningCash + fixedHoldingValue, low: aggregateRunningCash + fixedHoldingValue, close: aggregateRunningCash + fixedHoldingValue };
+            const totals = { open: aggregateDisplayCash + fixedHoldingValue, high: aggregateDisplayCash + fixedHoldingValue, low: aggregateDisplayCash + fixedHoldingValue, close: aggregateDisplayCash + fixedHoldingValue };
             openTickers.forEach((ticker) => {
                 const quantity = Number(holdingQuantityByTicker.get(ticker));
                 if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) return;
@@ -4215,7 +4244,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .sort((left, right) => right.marketValue - left.marketValue);
         const nonCashComponents = allHoldings.filter((entry) => !cashEquivalentSet.has(entry.ticker));
         const holdingsTotalValue = allHoldings.reduce((sum, entry) => sum + entry.marketValue, 0);
-        const cashValue = Math.max(0, Number(pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0);
+        const cashValue = Math.max(0, Number(pointRecord?.aggregate_display_cash ?? pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0);
         const fallbackTotal = holdingsTotalValue + cashValue;
         const denominator = Math.max(Number(pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity) || 0, fallbackTotal, 0);
         if (denominator <= 1e-9) {
@@ -4297,7 +4326,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const holdingsMarketValues = pointRecord?.aggregate_holdings_market_values || pointRecord?.holdings_market_values || {};
         const currentTicker = normalizeInvestmentTicker(activeTicker || tickerSummary?.ticker);
         const currentTickerValue = Math.max(0, Number(holdingsMarketValues?.[currentTicker]) || 0);
-        const cashValue = Math.max(0, Number(pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0);
+        const cashValue = Math.max(0, Number(pointRecord?.aggregate_display_cash ?? pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0);
         const holdingsTotal = Object.values(holdingsMarketValues)
             .reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
         const fallbackTotal = holdingsTotal + cashValue;
@@ -6249,7 +6278,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const description = formatTransactionDescription(txn);
         const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
         const brokerRunningCash = Number(txn?.broker_running_cash ?? txn?.running_cash) || 0;
+        const brokerPendingSettlementCash = Number(txn?.broker_pending_settlement_cash) || 0;
+        const brokerDisplayCash = Number(txn?.broker_display_cash);
         const brokerTotalEquity = Number(txn?.broker_total_equity ?? txn?.total_equity) || 0;
+        const brokerCode = normalizeInvestmentBroker(txn?.broker || getTransactionBrokerCode(txn));
+        const shouldShowPendingSettlementCash = (
+            brokerCode === 'hsbc'
+            && txn?.source?.cash_replay_pending_settlement === true
+            && Math.abs(brokerPendingSettlementCash) > 1e-9
+        );
+        const brokerCashForDisplay = Number.isFinite(brokerDisplayCash)
+            ? brokerDisplayCash
+            : (shouldShowPendingSettlementCash
+                ? brokerRunningCash + brokerPendingSettlementCash
+                : brokerRunningCash);
         const sourceKey = String(txn?.manual_internal_transfer_source_key || '').trim();
         const transferOptions = sourceKey ? (investmentInternalTransferSourceOptionsByKey.get(sourceKey) || []) : [];
         const selectedTargetKey = String(txn?.manual_internal_transfer_selected_target_key || '').trim();
@@ -6294,7 +6336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(txn.display_amount)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatTransactionCommissionDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-right">${formatAmount(brokerMarketValue)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${formatAmount(brokerRunningCash)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${formatAmount(brokerCashForDisplay)}</td>
                 <td class="investment-history-cell investment-history-cell-right investment-history-cell-emphasis"><strong>${formatAmount(brokerTotalEquity)}</strong></td>
             </tr>
         `;
@@ -8856,7 +8898,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
         const latestSnapshot = investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1];
-        const aggregateCash = Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash);
+        const rawAggregateCash = Number(latestSnapshot?.aggregate_display_cash);
+        const aggregateCash = Number.isFinite(rawAggregateCash)
+            ? rawAggregateCash
+            : Number(latestSnapshot?.aggregate_running_cash ?? latestSnapshot?.running_cash);
         const latestChartPoint = Array.isArray(investmentChartPointsCache) && investmentChartPointsCache.length
             ? investmentChartPointsCache[investmentChartPointsCache.length - 1]
             : null;
@@ -10144,6 +10189,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const aggregateLedgerState = {
             cashBalances: createCashLedger(aggregateStartingCash, baseCurrency),
             runningCash: aggregateStartingCash,
+            pendingSettlementCash: 0,
             holdings: {},
             moneyMarketAnchors: {},
         };
@@ -10179,6 +10225,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 cashBalances: createCashLedger(safeStartingCash, baseCurrency),
                 runningCash: safeStartingCash,
+                pendingSettlementCash: 0,
                 holdings: {},
                 moneyMarketAnchors: {},
             };
@@ -10301,6 +10348,25 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
+        function calculatePendingSettlementCashDelta(txn) {
+            const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (
+                brokerCode !== 'hsbc'
+                || !['buy', 'sell'].includes(normalizedType)
+                || txn?.source?.cash_replay_pending_settlement !== true
+            ) {
+                return 0;
+            }
+            const amount = Number(
+                txn?.normalized?.net_amount
+                ?? txn?.net_amount_raw
+                ?? txn?.gross_amount_raw
+                ?? 0
+            );
+            return Number.isFinite(amount) ? amount : 0;
+        }
+
         function calculateInvestmentCashDelta(txn) {
             let qty = getTransactionQuantity(txn);
             let amount = getTransactionAmount(txn);
@@ -10309,6 +10375,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (txn.normalized?.commission !== undefined && txn.normalized?.commission !== null) commission = Number(txn.normalized.commission);
             else if (txn.commission !== undefined && txn.commission !== null) commission = Number(txn.commission);
             const normalizedType = getNormalizedTransactionType(txn);
+            const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+            if (
+                brokerCode === 'hsbc'
+                && ['buy', 'sell'].includes(normalizedType)
+                && txn?.source?.cash_replay_pending_settlement === true
+            ) {
+                return 0;
+            }
             if (normalizedType === 'fx_translation_pnl') {
                 return 0;
             }
@@ -10379,6 +10453,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
+        const lastProcessedBrokerCashForDisplay = new Map();
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -10419,8 +10494,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const ledgerDate = normalizeLedgerDate(txn?.date);
             const transactionCurrency = formatTransactionCurrency(txn) || getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
             const cashDelta = calculateInvestmentCashDelta(txn) + (Number(cashFundingAdjustments.get(processedIndex)) || 0);
+            const pendingSettlementDelta = calculatePendingSettlementCashDelta(txn);
             applyCashStateUpdate(aggregateLedgerState, transactionCurrency, cashDelta, ledgerDate);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate);
+            aggregateLedgerState.pendingSettlementCash += pendingSettlementDelta;
+            brokerLedgerState.pendingSettlementCash += pendingSettlementDelta;
+            const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+            const shouldReplayPendingSettlement = (
+                normalizedBrokerCode === 'hsbc'
+                && txn?.source?.cash_replay_pending_settlement === true
+            );
+            const rawBrokerDisplayCashBase = Number(lastProcessedBrokerCashForDisplay.get(normalizedBrokerCode));
+            const brokerDisplayCashBase = Number.isFinite(rawBrokerDisplayCashBase)
+                ? rawBrokerDisplayCashBase
+                : brokerLedgerState.runningCash;
+            const pendingAwareBrokerCashForDisplay = shouldReplayPendingSettlement
+                ? brokerDisplayCashBase + pendingSettlementDelta
+                : brokerLedgerState.runningCash;
             const transactionDate = normalizeLedgerDate(txn?.date);
             const hasWindowedAvailableCash = (
                 txn?.source?.available_cash_after_raw !== undefined
@@ -10456,6 +10546,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     rebuildAggregateCashState(ledgerDate);
                 }
             }
+            const normalizedBrokerCashForDisplay = normalizeInvestmentBroker(brokerCode) === 'hsbc'
+                ? pendingAwareBrokerCashForDisplay
+                : Number(brokerLedgerState.runningCash);
+            lastProcessedBrokerCashForDisplay.set(normalizedBrokerCode, normalizedBrokerCashForDisplay);
+            const aggregateDisplayCash = aggregateLedgerState.runningCash + aggregateLedgerState.pendingSettlementCash;
             const aggregateCashByCurrency = cloneCashLedgerBalances(aggregateLedgerState.cashBalances);
             const brokerCashByCurrency = cloneCashLedgerBalances(brokerLedgerState.cashBalances);
             return {
@@ -10468,11 +10563,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 holdings: { ...aggregateLedgerState.holdings },
                 money_market_anchors: { ...aggregateLedgerState.moneyMarketAnchors },
                 aggregate_running_cash: aggregateLedgerState.runningCash,
+                aggregate_display_cash: aggregateDisplayCash,
                 aggregate_cash_by_currency: aggregateCashByCurrency,
+                aggregate_pending_settlement_cash: aggregateLedgerState.pendingSettlementCash,
                 aggregate_holdings: { ...aggregateLedgerState.holdings },
                 aggregate_money_market_anchors: { ...aggregateLedgerState.moneyMarketAnchors },
                 broker_running_cash: brokerLedgerState.runningCash,
+                broker_display_cash: normalizedBrokerCashForDisplay,
                 broker_cash_by_currency: brokerCashByCurrency,
+                broker_pending_settlement_cash: brokerLedgerState.pendingSettlementCash,
                 broker_holdings: { ...brokerLedgerState.holdings },
                 broker_money_market_anchors: { ...brokerLedgerState.moneyMarketAnchors },
             };
@@ -10570,16 +10669,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const aggregateHoldings = txn.aggregate_holdings || txn.holdings || {};
             const aggregateMoneyMarketAnchors = txn.aggregate_money_market_anchors || txn.money_market_anchors || {};
             const aggregateRunningCash = Number(txn.aggregate_running_cash ?? txn.running_cash) || 0;
+            const aggregatePendingSettlementCash = Number(txn.aggregate_pending_settlement_cash) || 0;
+            const aggregateDisplayCash = Number.isFinite(Number(txn.aggregate_display_cash))
+                ? Number(txn.aggregate_display_cash)
+                : aggregateRunningCash + aggregatePendingSettlementCash;
             const brokerHoldings = txn.broker_holdings || {};
             const brokerMoneyMarketAnchors = txn.broker_money_market_anchors || {};
             const brokerRunningCash = Number(txn.broker_running_cash) || 0;
+            const brokerPendingSettlementCash = Number(txn.broker_pending_settlement_cash) || 0;
+            const brokerDisplayCash = Number.isFinite(Number(txn.broker_display_cash))
+                ? Number(txn.broker_display_cash)
+                : brokerRunningCash + brokerPendingSettlementCash;
             const aggregateMarketValue = calculateTransactionMarketValue(txn, aggregateHoldings, aggregateMoneyMarketAnchors);
             const brokerMarketValue = calculateTransactionMarketValue(txn, brokerHoldings, brokerMoneyMarketAnchors);
 
             txn.aggregate_market_value = aggregateMarketValue;
-            txn.aggregate_total_equity = aggregateRunningCash + aggregateMarketValue;
+            txn.aggregate_total_equity = aggregateDisplayCash + aggregateMarketValue;
             txn.broker_market_value = brokerMarketValue;
-            txn.broker_total_equity = brokerRunningCash + brokerMarketValue;
+            txn.broker_total_equity = brokerDisplayCash + brokerMarketValue;
 
             txn.market_value = aggregateMarketValue;
             txn.total_equity = txn.aggregate_total_equity;
@@ -10600,10 +10707,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 latestProcessed.market_value = authoritativeMarketValue;
                 latestProcessed.aggregate_market_value = authoritativeMarketValue;
             }
-            latestProcessed.total_equity = latestProcessed.running_cash + latestProcessed.market_value;
+            const aggregatePendingSettlementCash = Number(latestProcessed.aggregate_pending_settlement_cash) || 0;
+            latestProcessed.aggregate_display_cash = latestProcessed.running_cash + aggregatePendingSettlementCash;
+            latestProcessed.total_equity = latestProcessed.aggregate_display_cash + latestProcessed.market_value;
             latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
             if (isSingleBrokerPortfolio) {
                 latestProcessed.broker_running_cash = latestProcessed.aggregate_running_cash ?? latestProcessed.running_cash;
+                latestProcessed.broker_display_cash = latestProcessed.aggregate_display_cash;
                 latestProcessed.broker_market_value = latestProcessed.aggregate_market_value ?? latestProcessed.market_value;
                 latestProcessed.broker_total_equity = latestProcessed.aggregate_total_equity ?? latestProcessed.total_equity;
                 latestProcessed.broker_cash_by_currency = { ...(latestProcessed.aggregate_cash_by_currency || latestProcessed.cash_by_currency || {}) };
@@ -10736,7 +10846,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
-        const AGGREGATE_CASH = Number(last?.aggregate_running_cash ?? last?.running_cash);
+        const rawAggregateDisplayCash = Number(last?.aggregate_display_cash);
+        const AGGREGATE_CASH = Number.isFinite(rawAggregateDisplayCash)
+            ? rawAggregateDisplayCash
+            : Number(last?.aggregate_running_cash ?? last?.running_cash);
         holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, AGGREGATE_TOTAL_EQUITY, AGGREGATE_CASH);
         attachHoldingsTableAlignmentSync(holdingsPanel);
         bindHoldingsLogoFallbacks(holdingsPanel);
@@ -10749,10 +10862,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const latestChartPoint = Array.isArray(chartPoints) && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
         renderInvestmentDummyPortfolioDonut(latestChartPoint || {
-            aggregate_running_cash: Number(last?.aggregate_running_cash ?? last?.running_cash) || 0,
+            aggregate_running_cash: Number(last?.aggregate_display_cash ?? last?.aggregate_running_cash ?? last?.running_cash) || 0,
+            aggregate_display_cash: Number(last?.aggregate_display_cash ?? last?.aggregate_running_cash ?? last?.running_cash) || 0,
             aggregate_total_equity: Number(last?.aggregate_total_equity ?? last?.total_equity) || Number(last?.aggregate_running_cash ?? last?.running_cash) || 0,
             aggregate_holdings_market_values: {},
-            running_cash: Number(last?.aggregate_running_cash ?? last?.running_cash) || 0,
+            running_cash: Number(last?.aggregate_display_cash ?? last?.aggregate_running_cash ?? last?.running_cash) || 0,
             total_equity: Number(last?.aggregate_total_equity ?? last?.total_equity) || Number(last?.aggregate_running_cash ?? last?.running_cash) || 0,
             holdings_market_values: {},
         }, tickerProfiles);
@@ -11472,7 +11586,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pointEquity = Number(pointRecord?.aggregate_total_equity ?? pointRecord?.total_equity) || 0;
                 const previousPointEquity = Number(previousTradingPoint?.aggregate_total_equity ?? previousTradingPoint?.total_equity) || 0;
                 const pointMarketValue = Number(pointRecord?.aggregate_market_value ?? pointRecord?.market_value) || 0;
-                const pointRunningCash = Number(pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0;
+                const pointRunningCash = Number(pointRecord?.aggregate_display_cash ?? pointRecord?.aggregate_running_cash ?? pointRecord?.running_cash) || 0;
                 const pnlVsPreviousTradingDay = previousTradingPoint
                     ? pointEquity - previousPointEquity - transferSincePreviousTradingDay
                     : null;

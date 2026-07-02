@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en-US">
+<html lang="{{ language_html_lang or 'en-US' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -159,10 +159,10 @@
             <span class="icon icon-sidebar-left" aria-hidden="true"></span>
         </button>
         <div class="global-quick-actions" id="global_quick_actions" aria-label="Global quick actions">
-            <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="Language" title="Language">
+            <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>
             </button>
-            <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" aria-label="Switch theme" title="Switch theme" aria-pressed="false">
+            <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
                 <span class="icon" id="global_theme_toggle_icon" aria-hidden="true"></span>
             </button>
         </div>
@@ -225,6 +225,13 @@
     "backtestResult": backtest_result,
     "backtestPeriodOptions": backtest_periods_by_interval,
     "dateDisplay": {"full": date_display_full_format, "short": date_display_short_format},
+    "language": {
+        "code": language_code,
+        "htmlLang": language_html_lang,
+        "labels": language_labels,
+        "options": language_options,
+        "translations": language_translations,
+    },
     "project": {"sourceUrl": project_source_url, "displayUrl": project_display_url},
     "currentView": current_view_name,
     "settingsSection": settings_section,

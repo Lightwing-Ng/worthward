@@ -1,4 +1,4 @@
-/* Code version: v0.5.3 */
+/* Code version: v0.5.4 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -38,6 +38,16 @@
     const MIN_TICKERS = constraints?.minTickers || 2;
     const MAX_TICKERS = constraints?.maxTickers || 5;
     const minimumRequiredTickers = (isBacktestView || isDcaView) ? 1 : MIN_TICKERS;
+    const getLanguageState = () => window.ANTIGRAVITY_APP?.language || {};
+    const translateUi = (value) => {
+        const languageState = getLanguageState();
+        const languageCode = String(languageState.code || "en");
+        if (languageCode === "en") return value;
+        const row = Array.isArray(languageState.translations)
+            ? languageState.translations.find((candidate) => candidate?.en === value)
+            : null;
+        return row?.[languageCode] || value;
+    };
     const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
     const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
     const $ = (selector) => document.querySelector(selector);
@@ -2847,7 +2857,7 @@
         if (!(toggle instanceof HTMLButtonElement)) return;
         const effectiveMode = getEffectiveThemeMode();
         const nextMode = effectiveMode === "dark" ? "light" : "dark";
-        const label = nextMode === "dark" ? "Switch to Dark mode" : "Switch to Light mode";
+        const label = nextMode === "dark" ? translateUi("Switch to Dark mode") : translateUi("Switch to Light mode");
         toggle.dataset.effectiveTheme = effectiveMode;
         toggle.setAttribute("aria-label", label);
         toggle.setAttribute("title", label);
@@ -2901,6 +2911,41 @@
         window.addEventListener("antigravity:theme-mode-change", () => {
             syncThemeModeForm(document.documentElement.dataset.themeMode);
             syncGlobalThemeToggle();
+        });
+    };
+
+    const initGlobalLanguageControls = () => {
+        const toggle = document.getElementById("global_language_toggle");
+        if (!(toggle instanceof HTMLButtonElement)) return;
+        const languageState = getLanguageState();
+        const languageLabel = languageState.labels?.[languageState.code] || translateUi("Language");
+        toggle.setAttribute("aria-label", `${translateUi("Language")}: ${languageLabel}`);
+        toggle.setAttribute("title", `${translateUi("Language")}: ${languageLabel}`);
+        if (toggle.dataset.boundLanguageToggle === "1") return;
+        toggle.dataset.boundLanguageToggle = "1";
+        toggle.addEventListener("click", async () => {
+            toggle.disabled = true;
+            try {
+                const response = await fetch("/api/settings/language/cycle", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({current: getLanguageState().code || "en"}),
+                });
+                const payload = await response.json().catch(() => null);
+                if (payload?.success) {
+                    if (window.ANTIGRAVITY_APP?.language) {
+                        window.ANTIGRAVITY_APP.language.code = payload.language;
+                        window.ANTIGRAVITY_APP.language.htmlLang = payload.htmlLang;
+                    }
+                    if (payload.dateDisplay && window.ANTIGRAVITY_APP?.dateDisplay) {
+                        window.ANTIGRAVITY_APP.dateDisplay = payload.dateDisplay;
+                    }
+                    window.location.reload();
+                    return;
+                }
+            } catch (_error) {
+            }
+            toggle.disabled = false;
         });
     };
 
@@ -3684,6 +3729,9 @@
         }
         if (fullFormat === "yyyy_mmm_dd") {
             return {tokens: [`${year}`, monthLabel, paddedDay], wrapAfterIndex: 0};
+        }
+        if (fullFormat === "yyyy_mm_dd_cjk") {
+            return {tokens: [`${year}年${padTwo(monthIndex + 1)}月${paddedDay}日`], wrapAfterIndex: 0};
         }
         return {tokens: [`${day}`, monthLabel, `${year}`], wrapAfterIndex: 1};
     };
@@ -4563,6 +4611,7 @@
     initializeWorkspaceEnhancements();
     initThemeModeControls();
     initGlobalAppearanceControls();
+    initGlobalLanguageControls();
     rememberCurrentViewUrl();
     attachDockMemory();
     attachOptimisticInternalNavigation();
