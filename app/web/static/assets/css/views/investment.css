@@ -1,4 +1,4 @@
-/* Code version: v1.16.4 */
+/* Code version: v1.16.5 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2327,6 +2327,7 @@
 }
 
 .investment-holdings-table-shell {
+    --scrollable-data-table-header-height: 136px;
     border-radius: inherit;
     background: var(--panel-strong);
     backdrop-filter: var(--glass-surface-blur);
