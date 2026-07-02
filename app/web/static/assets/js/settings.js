@@ -1987,6 +1987,75 @@
         const actionInput = form.querySelector("[data-language-action-input]");
         const uploadTrigger = form.querySelector("[data-language-upload-trigger]");
         const uploadInput = form.querySelector("[data-language-upload-input]");
+        const saveButton = form.querySelector("[data-language-save-button]");
+        const saveFeedback = form.querySelector("[data-language-save-feedback]");
+        const languageInputs = Array.from(form.querySelectorAll('tbody input[type="text"][name^="translation_"]'))
+            .filter((input) => input instanceof HTMLInputElement);
+
+        const setSaveFeedback = (message, state = "") => {
+            if (!(saveFeedback instanceof HTMLElement)) return;
+            const text = String(message || "").trim();
+            saveFeedback.textContent = text;
+            saveFeedback.hidden = !text;
+            saveFeedback.classList.toggle("is-success", state === "success");
+            saveFeedback.classList.toggle("is-error", state === "error");
+        };
+
+        const syncLanguageDirtyState = (input) => {
+            if (!(input instanceof HTMLInputElement)) return false;
+            const baseline = input.dataset.languageInitialValue ?? "";
+            const isDirty = input.value !== baseline;
+            input.classList.toggle("is-dirty", isDirty);
+            input.closest("tr")?.classList.toggle("is-dirty-row", isDirty);
+            return isDirty;
+        };
+
+        const syncAllLanguageDirtyStates = () => {
+            let hasDirty = false;
+            languageInputs.forEach((input) => {
+                hasDirty = syncLanguageDirtyState(input) || hasDirty;
+            });
+            return hasDirty;
+        };
+
+        const clearLanguageDirtyState = () => {
+            languageInputs.forEach((input) => {
+                if (!(input instanceof HTMLInputElement)) return;
+                input.dataset.languageInitialValue = input.value;
+                input.classList.remove("is-dirty");
+                input.closest("tr")?.classList.remove("is-dirty-row");
+            });
+        };
+
+        const setSavePending = (isPending) => {
+            if (saveButton instanceof HTMLButtonElement) {
+                saveButton.disabled = isPending;
+                saveButton.classList.toggle("is-pending", isPending);
+                saveButton.setAttribute("aria-busy", String(isPending));
+                if (isPending) {
+                    saveButton.dataset.languageSaveLabel = saveButton.dataset.languageSaveLabel || saveButton.textContent || "Save translations";
+                    saveButton.textContent = "Saving...";
+                } else {
+                    saveButton.textContent = saveButton.dataset.languageSaveLabel || "Save translations";
+                    saveButton.removeAttribute("aria-busy");
+                }
+            }
+        };
+
+        languageInputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            input.dataset.languageInitialValue = input.value;
+            input.addEventListener("input", () => {
+                syncLanguageDirtyState(input);
+                if (saveFeedback instanceof HTMLElement && !saveFeedback.hidden && saveFeedback.classList.contains("is-success")) {
+                    setSaveFeedback("", "");
+                }
+            });
+            input.addEventListener("change", () => {
+                syncLanguageDirtyState(input);
+            });
+        });
+
         if (uploadTrigger instanceof HTMLButtonElement && uploadInput instanceof HTMLInputElement) {
             uploadTrigger.addEventListener("click", () => {
                 uploadInput.click();
@@ -1997,9 +2066,33 @@
                 form.submit();
             });
         }
-        form.addEventListener("submit", () => {
+        form.addEventListener("submit", async (event) => {
             if (actionInput instanceof HTMLInputElement && actionInput.value !== "upload") {
                 actionInput.value = "save";
+                event.preventDefault();
+                const hadDirtyFields = syncAllLanguageDirtyStates();
+                setSaveFeedback(hadDirtyFields ? "Saving translations..." : "Saving translations...", "");
+                setSavePending(true);
+                try {
+                    const response = await fetch(form.action, {
+                        method: "POST",
+                        body: new FormData(form),
+                        headers: {
+                            "Accept": "application/json",
+                            "X-Settings-Async": "1",
+                        },
+                    });
+                    const payload = await response.json().catch(() => null);
+                    if (!response.ok || !payload?.success) {
+                        throw new Error(payload?.notice || `Language save failed: ${response.status}`);
+                    }
+                    clearLanguageDirtyState();
+                    setSaveFeedback(payload.notice || "Translations saved.", "success");
+                } catch (_error) {
+                    setSaveFeedback("Unable to save translations right now.", "error");
+                } finally {
+                    setSavePending(false);
+                }
             }
         });
 

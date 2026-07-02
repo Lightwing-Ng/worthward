@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.9
+ * Code version: v1.59.11
  * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
  * - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
  * - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
@@ -40,6 +40,7 @@
  * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
  * - Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
  * - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
+ * - Fixed: Investment realtime polling and breathing pulse are disabled during New York post-market and on non-trading days.
  * - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.
  * - Fixed: Holdings Last now applies US post quotes from the prior session day and Hong Kong intraday quotes on their own market clocks during US after-hours.
  * - Fixed: Lineage profile lookup now uses exported data-utils helpers instead of an undefined local lineage-map reference.
@@ -417,10 +418,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
+    const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
     const INVESTMENT_LIVE_DIGIT_ANIMATION_MS = 520;
+    const INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS = {
+        '1w': 5,
+        '1m': 23,
+    };
     const investmentLiveCharWidthCache = new Map();
     const investmentLiveValueAnimationCancels = new WeakMap();
+    let investmentMarketSessionState = null;
+    let investmentMarketSessionStateLoadedAt = 0;
+    let investmentMarketSessionStateRequest = null;
+    let investmentMarketSessionStateRequestDayCount = 0;
+    let investmentMarketSessionStateDayCount = 0;
     const investmentStockDetailsPanel = document.getElementById(INVESTMENT_STOCK_DETAILS_PANEL_ID);
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
     const investmentShareActions = document.getElementById('investment_share_actions');
@@ -891,6 +902,99 @@ document.addEventListener('DOMContentLoaded', () => {
         return window.ANTIGRAVITY_APP?.endpoints?.investmentRealtimeQuotes || '/api/investment/realtime-quotes';
     }
 
+    function getInvestmentMarketSessionEndpoint() {
+        return window.ANTIGRAVITY_APP?.endpoints?.investmentMarketSession || '/api/market-session/us-equity';
+    }
+
+    function getSafeInvestmentMarketSessionState() {
+        return (investmentMarketSessionState && typeof investmentMarketSessionState === 'object') ? investmentMarketSessionState : null;
+    }
+
+    function isInvestmentOverviewHighPrecisionEquityRange(range = selectedInvestmentEquityRange) {
+        const normalizedRange = normalizeInvestmentEquityRange(range);
+        return normalizedRange === '1w' || normalizedRange === '1m';
+    }
+
+    function getInvestmentOverviewIntradayDayCount(range = selectedInvestmentEquityRange) {
+        const normalizedRange = normalizeInvestmentEquityRange(range);
+        return INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS[normalizedRange] || 0;
+    }
+
+    function refreshInvestmentMarketSessionState({
+        force = false,
+        dayCount = INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS['1w'],
+    } = {}) {
+        const now = Date.now();
+        const requestedDayCount = Math.max(1, Math.min(365, Number(dayCount) || INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS['1w']));
+        const isFresh = now - investmentMarketSessionStateLoadedAt <= INVESTMENT_MARKET_SESSION_TTL_MS;
+        if (!force && isFresh && investmentMarketSessionStateRequest === null && investmentMarketSessionStateDayCount >= requestedDayCount) {
+            return Promise.resolve(investmentMarketSessionState);
+        }
+        if (investmentMarketSessionStateRequest && investmentMarketSessionStateRequestDayCount === requestedDayCount) {
+            return investmentMarketSessionStateRequest;
+        }
+        const sessionEndpoint = getInvestmentMarketSessionEndpoint();
+        const resolvedEndpoint = `${sessionEndpoint}?day_count=${encodeURIComponent(String(requestedDayCount))}`;
+
+        investmentMarketSessionStateRequest = (async () => {
+            try {
+                const response = await fetch(resolvedEndpoint, buildInvestmentRequestOptions());
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || 'Unable to read US equity market session state.');
+                }
+                const safePayload = (payload && typeof payload === 'object') ? payload : {};
+                investmentMarketSessionState = {
+                    market: String(safePayload.market || '').trim() || 'us_equity',
+                    session: String(safePayload.session || '').trim().toLowerCase() || 'off',
+                    is_trading_day: Boolean(safePayload.is_trading_day),
+                    is_early_close: Boolean(safePayload.is_early_close),
+                    is_realtime_allowed: Boolean(safePayload.is_realtime_allowed),
+                    session_date: String(safePayload.session_date || '').trim(),
+                    as_of: String(safePayload.as_of || '').trim(),
+                    trading_days: Array.isArray(safePayload.trading_days)
+                        ? [...new Set(safePayload.trading_days)]
+                            .map((dayKey) => normalizeLedgerDate(dayKey))
+                            .filter(Boolean)
+                        : [],
+                };
+                investmentMarketSessionStateDayCount = requestedDayCount;
+            } catch (error) {
+                if (!isFresh || !investmentMarketSessionState) {
+                    investmentMarketSessionState = {
+                        market: 'us_equity',
+                        session: 'off',
+                        is_trading_day: false,
+                        is_early_close: false,
+                        is_realtime_allowed: false,
+                        session_date: '',
+                        as_of: '',
+                        trading_days: [],
+                    };
+                }
+                if (isFresh) {
+                    console.warn('Unable to refresh US equity session state', error);
+                }
+            } finally {
+                investmentMarketSessionStateLoadedAt = Date.now();
+                investmentMarketSessionStateRequest = null;
+                investmentMarketSessionStateRequestDayCount = 0;
+            }
+            return investmentMarketSessionState;
+        })();
+        investmentMarketSessionStateRequestDayCount = requestedDayCount;
+        return investmentMarketSessionStateRequest;
+    }
+
+    function getCachedInvestmentMarketSessionState() {
+        const now = Date.now();
+        const isFresh = now - investmentMarketSessionStateLoadedAt <= INVESTMENT_MARKET_SESSION_TTL_MS;
+        if (!isFresh) {
+            void refreshInvestmentMarketSessionState();
+        }
+        return getSafeInvestmentMarketSessionState();
+    }
+
     function shouldShowInvestmentRealtimePulse(session) {
         return ['pre', 'intraday', 'post'].includes(String(session || '').trim().toLowerCase());
     }
@@ -934,8 +1038,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function shouldRunInvestmentRealtimeQuotes() {
-        if (shouldShowInvestmentRealtimePulse(getInvestmentRealtimeClockSession())) {
+        const usSessionState = getCachedInvestmentMarketSessionState();
+        if (usSessionState?.is_realtime_allowed) {
             return true;
+        }
+        if (usSessionState && usSessionState.session !== 'off' && usSessionState.session !== 'post') {
+            return false;
         }
         return (
             shouldShowInvestmentRealtimePulse(getInvestmentHongKongClockSession())
@@ -943,8 +1051,10 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    refreshInvestmentMarketSessionState({ force: true }).catch(() => {});
+
     function isInvestmentOverviewIntradayEquityRange(range = selectedInvestmentEquityRange) {
-        return normalizeInvestmentEquityRange(range) === '1w';
+        return isInvestmentOverviewHighPrecisionEquityRange(range);
     }
 
     function isInvestmentDailyEquityLiveRange(range = selectedInvestmentEquityRange) {
@@ -952,8 +1062,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentLiveSessionDateKey() {
+        const sessionState = getCachedInvestmentMarketSessionState();
         return shouldRunInvestmentRealtimeQuotes()
-            ? getInvestmentNewYorkClockParts().dateKey
+            ? (sessionState?.session_date || getInvestmentNewYorkClockParts().dateKey)
             : '';
     }
 
@@ -1598,6 +1709,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tickers.length) return;
         if (!shouldRunInvestmentRealtimeQuotes()) {
             resetInvestmentRealtimeChartState();
+            scheduleInvestmentRealtimeQuotePolling();
+            return;
         }
         investmentRealtimeQuoteInflight = true;
         investmentRealtimeQuoteAbortController = new AbortController();
@@ -1623,7 +1736,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function restartInvestmentRealtimeQuotePolling() {
         stopInvestmentRealtimeQuotePolling();
-        pollInvestmentRealtimeQuotes();
+        void refreshInvestmentMarketSessionState({ force: true })
+            .catch(() => null)
+            .then(() => pollInvestmentRealtimeQuotes());
     }
 
     function readInvestmentPageMemory() {
@@ -2647,14 +2762,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function loadInvestmentOverviewIntradayRows(ticker, dayKeys = []) {
+    async function loadInvestmentOverviewIntradayRows(ticker, dayKeys = [], range = selectedInvestmentEquityRange) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedRange = isInvestmentOverviewIntradayEquityRange(range)
+            ? normalizeInvestmentEquityRange(range)
+            : '1w';
         if (!normalizedTicker) return [];
         const requestedDayKeys = (Array.isArray(dayKeys) ? dayKeys : [])
             .map((dayKey) => normalizeLedgerDate(dayKey))
             .filter(Boolean);
         const requestedDays = requestedDayKeys.join(',');
-        const cacheKey = `${normalizedTicker}:1w:${requestedDays}`;
+        const cacheKey = `${normalizedTicker}:${normalizedRange}:${requestedDays}`;
         if (investmentOverviewIntradayCache.has(cacheKey)) {
             return investmentOverviewIntradayCache.get(cacheKey) || [];
         }
@@ -2671,7 +2789,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let response = null;
             try {
                 response = await fetch(
-                    `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=1w&ensure_store=1${dayQuery}`,
+                    `/api/investment/intraday?ticker=${encodeURIComponent(normalizedTicker)}&range=${encodeURIComponent(normalizedRange)}&ensure_store=1${dayQuery}`,
                     buildInvestmentRequestOptions({ signal: abortController.signal }),
                 );
             } finally {
@@ -2789,104 +2907,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return displayCandles;
     }
 
-    function formatInvestmentOverviewDateKey(date) {
-        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    }
-
-    function getInvestmentOverviewObservedHolidayKey(year, monthIndex, day) {
-        const date = new Date(Date.UTC(year, monthIndex, day));
-        const weekday = date.getUTCDay();
-        if (weekday === 6) {
-            date.setUTCDate(date.getUTCDate() - 1);
-        } else if (weekday === 0) {
-            date.setUTCDate(date.getUTCDate() + 1);
+    function buildInvestmentOverviewTradingDayKeys(range = selectedInvestmentEquityRange) {
+        const normalizedRange = normalizeInvestmentEquityRange(range);
+        const requiredDayCount = getInvestmentOverviewIntradayDayCount(normalizedRange);
+        if (!requiredDayCount) return [];
+        const safePayload = getSafeInvestmentMarketSessionState();
+        const tradingDays = Array.isArray(safePayload?.trading_days) ? safePayload.trading_days : [];
+        if (!tradingDays.length) {
+            void refreshInvestmentMarketSessionState({ dayCount: requiredDayCount, force: true });
+            return [];
         }
-        return formatInvestmentOverviewDateKey(date);
-    }
-
-    function getInvestmentOverviewNthWeekdayKey(year, monthIndex, weekday, nth) {
-        const date = new Date(Date.UTC(year, monthIndex, 1));
-        const offset = (weekday - date.getUTCDay() + 7) % 7;
-        date.setUTCDate(1 + offset + ((nth - 1) * 7));
-        return formatInvestmentOverviewDateKey(date);
-    }
-
-    function getInvestmentOverviewLastWeekdayKey(year, monthIndex, weekday) {
-        const date = new Date(Date.UTC(year, monthIndex + 1, 0));
-        const offset = (date.getUTCDay() - weekday + 7) % 7;
-        date.setUTCDate(date.getUTCDate() - offset);
-        return formatInvestmentOverviewDateKey(date);
-    }
-
-    function getInvestmentOverviewGoodFridayKey(year) {
-        const a = year % 19;
-        const b = Math.floor(year / 100);
-        const c = year % 100;
-        const d = Math.floor(b / 4);
-        const e = b % 4;
-        const f = Math.floor((b + 8) / 25);
-        const g = Math.floor((b - f + 1) / 3);
-        const h = ((19 * a) + b - d - g + 15) % 30;
-        const i = Math.floor(c / 4);
-        const k = c % 4;
-        const l = (32 + (2 * e) + (2 * i) - h - k) % 7;
-        const m = Math.floor((a + (11 * h) + (22 * l)) / 451);
-        const month = Math.floor((h + l - (7 * m) + 114) / 31);
-        const day = ((h + l - (7 * m) + 114) % 31) + 1;
-        const easter = new Date(Date.UTC(year, month - 1, day));
-        easter.setUTCDate(easter.getUTCDate() - 2);
-        return formatInvestmentOverviewDateKey(easter);
-    }
-
-    function getInvestmentOverviewMarketHolidayKeys(year) {
-        return new Set([
-            getInvestmentOverviewObservedHolidayKey(year, 0, 1),
-            getInvestmentOverviewNthWeekdayKey(year, 0, 1, 3),
-            getInvestmentOverviewNthWeekdayKey(year, 1, 1, 3),
-            getInvestmentOverviewGoodFridayKey(year),
-            getInvestmentOverviewLastWeekdayKey(year, 4, 1),
-            getInvestmentOverviewObservedHolidayKey(year, 5, 19),
-            getInvestmentOverviewObservedHolidayKey(year, 6, 4),
-            getInvestmentOverviewNthWeekdayKey(year, 8, 1, 1),
-            getInvestmentOverviewNthWeekdayKey(year, 10, 4, 4),
-            getInvestmentOverviewObservedHolidayKey(year, 11, 25),
-        ]);
-    }
-
-    function isInvestmentOverviewTradingDayKey(dayKey) {
-        const normalizedDayKey = normalizeLedgerDate(dayKey);
-        const match = normalizedDayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!match) return false;
-        const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-        const weekday = date.getUTCDay();
-        if (weekday === 0 || weekday === 6) return false;
-        return !getInvestmentOverviewMarketHolidayKeys(date.getUTCFullYear()).has(normalizedDayKey);
-    }
-
-    function buildInvestmentOverviewTradingDayKeys() {
-        const currentDateKey = getInvestmentNewYorkClockParts().dateKey || '';
-        const currentDateMatch = currentDateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        const currentDate = currentDateMatch
-            ? new Date(Date.UTC(Number(currentDateMatch[1]), Number(currentDateMatch[2]) - 1, Number(currentDateMatch[3])))
-            : null;
-        if (!(currentDate instanceof Date) || Number.isNaN(currentDate.getTime())) return [];
-        if (getInvestmentRealtimeClockSession() !== 'intraday') {
-            currentDate.setUTCDate(currentDate.getUTCDate() - 1);
+        const normalizedTradingDays = [...tradingDays]
+            .map((dayKey) => normalizeLedgerDate(dayKey))
+            .filter(Boolean);
+        if (normalizedTradingDays.length < requiredDayCount) {
+            void refreshInvestmentMarketSessionState({ dayCount: requiredDayCount, force: true });
+            return [];
         }
-        const dayKeys = [];
-        const cursor = new Date(currentDate.getTime());
-        while (dayKeys.length < 5) {
-            const dayKey = formatInvestmentOverviewDateKey(cursor);
-            if (isInvestmentOverviewTradingDayKey(dayKey)) {
-                dayKeys.unshift(dayKey);
-            }
-            cursor.setUTCDate(cursor.getUTCDate() - 1);
-        }
-        return dayKeys;
+        return normalizedTradingDays.slice(-requiredDayCount);
     }
 
     function buildInvestmentOverviewRegularSessionMinuteKeys(dayKey) {
@@ -2936,9 +2974,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function buildInvestmentOverviewIntradayLinePoints() {
-        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return [];
-        const dayKeys = buildInvestmentOverviewTradingDayKeys();
-        if (dayKeys.length !== 5) return [];
+        const normalizedRange = normalizeInvestmentEquityRange(selectedInvestmentEquityRange);
+        if (!isInvestmentOverviewHighPrecisionEquityRange(normalizedRange)) return [];
+        const requiredDayCount = getInvestmentOverviewIntradayDayCount(normalizedRange);
+        const dayKeys = buildInvestmentOverviewTradingDayKeys(normalizedRange);
+        if (!dayKeys.length || dayKeys.length < requiredDayCount) return [];
         const effectiveSnapshotsByDay = new Map(
             dayKeys.map((dayKey) => [dayKey, getInvestmentOverviewEffectiveSnapshotForTradingDay(dayKey)]),
         );
@@ -3075,8 +3115,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentOverviewEmptyIntradayLinePoints() {
-        const dayKeys = buildInvestmentOverviewTradingDayKeys();
-        if (dayKeys.length !== 5) return [];
+        const normalizedRange = normalizeInvestmentEquityRange(selectedInvestmentEquityRange);
+        if (!isInvestmentOverviewHighPrecisionEquityRange(normalizedRange)) return [];
+        const requiredDayCount = getInvestmentOverviewIntradayDayCount(normalizedRange);
+        const dayKeys = buildInvestmentOverviewTradingDayKeys(normalizedRange);
+        if (!dayKeys.length || dayKeys.length < requiredDayCount) return [];
         return dayKeys.flatMap((dayKey) => (
             buildInvestmentOverviewRegularSessionMinuteKeys(dayKey).map((minuteKey) => ({
                 date: minuteKey,
@@ -3192,7 +3235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function buildInvestmentOverviewIntradayCandles() {
-        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return [];
+        if (!isInvestmentOverviewIntradayEquityRange()) return [];
         const latestSnapshot = Array.isArray(investmentProcessedTransactionsCache) && investmentProcessedTransactionsCache.length
             ? investmentProcessedTransactionsCache[investmentProcessedTransactionsCache.length - 1]
             : null;
@@ -10944,7 +10987,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 point: entry?.point || null,
             }))
             .filter((entry) => entry.date);
-        const useOverviewIntradayLine = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+        const useOverviewIntradayLine = isInvestmentOverviewIntradayEquityRange()
             && normalizedIntradayLinePoints.length >= 390;
         const rawDates = useOverviewIntradayLine
             ? normalizedIntradayLinePoints.map((entry) => entry.date)
@@ -11187,10 +11230,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function scheduleInvestmentOverviewIntradayLinePoints(chartPoints = []) {
         const requestSerial = ++investmentOverviewIntradayRenderSerial;
-        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return;
-        buildInvestmentOverviewIntradayLinePoints().then((linePoints) => {
+        if (!isInvestmentOverviewIntradayEquityRange()) return;
+        const normalizedRange = normalizeInvestmentEquityRange(selectedInvestmentEquityRange);
+        const requestedDayCount = getInvestmentOverviewIntradayDayCount(normalizedRange);
+        const readiness = requestedDayCount
+            ? refreshInvestmentMarketSessionState({ dayCount: requestedDayCount, force: true })
+            : Promise.resolve(investmentMarketSessionState);
+        readiness.then(() => {
             if (requestSerial !== investmentOverviewIntradayRenderSerial) return;
-            if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) !== '1w') return;
+            if (!isInvestmentOverviewIntradayEquityRange()) return;
+            return buildInvestmentOverviewIntradayLinePoints();
+        }).then((linePoints) => {
+            if (requestSerial !== investmentOverviewIntradayRenderSerial) return;
+            if (!isInvestmentOverviewIntradayEquityRange()) return;
             if (!Array.isArray(linePoints) || linePoints.length < 390) return;
             const cachedLinePoints = getCachedInvestmentOverviewIntradayLinePoints();
             if (
@@ -11283,10 +11335,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setInvestmentChartReady(false, canvas);
 
         const referenceLineWidth = 2.0;
-        const cachedOverviewIntradayLinePoints = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+        const cachedOverviewIntradayLinePoints = isInvestmentOverviewIntradayEquityRange()
             ? getCachedInvestmentOverviewIntradayLinePoints()
             : [];
-        const initialOverviewIntradayLinePoints = normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === '1w'
+        const initialOverviewIntradayLinePoints = isInvestmentOverviewIntradayEquityRange()
             ? (cachedOverviewIntradayLinePoints.length
                 ? cachedOverviewIntradayLinePoints
                 : buildInvestmentOverviewEmptyIntradayLinePoints())
@@ -11430,6 +11482,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!(markerElement instanceof HTMLElement)) return;
                 const markerTarget = resolveInvestmentEquityRealtimeMarkerTarget(runtimeState);
                 if (!markerTarget || !Number.isInteger(markerTarget.index) || markerTarget.index < 0) {
+                    markerElement.hidden = true;
+                    return;
+                }
+                if (!shouldRunInvestmentRealtimeQuotes()) {
                     markerElement.hidden = true;
                     return;
                 }

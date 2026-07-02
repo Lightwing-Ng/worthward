@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.7
+Code version: v0.4.8
 """
 
 from __future__ import annotations
@@ -99,7 +99,12 @@ from app.core.config import (
     SETTINGS_STORE_DIR,
     SUPPORTED_PERIODS_1M,
 )
-from app.services.date_constraints import build_date_constraint_payload, latest_completed_nyse_trading_day
+from app.services.date_constraints import (
+    build_date_constraint_payload,
+    latest_completed_nyse_trading_day,
+    nyse_market_session_state,
+    nyse_recent_trading_days,
+)
 from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
     build_investment_payload_from_futuhk_statement_pdfs,
@@ -303,6 +308,7 @@ class WebRuntime:
     investment_get_latest_price: Any
     investment_get_parquet: Any
     investment_get_intraday_history: Any
+    investment_get_market_session: Any
     investment_get_realtime_quotes: Any
     investment_update_internal_transfer_binding: Any
     live_trading_get_positions: Any
@@ -2207,10 +2213,10 @@ def build_web_runtime() -> WebRuntime:
                 "sample_surface_shadow": "var(--apple-frosted-glass-shadow)",
                 "tokens": [
                     raw_token("--apple-frosted-glass-background",
-                              "linear-gradient(90deg, rgba(232, 238, 235, 0.54) 0%, rgba(242, 234, 225, 0.48) 50%, rgba(235, 239, 243, 0.54) 100%), rgba(245, 246, 246, 0.38)"),
-                    raw_token("--apple-frosted-glass-border", "1px solid rgba(255, 255, 255, 0.44)"),
-                    raw_token("--apple-frosted-glass-shadow", "0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62)"),
-                    raw_token("--apple-frosted-glass-blur", "saturate(180%) blur(30px)"),
+                              "linear-gradient(90deg, rgba(232, 238, 235, 0.30) 0%, rgba(242, 234, 225, 0.26) 50%, rgba(235, 239, 243, 0.30) 100%), rgba(245, 246, 246, 0.18)"),
+                    raw_token("--apple-frosted-glass-border", "1px solid rgba(255, 255, 255, 0.34)"),
+                    raw_token("--apple-frosted-glass-shadow", "0 18px 46px rgba(13, 18, 28, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.48)"),
+                    raw_token("--apple-frosted-glass-blur", "saturate(170%) blur(24px)"),
                 ],
             },
         ]
@@ -3624,6 +3630,7 @@ def build_web_runtime() -> WebRuntime:
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
                 "investmentIntraday": "/api/investment/intraday",
+                "investmentMarketSession": "/api/market-session/us-equity",
                 "investmentRealtimeQuotes": "/api/investment/realtime-quotes",
                 "liveTradingPositions": "/api/live-trading/positions",
                 "liveTradingOrder": "/api/live-trading/orders",
@@ -3964,6 +3971,8 @@ def build_web_runtime() -> WebRuntime:
 
     def general_settings_action():
         notices: list[str] = []
+        wants_async_language_response = request.headers.get("X-Settings-Async") == "1"
+        selected_language_settings = load_language_settings()
         language_action = str(request.form.get("language_action", "save")).strip()
         language_file = request.files.get("language_mapping_xlsx")
         if language_action == "upload" and language_file and language_file.filename:
@@ -4008,6 +4017,14 @@ def build_web_runtime() -> WebRuntime:
                 notices.append(f"Language updated: {LANGUAGE_LABELS[selected_language_settings.language]}.")
             elif translation_rows:
                 notices.append("Language translations updated.")
+        if wants_async_language_response:
+            response = jsonify({
+                "success": True,
+                "notice": " ".join(notices),
+                "language": selected_language_settings.language,
+                "label": LANGUAGE_LABELS[selected_language_settings.language],
+            })
+            return apply_no_store_headers(response)
         if "full_date_format" in request.form:
             current_full = load_date_display_settings().full_date_format
             selected_full = save_full_date_display_format(request.form.get("full_date_format", current_full))
@@ -5240,8 +5257,15 @@ def build_web_runtime() -> WebRuntime:
                 if selected_days:
                     intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d").isin(selected_days)].copy()
             elif requested_range == "1w":
-                start_at = latest_timestamp - pd.Timedelta(days=6)
-                intraday = intraday.loc[intraday["Date"] >= start_at].copy()
+                trading_days = nyse_recent_trading_days(latest_timestamp, day_count=5)
+                selected_days = set(trading_days)
+                if selected_days:
+                    intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d").isin(selected_days)].copy()
+            elif requested_range == "1m":
+                trading_days = nyse_recent_trading_days(latest_timestamp, day_count=23)
+                selected_days = set(trading_days)
+                if selected_days:
+                    intraday = intraday.loc[intraday["Date"].dt.strftime("%Y-%m-%d").isin(selected_days)].copy()
 
             rows = [
                 {
@@ -5338,6 +5362,38 @@ def build_web_runtime() -> WebRuntime:
         })
         response.status_code = 200
         return apply_no_store_headers(response)
+
+    def investment_get_market_session():
+        """Get US-equity market session state for frontend-safe gating of realtime refresh."""
+        try:
+            reference = request.args.get("as_of")
+            session_state = nyse_market_session_state(reference if reference else None)
+            trading_days = nyse_recent_trading_days(reference if reference else None)
+            response = jsonify({"success": True, "trading_days": trading_days, **session_state})
+            response.status_code = 200
+            return apply_no_store_headers(response)
+        except Exception as exc:  # noqa: BLE001
+            response = jsonify({
+                "success": False,
+                "error": str(exc),
+                "market": "us_equity",
+                "is_trading_day": False,
+                "is_early_close": False,
+                "session": "off",
+                "session_date": "",
+                "as_of": pd.Timestamp.now(tz="America/New_York").isoformat(),
+                "timezone": "America/New_York",
+                "is_realtime_allowed": False,
+                "premarket_open": "04:00",
+                "regular_open": "09:30",
+                "regular_close": "16:00",
+                "postmarket_close": "20:00",
+                "next_session_open": "",
+                "next_session_close": "",
+                "trading_days": [],
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def live_trading_get_positions():
         """Load current Longbridge stock positions for the Live trading workspace."""
@@ -5483,6 +5539,7 @@ def build_web_runtime() -> WebRuntime:
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,
         investment_get_realtime_quotes=investment_get_realtime_quotes,
+        investment_get_market_session=investment_get_market_session,
         investment_update_internal_transfer_binding=investment_update_internal_transfer_binding,
         live_trading_get_positions=live_trading_get_positions,
         live_trading_submit_order=live_trading_submit_order,

@@ -1,7 +1,7 @@
 """
 More route registration.
 
-Code version: v0.3.4
+Code version: v0.3.5
 """
 
 from flask import Flask
@@ -18,6 +18,7 @@ def register_more_routes(app: Flask, runtime: WebRuntime) -> None:
     app.post("/api/investment/transactions")(runtime.investment_add_transaction)
     app.get("/api/investment/latest-price")(runtime.investment_get_latest_price)
     app.get("/api/investment/parquet")(runtime.investment_get_parquet)
+    app.get("/api/market-session/us-equity")(runtime.investment_get_market_session)
     app.get("/api/investment/intraday")(runtime.investment_get_intraday_history)
     app.get("/api/investment/realtime-quotes")(runtime.investment_get_realtime_quotes)
     app.post("/api/investment/internal-transfer-binding")(runtime.investment_update_internal_transfer_binding)

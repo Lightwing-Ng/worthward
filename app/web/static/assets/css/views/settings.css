@@ -134,10 +134,15 @@
     max-width: 100%;
 }
 
-.settings-shell-local-market-store > .settings-summary,
-.settings-shell-local-market-store > .local-store-table-shell {
+.settings-shell-local-market-store > .settings-summary {
     width: 100%;
     max-width: 100%;
+}
+
+.settings-shell-local-market-store > .local-store-table-shell {
+    width: calc(100% - var(--page-edge-pad));
+    max-width: calc(100% - var(--page-edge-pad));
+    align-self: flex-start;
 }
 
 .settings-general-header {
@@ -1422,7 +1427,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .settings-strategy-card[open] {
     background: var(--glass-surface-background);
-    max-height: var(--settings-strategy-card-expanded-max-height);
+    max-height: none;
+    overflow: visible;
 }
 
 .settings-strategy-summary {
@@ -1757,13 +1763,54 @@ div.style-token-modal-demo::-webkit-scrollbar,
 .settings-language-file-actions {
     grid-column: 3;
     justify-self: end;
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    justify-content: flex-end;
+    width: calc((var(--settings-round-icon-button-size) * 2) + 8px);
+    height: var(--settings-round-icon-button-size);
+    isolation: isolate;
+    pointer-events: none;
 }
 
 .settings-language-file-button {
+    position: absolute;
+    top: 0;
+    right: 0;
     flex: 0 0 auto;
+    pointer-events: auto;
+    transition:
+        opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 440ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 160ms var(--motion-standard),
+        box-shadow 160ms var(--motion-standard),
+        color 160ms var(--motion-standard);
+    will-change: transform, opacity;
+}
+
+.settings-language-file-button-download {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate3d(calc(-1 * (var(--settings-round-icon-button-size) + 8px)), 0, 0) scale(0.72);
+    transform-origin: center;
+    transition-delay: 0ms;
+}
+
+.settings-language-file-button-upload {
+    transition-delay: 28ms;
+}
+
+.settings-language-file-actions:hover .settings-language-file-button-download,
+.settings-language-file-actions:focus-within .settings-language-file-button-download {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate3d(calc(-1 * (var(--settings-round-icon-button-size) + 8px)), 0, 0) scale(1);
+    transition-timing-function:
+        cubic-bezier(0.22, 1, 0.36, 1),
+        cubic-bezier(0.16, 1, 0.3, 1),
+        var(--motion-standard),
+        var(--motion-standard),
+        var(--motion-standard);
 }
 
 .icon-language-download {
@@ -1797,6 +1844,58 @@ div.style-token-modal-demo::-webkit-scrollbar,
     width: 64px;
 }
 
+.settings-language-table th,
+.settings-language-table td {
+    vertical-align: middle;
+}
+
+.settings-language-table th {
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.settings-language-table td {
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+.settings-language-table td:first-child {
+    text-align: center;
+    vertical-align: middle;
+    width: 64px;
+}
+
+.settings-language-table td input {
+    min-height: 34px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    line-height: 1.2;
+    border-radius: 10px;
+}
+
+.settings-language-table th.is-current-language {
+    color: var(--theme-accent-positive);
+}
+
+.settings-language-header-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    vertical-align: middle;
+}
+
+.settings-language-current-indicator {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    margin-left: 8px;
+    vertical-align: middle;
+    background-color: var(--theme-accent-positive);
+    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+}
+
 .settings-language-col-timestamp {
     width: 210px;
 }
@@ -1828,8 +1927,40 @@ div.style-token-modal-demo::-webkit-scrollbar,
     box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 
+.settings-language-table input.is-dirty {
+    border-color: color-mix(in srgb, var(--theme-warning) 78%, transparent);
+    background: color-mix(in srgb, var(--theme-warning) 12%, var(--theme-glass-surface-background-dense));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-warning) 55%, transparent);
+}
+
+.settings-language-table input.is-dirty:focus {
+    border-color: color-mix(in srgb, var(--theme-warning) 82%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-warning) 30%, transparent);
+}
+
 .settings-language-save-button {
     justify-self: end;
+}
+
+.settings-language-submit-row {
+    display: grid;
+    justify-items: end;
+    gap: 8px;
+}
+
+.settings-language-feedback {
+    margin: 0;
+    font-size: var(--font-ui-sm);
+    line-height: 1.35;
+    color: var(--theme-warning-text);
+}
+
+.settings-language-feedback.is-success {
+    color: var(--theme-accent-positive);
+}
+
+.settings-language-feedback.is-error {
+    color: var(--theme-error-strong);
 }
 
 .settings-language-pagination:empty {
@@ -2223,7 +2354,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .about-link-card {
     display: inline-grid;
-    grid-template-columns: 18px minmax(0, 1fr);
+    grid-template-columns: 22px minmax(0, 1fr);
     align-items: center;
     column-gap: 10px;
     max-width: 100%;
@@ -2236,9 +2367,20 @@ div.style-token-modal-demo::-webkit-scrollbar,
     color: var(--accent-text);
 }
 
+.about-link-logo-shell {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    background: var(--color-white-adaptive);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-text) 10%, transparent);
+    overflow: hidden;
+}
+
 .about-link-logo {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     object-fit: contain;
 }
 
@@ -2493,6 +2635,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+    justify-items: start;
+}
+
+.settings-shell-broker-access .settings-action-package-grid > .settings-action-package {
+    width: min(100%, var(--settings-form-control-max-width));
+    max-width: var(--settings-form-control-max-width);
+    border-radius: var(--radius-soft);
 }
 
 .settings-clear-caches-stack {
@@ -2985,10 +3134,24 @@ div.style-token-modal-demo::-webkit-scrollbar,
     pointer-events: auto;
     background: var(--theme-muted-translucent);
     color: var(--accent-contrast);
+    transition:
+        background 180ms var(--motion-standard),
+        color 180ms var(--motion-standard),
+        box-shadow 180ms var(--motion-standard),
+        transform 180ms var(--motion-standard);
 }
 
 .cash-equivalents-card .cash-equivalent-row .ticker-remove .icon-remove-muted {
     background-color: currentColor;
+    transition: background-color 180ms var(--motion-standard);
+}
+
+.cash-equivalents-card .cash-equivalent-row .ticker-remove:hover,
+.cash-equivalents-card .cash-equivalent-row .ticker-remove:focus-visible {
+    background: color-mix(in srgb, var(--theme-error) 16%, transparent);
+    color: var(--theme-error);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-error) 32%, transparent);
+    transform: translateY(-1px);
 }
 
 .cash-equivalents-add-action-shell {

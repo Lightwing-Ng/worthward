@@ -115,7 +115,9 @@
     <article class="report-card workspace-content-card about-section settings-reading-guard">
             <h2 class="about-heading">Source code</h2>
             <a class="about-link-card" href="{{ project_source_url }}" target="_blank" rel="noreferrer">
-                <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="GitHub logo">
+                <span class="about-link-logo-shell" aria-hidden="true">
+                    <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="">
+                </span>
                 <span class="about-link-copy">{{ project_display_url }}</span>
             </a>
     </article>
@@ -179,13 +181,13 @@
                     <button type="button" class="settings-language-tab is-active" data-language-tab="current" aria-selected="true">Current</button>
                     <button type="button" class="settings-language-tab" data-language-tab="history" aria-selected="false">History</button>
                 </div>
-                <div class="settings-language-file-actions">
-                    <a class="settings-round-icon-button settings-language-file-button" href="/api/settings/language/mapping.xlsx" download aria-label="Download i18n mapping" title="Download i18n mapping">
-                        <span class="icon icon-language-download" aria-hidden="true"></span>
-                    </a>
-                    <button type="button" class="settings-round-icon-button settings-language-file-button" data-language-upload-trigger aria-label="Upload i18n mapping" title="Upload i18n mapping">
+                <div class="settings-language-file-actions" aria-label="{{ translate_ui('Language mapping file actions') }}">
+                    <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="Upload i18n mapping" title="Upload i18n mapping">
                         <span class="icon icon-language-upload" aria-hidden="true"></span>
                     </button>
+                    <a class="settings-round-icon-button settings-language-file-button settings-language-file-button-download" href="/api/settings/language/mapping.xlsx" download aria-label="Download i18n mapping" title="Download i18n mapping">
+                        <span class="icon icon-language-download" aria-hidden="true"></span>
+                    </a>
                     <input type="file" name="language_mapping_xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-language-upload-input hidden>
                 </div>
             </div>
@@ -201,9 +203,24 @@
                         <thead>
                             <tr>
                                 <th>No.</th>
-                                <th>English</th>
-                                <th>繁體中文（香港）</th>
-                                <th>简体中文（中国大陆）</th>
+                                <th class="{% if language_code == 'en' %}is-current-language{% endif %}">
+                                    <span class="settings-language-header-label">English</span>
+                                    {% if language_code == 'en' %}
+                                    <span class="settings-language-current-indicator" aria-hidden="true"></span>
+                                    {% endif %}
+                                </th>
+                                <th class="{% if language_code == 'zh_hant_hk' %}is-current-language{% endif %}">
+                                    <span class="settings-language-header-label">繁體中文（香港）</span>
+                                    {% if language_code == 'zh_hant_hk' %}
+                                    <span class="settings-language-current-indicator" aria-hidden="true"></span>
+                                    {% endif %}
+                                </th>
+                                <th class="{% if language_code == 'zh_hans_cn' %}is-current-language{% endif %}">
+                                    <span class="settings-language-header-label">简体中文（中国大陆）</span>
+                                    {% if language_code == 'zh_hans_cn' %}
+                                    <span class="settings-language-current-indicator" aria-hidden="true"></span>
+                                    {% endif %}
+                                </th>
                             </tr>
                         </thead>
                     </table>
@@ -273,7 +290,10 @@
                 </div>
                 <nav class="local-store-pagination settings-language-pagination" data-language-pagination="history" aria-label="Language history pages"></nav>
             </div>
-            <button type="submit" class="settings-inline-button settings-inline-button-primary settings-language-save-button">{{ translate_ui('Save translations') }}</button>
+            <div class="settings-language-submit-row">
+                <button type="submit" class="settings-inline-button settings-inline-button-primary settings-language-save-button" data-language-save-button data-language-save-label="{{ translate_ui('Save translations') }}">{{ translate_ui('Save translations') }}</button>
+                <p class="settings-language-feedback" role="status" aria-live="polite" data-language-save-feedback hidden></p>
+            </div>
         </form>
     </section>
     <section class="settings-card settings-general-card settings-general-panel">

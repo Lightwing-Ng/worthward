@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v3.0.2`
+Documentation version: `v2.15.8`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -19,7 +19,7 @@ Documentation version: `v3.0.2`
 - Choose the backtest execution mode between `signal_close` and `next_open`
 - Review TradingView-based timing signals from `More`
 - Import IBKR CSV exports into a local investment ledger used by `More -> Investment`
-- Manage theme, date format, broker access, Outlook SMTP OAuth, local cache maintenance, strategy metadata, and design tokens from `Settings`
+- Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
 
 ## Runtime requirements
 
@@ -28,7 +28,7 @@ Documentation version: `v3.0.2`
 - `pyarrow` for parquet persistence
 - Optional Longbridge credentials for broker-backed market data and the preferred `1m` refresh path
 - Optional `tradingview_ta` if you want TradingView timing analysis
-- Optional Microsoft Entra app credentials if you want Outlook SMTP OAuth
+- Yahoo Mail app password for SMTP alerts
 
 This repository uses the host machine's Python interpreter directly. The helper scripts pin Python `3.13` so shell-level defaults such as Python `3.14` do not affect the project.
 
@@ -90,7 +90,14 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `More`
   Inspect the `Timing` and `Investment` views.
 - `Settings`
-  Review app metadata, appearance and date preferences, backtest execution mode, design tokens, service health, broker access, Outlook SMTP OAuth, Local Market Store maintenance, strategy metadata, and cache controls.
+  Review app metadata, appearance and date preferences, backtest execution mode, design tokens, service health, broker access, Yahoo Mail SMTP, Local Market Store maintenance, strategy metadata, and cache controls.
+
+## Documentation conventions for handoff
+
+- Language: American English
+- Currency: USD
+- Date format: `dd Mmm yyyy` (for example, `2 Jul 2026`)
+- Timezone: America/New_York for handoff records
 
 ## Settings navigation
 
@@ -154,6 +161,45 @@ The current `Settings` navigation includes:
 
 `config.toml` contains an `investment.money_market_funds` rule family for cash-like instruments whose valuation should not depend on normal daily mark-to-market history.
 
+## HSBC import convention (snapshot confirmed at 1 Jul 2026, 21:30 America/New_York)
+
+This record keeps only the operational convention that remains compatible with the current HSBC paste-import path and does not change HSBC parsing or settlement logic. The app continues to run the current pending-cash replay flow, and small differences from the HSBC web "unsettled transferable cash" display can still appear in rare edge cases.
+
+- Snapshot convention:
+  - Treat `1.txt`, `2.txt`, and `3.txt` as a single pasted batch.
+  - The current locally reproducible available-cash figure is `28,397.90` USD.
+  - HSBC's displayed `28,397.94` is a UI-level value and is tracked as a display baseline only; it is not enforced as the local booking rule.
+  - HSBC settlement matching, unsettled identification, and cash calculation paths are not changed. If HSBC later revises its page conventions, only the manual reconciliation note should be updated.
+
+- 11 pending/replay orders captured by the current algorithm:
+  - `P-983469` / `1 Jul 2026` / `DRAM` / BUY / `-132.000` USD
+  - `P-711443` / `1 Jul 2026` / `DRAM` / BUY / `-66.500` USD
+  - `P-998857` / `1 Jul 2026` / `DRAM` / BUY / `-67.000` USD
+  - `P-121505` / `1 Jul 2026` / `DRAM` / BUY / `-67.500` USD
+  - `P-024754` / `1 Jul 2026` / `DRAM` / BUY / `-67.680` USD
+  - `P-336384` / `1 Jul 2026` / `SGOV` / BUY / `-1,004.000` USD
+  - `P-505250` / `1 Jul 2026` / `SGOV` / BUY / `-1,004.000` USD
+  - `P-085064` / `1 Jul 2026` / `DRAM` / BUY / `-68.000` USD
+  - `P-534771` / `1 Jul 2026` / `DRAM` / BUY / `-67.250` USD
+  - `P-623481` / `1 Jul 2026` / `DRAM` / BUY / `-68.000` USD
+  - `S-534157` / `1 Jul 2026` / `BOXX` / SELL / `12,885.400` USD
+
+  - Total unsettled replay amount: `10,273.470` USD
+
+## IBKR import convention (handover reference)
+
+IBKR is separate from HSBC behavior. Under the current repository convention, entries are booked directly from IBKR transaction flow and no HSBC-style unsettled replay is applied. For handoff and sanity checks:
+
+- Import source rule:
+  - Use IBKR Flex Web Service v3 or official IBKR CSV exports as the source of truth.
+  - Do not apply HSBC pending logic to IBKR data.
+- Booking and reconciliation:
+  - Record each row using imported fields for gross amount, commission, taxes, and cash movement.
+  - Treat ledger cash changes as ledger data from transaction rows, with no HSBC-style "transferable cash" manual offset.
+- Failure modes:
+  - With consistent IBKR imports, positions and equity should progress on a stable accounting basis without abrupt cross-row resets to zero.
+  - If equity suddenly drops abnormally, first check for mixed source imports (CSV + Flex overlap) or duplicate range imports.
+
 ## Broker and email support
 
 ### Longbridge
@@ -178,12 +224,10 @@ The current `Settings` navigation includes:
 - The Flex client validates response URLs, redacts tokens, bounds responses, and uses safe XML parsing. Secrets are never persisted.
 - Gateway (Client Portal local Java) has been fully removed. Historical Gateway-origin records in your ledger remain mergeable.
 
-### Outlook SMTP
+### Yahoo Mail SMTP
 
-- Uses `smtp-mail.outlook.com:587` with `STARTTLS`
-- Uses Microsoft OAuth `2.0` rather than password-first SMTP auth
-- Supports device-code authorization
-- Expects a Microsoft Entra app client ID and the delegated scope `https://outlook.office.com/SMTP.Send`
+- Uses `smtp.mail.yahoo.com:587` with `STARTTLS`
+- Uses a Yahoo Mail app password stored locally for authentication
 
 ## Strategy system
 
