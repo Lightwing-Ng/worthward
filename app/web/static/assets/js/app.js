@@ -1,4 +1,4 @@
-/* Code version: v0.5.5 */
+/* Code version: v0.5.6 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -76,6 +76,7 @@
     let activeWorkspaceHydration = null;
     let activeWorkspaceSummaryMorphCleanup = null;
     let activeWorkspaceModeLayoutCleanup = null;
+    let activeScrollableTableHeaderCleanup = null;
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
     let pendingWorkspaceChartTransition = null;
@@ -997,6 +998,104 @@
         };
     };
 
+    const attachScrollableDataTableHeaderMeasurements = () => {
+        if (typeof activeScrollableTableHeaderCleanup === "function") {
+            activeScrollableTableHeaderCleanup();
+            activeScrollableTableHeaderCleanup = null;
+        }
+        const headerHeightProperty = "--scrollable-data-table-header-height";
+        let frameId = 0;
+        let resizeObserver = null;
+        let mutationObserver = null;
+        const observedShells = new Set();
+        const observedHeaders = new Set();
+
+        const getOverlayHeader = (shell) => (
+            Array.from(shell.children).find((child) => (
+                child instanceof HTMLTableElement
+                && child.matches('table[aria-hidden="true"]')
+            )) || null
+        );
+        const getCurrentShells = () => (
+            Array.from(new Set($$(".scrollable-data-table-shell")))
+                .filter((shell) => shell instanceof HTMLElement)
+        );
+        const observeShell = (shell) => {
+            if (!resizeObserver || observedShells.has(shell)) return;
+            resizeObserver.observe(shell);
+            observedShells.add(shell);
+        };
+        const observeHeader = (overlayHeader) => {
+            if (!resizeObserver || observedHeaders.has(overlayHeader)) return;
+            resizeObserver.observe(overlayHeader);
+            observedHeaders.add(overlayHeader);
+        };
+        const roundUpToDevicePixel = (value) => {
+            const scale = window.devicePixelRatio || 1;
+            return Math.ceil(value * scale) / scale;
+        };
+        const syncShell = (shell) => {
+            observeShell(shell);
+            const overlayHeader = getOverlayHeader(shell);
+            if (!(overlayHeader instanceof HTMLElement)) {
+                shell.style.removeProperty(headerHeightProperty);
+                return;
+            }
+            observeHeader(overlayHeader);
+            const headerHeight = overlayHeader.getBoundingClientRect().height;
+            if (headerHeight > 0) {
+                shell.style.setProperty(headerHeightProperty, `${roundUpToDevicePixel(headerHeight)}px`);
+            }
+        };
+        const syncAll = () => {
+            getCurrentShells().forEach(syncShell);
+        };
+        const scheduleSync = () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+            frameId = window.requestAnimationFrame(() => {
+                frameId = 0;
+                syncAll();
+            });
+        };
+
+        syncAll();
+        window.addEventListener("resize", scheduleSync);
+        window.addEventListener("orientationchange", scheduleSync);
+        window.addEventListener("pageshow", scheduleSync);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", scheduleSync);
+        }
+        if (typeof ResizeObserver === "function") {
+            resizeObserver = new ResizeObserver(scheduleSync);
+            syncAll();
+        }
+        if (typeof MutationObserver === "function") {
+            mutationObserver = new MutationObserver(scheduleSync);
+            const mutationRoot = document.getElementById("workspace_panel") || document.body;
+            mutationObserver.observe(mutationRoot, {
+                attributes: true,
+                attributeFilter: ["hidden", "class", "style", "aria-hidden"],
+                childList: true,
+                subtree: true,
+                characterData: true,
+            });
+        }
+        activeScrollableTableHeaderCleanup = () => {
+            if (frameId) window.cancelAnimationFrame(frameId);
+            window.removeEventListener("resize", scheduleSync);
+            window.removeEventListener("orientationchange", scheduleSync);
+            window.removeEventListener("pageshow", scheduleSync);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener("resize", scheduleSync);
+            }
+            resizeObserver?.disconnect();
+            mutationObserver?.disconnect();
+            observedShells.forEach((shell) => shell.style.removeProperty(headerHeightProperty));
+            observedShells.clear();
+            observedHeaders.clear();
+        };
+    };
+
     const initializeWorkspaceEnhancements = () => {
         initMobilePageBottomPadding();
         attachNoticeHandlers();
@@ -1004,6 +1103,7 @@
         bootstrap.initWorkspaceShareDrawer?.();
         attachWorkspaceSummaryMorph();
         attachWorkspaceModeLayout();
+        attachScrollableDataTableHeaderMeasurements();
         bootstrap.initSettingsWorkspace?.({
             state,
             endpoints,

@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.0
+ * Code version: v1.61.1
+ * - Fixed: Scrollable investment tables now measure overlay header height dynamically so fixed summary rows never cover top rows.
  * - Changed: Community share PNG capture now uses a 1080 px by 1730 px 2x export shell grid.
  * - Changed: Community share PNG capture now reads export dimensions and footer sizing from the same CSS tokens used by the settings export-image preview.
  * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
@@ -6532,13 +6533,48 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildTableAlignmentSync(tableShell, scrollContainer, scrollbarVariableName) {
         if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return null;
 
+        const headerHeightVariableName = '--scrollable-data-table-header-height';
         let frameId = 0;
         let resizeObserver = null;
+        let observedHeader = null;
+
+        const getOverlayHeader = () => {
+            const header = Array.from(tableShell.children).find((child) => (
+                child instanceof HTMLTableElement
+                && child.matches('table[aria-hidden="true"]')
+            ));
+            return header instanceof HTMLElement ? header : null;
+        };
+
+        const roundUpToDevicePixel = (value) => {
+            const scale = window.devicePixelRatio || 1;
+            return Math.ceil(value * scale) / scale;
+        };
+
+        const syncHeaderHeight = () => {
+            const overlayHeader = getOverlayHeader();
+            if (!(overlayHeader instanceof HTMLElement)) {
+                tableShell.style.removeProperty(headerHeightVariableName);
+                return;
+            }
+            if (resizeObserver && observedHeader !== overlayHeader) {
+                if (observedHeader instanceof HTMLElement) {
+                    resizeObserver.unobserve(observedHeader);
+                }
+                resizeObserver.observe(overlayHeader);
+                observedHeader = overlayHeader;
+            }
+            const headerHeight = overlayHeader.getBoundingClientRect().height;
+            if (headerHeight > 0) {
+                tableShell.style.setProperty(headerHeightVariableName, `${roundUpToDevicePixel(headerHeight)}px`);
+            }
+        };
 
         const syncAlignment = () => {
             frameId = 0;
             const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
             tableShell.style.setProperty(scrollbarVariableName, `${scrollbarWidth}px`);
+            syncHeaderHeight();
         };
 
         const scheduleAlignmentSync = () => {
@@ -6559,6 +6595,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bodyTable instanceof HTMLElement) {
                 resizeObserver.observe(bodyTable);
             }
+            const overlayHeader = getOverlayHeader();
+            if (overlayHeader instanceof HTMLElement) {
+                resizeObserver.observe(overlayHeader);
+                observedHeader = overlayHeader;
+            }
         }
 
         return () => {
@@ -6569,6 +6610,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.removeEventListener('resize', scheduleAlignmentSync);
             resizeObserver?.disconnect();
             tableShell.style.removeProperty(scrollbarVariableName);
+            tableShell.style.removeProperty(headerHeightVariableName);
         };
     }
 
