@@ -1,4 +1,4 @@
-/* Code version: v1.16.1 */
+/* Code version: v1.16.3 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2349,6 +2349,14 @@
     inset-inline-start: 0;
     z-index: calc(var(--layer-surface-content) + 1);
     pointer-events: none;
+    border-radius: 10px 10px 0 0;
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
+    border-bottom: 0;
+    overflow: hidden;
 }
 
 .scrollable-data-table-scroll,
@@ -2363,7 +2371,7 @@
     background: var(--panel-strong);
     background-clip: padding-box;
     scrollbar-gutter: stable;
-    padding-top: var(--scrollable-data-table-header-height);
+    scroll-padding-top: var(--scrollable-data-table-header-height);
 }
 
 .investment-holdings-table-scroll.trade-transactions-wrap {
@@ -2394,6 +2402,11 @@
     border-spacing: 0;
 }
 
+.scrollable-data-table-scroll > .scrollable-data-table,
+.investment-holdings-table-scroll > .investment-holdings-table {
+    margin-top: var(--scrollable-data-table-header-height);
+}
+
 .scrollable-data-table th,
 .scrollable-data-table td,
 .investment-holdings-table th,
@@ -2407,20 +2420,20 @@
     position: sticky;
     top: 0;
     z-index: var(--layer-surface-content);
-    background: var(--frosted-glass-extracted-background);
+    background: transparent;
     color: var(--scrollable-data-table-header-color);
     font-weight: 700;
     padding: var(--scrollable-data-table-header-padding);
     text-align: center;
     vertical-align: top;
     background-clip: padding-box;
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 .scrollable-data-table thead th {
-    border-top: 1px solid var(--glass-surface-border);
+    border-top: 0;
 }
 
 .investment-holdings-table th,
@@ -2430,10 +2443,18 @@
     padding: var(--investment-holdings-cell-padding);
 }
 
-.scrollable-data-table thead th+th,
-.investment-holdings-table thead th+th,
 .investment-holdings-table tbody td+td {
     border-left: 1px solid var(--glass-surface-border);
+}
+
+.scrollable-data-table thead th+th,
+.investment-holdings-table thead th+th {
+    border-left: 0;
+}
+
+.scrollable-data-table[aria-hidden="true"] thead th+th,
+.investment-holdings-table[aria-hidden="true"] thead th+th {
+    border-left: 0;
 }
 
 .investment-holdings-table tbody tr+tr td,
@@ -2454,7 +2475,7 @@
 }
 
 .scrollable-data-table thead th:first-child {
-    border-left: 1px solid var(--glass-surface-border);
+    border-left: 0;
 }
 
 .scrollable-data-table thead th:last-child,
@@ -2463,7 +2484,7 @@
 }
 
 .scrollable-data-table thead th:last-child {
-    border-right: 1px solid var(--glass-surface-border);
+    border-right: 0;
 }
 
 .scrollable-data-table tbody tr:nth-child(even) td,

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.10
+Code version: v0.4.11
 """
 
 from __future__ import annotations
@@ -1876,7 +1876,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-indicator-shadow",
                               "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
                     raw_token("--local-store-pagination-button-background", "var(--frosted-glass-extracted-background)"),
-                    raw_token("--local-store-pagination-button-border", "var(--frosted-glass-extracted-border)"),
+                    raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                     raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-extracted-shadow)"),
                     raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-extracted-blur)"),
                     raw_token("--local-store-pagination-motion-duration", "325ms"),
