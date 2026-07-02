@@ -1,4 +1,4 @@
-/* Code version: v1.14.16 */
+/* Code version: v1.14.21 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2643,6 +2643,13 @@
 .investment-holdings-summary-row {
     position: relative;
     border-radius: 0;
+    background: var(--investment-holdings-summary-frosted-background);
+    background-clip: padding-box;
+    backdrop-filter: var(--investment-holdings-summary-frosted-blur);
+    -webkit-backdrop-filter: var(--investment-holdings-summary-frosted-blur);
+    box-shadow:
+        var(--investment-holdings-summary-frosted-shadow),
+        var(--investment-holdings-summary-frosted-highlight);
     isolation: isolate;
 }
 
@@ -2652,18 +2659,16 @@
     z-index: calc(var(--layer-surface-content) + 1);
     border-radius: 0;
     background-clip: padding-box;
-    background: var(--investment-holdings-summary-frosted-background);
-    backdrop-filter: var(--investment-holdings-summary-frosted-blur);
-    -webkit-backdrop-filter: var(--investment-holdings-summary-frosted-blur);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     border-top: var(--investment-holdings-summary-frosted-border);
     border-bottom: var(--investment-holdings-summary-frosted-border);
-    box-shadow:
-        var(--investment-holdings-summary-frosted-shadow),
-        var(--investment-holdings-summary-frosted-highlight);
+    box-shadow: none;
 }
 
 .investment-holdings-summary-row td + td {
-    border-left: 1px solid var(--investment-holdings-summary-cell-separator);
+    border-left: 0;
 }
 
 .investment-holdings-summary-row td:first-child,
@@ -2721,8 +2726,9 @@
     white-space: nowrap;
 }
 
-.investment-holdings-summary-metric-label {
-    opacity: 0.75;
+.investment-holdings-summary-row .investment-holdings-summary-metric-label {
+    color: var(--text);
+    opacity: 1;
     text-align: left;
     width: 105px;
     flex-shrink: 0;
