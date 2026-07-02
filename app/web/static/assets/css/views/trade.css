@@ -662,11 +662,11 @@
     border-radius: var(--radius-pill);
     min-height: 0;
     pointer-events: auto;
-    background: var(--apple-frosted-glass-background);
-    box-shadow: var(--apple-frosted-glass-shadow);
-    backdrop-filter: var(--apple-frosted-glass-blur);
-    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
-    border: var(--apple-frosted-glass-border);
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     isolation: isolate;
 }
 
@@ -733,11 +733,11 @@
     transform: translateX(-50%) translateY(4px);
     padding: 7px 10px;
     border-radius: var(--radius-soft);
-    background: var(--glass-popover-background);
-    box-shadow: var(--glass-popover-shadow);
-    backdrop-filter: var(--glass-popover-blur);
-    -webkit-backdrop-filter: var(--glass-popover-blur);
-    border: var(--glass-popover-border);
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     color: var(--text);
     font-size: var(--font-tooltip);
     line-height: 1;

@@ -1,4 +1,4 @@
-/* Code version: v0.1.2 */
+/* Code version: v0.1.4 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -793,6 +793,20 @@
 	justify-content: space-between;
 	text-align: left;
 	width: 100%;
+	background: var(--control-liquid-background);
+	border: var(--control-liquid-border);
+	box-shadow: var(--control-liquid-shadow);
+	backdrop-filter: var(--control-liquid-blur);
+	-webkit-backdrop-filter: var(--control-liquid-blur);
+}
+.trade-strategy-trigger:hover,
+.trade-strategy-trigger:focus,
+.trade-strategy-trigger:focus-visible {
+	background: var(--control-liquid-background-hover);
+	box-shadow: var(--control-liquid-shadow-focus);
+}
+.trade-strategy-select.trade-strategy-trigger {
+	border: var(--control-liquid-border) !important;
 }
 .trade-strategy-trigger-label {
 	display: inline-flex;
@@ -817,11 +831,11 @@
 	right: 0;
 	padding: 10px;
 	border-radius: var(--radius-soft);
-	background: var(--glass-popover-background);
-	box-shadow: var(--glass-popover-shadow), 0 12px 24px var(--theme-shadow-ambient);
-	backdrop-filter: var(--glass-popover-blur);
-	-webkit-backdrop-filter: var(--glass-popover-blur);
-	border: 1px solid var(--theme-glass-highlight);
+	background: var(--frosted-glass-extracted-background);
+	box-shadow: var(--frosted-glass-extracted-shadow);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	border: var(--frosted-glass-extracted-border);
 	z-index: var(--layer-inline-overlay);
 	max-height: min(360px, 55vh);
 	overflow-x: hidden;
@@ -842,11 +856,11 @@
 .backtest-shared-select-dropdown {
 	position: absolute;
 	color: var(--text);
-	background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
-	border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
-	box-shadow: 0 24px 48px var(--theme-shadow-ambient), 0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
-	backdrop-filter: saturate(180%) blur(28px);
-	-webkit-backdrop-filter: saturate(180%) blur(28px);
+	background: var(--frosted-glass-extracted-background);
+	border: var(--frosted-glass-extracted-border);
+	box-shadow: var(--frosted-glass-extracted-shadow-hover);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
 }
@@ -991,11 +1005,11 @@
 	min-height: var(--trade-control-input-height);
 	padding: 0;
 	border-radius: 50%;
-	background: var(--glass-chip-background-strong);
-	border: var(--glass-chip-border);
-	box-shadow: var(--glass-chip-shadow);
-	backdrop-filter: var(--glass-chip-blur);
-	-webkit-backdrop-filter: var(--glass-chip-blur);
+	background: var(--settings-round-icon-button-background);
+	border: var(--settings-round-icon-button-border);
+	box-shadow: var(--settings-round-icon-button-shadow);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 	color: var(--theme-muted);
 	display: inline-grid;
 	place-items: center;
@@ -1003,15 +1017,15 @@
 }
 .trade-strategy-tune-button:hover,
 .trade-strategy-tune-button:focus-visible {
-	background: var(--glass-chip-background-hover);
-	box-shadow: var(--glass-chip-shadow-hover);
+	background: var(--settings-round-icon-button-background-hover);
+	box-shadow: var(--settings-round-icon-button-shadow-hover);
 	color: var(--accent-text);
 	transform: translateY(-1px);
 }
 .trade-strategy-tune-button.is-active,
 .trade-strategy-tune-button[aria-pressed="true"] {
-	background: var(--glass-chip-background-hover);
-	box-shadow: var(--glass-chip-shadow-active);
+	background: var(--settings-round-icon-button-background-hover);
+	box-shadow: var(--settings-round-icon-button-shadow-active);
 	color: var(--accent-text);
 	transform: translateY(1px) scale(0.985);
 }
@@ -1514,14 +1528,14 @@
 .range-mode-shell[data-active="period"] ~ #exact_panel { display: none !important; }
 .range-mode-shell[data-active="exact"] + #period_panel { display: none !important; }
 .range-mode-shell[data-active="exact"] ~ #exact_panel { display: block; }
-.chart-tooltip, .field-tooltip { background: var(--glass-popover-background); box-shadow: var(--glass-popover-shadow); backdrop-filter: var(--glass-popover-blur); -webkit-backdrop-filter: var(--glass-popover-blur); border: var(--glass-popover-border); border-radius: var(--radius-soft); }
+.chart-tooltip, .field-tooltip { background: var(--frosted-glass-extracted-background); box-shadow: var(--frosted-glass-extracted-shadow); backdrop-filter: var(--frosted-glass-extracted-blur); -webkit-backdrop-filter: var(--frosted-glass-extracted-blur); border: var(--frosted-glass-extracted-border); border-radius: var(--radius-soft); }
 .field-tooltip,
 .field-tooltip-validation {
-	background: var(--apple-frosted-glass-background);
-	border: var(--apple-frosted-glass-border);
-	box-shadow: var(--apple-frosted-glass-shadow);
-	backdrop-filter: var(--apple-frosted-glass-blur);
-	-webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+	background: var(--frosted-glass-extracted-background);
+	border: var(--frosted-glass-extracted-border);
+	box-shadow: var(--frosted-glass-extracted-shadow);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 	isolation: isolate;
 }
 .liquid-glass-surface {
@@ -1543,11 +1557,11 @@
 }
 .field-tooltip.liquid-glass-surface,
 .field-tooltip-validation.liquid-glass-surface {
-	background: var(--apple-frosted-glass-background);
-	border: var(--apple-frosted-glass-border);
-	box-shadow: var(--apple-frosted-glass-shadow);
-	backdrop-filter: var(--apple-frosted-glass-blur);
-	-webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+	background: var(--frosted-glass-extracted-background);
+	border: var(--frosted-glass-extracted-border);
+	box-shadow: var(--frosted-glass-extracted-shadow);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 }
 .field-tooltip.liquid-glass-surface::after,
 .field-tooltip-validation.liquid-glass-surface::after {

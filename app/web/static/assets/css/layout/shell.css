@@ -1,4 +1,4 @@
-/* Code version: v3.25.0 */
+/* Code version: v3.25.1 */
 .sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--glass-surface-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
 .settings-round-icon-button,
 .global-quick-action-button,
@@ -6,12 +6,13 @@
 	width: var(--settings-round-icon-button-size);
 	height: var(--settings-round-icon-button-size);
 	padding: 0;
-	border: 0;
+	border: var(--settings-round-icon-button-border);
 	border-radius: var(--settings-round-icon-button-radius);
 	background: var(--settings-round-icon-button-background);
 	box-shadow: var(--settings-round-icon-button-shadow);
-	backdrop-filter: var(--glass-chip-blur);
-	-webkit-backdrop-filter: var(--glass-chip-blur);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	box-sizing: border-box;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;

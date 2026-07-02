@@ -1,4 +1,4 @@
-/* Code version: v1.14.15 */
+/* Code version: v1.14.16 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -148,6 +148,11 @@
     gap: 12px;
     padding: 12px;
     transform-origin: right center;
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     filter: saturate(1) blur(0);
     transition:
         opacity 220ms var(--motion-standard),
@@ -157,6 +162,10 @@
         box-shadow 220ms var(--motion-standard),
         border-color 220ms var(--motion-standard);
     will-change: transform, opacity, filter;
+}
+
+.live-trading-suggestions-panel::after {
+    background: transparent;
 }
 
 .live-trading-panel-copy {
@@ -452,11 +461,11 @@
     min-height: 56px;
     padding: 6px;
     border-radius: 999px;
-    background: var(--glass-popover-background);
-    box-shadow: var(--glass-popover-shadow);
-    backdrop-filter: var(--glass-popover-blur);
-    -webkit-backdrop-filter: var(--glass-popover-blur);
-    border: var(--glass-popover-border);
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     isolation: isolate;
     user-select: none;
     touch-action: pan-y;
@@ -1847,10 +1856,10 @@
 }
 
 #investment_holdings_panel {
-    --investment-holdings-summary-frosted-background: var(--glass-surface-background);
-    --investment-holdings-summary-frosted-border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 24%, transparent);
-    --investment-holdings-summary-frosted-shadow: none;
-    --investment-holdings-summary-frosted-blur: none;
+    --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
+    --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
+    --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
+    --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
     --investment-holdings-summary-frosted-highlight: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 55%, transparent);
     --investment-holdings-summary-cell-separator: transparent;
     --investment-holdings-row-background: var(--panel-strong);
@@ -2770,10 +2779,10 @@
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme-override="light"]) #investment_holdings_panel {
-        --investment-holdings-summary-frosted-background: var(--glass-surface-background);
-        --investment-holdings-summary-frosted-border: 1px solid var(--glass-surface-border);
-        --investment-holdings-summary-frosted-shadow: 0 18px 44px var(--theme-shadow-ambient);
-        --investment-holdings-summary-frosted-blur: var(--glass-chip-blur);
+        --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
+        --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
+        --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
+        --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
         --investment-holdings-summary-frosted-highlight: inset 0 0 0 1px transparent;
         --investment-holdings-summary-cell-separator: var(--glass-surface-border);
         --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
@@ -2783,10 +2792,10 @@
 }
 
 :root[data-theme-override="dark"] #investment_holdings_panel {
-    --investment-holdings-summary-frosted-background: var(--glass-surface-background);
-    --investment-holdings-summary-frosted-border: 1px solid var(--glass-surface-border);
-    --investment-holdings-summary-frosted-shadow: 0 18px 44px var(--theme-shadow-ambient);
-    --investment-holdings-summary-frosted-blur: var(--glass-chip-blur);
+    --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
+    --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
+    --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
+    --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
     --investment-holdings-summary-frosted-highlight: inset 0 0 0 1px transparent;
     --investment-holdings-summary-cell-separator: var(--glass-surface-border);
     --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);

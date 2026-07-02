@@ -2407,7 +2407,7 @@ def build_web_runtime() -> WebRuntime:
                     "status": "Checking...",
                     "note": "Checking whether the primary ticker logo service and its fallbacks can be reached from this device.",
                     "checked_at_text": "Last checked: Checking...",
-                    "logo_url": service_logo_url("network.svg"),
+                    "logo_url": service_logo_url("apple.logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
@@ -2454,7 +2454,7 @@ def build_web_runtime() -> WebRuntime:
                     else "Remote logo sources are blocked here, so only logos already stored locally will appear."
                 ),
                 "checked_at_text": format_checked_at(last_remote_logo_check_at()),
-                "logo_url": service_logo_url("network.svg"),
+                "logo_url": service_logo_url("apple.logo.svg"),
                 "is_available": remote_logo_access,
                 "is_pending": False,
             },

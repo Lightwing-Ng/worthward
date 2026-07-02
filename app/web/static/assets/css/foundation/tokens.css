@@ -1,4 +1,4 @@
-/* Code version: v0.3.11 */
+/* Code version: v0.3.12 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -94,11 +94,12 @@
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;
 	--settings-round-icon-button-radius: var(--radius-pill);
-	--settings-round-icon-button-background: var(--glass-chip-background-strong);
-	--settings-round-icon-button-background-hover: var(--glass-chip-background-hover);
-	--settings-round-icon-button-shadow: var(--glass-chip-shadow);
-	--settings-round-icon-button-shadow-hover: var(--glass-chip-shadow-hover);
-	--settings-round-icon-button-shadow-active: var(--glass-chip-shadow-active);
+	--settings-round-icon-button-background: var(--frosted-glass-extracted-background);
+	--settings-round-icon-button-background-hover: var(--frosted-glass-extracted-background-hover);
+	--settings-round-icon-button-border: var(--frosted-glass-extracted-border);
+	--settings-round-icon-button-shadow: var(--frosted-glass-extracted-shadow);
+	--settings-round-icon-button-shadow-hover: var(--frosted-glass-extracted-shadow-hover);
+	--settings-round-icon-button-shadow-active: var(--frosted-glass-extracted-shadow-active);
 	--settings-round-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
 	--settings-round-icon-button-color-hover: var(--accent-text);
 	--settings-form-shell-max-width: 780px;
@@ -237,10 +238,21 @@
 	--glass-chip-shadow-hover: 0 12px 32px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-shadow-active: 0 6px 18px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 94%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-blur: saturate(180%) blur(28px);
-	--tooltip-background: var(--apple-frosted-glass-background);
-	--tooltip-border: var(--apple-frosted-glass-border);
-	--tooltip-shadow: var(--apple-frosted-glass-shadow);
-	--tooltip-blur: var(--apple-frosted-glass-blur);
+	--frosted-glass-extracted-background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
+		rgba(255, 255, 255, 0.08);
+	--frosted-glass-extracted-background-hover:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(248, 249, 250, 0.24) 100%),
+		rgba(255, 255, 255, 0.12);
+	--frosted-glass-extracted-border: 1px solid rgba(255, 255, 255, 0.30);
+	--frosted-glass-extracted-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
+	--frosted-glass-extracted-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
+	--frosted-glass-extracted-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
+	--frosted-glass-extracted-blur: saturate(160%) blur(18px);
+	--tooltip-background: var(--frosted-glass-extracted-background);
+	--tooltip-border: var(--frosted-glass-extracted-border);
+	--tooltip-shadow: var(--frosted-glass-extracted-shadow);
+	--tooltip-blur: var(--frosted-glass-extracted-blur);
 	--chart-tooltip-min-width: 164px;
 	--chart-tooltip-max-width: 260px;
 	--chart-tooltip-padding-block: 10px;
