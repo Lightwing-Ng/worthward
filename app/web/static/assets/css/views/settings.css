@@ -1,4 +1,4 @@
-/* Code version: v0.5.3 */
+/* Code version: v0.5.4 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1403,6 +1403,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     }
 }
 
+.settings-shell-strategies,
 .settings-strategy-list {
     --settings-strategy-card-min-height: 88px;
     --settings-strategy-card-expanded-max-height: min(52vh, 480px);
@@ -1411,6 +1412,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .settings-strategy-card {
     display: block;
+    flex: 0 0 auto;
     padding: 0;
     min-height: var(--settings-strategy-card-min-height);
     min-width: 0;
@@ -1468,21 +1470,18 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-strategy-params-shell {
-    display: grid;
+    display: block;
     min-width: 0;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    grid-template-rows: 0fr;
     overflow: hidden;
-    contain: layout paint;
-    transition: grid-template-rows 320ms var(--motion-emphasized), opacity 220ms var(--motion-emphasized), padding-bottom 320ms var(--motion-emphasized);
+    transition: opacity 220ms var(--motion-emphasized), padding-bottom 220ms var(--motion-emphasized);
     opacity: 0;
     padding-bottom: 0;
 }
 
 .settings-strategy-card[open] .settings-strategy-params-shell {
-    grid-template-rows: 1fr;
     opacity: 1;
     padding-bottom: 14px;
 }
@@ -1678,7 +1677,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-strategy-scroll-table tbody td {
-    padding: var(--scrollable-data-table-cell-padding);
+    padding: var(--settings-strategy-param-cell-pad-block) var(--settings-strategy-param-cell-pad-inline);
 }
 
 .settings-table th {

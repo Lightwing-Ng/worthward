@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.8
+Code version: v0.4.9
 """
 
 from __future__ import annotations
@@ -2190,16 +2190,16 @@ def build_web_runtime() -> WebRuntime:
                 "sample_kind": "glass-surface",
                 "sample_title": sample_title,
                 "sample_copy": sample_copy,
-                "sample_surface_background": "linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%)",
-                "sample_surface_border": "1px solid rgba(255, 255, 255, 0.30)",
-                "sample_surface_blur": "saturate(160%) blur(18px)",
-                "sample_surface_shadow": "0 18px 40px rgba(10, 14, 25, 0.12)",
-                "tokens": standard_material_tokens(
-                    "linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%)",
-                    "1px solid rgba(255, 255, 255, 0.30)",
-                    "0 18px 40px rgba(10, 14, 25, 0.12)",
-                    "saturate(160%) blur(18px)",
-                ),
+                "sample_surface_background": "var(--frosted-glass-extracted-background)",
+                "sample_surface_border": "var(--frosted-glass-extracted-border)",
+                "sample_surface_blur": "var(--frosted-glass-extracted-blur)",
+                "sample_surface_shadow": "var(--frosted-glass-extracted-shadow)",
+                "tokens": [
+                    raw_token("--frosted-glass-extracted-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--frosted-glass-extracted-border", "var(--frosted-glass-extracted-border)"),
+                    raw_token("--frosted-glass-extracted-shadow", "var(--frosted-glass-extracted-shadow)"),
+                    raw_token("--frosted-glass-extracted-blur", "var(--frosted-glass-extracted-blur)"),
+                ],
             },
             {
                 "id": material_token_id("Apple frosted glass"),
