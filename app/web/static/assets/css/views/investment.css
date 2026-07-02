@@ -1,4 +1,4 @@
-/* Code version: v1.16.3 */
+/* Code version: v1.16.4 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -3552,6 +3552,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-history-table-shell {
+    --scrollable-data-table-header-height: 62px;
     flex: 1 1 auto;
     height: 100%;
     min-height: 0;
