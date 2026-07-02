@@ -179,7 +179,7 @@
         "cash-equivalents": {title: labels.cash_equivalents || "Cash equivalents", layout: "actions"},
         "clear-caches": {title: "Clear caches", layout: "actions"},
         "email-smtp": {title: labels.email_smtp || "Email (SMTP)", layout: "form"},
-        "export-image": {title: "Export image", layout: "tokens"},
+        "export-image": {title: "Export images", layout: "tokens"},
         "font-tokens": {title: "Font tokens", layout: "tokens"},
         general: {title: "General", layout: "options"},
         "local-market-store": {title: labels.local_market_store || "Local market store", layout: "table"},

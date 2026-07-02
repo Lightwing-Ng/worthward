@@ -1995,7 +1995,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_kind": "export-image-share-card",
                 "sample_title": "Overview",
                 "sample_subtitle": "",
-                "sample_copy": "Export image previews use the same HTML and CSS as workspace and investment PNG exports. The print spec is a portrait card at 53.98 mm by 85.60 mm with a 3.18 mm corner radius, mapped onto a 10 px per mm export grid for readable PNG output.",
+                "sample_copy": "Exported image previews use the same HTML and CSS as workspace and investment PNG exports. The print spec is a portrait card at 53.98 mm by 85.60 mm with a 3.18 mm corner radius, mapped onto a 10 px per mm export grid for readable PNG output.",
                 "sample_button": "",
                 "sample_button_class": "",
                 "sample_icon_class": "",
@@ -2983,7 +2983,7 @@ def build_web_runtime() -> WebRuntime:
             elif settings_section == "style-tokens":
                 settings_title = translate_ui("Style tokens")
             elif settings_section == "export-image":
-                settings_title = translate_ui("Export image")
+                settings_title = translate_ui("Export images")
             elif settings_section == "cash-equivalents":
                 settings_title = translate_ui("Cash equivalents")
         elif current_view == "more":

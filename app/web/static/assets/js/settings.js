@@ -1,4 +1,4 @@
-/* Code version: v0.6.2 */
+/* Code version: v0.7.1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -777,6 +777,15 @@
         applyStyleTokenInvestmentSharePreview(demoShell, currentIndex);
     };
 
+    const calibrateStyleTokenSharePreviewTemplate = (card) => {
+        if (!(card instanceof HTMLElement)) return;
+        card.dataset.shareTemplate = "stable-v1";
+        const footer = card.querySelector(".investment-community-share-footer");
+        if (footer instanceof HTMLElement) {
+            footer.dataset.shareTemplateFixed = "1";
+        }
+    };
+
     const createStyleTokenDemoElement = (tagName, className = "", textContent = null) => {
         const element = document.createElement(tagName);
         if (className) element.className = className;
@@ -1188,7 +1197,7 @@
                 14,
             );
         const labelFontWeight = isOverviewStyleChart
-            ? "700"
+            ? "400"
             : (cardStyles.getPropertyValue("--font-weight-semibold").trim()
                 || rootStyles.getPropertyValue("--font-weight-semibold").trim()
                 || "600");
@@ -1284,7 +1293,7 @@
         }
 
         context.strokeStyle = accent;
-        context.lineWidth = isOverviewStyleChart ? 6 : 4;
+        context.lineWidth = isOverviewStyleChart ? 2.0 : 4;
         context.lineJoin = "round";
         context.lineCap = "round";
         context.beginPath();
@@ -1324,6 +1333,7 @@
         const body = card.querySelector(".investment-community-share-body");
         const viewLabel = demoShell.querySelector("[data-style-token-share-view-label]");
         if (!(title instanceof HTMLElement) || !(body instanceof HTMLElement) || !(viewLabel instanceof HTMLElement)) return;
+        calibrateStyleTokenSharePreviewTemplate(card);
         demoShell.dataset.styleTokenSharePreviewIndex = String(normalizedIndex);
         demoShell.dataset.styleTokenSharePreviewView = currentView.id;
         card.dataset.shareView = currentView.id;

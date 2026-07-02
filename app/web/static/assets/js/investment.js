@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.59.11
+ * Code version: v1.60.0
+ * - Changed: Community share PNG capture now reads export dimensions and footer sizing from the same CSS tokens used by the settings export-image preview.
  * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
  * - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
  * - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
@@ -6858,10 +6859,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedView = normalizeInvestmentView(view);
         const host = document.createElement('div');
         host.className = 'investment-community-share-capture';
-        host.style.setProperty('--investment-community-share-shell-export-width', '540px');
-        host.style.setProperty('--investment-community-share-shell-export-height', '856px');
-        host.style.setProperty('--investment-community-share-footer-brand-size', '72px');
-        host.style.setProperty('--investment-community-share-footer-qr-size', '108px');
+        host.style.setProperty('--investment-community-share-shell-export-width', 'var(--investment-community-share-shell-width, 540px)');
+        host.style.setProperty('--investment-community-share-shell-export-height', 'var(--investment-community-share-shell-height, 856px)');
 
         const card = document.createElement('article');
         card.className = 'investment-community-share-card';

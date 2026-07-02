@@ -51,7 +51,7 @@
     </a>
     <a href="{{ settings_urls['export-image'] }}" class="settings-nav-item settings-nav-item-export-image{% if settings_section == 'export-image' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-export-image"></span></span>
-        <span class="settings-nav-label">Export image</span>
+        <span class="settings-nav-label">Export images</span>
     </a>
     <a href="{{ settings_urls['font-tokens'] }}" class="settings-nav-item settings-nav-item-font-tokens{% if settings_section == 'font-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
@@ -1270,7 +1270,7 @@
                                 </button>
                             </div>
                             <div class="style-token-investment-share-preview-shell">
-                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" aria-label="Overview community share template">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" data-share-template="stable-v1" aria-label="Overview community share template">
                                     <div class="investment-community-share-header">
                                         <div class="investment-community-share-heading">
                                             <p class="investment-community-share-title">{{ row.sample_title }}</p>
@@ -1278,7 +1278,7 @@
                                         </div>
                                     </div>
                                     <div class="investment-community-share-body"></div>
-                                    <div class="investment-community-share-footer">
+                                    <div class="investment-community-share-footer" data-share-template-fixed="1">
                                         <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
                                         <div class="investment-community-share-footer-copy">
                                             <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
@@ -1306,14 +1306,14 @@
                                 </button>
                             </div>
                             <div class="style-token-investment-share-preview-shell">
-                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" aria-label="Compare community share template">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" data-share-template="stable-v1" aria-label="Compare community share template">
                                     <div class="investment-community-share-header">
                                         <div class="investment-community-share-heading">
                                             <p class="investment-community-share-title">Compare stocks</p>
                                         </div>
                                     </div>
                                     <div class="investment-community-share-body"></div>
-                                    <div class="investment-community-share-footer">
+                                    <div class="investment-community-share-footer" data-share-template-fixed="1">
                                         <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
                                         <div class="investment-community-share-footer-copy">
                                             <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>

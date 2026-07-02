@@ -1,4 +1,4 @@
-/* Code version: v1.14.21 */
+/* Code version: v1.15.1 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -944,8 +944,8 @@
     position: fixed;
     left: -200vw;
     top: 0;
-    width: var(--investment-community-share-shell-export-width, 540px);
-    height: var(--investment-community-share-shell-export-height, 856px);
+    width: var(--investment-community-share-shell-export-width, var(--investment-community-share-shell-width, 540px));
+    height: var(--investment-community-share-shell-export-height, var(--investment-community-share-shell-height, 856px));
     pointer-events: none;
     z-index: -1;
 }
@@ -1404,7 +1404,7 @@
     justify-content: center;
     align-items: center;
     min-height: 0;
-    padding-block: 4px;
+    padding-block: 0;
 }
 
 .investment-community-share-overview-donut .style-token-portfolio-donut-shell {
@@ -1417,9 +1417,9 @@
 }
 
 .investment-community-share-card[data-share-view="chart"] .investment-community-share-overview-donut .portfolio-donut-orbit {
-    --portfolio-donut-orbit-donut-size: 176px;
-    --portfolio-donut-orbit-ring-width: 16px;
-    --portfolio-donut-orbit-logo-size: 28px;
+    --portfolio-donut-orbit-donut-size: 208px;
+    --portfolio-donut-orbit-ring-width: 18px;
+    --portfolio-donut-orbit-logo-size: 32px;
     width: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
     height: calc(var(--portfolio-donut-outer-tangent-radius) * 2);
     max-width: 100%;

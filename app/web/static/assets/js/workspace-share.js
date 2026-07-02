@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.2.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -120,10 +120,8 @@
 	const createWorkspaceShareTemplateFrame = ({ shareView, title }) => {
 		const host = document.createElement("div");
 		host.className = "investment-community-share-capture";
-		host.style.setProperty("--investment-community-share-shell-export-width", "540px");
-		host.style.setProperty("--investment-community-share-shell-export-height", "856px");
-		host.style.setProperty("--investment-community-share-footer-brand-size", "72px");
-		host.style.setProperty("--investment-community-share-footer-qr-size", "108px");
+		host.style.setProperty("--investment-community-share-shell-export-width", "var(--investment-community-share-shell-width, 540px)");
+		host.style.setProperty("--investment-community-share-shell-export-height", "var(--investment-community-share-shell-height, 856px)");
 
 		const card = document.createElement("article");
 		card.className = "investment-community-share-card";
@@ -307,11 +305,32 @@
 		const usesExtendedInsets = originalPadding.right > 12 || originalPadding.top > 12;
 		const minBottomPadding = readShareChartBottomPadding(resolvedChartInstance, safePadding);
 		const originalAnimation = resolvedChartInstance.options.animation;
+		const xAxisLabelOptions = resolvedChartInstance.options.plugins?.investmentXAxisLabels || null;
+		const originalXAxisFontWeight = xAxisLabelOptions ? xAxisLabelOptions.fontWeight : undefined;
+		const yTicks = resolvedChartInstance.options.scales?.y?.ticks || null;
+		const originalYTickFont = yTicks?.font;
+		const originalDatasetBorderWidths = Array.isArray(resolvedChartInstance.data?.datasets)
+			? resolvedChartInstance.data.datasets.map((dataset) => dataset?.borderWidth)
+			: [];
 
 		if (typeof resolvedChartInstance.stop === "function") {
 			resolvedChartInstance.stop();
 		}
 		resolvedChartInstance.options.animation = false;
+		if (xAxisLabelOptions) {
+			xAxisLabelOptions.fontWeight = "400";
+		}
+		if (yTicks) {
+			yTicks.font = {
+				...(typeof originalYTickFont === "object" && originalYTickFont !== null ? originalYTickFont : {}),
+				weight: "400",
+			};
+		}
+		if (Array.isArray(resolvedChartInstance.data?.datasets)) {
+			resolvedChartInstance.data.datasets.forEach((dataset) => {
+				if (dataset) dataset.borderWidth = 2.0;
+			});
+		}
 		resolvedChartInstance.options.layout.padding = {
 			left: safePadding,
 			right: usesExtendedInsets ? Math.max(safePadding, 24) : safePadding,
@@ -322,6 +341,18 @@
 		const dataUrl = sourceCanvas.toDataURL("image/png");
 		resolvedChartInstance.options.layout.padding = originalPadding;
 		resolvedChartInstance.options.animation = originalAnimation;
+		if (xAxisLabelOptions) {
+			xAxisLabelOptions.fontWeight = originalXAxisFontWeight;
+		}
+		if (yTicks) {
+			if (originalYTickFont === undefined) delete yTicks.font;
+			else yTicks.font = originalYTickFont;
+		}
+		if (Array.isArray(resolvedChartInstance.data?.datasets)) {
+			resolvedChartInstance.data.datasets.forEach((dataset, index) => {
+				if (dataset) dataset.borderWidth = originalDatasetBorderWidths[index];
+			});
+		}
 		resolvedChartInstance.update("none");
 		return dataUrl;
 	};
