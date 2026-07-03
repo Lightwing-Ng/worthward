@@ -1,7 +1,15 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.1
+ * Code version: v1.61.11
+ * - Fixed: Scrollable investment table Frosted glass underlays now begin at the real scroll viewport edge, avoiding ghost rows at scroll top and restoring Transaction history header material.
+ * - Fixed: Holdings table overlay now keeps a synced hidden body-table underlay behind the Frosted glass extracted header and summary material.
+ * - Fixed: Investment view Metrics segmented pill now relies on the edge-cap geometry solver without a manual optical offset, keeping both the right cap and text center aligned.
+ * - Fixed: Investment view segmented edge pills now lock their outer cap centers to the shell cap centers while preserving text-centered geometry.
+ * - Fixed: Investment view segmented pill schedules a post-transition remeasure so active labels stay pixel-centered after final text layout settles.
+ * - Fixed: Investment view segmented pill measurement now reads text-node ranges instead of the flex label box, aligning short labels to the actual rendered glyph center.
+ * - Fixed: Investment view segmented pill positioning now uses the active label text range center, removing the last 1 px visual offset on Metrics.
+ * - Fixed: Investment view segmented pills now center the blue highlight on the active label text for short labels such as Holdings and Metrics.
  * - Fixed: Scrollable investment tables now measure overlay header height dynamically so fixed summary rows never cover top rows.
  * - Changed: Community share PNG capture now uses a 1080 px by 1730 px 2x export shell grid.
  * - Changed: Community share PNG capture now reads export dimensions and footer sizing from the same CSS tokens used by the settings export-image preview.
@@ -634,6 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentFormHideTimer = null;
     let investmentImportInFlight = false;
     let investmentSegmentedMeasureRaf = 0;
+    let investmentSegmentedMeasureTimer = 0;
     let investmentIbkrModeMeasureRaf = 0;
     let investmentHsbcModeMeasureRaf = 0;
     let activeInvestmentHistoryRowIds = [];
@@ -2402,6 +2411,12 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentSegmentedMeasureRaf = 0;
     }
 
+    function clearInvestmentSegmentedMeasureTimer() {
+        if (!investmentSegmentedMeasureTimer) return;
+        window.clearTimeout(investmentSegmentedMeasureTimer);
+        investmentSegmentedMeasureTimer = 0;
+    }
+
     const SEGMENTED_TEXT_RENDER_SAFETY_PX = 2;
 
     function measureSegmentedInlineContentWidth(element, renderSafetyPx = SEGMENTED_TEXT_RENDER_SAFETY_PX) {
@@ -2422,9 +2437,58 @@ document.addEventListener('DOMContentLoaded', () => {
             : 0;
     }
 
+    function collectSegmentedTextNodes(element) {
+        const nodes = [];
+        const visit = (node) => {
+            if (!node) return;
+            if (node.nodeType === Node.TEXT_NODE) {
+                if (String(node.textContent || '').trim()) nodes.push(node);
+                return;
+            }
+            Array.from(node.childNodes || []).forEach(visit);
+        };
+        visit(element);
+        return nodes;
+    }
+
+    function measureSegmentedInlineContentRect(element, renderSafetyPx = SEGMENTED_TEXT_RENDER_SAFETY_PX) {
+        if (!(element instanceof HTMLElement)) return null;
+        const textNodes = collectSegmentedTextNodes(element);
+        const rects = [];
+        textNodes.forEach((textNode) => {
+            const range = document.createRange();
+            range.selectNodeContents(textNode);
+            rects.push(...Array.from(range.getClientRects()));
+            if (typeof range.detach === 'function') {
+                range.detach();
+            }
+        });
+        let left = Infinity;
+        let right = -Infinity;
+        rects.forEach((rect) => {
+            if (rect.width <= 0) return;
+            left = Math.min(left, rect.left);
+            right = Math.max(right, rect.right);
+        });
+        if (Number.isFinite(left) && Number.isFinite(right) && right > left) {
+            return {
+                centerX: (left + right) / 2,
+                width: Math.ceil((right - left) + renderSafetyPx),
+            };
+        }
+        const fallbackRect = element.getBoundingClientRect();
+        if (fallbackRect.width <= 0) return null;
+        return {
+            centerX: fallbackRect.left + (fallbackRect.width / 2),
+            width: Math.ceil(fallbackRect.width + renderSafetyPx),
+        };
+    }
+
     function measureInvestmentSegmentedPillGeometry(control, activeLabel, {
         labelSelector = '',
         horizontalInset = null,
+        centerOnActiveContent = false,
+        alignEdgeCaps = false,
     } = {}) {
         if (!(control instanceof HTMLElement) || !(activeLabel instanceof HTMLElement)) return null;
         const activeOption = activeLabel.closest('.segmented-control-option');
@@ -2466,17 +2530,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 + (Number.parseFloat(controlStyles.paddingRight) || 0),
             ),
         );
-        const maxContentWidth = options.reduce((currentMax, option) => {
-            const optionLabel = option.querySelector('input + span');
-            if (!(optionLabel instanceof HTMLElement)) return currentMax;
+        const measureOptionContentWidth = (optionLabel) => {
             const measureTarget = labelSelector
                 ? (optionLabel.querySelector(labelSelector) || optionLabel)
                 : optionLabel;
-            const measuredWidth = measureSegmentedInlineContentWidth(
+            return measureSegmentedInlineContentWidth(
                 measureTarget instanceof HTMLElement ? measureTarget : optionLabel,
                 renderSafetyPx,
             );
-            return Math.max(currentMax, measuredWidth);
+        };
+        const maxContentWidth = options.reduce((currentMax, option) => {
+            const optionLabel = option.querySelector('input + span');
+            if (!(optionLabel instanceof HTMLElement)) return currentMax;
+            return Math.max(currentMax, measureOptionContentWidth(optionLabel));
         }, 0);
         const optionWidth = Math.max(1, Math.ceil(maxContentWidth + (resolvedHorizontalInset * 2)));
         const optionCount = options.length;
@@ -2503,9 +2569,47 @@ document.addEventListener('DOMContentLoaded', () => {
         control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
         control.style.width = `${visibleControlWidth}px`;
         control.dataset.segmentedOverflow = totalControlWidth > visibleControlWidth + 1 ? '1' : '0';
+        const activeMeasureTarget = labelSelector
+            ? (activeLabel.querySelector(labelSelector) || activeLabel)
+            : activeLabel;
+        const activeContentRect = measureSegmentedInlineContentRect(
+            activeMeasureTarget instanceof HTMLElement ? activeMeasureTarget : activeLabel,
+            renderSafetyPx,
+        );
+        const activeContentWidth = activeContentRect?.width || measureOptionContentWidth(activeLabel);
+        const activePillWidth = centerOnActiveContent
+            ? Math.min(optionWidth, Math.max(1, Math.ceil(activeContentWidth + (resolvedHorizontalInset * 2))))
+            : optionWidth;
+        const activeOptionRect = activeOption.getBoundingClientRect();
+        const activeContentCenterOffset = (
+            centerOnActiveContent
+            && activeContentRect
+            && activeOptionRect.width > 0
+        )
+            ? activeContentRect.centerX - activeOptionRect.left
+            : optionWidth / 2;
+        const activeContentCenter = (activeIndex * (optionWidth + columnGap)) + activeContentCenterOffset;
+        let constrainedPillWidth = activePillWidth;
+        let activePillLeft = activeContentCenter - (constrainedPillWidth / 2);
+        if (centerOnActiveContent && alignEdgeCaps) {
+            const thumbInset = Math.max(
+                0,
+                Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-thumb-inset'))
+                || Number.parseFloat(controlStyles.paddingLeft)
+                || 0,
+            );
+            if (activeIndex === 0) {
+                constrainedPillWidth = Math.max(1, activeContentCenter * 2);
+                activePillLeft = 0;
+            } else if (activeIndex === optionCount - 1) {
+                const rightCapEdge = Math.max(thumbInset, visibleControlWidth - (thumbInset * 2));
+                constrainedPillWidth = Math.max(1, (rightCapEdge - activeContentCenter) * 2);
+                activePillLeft = activeContentCenter - (constrainedPillWidth / 2);
+            }
+        }
         return {
-            left: activeIndex * (optionWidth + columnGap),
-            width: optionWidth,
+            left: activePillLeft,
+            width: constrainedPillWidth,
             totalWidth: totalControlWidth,
             visibleWidth: visibleControlWidth,
         };
@@ -2554,7 +2658,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const pillGeometry = measureInvestmentSegmentedPillGeometry(segmentedControl, activeLabel);
+        const pillGeometry = measureInvestmentSegmentedPillGeometry(segmentedControl, activeLabel, {
+            centerOnActiveContent: true,
+            alignEdgeCaps: true,
+        });
         if (!pillGeometry) {
             segmentedControl.classList.remove('is-pill-ready');
             syncInvestmentShareActionsPosition();
@@ -2572,10 +2679,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!segmentedControl) return;
         segmentedControl.classList.remove('is-pill-ready');
         clearInvestmentSegmentedMeasureRaf();
+        clearInvestmentSegmentedMeasureTimer();
         investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
             investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
                 investmentSegmentedMeasureRaf = 0;
                 updateInvestmentSegmentedPill();
+                investmentSegmentedMeasureTimer = window.setTimeout(() => {
+                    investmentSegmentedMeasureTimer = 0;
+                    updateInvestmentSegmentedPill();
+                }, 520);
             });
         });
     }
@@ -6614,6 +6726,84 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function attachScrollableTableFrostedUnderlay(tableShell, scrollContainer, {
+        underlayClassName = '',
+        underlayTableClassName = '',
+        scrollbarVariableName = '',
+    } = {}) {
+        if (!(tableShell instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return null;
+        const bodyTable = scrollContainer.querySelector('table');
+        if (!(bodyTable instanceof HTMLTableElement)) return null;
+        tableShell
+            .querySelectorAll('.scrollable-data-table-frosted-underlay')
+            .forEach((node) => node.remove());
+
+        const underlay = document.createElement('div');
+        underlay.className = [
+            'scrollable-data-table-frosted-underlay',
+            underlayClassName,
+        ].filter(Boolean).join(' ');
+        underlay.setAttribute('aria-hidden', 'true');
+        const underlayTable = bodyTable.cloneNode(true);
+        underlayTable.classList.add('scrollable-data-table-frosted-underlay-table');
+        if (underlayTableClassName) {
+            underlayTable.classList.add(underlayTableClassName);
+        }
+        underlayTable.setAttribute('aria-hidden', 'true');
+        underlay.appendChild(underlayTable);
+        tableShell.insertBefore(underlay, tableShell.firstChild);
+
+        let frameId = 0;
+        let resizeObserver = null;
+
+        const syncUnderlay = () => {
+            frameId = 0;
+            const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
+            if (scrollbarVariableName) {
+                tableShell.style.setProperty(scrollbarVariableName, `${scrollbarWidth}px`);
+            }
+            const shellRect = tableShell.getBoundingClientRect();
+            const scrollRect = scrollContainer.getBoundingClientRect();
+            const scrollViewportOffset = Math.max(0, scrollRect.top - shellRect.top);
+            tableShell.style.setProperty(
+                '--scrollable-data-table-underlay-offset-y',
+                `${scrollViewportOffset - scrollContainer.scrollTop}px`
+            );
+            const bodyWidth = bodyTable.getBoundingClientRect().width;
+            if (bodyWidth > 0) {
+                underlayTable.style.width = `${bodyWidth}px`;
+            }
+        };
+
+        const scheduleUnderlaySync = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(syncUnderlay);
+        };
+
+        scheduleUnderlaySync();
+        scrollContainer.addEventListener('scroll', scheduleUnderlaySync, { passive: true });
+        window.addEventListener('resize', scheduleUnderlaySync);
+
+        if (window.ResizeObserver) {
+            resizeObserver = new ResizeObserver(scheduleUnderlaySync);
+            resizeObserver.observe(tableShell);
+            resizeObserver.observe(scrollContainer);
+            resizeObserver.observe(bodyTable);
+        }
+
+        return () => {
+            if (frameId) {
+                window.cancelAnimationFrame(frameId);
+                frameId = 0;
+            }
+            scrollContainer.removeEventListener('scroll', scheduleUnderlaySync);
+            window.removeEventListener('resize', scheduleUnderlaySync);
+            resizeObserver?.disconnect();
+            underlay.remove();
+            tableShell.style.removeProperty('--scrollable-data-table-underlay-offset-y');
+        };
+    }
+
     function teardownHoldingsTableAlignmentSync() {
         if (typeof investmentHoldingsTableAlignmentCleanup === 'function') {
             investmentHoldingsTableAlignmentCleanup();
@@ -6626,11 +6816,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(holdingsPanel instanceof HTMLElement)) return;
         const tableShell = holdingsPanel.querySelector('.investment-holdings-table-shell');
         const scrollContainer = holdingsPanel.querySelector('.investment-holdings-table-scroll');
-        investmentHoldingsTableAlignmentCleanup = buildTableAlignmentSync(
+        const alignmentCleanup = buildTableAlignmentSync(
             tableShell,
             scrollContainer,
             '--investment-holdings-scrollbar-width'
         );
+        const underlayCleanup = attachScrollableTableFrostedUnderlay(tableShell, scrollContainer, {
+            underlayClassName: 'investment-holdings-frosted-underlay',
+            underlayTableClassName: 'investment-holdings-frosted-underlay-table',
+            scrollbarVariableName: '--investment-holdings-scrollbar-width',
+        });
+        investmentHoldingsTableAlignmentCleanup = () => {
+            if (typeof alignmentCleanup === 'function') alignmentCleanup();
+            if (typeof underlayCleanup === 'function') underlayCleanup();
+        };
     }
 
     function teardownHistoryTableAlignmentSync() {
@@ -6649,11 +6848,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const scrollContainer = historyPanel.matches('.investment-history-table-scroll')
             ? historyPanel
             : historyPanel.querySelector('.investment-history-table-scroll');
-        investmentHistoryTableAlignmentCleanup = buildTableAlignmentSync(
+        const alignmentCleanup = buildTableAlignmentSync(
             tableShell,
             scrollContainer,
             '--investment-history-scrollbar-width'
         );
+        const underlayCleanup = attachScrollableTableFrostedUnderlay(tableShell, scrollContainer, {
+            underlayClassName: 'investment-history-frosted-underlay',
+            underlayTableClassName: 'investment-history-frosted-underlay-table',
+            scrollbarVariableName: '--investment-history-scrollbar-width',
+        });
+        investmentHistoryTableAlignmentCleanup = () => {
+            if (typeof alignmentCleanup === 'function') alignmentCleanup();
+            if (typeof underlayCleanup === 'function') underlayCleanup();
+        };
     }
 
     function teardownStockDetailsTableAlignmentSync() {

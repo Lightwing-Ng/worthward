@@ -1,4 +1,4 @@
-/* Code version: v1.16.10 */
+/* Code version: v1.16.12 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2336,10 +2336,36 @@
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
     isolation: isolate;
     --investment-holdings-scrollbar-width: 0px;
+    --scrollable-data-table-underlay-offset-y: 0px;
 }
 
 .investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
     width: 100%;
+}
+
+.scrollable-data-table-frosted-underlay {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: var(--scrollable-data-table-header-height);
+    z-index: var(--layer-surface-content);
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: 10px 10px 0 0;
+    opacity: 0.74;
+}
+
+.scrollable-data-table-frosted-underlay-table {
+    transform: translateY(var(--scrollable-data-table-underlay-offset-y));
+    will-change: transform;
+}
+
+.investment-holdings-frosted-underlay-table {
+    width: calc(100% - var(--investment-holdings-scrollbar-width));
+}
+
+.investment-history-frosted-underlay-table {
+    width: calc(100% - var(--investment-history-scrollbar-width));
 }
 
 .scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"],
@@ -3577,6 +3603,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 0;
     transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     --investment-history-scrollbar-width: 0px;
+    --scrollable-data-table-underlay-offset-y: 0px;
 }
 
 .investment-history-table-shell > .investment-history-table[aria-hidden="true"] {
