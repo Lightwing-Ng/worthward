@@ -1,7 +1,12 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.22
+ * Code version: v1.61.27
+ * - Fixed: Investment stock-details helper import now revs to the no-dot intraday average-price line correction.
+ * - Fixed: Investment stock-details helper import now revs to the intraday average-price event-stepped cost line update.
+ * - Fixed: Investment stock-details helper import now revs to the overnight first-candle anchoring correction.
+ * - Fixed: Investment entry module diagnostics now report the current loaded frontend file version after the stock-details intraday chart update.
+ * - Changed: Stock details 1W now loads regular-session 1-minute candles independently of realtime polling so GKX intraday fills can be plotted precisely.
  * - Fixed: Investment history highlight cleanup now ignores empty cloned-row ids so post-import refresh cannot call querySelector("#").
  * - Fixed: Transaction history pagination now scopes history scroll and body lookups to the Transaction history surface so Stock details history tables cannot intercept updates.
  * - Fixed: Investment history pagination pointer handling now accepts browser pointerup events with neutral button codes, so coordinate mouse/touch clicks activate page buttons.
@@ -282,10 +287,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.7';
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.11';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.58.1',
+    entry: 'v1.61.27',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -2860,7 +2865,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         const normalizedRange = normalizeInvestmentStockDetailsRange(range);
         if (!normalizedTicker || !isInvestmentStockDetailsIntradayRange(normalizedRange)) return [];
-        if (!shouldRunInvestmentRealtimeQuotes()) return [];
         const cacheKey = `${normalizedTicker}:${normalizedRange}`;
         if (investmentStockDetailsIntradayCache.has(cacheKey)) {
             return investmentStockDetailsIntradayCache.get(cacheKey) || [];

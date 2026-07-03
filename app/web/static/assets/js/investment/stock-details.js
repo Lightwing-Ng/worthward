@@ -1,7 +1,11 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.7
+ * Code version: v0.2.11
+ * - Fixed: Stock-details intraday average-price curves no longer draw solid point markers on cost-change indexes.
+ * - Changed: Stock-details intraday average-price curves now render as event-stepped cost lines with subtle change points so each trade-driven cost update is visible.
+ * - Fixed: Stock-details overnight trades at or after 20:00 now prefer the next visible intraday session's first candle before falling back to the ledger date.
+ * - Changed: Stock-details 1W uses regular-session 1-minute candles outside realtime sessions and anchors off-hours trade markers to the nearest session candle.
  * - Fixed: Broker metric replay now builds its own rendered split-factor hints instead of reading a stock-detail row-local variable.
  * - Fixed: Stock-details transaction replay now shares rendered split-factor hints with zero-price grant rows.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
@@ -12,7 +16,7 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.7';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.11';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -383,7 +387,7 @@ export function createInvestmentStockDetailsUtils({
         const normalizedRange = normalizeInvestmentStockDetailsRange(getSelectedInvestmentStockDetailsRange());
         const allowRealtimeData = shouldRunInvestmentRealtimeQuotes();
         let intradayRows = [];
-        if (isInvestmentStockDetailsIntradayRange(normalizedRange) && allowRealtimeData) {
+        if (isInvestmentStockDetailsIntradayRange(normalizedRange)) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Loading 1-minute price history...</div>';
             try {
                 intradayRows = await loadInvestmentStockDetailsIntradayRows(normalizedTicker, normalizedRange);
@@ -499,6 +503,26 @@ export function createInvestmentStockDetailsUtils({
         });
         const intradayDayFallbackIndex = buildInvestmentIntradayDayFallbackIndex(labels);
         const intradayDayBoundaries = buildInvestmentIntradayDayBoundaries(labels);
+        const getTransactionDatetimeValue = (txn) => String(txn?.datetime || txn?.date || '').trim();
+        const getNextVisibleIntradayDayBoundary = (ledgerDate) => {
+            const normalizedLedgerDate = normalizeLedgerDate(ledgerDate);
+            if (!normalizedLedgerDate) return null;
+            return intradayDayBoundaries.orderedDays.find((dayBoundary) => dayBoundary.dayKey > normalizedLedgerDate) || null;
+        };
+        const resolveIntradayDayBoundaryForTransaction = (txn, sessionType) => {
+            const ledgerDate = normalizeLedgerDate(txn?.date);
+            const datetimeMatch = getTransactionDatetimeValue(txn).match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
+            const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
+            const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
+            const totalMinutes = Number.isInteger(hour) && Number.isInteger(minute)
+                ? (hour * 60) + minute
+                : null;
+            if (sessionType === 'night' && Number.isFinite(totalMinutes) && totalMinutes >= 20 * 60) {
+                const nextDayBoundary = getNextVisibleIntradayDayBoundary(ledgerDate);
+                if (nextDayBoundary) return nextDayBoundary;
+            }
+            return intradayDayBoundaries.dayMap.get(ledgerDate) || null;
+        };
         const resolveTradeMarkerPrice = (markerIndex, transactionPrice) => {
             const normalizedTransactionPrice = Number(transactionPrice);
             const normalizedClosePrice = Number(closeValues[markerIndex]);
@@ -510,7 +534,8 @@ export function createInvestmentStockDetailsUtils({
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
-            const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(txn?.date);
+            const transactionDatetimeValue = getTransactionDatetimeValue(txn);
+            const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue);
             const transactionPrice = getTransactionPrice(txn);
             const ledgerDate = normalizeLedgerDate(txn?.date);
             let markerIndex = null;
@@ -518,15 +543,14 @@ export function createInvestmentStockDetailsUtils({
             let markerSessionType = 'intraday';
             let markerPrice = null;
             if (useIntradayCandles) {
-                markerSessionType = getInvestmentTradeSessionType(txn?.date);
+                markerSessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
                 const exactMinuteIndex = dateIndex.get(exactMinuteKey);
                 if (Number.isInteger(exactMinuteIndex)) {
                     markerIndex = exactMinuteIndex;
                     markerPrice = resolveTradeMarkerPrice(exactMinuteIndex, transactionPrice);
                 } else if (markerSessionType !== 'intraday') {
-                    const dayBoundary = intradayDayBoundaries.dayMap.get(ledgerDate);
+                    const dayBoundary = resolveIntradayDayBoundaryForTransaction(txn, markerSessionType);
                     if (dayBoundary) {
-                        markerPlacement = 'gap';
                         markerIndex = markerSessionType === 'post' ? dayBoundary.lastIndex : dayBoundary.firstIndex;
                         markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
                     }
@@ -563,16 +587,14 @@ export function createInvestmentStockDetailsUtils({
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return null;
             if (useIntradayCandles) {
-                const exactMinuteIndex = dateIndex.get(normalizeInvestmentIntradayMinuteKey(txn?.date));
+                const transactionDatetimeValue = getTransactionDatetimeValue(txn);
+                const exactMinuteIndex = dateIndex.get(normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue));
                 if (Number.isInteger(exactMinuteIndex)) return exactMinuteIndex;
-                const dayBoundary = intradayDayBoundaries.dayMap.get(ledgerDate);
-                const sessionType = getInvestmentTradeSessionType(txn?.date);
+                const sessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
+                const dayBoundary = resolveIntradayDayBoundaryForTransaction(txn, sessionType);
                 if (dayBoundary) {
                     if (sessionType === 'post') {
-                        const nextDay = dayBoundary.ordinal < intradayDayBoundaries.orderedDays.length - 1
-                            ? intradayDayBoundaries.orderedDays[dayBoundary.ordinal + 1]
-                            : null;
-                        return nextDay ? nextDay.firstIndex : dayBoundary.lastIndex;
+                        return dayBoundary.lastIndex;
                     }
                     if (sessionType === 'pre' || sessionType === 'night') {
                         return dayBoundary.firstIndex;
@@ -594,7 +616,7 @@ export function createInvestmentStockDetailsUtils({
                 return transactionLedgerDate < firstVisibleLedgerDate;
             }
             const firstVisibleMinuteKey = normalizeInvestmentIntradayMinuteKey(firstVisibleLabel);
-            const transactionMinuteKey = normalizeInvestmentIntradayMinuteKey(txn?.date);
+            const transactionMinuteKey = normalizeInvestmentIntradayMinuteKey(getTransactionDatetimeValue(txn));
             if (firstVisibleMinuteKey && transactionMinuteKey) {
                 return transactionMinuteKey < firstVisibleMinuteKey;
             }
@@ -1204,9 +1226,14 @@ export function createInvestmentStockDetailsUtils({
                         label: `${normalizedTicker} average price`,
                         data: averagePriceSeries,
                         order: 1,
-                        borderColor: applyCanvasAlpha(resolvedTheme.muted, 0.5),
-                        borderWidth: 1.0,
+                        borderColor: applyCanvasAlpha(resolvedTheme.muted, useIntradayCandles ? 0.78 : 0.5),
+                        backgroundColor: applyCanvasAlpha(resolvedTheme.muted, useIntradayCandles ? 0.78 : 0.5),
+                        borderWidth: useIntradayCandles ? 1.35 : 1.0,
                         pointRadius: 0,
+                        pointHoverRadius: 0,
+                        pointBackgroundColor: applyCanvasAlpha(resolvedTheme.muted, 0.9),
+                        pointBorderColor: applyCanvasAlpha(resolvedTheme.muted, 0.9),
+                        stepped: useIntradayCandles ? 'before' : false,
                         tension: 0,
                         borderJoinStyle: 'round',
                         borderCapStyle: 'round',
