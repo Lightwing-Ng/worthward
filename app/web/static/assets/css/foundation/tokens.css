@@ -1,4 +1,4 @@
-/* Code version: v0.3.15 */
+/* Code version: v0.3.16 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -152,7 +152,7 @@
 	--local-store-pagination-button-border: 1px solid var(--accent-border-strong);
 	--local-store-pagination-button-shadow: var(--frosted-glass-extracted-shadow);
 	--local-store-pagination-button-blur: var(--frosted-glass-extracted-blur);
-	--local-store-pagination-motion-duration: 325ms;
+	--local-store-pagination-motion-duration: 500ms;
 	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
 	--mode-switch-pad: 4px;

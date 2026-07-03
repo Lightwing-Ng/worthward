@@ -1,4 +1,4 @@
-/* Code version: v1.1.10 */
+/* Code version: v1.1.12 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -310,8 +310,18 @@
 .chart-tooltip-logo,
 .portfolio-donut-logo {
     border-radius: 50%;
-    background: radial-gradient(circle at center, var(--color-white-adaptive) calc(50% - 1px), transparent calc(50% - 1px));
+    background: radial-gradient(circle at center, var(--color-white-adaptive) 50%, transparent 50%);
     box-shadow: none;
+}
+
+.ticker-logo:is(img),
+.suggestion-logo:is(img),
+.ticker-identity-logo:is(img),
+.timing-suggestion-logo:is(img),
+.chart-tooltip-logo:is(img),
+.portfolio-donut-logo:is(img) {
+    box-sizing: border-box;
+    padding: 2px;
 }
 
 .portfolio-donut {
