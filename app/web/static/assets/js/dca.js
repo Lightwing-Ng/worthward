@@ -1,4 +1,4 @@
-/* Code version: v0.1.8 */
+/* Code version: v0.1.9 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -199,7 +199,7 @@
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
-                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
                 ctx.textBaseline = "top";
                 tickIndexes.forEach((index, tickIndex) => {
                     const rawLabel = String(rawDates[index] || "");

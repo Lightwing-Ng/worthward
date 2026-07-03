@@ -1,7 +1,9 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.12
+ * Code version: v0.2.14
+ * - Changed: Stock-details price chart x-axis date labels now use weight 400 while preserving the existing font and size.
+ * - Changed: Stock-details 1W x-axis labels now center each trading date within its intraday session and omit intraday times.
  * - Fixed: Stock-details intraday trade markers no longer project pre-range overnight trades onto the first visible candle.
  * - Fixed: Stock-details intraday average-price curves no longer draw solid point markers on cost-change indexes.
  * - Changed: Stock-details intraday average-price curves now render as event-stepped cost lines with subtle change points so each trade-driven cost update is visible.
@@ -17,7 +19,7 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.12';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.14';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -782,6 +784,35 @@ export function createInvestmentStockDetailsUtils({
         const formatAxisDateLines = (dateParts) => {
             return formatInvestmentFullDateLines(dateParts, { allowWrap: true });
         };
+        const formatAxisDateOnlyLines = (dateParts) => {
+            if (!dateParts) return ['', ''];
+            return formatInvestmentFullDateLines({
+                year: dateParts.year,
+                monthIndex: dateParts.monthIndex,
+                day: dateParts.day,
+                hours: null,
+                minutes: null,
+            }, { allowWrap: true });
+        };
+        const buildIntradayCenteredAxisTicks = () => {
+            if (!useIntradayCandles || normalizedRange !== '1w') return [];
+            return intradayDayBoundaries.orderedDays
+                .map((dayBoundary) => {
+                    const firstIndex = Number(dayBoundary?.firstIndex);
+                    const lastIndex = Number(dayBoundary?.lastIndex);
+                    if (!Number.isInteger(firstIndex) || !Number.isInteger(lastIndex)) return null;
+                    const labelIndex = Math.round((firstIndex + lastIndex) / 2);
+                    const parsedDate = parseRawDate(labels[firstIndex] || labels[labelIndex]);
+                    if (!parsedDate) return null;
+                    return {
+                        firstIndex,
+                        lastIndex,
+                        labelIndex,
+                        parsedDate,
+                    };
+                })
+                .filter(Boolean);
+        };
         const buildTickIndexSet = (count, plotWidth) => {
             if (count <= 0) return new Set();
             if (count === 1) return new Set([0]);
@@ -866,6 +897,30 @@ export function createInvestmentStockDetailsUtils({
                 const xScale = scales?.x;
                 if (!chartArea || !xScale || !labels.length) return;
                 const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+                const intradayCenteredTicks = buildIntradayCenteredAxisTicks();
+                if (intradayCenteredTicks.length) {
+                    const baselineY = chartArea.bottom;
+                    const lineHeight = 10;
+                    ctx.save();
+                    ctx.fillStyle = resolvedTheme.muted;
+                    ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                    ctx.textBaseline = 'top';
+                    ctx.textAlign = 'center';
+                    intradayCenteredTicks.forEach((tick) => {
+                        const leftX = xScale.getPixelForValue(tick.firstIndex);
+                        const rightX = xScale.getPixelForValue(tick.lastIndex);
+                        const fallbackX = xScale.getPixelForValue(tick.labelIndex);
+                        const x = Number.isFinite(leftX) && Number.isFinite(rightX)
+                            ? (leftX + rightX) / 2
+                            : fallbackX;
+                        if (!Number.isFinite(x)) return;
+                        const [firstLine, secondLine] = formatAxisDateOnlyLines(tick.parsedDate);
+                        ctx.fillText(firstLine, x, baselineY);
+                        ctx.fillText(secondLine, x, baselineY + lineHeight);
+                    });
+                    ctx.restore();
+                    return;
+                }
                 const tickIndexes = typeof buildInvestmentAxisTickIndexes === 'function'
                     ? buildInvestmentAxisTickIndexes(labels, labels, viewportWidth, parseRawDate)
                     : Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
@@ -873,7 +928,7 @@ export function createInvestmentStockDetailsUtils({
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
-                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
                 ctx.textBaseline = 'top';
                 tickIndexes.forEach((index, tickIndex) => {
                     const parsedDate = parseRawDate(labels[index]);

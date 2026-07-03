@@ -1,7 +1,8 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.9.2
+ * Code version: v1.9.3
+ * - Changed: Live trading price chart x-axis date labels now use weight 400 while preserving the existing font and size.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1673,7 +1674,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = theme.muted;
-                ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+                ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
                 ctx.textBaseline = "top";
                 tickIndexes.forEach((index, tickIndex) => {
                     const [firstLine, secondLine] = formatAxisLabel(labels[index]);

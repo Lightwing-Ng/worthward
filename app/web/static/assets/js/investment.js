@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.28
+ * Code version: v1.61.29
+ * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
+ * - Fixed: Investment stock-details helper import now revs to the x-axis date label font-weight update.
  * - Fixed: Investment stock-details helper import now revs to the pre-range overnight marker projection fix.
  * - Fixed: Investment stock-details helper import now revs to the no-dot intraday average-price line correction.
  * - Fixed: Investment stock-details helper import now revs to the intraday average-price event-stepped cost line update.
@@ -288,10 +290,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.12';
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.61.28',
+    entry: 'v1.61.29',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -11960,7 +11962,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const labelOptions = chart.options?.plugins?.investmentXAxisLabels || {};
                 const fontSize = Number.parseFloat(labelOptions.fontSize) || 12;
                 const lineHeight = Number.parseFloat(labelOptions.lineHeight) || 10;
-                const fontWeight = String(labelOptions.fontWeight || '700');
+                const fontWeight = String(labelOptions.fontWeight || '400');
                 const fontFamily = String(labelOptions.fontFamily || '"GDS Transport", "Helvetica Neue", Arial, sans-serif');
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
@@ -12186,7 +12188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tooltip: { enabled: false, external: externalTooltipHandler },
                 investmentXAxisLabels: {
                     fontSize: 12,
-                    fontWeight: '700',
+                    fontWeight: '400',
                     fontFamily: '"GDS Transport", "Helvetica Neue", Arial, sans-serif',
                     lineHeight: 10,
                 },

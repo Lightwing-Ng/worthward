@@ -1,4 +1,4 @@
-/* Code version: v0.4.9 */
+/* Code version: v0.4.10 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -243,7 +243,7 @@
 				ctx.fillStyle = resolvedTheme.muted;
 				const axisFontSize = readPxToken(chartInstance.canvas, "--workspace-share-chart-axis-font-size", 12);
 				const lineHeight = Math.round(axisFontSize * 1.08);
-				ctx.font = `700 ${axisFontSize}px "GDS Transport", "Helvetica Neue", Arial, sans-serif`;
+				ctx.font = `400 ${axisFontSize}px "GDS Transport", "Helvetica Neue", Arial, sans-serif`;
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
 					const parsedDate = parseRawDate(rawDates[index]);

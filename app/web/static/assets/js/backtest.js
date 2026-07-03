@@ -1,4 +1,4 @@
-/* Code version: v0.3.7 */
+/* Code version: v0.3.8 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -408,7 +408,7 @@
 				const lineHeight = 10;
 				ctx.save();
 				ctx.fillStyle = resolvedTheme.muted;
-				ctx.font = '700 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
+				ctx.font = '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif';
 				ctx.textBaseline = "top";
 				tickIndexes.forEach((index, tickIndex) => {
 					const parsedDate = parseRawDate(rawDates[index]);
