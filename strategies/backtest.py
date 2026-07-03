@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v0.3.0
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def _build_win_rate_trade_pairs(
         trades: list[dict[str, object]],
         final_close_price: float,
         final_trade_date: pd.Timestamp,
-        open_shares: int,
+        open_shares: float,
 ) -> list[tuple[dict[str, object], dict[str, object]]]:
     # We work on a copy for win rate calculation only
     # Original trades list remains unchanged for UI display
@@ -77,7 +77,7 @@ def _build_win_rate_trade_pairs(
             "date": final_trade_date.strftime("%Y/%m/%d"),
             "side": "Sell",
             "price": round(final_close_price, 4),
-            "shares": open_shares,
+            "shares": round(open_shares, 6),
             "pnl": round((final_close_price - entry_price) * open_shares, 4),
             "cash": round(current_cash, 4),
             "equity": round(current_cash, 4),
@@ -147,11 +147,55 @@ def _build_trade_markers(frame: pd.DataFrame, trades: list[dict[str, object]], i
     return buy_markers, sell_markers
 
 
+def _apply_dividend_cash_flow(
+        *,
+        cash: float,
+        shares: float,
+        close_price: float,
+        dividend_per_share: float,
+        reinvest_cash_dividends: bool,
+) -> tuple[float, float]:
+    if shares <= 0 or dividend_per_share <= 0:
+        return cash, shares
+    dividend_cash = shares * dividend_per_share
+    if reinvest_cash_dividends and close_price > 0:
+        return cash, shares + (dividend_cash / close_price)
+    return cash + dividend_cash, shares
+
+
+def _build_buy_hold_equity_series(
+        frame: pd.DataFrame,
+        initial_capital: float,
+        *,
+        reinvest_cash_dividends: bool,
+        include_cash_dividends: bool,
+) -> tuple[pd.Series, float]:
+    first_price = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
+    shares = float(floor(initial_capital / first_price)) if first_price > 0 else 0.0
+    cash = float(initial_capital) - (shares * first_price)
+    equity_values: list[float] = []
+    for index, row in enumerate(frame.itertuples(index=False)):
+        close_price = float(row.Close)
+        dividend_per_share = float(getattr(row, "Dividends", 0.0) or 0.0)
+        if include_cash_dividends and index > 0:
+            cash, shares = _apply_dividend_cash_flow(
+                cash=cash,
+                shares=shares,
+                close_price=close_price,
+                dividend_per_share=dividend_per_share,
+                reinvest_cash_dividends=reinvest_cash_dividends,
+            )
+        equity_values.append(cash + (shares * close_price))
+    return pd.Series(equity_values, index=frame.index, dtype="float64"), float(equity_values[-1] if equity_values else initial_capital)
+
+
 def run_single_ticker_backtest(
         signal_result: StrategySignalResult,
         initial_capital: float,
         execution_mode: str = "signal_close",
         interval: str = "1d",
+        reinvest_cash_dividends: bool = False,
+        include_cash_dividends: bool = True,
 ) -> dict[str, object]:
     frame = signal_result.frame.copy()
     if frame.empty:
@@ -159,7 +203,7 @@ def run_single_ticker_backtest(
 
     trade_date_format = "%Y/%m/%d %H:%M" if interval == "1m" else "%Y/%m/%d"
     cash = float(initial_capital)
-    shares = 0
+    shares = 0.0
     entry_price = None
     equity_points: list[float] = []
     trades: list[dict[str, object]] = []
@@ -174,8 +218,18 @@ def run_single_ticker_backtest(
         trade_date = pd.Timestamp(row.Date)
         open_price = float(getattr(row, "Open", 0.0))
         close_price = float(row.Close)
+        dividend_per_share = float(getattr(row, "Dividends", 0.0) or 0.0)
         buy_signal = bool(getattr(row, buy_column))
         sell_signal = bool(getattr(row, sell_column))
+
+        if include_cash_dividends:
+            cash, shares = _apply_dividend_cash_flow(
+                cash=cash,
+                shares=shares,
+                close_price=close_price,
+                dividend_per_share=dividend_per_share,
+                reinvest_cash_dividends=reinvest_cash_dividends,
+            )
 
         # Special Case: Entry-at-Point-Zero for strategies with initial signals
         if is_first_row and (buy_signal or sell_signal) and shares == 0 and open_price > 0:
@@ -190,7 +244,7 @@ def run_single_ticker_backtest(
             else:
                 # In signal_close mode, execute immediately at the open price
                 if buy_signal:
-                    shares = floor(cash / open_price)
+                    shares = float(floor(cash / open_price))
                     if shares > 0:
                         cash -= (shares * open_price)
                         entry_price = open_price
@@ -198,7 +252,7 @@ def run_single_ticker_backtest(
                             "date": trade_date.strftime(trade_date_format),
                             "side": "Buy",
                             "price": round(open_price, 4),
-                            "shares": shares,
+                            "shares": round(shares, 6),
                             "pnl": 0.0,
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
@@ -215,7 +269,7 @@ def run_single_ticker_backtest(
 
             if pending_order == "buy" and execution_price > 0:
                 if shares == 0:  # Entry Long
-                    shares = floor(cash / execution_price)
+                    shares = float(floor(cash / execution_price))
                     if shares > 0:
                         cash -= (shares * execution_price)
                         entry_price = execution_price
@@ -223,8 +277,9 @@ def run_single_ticker_backtest(
                             "date": trade_date.strftime(trade_date_format),
                             "side": "Buy",
                             "price": round(execution_price, 4),
-                            "shares": shares,
+                            "shares": round(shares, 6),
                             "pnl": 0.0,
+                            "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
                         })
                 elif shares < 0:  # Exit Short (Cover)
@@ -236,12 +291,12 @@ def run_single_ticker_backtest(
                         "date": trade_date.strftime(trade_date_format),
                         "side": "Buy",
                         "price": round(execution_price, 4),
-                        "shares": short_shares,
+                        "shares": round(short_shares, 6),
                         "pnl": round(pnl, 4),
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
-                    shares = 0
+                    shares = 0.0
                     entry_price = None
                 pending_order = None
             elif pending_order == "sell" and execution_price > 0:
@@ -253,12 +308,12 @@ def run_single_ticker_backtest(
                         "date": trade_date.strftime(trade_date_format),
                         "side": "Sell",
                         "price": round(execution_price, 4),
-                        "shares": shares,
+                        "shares": round(shares, 6),
                         "pnl": round(pnl, 4),
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
-                    shares = 0
+                    shares = 0.0
                     entry_price = None
                 # Do NOT allow entry short in long-only mode
                 pending_order = None
@@ -266,7 +321,7 @@ def run_single_ticker_backtest(
         if normalized_execution_mode == "signal_close":
             if buy_signal and close_price > 0:
                 if shares == 0:  # Entry Long
-                    shares = floor(cash / close_price)
+                    shares = float(floor(cash / close_price))
                     if shares > 0:
                         cash -= (shares * close_price)
                         entry_price = close_price
@@ -274,7 +329,7 @@ def run_single_ticker_backtest(
                             "date": trade_date.strftime(trade_date_format),
                             "side": "Buy",
                             "price": round(close_price, 4),
-                            "shares": shares,
+                            "shares": round(shares, 6),
                             "pnl": 0.0,
                             "cash": round(cash, 4),
                             "equity": round(cash + (shares * close_price), 4),
@@ -288,12 +343,12 @@ def run_single_ticker_backtest(
                         "date": trade_date.strftime(trade_date_format),
                         "side": "Buy",
                         "price": round(close_price, 4),
-                        "shares": short_shares,
+                        "shares": round(short_shares, 6),
                         "pnl": round(pnl, 4),
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
-                    shares = 0
+                    shares = 0.0
                     entry_price = None
             elif sell_signal and close_price > 0:
                 if shares > 0:  # Exit Long (Sell)
@@ -304,12 +359,12 @@ def run_single_ticker_backtest(
                         "date": trade_date.strftime(trade_date_format),
                         "side": "Sell",
                         "price": round(close_price, 4),
-                        "shares": shares,
+                        "shares": round(shares, 6),
                         "pnl": round(pnl, 4),
                         "cash": round(cash, 4),
                         "equity": round(cash, 4),
                     })
-                    shares = 0
+                    shares = 0.0
                     entry_price = None
                 # Do NOT allow entry short in long-only mode
         else:
@@ -321,10 +376,12 @@ def run_single_ticker_backtest(
         equity_points.append(cash + (shares * close_price))
 
     frame["Equity"] = equity_points
-    first_price = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
-    bh_shares_for_series = floor(initial_capital / first_price) if first_price > 0 else 0
-    bh_cash_for_series = initial_capital - (bh_shares_for_series * first_price)
-    bh_equity_series = (bh_shares_for_series * frame["Close"]) + bh_cash_for_series
+    bh_equity_series, bh_final_equity = _build_buy_hold_equity_series(
+        frame,
+        initial_capital,
+        reinvest_cash_dividends=reinvest_cash_dividends,
+        include_cash_dividends=include_cash_dividends,
+    )
     beat_bh_mask = frame["Equity"] > bh_equity_series
     beat_bh_pct = (beat_bh_mask.sum() / len(frame)) * 100.0 if len(frame) > 0 else 0.0
     total_trades = len([trade for trade in trades if not trade.get("_virtual_close")])
@@ -338,10 +395,6 @@ def run_single_ticker_backtest(
     total_return = ((final_equity / float(initial_capital)) - 1.0) * 100.0
 
     # Advanced Metrics    # 1. Benchmark P&L (Buy and Hold at first open)
-    first_open = float(frame["Open"].iloc[0] if "Open" in frame.columns else frame["Close"].iloc[0])
-    bh_shares = floor(initial_capital / first_open) if first_open > 0 else 0
-    bh_cash = initial_capital - (bh_shares * first_open)
-    bh_final_equity = bh_cash + (bh_shares * final_close_price)
     benchmark_alpha = final_equity - bh_final_equity
 
     # 2. Strategy Component Gains
@@ -394,6 +447,7 @@ def run_single_ticker_backtest(
             "low": [round(float(getattr(row, "Low", row.Close)), 4) for row in frame.itertuples(index=False)],
             "close": [round(float(value), 4) for value in frame["Close"].tolist()],
             "equity": [round(float(value), 4) for value in frame["Equity"].tolist()],
+            "all_in_equity": [round(float(value), 4) for value in bh_equity_series.tolist()],
             "buy_markers": buy_markers,
             "sell_markers": sell_markers,
         },

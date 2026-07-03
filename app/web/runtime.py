@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.11
+Code version: v0.4.13
 """
 
 from __future__ import annotations
@@ -801,10 +801,11 @@ def build_web_runtime() -> WebRuntime:
             request.args.get("from", ""),
             request.args.get("to", ""),
             request.args.get("interval", ""),
+            str(request.args.get("price_only", "")),
             str(request.args.get("dividends", "")),
             # Include all strategy parameters in cache key
             sorted([(k, request.args.get(k, "")) for k in request.args.keys() if k not in {
-                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "dividends",
+                "ticker", "strategy", "capital", "period", "range", "from", "to", "interval", "price_only", "dividends",
                 "view", "section", "view", "tickers", "weight",
             }]),
             {
@@ -965,6 +966,11 @@ def build_web_runtime() -> WebRuntime:
                 return values[-1] == "1"
         return default
 
+    def resolve_workspace_dividend_mode(price_only: bool, reinvest_cash_dividends: bool) -> str:
+        if price_only:
+            return "price"
+        return "reinvest" if reinvest_cash_dividends else "cash"
+
     def parse_range_request_args() -> tuple[str, str, str, str]:
         range_mode = request.args.get(
             "range",
@@ -1098,13 +1104,15 @@ def build_web_runtime() -> WebRuntime:
     def build_benchmark_series_payloads(
             reference_dates: pd.Series,
             include_dividends: bool,
+            price_only: bool,
     ) -> tuple[list[SeriesPayload], list[QuoteProfile]]:
         benchmark_series: list[SeriesPayload] = []
         benchmark_profiles: list[QuoteProfile] = []
         reference_date_frame = pd.DataFrame({"Date": reference_dates})
+        dividend_mode = resolve_workspace_dividend_mode(price_only, include_dividends)
         for ticker in PORTFOLIO_BENCHMARK_TICKERS:
             try:
-                dataset = fetch_history(ticker, include_dividends)
+                dataset = fetch_history(ticker, include_dividends, dividend_mode=dividend_mode)
             except (ImportError, OSError, ValueError, KeyError, TypeError):
                 continue
             aligned = pd.merge(
@@ -1208,7 +1216,8 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError("No ticker selected for backtest.")
         trade_ticker = validate_ticker_or_raise(requested_tickers[0])
         backtest_cache_refresh = ensure_latest_backtest_caches(trade_ticker)
-        include_dividends = parse_bool_flag("dividends", "include_dividends")
+        price_only = parse_bool_flag("price_only", "price_return_only")
+        include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         supported_intervals = list_available_market_intervals(trade_ticker)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
@@ -1216,7 +1225,12 @@ def build_web_runtime() -> WebRuntime:
             requested_interval = "1m"
         if requested_interval not in supported_intervals:
             requested_interval = supported_intervals[0]
-        trade_dataset = fetch_history(trade_ticker, include_dividends, interval=requested_interval)
+        trade_dataset = fetch_history(
+            trade_ticker,
+            False,
+            interval=requested_interval,
+            dividend_mode="price",
+        )
 
         if requested_interval == "1m":
             six_months_ago = one_minute_lookback_start().tz_localize(None)
@@ -1262,6 +1276,8 @@ def build_web_runtime() -> WebRuntime:
             backtest_initial_capital,
             execution_mode=backtest_execution_mode,
             interval=requested_interval,
+            reinvest_cash_dividends=include_dividends,
+            include_cash_dividends=not price_only,
         )
         return (
             backtest_result,
@@ -2568,6 +2584,10 @@ def build_web_runtime() -> WebRuntime:
         if dividends_value:
             pairs.append(("dividends", dividends_value))
 
+        price_only_value = request.args.get("price_only", request.args.get("price_return_only", "")).strip()
+        if price_only_value:
+            pairs.append(("price_only", price_only_value))
+
         strategy_value = request.args.get("strategy", "").strip()
         if strategy_value:
             pairs.append(("strategy", strategy_value))
@@ -2611,6 +2631,8 @@ def build_web_runtime() -> WebRuntime:
             "exact_end",
             "dividends",
             "include_dividends",
+            "price_only",
+            "price_return_only",
             "strategy",
             "capital",
             "initial_capital",
@@ -2780,33 +2802,34 @@ def build_web_runtime() -> WebRuntime:
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
         requested_tickers = parse_requested_tickers()
         range_mode, period, exact_start, exact_end = parse_range_request_args()
-        include_dividends = parse_bool_flag("dividends", "include_dividends")
+        price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
+        include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
 
         if current_view == "tickers" and not requested_tickers:
             requested_tickers = [
                 normalize_ticker_input(defaults.get("ticker_a", DEFAULT_TICKERS[0])),
                 normalize_ticker_input(defaults.get("ticker_b", DEFAULT_TICKERS[1])),
             ]
-            include_dividends = True
+            include_dividends = False
         elif current_view == "portfolio" and not requested_tickers:
             requested_tickers = [
                                     normalize_ticker_input(value)
                                     for value in defaults.get("portfolio_tickers", ["NVDA", "AAPL", "QQQ"])
                                     if normalize_ticker_input(value)
                                 ][:MAX_TICKERS]
-            include_dividends = True
+            include_dividends = False
         elif current_view == "backtest" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
                 defaults.get("backtest_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
             )
             requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
-            include_dividends = bool(defaults.get("backtest_include_dividends", True))
+            include_dividends = False if price_only else bool(defaults.get("backtest_include_dividends", False))
         elif current_view == "dca" and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
                 defaults.get("dca_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
             )
             requested_tickers = [default_trade_ticker] if default_trade_ticker else [DEFAULT_TICKERS[0]]
-            include_dividends = bool(defaults.get("dca_include_dividends", True))
+            include_dividends = False if price_only else bool(defaults.get("dca_include_dividends", False))
 
         settings_feedback = _read_settings_feedback() if current_view == "settings" else {}
         error = (
@@ -3012,7 +3035,11 @@ def build_web_runtime() -> WebRuntime:
         if period not in supported_periods:
             period = supported_periods[0] if supported_periods else DEFAULT_PERIOD
 
-        def handle_fetch_history_failure(ticker: str, include_dividends_flag: bool) -> pd.DataFrame:
+        def handle_fetch_history_failure(
+                ticker: str,
+                include_dividends_flag: bool,
+                dividend_mode: str | None = None,
+        ) -> pd.DataFrame:
             """
             If fetching fails because remote data cannot be retrieved, try to load whatever local data exists.
             If any local parquet exists, even if incomplete, return it instead of raising immediately.
@@ -3020,7 +3047,11 @@ def build_web_runtime() -> WebRuntime:
             path = history_store_path_for(ticker)
             if path.exists():
                 try:
-                    return select_price_series(pd.read_parquet(path), include_dividends_flag)
+                    return select_price_series(
+                        pd.read_parquet(path),
+                        include_dividends_flag,
+                        dividend_mode=dividend_mode,
+                    )
                 except (ImportError, OSError, ValueError, KeyError, TypeError):
                     pass
             raise ValueError(f"No market data returned for {ticker}.")
@@ -3117,9 +3148,9 @@ def build_web_runtime() -> WebRuntime:
                     raise ValueError("No ticker selected for recurring investment.")
 
                 try:
-                    dca_dataset = fetch_history(dca_ticker, include_dividends)
+                    dca_dataset = fetch_history(dca_ticker, False, dividend_mode="price")
                 except ValueError:
-                    dca_dataset = handle_fetch_history_failure(dca_ticker, include_dividends)
+                    dca_dataset = handle_fetch_history_failure(dca_ticker, False, dividend_mode="price")
 
                 date_constraints = build_date_constraint_payload(
                     dca_dataset,
@@ -3159,6 +3190,8 @@ def build_web_runtime() -> WebRuntime:
                     frequency=dca_frequency,
                     weekday=dca_weekday,
                     month_day=dca_month_day,
+                    reinvest_cash_dividends=include_dividends,
+                    include_cash_dividends=not price_only,
                 )
                 profiles = [fetch_quote_profile(dca_ticker, False)]
                 ticker_slots = [dca_ticker]
@@ -3233,13 +3266,14 @@ def build_web_runtime() -> WebRuntime:
                         datasets: list[pd.DataFrame] = []
                         failed_fetches: list[str] = []
                         completely_missing: list[str] = []
+                        dividend_mode = resolve_workspace_dividend_mode(price_only, include_dividends)
                         for ticker in validated_tickers:
                             try:
-                                datasets.append(fetch_history(ticker, include_dividends))
+                                datasets.append(fetch_history(ticker, include_dividends, dividend_mode=dividend_mode))
                             except ValueError as fetch_exc:
                                 if "No market data returned" in str(fetch_exc) or "Local market data for" in str(fetch_exc):
                                     try:
-                                        dataset = handle_fetch_history_failure(ticker, include_dividends)
+                                        dataset = handle_fetch_history_failure(ticker, include_dividends, dividend_mode=dividend_mode)
                                         datasets.append(dataset)
                                         failed_fetches.append(ticker)
                                     except ValueError:
@@ -3263,7 +3297,7 @@ def build_web_runtime() -> WebRuntime:
                                 validated_tickers[idx] = replacement
                                 # Fetch dataset for replacement
                                 try:
-                                    dataset = fetch_history(replacement, include_dividends)
+                                    dataset = fetch_history(replacement, include_dividends, dividend_mode=dividend_mode)
                                     # Remove the placeholder None we appended when skipping
                                     if len(datasets) > idx:
                                         datasets.pop(idx)
@@ -3384,6 +3418,7 @@ def build_web_runtime() -> WebRuntime:
                             benchmark_series, benchmark_profiles = build_benchmark_series_payloads(
                                 aligned_datasets[0]["Date"],
                                 include_dividends,
+                                price_only,
                             )
                             series = [portfolio_series, *benchmark_series]
                             profiles = [*profiles, *benchmark_profiles]
@@ -3551,6 +3586,7 @@ def build_web_runtime() -> WebRuntime:
             max_tickers=MAX_TICKERS,
             min_tickers=MIN_TICKERS,
             include_dividends=include_dividends,
+            price_only=price_only,
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,
@@ -4527,13 +4563,18 @@ def build_web_runtime() -> WebRuntime:
         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
         if len(set(validated_tickers)) != len(validated_tickers):
             return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))
-        include_dividends_flag = request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+        price_only_flag = request.args.get("price_only", request.args.get("price_return_only", "0")) == "1"
+        include_dividends_flag = False if price_only_flag else request.args.get("dividends", request.args.get("include_dividends", "0")) == "1"
+        dividend_mode = resolve_workspace_dividend_mode(price_only_flag, include_dividends_flag)
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
         freshness_refresh_failures: list[str] = []
         if requested_view in {"tickers", "portfolio", "dca"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
-        datasets = [fetch_history(ticker, include_dividends_flag) for ticker in validated_tickers]
+        datasets = [
+            fetch_history(ticker, include_dividends_flag, dividend_mode=dividend_mode)
+            for ticker in validated_tickers
+        ]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
         if freshness_refresh_failures:
             failed_preview = ", ".join(freshness_refresh_failures)

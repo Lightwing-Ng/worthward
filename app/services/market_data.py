@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.4
+Code version: v0.4.5
 """
 
 from __future__ import annotations
@@ -117,6 +117,7 @@ def _download_daily_history_with_yfinance(
                 end=end,
                 period=period,
                 interval=interval,
+                actions=normalize_market_interval(interval) == "1d",
                 auto_adjust=False,
                 prepost=prepost,
                 progress=False,
@@ -577,7 +578,7 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
         history = history.rename(columns={"Datetime": "Date"})
 
     required_columns = ["Date", "Close"]
-    ohlc_columns = ["Open", "High", "Low", "Adj Close"]
+    ohlc_columns = ["Open", "High", "Low", "Adj Close", "Dividends"]
     missing_required = [column for column in required_columns if column not in history.columns]
     if missing_required:
         raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_required)}.")
@@ -596,17 +597,54 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
     subset_for_drop = ["Date", "Close"]
     if "Adj Close" in dataset.columns:
         subset_for_drop.append("Adj Close")
+    if "Dividends" in dataset.columns:
+        dataset["Dividends"] = dataset["Dividends"].fillna(0.0)
     dataset = dataset.dropna(subset=subset_for_drop).sort_values("Date").reset_index(drop=True)
     return _apply_inferred_split_adjustments(dataset)
 
 
-def select_price_series(dataset: pd.DataFrame, include_dividends: bool) -> pd.DataFrame:
-    price_column = "Adj Close" if include_dividends and "Adj Close" in dataset.columns else "Close"
-    cols = ["Date", "Open", "High", "Low", price_column]
+def _build_cash_dividend_close_series(dataset: pd.DataFrame) -> pd.Series:
+    close = pd.to_numeric(dataset["Close"], errors="coerce").astype("float64")
+    if "Dividends" not in dataset.columns:
+        return close
+    dividends = pd.to_numeric(dataset["Dividends"], errors="coerce").fillna(0.0).astype("float64")
+    cumulative_cash = dividends.copy()
+    if not cumulative_cash.empty:
+        cumulative_cash.iloc[0] = 0.0
+    cumulative_cash = cumulative_cash.cumsum()
+    return close + cumulative_cash
+
+
+def _build_reinvested_dividend_close_series(dataset: pd.DataFrame) -> pd.Series:
+    close = pd.to_numeric(dataset["Close"], errors="coerce").astype("float64")
+    if "Dividends" not in dataset.columns or not (pd.to_numeric(dataset["Dividends"], errors="coerce").fillna(0.0) > 0).any():
+        return pd.to_numeric(dataset["Adj Close"], errors="coerce").astype("float64") if "Adj Close" in dataset.columns else close
+
+    dividends = pd.to_numeric(dataset["Dividends"], errors="coerce").fillna(0.0).astype("float64")
+    shares = 1.0
+    values: list[float] = []
+    for index, close_price in enumerate(close.tolist()):
+        dividend_per_share = float(dividends.iloc[index])
+        if index > 0 and dividend_per_share > 0 and close_price > 0:
+            shares += (shares * dividend_per_share) / close_price
+        values.append(shares * close_price)
+    return pd.Series(values, index=dataset.index, dtype="float64")
+
+
+def select_price_series(
+        dataset: pd.DataFrame,
+        include_dividends: bool,
+        dividend_mode: str | None = None,
+) -> pd.DataFrame:
+    normalized_dividend_mode = str(dividend_mode or ("reinvest" if include_dividends else "cash")).strip().lower()
+    price_column = "Close"
+    cols = ["Date", "Open", "High", "Low", price_column, "Dividends"]
     available_cols = [c for c in cols if c in dataset.columns]
     result = dataset[available_cols].copy()
-    if price_column != "Close":
-        result = result.rename(columns={price_column: "Close"})
+    if normalized_dividend_mode == "reinvest":
+        result["Close"] = _build_reinvested_dividend_close_series(dataset)
+    elif normalized_dividend_mode == "cash":
+        result["Close"] = _build_cash_dividend_close_series(dataset)
     return result
 
 
@@ -636,12 +674,14 @@ def fetch_history(
         ticker: str,
         include_dividends: bool,
         interval: str = "1d",
+        dividend_mode: str | None = None,
 ) -> pd.DataFrame:
     normalized_ticker = normalize_ticker(ticker)
     normalized_interval = normalize_market_interval(interval)
     ensure_market_store_dir()
     path = history_store_path_for_interval(normalized_ticker, normalized_interval)
     if path.exists():
+        should_refresh_for_dividends = False
         with market_store_file_lock(path):
             dataset = pd.read_parquet(path)
             if is_intraday_market_interval(normalized_interval):
@@ -650,8 +690,16 @@ def fetch_history(
                     write_parquet_atomic(path, normalized_intraday, index=False)
                 dataset = normalized_intraday
             else:
+                should_refresh_for_dividends = "Dividends" not in dataset.columns
                 dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
-        return select_price_series(dataset, include_dividends)
+        if should_refresh_for_dividends:
+            try:
+                refresh_history_store(normalized_ticker, force_full=True)
+                with market_store_file_lock(path):
+                    dataset = normalize_history_frame(pd.read_parquet(path), normalized_ticker, interval=normalized_interval)
+            except Exception as exc:
+                LOGGER.warning("Unable to refresh dividend actions for %s at %s: %s", normalized_ticker, path, exc)
+        return select_price_series(dataset, include_dividends, dividend_mode=dividend_mode)
 
     if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
         raise ValueError(
@@ -663,10 +711,10 @@ def fetch_history(
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     with market_store_file_lock(path):
         write_parquet_atomic(path, normalized_dataset, index=False)
-    return select_price_series(normalized_dataset, include_dividends)
+    return select_price_series(normalized_dataset, include_dividends, dividend_mode=dividend_mode)
 
 
-def refresh_history_store(ticker: str) -> Path:
+def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
     normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
 
@@ -675,7 +723,7 @@ def refresh_history_store(ticker: str) -> Path:
     start_date = None
     existing_df = None
     with market_store_file_lock(path):
-        if path.exists():
+        if path.exists() and not force_full:
             try:
                 existing_df = normalize_history_frame(pd.read_parquet(path), normalized_ticker)
                 if not existing_df.empty:

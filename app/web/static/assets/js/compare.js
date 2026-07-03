@@ -1,4 +1,4 @@
-/* Code version: v0.4.1 */
+/* Code version: v0.4.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -106,7 +106,7 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "dividends", "include_dividends"];
+		const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "price_only", "price_return_only", "dividends", "include_dividends"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
 			const next = (nextParams.get(key) || "").toString().trim();

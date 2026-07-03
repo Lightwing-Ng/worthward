@@ -1,7 +1,7 @@
 """
 Recurring investment simulator.
 
-Code version: v0.1.4
+Code version: v0.1.6
 """
 
 from __future__ import annotations
@@ -117,10 +117,15 @@ def simulate_recurring_investment(
     frequency: str,
     weekday: int,
     month_day: int,
+    reinvest_cash_dividends: bool = False,
+    include_cash_dividends: bool = True,
 ) -> dict[str, object]:
     if target_dataset.empty:
         raise ValueError(f"No market data available for {ticker}.")
-    merged = target_dataset[["Date", "Close"]].copy().sort_values("Date")
+    columns = ["Date", "Close"]
+    if "Dividends" in target_dataset.columns:
+        columns.append("Dividends")
+    merged = target_dataset[columns].copy().sort_values("Date")
 
     periodic_amount = max(float(amount_per_period), 1.0)
     normalized_frequency = _normalize_frequency(frequency)
@@ -141,7 +146,9 @@ def simulate_recurring_investment(
     total_planned_amount = periodic_amount * len(schedule_dates)
     first_bar_price = float(merged["Close"].iloc[0]) if not merged.empty else 0.0
     all_in_shares = (total_planned_amount / first_bar_price) if first_bar_price > 0 else 0.0
+    all_in_dividend_cash = 0.0
     target_shares = 0.0
+    target_dividend_cash = 0.0
     total_invested = 0.0
     target_equity_series: list[float] = []
     all_in_equity_series: list[float | None] = []
@@ -153,13 +160,24 @@ def simulate_recurring_investment(
         event_count = int(schedule_counter.get(trade_date, 0))
         contribution_amount = periodic_amount * event_count
         target_close = float(row.Close)
+        dividend_per_share = float(getattr(row, "Dividends", 0.0) or 0.0)
+
+        if include_cash_dividends and dividend_per_share > 0 and target_close > 0:
+            target_dividend_amount = target_shares * dividend_per_share
+            all_in_dividend_amount = all_in_shares * dividend_per_share
+            if reinvest_cash_dividends:
+                target_shares += target_dividend_amount / target_close
+                all_in_shares += all_in_dividend_amount / target_close
+            else:
+                target_dividend_cash += target_dividend_amount
+                all_in_dividend_cash += all_in_dividend_amount
 
         if event_count > 0 and target_close > 0:
             target_buy_shares = contribution_amount / target_close
             target_shares += target_buy_shares
             total_invested += contribution_amount
             remaining_cash = max(total_planned_amount - total_invested, 0.0)
-            target_equity_after_buy = (target_shares * target_close) + remaining_cash
+            target_equity_after_buy = (target_shares * target_close) + remaining_cash + target_dividend_cash
             trades.append({
                 "date": _format_trade_date(trade_date),
                 "raw_date": trade_date.strftime("%Y-%m-%d"),
@@ -174,8 +192,8 @@ def simulate_recurring_investment(
             })
 
         remaining_cash = max(total_planned_amount - total_invested, 0.0)
-        target_equity = (target_shares * target_close) + remaining_cash
-        all_in_equity = (all_in_shares * target_close) if all_in_shares > 0 else 0.0
+        target_equity = (target_shares * target_close) + remaining_cash + target_dividend_cash
+        all_in_equity = ((all_in_shares * target_close) + all_in_dividend_cash) if all_in_shares > 0 else 0.0
         target_equity_series.append(round(target_equity, 4))
         all_in_equity_series.append(round(all_in_equity, 4))
         contribution_markers.append(event_count > 0)

@@ -13,7 +13,7 @@
             </div>
             <div class="report-info-row">
                 <dt>{{ labels.return_mode }}</dt>
-                <dd>{% if include_dividends %}{{ labels.return_mode_total }}{% else %}{{ labels.return_mode_price }}{% endif %}</dd>
+                <dd>{% if price_only %}{{ labels.return_mode_price }}{% elif include_dividends %}{{ labels.return_mode_reinvest }}{% else %}{{ labels.return_mode_total }}{% endif %}</dd>
             </div>
         </dl>
     </div>

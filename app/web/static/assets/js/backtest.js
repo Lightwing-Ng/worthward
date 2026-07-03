@@ -1,4 +1,4 @@
-/* Code version: v0.3.8 */
+/* Code version: v0.3.9 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -269,10 +269,9 @@
 			}, { buy: [], sell: [] });
 		};
 		const tradeMarkerPoints = buildTradeMarkerPoints(backtestResult.trades, rawDates, interval);
-		const firstOpen = open.length > 0 ? open[0] : (close.length > 0 ? close[0] : 0);
-		const allInShares = firstOpen > 0 ? Math.floor(initialCapital / firstOpen) : 0;
-		const allInCash = initialCapital - (allInShares * firstOpen);
-		const allInEquity = close.map((value) => Number((allInCash + (allInShares * value)).toFixed(4)));
+		const allInEquity = Array.isArray(backtestResult.chart?.all_in_equity) && backtestResult.chart.all_in_equity.length
+			? backtestResult.chart.all_in_equity.map((value) => Number(value || 0))
+			: buildAllInSeries(close, initialCapital);
 
 		const axisLineColor = resolvedTheme.muted;
 		const fixedYAxisWidth = 52;

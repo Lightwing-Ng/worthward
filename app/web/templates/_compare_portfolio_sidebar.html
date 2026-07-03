@@ -65,10 +65,19 @@
     </div>
     {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact-mobile", true) }}
     <div class="field-checkbox field-switch">
+        <label class="switch-row" for="price_only">
+            <span class="switch-label">{{ labels.price_only }}</span>
+            <span class="ios-switch-shell">
+                <input id="price_only" name="price_only" type="checkbox" value="1" {% if price_only %}checked{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
         <label class="switch-row" for="include_dividends">
             <span class="switch-label">{{ labels.include_dividends }}</span>
             <span class="ios-switch-shell">
-                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends %}checked{% endif %}>
+                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends and not price_only %}checked{% endif %}>
                 <span class="ios-switch-slider" aria-hidden="true"></span>
             </span>
         </label>

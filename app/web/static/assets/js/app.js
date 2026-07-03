@@ -1,4 +1,4 @@
-/* Code version: v0.5.8 */
+/* Code version: v0.5.9 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -653,7 +653,7 @@
         const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
         if (currentTickers !== nextTickers) return true;
 
-        const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "dividends", "include_dividends"];
+        const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "price_only", "price_return_only", "dividends", "include_dividends"];
         for (const key of xAxisKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -3321,12 +3321,23 @@
     const rangeModeInputs = $$("input[name='range']");
     const exactStartInput = $("#exact_start");
     const exactEndInput = $("#exact_end");
+    const priceOnlyInput = $("#price_only");
     const includeDividendsInput = $("#include_dividends");
+    const dividendReinvestField = $("[data-dividend-reinvest-field]");
     const tradeCapitalField = $(".trade-capital-field");
     const tradeCapitalInput = $("#trade_initial_capital");
     const tradeCapitalSlider = $("#trade_initial_capital_slider");
     const getSharedSelectFields = () => Array.from(document.querySelectorAll("[data-shared-select-field]"))
         .filter((field) => field instanceof HTMLElement);
+
+    const syncDividendModeSwitches = () => {
+        if (!priceOnlyInput || !includeDividendsInput) return;
+        const isPriceOnly = priceOnlyInput.checked;
+        if (isPriceOnly) includeDividendsInput.checked = false;
+        if (dividendReinvestField instanceof HTMLElement) {
+            dividendReinvestField.hidden = isPriceOnly;
+        }
+    };
 
     const getSharedSelectParts = (field) => {
         if (!(field instanceof HTMLElement)) return null;
@@ -4652,7 +4663,11 @@
             if (periodValue) params.set("period", periodValue);
         }
 
-        if (includeDividendsInput?.checked) params.set("dividends", "1");
+        if (priceOnlyInput?.checked) {
+            params.set("price_only", "1");
+        } else if (includeDividendsInput?.checked) {
+            params.set("dividends", "1");
+        }
 
         if (isPortfolioView) {
             const allocationMode = getPortfolioAllocationMode();
@@ -4779,7 +4794,11 @@
         const tickers = getFilledTickers();
         if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
         const params = new URLSearchParams({view: state.currentView});
-        if (includeDividendsInput?.checked) params.set("dividends", "1");
+        if (priceOnlyInput?.checked) {
+            params.set("price_only", "1");
+        } else if (includeDividendsInput?.checked) {
+            params.set("dividends", "1");
+        }
         if (exactStartInput.value) params.set("from", exactStartInput.value);
         if (exactEndInput.value) params.set("to", exactEndInput.value);
         tickers.forEach((ticker) => params.append("ticker", ticker));
@@ -4883,6 +4902,14 @@
     if (includeDividendsInput && form) {
         includeDividendsInput.addEventListener("change", () => {
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("dividends");
+            scheduleAutoSubmit(80);
+        });
+    }
+    if (priceOnlyInput && form) {
+        syncDividendModeSwitches();
+        priceOnlyInput.addEventListener("change", () => {
+            syncDividendModeSwitches();
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("price-only");
             scheduleAutoSubmit(80);
         });
     }
