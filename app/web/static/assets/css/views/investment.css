@@ -1,4 +1,4 @@
-/* Code version: v1.16.7 */
+/* Code version: v1.16.8 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2849,7 +2849,7 @@
         --investment-holdings-summary-cell-separator: var(--glass-surface-border);
         --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
         --investment-holdings-row-background-alt: color-mix(in srgb, var(--theme-background) 78%, var(--color-white-adaptive) 22%);
-        --investment-holdings-row-blur: var(--glass-mask-blur);
+        --investment-holdings-row-blur: none;
     }
 }
 
@@ -2862,7 +2862,7 @@
     --investment-holdings-summary-cell-separator: var(--glass-surface-border);
     --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
     --investment-holdings-row-background-alt: color-mix(in srgb, var(--theme-background) 78%, var(--color-white-adaptive) 22%);
-    --investment-holdings-row-blur: var(--glass-mask-blur);
+    --investment-holdings-row-blur: none;
 }
 
 .investment-history-surface {
