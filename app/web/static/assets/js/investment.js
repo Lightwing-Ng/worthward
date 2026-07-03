@@ -1,7 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.15
+ * Code version: v1.61.22
+ * - Fixed: Investment history highlight cleanup now ignores empty cloned-row ids so post-import refresh cannot call querySelector("#").
+ * - Fixed: Transaction history pagination now scopes history scroll and body lookups to the Transaction history surface so Stock details history tables cannot intercept updates.
+ * - Fixed: Investment history pagination pointer handling now accepts browser pointerup events with neutral button codes, so coordinate mouse/touch clicks activate page buttons.
+ * - Fixed: Investment history pagination binding now runs before heavier Investment view setup so page buttons remain interactive even if later initialization work is delayed.
+ * - Fixed: Investment history pagination now handles pointer release directly as well as keyboard click, making page buttons respond reliably to real mouse and touch input.
+ * - Fixed: Investment history pagination now preserves the shared Local store pagination bouncy indicator transition when changing pages.
+ * - Fixed: Transaction history pagination now updates the real scroll table instead of the frosted underlay clone, and underlay table clones no longer duplicate DOM ids.
  * - Fixed: Scrollable investment overlay column syncing now preserves fractional body widths so per-column rounding cannot expand the fixed table past the shell.
  * - Fixed: Scrollable investment overlay tables now sync fixed cell border-box widths from body rows and assign the scrollbar track only to the final fixed cell.
  * - Fixed: Scrollable investment overlay tables now keep full-shell Frosted glass material while assigning the scrollbar track to the final fixed column only.
@@ -713,6 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentHistoryTableAlignmentCleanup = null;
     let investmentStockDetailsTableAlignmentCleanup = null;
     let investmentHistoryCurrentPage = 1;
+    let investmentHistoryPendingPaginationAnimation = null;
     let investmentBrokerFilterSelectedCodes = new Set();
     let investmentBrokerFilterDocumentListenersBound = false;
     let investmentBrokerFilterApplyRaf = 0;
@@ -6789,6 +6797,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ].filter(Boolean).join(' ');
         underlay.setAttribute('aria-hidden', 'true');
         const underlayTable = bodyTable.cloneNode(true);
+        underlayTable.querySelectorAll('[id]').forEach((node) => {
+            node.removeAttribute('id');
+        });
+        underlayTable.removeAttribute('id');
         underlayTable.classList.add('scrollable-data-table-frosted-underlay-table');
         if (underlayTableClassName) {
             underlayTable.classList.add(underlayTableClassName);
@@ -7669,15 +7681,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentHistoryScrollContainer() {
-        return bindInvestmentScrollIntent(document.querySelector('.investment-history-table-scroll'), 'history');
+        return bindInvestmentScrollIntent(
+            investmentHistorySurface?.querySelector('.investment-history-table-scroll'),
+            'history',
+        );
+    }
+
+    function getInvestmentHistoryTableBody() {
+        return investmentHistorySurface?.querySelector('.investment-history-table-scroll #investment_history');
     }
 
     function getInvestmentHistoryRowsByLedgerNos(ledgerNos) {
+        const scrollContainer = getInvestmentHistoryScrollContainer();
         return Array.from(new Set((Array.isArray(ledgerNos) ? ledgerNos : [])
             .map((ledgerNo) => Number(ledgerNo))
             .filter((ledgerNo) => Number.isFinite(ledgerNo) && ledgerNo > 0)))
-            .map((ledgerNo) => document.getElementById(`investment_history_row_${ledgerNo}`))
+            .map((ledgerNo) => {
+                const selector = `tr[data-investment-history-row="${CSS.escape(String(ledgerNo))}"]`;
+                return scrollContainer?.querySelector(selector) || document.querySelector(selector);
+            })
             .filter(Boolean);
+    }
+
+    function getInvestmentHistoryRowById(rowId) {
+        const normalizedRowId = String(rowId || '').trim();
+        if (!normalizedRowId) return null;
+        return getInvestmentHistoryScrollContainer()?.querySelector(`#${CSS.escape(normalizedRowId)}`)
+            || document.getElementById(normalizedRowId);
     }
 
     function getInvestmentStockDetailsScrollContainer() {
@@ -7694,7 +7724,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function clearInvestmentHistoryHighlights() {
         activeInvestmentHistoryRowIds.forEach((rowId) => {
-            const row = document.getElementById(rowId);
+            const row = getInvestmentHistoryRowById(rowId);
             if (!row) return;
             row.classList.remove('is-metric-hover-active');
             row.classList.remove('is-metric-hover-target');
@@ -7789,7 +7819,9 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.add('is-metric-hover-target');
             row.classList.add('is-metric-hover-active');
         });
-        activeInvestmentHistoryRowIds = resolvedRows.map((row) => row.id);
+        activeInvestmentHistoryRowIds = resolvedRows
+            .map((row) => String(row.id || '').trim())
+            .filter(Boolean);
         if (scroll) {
             scrollInvestmentHistoryRowsIntoView(resolvedRows, behavior);
         }
@@ -8331,10 +8363,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return { data, valuationStatus };
     }
 
+    bindInvestmentHistoryPagination();
     initInvestmentViewTabs();
     initInvestmentDummyDonut();
     mountInvestmentBrokerFilterHeaders();
-    bindInvestmentHistoryPagination();
     bindInvestmentExportButton();
     syncInvestmentImportMode();
     syncHsbcPasteDisplaySummaries();
@@ -10377,8 +10409,85 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getInvestmentHistoryPaginationButtonRect(button) {
+        if (!(investmentHistoryPagination instanceof HTMLElement) || !(button instanceof HTMLElement)) return null;
+        const navRect = investmentHistoryPagination.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        return {
+            x: buttonRect.left - navRect.left,
+            y: buttonRect.top - navRect.top,
+            width: buttonRect.width,
+            height: buttonRect.height,
+        };
+    }
+
+    function captureInvestmentHistoryPaginationAnimation(targetPage) {
+        if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) return null;
+        const current = investmentHistoryPagination.querySelector('.local-store-page-button.is-active')
+            || investmentHistoryPagination.querySelector('.local-store-page-button[data-pagination-current="1"]');
+        const fromRect = getInvestmentHistoryPaginationButtonRect(current);
+        if (!fromRect) return null;
+        return {
+            fromRect,
+            targetPage: Number(targetPage),
+        };
+    }
+
+    function getInvestmentHistoryPaginationMotionDurationMs() {
+        if (!(investmentHistoryPagination instanceof HTMLElement)) return 500;
+        const styles = window.getComputedStyle(investmentHistoryPagination);
+        const rawDuration = styles.getPropertyValue('--local-store-pagination-motion-duration').trim();
+        const parsedDuration = Number.parseFloat(rawDuration);
+        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) return 500;
+        return rawDuration.endsWith('ms') ? parsedDuration : parsedDuration * 1000;
+    }
+
+    function animateInvestmentHistoryPaginationIndicator(animationState) {
+        if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) {
+            positionInvestmentHistoryPaginationIndicator({ immediate: true });
+            return;
+        }
+        const fromRect = animationState?.fromRect;
+        const targetPage = Number(animationState?.targetPage);
+        const target = Number.isFinite(targetPage)
+            ? investmentHistoryPagination.querySelector(
+                `.local-store-page-button[data-investment-history-page-target="${CSS.escape(String(targetPage))}"]:not(.local-store-page-nav)`
+            )
+            : investmentHistoryPagination.querySelector('.local-store-page-button.is-active');
+        if (!(target instanceof HTMLElement) || !fromRect) {
+            positionInvestmentHistoryPaginationIndicator({ immediate: true });
+            return;
+        }
+        const indicator = ensureInvestmentHistoryPaginationIndicator(investmentHistoryPagination);
+        if (!(indicator instanceof HTMLElement)) return;
+        investmentHistoryPagination.classList.add('is-animated', 'is-animating');
+        indicator.style.transition = 'none';
+        indicator.style.width = `${fromRect.width}px`;
+        indicator.style.height = `${fromRect.height}px`;
+        indicator.style.transform = `translate3d(${fromRect.x}px, ${fromRect.y}px, 0)`;
+        void indicator.offsetWidth;
+        indicator.style.removeProperty('transition');
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                const targetRect = getInvestmentHistoryPaginationButtonRect(target);
+                if (!targetRect) {
+                    positionInvestmentHistoryPaginationIndicator({ immediate: true });
+                    return;
+                }
+                indicator.style.width = `${targetRect.width}px`;
+                indicator.style.height = `${targetRect.height}px`;
+                indicator.style.transform = `translate3d(${targetRect.x}px, ${targetRect.y}px, 0)`;
+            });
+        });
+        window.setTimeout(() => {
+            investmentHistoryPagination?.classList.remove('is-animating');
+        }, getInvestmentHistoryPaginationMotionDurationMs());
+    }
+
     function renderInvestmentHistoryPagination(totalRows = 0) {
         if (!(investmentHistoryPagination instanceof HTMLElement)) return;
+        const pendingAnimation = investmentHistoryPendingPaginationAnimation;
+        investmentHistoryPendingPaginationAnimation = null;
         const totalPages = getInvestmentHistoryTotalPages(totalRows);
         if (totalRows <= INVESTMENT_HISTORY_PAGE_SIZE) {
             investmentHistoryPagination.hidden = true;
@@ -10405,6 +10514,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>'}
         `;
         window.requestAnimationFrame(() => {
+            if (pendingAnimation) {
+                animateInvestmentHistoryPaginationIndicator(pendingAnimation);
+                return;
+            }
             positionInvestmentHistoryPaginationIndicator({ immediate: true });
         });
     }
@@ -10429,21 +10542,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function bindInvestmentHistoryPagination() {
         if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.dataset.bound === '1') return;
         investmentHistoryPagination.dataset.bound = '1';
-        investmentHistoryPagination.addEventListener('click', (event) => {
-            const button = event.target.closest('[data-investment-history-page-target]');
-            if (!(button instanceof HTMLButtonElement)) return;
+        const handleInvestmentHistoryPaginationActivation = (event) => {
+            const button = event.target instanceof Element
+                ? event.target.closest('[data-investment-history-page-target]')
+                : null;
+            if (!(button instanceof HTMLElement)) return;
+            if (button.matches(':disabled') || button.getAttribute('aria-disabled') === 'true') return;
             const targetPage = Number(button.dataset.investmentHistoryPageTarget || 0);
             if (!Number.isFinite(targetPage) || targetPage <= 0 || targetPage === investmentHistoryCurrentPage) return;
+            event.preventDefault();
+            investmentHistoryPendingPaginationAnimation = captureInvestmentHistoryPaginationAnimation(targetPage);
             investmentHistoryCurrentPage = targetPage;
             renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, investmentChartPointsCache, { scrollToTop: true });
-        });
+        };
+        investmentHistoryPagination.addEventListener('click', handleInvestmentHistoryPaginationActivation);
         window.addEventListener('resize', () => {
             positionInvestmentHistoryPaginationIndicator({ immediate: true });
         });
     }
 
     function renderInvestmentHistoryTableRows(processedTransactions = [], chartPoints = [], { resetPage = false, scrollToTop = false } = {}) {
-        const tbody = document.getElementById('investment_history');
+        const tbody = getInvestmentHistoryTableBody();
         if (!(tbody instanceof HTMLElement)) return;
         clearInvestmentHistoryHighlights();
         const visibleTransactions = getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints);
@@ -10486,7 +10605,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderTransactionTable(transactions, { preserveHistoryPage = false, scrollToTop = true } = {}) {
-        const tbody = document.getElementById('investment_history');
+        const tbody = getInvestmentHistoryTableBody();
         if (!tbody) return { isDegraded: false, message: '' };
         clearInvestmentHistoryHighlights();
         syncInvestmentHistoryHeading();
