@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.11
+ * Code version: v0.2.12
+ * - Fixed: Stock-details intraday trade markers no longer project pre-range overnight trades onto the first visible candle.
  * - Fixed: Stock-details intraday average-price curves no longer draw solid point markers on cost-change indexes.
  * - Changed: Stock-details intraday average-price curves now render as event-stepped cost lines with subtle change points so each trade-driven cost update is visible.
  * - Fixed: Stock-details overnight trades at or after 20:00 now prefer the next visible intraday session's first candle before falling back to the ledger date.
@@ -16,7 +17,7 @@
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.11';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.12';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -518,10 +519,33 @@ export function createInvestmentStockDetailsUtils({
                 ? (hour * 60) + minute
                 : null;
             if (sessionType === 'night' && Number.isFinite(totalMinutes) && totalMinutes >= 20 * 60) {
-                const nextDayBoundary = getNextVisibleIntradayDayBoundary(ledgerDate);
-                if (nextDayBoundary) return nextDayBoundary;
+                return getNextVisibleIntradayDayBoundary(ledgerDate);
             }
             return intradayDayBoundaries.dayMap.get(ledgerDate) || null;
+        };
+        const isTransactionBeforeVisibleRange = (txn) => {
+            if (!labels.length) return false;
+            const firstVisibleLedgerDate = normalizeLedgerDate(labels[0]);
+            const transactionLedgerDate = normalizeLedgerDate(txn?.date);
+            if (!firstVisibleLedgerDate || !transactionLedgerDate) return false;
+            return transactionLedgerDate < firstVisibleLedgerDate;
+        };
+        const isTransactionAfterVisibleRange = (txn) => {
+            if (!labels.length) return false;
+            const lastVisibleLedgerDate = normalizeLedgerDate(labels[labels.length - 1]);
+            const transactionLedgerDate = normalizeLedgerDate(txn?.date);
+            if (!lastVisibleLedgerDate || !transactionLedgerDate) return false;
+            if (transactionLedgerDate > lastVisibleLedgerDate) return true;
+            if (transactionLedgerDate < lastVisibleLedgerDate) return false;
+            const transactionDatetimeValue = getTransactionDatetimeValue(txn);
+            const sessionType = getInvestmentTradeSessionType(transactionDatetimeValue);
+            const datetimeMatch = transactionDatetimeValue.match(/^\d{4}-\d{2}-\d{2}(?:[T ](\d{2}):(\d{2}))/);
+            const hour = datetimeMatch ? Number(datetimeMatch[1]) : null;
+            const minute = datetimeMatch ? Number(datetimeMatch[2]) : null;
+            const totalMinutes = Number.isInteger(hour) && Number.isInteger(minute)
+                ? (hour * 60) + minute
+                : null;
+            return sessionType === 'night' && Number.isFinite(totalMinutes) && totalMinutes >= 20 * 60;
         };
         const resolveTradeMarkerPrice = (markerIndex, transactionPrice) => {
             const normalizedTransactionPrice = Number(transactionPrice);
@@ -534,6 +558,9 @@ export function createInvestmentStockDetailsUtils({
         const tradeMarkerPoints = chronologicalRows.reduce((accumulator, txn) => {
             const normalizedType = getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(normalizedType)) return accumulator;
+            if (useIntradayCandles && (isTransactionBeforeVisibleRange(txn) || isTransactionAfterVisibleRange(txn))) {
+                return accumulator;
+            }
             const transactionDatetimeValue = getTransactionDatetimeValue(txn);
             const exactMinuteKey = normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue);
             const transactionPrice = getTransactionPrice(txn);
@@ -587,6 +614,7 @@ export function createInvestmentStockDetailsUtils({
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (!ledgerDate) return null;
             if (useIntradayCandles) {
+                if (isTransactionBeforeVisibleRange(txn) || isTransactionAfterVisibleRange(txn)) return null;
                 const transactionDatetimeValue = getTransactionDatetimeValue(txn);
                 const exactMinuteIndex = dateIndex.get(normalizeInvestmentIntradayMinuteKey(transactionDatetimeValue));
                 if (Number.isInteger(exactMinuteIndex)) return exactMinuteIndex;
@@ -605,22 +633,6 @@ export function createInvestmentStockDetailsUtils({
             }
             const dailyIndex = dateIndex.get(ledgerDate);
             return Number.isInteger(dailyIndex) ? dailyIndex : null;
-        };
-        const isTransactionBeforeVisibleRange = (txn) => {
-            if (!labels.length) return false;
-            const firstVisibleLabel = String(labels[0] || '');
-            const firstVisibleLedgerDate = normalizeLedgerDate(firstVisibleLabel);
-            const transactionLedgerDate = normalizeLedgerDate(txn?.date);
-            if (!firstVisibleLedgerDate || !transactionLedgerDate) return false;
-            if (!useIntradayCandles) {
-                return transactionLedgerDate < firstVisibleLedgerDate;
-            }
-            const firstVisibleMinuteKey = normalizeInvestmentIntradayMinuteKey(firstVisibleLabel);
-            const transactionMinuteKey = normalizeInvestmentIntradayMinuteKey(getTransactionDatetimeValue(txn));
-            if (firstVisibleMinuteKey && transactionMinuteKey) {
-                return transactionMinuteKey < firstVisibleMinuteKey;
-            }
-            return transactionLedgerDate < firstVisibleLedgerDate;
         };
         const preRangeTransactions = [];
         const transactionsBySnapshotIndex = chronologicalRows.reduce((accumulator, txn) => {

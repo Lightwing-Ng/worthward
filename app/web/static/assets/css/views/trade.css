@@ -796,7 +796,7 @@
     -webkit-mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat;
 }
 
-.icon-dock-more {
+.icon-dock-trade {
     background-color: currentColor;
     mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/square.grid.2x2.fill.svg") center/contain no-repeat;
@@ -808,17 +808,17 @@
     -webkit-mask: url("/static/images/gear.svg") center/contain no-repeat;
 }
 
-.icon-more-timing {
+.icon-trade-timing {
     mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/calendar.day.timeline.right.svg") center/contain no-repeat;
 }
 
-.icon-more-investment {
+.icon-trade-investment {
     mask: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/dollarsign.gauge.chart.lefthalf.righthalf.svg") center/contain no-repeat;
 }
 
-.icon-more-live-trading {
+.icon-trade-live-trading {
     mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
 }

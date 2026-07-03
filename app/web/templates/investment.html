@@ -1,20 +1,20 @@
 {# Code version: v1.6.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
-{% set sidebar_title = "More" %}
+{% set sidebar_title = "Trade" %}
 
 {% block sidebar_content %}
-    <nav class="settings-nav" aria-label="More sections">
-        <a href="{{ more_urls.investment }}"
-           class="settings-nav-item{% if current_view == 'more' and more_section == 'investment' %} is-active{% endif %}">
+    <nav class="settings-nav" aria-label="Trade sections">
+        <a href="{{ trade_urls.investment }}"
+           class="settings-nav-item{% if current_view == 'trade' and trade_section == 'investment' %} is-active{% endif %}">
             <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
-                    class="icon icon-more-investment investment-nav-icon" aria-hidden="true"></span></span>
+                    class="icon icon-trade-investment investment-nav-icon" aria-hidden="true"></span></span>
             <span class="settings-nav-label">Investment</span>
         </a>
-        <a href="{{ more_urls['live-trading'] }}"
-           class="settings-nav-item{% if current_view == 'more' and more_section == 'live-trading' %} is-active{% endif %}">
+        <a href="{{ trade_urls['live-trading'] }}"
+           class="settings-nav-item{% if current_view == 'trade' and trade_section == 'live-trading' %} is-active{% endif %}">
             <span class="settings-nav-icon-shell investment-nav-icon-shell"><span
-                    class="icon icon-more-live-trading investment-nav-icon" aria-hidden="true"></span></span>
+                    class="icon icon-trade-live-trading investment-nav-icon" aria-hidden="true"></span></span>
             <span class="settings-nav-label">Live trading</span>
         </a>
     </nav>
@@ -698,5 +698,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.61.27') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.61.28') }}"></script>
 {% endblock %}

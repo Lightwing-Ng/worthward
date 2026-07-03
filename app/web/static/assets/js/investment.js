@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.27
+ * Code version: v1.61.28
+ * - Fixed: Investment stock-details helper import now revs to the pre-range overnight marker projection fix.
  * - Fixed: Investment stock-details helper import now revs to the no-dot intraday average-price line correction.
  * - Fixed: Investment stock-details helper import now revs to the intraday average-price event-stepped cost line update.
  * - Fixed: Investment stock-details helper import now revs to the overnight first-candle anchoring correction.
@@ -178,7 +179,7 @@
  * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
  * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
  * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
- * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/more/investment` visits back to the prior selection
+ * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/trade/investment` visits back to the prior selection
  * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
  * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
  * - Changed: Stock details time-range segmented control replaces 1M with 3M and now filters by the natural prior 3-month window
@@ -287,10 +288,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.11';
+} from './investment/stock-details.js?v=investment-stock-details-v0.2.12';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.61.27',
+    entry: 'v1.61.28',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -1803,7 +1804,7 @@ document.addEventListener('DOMContentLoaded', () => {
         writeInvestmentPageMemory({
             ...currentMemory,
             page_key: 'investment',
-            page_path: '/more/investment',
+            page_path: '/trade/investment',
             last_used_at: new Date().toISOString(),
             last_view: normalizedView,
             last_stock_ticker: normalizedTicker,

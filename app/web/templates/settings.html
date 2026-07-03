@@ -963,7 +963,7 @@
         <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="Add a ticker" title="Add a ticker"><span class="icon icon-plus" aria-hidden="true"></span></button>
     </div>
     <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
-        <p class="settings-service-note">Tickers in this list are treated as cash in the investment donut chart (at /more/investment) and use the standard green token instead of the gradient.</p>
+        <p class="settings-service-note">Tickers in this list are treated as cash in the investment donut chart (at /trade/investment) and use the standard green token instead of the gradient.</p>
         <div class="cash-equivalents-list" id="cash_equivalents_list" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
             {% for row in cash_equivalent_rows %}
             <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">

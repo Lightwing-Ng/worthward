@@ -58,7 +58,7 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Light", "zh_hant_hk": "淺色", "zh_hans_cn": "浅色"},
     {"en": "Local market store", "zh_hant_hk": "本機市場資料庫", "zh_hans_cn": "本地市场数据库"},
     {"en": "Material tokens", "zh_hant_hk": "材質權杖", "zh_hans_cn": "材质令牌"},
-    {"en": "More", "zh_hant_hk": "更多", "zh_hans_cn": "更多"},
+    {"en": "Trade", "zh_hant_hk": "交易", "zh_hans_cn": "交易"},
     {"en": "Network self-check", "zh_hant_hk": "網絡自檢", "zh_hans_cn": "网络自检"},
     {"en": "Save translations", "zh_hant_hk": "儲存翻譯", "zh_hans_cn": "保存翻译"},
     {"en": "Settings", "zh_hant_hk": "設定", "zh_hans_cn": "设置"},

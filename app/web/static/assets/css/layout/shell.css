@@ -1,4 +1,4 @@
-/* Code version: v3.25.1 */
+/* Code version: v3.25.2 */
 .sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--glass-surface-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
 .settings-round-icon-button,
 .global-quick-action-button,
@@ -453,11 +453,11 @@ h1,
 	margin: 0;
 	font-size: var(--font-card-title);
 	line-height: 1;
-	letter-spacing: -0.03em;
+	letter-spacing: 0;
 	font-weight: var(--font-weight-medium);
 	color: var(--text);
 }
-h1 { max-width: none; text-wrap: balance; min-height: 48px; display: flex; align-items: flex-start; }
+h1 { max-width: none; line-height: 1.18; text-wrap: balance; min-height: 48px; display: flex; align-items: flex-start; }
 .sidebar .hero { padding-right: 56px; margin-bottom: 24px; }
 .panel { background: var(--panel); border-radius: var(--radius-panel); box-shadow: var(--shadow); backdrop-filter: saturate(180%) blur(28px); -webkit-backdrop-filter: saturate(180%) blur(28px); position: relative; overflow: hidden; }
 .panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--glass-highlight) 0%, color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent) 100%); pointer-events: none; }

@@ -17,8 +17,8 @@ Documentation version: `v2.15.8`
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
 - Choose the backtest execution mode between `signal_close` and `next_open`
-- Review TradingView-based timing signals from `More`
-- Import IBKR CSV exports into a local investment ledger used by `More -> Investment`
+- Review TradingView-based timing signals from `Trade`
+- Import IBKR CSV exports into a local investment ledger used by `Trade -> Investment`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
 
 ## Runtime requirements
@@ -74,7 +74,7 @@ The runtime entry chain is:
 main.py
   -> app.create_app()
   -> app/web/routes_entry.py
-  -> app/web/routes/{compare,portfolio,backtest,more,settings}.py
+  -> app/web/routes/{compare,portfolio,backtest,trade,settings}.py
 ```
 
 There is no Node.js build step, Docker setup, or alternate app runner in this repository. The supported local workflow is the pinned Python shell-script flow under `scripts/`.
@@ -87,8 +87,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
-- `More`
-  Inspect the `Timing` and `Investment` views.
+- `Trade`
+  Inspect the `Timing`, `Investment`, and `Live trading` views.
 - `Settings`
   Review app metadata, appearance and date preferences, backtest execution mode, design tokens, service health, broker access, Yahoo Mail SMTP, Local Market Store maintenance, strategy metadata, and cache controls.
 
@@ -154,7 +154,7 @@ The current `Settings` navigation includes:
 
 - Investment transactions are read from `settings_store/investment.parquet`
 - The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these files are ignored by Git and are rebuilt from `investment.parquet` plus local market history files
-- The `More -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
+- The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
 - IBKR internal FX conversion symbols such as `USD.HKD` are treated as ledger-only cash-conversion artifacts rather than queryable securities

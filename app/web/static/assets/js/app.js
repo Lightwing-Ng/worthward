@@ -162,10 +162,10 @@
         }
     };
 
-    const resolveMoreSectionFromUrl = (url) => {
+    const resolveTradeSectionFromUrl = (url) => {
         try {
             const parsedUrl = new URL(url, window.location.origin);
-            const pathMatch = parsedUrl.pathname.match(/^\/more\/([^/?#]+)/);
+            const pathMatch = parsedUrl.pathname.match(/^\/(?:trade|more)\/([^/?#]+)/);
             if (pathMatch?.[1] === "live-trading") return "live-trading";
             return "investment";
         } catch (_error) {
@@ -190,7 +190,7 @@
         "style-tokens": {title: "Style tokens", layout: "tokens"},
     });
     const SETTINGS_NAVIGATION_ORDER = Object.freeze(Object.keys(SETTINGS_NAVIGATION_PROFILES));
-    const MORE_NAVIGATION_PROFILES = Object.freeze({
+    const TRADE_NAVIGATION_PROFILES = Object.freeze({
         investment: {title: "Investment"},
         "live-trading": {title: "Live trading"},
     });
@@ -230,10 +230,10 @@
             title = labels.settings_title || "Settings";
             items = SETTINGS_NAVIGATION_ORDER.map((key) => ({key, label: SETTINGS_NAVIGATION_PROFILES[key].title}));
             activeKey = SETTINGS_NAVIGATION_PROFILES[targetSection] ? targetSection : "about";
-        } else if (targetView === "more") {
-            title = labels.dock_more || "More";
-            items = Object.entries(MORE_NAVIGATION_PROFILES).map(([key, profile]) => ({key, label: profile.title}));
-            activeKey = MORE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
+        } else if (targetView === "trade") {
+            title = labels.dock_trade || "Trade";
+            items = Object.entries(TRADE_NAVIGATION_PROFILES).map(([key, profile]) => ({key, label: profile.title}));
+            activeKey = TRADE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
         }
         const activeIndex = Math.max(items.findIndex((item) => item.key === activeKey), 0);
         return `
@@ -302,9 +302,9 @@
         `;
     };
 
-    const buildMoreNavigationSkeleton = (targetSection) => {
-        const section = MORE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
-        const title = MORE_NAVIGATION_PROFILES[section].title;
+    const buildTradeNavigationSkeleton = (targetSection) => {
+        const section = TRADE_NAVIGATION_PROFILES[targetSection] ? targetSection : "investment";
+        const title = TRADE_NAVIGATION_PROFILES[section].title;
         if (section === "live-trading") {
             return `
                 <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
@@ -393,9 +393,9 @@
         if (targetView === "settings") {
             normalizedSection = SETTINGS_NAVIGATION_PROFILES[section] ? section : "about";
             workspaceMarkup = buildSettingsNavigationSkeleton(normalizedSection);
-        } else if (targetView === "more") {
-            normalizedSection = MORE_NAVIGATION_PROFILES[section] ? section : "investment";
-            workspaceMarkup = buildMoreNavigationSkeleton(normalizedSection);
+        } else if (targetView === "trade") {
+            normalizedSection = TRADE_NAVIGATION_PROFILES[section] ? section : "investment";
+            workspaceMarkup = buildTradeNavigationSkeleton(normalizedSection);
         } else if (WORKSPACE_VIEWS.has(targetView)) {
             workspaceMarkup = buildWorkspaceNavigationSkeleton(targetView);
         } else {
@@ -405,7 +405,7 @@
             sidebar.innerHTML = buildNavigationSidebar(targetView, normalizedSection);
         }
         workspacePanel.innerHTML = `
-            <div class="navigation-skeleton-status sr-only" role="status" aria-live="polite">Loading ${escapeSkeletonText(targetView === "settings" ? SETTINGS_NAVIGATION_PROFILES[normalizedSection].title : targetView === "more" ? MORE_NAVIGATION_PROFILES[normalizedSection].title : WORKSPACE_NAVIGATION_PROFILES[targetView].title)}</div>
+            <div class="navigation-skeleton-status sr-only" role="status" aria-live="polite">Loading ${escapeSkeletonText(targetView === "settings" ? SETTINGS_NAVIGATION_PROFILES[normalizedSection].title : targetView === "trade" ? TRADE_NAVIGATION_PROFILES[normalizedSection].title : WORKSPACE_NAVIGATION_PROFILES[targetView].title)}</div>
             <div class="navigation-skeleton-root" data-navigation-skeleton aria-hidden="true">${workspaceMarkup}</div>
         `;
         workspacePanel.dataset.navigationSkeleton = "1";
@@ -491,7 +491,7 @@
                 || path === "/workspaces/backtest"
                 || path.startsWith("/workspaces/backtest/")
             ) return "backtest";
-            if (path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "more";
+            if (path === "/trade" || path.startsWith("/trade/") || path === "/more" || path.startsWith("/more/") || path === "/invest" || path === "/investment") return "trade";
             if (path === "/settings" || path.startsWith("/settings/")) return "settings";
             return null;
         } catch (_error) {
@@ -512,7 +512,7 @@
 
     const syncDockPreviewTarget = (targetDockGroup) => {
         if (!targetDockGroup) return;
-        const dockGroupByIndex = ["workspace", "more", "settings"];
+        const dockGroupByIndex = ["workspace", "trade", "settings"];
         $$(".sidebar-dock-item").forEach((link, index) => {
             const isTarget = dockGroupByIndex[index] === targetDockGroup;
             link.classList.toggle("is-active", isTarget);
@@ -557,8 +557,8 @@
         const targetView = resolveViewFromUrl(nextUrl);
         const targetSection = targetView === "settings"
             ? resolveSettingsSectionFromUrl(nextUrl)
-            : targetView === "more"
-                ? resolveMoreSectionFromUrl(nextUrl)
+            : targetView === "trade"
+                ? resolveTradeSectionFromUrl(nextUrl)
                 : null;
         const dockGroup = targetDockGroup || resolveDockGroupFromView(targetView);
         captureOptimisticNavigationSnapshot();
@@ -1658,7 +1658,7 @@
     };
 
     const attachDockMemory = () => {
-        const dockGroupByIndex = ["workspace", "more", "settings"];
+        const dockGroupByIndex = ["workspace", "trade", "settings"];
         $$(".sidebar-dock-item").forEach((link, index) => {
             const targetDockGroup = dockGroupByIndex[index];
             if (!targetDockGroup || link.dataset.boundDockMemory === "1") return;

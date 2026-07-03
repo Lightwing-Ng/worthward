@@ -231,11 +231,11 @@ PORTFOLIO_BENCHMARK_COLORS = {
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
-SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "more", "settings"}
+SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "trade", "settings"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
                                "clear-caches", "style-tokens", "export-image", "cash-equivalents"}
-SUPPORTED_MORE_SECTIONS = {"investment", "live-trading"}
-LEGACY_MORE_SECTION_ALIASES = {
+SUPPORTED_TRADE_SECTIONS = {"investment", "live-trading"}
+LEGACY_TRADE_SECTION_ALIASES = {
     "timing": "investment",
     "invest": "investment",
     "live": "live-trading",
@@ -253,7 +253,7 @@ VIEW_PATHS = {
     "portfolio": "/workspaces/portfolio",
     "dca": "/workspaces/dca",
     "backtest": "/workspaces/backtest",
-    "more": "/more/investment",
+    "trade": "/trade/investment",
     "settings": "/settings/about",
 }
 ADAPTIVE_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "10y", "max")
@@ -277,8 +277,10 @@ class WebRuntime:
     backtest_page: Any
     legacy_backtest_page: Any
     legacy_trade_messages_page: Any
-    more_root: Any
-    more_page: Any
+    trade_root: Any
+    trade_page: Any
+    legacy_trade_root: Any
+    legacy_trade_page: Any
     settings_root: Any
     settings_page: Any
     export_transactions_api: Any
@@ -1154,16 +1156,16 @@ def build_web_runtime() -> WebRuntime:
     def build_settings_url(section_name: str) -> str:
         return build_settings_path(section_name)
 
-    def normalize_more_section(section_name: str | None) -> str:
+    def normalize_trade_section(section_name: str | None) -> str:
         candidate = (section_name or "investment").strip().lower()
-        candidate = LEGACY_MORE_SECTION_ALIASES.get(candidate, candidate)
-        return candidate if candidate in SUPPORTED_MORE_SECTIONS else "investment"
+        candidate = LEGACY_TRADE_SECTION_ALIASES.get(candidate, candidate)
+        return candidate if candidate in SUPPORTED_TRADE_SECTIONS else "investment"
 
-    def build_more_path(section_name: str) -> str:
-        return f"/more/{normalize_more_section(section_name)}"
+    def build_trade_path(section_name: str) -> str:
+        return f"/trade/{normalize_trade_section(section_name)}"
 
-    def build_more_url(section_name: str) -> str:
-        return build_more_path(section_name)
+    def build_trade_url(section_name: str) -> str:
+        return build_trade_path(section_name)
 
     def should_use_modal_banner_message(message: str | None) -> bool:
         normalized = (message or "").strip()
@@ -2760,7 +2762,7 @@ def build_web_runtime() -> WebRuntime:
     def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
         return resolve_effective_period_for_datasets(requested_period, datasets)
 
-    def render_workspace_page(current_view: str, settings_section: str = "about", more_section: str = "investment"):
+    def render_workspace_page(current_view: str, settings_section: str = "about", trade_section: str = "investment"):
         backtest_execution_mode = load_backtest_execution_mode()
         date_display_settings = load_date_display_settings()
         language_settings = load_language_settings()
@@ -2949,7 +2951,7 @@ def build_web_runtime() -> WebRuntime:
         }
 
         settings_section = normalize_settings_section(settings_section)
-        more_section = normalize_more_section(more_section)
+        trade_section = normalize_trade_section(trade_section)
 
         if current_view == "settings" and settings_section == "about":
             error = None
@@ -2993,13 +2995,13 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = translate_ui("Export images")
             elif settings_section == "cash-equivalents":
                 settings_title = translate_ui("Cash equivalents")
-        elif current_view == "more":
-            page_title = labels["more_title"]
-            settings_title = labels["more_title"]
-            if more_section == "investment":
+        elif current_view == "trade":
+            page_title = labels["trade_title"]
+            settings_title = labels["trade_title"]
+            if trade_section == "investment":
                 page_title = "Investment"
                 settings_title = "Investment"
-            elif more_section == "live-trading":
+            elif trade_section == "live-trading":
                 page_title = "Live trading"
                 settings_title = "Live trading"
 
@@ -3488,8 +3490,8 @@ def build_web_runtime() -> WebRuntime:
                     all_local_market_tickers[start_index:end_index],
                     include_ranges=True,
                 )
-        elif current_view == "more":
-            if more_section == "live-trading":
+        elif current_view == "trade":
+            if trade_section == "live-trading":
                 live_trading_account_label = load_longbridge_account_label(load_broker_settings())
 
         if current_view in {"backtest", "dca"}:
@@ -3512,11 +3514,11 @@ def build_web_runtime() -> WebRuntime:
             "portfolio": "portfolio.html",
             "dca": "dca.html",
             "backtest": "backtest.html",
-            "more": (
+            "trade": (
                 "investment.html"
-                if more_section == "investment"
+                if trade_section == "investment"
                 else "live_trading.html"
-                if more_section == "live-trading"
+                if trade_section == "live-trading"
                 else "investment.html"
             ),
             "settings": "settings.html",
@@ -3556,7 +3558,7 @@ def build_web_runtime() -> WebRuntime:
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
             settings_section=settings_section,
-            more_section=more_section,
+            trade_section=trade_section,
             top_tickers=top_tickers,
             timing_selected_ticker=timing_selected_ticker,
             timing_metrics=timing_metrics,
@@ -3595,14 +3597,14 @@ def build_web_runtime() -> WebRuntime:
             local_store_page_slots=local_store_page_slots,
             local_store_next_slot=local_store_next_slot,
             page_title=page_title,
-            sidebar_title=labels["more_title"] if current_view == "more" else page_title,
+            sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "more", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
-            more_urls={section_name: build_more_url(section_name) for section_name in ("investment", "live-trading")},
+            trade_urls={section_name: build_trade_url(section_name) for section_name in ("investment", "live-trading")},
             local_store_page_urls={page_number: build_local_store_page_url(page_number) for page_number in range(1, local_store_total_pages + 1)},
             labels=labels,
             theme=theme,
@@ -3645,7 +3647,7 @@ def build_web_runtime() -> WebRuntime:
         ))
         if current_view == "settings":
             response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
-        if current_view == "more" and more_section == "investment":
+        if current_view == "trade" and trade_section == "investment":
             apply_no_store_headers(response)
         return response
 
@@ -3910,14 +3912,20 @@ def build_web_runtime() -> WebRuntime:
     def legacy_trade_messages_page():
         return build_legacy_workspace_redirect("backtest")
 
-    def more_root():
-        return redirect(build_more_path("investment"))
+    def trade_root():
+        return redirect(build_trade_path("investment"))
 
-    def more_page(section_name: str):
-        normalized_section = normalize_more_section(section_name)
+    def trade_page(section_name: str):
+        normalized_section = normalize_trade_section(section_name)
         if normalized_section != (section_name or "").strip().lower():
-            return redirect(build_more_path(normalized_section))
-        return render_workspace_page("more", more_section=normalized_section)
+            return redirect(build_trade_path(normalized_section))
+        return render_workspace_page("trade", trade_section=normalized_section)
+
+    def legacy_trade_root():
+        return redirect(build_trade_path("investment"))
+
+    def legacy_trade_page(section_name: str):
+        return redirect(build_trade_path(normalize_trade_section(section_name)))
 
     def settings_root():
         return redirect(build_settings_path("about"))
@@ -4618,7 +4626,7 @@ def build_web_runtime() -> WebRuntime:
 
     def investment_page():
         query_string = request.query_string.decode().strip()
-        target_path = build_more_path("investment")
+        target_path = build_trade_path("investment")
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def investment_get_transactions():
@@ -5515,8 +5523,10 @@ def build_web_runtime() -> WebRuntime:
         backtest_page=backtest_page,
         legacy_backtest_page=legacy_backtest_page,
         legacy_trade_messages_page=legacy_trade_messages_page,
-        more_root=more_root,
-        more_page=more_page,
+        trade_root=trade_root,
+        trade_page=trade_page,
+        legacy_trade_root=legacy_trade_root,
+        legacy_trade_page=legacy_trade_page,
         settings_root=settings_root,
         settings_page=settings_page,
         export_transactions_api=export_transactions_api,

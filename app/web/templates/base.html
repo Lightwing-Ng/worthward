@@ -190,9 +190,9 @@
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
             <span class="sr-only">{{ dock_workspace_label }}</span>
         </a>
-        <a href="{{ dock_urls.more }}" class="sidebar-dock-item sidebar-dock-item-more{% if current_view == 'more' %} is-active{% endif %}" aria-current="{% if current_view == 'more' %}page{% endif %}" aria-label="{{ labels.dock_more }}" data-tooltip="{{ labels.dock_more }}">
-            <span class="icon icon-dock-more" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_more }}</span>
+        <a href="{{ dock_urls.trade }}" class="sidebar-dock-item sidebar-dock-item-trade{% if current_view == 'trade' %} is-active{% endif %}" aria-current="{% if current_view == 'trade' %}page{% endif %}" aria-label="{{ labels.dock_trade }}" data-tooltip="{{ labels.dock_trade }}">
+            <span class="icon icon-dock-trade" aria-hidden="true"></span>
+            <span class="sr-only">{{ labels.dock_trade }}</span>
         </a>
         <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
             <span class="icon icon-dock-settings" aria-hidden="true"></span>
@@ -243,7 +243,7 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
-{% if current_view in ["tickers", "portfolio", "dca", "backtest", "more"] %}
+{% if current_view in ["tickers", "portfolio", "dca", "backtest", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.3.0') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
