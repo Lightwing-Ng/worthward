@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.11
+ * Code version: v1.61.15
+ * - Fixed: Scrollable investment overlay column syncing now preserves fractional body widths so per-column rounding cannot expand the fixed table past the shell.
+ * - Fixed: Scrollable investment overlay tables now sync fixed cell border-box widths from body rows and assign the scrollbar track only to the final fixed cell.
+ * - Fixed: Scrollable investment overlay tables now keep full-shell Frosted glass material while assigning the scrollbar track to the final fixed column only.
+ * - Fixed: Scrollable investment overlay tables now use a shared content-width variable plus border compensation so rightmost fixed headers never occupy scrollbar tracks.
  * - Fixed: Scrollable investment table Frosted glass underlays now begin at the real scroll viewport edge, avoiding ghost rows at scroll top and restoring Transaction history header material.
  * - Fixed: Holdings table overlay now keeps a synced hidden body-table underlay behind the Frosted glass extracted header and summary material.
  * - Fixed: Investment view Metrics segmented pill now relies on the edge-cap geometry solver without a manual optical offset, keeping both the right cap and text center aligned.
@@ -6663,6 +6667,37 @@ document.addEventListener('DOMContentLoaded', () => {
             return Math.ceil(value * scale) / scale;
         };
 
+        const getBodyColumnWidths = (bodyTable) => {
+            if (!(bodyTable instanceof HTMLTableElement)) return [];
+            const row = Array.from(bodyTable.rows).find((candidate) => candidate.cells.length);
+            if (!row) return [];
+            return Array.from(row.cells).map((cell) => cell.getBoundingClientRect().width);
+        };
+
+        const syncOverlayColumnWidths = (scrollbarWidth, overlayBorderCompensation) => {
+            const overlayHeader = getOverlayHeader();
+            const bodyTable = scrollContainer.querySelector('table');
+            if (!(overlayHeader instanceof HTMLTableElement) || !(bodyTable instanceof HTMLTableElement)) return;
+            const columnWidths = getBodyColumnWidths(bodyTable);
+            if (!columnWidths.length) return;
+            Array.from(overlayHeader.children).forEach((child) => {
+                if (child instanceof HTMLElement && child.tagName === 'COLGROUP') {
+                    child.remove();
+                }
+            });
+            const lastIndex = columnWidths.length - 1;
+            columnWidths[lastIndex] = Math.max(
+                1,
+                columnWidths[lastIndex] + scrollbarWidth,
+            );
+            Array.from(overlayHeader.rows).forEach((row) => {
+                Array.from(row.cells).forEach((cell, index) => {
+                    if (index >= columnWidths.length) return;
+                    cell.style.width = `${columnWidths[index] || 1}px`;
+                });
+            });
+        };
+
         const syncHeaderHeight = () => {
             const overlayHeader = getOverlayHeader();
             if (!(overlayHeader instanceof HTMLElement)) {
@@ -6685,7 +6720,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const syncAlignment = () => {
             frameId = 0;
             const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
+            const overlayBorderCompensation = scrollbarWidth > 0 ? 1 : 0;
             tableShell.style.setProperty(scrollbarVariableName, `${scrollbarWidth}px`);
+            tableShell.style.setProperty('--scrollable-data-table-scrollbar-width', `${scrollbarWidth}px`);
+            tableShell.style.setProperty(
+                '--scrollable-data-table-overlay-border-compensation',
+                `${overlayBorderCompensation}px`
+            );
+            syncOverlayColumnWidths(scrollbarWidth, overlayBorderCompensation);
             syncHeaderHeight();
         };
 
@@ -6722,6 +6764,8 @@ document.addEventListener('DOMContentLoaded', () => {
             window.removeEventListener('resize', scheduleAlignmentSync);
             resizeObserver?.disconnect();
             tableShell.style.removeProperty(scrollbarVariableName);
+            tableShell.style.removeProperty('--scrollable-data-table-scrollbar-width');
+            tableShell.style.removeProperty('--scrollable-data-table-overlay-border-compensation');
             tableShell.style.removeProperty(headerHeightVariableName);
         };
     }

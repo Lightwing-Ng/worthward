@@ -1,4 +1,4 @@
-/* Code version: v0.5.6 */
+/* Code version: v0.5.8 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -1004,11 +1004,15 @@
             activeScrollableTableHeaderCleanup = null;
         }
         const headerHeightProperty = "--scrollable-data-table-header-height";
+        const scrollbarWidthProperty = "--scrollable-data-table-scrollbar-width";
+        const overlayBorderCompensationProperty = "--scrollable-data-table-overlay-border-compensation";
         let frameId = 0;
         let resizeObserver = null;
         let mutationObserver = null;
         const observedShells = new Set();
         const observedHeaders = new Set();
+        const observedScrollContainers = new Set();
+        const observedBodyTables = new Set();
 
         const getOverlayHeader = (shell) => (
             Array.from(shell.children).find((child) => (
@@ -1020,6 +1024,15 @@
             Array.from(new Set($$(".scrollable-data-table-shell")))
                 .filter((shell) => shell instanceof HTMLElement)
         );
+        const getScrollContainer = (shell) => (
+            Array.from(shell.children).find((child) => (
+                child instanceof HTMLElement
+                && child.classList.contains("scrollable-data-table-scroll")
+            )) || shell.querySelector(".scrollable-data-table-scroll")
+        );
+        const getBodyTable = (scrollContainer) => (
+            scrollContainer?.querySelector("table:not([aria-hidden='true'])") || null
+        );
         const observeShell = (shell) => {
             if (!resizeObserver || observedShells.has(shell)) return;
             resizeObserver.observe(shell);
@@ -1030,18 +1043,86 @@
             resizeObserver.observe(overlayHeader);
             observedHeaders.add(overlayHeader);
         };
+        const observeScrollContainer = (scrollContainer) => {
+            if (!resizeObserver || observedScrollContainers.has(scrollContainer)) return;
+            resizeObserver.observe(scrollContainer);
+            observedScrollContainers.add(scrollContainer);
+        };
+        const observeBodyTable = (bodyTable) => {
+            if (!resizeObserver || observedBodyTables.has(bodyTable)) return;
+            resizeObserver.observe(bodyTable);
+            observedBodyTables.add(bodyTable);
+        };
         const roundUpToDevicePixel = (value) => {
             const scale = window.devicePixelRatio || 1;
             return Math.ceil(value * scale) / scale;
+        };
+        const getBodyColumnMetrics = (bodyTable) => {
+            if (!(bodyTable instanceof HTMLTableElement)) return null;
+            const row = Array.from(bodyTable.rows).find((candidate) => candidate.cells.length);
+            if (!row) return null;
+            const cells = Array.from(row.cells);
+            const widths = cells.map((cell) => cell.getBoundingClientRect().width);
+            const lastCell = cells[widths.length - 1] || null;
+            return {
+                lastCellRight: lastCell?.getBoundingClientRect().right || 0,
+                widths,
+            };
+        };
+        const syncOverlayColumnWidths = (overlayHeader, bodyTable, trailingTrackWidth) => {
+            if (!(overlayHeader instanceof HTMLTableElement) || !(bodyTable instanceof HTMLTableElement)) return;
+            const bodyColumnMetrics = getBodyColumnMetrics(bodyTable);
+            const columnWidths = bodyColumnMetrics?.widths || [];
+            if (!columnWidths.length) return;
+            Array.from(overlayHeader.children).forEach((child) => {
+                if (child instanceof HTMLElement && child.tagName === "COLGROUP") {
+                    child.remove();
+                }
+            });
+            const lastIndex = columnWidths.length - 1;
+            columnWidths[lastIndex] = Math.max(1, columnWidths[lastIndex] + trailingTrackWidth);
+            Array.from(overlayHeader.rows).forEach((row) => {
+                Array.from(row.cells).forEach((cell, index) => {
+                    if (index >= columnWidths.length) return;
+                    cell.style.width = `${columnWidths[index] || 1}px`;
+                });
+            });
         };
         const syncShell = (shell) => {
             observeShell(shell);
             const overlayHeader = getOverlayHeader(shell);
             if (!(overlayHeader instanceof HTMLElement)) {
                 shell.style.removeProperty(headerHeightProperty);
+                shell.style.removeProperty(scrollbarWidthProperty);
+                shell.style.removeProperty(overlayBorderCompensationProperty);
                 return;
             }
             observeHeader(overlayHeader);
+            const scrollContainer = getScrollContainer(shell);
+            const bodyTable = getBodyTable(scrollContainer);
+            if (scrollContainer instanceof HTMLElement) {
+                observeScrollContainer(scrollContainer);
+                const scrollbarWidth = Math.max(0, scrollContainer.offsetWidth - scrollContainer.clientWidth);
+                let trailingTrackWidth = scrollbarWidth;
+                if (bodyTable instanceof HTMLTableElement) {
+                    const bodyColumnMetrics = getBodyColumnMetrics(bodyTable);
+                    if (bodyColumnMetrics && bodyColumnMetrics.lastCellRight > 0) {
+                        trailingTrackWidth = Math.max(
+                            0,
+                            shell.getBoundingClientRect().right - bodyColumnMetrics.lastCellRight
+                        );
+                    }
+                }
+                shell.style.setProperty(scrollbarWidthProperty, `${trailingTrackWidth}px`);
+                shell.style.setProperty(
+                    overlayBorderCompensationProperty,
+                    `${trailingTrackWidth > 0 ? 1 : 0}px`
+                );
+                if (bodyTable instanceof HTMLTableElement) {
+                    observeBodyTable(bodyTable);
+                    syncOverlayColumnWidths(overlayHeader, bodyTable, trailingTrackWidth);
+                }
+            }
             const headerHeight = overlayHeader.getBoundingClientRect().height;
             if (headerHeight > 0) {
                 shell.style.setProperty(headerHeightProperty, `${roundUpToDevicePixel(headerHeight)}px`);
@@ -1090,9 +1171,15 @@
             }
             resizeObserver?.disconnect();
             mutationObserver?.disconnect();
-            observedShells.forEach((shell) => shell.style.removeProperty(headerHeightProperty));
+            observedShells.forEach((shell) => {
+                shell.style.removeProperty(headerHeightProperty);
+                shell.style.removeProperty(scrollbarWidthProperty);
+                shell.style.removeProperty(overlayBorderCompensationProperty);
+            });
             observedShells.clear();
             observedHeaders.clear();
+            observedScrollContainers.clear();
+            observedBodyTables.clear();
         };
     };
 

@@ -1,4 +1,4 @@
-/* Code version: v1.16.12 */
+/* Code version: v1.16.19 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2307,6 +2307,8 @@
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
     --scrollable-data-table-header-height: 28px;
+    --scrollable-data-table-scrollbar-width: 0px;
+    --scrollable-data-table-overlay-border-compensation: 0px;
     flex: 1 1 auto;
     width: 100%;
     min-height: 0;
@@ -2372,7 +2374,7 @@
 .investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
     position: absolute;
     inset-block-start: 0;
-    inset-inline-start: 0;
+    inset-inline-start: calc(-1 * var(--scrollable-data-table-overlay-border-compensation));
     z-index: calc(var(--layer-surface-content) + 1);
     pointer-events: none;
     border-radius: 10px 10px 0 0;
@@ -2383,6 +2385,22 @@
     border: var(--frosted-glass-extracted-border);
     border-bottom: 0;
     overflow: hidden;
+    width: 100%;
+}
+
+.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] th,
+.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] td,
+.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] th,
+.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] td {
+    box-sizing: border-box;
+}
+
+.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] tr > :last-child {
+    padding-inline-end: calc(1px + var(--scrollable-data-table-scrollbar-width));
+}
+
+.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] tr > :last-child {
+    padding-inline-end: calc(6px + var(--scrollable-data-table-scrollbar-width));
 }
 
 .scrollable-data-table-scroll,
@@ -3607,7 +3625,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-history-table-shell > .investment-history-table[aria-hidden="true"] {
-    width: calc(100% - var(--investment-history-scrollbar-width));
+    min-width: 0;
+    width: 100%;
 }
 
 .investment-history-table-scroll {
