@@ -10454,7 +10454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?? txn?.gross_amount_raw
                 ?? 0
             );
-            return Number.isFinite(amount) ? amount : 0;
+            return Number.isFinite(amount) && amount > 0 ? amount : 0;
         }
 
         function calculateInvestmentCashDelta(txn) {

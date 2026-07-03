@@ -1,4 +1,4 @@
-/* Code version: v1.16.6 */
+/* Code version: v1.16.7 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -2710,6 +2710,17 @@
     border-top: var(--investment-holdings-summary-frosted-border);
     border-bottom: var(--investment-holdings-summary-frosted-border);
     box-shadow: none;
+}
+
+.investment-holdings-table[aria-hidden="true"] .investment-holdings-summary-row {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+.investment-holdings-table[aria-hidden="true"] .investment-holdings-summary-row td {
+    border: 0;
 }
 
 .investment-holdings-summary-row td + td {
