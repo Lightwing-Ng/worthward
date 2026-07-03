@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.29
+ * Code version: v1.61.30
+ * - Fixed: Investment range segmented controls now scroll the active edge option fully into view when horizontal space is constrained.
  * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
  * - Fixed: Investment stock-details helper import now revs to the x-axis date label font-weight update.
  * - Fixed: Investment stock-details helper import now revs to the pre-range overnight marker projection fix.
@@ -293,7 +294,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.61.29',
+    entry: 'v1.61.30',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -3560,6 +3561,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        keepSegmentedActiveOptionVisible(rangeControl, pillGeometry);
         rangeControl.classList.add('is-pill-ready');
     }
 
@@ -3598,6 +3600,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
         rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
+        keepSegmentedActiveOptionVisible(rangeControl, pillGeometry);
         rangeControl.classList.add('is-pill-ready');
     }
 
