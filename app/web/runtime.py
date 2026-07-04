@@ -65,6 +65,7 @@ from app.services.comparisons import (
     resolve_effective_period_for_datasets,
     slice_dataset_for_period,
     slice_datasets_for_compare_period,
+    slice_intraday_datasets_for_compare_period,
 )
 from app.core.email_settings import (
     SmtpSettings,
@@ -3029,7 +3030,10 @@ def build_web_runtime() -> WebRuntime:
                 settings_title = "Live trading"
 
         supported_periods = (
-            list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals else list(ADAPTIVE_PERIODS_1D)
+            list(COMPARE_PERIODS_1D)
+            if current_view in {"tickers", "portfolio"}
+            else list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals
+            else list(ADAPTIVE_PERIODS_1D)
         )
 
         if period not in supported_periods:
@@ -3312,11 +3316,34 @@ def build_web_runtime() -> WebRuntime:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
-                        supported_periods = build_supported_periods_from_dates(
-                            extract_shared_dates(datasets),
-                            interval="1d",
-                            candidate_periods=COMPARE_PERIODS_1D,
-                        )
+                        intraday_supported_periods: list[str] = []
+                        intraday_period_candidates = {"1d", "3d", "1w"}
+                        intraday_period_sets = [
+                            {
+                                candidate
+                                for candidate in build_supported_periods_for_history_store(ticker, "1m")
+                                if candidate in intraday_period_candidates
+                            }
+                            for ticker in validated_tickers
+                        ]
+                        if intraday_period_sets and all(period_set for period_set in intraday_period_sets):
+                            intraday_supported_periods = [
+                                candidate
+                                for candidate in ("1d", "3d", "1w")
+                                if all(candidate in period_set for period_set in intraday_period_sets)
+                            ]
+                        supported_periods = [
+                            *intraday_supported_periods,
+                            *[
+                                candidate
+                                for candidate in build_supported_periods_from_dates(
+                                    extract_shared_dates(datasets),
+                                    interval="1d",
+                                    candidate_periods=COMPARE_PERIODS_1D,
+                                )
+                                if candidate not in intraday_period_candidates
+                            ],
+                        ]
                         date_constraints = build_date_constraint_payload(
                             *datasets,
                             requested_start=exact_start or None,
@@ -3361,6 +3388,8 @@ def build_web_runtime() -> WebRuntime:
                             else:
                                 notice += " " + freshness_notice
 
+                        is_intraday_compare_period = range_mode != "exact" and period in {"1d", "3d", "1w"}
+
                         if range_mode == "exact":
                             if not date_constraints.trading_dates:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
@@ -3375,6 +3404,36 @@ def build_web_runtime() -> WebRuntime:
                             exact_start_value = date_constraints.adjusted_start or date_constraints.min_date or ""
                             exact_end_value = date_constraints.adjusted_end or date_constraints.max_date or ""
                             period_label = "Exact range"
+                        elif is_intraday_compare_period:
+                            if period not in intraday_supported_periods:
+                                earliest_intraday = min(dataset["Date"].min() for dataset in datasets) if datasets else None
+                                period, intraday_notice = resolve_requested_period_from_supported(
+                                    period,
+                                    intraday_supported_periods or list(COMPARE_PERIODS_1D),
+                                    earliest_intraday,
+                                )
+                                if intraday_notice and notice is None:
+                                    notice = intraday_notice
+                                elif intraday_notice:
+                                    notice = f"{notice} {intraday_notice}"
+                            intraday_datasets = [
+                                fetch_history(
+                                    ticker,
+                                    include_dividends=False,
+                                    interval="1m",
+                                    dividend_mode="price",
+                                )
+                                for ticker in validated_tickers
+                            ]
+                            common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
+                            aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                intraday_datasets,
+                                period,
+                                common_end_date,
+                            )
+                            exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
+                            exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
+                            period_label = format_period_label(period)
                         else:
                             period, notice_resolve = resolve_effective_period_for_many(period, datasets)
                             if notice_resolve and notice is None:
@@ -3390,7 +3449,7 @@ def build_web_runtime() -> WebRuntime:
                             exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
                             exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                             period_label = format_period_label(period)
-                        supported_periods = list(COMPARE_PERIODS_1D)
+                        supported_periods = supported_periods or list(COMPARE_PERIODS_1D)
 
                         colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                         if current_view == "portfolio":

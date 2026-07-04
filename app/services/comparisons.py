@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -9,8 +9,20 @@ from __future__ import annotations
 import pandas as pd
 
 from app.core.config import PERIOD_OFFSETS
-from app.services.presentation import format_display_date, format_period_label
+from app.services.presentation import format_display_date, format_display_datetime, format_period_label
 from app.models.schemas import SeriesPayload
+
+_REGULAR_SESSION_OPEN_MINUTE = (9 * 60) + 30
+_REGULAR_SESSION_CLOSE_MINUTE = (16 * 60) - 1
+
+
+def _minute_of_day(timestamp: pd.Timestamp) -> int:
+    return (timestamp.hour * 60) + timestamp.minute
+
+
+def _is_regular_session_timestamp(timestamp: pd.Timestamp) -> bool:
+    minute_of_day = _minute_of_day(timestamp)
+    return _REGULAR_SESSION_OPEN_MINUTE <= minute_of_day <= _REGULAR_SESSION_CLOSE_MINUTE
 
 
 def latest_common_start(datasets: list[pd.DataFrame]) -> pd.Timestamp:
@@ -147,6 +159,44 @@ def slice_datasets_for_compare_period(
     return align_many_datasets_on_common_dates(sliced_datasets)
 
 
+def slice_intraday_datasets_for_compare_period(
+        datasets: list[pd.DataFrame],
+        period: str,
+        reference_end_date: pd.Timestamp,
+) -> list[pd.DataFrame]:
+    if not datasets:
+        raise ValueError("At least one dataset is required.")
+
+    common_end = pd.Timestamp(reference_end_date)
+    sliced_datasets: list[pd.DataFrame] = []
+    target_trading_days: list[object] | None = None
+
+    for dataset in datasets:
+        bounded_dataset = dataset[dataset["Date"] <= common_end].copy()
+        if bounded_dataset.empty:
+            sliced_datasets.append(dataset.tail(1).copy())
+            continue
+        bounded_dataset = bounded_dataset.sort_values("Date")
+
+        if period == "1d":
+            latest_day = bounded_dataset["Date"].dt.date.max()
+            trimmed = bounded_dataset[bounded_dataset["Date"].dt.date == latest_day].copy()
+        else:
+            trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
+            requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0
+            if requested_day_count <= 0:
+                raise ValueError(f"Unsupported intraday comparison period: {period}")
+            if target_trading_days is None:
+                target_trading_days = trading_days[-requested_day_count:]
+            selected_days = set(target_trading_days or trading_days[-requested_day_count:])
+            trimmed = bounded_dataset[bounded_dataset["Date"].dt.date.isin(selected_days)].copy()
+            trimmed = trimmed[trimmed["Date"].map(_is_regular_session_timestamp)].copy()
+
+        sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
+
+    return align_many_datasets_on_common_dates(sliced_datasets)
+
+
 def build_series_payload(
         ticker: str,
         dataset: pd.DataFrame,
@@ -156,10 +206,17 @@ def build_series_payload(
 ) -> SeriesPayload:
     first_close = float(dataset["Close"].iloc[0])
     normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0
+    has_intraday_timestamps = dataset["Date"].map(
+        lambda value: pd.Timestamp(value).hour != 0 or pd.Timestamp(value).minute != 0
+    ).any()
     return SeriesPayload(
         ticker=ticker.upper(),
-        dates=dataset["Date"].map(format_display_date).tolist(),
-        raw_dates=dataset["Date"].map(lambda value: pd.Timestamp(value).strftime("%Y-%m-%d")).tolist(),
+        dates=dataset["Date"].map(
+            lambda value: format_display_datetime(value) if has_intraday_timestamps else format_display_date(value)
+        ).tolist(),
+        raw_dates=dataset["Date"].map(
+            lambda value: pd.Timestamp(value).strftime("%Y-%m-%d %H:%M")
+        ).tolist(),
         normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
         color=color,
         glow=glow,

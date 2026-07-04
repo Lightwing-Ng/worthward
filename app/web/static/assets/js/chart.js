@@ -1,7 +1,17 @@
-/* Code version: v0.4.10 */
+/* Code version: v0.6.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
+	const ONE_DAY_COMPARE_SESSION_MARKERS = Object.freeze([
+		{ minutes: (4 * 60), timeLabel: "04:00", align: "left" },
+		{ minutes: (9 * 60) + 30, timeLabel: "09:30", align: "center" },
+		{ minutes: (16 * 60), timeLabel: "16:00", align: "center" },
+		{ minutes: (20 * 60), timeLabel: "20:00", align: "right" },
+	]);
+	const ONE_DAY_COMPARE_DIVIDER_MINUTES = Object.freeze([
+		(9 * 60) + 30,
+		16 * 60,
+	]);
 
 	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
 
@@ -153,7 +163,7 @@
 		const { series, profiles } = chartState;
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
-		["glowPlugin", "zeroBandPlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
+		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
 			try {
 				const registeredPlugin = Chart.registry?.plugins?.get?.(pluginId);
 				if (registeredPlugin) Chart.unregister(registeredPlugin);
@@ -180,6 +190,7 @@
 
 		const labels = series[0].dates;
 		const rawDates = Array.isArray(series[0].raw_dates) ? series[0].raw_dates : [];
+		const selectedPeriod = new URLSearchParams(window.location.search).get("period")?.trim().toLowerCase() || "";
 		const refreshTransition = consumeChartWorkspaceRefreshTransition(state.currentView);
 		const chartWrap = canvas.closest(".chart-wrap") || canvas.parentElement;
 		const chartYPaddingPx = readPxToken(chartWrap, "--trade-chart-y-padding-px", 5);
@@ -230,14 +241,60 @@
 			},
 		};
 
+		const normalizeDateKey = (value) => {
+			const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+			return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+		};
+
+		const hasMeaningfulIntradayTime = (value) => {
+			const match = String(value || "").match(/(?:[T ](\d{2}):(\d{2}))$/);
+			if (!match) return false;
+			const hours = Number(match[1]);
+			const minutes = Number(match[2]);
+			if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false;
+			return hours !== 0 || minutes !== 0;
+		};
+
+		const hasIntradayLabels = rawDates.some((value) => hasMeaningfulIntradayTime(value));
+		const isCompareOneDayRange = state.currentView === "tickers" && selectedPeriod === "1d" && hasIntradayLabels;
+
+		const buildOneDaySessionTickDefinitions = () => {
+			const anchorDateParts = parseRawDate(rawDates[0]);
+			if (!anchorDateParts) return [];
+			const dateLine = typeof formatFullDateParts === "function"
+				? formatFullDateParts({
+					year: anchorDateParts.year,
+					monthIndex: anchorDateParts.monthIndex,
+					day: anchorDateParts.day,
+				})
+				: `${anchorDateParts.day}/${anchorDateParts.monthIndex + 1}/${anchorDateParts.year}`;
+			const sessionStartMinute = 4 * 60;
+			const sessionEndMinute = 20 * 60;
+			const totalSessionMinutes = sessionEndMinute - sessionStartMinute;
+			return ONE_DAY_COMPARE_SESSION_MARKERS.map((marker) => ({
+				xRatio: totalSessionMinutes > 0 ? (marker.minutes - sessionStartMinute) / totalSessionMinutes : 0,
+				align: marker.align,
+				firstLine: marker.timeLabel,
+				secondLine: dateLine,
+			}));
+		};
+
+		const buildOneDaySessionDividerRatios = () => {
+			const sessionStartMinute = 4 * 60;
+			const sessionEndMinute = 20 * 60;
+			const totalSessionMinutes = sessionEndMinute - sessionStartMinute;
+			if (totalSessionMinutes <= 0) return [];
+			return ONE_DAY_COMPARE_DIVIDER_MINUTES.map((minutes) => (
+				(minutes - sessionStartMinute) / totalSessionMinutes
+			)).filter((ratio) => ratio > 0 && ratio < 1);
+		};
+
 		const xAxisLabelPlugin = {
 			id: "xAxisLabelPlugin",
 			afterDraw(chartInstance) {
 				const { ctx, chartArea, scales } = chartInstance;
 				const xScale = scales?.x;
 				if (!chartArea || !xScale || !labels.length) return;
-				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-				const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
 				const baselineY = chartArea.bottom;
 				ctx.save();
 				ctx.fillStyle = resolvedTheme.muted;
@@ -245,18 +302,57 @@
 				const lineHeight = Math.round(axisFontSize * 1.08);
 				ctx.font = `400 ${axisFontSize}px "GDS Transport", "Helvetica Neue", Arial, sans-serif`;
 				ctx.textBaseline = "top";
+				if (isCompareOneDayRange) {
+					const sessionTicks = buildOneDaySessionTickDefinitions();
+					sessionTicks.forEach((tickDef, tickIndex) => {
+						const x = chartArea.left + (chartArea.width * tickDef.xRatio);
+						if (!Number.isFinite(x)) return;
+						if (tickDef.align === "left" || tickIndex === 0) ctx.textAlign = "left";
+						else if (tickDef.align === "right" || tickIndex === sessionTicks.length - 1) ctx.textAlign = "right";
+						else ctx.textAlign = "center";
+						ctx.fillText(tickDef.firstLine, x, baselineY + 4);
+						ctx.fillText(tickDef.secondLine, x, baselineY + 4 + lineHeight);
+					});
+					ctx.restore();
+					return;
+				}
+				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+				const tickIndexes = buildChartTickIndexes(labels, rawDates, viewportWidth, hasIntradayLabels);
 				tickIndexes.forEach((index, tickIndex) => {
 					const parsedDate = parseRawDate(rawDates[index]);
 					if (!parsedDate) return;
 					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
-					const ratio = labels.length <= 1 ? 0 : index / (labels.length - 1);
-					const x = chartArea.left + (chartArea.width * ratio);
+					const x = xScale.getPixelForValue(index);
 					if (!Number.isFinite(x)) return;
 					if (tickIndex === 0) ctx.textAlign = "left";
 					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
 					else ctx.textAlign = "center";
 					ctx.fillText(firstLine, x, baselineY + 4);
 					ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
+				});
+				ctx.restore();
+			},
+		};
+
+		const oneDaySessionGuidePlugin = {
+			id: "oneDaySessionGuidePlugin",
+			beforeDatasetsDraw(chartInstance) {
+				if (!isCompareOneDayRange) return;
+				const { ctx, chartArea } = chartInstance;
+				if (!chartArea) return;
+				const dividerRatios = buildOneDaySessionDividerRatios();
+				if (!dividerRatios.length) return;
+				ctx.save();
+				ctx.strokeStyle = resolvedTheme.muted;
+				ctx.globalAlpha = 0.22;
+				ctx.lineWidth = 1;
+				dividerRatios.forEach((ratio) => {
+					const x = chartArea.left + (chartArea.width * ratio);
+					if (!Number.isFinite(x)) return;
+					ctx.beginPath();
+					ctx.moveTo(x, chartArea.top);
+					ctx.lineTo(x, chartArea.bottom);
+					ctx.stroke();
 				});
 				ctx.restore();
 			},
@@ -401,19 +497,24 @@
 
 		const parseRawDate = (value) => {
 			if (typeof value !== "string") return null;
-			// Match date part only (yyyy-mm-dd) from ISO strings or simple date strings
-			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+			const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
 			if (!match) return null;
 			return {
 				year: Number(match[1]),
 				monthIndex: Number(match[2]) - 1,
 				day: Number(match[3]),
+				hours: match[4] ? Number(match[4]) : null,
+				minutes: match[5] ? Number(match[5]) : null,
 			};
 		};
 
 		const formatChartDate = (dateParts) => (
 			typeof formatFullDateParts === "function"
-				? formatFullDateParts(dateParts)
+				? formatFullDateParts(dateParts, {
+					includeTime: Number.isFinite(dateParts?.hours)
+						&& Number.isFinite(dateParts?.minutes)
+						&& (dateParts.hours !== 0 || dateParts.minutes !== 0),
+				})
 				: `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`
 		);
 
@@ -438,34 +539,63 @@
 			]);
 		};
 
+		const buildChartTickIndexes = (chartLabels, chartRawDates, plotWidth, useIntradayDedup = false) => {
+			const tickIndexes = Array.from(buildTickIndexSet(chartLabels.length, plotWidth)).sort((left, right) => left - right);
+			if (!useIntradayDedup) return tickIndexes;
+			const uniqueDays = new Set(chartRawDates.map((value) => normalizeDateKey(value)).filter(Boolean));
+			if (uniqueDays.size <= 1) return tickIndexes;
+			const seenDays = new Set();
+			return tickIndexes.filter((index) => {
+				const dayKey = normalizeDateKey(chartRawDates[index]);
+				if (!dayKey || seenDays.has(dayKey)) return false;
+				seenDays.add(dayKey);
+				return true;
+			});
+		};
+
 		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
+		const shouldAnimateRefreshTransition = Boolean(refreshTransition) && !hasIntradayLabels;
 		const chartYScale = buildPixelPaddedYScale(canvas, targetSeriesByIndex, chartYPaddingPx);
 		const axisFontSize = readPxToken(canvas, "--workspace-share-chart-axis-font-size", 12);
-		const xAxisBottomPadding = Math.max(22, Math.round(axisFontSize * 2.6));
+		const xAxisBottomPadding = isCompareOneDayRange
+			? Math.max(30, Math.round(axisFontSize * 3.1))
+			: Math.max(22, Math.round(axisFontSize * 2.6));
 		const chart = new Chart(canvas, {
 			type: "line",
 			data: {
 				labels,
-				datasets: series.map((item, index) => ({
-					...baseDatasetStyle,
-					label: item.ticker,
-					data: refreshTransition
-						? buildAlignedSeries(
-							previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
-							previousSeriesMap.get(item.ticker)?.values || [],
-							labels,
-							item.normalized_returns,
-						)
-						: item.normalized_returns,
-					borderColor: item.color || resolvedTheme.accentPrimary || theme.accent_primary,
-					pointHoverBackgroundColor: item.color || resolvedTheme.accentPrimary || theme.accent_primary,
-					shadowColor: hexToRgba(item.color || resolvedTheme.accentPrimary || theme.accent_primary, 0.4),
-					glow: item.glow !== false,
-					shadowBlur: referenceShadowBlur,
-				})),
+				datasets: series.map((item, index) => {
+					const strokeColor = item.color || resolvedTheme.accentPrimary || theme.accent_primary;
+					return {
+						...baseDatasetStyle,
+						label: item.ticker,
+						data: refreshTransition
+							? buildAlignedSeries(
+								previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
+								previousSeriesMap.get(item.ticker)?.values || [],
+								labels,
+								item.normalized_returns,
+							)
+							: item.normalized_returns,
+						borderColor: strokeColor,
+						pointHoverBackgroundColor: strokeColor,
+						shadowColor: hexToRgba(strokeColor, 0.4),
+						glow: item.glow !== false,
+						shadowBlur: referenceShadowBlur,
+						segment: {
+							borderColor: (context) => {
+								if (!hasIntradayLabels) return strokeColor;
+								const leftDate = normalizeDateKey(rawDates[Number(context?.p0DataIndex)]);
+								const rightDate = normalizeDateKey(rawDates[Number(context?.p1DataIndex)]);
+								if (leftDate && rightDate && leftDate !== rightDate) return "rgba(0, 85, 204, 0)";
+								return strokeColor;
+							},
+						},
+					};
+				}),
 			},
 			options: {
-				animation: refreshTransition ? false : undefined,
+				animation: hasIntradayLabels || shouldAnimateRefreshTransition ? false : undefined,
 				responsive: true,
 				maintainAspectRatio: false,
 				layout: { padding: { top: 8, right: logoSize + logoGap + logoRightPadding, bottom: xAxisBottomPadding, left: 4 } },
@@ -514,7 +644,7 @@
 					},
 				},
 			},
-			plugins: [glowPlugin, zeroBandPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
+			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
 		});
 		bindColorSchemeRefresh(() => {
 			const nextTheme = readThemeTokens();
@@ -528,7 +658,7 @@
 			});
 			chart.update();
 		});
-		if (refreshTransition) {
+		if (shouldAnimateRefreshTransition) {
 			window.requestAnimationFrame(() => {
 				chart.options.animation = {
 					duration: 540,

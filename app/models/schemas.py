@@ -13,7 +13,7 @@ class SeriesPayload:
     ticker: str
     dates: List[str]
     raw_dates: List[str]
-    normalized_returns: List[float]
+    normalized_returns: List[float | None]
     color: Optional[str] = None
     glow: bool = True
 
