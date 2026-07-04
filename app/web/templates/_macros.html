@@ -50,7 +50,45 @@
 </div>
 {%- endmacro %}
 
-{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', custom_period_dropdown=false) -%}
+{% macro render_date_picker_field(role, input_id, input_name, value, label, aria_label, feedback_id, disabled=false, hidden=false) -%}
+<div class="date-picker-field" data-date-picker data-date-role="{{ role }}"{% if hidden %} hidden{% endif %}>
+    <label for="{{ input_id }}"{% if role == "end" %} class="date-end-label"{% endif %}>{{ label }}</label>
+    <input id="{{ input_id }}" name="{{ input_name }}" type="hidden" value="{{ value }}"{% if disabled %} disabled{% endif %}>
+    <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+        <span
+            class="date-picker-trigger-value"
+            data-date-trigger-value
+            data-date-editor
+            contenteditable="plaintext-only"
+            role="textbox"
+            aria-multiline="false"
+            aria-label="{{ aria_label }}"
+            aria-describedby="{{ feedback_id }}"
+            data-placeholder="Select date"
+            data-empty="1"
+            spellcheck="false"
+        ></span>
+    </div>
+    <div class="date-picker-popover" data-date-popover hidden>
+        <p id="{{ feedback_id }}" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
+        <div class="date-picker-toolbar">
+            <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                <span class="icon icon-page-prev" aria-hidden="true"></span>
+            </button>
+            <p class="date-picker-month" data-date-month></p>
+            <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                <span class="icon icon-page-next" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div class="date-picker-weekdays" aria-hidden="true">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="date-picker-days" data-date-grid></div>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', custom_period_dropdown=false, exact_single_date=false, exact_single_date_label='Trading date') -%}
 {% set range_mode_label = labels.mode if labels.mode is defined else "Mode" %}
 {% set selected_period_label = period_labels.get(period, period_labels.get(periods[0], labels.period) if periods else labels.period) %}
 <div class="field range-mode-field">
@@ -107,77 +145,13 @@
     {% endif %}
 </div>
 <div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
-    <div class="date-picker-grid">
-        <div class="date-picker-field" data-date-picker data-date-role="start">
-            <label for="exact_start">{{ labels.start }}</label>
-            <input id="exact_start" name="from" type="hidden" value="{{ exact_start }}">
-            <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
-                <span
-                    class="date-picker-trigger-value"
-                    data-date-trigger-value
-                    data-date-editor
-                    contenteditable="plaintext-only"
-                    role="textbox"
-                    aria-multiline="false"
-                    aria-label="Type start date"
-                    aria-describedby="exact_start_feedback"
-                    data-placeholder="Select date"
-                    data-empty="1"
-                    spellcheck="false"
-                ></span>
-            </div>
-            <div class="date-picker-popover" data-date-popover hidden>
-                <p id="exact_start_feedback" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
-                <div class="date-picker-toolbar">
-                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
-                        <span class="icon icon-page-prev" aria-hidden="true"></span>
-                    </button>
-                    <p class="date-picker-month" data-date-month></p>
-                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
-                        <span class="icon icon-page-next" aria-hidden="true"></span>
-                    </button>
-                </div>
-                <div class="date-picker-weekdays" aria-hidden="true">
-                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
-                </div>
-                <div class="date-picker-days" data-date-grid></div>
-            </div>
-        </div>
-        <div class="date-picker-field" data-date-picker data-date-role="end">
-            <label for="exact_end" class="date-end-label">{{ labels.to }}</label>
-            <input id="exact_end" name="to" type="hidden" value="{{ exact_end }}">
-            <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
-                <span
-                    class="date-picker-trigger-value"
-                    data-date-trigger-value
-                    data-date-editor
-                    contenteditable="plaintext-only"
-                    role="textbox"
-                    aria-multiline="false"
-                    aria-label="Type end date"
-                    aria-describedby="exact_end_feedback"
-                    data-placeholder="Select date"
-                    data-empty="1"
-                    spellcheck="false"
-                ></span>
-            </div>
-            <div class="date-picker-popover" data-date-popover hidden>
-                <p id="exact_end_feedback" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
-                <div class="date-picker-toolbar">
-                    <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
-                        <span class="icon icon-page-prev" aria-hidden="true"></span>
-                    </button>
-                    <p class="date-picker-month" data-date-month></p>
-                    <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
-                        <span class="icon icon-page-next" aria-hidden="true"></span>
-                    </button>
-                </div>
-                <div class="date-picker-weekdays" aria-hidden="true">
-                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
-                </div>
-                <div class="date-picker-days" data-date-grid></div>
-            </div>
-        </div>
+    {% set exact_trading_date = exact_start if exact_start else exact_end %}
+    <div class="date-picker-grid" data-exact-range-date-grid{% if exact_single_date %} hidden{% endif %}>
+        {{ render_date_picker_field("start", "exact_start", "from", exact_start, labels.start, "Type start date", "exact_start_feedback", exact_single_date, false) }}
+        {{ render_date_picker_field("end", "exact_end", "to", exact_end, labels.to, "Type end date", "exact_end_feedback", exact_single_date, false) }}
+    </div>
+    <div class="date-picker-grid" data-exact-single-date-grid{% if not exact_single_date %} hidden{% endif %}>
+        {{ render_date_picker_field("single", "exact_trading_date", "trading_date", exact_trading_date, exact_single_date_label, "Type trading date", "exact_trading_date_feedback", not exact_single_date, false) }}
     </div>
 </div>
 {%- endmacro %}

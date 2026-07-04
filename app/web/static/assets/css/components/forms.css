@@ -1,4 +1,4 @@
-/* Code version: v0.1.8 */
+/* Code version: v0.1.9 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1716,9 +1716,9 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 	min-height: 34px;
 	justify-self: center;
 	border-radius: var(--radius-pill);
-	outline: 2px solid var(--accent-text);
-	outline-offset: -2px;
-	color: var(--accent-text);
+	background: var(--accent-fill);
+	color: var(--accent-contrast);
+	font-weight: var(--font-weight-bold);
 }
 .date-picker-day.is-selected.is-peer-boundary { color: var(--accent-contrast); }
 .date-picker-day.is-today { box-shadow: inset 0 0 0 1px var(--accent-border-medium); }

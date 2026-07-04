@@ -1,11 +1,11 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Any
 
 
 @dataclass
@@ -16,6 +16,7 @@ class SeriesPayload:
     normalized_returns: List[float | None]
     color: Optional[str] = None
     glow: bool = True
+    candlestick_returns: Optional[List[dict[str, Any]]] = None
 
 
 @dataclass

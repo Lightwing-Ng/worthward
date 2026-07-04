@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.4.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -23,6 +23,11 @@ def _minute_of_day(timestamp: pd.Timestamp) -> int:
 def _is_regular_session_timestamp(timestamp: pd.Timestamp) -> bool:
     minute_of_day = _minute_of_day(timestamp)
     return _REGULAR_SESSION_OPEN_MINUTE <= minute_of_day <= _REGULAR_SESSION_CLOSE_MINUTE
+
+
+def filter_intraday_dataset_to_regular_session(dataset: pd.DataFrame) -> pd.DataFrame:
+    regular_session = dataset[dataset["Date"].map(_is_regular_session_timestamp)].copy()
+    return regular_session if not regular_session.empty else dataset.copy()
 
 
 def latest_common_start(datasets: list[pd.DataFrame]) -> pd.Timestamp:
@@ -51,6 +56,38 @@ def align_many_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd
         raise ValueError("The selected tickers do not share any common trading dates.")
     return [
         merged[["Date", f"Close_{index}"]].rename(columns={f"Close_{index}": "Close"}).copy()
+        for index in range(len(datasets))
+    ]
+
+
+def align_many_intraday_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    if not datasets:
+        return []
+    price_columns = [
+        column
+        for column in ("Open", "High", "Low", "Close")
+        if all(column in dataset.columns for dataset in datasets)
+    ]
+    if "Close" not in price_columns:
+        price_columns.append("Close")
+    merged = datasets[0][["Date", *price_columns]].rename(
+        columns={column: f"{column}_0" for column in price_columns}
+    ).copy()
+    for index, dataset in enumerate(datasets[1:], start=1):
+        merged = pd.merge(
+            merged,
+            dataset[["Date", *price_columns]].rename(
+                columns={column: f"{column}_{index}" for column in price_columns}
+            ),
+            on="Date",
+            how="inner",
+        ).sort_values("Date")
+    if merged.empty:
+        raise ValueError("The selected tickers do not share any common trading dates.")
+    return [
+        merged[["Date", *[f"{column}_{index}" for column in price_columns]]].rename(
+            columns={f"{column}_{index}": column for column in price_columns}
+        ).copy()
         for index in range(len(datasets))
     ]
 
@@ -194,7 +231,7 @@ def slice_intraday_datasets_for_compare_period(
 
         sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
 
-    return align_many_datasets_on_common_dates(sliced_datasets)
+    return align_many_intraday_datasets_on_common_dates(sliced_datasets)
 
 
 def build_series_payload(
@@ -204,11 +241,29 @@ def build_series_payload(
         *,
         glow: bool = True,
 ) -> SeriesPayload:
-    first_close = float(dataset["Close"].iloc[0])
-    normalized_returns = ((dataset["Close"] / first_close) - 1.0) * 100.0
     has_intraday_timestamps = dataset["Date"].map(
         lambda value: pd.Timestamp(value).hour != 0 or pd.Timestamp(value).minute != 0
     ).any()
+    has_ohlc = has_intraday_timestamps and all(column in dataset.columns for column in ("Open", "High", "Low", "Close"))
+    baseline_price = float(dataset["Open"].iloc[0]) if has_ohlc else float(dataset["Close"].iloc[0])
+    normalized_returns = ((dataset["Close"] / baseline_price) - 1.0) * 100.0
+    candlestick_returns = None
+    if has_ohlc:
+        candlestick_returns = [
+            {
+                "x": index,
+                "o": round(((float(open_value) / baseline_price) - 1.0) * 100.0, 4),
+                "h": round(((float(high_value) / baseline_price) - 1.0) * 100.0, 4),
+                "l": round(((float(low_value) / baseline_price) - 1.0) * 100.0, 4),
+                "c": round(((float(close_value) / baseline_price) - 1.0) * 100.0, 4),
+            }
+            for index, (open_value, high_value, low_value, close_value) in enumerate(zip(
+                dataset["Open"],
+                dataset["High"],
+                dataset["Low"],
+                dataset["Close"],
+            ))
+        ]
     return SeriesPayload(
         ticker=ticker.upper(),
         dates=dataset["Date"].map(
@@ -220,4 +275,5 @@ def build_series_payload(
         normalized_returns=[round(value, 4) for value in normalized_returns.tolist()],
         color=color,
         glow=glow,
+        candlestick_returns=candlestick_returns,
     )

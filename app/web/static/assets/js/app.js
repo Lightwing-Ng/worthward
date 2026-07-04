@@ -1,4 +1,4 @@
-/* Code version: v0.5.9 */
+/* Code version: v0.5.12 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -653,7 +653,7 @@
         const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
         if (currentTickers !== nextTickers) return true;
 
-        const xAxisKeys = ["period", "range", "from", "exact_start", "to", "exact_end", "price_only", "price_return_only", "dividends", "include_dividends"];
+        const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "price_only", "price_return_only", "dividends", "include_dividends"];
         for (const key of xAxisKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -3321,7 +3321,13 @@
     const rangeModeInputs = $$("input[name='range']");
     const exactStartInput = $("#exact_start");
     const exactEndInput = $("#exact_end");
+    const exactTradingDateInput = $("#exact_trading_date");
+    const exactRangeDateGrid = $("[data-exact-range-date-grid]");
+    const exactSingleDateGrid = $("[data-exact-single-date-grid]");
+    const extendedHoursInput = $("#include_extended_hours");
+    const extendedHoursField = $("[data-one-day-extended-hours-field]");
     const priceOnlyInput = $("#price_only");
+    const priceOnlyField = $("[data-price-only-field]");
     const includeDividendsInput = $("#include_dividends");
     const dividendReinvestField = $("[data-dividend-reinvest-field]");
     const tradeCapitalField = $(".trade-capital-field");
@@ -3330,13 +3336,50 @@
     const getSharedSelectFields = () => Array.from(document.querySelectorAll("[data-shared-select-field]"))
         .filter((field) => field instanceof HTMLElement);
 
+    const isOneDayExactDateMode = () => (
+        state.currentView === "tickers"
+        && (periodSelect?.value || defaults.period) === "1d"
+    );
+
+    const syncExactDateModeControls = () => {
+        const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
+        const useSingleDate = rangeMode === "exact" && isOneDayExactDateMode();
+        if (exactRangeDateGrid instanceof HTMLElement) exactRangeDateGrid.hidden = useSingleDate;
+        if (exactSingleDateGrid instanceof HTMLElement) exactSingleDateGrid.hidden = !useSingleDate;
+        if (exactStartInput) exactStartInput.disabled = useSingleDate;
+        if (exactEndInput) exactEndInput.disabled = useSingleDate;
+        if (exactTradingDateInput) exactTradingDateInput.disabled = !useSingleDate;
+    };
+
     const syncDividendModeSwitches = () => {
         if (!priceOnlyInput || !includeDividendsInput) return;
+        const isOneDayPeriod = state.currentView === "tickers" && (periodSelect?.value || defaults.period) === "1d";
+        if (priceOnlyField instanceof HTMLElement) {
+            priceOnlyField.hidden = isOneDayPeriod;
+        }
+        priceOnlyInput.disabled = isOneDayPeriod;
+        includeDividendsInput.disabled = isOneDayPeriod;
+        if (isOneDayPeriod) {
+            priceOnlyInput.checked = false;
+            includeDividendsInput.checked = false;
+            if (dividendReinvestField instanceof HTMLElement) {
+                dividendReinvestField.hidden = true;
+            }
+            return;
+        }
         const isPriceOnly = priceOnlyInput.checked;
         if (isPriceOnly) includeDividendsInput.checked = false;
         if (dividendReinvestField instanceof HTMLElement) {
             dividendReinvestField.hidden = isPriceOnly;
         }
+    };
+
+    const syncOneDayExtendedHoursSwitch = () => {
+        if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) return;
+        const isOneDayPeriod = state.currentView === "tickers" && (periodSelect?.value || defaults.period) === "1d";
+        extendedHoursField.hidden = !isOneDayPeriod;
+        extendedHoursInput.disabled = !isOneDayPeriod;
+        if (!isOneDayPeriod) extendedHoursInput.checked = false;
     };
 
     const getSharedSelectParts = (field) => {
@@ -4138,6 +4181,13 @@
         if (!exactStartInput || !exactEndInput) return false;
         const range = getRenderedChartDateRange();
         if (!range?.start || !range?.end) return false;
+        if (isOneDayExactDateMode() && exactTradingDateInput) {
+            exactTradingDateInput.value = range.start;
+            if (exactStartInput) exactStartInput.value = range.start;
+            if (exactEndInput) exactEndInput.value = range.start;
+            refreshDatePickers();
+            return true;
+        }
         exactStartInput.value = range.start;
         exactEndInput.value = range.end;
         refreshDatePickers();
@@ -4145,6 +4195,7 @@
     };
 
     const chooseRelativePeriodForExactRange = () => {
+        if (isOneDayExactDateMode()) return "1d";
         if (!periodSelect || !exactStartInput?.value || !exactEndInput?.value) return null;
         const exactStartDate = parseIsoDate(exactStartInput.value);
         const exactEndDate = parseIsoDate(exactEndInput.value);
@@ -4265,6 +4316,7 @@
             exactPanel.setAttribute("aria-hidden", String(isPeriodMode));
             exactPanel.style.display = isPeriodMode ? "none" : "";
         }
+        syncExactDateModeControls();
         if (isPeriodMode) closeAllDatePickers();
     };
 
@@ -4282,7 +4334,13 @@
         if (isTickerValidationPending()) return false;
         if (getTickerInputs().some((input) => !input.checkValidity() || input.dataset.unknown === "1")) return false;
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
-        if (rangeModeInputs.length && rangeMode === "exact" && (!exactStartInput?.value || !exactEndInput?.value)) return false;
+        if (rangeModeInputs.length && rangeMode === "exact") {
+            if (isOneDayExactDateMode()) {
+                if (!exactTradingDateInput?.value) return false;
+            } else if (!exactStartInput?.value || !exactEndInput?.value) {
+                return false;
+            }
+        }
         return true;
     };
 
@@ -4656,8 +4714,14 @@
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         if (rangeMode === "exact") {
             params.set("range", "exact");
-            if (exactStartInput?.value) params.set("from", exactStartInput.value);
-            if (exactEndInput?.value) params.set("to", exactEndInput.value);
+            const periodValue = $("#period")?.value || defaults.period;
+            if (periodValue) params.set("period", periodValue);
+            if (isOneDayExactDateMode()) {
+                if (exactTradingDateInput?.value) params.set("trading_date", exactTradingDateInput.value);
+            } else {
+                if (exactStartInput?.value) params.set("from", exactStartInput.value);
+                if (exactEndInput?.value) params.set("to", exactEndInput.value);
+            }
         } else {
             const periodValue = $("#period")?.value || defaults.period;
             if (periodValue) params.set("period", periodValue);
@@ -4667,6 +4731,9 @@
             params.set("price_only", "1");
         } else if (includeDividendsInput?.checked) {
             params.set("dividends", "1");
+        }
+        if (extendedHoursInput?.checked && !extendedHoursInput.disabled) {
+            params.set("extended_hours", "1");
         }
 
         if (isPortfolioView) {
@@ -4785,7 +4852,7 @@
     };
 
     const syncDateConstraints = async () => {
-        if (!exactStartInput || !exactEndInput) return;
+        if ((!exactStartInput || !exactEndInput) && !exactTradingDateInput) return;
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         if (rangeMode !== "exact") {
             validTradingDateSet = null;
@@ -4799,8 +4866,15 @@
         } else if (includeDividendsInput?.checked) {
             params.set("dividends", "1");
         }
-        if (exactStartInput.value) params.set("from", exactStartInput.value);
-        if (exactEndInput.value) params.set("to", exactEndInput.value);
+        if (isOneDayExactDateMode()) {
+            if (exactTradingDateInput?.value) {
+                params.set("from", exactTradingDateInput.value);
+                params.set("to", exactTradingDateInput.value);
+            }
+        } else {
+            if (exactStartInput?.value) params.set("from", exactStartInput.value);
+            if (exactEndInput?.value) params.set("to", exactEndInput.value);
+        }
         tickers.forEach((ticker) => params.append("ticker", ticker));
         try {
             const response = await fetch(`${endpoints.dateConstraints}?${params.toString()}`);
@@ -4808,19 +4882,38 @@
             const payload = await response.json();
             validTradingDateSet = payload.trading_dates?.length ? new Set(payload.trading_dates) : null;
             const tradingDateSet = new Set(payload.trading_dates || []);
-            exactStartInput.min = payload.min_date || "";
-            exactStartInput.max = payload.max_date || "";
-            exactEndInput.min = payload.min_date || "";
-            exactEndInput.max = payload.max_date || "";
-            if (payload.adjusted_start) exactStartInput.value = payload.adjusted_start;
-            if (payload.adjusted_end) exactEndInput.value = payload.adjusted_end;
+            if (exactStartInput) {
+                exactStartInput.min = payload.min_date || "";
+                exactStartInput.max = payload.max_date || "";
+            }
+            if (exactEndInput) {
+                exactEndInput.min = payload.min_date || "";
+                exactEndInput.max = payload.max_date || "";
+            }
+            if (exactTradingDateInput) {
+                exactTradingDateInput.min = payload.min_date || "";
+                exactTradingDateInput.max = payload.max_date || "";
+            }
+            if (isOneDayExactDateMode()) {
+                const adjustedTradingDate = payload.adjusted_start || payload.adjusted_end || payload.max_date || "";
+                if (adjustedTradingDate && exactTradingDateInput) exactTradingDateInput.value = adjustedTradingDate;
+                if (adjustedTradingDate && exactStartInput) exactStartInput.value = adjustedTradingDate;
+                if (adjustedTradingDate && exactEndInput) exactEndInput.value = adjustedTradingDate;
+            } else {
+                if (payload.adjusted_start && exactStartInput) exactStartInput.value = payload.adjusted_start;
+                if (payload.adjusted_end && exactEndInput) exactEndInput.value = payload.adjusted_end;
+            }
             const enforceTradingDate = (input, fallbackValue) => {
                 if (!input.value || tradingDateSet.has(input.value)) return false;
                 input.value = fallbackValue || "";
                 return true;
             };
-            enforceTradingDate(exactStartInput, payload.adjusted_start);
-            enforceTradingDate(exactEndInput, payload.adjusted_end);
+            if (isOneDayExactDateMode()) {
+                enforceTradingDate(exactTradingDateInput, payload.adjusted_start || payload.adjusted_end || payload.max_date);
+            } else {
+                enforceTradingDate(exactStartInput, payload.adjusted_start);
+                enforceTradingDate(exactEndInput, payload.adjusted_end);
+            }
             datePickerState.forEach((picker) => {
                 picker.invalidDraft = "";
                 picker.validationMessage = "";
@@ -4891,7 +4984,7 @@
             scheduleAutoSubmit();
         }
     }));
-    [exactStartInput, exactEndInput].forEach((input) => {
+    [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
             syncDateConstraints();
@@ -4913,10 +5006,20 @@
             scheduleAutoSubmit(80);
         });
     }
+    if (extendedHoursInput && form) {
+        syncOneDayExtendedHoursSwitch();
+        extendedHoursInput.addEventListener("change", () => {
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("extended-hours");
+            scheduleAutoSubmit(80);
+        });
+    }
     form?.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement && target.id === "period") {
             refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+            syncExactDateModeControls();
+            syncOneDayExtendedHoursSwitch();
+            syncDividendModeSwitches();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
             scheduleAutoSubmit();
             return;

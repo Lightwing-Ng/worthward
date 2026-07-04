@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.5
+Code version: v0.4.6
 """
 
 from __future__ import annotations
@@ -321,6 +321,26 @@ def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
         "market": market,
         "source": "yfinance",
     }
+
+
+def fetch_compare_one_day_extended_history(ticker: str) -> pd.DataFrame:
+    """
+    Fetch recent 1-minute OHLC bars with US extended hours for the compare 1d chart.
+
+    The result is intentionally not written to the local 1-minute store because
+    this is a chart-specific view that needs pre-market and post-market bars.
+    """
+    normalized_ticker = normalize_ticker(ticker)
+    history = _download_daily_history_with_yfinance(
+        normalized_ticker,
+        period="5d",
+        interval="1m",
+        prepost=True,
+    )
+    if history is None or history.empty:
+        raise ValueError(f"No extended-hours 1-minute data returned for {normalized_ticker} via yfinance.")
+    normalized = normalize_history_frame(history, normalized_ticker, interval="1m")
+    return select_price_series(normalized, include_dividends=False, dividend_mode="price")
 
 
 def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:

@@ -1,4 +1,4 @@
-/* Code version: v0.6.0 */
+/* Code version: v0.7.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -11,6 +11,12 @@
 	const ONE_DAY_COMPARE_DIVIDER_MINUTES = Object.freeze([
 		(9 * 60) + 30,
 		16 * 60,
+	]);
+	const ONE_DAY_COMPARE_REGULAR_SESSION_MARKERS = Object.freeze([
+		{ minutes: (9 * 60) + 30, timeLabel: "09:30", align: "left" },
+		{ minutes: 12 * 60, timeLabel: "12:00", align: "center" },
+		{ minutes: 14 * 60, timeLabel: "14:00", align: "center" },
+		{ minutes: 16 * 60, timeLabel: "16:00", align: "right" },
 	]);
 
 	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
@@ -163,7 +169,7 @@
 		const { series, profiles } = chartState;
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
-		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
+		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
 			try {
 				const registeredPlugin = Chart.registry?.plugins?.get?.(pluginId);
 				if (registeredPlugin) Chart.unregister(registeredPlugin);
@@ -246,6 +252,23 @@
 			return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 		};
 
+		const getRawDateMinuteOfDay = (value) => {
+			const match = String(value || "").match(/(?:[T ](\d{2}):(\d{2}))$/);
+			if (!match) return null;
+			const hours = Number(match[1]);
+			const minutes = Number(match[2]);
+			if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+			return (hours * 60) + minutes;
+		};
+
+		const getOneDayTimestampRatio = (value) => {
+			const minuteOfDay = getRawDateMinuteOfDay(value);
+			if (!Number.isFinite(minuteOfDay)) return null;
+			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
+			if (totalSessionMinutes <= 0) return null;
+			return Math.min(1, Math.max(0, (minuteOfDay - oneDaySessionStartMinute) / totalSessionMinutes));
+		};
+
 		const hasMeaningfulIntradayTime = (value) => {
 			const match = String(value || "").match(/(?:[T ](\d{2}):(\d{2}))$/);
 			if (!match) return false;
@@ -257,6 +280,14 @@
 
 		const hasIntradayLabels = rawDates.some((value) => hasMeaningfulIntradayTime(value));
 		const isCompareOneDayRange = state.currentView === "tickers" && selectedPeriod === "1d" && hasIntradayLabels;
+		const hasOneDayExtendedHours = isCompareOneDayRange && rawDates.some((value) => {
+			const minuteOfDay = getRawDateMinuteOfDay(value);
+			return Number.isFinite(minuteOfDay) && (minuteOfDay < ((9 * 60) + 30) || minuteOfDay >= (16 * 60));
+		});
+		const oneDaySessionStartMinute = hasOneDayExtendedHours ? (4 * 60) : ((9 * 60) + 30);
+		const oneDaySessionEndMinute = hasOneDayExtendedHours ? (20 * 60) : (16 * 60);
+		const hasOneDayCandlesticks = isCompareOneDayRange
+			&& series.every((item) => Array.isArray(item?.candlestick_returns) && item.candlestick_returns.length === labels.length);
 
 		const buildOneDaySessionTickDefinitions = () => {
 			const anchorDateParts = parseRawDate(rawDates[0]);
@@ -268,11 +299,10 @@
 					day: anchorDateParts.day,
 				})
 				: `${anchorDateParts.day}/${anchorDateParts.monthIndex + 1}/${anchorDateParts.year}`;
-			const sessionStartMinute = 4 * 60;
-			const sessionEndMinute = 20 * 60;
-			const totalSessionMinutes = sessionEndMinute - sessionStartMinute;
-			return ONE_DAY_COMPARE_SESSION_MARKERS.map((marker) => ({
-				xRatio: totalSessionMinutes > 0 ? (marker.minutes - sessionStartMinute) / totalSessionMinutes : 0,
+			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
+			const markers = hasOneDayExtendedHours ? ONE_DAY_COMPARE_SESSION_MARKERS : ONE_DAY_COMPARE_REGULAR_SESSION_MARKERS;
+			return markers.map((marker) => ({
+				xRatio: totalSessionMinutes > 0 ? (marker.minutes - oneDaySessionStartMinute) / totalSessionMinutes : 0,
 				align: marker.align,
 				firstLine: marker.timeLabel,
 				secondLine: dateLine,
@@ -280,12 +310,11 @@
 		};
 
 		const buildOneDaySessionDividerRatios = () => {
-			const sessionStartMinute = 4 * 60;
-			const sessionEndMinute = 20 * 60;
-			const totalSessionMinutes = sessionEndMinute - sessionStartMinute;
+			if (!hasOneDayExtendedHours) return [];
+			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
 			if (totalSessionMinutes <= 0) return [];
 			return ONE_DAY_COMPARE_DIVIDER_MINUTES.map((minutes) => (
-				(minutes - sessionStartMinute) / totalSessionMinutes
+				(minutes - oneDaySessionStartMinute) / totalSessionMinutes
 			)).filter((ratio) => ratio > 0 && ratio < 1);
 		};
 
@@ -358,6 +387,56 @@
 			},
 		};
 
+		const oneDayCandlestickPlugin = {
+			id: "oneDayCandlestickPlugin",
+			afterDatasetsDraw(chartInstance) {
+				if (!hasOneDayCandlesticks) return;
+				const { ctx, chartArea, scales } = chartInstance;
+				const yScale = scales?.y;
+				if (!chartArea || !yScale) return;
+				const datasetCount = Math.max(series.length, 1);
+				const hairlineWidth = Math.max(0.35, 1 / Math.max(window.devicePixelRatio || 1, 1));
+				const sessionMinuteWidth = chartArea.width / (oneDaySessionEndMinute - oneDaySessionStartMinute);
+				const groupWidth = Math.max(1, Math.min(sessionMinuteWidth * 0.78, 8));
+				const candleWidth = Math.max(hairlineWidth, groupWidth / datasetCount);
+				ctx.save();
+				series.forEach((item, datasetIndex) => {
+					const candles = Array.isArray(item?.candlestick_returns) ? item.candlestick_returns : [];
+					const strokeColor = item.color || resolvedTheme.accentPrimary || theme.accent_primary;
+					const fillColor = hexToRgba(strokeColor, 0.28);
+					const xOffset = (datasetIndex - ((datasetCount - 1) / 2)) * candleWidth;
+					ctx.strokeStyle = strokeColor;
+					ctx.fillStyle = fillColor;
+					ctx.lineWidth = hairlineWidth;
+					candles.forEach((candle, candleIndex) => {
+						const high = Number(candle?.h);
+						const low = Number(candle?.l);
+						const open = Number(candle?.o);
+						const close = Number(candle?.c);
+						if (![high, low, open, close].every(Number.isFinite)) return;
+						const xRatio = getOneDayTimestampRatio(rawDates[candleIndex]);
+						if (!Number.isFinite(xRatio)) return;
+						const x = chartArea.left + (chartArea.width * xRatio) + xOffset;
+						const highY = yScale.getPixelForValue(high);
+						const lowY = yScale.getPixelForValue(low);
+						const openY = yScale.getPixelForValue(open);
+						const closeY = yScale.getPixelForValue(close);
+						if (![x, highY, lowY, openY, closeY].every(Number.isFinite)) return;
+						const bodyTop = Math.min(openY, closeY);
+						const bodyHeight = Math.max(hairlineWidth, Math.abs(closeY - openY));
+						const bodyLeft = x - (candleWidth / 2);
+						ctx.beginPath();
+						ctx.moveTo(x, highY);
+						ctx.lineTo(x, lowY);
+						ctx.stroke();
+						ctx.fillRect(bodyLeft, bodyTop, candleWidth, bodyHeight);
+						ctx.strokeRect(bodyLeft, bodyTop, candleWidth, bodyHeight);
+					});
+				});
+				ctx.restore();
+			},
+		};
+
 		const hoverGuidePlugin = {
 			id: "hoverGuidePlugin",
 			afterDatasetsDraw(chartInstance) {
@@ -379,7 +458,7 @@
 		const lineEndLogoPlugin = {
 			id: "lineEndLogoPlugin",
 			afterDatasetsDraw(chartInstance) {
-				const { ctx, chartArea } = chartInstance;
+				const { ctx, chartArea, scales } = chartInstance;
 				if (!chartArea) return;
 				chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
 					const profile = profiles.find((item) => item.ticker === dataset.label);
@@ -389,8 +468,18 @@
 					if (!lastPoint) return;
 					const image = getLogoImage(profile.logo_url, chartInstance);
 					if (!image?.complete || !image.naturalWidth || !image.naturalHeight) return;
-					const centerX = chartArea.right + logoGap + (logoSize / 2);
-					const centerY = lastPoint.y;
+					let centerX = chartArea.right + logoGap + (logoSize / 2);
+					let centerY = lastPoint.y;
+					if (hasOneDayCandlesticks) {
+						const lastRawDate = rawDates[rawDates.length - 1];
+						const lastCandle = series[datasetIndex]?.candlestick_returns?.[rawDates.length - 1];
+						const lastRatio = getOneDayTimestampRatio(lastRawDate);
+						const close = Number(lastCandle?.c);
+						if (Number.isFinite(lastRatio) && Number.isFinite(close) && scales?.y) {
+							centerX = chartArea.left + (chartArea.width * lastRatio) + logoGap + (logoSize / 2);
+							centerY = scales.y.getPixelForValue(close);
+						}
+					}
 					const drawX = centerX - (logoSize / 2);
 					const drawY = centerY - (logoSize / 2);
 
@@ -554,8 +643,17 @@
 		};
 
 		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
+		const candlestickSeriesByIndex = series.map((item) => (
+			Array.isArray(item?.candlestick_returns)
+				? item.candlestick_returns.flatMap((candle) => [candle?.o, candle?.h, candle?.l, candle?.c])
+				: []
+		));
 		const shouldAnimateRefreshTransition = Boolean(refreshTransition) && !hasIntradayLabels;
-		const chartYScale = buildPixelPaddedYScale(canvas, targetSeriesByIndex, chartYPaddingPx);
+		const chartYScale = buildPixelPaddedYScale(
+			canvas,
+			hasOneDayCandlesticks ? candlestickSeriesByIndex : targetSeriesByIndex,
+			chartYPaddingPx,
+		);
 		const axisFontSize = readPxToken(canvas, "--workspace-share-chart-axis-font-size", 12);
 		const xAxisBottomPadding = isCompareOneDayRange
 			? Math.max(30, Math.round(axisFontSize * 3.1))
@@ -582,6 +680,7 @@
 						shadowColor: hexToRgba(strokeColor, 0.4),
 						glow: item.glow !== false,
 						shadowBlur: referenceShadowBlur,
+						showLine: !hasOneDayCandlesticks,
 						segment: {
 							borderColor: (context) => {
 								if (!hasIntradayLabels) return strokeColor;
@@ -644,7 +743,7 @@
 					},
 				},
 			},
-			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
+			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, oneDayCandlestickPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
 		});
 		bindColorSchemeRefresh(() => {
 			const nextTheme = readThemeTokens();

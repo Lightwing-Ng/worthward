@@ -1,13 +1,14 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.13
+Code version: v0.4.17
 """
 
 from __future__ import annotations
 from datetime import datetime
 from http.client import RemoteDisconnected
 import json
+import logging
 import re
 import threading
 import time
@@ -21,6 +22,8 @@ import hashlib
 import pandas as pd
 from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 from openpyxl import Workbook, load_workbook
+
+LOGGER = logging.getLogger(__name__)
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from app.core.cash_equivalent_settings import (
@@ -62,6 +65,7 @@ from app.core.broker_settings import (
 )
 from app.services.comparisons import (
     build_series_payload,
+    filter_intraday_dataset_to_regular_session,
     resolve_effective_period_for_datasets,
     slice_dataset_for_period,
     slice_datasets_for_compare_period,
@@ -159,6 +163,7 @@ from app.services.live_trading import (
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
+    fetch_compare_one_day_extended_history,
     fetch_history,
     fetch_yfinance_realtime_quote,
     fetch_yfinance_realtime_quotes,
@@ -978,8 +983,12 @@ def build_web_runtime() -> WebRuntime:
             request.args.get("range_mode", defaults.get("range_mode", "period")),
         ).strip().lower()
         period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
+        exact_trading_date = request.args.get("trading_date", request.args.get("exact_trading_date", "")).strip()
         exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
         exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
+        if range_mode == "exact" and period == "1d" and exact_trading_date:
+            exact_start = exact_trading_date
+            exact_end = exact_trading_date
         return range_mode, period, exact_start, exact_end
 
     def build_exact_range_bounds(start_value: str, end_value: str) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -1004,6 +1013,47 @@ def build_web_runtime() -> WebRuntime:
             slice_dataset_to_exact_range(dataset, adjusted_start, adjusted_end)
             for dataset in datasets
         ]
+
+    def slice_intraday_dataset_to_trading_date(dataset: pd.DataFrame, trading_date: object) -> pd.DataFrame:
+        target_date = pd.to_datetime(trading_date).date()
+        return dataset[dataset["Date"].dt.date == target_date].copy()
+
+    def load_compare_one_day_intraday_dataset(
+            ticker: str,
+            *,
+            include_extended_hours_flag: bool,
+            trading_date: object | None = None,
+    ) -> pd.DataFrame:
+        try:
+            intraday_dataset = fetch_compare_one_day_extended_history(ticker)
+            if trading_date is not None:
+                dated_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
+                if dated_dataset.empty:
+                    raise ValueError(f"Extended-hours data for {ticker} does not include {trading_date}.")
+                intraday_dataset = dated_dataset
+            if not include_extended_hours_flag:
+                intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
+            return intraday_dataset
+        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.warning(
+                "Unable to fetch extended-hours compare 1d data for %s: %s",
+                ticker,
+                exc,
+            )
+
+        intraday_dataset = fetch_history(
+            ticker,
+            include_dividends=False,
+            interval="1m",
+            dividend_mode="price",
+        )
+        if trading_date is not None:
+            intraday_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
+        if not include_extended_hours_flag:
+            intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
+        if intraday_dataset.empty:
+            raise ValueError(f"The selected trading date does not contain shared intraday data for {ticker}.")
+        return intraday_dataset
 
     def format_store_range_date(raw_value: object) -> str:
         return format_store_range_date_value(raw_value)
@@ -2805,6 +2855,11 @@ def build_web_runtime() -> WebRuntime:
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
         include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
+        include_extended_hours = (
+            current_view == "tickers"
+            and period == "1d"
+            and parse_bool_flag("extended_hours", "include_extended_hours")
+        )
 
         if current_view == "tickers" and not requested_tickers:
             requested_tickers = [
@@ -3388,9 +3443,33 @@ def build_web_runtime() -> WebRuntime:
                             else:
                                 notice += " " + freshness_notice
 
+                        is_exact_one_day_compare = current_view == "tickers" and range_mode == "exact" and period == "1d"
                         is_intraday_compare_period = range_mode != "exact" and period in {"1d", "3d", "1w"}
 
-                        if range_mode == "exact":
+                        if is_exact_one_day_compare:
+                            if not date_constraints.trading_dates:
+                                raise ValueError("The selected tickers do not share any common trading dates.")
+                            target_trading_date = date_constraints.adjusted_start or date_constraints.adjusted_end or date_constraints.max_date
+                            if not target_trading_date:
+                                raise ValueError("Select a shared trading date.")
+                            intraday_datasets = [
+                                load_compare_one_day_intraday_dataset(
+                                    ticker,
+                                    include_extended_hours_flag=include_extended_hours,
+                                    trading_date=target_trading_date,
+                                )
+                                for ticker in validated_tickers
+                            ]
+                            common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
+                            aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                intraday_datasets,
+                                "1d",
+                                common_end_date,
+                            )
+                            exact_start_value = pd.to_datetime(target_trading_date).strftime("%Y-%m-%d")
+                            exact_end_value = exact_start_value
+                            period_label = "Trading date"
+                        elif range_mode == "exact":
                             if not date_constraints.trading_dates:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
                             aligned_datasets = align_datasets_on_common_dates(datasets)
@@ -3416,15 +3495,24 @@ def build_web_runtime() -> WebRuntime:
                                     notice = intraday_notice
                                 elif intraday_notice:
                                     notice = f"{notice} {intraday_notice}"
-                            intraday_datasets = [
-                                fetch_history(
-                                    ticker,
-                                    include_dividends=False,
-                                    interval="1m",
-                                    dividend_mode="price",
+                            intraday_datasets: list[pd.DataFrame] = []
+                            for ticker in validated_tickers:
+                                if period == "1d":
+                                    intraday_datasets.append(
+                                        load_compare_one_day_intraday_dataset(
+                                            ticker,
+                                            include_extended_hours_flag=include_extended_hours,
+                                        )
+                                    )
+                                    continue
+                                intraday_datasets.append(
+                                    fetch_history(
+                                        ticker,
+                                        include_dividends=False,
+                                        interval="1m",
+                                        dividend_mode="price",
+                                    )
                                 )
-                                for ticker in validated_tickers
-                            ]
                             common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
                             aligned_datasets = slice_intraday_datasets_for_compare_period(
                                 intraday_datasets,
@@ -3646,6 +3734,7 @@ def build_web_runtime() -> WebRuntime:
             min_tickers=MIN_TICKERS,
             include_dividends=include_dividends,
             price_only=price_only,
+            include_extended_hours=include_extended_hours,
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,

@@ -63,21 +63,44 @@
             <span class="icon icon-plus" aria-hidden="true"></span>
         </button>
     </div>
-    {{ render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, "segmented-control--compact-mobile", true) }}
-    <div class="field-checkbox field-switch">
-        <label class="switch-row" for="price_only">
-            <span class="switch-label">{{ labels.price_only }}</span>
+    {{ render_range_controls(
+        range_mode,
+        period,
+        periods,
+        period_labels,
+        exact_start,
+        exact_end,
+        labels,
+        "segmented-control--compact-mobile",
+        true,
+        current_view == "tickers" and period == "1d",
+        "Trading date"
+    ) }}
+    {% set show_extended_hours_toggle = current_view == "tickers" and period == "1d" %}
+    <div class="field-checkbox field-switch" data-one-day-extended-hours-field {% if not show_extended_hours_toggle %}hidden{% endif %}>
+        <label class="switch-row" for="include_extended_hours">
+            <span class="switch-label">Pre-market &amp; after-hours</span>
             <span class="ios-switch-shell">
-                <input id="price_only" name="price_only" type="checkbox" value="1" {% if price_only %}checked{% endif %}>
+                <input id="include_extended_hours" name="extended_hours" type="checkbox" value="1" {% if include_extended_hours and show_extended_hours_toggle %}checked{% endif %} {% if not show_extended_hours_toggle %}disabled{% endif %}>
                 <span class="ios-switch-slider" aria-hidden="true"></span>
             </span>
         </label>
     </div>
-    <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only %}hidden{% endif %}>
+    {% set hide_dividend_switches = current_view == "tickers" and period == "1d" %}
+    <div class="field-checkbox field-switch" data-price-only-field {% if hide_dividend_switches %}hidden{% endif %}>
+        <label class="switch-row" for="price_only">
+            <span class="switch-label">{{ labels.price_only }}</span>
+            <span class="ios-switch-shell">
+                <input id="price_only" name="price_only" type="checkbox" value="1" {% if price_only and not hide_dividend_switches %}checked{% endif %} {% if hide_dividend_switches %}disabled{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
+    <div class="field-checkbox field-switch" data-dividend-reinvest-field {% if price_only or hide_dividend_switches %}hidden{% endif %}>
         <label class="switch-row" for="include_dividends">
             <span class="switch-label">{{ labels.include_dividends }}</span>
             <span class="ios-switch-shell">
-                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends and not price_only %}checked{% endif %}>
+                <input id="include_dividends" name="dividends" type="checkbox" value="1" {% if include_dividends and not price_only and not hide_dividend_switches %}checked{% endif %} {% if hide_dividend_switches %}disabled{% endif %}>
                 <span class="ios-switch-slider" aria-hidden="true"></span>
             </span>
         </label>
