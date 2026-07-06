@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -143,6 +143,11 @@ def normalize_ticker(ticker: str) -> str:
     normalized = _canonicalize_ticker_token(ticker)
     normalized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", normalized)
     normalized = re.sub(r"_+", "_", normalized).strip(" ._")
+    if normalized.endswith(".HK"):
+        symbol, suffix = normalized.rsplit(".", 1)
+        hk_variants = _hk_ticker_code_variants(symbol)
+        if hk_variants:
+            normalized = f"{hk_variants[-1]}.{suffix}"
     # The project defaults to bare symbols for US stocks (e.g. "BAC", "AAPL").
     # Do not pollute canonical storage or listings with ".US" suffix from Longbridge
     # or other sources. ".US" is only used internally when talking to Longbridge APIs.

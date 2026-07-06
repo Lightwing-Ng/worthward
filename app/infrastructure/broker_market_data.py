@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.5.7
+    Code version: v0.5.10
 """
 
 from __future__ import annotations
@@ -49,6 +49,7 @@ from app.infrastructure.storage import (
     history_store_path_for,
     intraday_history_store_path_for,
     market_store_file_lock,
+    normalize_ticker,
     write_parquet_atomic,
 )
 from app.services.date_constraints import latest_completed_nyse_trading_day
@@ -768,7 +769,59 @@ def _is_regular_new_york_session(timestamp: pd.Timestamp) -> bool:
     return session_open <= localized < session_close
 
 
-def _count_regular_session_rows(values: pd.Series) -> int:
+def _infer_market_from_ticker(ticker: str | None) -> str:
+    normalized = normalize_ticker(str(ticker or ""))
+    if normalized.endswith(".HK"):
+        return "HK"
+    if normalized.endswith(".KS"):
+        return "KR"
+    if normalized.endswith((".T", ".JP")):
+        return "JP"
+    if normalized.endswith((".SH", ".SS", ".SZ")):
+        return "CN"
+    if normalized.endswith(".SG"):
+        return "SG"
+    if normalized.endswith(".L"):
+        return "UK"
+    return "US"
+
+
+def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = None) -> bool:
+    market = _infer_market_from_ticker(ticker)
+    if market == "HK":
+        localized = timestamp.tz_convert(HONG_KONG_TIMEZONE)
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return ((9 * 60) + 30 <= total_minutes < 12 * 60) or (13 * 60 <= total_minutes < 16 * 60)
+    if market == "KR":
+        localized = timestamp.tz_convert("Asia/Seoul")
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return 9 * 60 <= total_minutes <= (15 * 60) + 30
+    if market == "JP":
+        localized = timestamp.tz_convert("Asia/Tokyo")
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return (9 * 60 <= total_minutes < (11 * 60) + 30) or ((12 * 60) + 30 <= total_minutes <= (15 * 60) + 30)
+    if market == "CN":
+        localized = timestamp.tz_convert("Asia/Shanghai")
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return ((9 * 60) + 30 <= total_minutes < (11 * 60) + 30) or (13 * 60 <= total_minutes < 15 * 60)
+    if market == "UK":
+        localized = timestamp.tz_convert("Europe/London")
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return 8 * 60 <= total_minutes < (16 * 60) + 30
+    return _is_regular_new_york_session(timestamp)
+
+
+def _count_regular_session_rows(values: pd.Series, ticker: str | None = None) -> int:
     timestamps = pd.to_datetime(values, errors="coerce").dropna()
     if timestamps.empty:
         return 0
@@ -778,7 +831,7 @@ def _count_regular_session_rows(values: pd.Series) -> int:
             timestamp = timestamp.tz_localize(NEW_YORK_TIMEZONE)
         else:
             timestamp = timestamp.tz_convert(NEW_YORK_TIMEZONE)
-        if _is_regular_new_york_session(timestamp):
+        if _is_regular_market_session(timestamp, ticker):
             count += 1
     return count
 
@@ -797,7 +850,7 @@ def _series_hkt_wall_time_to_new_york_naive(values: pd.Series) -> pd.Series:
     return timestamps.dt.tz_localize(HONG_KONG_TIMEZONE).dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
 
 
-def normalize_one_minute_store_frame(dataset: pd.DataFrame) -> pd.DataFrame:
+def normalize_one_minute_store_frame(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
     if dataset.empty or "Date" not in dataset.columns:
         return dataset
 
@@ -808,10 +861,10 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame) -> pd.DataFrame:
         return normalized.reset_index(drop=True)
 
     current_dates = raw_dates.loc[raw_dates.notna()]
-    current_score = _count_regular_session_rows(current_dates)
+    current_score = _count_regular_session_rows(current_dates, ticker)
 
     hkt_converted = _series_hkt_wall_time_to_new_york_naive(current_dates)
-    candidate_score = _count_regular_session_rows(hkt_converted)
+    candidate_score = _count_regular_session_rows(hkt_converted, ticker)
 
     if candidate_score > current_score:
         normalized["Date"] = hkt_converted.to_numpy()
@@ -819,7 +872,7 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame) -> pd.DataFrame:
         normalized["Date"] = _series_to_new_york_naive(current_dates).to_numpy()
 
     session_mask = normalized["Date"].apply(
-        lambda value: _is_regular_new_york_session(pd.Timestamp(value).tz_localize(NEW_YORK_TIMEZONE))
+        lambda value: _is_regular_market_session(pd.Timestamp(value).tz_localize(NEW_YORK_TIMEZONE), ticker)
     )
     normalized = normalized.loc[session_mask].copy()
     if normalized.empty:
@@ -829,7 +882,7 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame) -> pd.DataFrame:
     return normalized.reset_index(drop=True)
 
 
-def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
+def _candlestick_rows_to_frame(candlesticks: list[Any], ticker: str | None = None) -> pd.DataFrame:
     """
     Robustly converts Longbridge candlesticks to a DataFrame stored in NYT.
 
@@ -848,7 +901,7 @@ def _candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
         # Longbridge US 1m bars arrive in HKT wall time. We localize naive values
         # to Hong Kong first, then convert to New York and keep only regular hours.
         ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
-        if not _is_regular_new_york_session(ts_nyt):
+        if not _is_regular_market_session(ts_nyt, ticker):
             continue
 
         rows.append(
@@ -888,14 +941,14 @@ def _daily_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
+def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]], ticker: str | None = None) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
         raw_ts = candle.get("time")
         if raw_ts is None:
             continue
         ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
-        if not _is_regular_new_york_session(ts_nyt):
+        if not _is_regular_market_session(ts_nyt, ticker):
             continue
         rows.append(
             {
@@ -974,7 +1027,7 @@ def fetch_longbridge_one_minute_history(
             ],
             timeout_seconds=90,
         )
-        frame = _cli_candlestick_rows_to_frame(payload if isinstance(payload, list) else [])
+        frame = _cli_candlestick_rows_to_frame(payload if isinstance(payload, list) else [], ticker)
         if frame.empty:
             raise ValueError(f"No 1-minute market data returned for {ticker}.")
         dataset = frame.drop_duplicates(subset=["Date"], keep="first").sort_values("Date")
@@ -1019,7 +1072,7 @@ def fetch_longbridge_one_minute_history(
         if not batch:
             break
 
-        frame = _candlestick_rows_to_frame(list(batch))
+        frame = _candlestick_rows_to_frame(list(batch), ticker)
         if frame.empty:
             break
         frames.append(frame)
@@ -1180,7 +1233,7 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
     existing_df: pd.DataFrame | None = None
     if path.exists():
         try:
-            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
             if not existing_df.empty:
                 since = pd.to_datetime(existing_df["Date"].max()).to_pydatetime()
         except:
@@ -1192,7 +1245,7 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
         latest_existing_df: pd.DataFrame | None = existing_df
         if path.exists():
             try:
-                latest_existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+                latest_existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
             except Exception:
                 latest_existing_df = existing_df
 

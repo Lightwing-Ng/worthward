@@ -1,4 +1,4 @@
-/* Code version: v0.7.3 */
+/* Code version: v0.7.12 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -18,6 +18,7 @@
 		{ minutes: 14 * 60, timeLabel: "14:00", align: "center" },
 		{ minutes: 16 * 60, timeLabel: "16:00", align: "right" },
 	]);
+	const MAX_INTRADAY_CONNECTED_GAP_MINUTES = 5;
 
 	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
 
@@ -90,6 +91,14 @@
 		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	};
 
+	const toFiniteChartNumber = (value) => {
+		if (value === null || value === undefined || value === "") return null;
+		const numeric = Number(value);
+		return Number.isFinite(numeric) ? numeric : null;
+	};
+
+	const isFiniteChartValue = (value) => toFiniteChartNumber(value) !== null;
+
 	const readPxToken = (element, tokenName, fallbackValue) => {
 		if (!(element instanceof Element)) return fallbackValue;
 		const rawValue = getComputedStyle(element).getPropertyValue(tokenName).trim();
@@ -100,8 +109,8 @@
 	const collectFiniteValues = (datasets) => {
 		if (!Array.isArray(datasets)) return [];
 		return datasets.flatMap((dataset) => (Array.isArray(dataset) ? dataset : []))
-			.map((value) => Number(value))
-			.filter((value) => Number.isFinite(value));
+			.map((value) => toFiniteChartNumber(value))
+			.filter((value) => value !== null);
 	};
 
 	const buildPixelPaddedYScale = (canvas, datasets, paddingPx) => {
@@ -167,6 +176,7 @@
 		const { chart: chartState, theme, chartConfig } = state;
 		const resolvedTheme = readThemeTokens();
 		const { series, profiles } = chartState;
+		const selectedTradingDate = String(chartState.tradingDate || "");
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
 		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
@@ -261,7 +271,167 @@
 			return (hours * 60) + minutes;
 		};
 
+		const getRawDateSerialMinute = (value) => {
+			const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+			if (!match) return null;
+			const year = Number(match[1]);
+			const month = Number(match[2]);
+			const day = Number(match[3]);
+			const hours = match[4] ? Number(match[4]) : 0;
+			const minutes = match[5] ? Number(match[5]) : 0;
+			if (![year, month, day, hours, minutes].every(Number.isFinite)) return null;
+			return Math.floor(Date.UTC(year, month - 1, day) / 60000) + (hours * 60) + minutes;
+		};
+
+		const formatSerialMinuteTime = (serialMinute) => {
+			const markerDate = new Date(serialMinute * 60000);
+			const hours = String(markerDate.getUTCHours()).padStart(2, "0");
+			const minutes = String(markerDate.getUTCMinutes()).padStart(2, "0");
+			return `${hours}:${minutes}`;
+		};
+
+		const formatSerialMinuteDate = (serialMinute) => {
+			const markerDate = new Date(serialMinute * 60000);
+			const markerParts = {
+				year: markerDate.getUTCFullYear(),
+				monthIndex: markerDate.getUTCMonth(),
+				day: markerDate.getUTCDate(),
+			};
+			return typeof formatFullDateParts === "function"
+				? formatFullDateParts(markerParts)
+				: `${markerParts.day}/${markerParts.monthIndex + 1}/${markerParts.year}`;
+		};
+
+		const resolveMarketTimeConfig = (ticker) => {
+			const normalized = String(ticker || "").toUpperCase();
+			if (normalized.endsWith(".KS")) return { timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: (15 * 60) + 30 } };
+			if (normalized.endsWith(".HK")) return { timezone: "Asia/Hong_Kong", label: "HKT", session: { open: (9 * 60) + 30, close: 16 * 60 } };
+			if (normalized.endsWith(".T") || normalized.endsWith(".JP")) return { timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: (15 * 60) + 30 } };
+			if (normalized.endsWith(".SH") || normalized.endsWith(".SS") || normalized.endsWith(".SZ")) {
+				return { timezone: "Asia/Shanghai", label: "CST", session: { open: (9 * 60) + 30, close: 15 * 60 } };
+			}
+			if (normalized.endsWith(".L")) return { timezone: "Europe/London", label: "LON", session: { open: 8 * 60, close: (16 * 60) + 30 } };
+			return { timezone: "America/New_York", label: "NYT", session: { open: (9 * 60) + 30, close: 16 * 60 } };
+		};
+
+		const getTimezoneOffsetMinutes = (timezone, utcMs) => {
+			try {
+				const parts = new Intl.DateTimeFormat("en-US", {
+					timeZone: timezone,
+					year: "numeric",
+					month: "2-digit",
+					day: "2-digit",
+					hour: "2-digit",
+					minute: "2-digit",
+					hourCycle: "h23",
+				}).formatToParts(new Date(utcMs));
+				const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+				const localAsUtcMs = Date.UTC(
+					Number(values.year),
+					Number(values.month) - 1,
+					Number(values.day),
+					Number(values.hour),
+					Number(values.minute),
+				);
+				return Math.round((localAsUtcMs - utcMs) / 60000);
+			} catch (_error) {
+				return 0;
+			}
+		};
+
+		const formatSerialMinuteLocalTime = (serialMinute, config) => {
+			if (!Number.isFinite(serialMinute) || !config) return "";
+			const rawNewYorkMs = serialMinute * 60000;
+			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", rawNewYorkMs);
+			const actualUtcMs = rawNewYorkMs - (newYorkOffset * 60000);
+			const marketOffset = getTimezoneOffsetMinutes(config.timezone, actualUtcMs);
+			const localDate = new Date(actualUtcMs + (marketOffset * 60000));
+			const hours = String(localDate.getUTCHours()).padStart(2, "0");
+			const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+			return `${hours}:${minutes} ${config.label}`;
+		};
+
+		const localMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => {
+			if (!dateText || !config || !Number.isFinite(marketMinute)) return null;
+			const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
+			if (!match) return null;
+			const year = Number(match[1]);
+			const month = Number(match[2]);
+			const day = Number(match[3]);
+			if (![year, month, day].every(Number.isFinite)) return null;
+			const localWallUtcMs = Date.UTC(year, month - 1, day, Math.floor(marketMinute / 60), marketMinute % 60);
+			const marketOffset = getTimezoneOffsetMinutes(config.timezone, localWallUtcMs);
+			const actualUtcMs = localWallUtcMs - (marketOffset * 60000);
+			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", actualUtcMs);
+			const newYorkWallMs = actualUtcMs + (newYorkOffset * 60000);
+			return Math.round(newYorkWallMs / 60000);
+		};
+
+		const buildCrossMarketTooltipHtml = (pointIndex) => {
+			if (!isCrossMarketOneDayRange) return "";
+			const serialMinute = getRawDateSerialMinute(rawDates[pointIndex]);
+			if (!Number.isFinite(serialMinute)) return "";
+			const dateLine = selectedTradingDate
+				? formatSerialMinuteDate(getRawDateSerialMinute(selectedTradingDate))
+				: formatSerialMinuteDate(serialMinute);
+			const timeLines = series.map((item) => {
+				const config = resolveMarketTimeConfig(item?.ticker);
+				const timeText = formatSerialMinuteLocalTime(serialMinute, config);
+				return timeText ? `<span class="chart-tooltip-market-time">${timeText}</span>` : "";
+			}).filter(Boolean).join("");
+			return `
+				<span class="chart-tooltip-primary-date">${dateLine}</span>
+				${timeLines ? `<span class="chart-tooltip-market-times">${timeLines}</span>` : ""}
+			`;
+		};
+
+		const buildCrossMarketTickDefinitions = () => {
+			if (!Number.isFinite(crossMarketWindowStartMinute) || !Number.isFinite(crossMarketWindowEndMinute)) return [];
+			const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+			if (totalWindowMinutes <= 0) return [];
+			const tickCount = totalWindowMinutes >= 360 ? 4 : 3;
+			const indexes = tickCount === 4 ? [0, 1, 2, 3] : [0, 1, 2];
+			return indexes.map((index) => {
+				const ratio = tickCount === 1 ? 0 : index / (tickCount - 1);
+				const serialMinute = Math.round(crossMarketWindowStartMinute + (totalWindowMinutes * ratio));
+				return {
+					xRatio: ratio,
+					align: index === 0 ? "left" : index === tickCount - 1 ? "right" : "center",
+					firstLine: formatSerialMinuteTime(serialMinute),
+					secondLine: formatSerialMinuteDate(serialMinute),
+				};
+			});
+		};
+
+		const buildCrossMarketGuideRatios = () => {
+			if (!Number.isFinite(crossMarketWindowStartMinute) || !Number.isFinite(crossMarketWindowEndMinute)) return [];
+			const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+			if (totalWindowMinutes <= 0) return [];
+			const markerMinutes = new Set();
+			series.forEach((item) => {
+				const config = resolveMarketTimeConfig(item?.ticker);
+				[config?.session?.open, config?.session?.close].forEach((marketMinute) => {
+					const serialMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, marketMinute, config);
+					if (!Number.isFinite(serialMinute)) return;
+					if (serialMinute <= crossMarketWindowStartMinute || serialMinute >= crossMarketWindowEndMinute) return;
+					markerMinutes.add(serialMinute);
+				});
+			});
+			return Array.from(markerMinutes)
+				.sort((left, right) => left - right)
+				.map((serialMinute) => (serialMinute - crossMarketWindowStartMinute) / totalWindowMinutes)
+				.filter((ratio) => ratio > 0 && ratio < 1);
+		};
+
 		const getOneDayTimestampRatio = (value) => {
+			if (isCrossMarketOneDayRange && Number.isFinite(crossMarketWindowStartMinute) && Number.isFinite(crossMarketWindowEndMinute)) {
+				const serialMinute = getRawDateSerialMinute(value);
+				if (!Number.isFinite(serialMinute)) return null;
+				const elapsedMinutes = serialMinute - crossMarketWindowStartMinute;
+				const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+				if (totalWindowMinutes <= 0) return null;
+				return Math.min(1, Math.max(0, elapsedMinutes / totalWindowMinutes));
+			}
 			const minuteOfDay = getRawDateMinuteOfDay(value);
 			if (!Number.isFinite(minuteOfDay)) return null;
 			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
@@ -280,6 +450,21 @@
 
 		const hasIntradayLabels = rawDates.some((value) => hasMeaningfulIntradayTime(value));
 		const isCompareOneDayRange = state.currentView === "tickers" && selectedPeriod === "1d" && hasIntradayLabels;
+		const isCrossMarketOneDayRange = isCompareOneDayRange && series.some((item) => /\.(HK|KS|T|JP|SH|SS|SZ|SG|L)$/i.test(String(item?.ticker || "")));
+		const crossMarketSerialMinutes = isCrossMarketOneDayRange
+			? series.flatMap((item) => {
+				const values = Array.isArray(item?.normalized_returns) ? item.normalized_returns : [];
+				return rawDates
+					.map((rawDate, index) => (values[index] === null || values[index] === undefined ? null : getRawDateSerialMinute(rawDate)))
+					.filter((value) => Number.isFinite(value));
+			})
+			: [];
+		const crossMarketWindowStartMinute = crossMarketSerialMinutes.length
+			? Math.min(...crossMarketSerialMinutes)
+			: null;
+		const crossMarketWindowEndMinute = crossMarketSerialMinutes.length
+			? Math.max(...crossMarketSerialMinutes)
+			: null;
 		const hasOneDayExtendedHours = isCompareOneDayRange && rawDates.some((value) => {
 			const minuteOfDay = getRawDateMinuteOfDay(value);
 			return Number.isFinite(minuteOfDay) && (minuteOfDay < ((9 * 60) + 30) || minuteOfDay >= (16 * 60));
@@ -292,24 +477,27 @@
 		const buildOneDaySessionTickDefinitions = () => {
 			const anchorDateParts = parseRawDate(rawDates[0]);
 			if (!anchorDateParts) return [];
-			const dateLine = typeof formatFullDateParts === "function"
-				? formatFullDateParts({
-					year: anchorDateParts.year,
-					monthIndex: anchorDateParts.monthIndex,
-					day: anchorDateParts.day,
-				})
-				: `${anchorDateParts.day}/${anchorDateParts.monthIndex + 1}/${anchorDateParts.year}`;
+			if (isCrossMarketOneDayRange) return buildCrossMarketTickDefinitions();
 			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
 			const markers = hasOneDayExtendedHours ? ONE_DAY_COMPARE_SESSION_MARKERS : ONE_DAY_COMPARE_REGULAR_SESSION_MARKERS;
 			return markers.map((marker) => ({
 				xRatio: totalSessionMinutes > 0 ? (marker.minutes - oneDaySessionStartMinute) / totalSessionMinutes : 0,
 				align: marker.align,
 				firstLine: marker.timeLabel,
-				secondLine: dateLine,
+				secondLine: typeof formatFullDateParts === "function"
+					? formatFullDateParts({
+						year: anchorDateParts.year,
+						monthIndex: anchorDateParts.monthIndex,
+						day: anchorDateParts.day,
+					})
+					: `${anchorDateParts.day}/${anchorDateParts.monthIndex + 1}/${anchorDateParts.year}`,
 			}));
 		};
 
 		const buildOneDaySessionDividerRatios = () => {
+			if (isCrossMarketOneDayRange) {
+				return buildCrossMarketGuideRatios();
+			}
 			if (!hasOneDayExtendedHours) return [];
 			const totalSessionMinutes = oneDaySessionEndMinute - oneDaySessionStartMinute;
 			if (totalSessionMinutes <= 0) return [];
@@ -409,11 +597,11 @@
 					ctx.fillStyle = fillColor;
 					ctx.lineWidth = hairlineWidth;
 					candles.forEach((candle, candleIndex) => {
-						const high = Number(candle?.h);
-						const low = Number(candle?.l);
-						const open = Number(candle?.o);
-						const close = Number(candle?.c);
-						if (![high, low, open, close].every(Number.isFinite)) return;
+						const high = toFiniteChartNumber(candle?.h);
+						const low = toFiniteChartNumber(candle?.l);
+						const open = toFiniteChartNumber(candle?.o);
+						const close = toFiniteChartNumber(candle?.c);
+						if (![high, low, open, close].every((value) => value !== null)) return;
 						const xRatio = getOneDayTimestampRatio(rawDates[candleIndex]);
 						if (!Number.isFinite(xRatio)) return;
 						const x = chartArea.left + (chartArea.width * xRatio) + xOffset;
@@ -471,12 +659,20 @@
 					let centerX = chartArea.right + logoGap + (logoSize / 2);
 					let centerY = lastPoint.y;
 					if (hasOneDayCandlesticks) {
-						const lastRawDate = rawDates[rawDates.length - 1];
-						const lastCandle = series[datasetIndex]?.candlestick_returns?.[rawDates.length - 1];
+						const candles = Array.isArray(series[datasetIndex]?.candlestick_returns)
+							? series[datasetIndex].candlestick_returns
+							: [];
+						let lastCandleIndex = candles.length - 1;
+						while (lastCandleIndex >= 0) {
+							const candidate = candles[lastCandleIndex];
+							if ([candidate?.o, candidate?.h, candidate?.l, candidate?.c].every(isFiniteChartValue)) break;
+							lastCandleIndex -= 1;
+						}
+						const lastRawDate = rawDates[lastCandleIndex];
+						const lastCandle = candles[lastCandleIndex];
 						const lastRatio = getOneDayTimestampRatio(lastRawDate);
-						const close = Number(lastCandle?.c);
-						if (Number.isFinite(lastRatio) && Number.isFinite(close) && scales?.y) {
-							centerX = chartArea.left + (chartArea.width * lastRatio) + logoGap + (logoSize / 2);
+						const close = toFiniteChartNumber(lastCandle?.c);
+						if (Number.isFinite(lastRatio) && close !== null && scales?.y) {
 							centerY = scales.y.getPixelForValue(close);
 						}
 					}
@@ -497,7 +693,7 @@
 			if (tooltip) return tooltip;
 			tooltip = document.createElement("div");
 			tooltip.className = "chart-tooltip";
-			tooltip.innerHTML = '<p class="chart-tooltip-date"></p><div class="chart-tooltip-list"></div>';
+			tooltip.innerHTML = '<div class="chart-tooltip-date"></div><div class="chart-tooltip-list"></div>';
 			parent.appendChild(tooltip);
 			return tooltip;
 		};
@@ -513,7 +709,12 @@
 			if (tooltip.dataPoints?.length) {
 				const pointIndex = tooltip.dataPoints[0].dataIndex;
 				const parsedDate = parseRawDate(rawDates[pointIndex]);
-				dateEl.textContent = parsedDate ? formatChartDate(parsedDate) : (tooltip.title?.[0] || "");
+				const crossMarketHtml = buildCrossMarketTooltipHtml(pointIndex);
+				if (crossMarketHtml) {
+					dateEl.innerHTML = crossMarketHtml;
+				} else {
+					dateEl.textContent = parsedDate ? formatChartDate(parsedDate) : (tooltip.title?.[0] || "");
+				}
 			}
 
 			const bodyLines = tooltip.dataPoints.map((point) => {
@@ -684,9 +885,20 @@
 						segment: {
 							borderColor: (context) => {
 								if (!hasIntradayLabels) return strokeColor;
-								const leftDate = normalizeDateKey(rawDates[Number(context?.p0DataIndex)]);
-								const rightDate = normalizeDateKey(rawDates[Number(context?.p1DataIndex)]);
+								const leftIndex = Number(context?.p0DataIndex);
+								const rightIndex = Number(context?.p1DataIndex);
+								const leftDate = normalizeDateKey(rawDates[leftIndex]);
+								const rightDate = normalizeDateKey(rawDates[rightIndex]);
 								if (leftDate && rightDate && leftDate !== rightDate) return "rgba(0, 85, 204, 0)";
+								const leftSerialMinute = getRawDateSerialMinute(rawDates[leftIndex]);
+								const rightSerialMinute = getRawDateSerialMinute(rawDates[rightIndex]);
+								if (
+									Number.isFinite(leftSerialMinute)
+									&& Number.isFinite(rightSerialMinute)
+									&& Math.abs(rightSerialMinute - leftSerialMinute) > MAX_INTRADAY_CONNECTED_GAP_MINUTES
+								) {
+									return "rgba(0, 85, 204, 0)";
+								}
 								return strokeColor;
 							},
 						},

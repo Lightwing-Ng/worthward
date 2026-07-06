@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.5
+Code version: v0.3.6
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ from app.infrastructure.storage import (
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
+SUPPORTED_MARKET_SUFFIXES = {"HK", "KS", "T", "JP", "SH", "SS", "SZ", "SG", "L"}
+SUPPORTED_MARKET_EXCHANGES = US_EXCHANGES | {"HKG", "LSE"}
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOOKUP_LOCK = Lock()
 
@@ -187,17 +189,43 @@ def search_text_matches(query: str, symbol: str, company_name: str) -> bool:
     return False
 
 
+def remote_search_query(raw_query: str, normalized_query: str) -> str:
+    raw_symbol = str(raw_query or "").strip().upper()
+    if raw_symbol.endswith(".US"):
+        return normalized_query
+    if "." in raw_symbol:
+        return raw_symbol
+    return normalized_query
+
+
+def _supported_symbol_suffix(symbol: str) -> str:
+    normalized_symbol = normalize_ticker_input(symbol)
+    if "." not in normalized_symbol:
+        return ""
+    head, tail = normalized_symbol.rsplit(".", 1)
+    if not head:
+        return ""
+    if tail in {"A", "B", "C"}:
+        return tail
+    return tail if tail in SUPPORTED_MARKET_SUFFIXES else ""
+
+
 def is_supported_search_result(item: dict[str, object], query: str) -> bool:
-    symbol = str(item.get("symbol", "")).upper()
+    symbol = normalize_ticker_input(str(item.get("symbol", "")).upper())
     quote_type = str(item.get("quoteType", "")).upper()
     exchange = str(item.get("exchange", "")).upper()
     company_name = str(item.get("longname") or item.get("shortname") or symbol)
+    suffix = _supported_symbol_suffix(symbol)
+    is_market_suffix = suffix in SUPPORTED_MARKET_SUFFIXES
+    is_us_share_class = suffix in {"A", "B", "C"}
 
     if not search_text_matches(query, symbol, company_name):
         return False
     if quote_type not in VALID_QUOTE_TYPES:
         return False
-    if exchange not in US_EXCHANGES:
+    if exchange not in SUPPORTED_MARKET_EXCHANGES and not is_market_suffix:
+        return False
+    if is_us_share_class and exchange not in US_EXCHANGES:
         return False
     if "=" in symbol:
         return False
@@ -205,7 +233,7 @@ def is_supported_search_result(item: dict[str, object], query: str) -> bool:
         return False
     if "." in symbol:
         head, tail = symbol.split(".", 1)
-        if not head or tail not in {"A", "B", "C"}:
+        if not head or tail not in ({"A", "B", "C"} | SUPPORTED_MARKET_SUFFIXES):
             return False
     return True
 
@@ -219,7 +247,7 @@ def is_supported_local_symbol(symbol: str, query: str, company_name: str | None 
         return False
     if "." in normalized_symbol:
         head, tail = normalized_symbol.split(".", 1)
-        if not head or tail not in {"A", "B", "C"}:
+        if not head or tail not in ({"A", "B", "C"} | SUPPORTED_MARKET_SUFFIXES):
             return False
     plain_length = len(normalized_symbol.replace(".", ""))
     return plain_length <= 5
@@ -565,14 +593,14 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         remote_items = []
     else:
         try:
-            results = _search_yfinance_quotes(normalized_query)
+            results = _search_yfinance_quotes(remote_search_query(query, normalized_query))
         except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
             LOGGER.warning("Ticker search remote lookup failed for %s: %s", normalized_query, exc)
             results = []
 
         filtered: list[dict[str, str]] = []
         for item in results:
-            symbol = str(item.get("symbol", "")).upper()
+            symbol = normalize_ticker_input(str(item.get("symbol", "")).upper())
             quote_type = str(item.get("quoteType", "")).upper()
             if not is_supported_search_result(item, normalized_query):
                 continue

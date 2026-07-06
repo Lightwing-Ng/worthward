@@ -1614,6 +1614,20 @@ footer {
     white-space: nowrap;
 }
 
+.chart-tooltip-primary-date,
+.chart-tooltip-market-times,
+.chart-tooltip-market-time {
+    display: block;
+}
+
+.chart-tooltip-market-times {
+    margin-top: 3px;
+    color: var(--theme-muted);
+    font-size: var(--font-table-body);
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+}
+
 .chart-tooltip-list {
     display: grid;
     gap: var(--chart-tooltip-row-gap);

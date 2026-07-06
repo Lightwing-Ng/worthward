@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.4.6
+Code version: v0.5.3
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import pandas as pd
 import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
+from app.infrastructure.connectivity import has_remote_market_access
 from app.infrastructure.broker_market_data import (
     HONG_KONG_TIMEZONE,
     NEW_YORK_TIMEZONE,
@@ -90,8 +91,17 @@ def list_available_market_intervals(ticker: str) -> list[str]:
     return supported_intervals
 
 
+def yfinance_lookup_symbol(ticker: str) -> str:
+    normalized_ticker = normalize_ticker(ticker)
+    if normalized_ticker.endswith(".HK"):
+        symbol, suffix = normalized_ticker.rsplit(".", 1)
+        if symbol.isdigit():
+            return f"{symbol.zfill(4)}.{suffix}"
+    return normalized_ticker
+
+
 def _download_daily_history_with_yfinance(
-        ticker: str,
+        ticker: str | list[str],
         *,
         start: str | datetime | None = None,
         end: str | datetime | None = None,
@@ -107,12 +117,17 @@ def _download_daily_history_with_yfinance(
     resolve symbols like `MSFT.US`. We silence that low-level output here and
     let the caller decide whether to fall back to Longbridge.
     """
+    lookup_ticker: str | list[str]
+    if isinstance(ticker, list):
+        lookup_ticker = [yfinance_lookup_symbol(value) for value in ticker]
+    else:
+        lookup_ticker = yfinance_lookup_symbol(ticker)
     with YFINANCE_DOWNLOAD_LOCK:
         stderr_buffer = io.StringIO()
         stdout_buffer = io.StringIO()
         with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
             return yf.download(
-                tickers=ticker,
+                tickers=lookup_ticker,
                 start=start,
                 end=end,
                 period=period,
@@ -152,11 +167,13 @@ def _download_one_minute_history_with_yfinance_window(
         start: pd.Timestamp,
         end: pd.Timestamp,
 ) -> pd.DataFrame:
+    market = infer_ticker_market(ticker)
     history = _download_daily_history_with_yfinance(
         ticker,
         start=start.to_pydatetime(),
         end=(end + pd.Timedelta(minutes=1)).to_pydatetime(),
         interval="1m",
+        prepost=(market != "US"),
     )
     if history.empty:
         return history
@@ -215,11 +232,70 @@ def infer_ticker_market(ticker: str) -> str:
     normalized_ticker = normalize_ticker(ticker)
     if normalized_ticker.endswith(".HK"):
         return "HK"
-    if normalized_ticker.endswith((".SH", ".SZ")):
+    if normalized_ticker.endswith(".KS"):
+        return "KR"
+    if normalized_ticker.endswith((".T", ".JP")):
+        return "JP"
+    if normalized_ticker.endswith((".SH", ".SS", ".SZ")):
         return "CN"
     if normalized_ticker.endswith(".SG"):
         return "SG"
+    if normalized_ticker.endswith(".L"):
+        return "UK"
     return "US"
+
+
+def market_timezone_for_ticker(ticker: str) -> str:
+    market = infer_ticker_market(ticker)
+    if market == "HK":
+        return HONG_KONG_TIMEZONE
+    if market == "KR":
+        return "Asia/Seoul"
+    if market == "JP":
+        return "Asia/Tokyo"
+    if market == "CN":
+        return "Asia/Shanghai"
+    if market == "UK":
+        return "Europe/London"
+    return NEW_YORK_TIMEZONE
+
+
+def fetch_one_minute_history_for_trading_date(
+        ticker: str,
+        trading_date: object,
+        *,
+        include_dividends: bool = False,
+        dividend_mode: str | None = None,
+) -> pd.DataFrame:
+    normalized_ticker = normalize_ticker(ticker)
+    target_date = pd.to_datetime(trading_date, errors="coerce")
+    if pd.isna(target_date):
+        raise ValueError(f"Invalid trading date for {normalized_ticker}: {trading_date}.")
+
+    market_timezone = market_timezone_for_ticker(normalized_ticker)
+    local_start = pd.Timestamp(
+        year=int(target_date.year),
+        month=int(target_date.month),
+        day=int(target_date.day),
+        tz=market_timezone,
+    )
+    local_end = local_start + pd.Timedelta(days=1)
+    history = _download_daily_history_with_yfinance(
+        normalized_ticker,
+        start=local_start.tz_convert("UTC").to_pydatetime(),
+        end=local_end.tz_convert("UTC").to_pydatetime(),
+        interval="1m",
+        prepost=infer_ticker_market(normalized_ticker) != "US",
+    )
+    if history.empty:
+        raise ValueError(f"No 1-minute market data returned for {normalized_ticker} on {target_date.date()} via yfinance.")
+
+    normalized_dataset = normalize_history_frame(history, normalized_ticker, interval="1m")
+    return select_price_series(
+        normalized_dataset,
+        include_dividends,
+        dividend_mode=dividend_mode,
+    )
 
 
 def classify_hk_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
@@ -243,6 +319,26 @@ def classify_hk_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
     if morning_open <= total_minutes < morning_close:
         return "intraday"
     if afternoon_open <= total_minutes < afternoon_close:
+        return "intraday"
+    return "off"
+
+
+def classify_kr_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
+    """Classify a South Korean equity bar timestamp into intraday or off."""
+    parsed_timestamp = pd.to_datetime(timestamp, errors="coerce")
+    if pd.isna(parsed_timestamp):
+        return "off"
+    localized = parsed_timestamp
+    if localized.tzinfo is None:
+        localized = localized.tz_localize("Asia/Seoul")
+    else:
+        localized = localized.tz_convert("Asia/Seoul")
+    if int(localized.weekday()) >= 5:
+        return "off"
+    total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+    regular_open = 9 * 60
+    regular_close = (15 * 60) + 30
+    if regular_open <= total_minutes < regular_close:
         return "intraday"
     return "off"
 
@@ -368,17 +464,24 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
         is_multi = isinstance(history.columns, pd.MultiIndex)
         results: list[dict[str, object]] = []
         for normalized_ticker in normalized_list:
+            lookup_ticker = yfinance_lookup_symbol(normalized_ticker)
             try:
                 if is_multi:
                     # yfinance multi-ticker result usually has MultiIndex columns:
                     # level 0 = field (Close, etc), level 1 = ticker
                     try:
-                        tdf = history.xs(normalized_ticker, level=1, axis=1)
+                        tdf = history.xs(lookup_ticker, level=1, axis=1)
                     except (KeyError, AttributeError):
                         try:
-                            tdf = history[normalized_ticker]
-                        except (KeyError, TypeError):
-                            continue
+                            tdf = history.xs(normalized_ticker, level=1, axis=1)
+                        except (KeyError, AttributeError):
+                            try:
+                                tdf = history[lookup_ticker]
+                            except (KeyError, TypeError):
+                                try:
+                                    tdf = history[normalized_ticker]
+                                except (KeyError, TypeError):
+                                    continue
                 else:
                     tdf = history
                 if tdf.empty:
@@ -425,14 +528,14 @@ def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
     normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
     path = intraday_history_store_path_for(normalized_ticker, "1m")
-    normalized_dataset = normalize_one_minute_store_frame(dataset)
+    normalized_dataset = normalize_one_minute_store_frame(dataset, normalized_ticker)
     if normalized_dataset.empty:
         raise ValueError(f"No 1-minute market data returned for {normalized_ticker}.")
 
     with market_store_file_lock(path):
         if path.exists():
             try:
-                existing_df = normalize_one_minute_store_frame(pd.read_parquet(path))
+                existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), normalized_ticker)
             except (ImportError, OSError, ValueError, KeyError) as exc:
                 LOGGER.warning("Unable to read existing 1-minute store for %s from %s: %s", normalized_ticker, path, exc)
                 existing_df = pd.DataFrame()
@@ -705,7 +808,7 @@ def fetch_history(
         with market_store_file_lock(path):
             dataset = pd.read_parquet(path)
             if is_intraday_market_interval(normalized_interval):
-                normalized_intraday = normalize_one_minute_store_frame(dataset)
+                normalized_intraday = normalize_one_minute_store_frame(dataset, normalized_ticker)
                 if not normalized_intraday.equals(dataset):
                     write_parquet_atomic(path, normalized_intraday, index=False)
                 dataset = normalized_intraday
@@ -722,12 +825,9 @@ def fetch_history(
         return select_price_series(dataset, include_dividends, dividend_mode=dividend_mode)
 
     if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
-        raise ValueError(
-            f"Local 1-minute market data for {normalized_ticker} is unavailable. "
-            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access first."
-        )
-
-    history = download_full_history(normalized_ticker, interval=normalized_interval)
+        history = _download_recent_one_minute_history_with_yfinance(normalized_ticker)
+    else:
+        history = download_full_history(normalized_ticker, interval=normalized_interval)
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     with market_store_file_lock(path):
         write_parquet_atomic(path, normalized_dataset, index=False)
@@ -877,6 +977,8 @@ def ensure_fresh_history_store(ticker: str) -> bool:
     normalized_ticker = normalize_ticker(ticker)
     ensure_market_store_dir()
     if is_daily_store_fresh(normalized_ticker):
+        return False
+    if not has_remote_market_access():
         return False
     refresh_history_store(normalized_ticker)
     return True

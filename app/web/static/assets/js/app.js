@@ -1,4 +1,4 @@
-/* Code version: v0.5.14 */
+/* Code version: v0.5.16 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -759,6 +759,11 @@
     const getTickerFields = () => $$(".ticker-field");
     const getTickerInputs = () => getTickerFields().map((field) => field.querySelector("[data-ticker-input]")).filter(Boolean);
     const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
+    const isUsTicker = (ticker) => !/\.(HK|KS|T|JP|SH|SS|SZ|SG|L)$/i.test(sanitizeTicker(ticker));
+    const areAllFilledTickersUs = () => {
+        const tickers = getFilledTickers();
+        return tickers.length > 0 && tickers.every(isUsTicker);
+    };
     const getWeightFields = () => getTickerFields().map((field, index) => ({
         index,
         field,
@@ -2678,6 +2683,7 @@
             handlePortfolioTickerValueChange(input);
             closePanel();
             input.focus();
+            syncOneDayExtendedHoursSwitch();
             syncDateConstraints();
             if (isBacktestView) syncBacktestIntervals();
             if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
@@ -2742,6 +2748,7 @@
             hideTickerValidationTooltip(input);
             syncTickerIdentityState(input, sanitizeTicker(input.value.trim()));
             syncTickerInputDecoration(input);
+            syncOneDayExtendedHoursSwitch();
             const rawQuery = input.value.trim();
             const query = validateTickerInput(input);
             if (!rawQuery) {
@@ -2864,6 +2871,7 @@
             else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
             validateAllTickerInputs();
             void validateTickerExistence(input, {preferFresh: true});
+            syncOneDayExtendedHoursSwitch();
             syncDateConstraints();
             if (isBacktestView) syncBacktestIntervals();
             scheduleAutoSubmit();
@@ -3427,9 +3435,10 @@
     const syncOneDayExtendedHoursSwitch = () => {
         if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) return;
         const isOneDayPeriod = state.currentView === "tickers" && (periodSelect?.value || defaults.period) === "1d";
-        extendedHoursField.hidden = !isOneDayPeriod;
-        extendedHoursInput.disabled = !isOneDayPeriod;
-        if (!isOneDayPeriod) extendedHoursInput.checked = false;
+        const canUseExtendedHours = isOneDayPeriod && areAllFilledTickersUs();
+        extendedHoursField.hidden = !canUseExtendedHours;
+        extendedHoursInput.disabled = !canUseExtendedHours;
+        if (!canUseExtendedHours) extendedHoursInput.checked = false;
     };
 
     const getSharedSelectParts = (field) => {
