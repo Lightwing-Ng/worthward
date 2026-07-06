@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.6
+Code version: v0.3.7
 """
 
 from __future__ import annotations
@@ -174,11 +174,66 @@ def normalize_search_text(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", value.upper())
 
 
+def _numeric_symbol_head(value: str) -> str:
+    normalized_value = str(value or "").strip().upper()
+    symbol_head = normalized_value.split(".", 1)[0]
+    if not symbol_head.isdigit():
+        return ""
+    return symbol_head.lstrip("0") or "0"
+
+
+def display_search_symbol(symbol: str) -> str:
+    normalized_symbol = normalize_ticker_input(symbol)
+    if "." not in normalized_symbol:
+        return normalized_symbol
+    symbol_head, suffix = normalized_symbol.rsplit(".", 1)
+    if suffix == "HK" and symbol_head.isdigit() and len(symbol_head) <= 4:
+        return f"{symbol_head.zfill(4)}.{suffix}"
+    if suffix == "KS" and symbol_head.isdigit() and len(symbol_head) <= 6:
+        return f"{symbol_head.zfill(6)}.{suffix}"
+    return normalized_symbol
+
+
+def ticker_search_aliases(query: str) -> list[str]:
+    normalized_query = normalize_ticker_input(query)
+    if not normalized_query:
+        return []
+
+    aliases: list[str] = []
+
+    def add_alias(value: str) -> None:
+        alias = display_search_symbol(value)
+        if alias and alias not in aliases:
+            aliases.append(alias)
+
+    add_alias(normalized_query)
+
+    if "." in normalized_query:
+        symbol_head, suffix = normalized_query.rsplit(".", 1)
+        if symbol_head.isdigit() and suffix == "HK" and len(symbol_head) <= 4:
+            add_alias(f"{symbol_head.zfill(4)}.HK")
+        if symbol_head.isdigit() and suffix == "KS" and len(symbol_head) <= 6:
+            add_alias(f"{symbol_head.zfill(6)}.KS")
+        return aliases
+
+    if normalized_query.isdigit():
+        stripped_query = normalized_query.lstrip("0") or "0"
+        if len(stripped_query) <= 4:
+            add_alias(f"{stripped_query.zfill(4)}.HK")
+        if len(stripped_query) <= 6:
+            add_alias(f"{stripped_query.zfill(6)}.KS")
+    return aliases
+
+
 def search_text_matches(query: str, symbol: str, company_name: str) -> bool:
     normalized_query = normalize_search_text(query)
     normalized_symbol = normalize_search_text(symbol)
     normalized_name = normalize_search_text(company_name)
     if not normalized_query:
+        return True
+    numeric_query = _numeric_symbol_head(query)
+    numeric_symbol = _numeric_symbol_head(symbol)
+    if numeric_query and numeric_symbol.startswith(numeric_query):
         return True
     if normalized_symbol.startswith(normalized_query):
         return True
@@ -249,6 +304,11 @@ def is_supported_local_symbol(symbol: str, query: str, company_name: str | None 
         head, tail = normalized_symbol.split(".", 1)
         if not head or tail not in ({"A", "B", "C"} | SUPPORTED_MARKET_SUFFIXES):
             return False
+        if tail == "HK" and re.fullmatch(r"\d{1,5}", head):
+            return True
+        if tail == "KS" and re.fullmatch(r"\d{1,6}", head):
+            return True
+        return len(head) <= 8
     plain_length = len(normalized_symbol.replace(".", ""))
     return plain_length <= 5
 
@@ -259,8 +319,13 @@ def search_result_sort_key(item: dict[str, str], query: str) -> tuple[int, int, 
     normalized_query = normalize_search_text(query)
     normalized_symbol = normalize_search_text(symbol)
     normalized_name = normalize_search_text(company_name)
-    is_symbol_exact = 0 if normalized_symbol == normalized_query else 1
+    numeric_query = _numeric_symbol_head(query)
+    numeric_symbol = _numeric_symbol_head(symbol)
+    is_numeric_exact = bool(numeric_query and numeric_symbol == numeric_query)
+    is_symbol_exact = 0 if normalized_symbol == normalized_query or is_numeric_exact else 1
     is_symbol_prefix = 0 if normalized_symbol.startswith(normalized_query) else 1
+    if numeric_query and numeric_symbol.startswith(numeric_query):
+        is_symbol_prefix = 0
     is_name_match = 0 if normalized_query and normalized_query in normalized_name else 1
     is_etf = 1 if item.get("asset_type") == "ETF" else 0
     return is_symbol_exact, is_symbol_prefix, is_name_match, is_etf, symbol
@@ -506,37 +571,67 @@ def refresh_quote_profile_cache(
 
 def _build_recent_suggestion(symbol: str) -> dict[str, str]:
     profile = fetch_quote_profile(symbol, force_refresh=False)
+    display_symbol = display_search_symbol(symbol)
     return {
-        "symbol": symbol,
-        "name": profile.company_name or symbol,
+        "symbol": display_symbol,
+        "name": profile.company_name or display_symbol,
         "logo_url": profile.logo_url or "",
         "source": "recent",
     }
+
+
+def _build_local_suggestion(symbol: str, *, query: str, seen: set[str]) -> dict[str, str] | None:
+    normalized_symbol = normalize_ticker_input(symbol)
+    if not normalized_symbol:
+        return None
+    canonical_symbol = normalize_ticker_input(normalized_symbol)
+    if canonical_symbol in seen:
+        return None
+    if not (
+            history_store_path_for(normalized_symbol).exists()
+            or has_profile_record(normalized_symbol)
+            or has_logo_asset(normalized_symbol)
+    ):
+        return None
+    profile_record = load_profile_record(normalized_symbol)
+    display_symbol = display_search_symbol(normalized_symbol)
+    company_name = (
+            str((profile_record or {}).get("company_name") or "").strip()
+            or resolve_known_ticker_company_name(normalized_symbol)
+            or display_symbol
+    )
+    if not is_supported_local_symbol(normalized_symbol, query, company_name):
+        return None
+    seen.add(canonical_symbol)
+    logo_url = resolve_stored_logo_url(normalized_symbol) if has_logo_asset(normalized_symbol) else ""
+    return {
+        "symbol": display_symbol,
+        "name": company_name,
+        "logo_url": logo_url,
+        "source": "local",
+    }
+
+
+def build_local_alias_search_items(query: str) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for symbol in ticker_search_aliases(query):
+        item = _build_local_suggestion(symbol, query=query, seen=seen)
+        if item is not None:
+            items.append(item)
+    return sorted(items, key=lambda search_item: search_result_sort_key(search_item, query))
 
 
 def build_local_search_items(query: str) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     seen: set[str] = set()
     for symbol in list_local_tickers():
-        if symbol in seen or not history_store_path_for(symbol).exists():
+        if normalize_ticker_input(symbol) in seen or not history_store_path_for(symbol).exists():
             continue
-        profile_record = load_profile_record(symbol)
-        company_name = (
-                str((profile_record or {}).get("company_name") or "").strip()
-                or symbol
-        )
-        if not is_supported_local_symbol(symbol, query, company_name):
+        item = _build_local_suggestion(symbol, query=query, seen=seen)
+        if item is None:
             continue
-        seen.add(symbol)
-        logo_url = resolve_stored_logo_url(symbol) if has_logo_asset(symbol) else ""
-        items.append(
-            {
-                "symbol": symbol,
-                "name": company_name,
-                "logo_url": logo_url,
-                "source": "local",
-            }
-        )
+        items.append(item)
     return sorted(items, key=lambda search_item: search_result_sort_key(search_item, query))
 
 
@@ -549,9 +644,10 @@ def combine_unique_search_items(
     for item_group in item_groups:
         for search_item in item_group:
             symbol = search_item["symbol"]
-            if symbol in seen:
+            unique_symbol = normalize_ticker_input(symbol)
+            if unique_symbol in seen:
                 continue
-            seen.add(symbol)
+            seen.add(unique_symbol)
             combined.append(search_item)
             if len(combined) >= limit:
                 return combined
@@ -563,26 +659,29 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     normalized_query = normalize_ticker_input(query)
     recent_symbols = top_used_tickers(normalized_query, limit=limit)
     recent_items = [_build_recent_suggestion(symbol) for symbol in recent_symbols]
+    alias_items = build_local_alias_search_items(normalized_query) if normalized_query else []
     local_items = build_local_search_items(normalized_query) if normalized_query else []
 
     if len(normalized_query) < 1:
         return combine_unique_search_items(recent_items, local_items, limit=limit)
 
-    if len(normalized_query) == 1 and local_items:
-        return combine_unique_search_items(recent_items, local_items, limit=limit)
+    if len(normalized_query) == 1 and (alias_items or local_items):
+        return combine_unique_search_items(alias_items, recent_items, local_items, limit=limit)
 
     if any(
-            str(item.get("symbol") or "").upper() == normalized_query
-            for item in local_items
+            normalize_ticker_input(str(item.get("symbol") or "")) == normalize_ticker_input(alias)
+            for item in alias_items + local_items
+            for alias in ticker_search_aliases(normalized_query)
     ):
         prioritized_local_items = sorted(
-            local_items,
-            key=lambda local_item: 0 if str(local_item.get("symbol") or "").upper() == normalized_query else 1,
+            alias_items + local_items,
+            key=lambda local_item: search_result_sort_key(local_item, normalized_query),
         )
         return combine_unique_search_items(prioritized_local_items, recent_items, limit=limit)
 
     cached_items = load_search_cache_items(normalized_query)
-    if len(local_items) >= limit:
+    local_search_items = combine_unique_search_items(alias_items, local_items, limit=limit)
+    if len(local_search_items) >= limit:
         remote_items = []
     elif cached_items and all("logo_url" in item for item in cached_items):
         remote_items = [
@@ -630,4 +729,4 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     if not remote_items and not has_remote_market_access():
         remote_items = []
 
-    return combine_unique_search_items(recent_items, local_items, remote_items, limit=limit)
+    return combine_unique_search_items(alias_items, recent_items, local_items, remote_items, limit=limit)

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.26
+Code version: v0.4.28
 """
 
 from __future__ import annotations
@@ -408,6 +408,62 @@ def build_web_runtime() -> WebRuntime:
             "adjusted_end": payload.adjusted_end,
             "message": payload.message,
         }
+
+    def market_local_trading_dates_frame(dataset: pd.DataFrame, ticker: str) -> pd.DataFrame:
+        if dataset.empty or "Date" not in dataset.columns:
+            return pd.DataFrame({"Date": pd.Series(dtype="datetime64[ns]")})
+        market_timezone = market_timezone_for_ticker(ticker)
+
+        def market_local_date(value: object) -> object:
+            timestamp = pd.Timestamp(value)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.tz_localize("America/New_York")
+            else:
+                timestamp = timestamp.tz_convert("America/New_York")
+            return timestamp.tz_convert(market_timezone).date()
+
+        dates = dataset["Date"].map(market_local_date).dropna().drop_duplicates().sort_values()
+        return pd.DataFrame({"Date": pd.to_datetime(dates)})
+
+    def build_one_day_intraday_date_constraint_payload(
+            tickers: list[str],
+            requested_start: str | None = None,
+            requested_end: str | None = None,
+    ) -> DateConstraintPayload:
+        date_frames: list[pd.DataFrame] = []
+        refresh_failures: list[str] = []
+        for ticker in tickers:
+            try:
+                refresh_recent_one_minute_store_with_yfinance(ticker)
+            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
+                refresh_failures.append(ticker)
+            intraday_dataset = fetch_history(
+                ticker,
+                include_dividends=False,
+                interval="1m",
+                dividend_mode="price",
+            )
+            prepared_dataset = prepare_intraday_dataset_for_compare(
+                intraday_dataset,
+                ticker,
+                regular_session_only=True,
+            )
+            date_frames.append(market_local_trading_dates_frame(prepared_dataset, ticker))
+
+        payload = build_date_constraint_payload(
+            *date_frames,
+            requested_start=requested_start,
+            requested_end=requested_end,
+        )
+        if refresh_failures:
+            failed_preview = ", ".join(refresh_failures)
+            refresh_notice = (
+                f"Could not refresh 1-minute trading dates for {failed_preview}. "
+                "Using currently cached intraday dates."
+            )
+            payload.message = f"{payload.message} {refresh_notice}".strip() if payload.message else refresh_notice
+        return payload
 
     configured_money_market_tickers = {
         str(value).strip().upper()
@@ -3639,6 +3695,12 @@ def build_web_runtime() -> WebRuntime:
                             and not is_exact_one_day_compare
                             and 2 <= len(exact_range_trading_dates) <= 5
                         )
+                        if is_exact_one_day_compare:
+                            date_constraints = build_one_day_intraday_date_constraint_payload(
+                                validated_tickers,
+                                requested_start=exact_start or None,
+                                requested_end=exact_end or None,
+                            )
 
                         if is_exact_one_day_compare:
                             if not date_constraints.trading_dates:
@@ -3827,7 +3889,10 @@ def build_web_runtime() -> WebRuntime:
                         best_return = max(last_valid_return(item) for item in series)
                         common_start = aligned_datasets[0]["Date"].min()
                         common_end = aligned_datasets[0]["Date"].max()
-                        display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
+                        if current_view == "tickers" and range_mode == "exact" and period == "1d":
+                            display_range = format_display_date(pd.to_datetime(exact_start_value or common_start))
+                        else:
+                            display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
                         if current_view != "portfolio":
                             performance_items = [
                                 {
@@ -4947,7 +5012,16 @@ def build_web_runtime() -> WebRuntime:
         dividend_mode = resolve_workspace_dividend_mode(price_only_flag, include_dividends_flag)
         requested_start = request.args.get("from", request.args.get("exact_start", "")).strip() or None
         requested_end = request.args.get("to", request.args.get("exact_end", "")).strip() or None
+        requested_range = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
+        requested_period = request.args.get("period", "").strip().lower()
         freshness_refresh_failures: list[str] = []
+        if requested_view == "tickers" and requested_range == "exact" and requested_period == "1d":
+            payload = build_one_day_intraday_date_constraint_payload(
+                validated_tickers,
+                requested_start=requested_start,
+                requested_end=requested_end,
+            )
+            return jsonify(date_constraint_payload_to_json(payload))
         if requested_view in {"tickers", "portfolio", "dca"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [

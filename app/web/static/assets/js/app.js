@@ -1,4 +1,4 @@
-/* Code version: v0.5.16 */
+/* Code version: v0.5.20 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -50,6 +50,28 @@
     };
     const tickerPattern = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
     const sanitizeTicker = (value) => value.toUpperCase().replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
+    const tickerMatchKeys = (value) => {
+        const ticker = sanitizeTicker(value || "");
+        if (!ticker) return new Set();
+        const keys = new Set([ticker]);
+        const [symbolHead, suffix = ""] = ticker.split(".", 2);
+        const numericHead = /^\d+$/.test(symbolHead) ? (symbolHead.replace(/^0+/, "") || "0") : "";
+        if (numericHead) {
+            keys.add(numericHead);
+            if (suffix) keys.add(`${numericHead}.${suffix}`);
+            if (suffix === "HK") keys.add(`${numericHead.padStart(4, "0")}.HK`);
+            if (suffix === "KS") keys.add(`${numericHead.padStart(6, "0")}.KS`);
+        }
+        return keys;
+    };
+    const tickersEquivalent = (left, right) => {
+        const leftKeys = tickerMatchKeys(left);
+        const rightKeys = tickerMatchKeys(right);
+        for (const key of leftKeys) {
+            if (rightKeys.has(key)) return true;
+        }
+        return false;
+    };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
     const WORKSPACE_VIEWS = new Set(["tickers", "portfolio", "dca", "backtest"]);
@@ -1987,10 +2009,12 @@
 
     const applyExactTickerMatch = (input, items, ticker) => {
         if (!input || !Array.isArray(items) || !ticker) return null;
-        const exactItem = items.find((item) => String(item?.symbol || "").toUpperCase() === ticker) || null;
+        const exactItem = items.find((item) => tickersEquivalent(item?.symbol || "", ticker)) || null;
         if (!exactItem) return null;
+        const exactSymbol = sanitizeTicker(exactItem.symbol || ticker);
+        if (exactSymbol) input.value = exactSymbol;
         input.dataset.unknown = "";
-        rememberValidatedTicker(input, ticker, true);
+        rememberValidatedTicker(input, exactSymbol || ticker, true);
         setTickerValidationPending(input, false);
         syncTickerInputDecoration(input, exactItem);
         validateTickerInput(input);
@@ -2659,6 +2683,19 @@
             panel.classList.remove("is-open");
             activeIndex = -1;
         };
+        const requestTickerCalculation = (reason = "ticker-change") => {
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition(reason);
+        };
+        const commitTickerSelection = (reason = "ticker-change") => {
+            validateAllTickerInputs();
+            handlePortfolioTickerValueChange(input);
+            closePanel();
+            syncOneDayExtendedHoursSwitch();
+            syncDateConstraints();
+            if (isBacktestView) syncBacktestIntervals();
+            requestTickerCalculation(reason);
+            scheduleAutoSubmit(120);
+        };
         const showRecentItems = async () => {
             try {
                 const response = await fetch(`${endpoints.symbolSearch}?limit=5`);
@@ -2679,15 +2716,8 @@
             setTickerValidationPending(input, false);
             input.setCustomValidity("");
             syncTickerInputDecoration(input, item);
-            validateAllTickerInputs();
-            handlePortfolioTickerValueChange(input);
-            closePanel();
             input.focus();
-            syncOneDayExtendedHoursSwitch();
-            syncDateConstraints();
-            if (isBacktestView) syncBacktestIntervals();
-            if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
-            scheduleAutoSubmit(120);
+            commitTickerSelection("ticker-change");
         };
 
         const renderItems = (items) => {
@@ -2797,11 +2827,8 @@
                     input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
                     validateTickerInput(input);
                     if (exactMatch) {
-                        handlePortfolioTickerValueChange(input);
-                        syncDateConstraints();
-                        if (isBacktestView) syncBacktestIntervals();
-                        if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
-                        scheduleAutoSubmit(120);
+                        commitTickerSelection("ticker-change");
+                        return;
                     }
                     renderItems(payload);
                 } catch (error) {
@@ -2815,7 +2842,7 @@
                     });
                     if (requestId === autocompleteRequestSequence) closePanel();
                 }
-            }, 120);
+            }, 50);
         });
         input.addEventListener("focus", async () => {
             hideTickerValidationTooltip(input);
@@ -2867,8 +2894,8 @@
             }
         });
         input.addEventListener("change", () => {
-            if (isPortfolioView) requestWorkspaceChartTransition("ticker-change");
-            else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
+            closePanel();
+            requestTickerCalculation("ticker-change");
             validateAllTickerInputs();
             void validateTickerExistence(input, {preferFresh: true});
             syncOneDayExtendedHoursSwitch();
@@ -3239,7 +3266,7 @@
     };
 
     const didCompareRequestChangeRange = (currentParams, nextParams) => {
-        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end"];
+        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours"];
         for (const key of rangeKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -4920,6 +4947,10 @@
         const tickers = getFilledTickers();
         if (tickers.length < minimumRequiredTickers || new Set(tickers).size !== tickers.length) return;
         const params = new URLSearchParams({view: state.currentView});
+        const activeRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
+        const activePeriod = periodSelect?.value || defaults.period;
+        if (activeRangeMode) params.set("range", activeRangeMode);
+        if (activePeriod) params.set("period", activePeriod);
         if (priceOnlyInput?.checked) {
             params.set("price_only", "1");
         } else if (includeDividendsInput?.checked) {
@@ -5837,6 +5868,17 @@
                     iconClass: "icon-hourglass",
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
+            } else if (
+                state.currentView === "tickers"
+                && !missingLocalTickers.length
+                && pendingWorkspaceChartTransition?.view === state.currentView
+                && String(pendingWorkspaceChartTransition.reason || "").startsWith("ticker")
+            ) {
+                showWorkspaceModal({
+                    title: "Calculating comparison",
+                    copy: "Rebuilding the return curve and performance summary for the selected tickers. You can close this dialog while loading continues.",
+                    iconClass: "icon-hourglass",
+                });
             } else if (state.currentView === "tickers" && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
                 showWorkspaceModal({
                     title: "Calculating comparison",

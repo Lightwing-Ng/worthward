@@ -104,7 +104,7 @@
         'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
     ) }}
 </div>
-<div class="field range-panel" id="period_panel">
+<div class="field range-panel" id="period_panel" {% if range_mode == 'exact' %}hidden{% endif %}>
     <label for="period">{{ labels.period }}</label>
     {% if custom_period_dropdown %}
     <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="period">

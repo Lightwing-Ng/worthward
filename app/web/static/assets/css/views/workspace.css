@@ -1,4 +1,4 @@
-/* Code version: v1.1.12 */
+/* Code version: v1.1.13 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -725,13 +725,11 @@
     right: 0;
     z-index: var(--layer-global-popover);
     border-radius: var(--ticker-suggestions-radius, 10px);
-    background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
-    border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
-    box-shadow:
-        0 24px 48px var(--theme-shadow-ambient),
-        0 8px 18px color-mix(in srgb, var(--theme-shadow-ambient) 72%, transparent);
-    backdrop-filter: saturate(180%) blur(28px);
-    -webkit-backdrop-filter: saturate(180%) blur(28px);
+    background: var(--glass-popover-background);
+    border: var(--glass-popover-border);
+    box-shadow: var(--glass-popover-shadow);
+    backdrop-filter: var(--glass-popover-blur);
+    -webkit-backdrop-filter: var(--glass-popover-blur);
     overflow: hidden;
     isolation: isolate;
     display: none;
