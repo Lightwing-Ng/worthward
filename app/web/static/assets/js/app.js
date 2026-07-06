@@ -1,4 +1,4 @@
-/* Code version: v0.5.12 */
+/* Code version: v0.5.14 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2560,8 +2560,48 @@
     window.addEventListener("resize", syncVisibleTickerValidationTooltips);
     document.addEventListener("scroll", syncVisibleTickerValidationTooltips, true);
 
+    const closeTickerSuggestionPanels = ({exceptInput = null} = {}) => {
+        document.querySelectorAll(".suggestions.is-open").forEach((panel) => {
+            const ownerInputId = String(panel.id || "").replace(/_suggestions$/, "");
+            const ownerInput = ownerInputId ? document.getElementById(ownerInputId) : null;
+            if (exceptInput && ownerInput === exceptInput) return;
+            panel.innerHTML = "";
+            panel.classList.remove("is-open");
+        });
+    };
+
+    const resolveTickerSuggestionInputForTarget = (target) => {
+        if (!(target instanceof Element)) return null;
+        const input = target.closest("[data-ticker-input]");
+        if (input instanceof HTMLInputElement) return input;
+        const panel = target.closest(".suggestions");
+        if (!(panel instanceof HTMLElement)) return null;
+        const ownerInputId = String(panel.id || "").replace(/_suggestions$/, "");
+        const ownerInput = ownerInputId ? document.getElementById(ownerInputId) : null;
+        return ownerInput instanceof HTMLInputElement ? ownerInput : null;
+    };
+
+    const bindTickerSuggestionDismissal = () => {
+        if (document.body.dataset.tickerSuggestionDismissalBound === "1") return;
+        document.body.dataset.tickerSuggestionDismissalBound = "1";
+        document.addEventListener("pointerdown", (event) => {
+            closeTickerSuggestionPanels({
+                exceptInput: resolveTickerSuggestionInputForTarget(event.target),
+            });
+        }, true);
+        document.addEventListener("focusin", (event) => {
+            closeTickerSuggestionPanels({
+                exceptInput: resolveTickerSuggestionInputForTarget(event.target),
+            });
+        }, true);
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") closeTickerSuggestionPanels();
+        }, true);
+    };
+
     const setupAutocomplete = (input) => {
         if (!input || input.dataset.autocompleteReady === "1") return;
+        bindTickerSuggestionDismissal();
         input.dataset.autocompleteReady = "1";
         let autocompleteRequestSequence = 0;
         let autocompleteTimer = 0;
@@ -3188,6 +3228,16 @@
         compareOverlayTimer = window.setTimeout(() => {
             showCompareOverlay();
         }, 180);
+    };
+
+    const didCompareRequestChangeRange = (currentParams, nextParams) => {
+        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end"];
+        for (const key of rangeKeys) {
+            const current = (currentParams.get(key) || "").toString().trim();
+            const next = (nextParams.get(key) || "").toString().trim();
+            if (current !== next) return true;
+        }
+        return false;
     };
 
     const attachRemoveHandlers = () => {
@@ -5744,6 +5794,8 @@
                     iconClass: "icon-overlay-local-cache",
                 });
             }
+            const currentParams = new URLSearchParams(currentUrlObj.search);
+            const nextParams = new URLSearchParams(nextUrlObj.search);
             if (state.currentView === "backtest") {
                 showWorkspaceModal({
                     title: "Running Backtest",
@@ -5763,8 +5815,6 @@
                     return false;
                 }
 
-                const currentParams = new URLSearchParams(currentUrlObj.search);
-                const nextParams = new URLSearchParams(nextUrlObj.search);
                 const xAxisChanged = doesRequestChangedXAxis(currentParams, nextParams);
                 if (!xAxisChanged) {
                     captureBacktestRefreshTransition();
@@ -5778,10 +5828,14 @@
                     iconClass: "icon-hourglass",
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
+            } else if (state.currentView === "tickers" && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
+                showWorkspaceModal({
+                    title: "Calculating comparison",
+                    copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",
+                    iconClass: "icon-hourglass",
+                });
             } else if (pendingWorkspaceChartTransition?.view === state.currentView) {
                 // Same logic: only capture line chart transition if x-axis hasn't changed
-                const currentParams = new URLSearchParams(currentUrlObj.search);
-                const nextParams = new URLSearchParams(nextUrlObj.search);
                 const didRequestChangeXAxis = state.currentView === "portfolio"
                     ? didPortfolioRequestChangeXAxis
                     : bootstrap.didCompareRequestChangeXAxis;

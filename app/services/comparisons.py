@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.1
+Code version: v0.5.2
 """
 
 from __future__ import annotations
@@ -23,6 +23,49 @@ def _minute_of_day(timestamp: pd.Timestamp) -> int:
 def _is_regular_session_timestamp(timestamp: pd.Timestamp) -> bool:
     minute_of_day = _minute_of_day(timestamp)
     return _REGULAR_SESSION_OPEN_MINUTE <= minute_of_day <= _REGULAR_SESSION_CLOSE_MINUTE
+
+
+def _has_complete_regular_session(dataset: pd.DataFrame) -> bool:
+    if dataset.empty:
+        return False
+    regular_session = dataset[dataset["Date"].map(_is_regular_session_timestamp)]
+    if regular_session.empty:
+        return False
+    regular_minutes = regular_session["Date"].map(_minute_of_day)
+    return (
+        int(regular_minutes.min()) <= _REGULAR_SESSION_OPEN_MINUTE
+        and int(regular_minutes.max()) >= _REGULAR_SESSION_CLOSE_MINUTE
+    )
+
+
+def _complete_intraday_trading_days(dataset: pd.DataFrame) -> set[object]:
+    if dataset.empty:
+        return set()
+    return {
+        trading_day
+        for trading_day, day_frame in dataset.groupby(dataset["Date"].dt.date)
+        if _has_complete_regular_session(day_frame)
+    }
+
+
+def latest_common_complete_intraday_trading_day(
+        datasets: list[pd.DataFrame],
+        reference_end_date: pd.Timestamp | None = None,
+) -> object:
+    if not datasets:
+        raise ValueError("At least one dataset is required.")
+
+    common_days: set[object] | None = None
+    for dataset in datasets:
+        bounded_dataset = dataset.copy()
+        if reference_end_date is not None:
+            bounded_dataset = bounded_dataset[bounded_dataset["Date"] <= pd.Timestamp(reference_end_date)].copy()
+        complete_days = _complete_intraday_trading_days(bounded_dataset)
+        common_days = complete_days if common_days is None else common_days & complete_days
+
+    if not common_days:
+        raise ValueError("The selected tickers do not share a complete intraday trading day.")
+    return max(common_days)
 
 
 def filter_intraday_dataset_to_regular_session(dataset: pd.DataFrame) -> pd.DataFrame:
@@ -207,6 +250,9 @@ def slice_intraday_datasets_for_compare_period(
     common_end = pd.Timestamp(reference_end_date)
     sliced_datasets: list[pd.DataFrame] = []
     target_trading_days: list[object] | None = None
+    target_one_day: object | None = None
+    if period == "1d":
+        target_one_day = latest_common_complete_intraday_trading_day(datasets, common_end)
 
     for dataset in datasets:
         bounded_dataset = dataset[dataset["Date"] <= common_end].copy()
@@ -216,8 +262,7 @@ def slice_intraday_datasets_for_compare_period(
         bounded_dataset = bounded_dataset.sort_values("Date")
 
         if period == "1d":
-            latest_day = bounded_dataset["Date"].dt.date.max()
-            trimmed = bounded_dataset[bounded_dataset["Date"].dt.date == latest_day].copy()
+            trimmed = bounded_dataset[bounded_dataset["Date"].dt.date == target_one_day].copy()
         else:
             trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
             requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0

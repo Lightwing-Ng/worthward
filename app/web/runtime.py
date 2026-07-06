@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.17
+Code version: v0.4.18
 """
 
 from __future__ import annotations
@@ -1018,19 +1018,37 @@ def build_web_runtime() -> WebRuntime:
         target_date = pd.to_datetime(trading_date).date()
         return dataset[dataset["Date"].dt.date == target_date].copy()
 
+    def load_local_compare_one_day_intraday_dataset(ticker: str) -> pd.DataFrame:
+        path = intraday_history_store_path_for(ticker, "1m")
+        if not path.exists() or path.stat().st_size == 0:
+            raise ValueError(f"Local 1-minute market data for {ticker} is unavailable.")
+        with market_store_file_lock(path):
+            dataset = pd.read_parquet(path)
+        dataset = select_price_series(dataset, include_dividends=False, dividend_mode="price")
+        if dataset.empty:
+            raise ValueError(f"Local 1-minute market data for {ticker} is empty.")
+        return dataset
+
     def load_compare_one_day_intraday_dataset(
             ticker: str,
             *,
             include_extended_hours_flag: bool,
             trading_date: object | None = None,
     ) -> pd.DataFrame:
+        if trading_date is None:
+            intraday_dataset = load_local_compare_one_day_intraday_dataset(ticker)
+            if not include_extended_hours_flag:
+                intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
+            if intraday_dataset.empty:
+                raise ValueError(f"The latest local intraday store does not contain usable data for {ticker}.")
+            return intraday_dataset
+
         try:
             intraday_dataset = fetch_compare_one_day_extended_history(ticker)
-            if trading_date is not None:
-                dated_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
-                if dated_dataset.empty:
-                    raise ValueError(f"Extended-hours data for {ticker} does not include {trading_date}.")
-                intraday_dataset = dated_dataset
+            dated_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
+            if dated_dataset.empty:
+                raise ValueError(f"Extended-hours data for {ticker} does not include {trading_date}.")
+            intraday_dataset = dated_dataset
             if not include_extended_hours_flag:
                 intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
             return intraday_dataset
@@ -1047,8 +1065,7 @@ def build_web_runtime() -> WebRuntime:
             interval="1m",
             dividend_mode="price",
         )
-        if trading_date is not None:
-            intraday_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
+        intraday_dataset = slice_intraday_dataset_to_trading_date(intraday_dataset, trading_date)
         if not include_extended_hours_flag:
             intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
         if intraday_dataset.empty:
