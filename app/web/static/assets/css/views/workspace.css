@@ -1,4 +1,4 @@
-/* Code version: v1.1.13 */
+/* Code version: v1.1.14 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -1576,6 +1576,56 @@ footer {
     width: 100% !important;
     height: 100% !important;
     display: block;
+}
+
+.chart-context-menu {
+    position: fixed;
+    z-index: var(--layer-global-popover);
+    min-width: 176px;
+    padding: 6px;
+    border-radius: var(--radius-soft);
+    background: var(--frosted-glass-extracted-background);
+    border: var(--frosted-glass-extracted-border);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    color: var(--text);
+    isolation: isolate;
+}
+
+.chart-context-menu[hidden] {
+    display: none;
+}
+
+.chart-context-menu-item {
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--font-ui-sm);
+    line-height: 1.2;
+    text-align: left;
+    cursor: pointer;
+}
+
+.chart-context-menu-item:hover,
+.chart-context-menu-item:focus-visible {
+    background: var(--glass-chip-background-hover);
+    outline: none;
+}
+
+.chart-context-menu-icon {
+    width: 18px;
+    height: 18px;
+    background: currentColor;
 }
 
 .chart-region-wrap {

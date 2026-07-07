@@ -1,4 +1,4 @@
-/* Code version: v0.5.20 */
+/* Code version: v0.5.22 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -166,6 +166,189 @@
             },
         },
     };
+    const CHART_CONTEXT_HOST_SELECTOR = [
+        ".chart-wrap",
+        ".trade-chart-canvas-wrap",
+        ".investment-equity-chart-stage",
+        ".investment-stock-details-price-chart-stage",
+        ".live-trading-chart-shell",
+        "[data-investment-stock-price-chart]",
+        ".chart-surface",
+    ].join(", ");
+    const CHART_CONTEXT_MENU_ID = "chart_context_menu";
+    let activeChartContextCanvas = null;
+
+    const isExportableChartCanvas = (canvas) => {
+        if (!(canvas instanceof HTMLCanvasElement)) return false;
+        if (canvas.width <= 0 || canvas.height <= 0) return false;
+        if (window.Chart?.getChart?.(canvas)) return true;
+        return Boolean(canvas.closest(CHART_CONTEXT_HOST_SELECTOR));
+    };
+
+    const resolveChartCanvasFromTarget = (target) => {
+        if (!(target instanceof Element)) return null;
+        const directCanvas = target.closest("canvas");
+        if (isExportableChartCanvas(directCanvas)) return directCanvas;
+        const chartHost = target.closest(CHART_CONTEXT_HOST_SELECTOR);
+        const hostedCanvas = chartHost?.querySelector?.("canvas");
+        return isExportableChartCanvas(hostedCanvas) ? hostedCanvas : null;
+    };
+
+    const slugifyChartFilenamePart = (value) => {
+        const normalized = String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/&/g, " and ")
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+        return normalized || "chart";
+    };
+
+    const buildChartSvgFilename = (canvas) => {
+        const surface = canvas.closest(".chart-surface") || canvas.parentElement;
+        const heading = surface?.querySelector?.(".chart-heading")?.textContent
+            || canvas.getAttribute("aria-label")
+            || document.title
+            || "chart";
+        const baseName = slugifyChartFilenamePart(heading);
+        const idSuffix = slugifyChartFilenamePart(canvas.id || "");
+        if (!idSuffix || idSuffix === "chart" || baseName.includes(idSuffix)) return `${baseName}.svg`;
+        return `${baseName}-${idSuffix}.svg`;
+    };
+
+    const escapeSvgAttribute = (value) => String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const readChartExportBackground = (canvas) => {
+        const candidates = [
+            canvas.closest(".chart-wrap, .trade-chart-canvas-wrap, .investment-equity-chart-stage, .investment-stock-details-price-chart-stage, .live-trading-chart-shell"),
+            canvas.closest(".chart-surface"),
+            document.body,
+        ].filter(Boolean);
+        for (const candidate of candidates) {
+            const color = getComputedStyle(candidate).backgroundColor;
+            if (color && color !== "transparent" && !/rgba\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i.test(color)) {
+                return color;
+            }
+        }
+        return getComputedStyle(document.body).getPropertyValue("--theme-panel").trim() || "#ffffff";
+    };
+
+    const buildChartSvgMarkup = (canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        const displayWidth = Math.max(1, Math.round(rect.width || canvas.clientWidth || canvas.width));
+        const displayHeight = Math.max(1, Math.round(rect.height || canvas.clientHeight || canvas.height));
+        const imageDataUrl = canvas.toDataURL("image/png");
+        const background = readChartExportBackground(canvas);
+        return [
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${displayWidth} ${displayHeight}" role="img">`,
+            `<rect width="${displayWidth}" height="${displayHeight}" fill="${escapeSvgAttribute(background)}"/>`,
+            `<image href="${imageDataUrl}" x="0" y="0" width="${displayWidth}" height="${displayHeight}" preserveAspectRatio="none"/>`,
+            "</svg>",
+        ].join("");
+    };
+
+    const downloadBlobFile = (filename, blob) => {
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    const closeChartContextMenu = () => {
+        const menu = document.getElementById(CHART_CONTEXT_MENU_ID);
+        if (menu) {
+            menu.hidden = true;
+            menu.classList.remove("is-open");
+        }
+        activeChartContextCanvas = null;
+    };
+
+    const downloadActiveChartSvg = () => {
+        const canvas = activeChartContextCanvas;
+        closeChartContextMenu();
+        if (!isExportableChartCanvas(canvas)) return;
+        try {
+            const svg = buildChartSvgMarkup(canvas);
+            downloadBlobFile(
+                buildChartSvgFilename(canvas),
+                new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+            );
+        } catch (_error) {
+            window.alert("SVG export failed. The chart contains an image that this browser cannot export.");
+        }
+    };
+
+    const ensureChartContextMenu = () => {
+        let menu = document.getElementById(CHART_CONTEXT_MENU_ID);
+        if (menu) return menu;
+        menu = document.createElement("div");
+        menu.id = CHART_CONTEXT_MENU_ID;
+        menu.className = "chart-context-menu";
+        menu.setAttribute("role", "menu");
+        menu.hidden = true;
+        menu.innerHTML = `
+            <button type="button" class="chart-context-menu-item" role="menuitem" data-chart-context-action="download-svg">
+                <span class="icon chart-context-menu-icon" style="-webkit-mask-image: url(/static/images/tray.and.arrow.down.fill.svg); mask-image: url(/static/images/tray.and.arrow.down.fill.svg);" aria-hidden="true"></span>
+                <span>Download SVG</span>
+            </button>
+        `;
+        menu.addEventListener("click", (event) => {
+            const action = event.target instanceof Element
+                ? event.target.closest("[data-chart-context-action]")?.dataset.chartContextAction
+                : "";
+            if (action === "download-svg") downloadActiveChartSvg();
+        });
+        document.body.appendChild(menu);
+        return menu;
+    };
+
+    const positionChartContextMenu = (menu, clientX, clientY) => {
+        menu.hidden = false;
+        menu.classList.add("is-open");
+        menu.style.left = "0px";
+        menu.style.top = "0px";
+        const rect = menu.getBoundingClientRect();
+        const margin = 8;
+        const left = Math.min(
+            Math.max(margin, clientX),
+            Math.max(margin, window.innerWidth - rect.width - margin),
+        );
+        const top = Math.min(
+            Math.max(margin, clientY),
+            Math.max(margin, window.innerHeight - rect.height - margin),
+        );
+        menu.style.left = `${Math.round(left)}px`;
+        menu.style.top = `${Math.round(top)}px`;
+    };
+
+    document.addEventListener("contextmenu", (event) => {
+        const canvas = resolveChartCanvasFromTarget(event.target);
+        if (!canvas) {
+            closeChartContextMenu();
+            return;
+        }
+        event.preventDefault();
+        activeChartContextCanvas = canvas;
+        positionChartContextMenu(ensureChartContextMenu(), event.clientX, event.clientY);
+    });
+    document.addEventListener("pointerdown", (event) => {
+        const menu = document.getElementById(CHART_CONTEXT_MENU_ID);
+        if (!menu || menu.hidden || menu.contains(event.target)) return;
+        closeChartContextMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeChartContextMenu();
+    });
+    window.addEventListener("resize", closeChartContextMenu);
+    window.addEventListener("scroll", closeChartContextMenu, true);
 
     const getProgressiveManifest = (view, section = null) => {
         if (view === "settings") {
@@ -2686,7 +2869,7 @@
         const requestTickerCalculation = (reason = "ticker-change") => {
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition(reason);
         };
-        const commitTickerSelection = (reason = "ticker-change") => {
+        const syncCommittedTickerSelection = (reason = "ticker-change") => {
             validateAllTickerInputs();
             handlePortfolioTickerValueChange(input);
             closePanel();
@@ -2694,7 +2877,10 @@
             syncDateConstraints();
             if (isBacktestView) syncBacktestIntervals();
             requestTickerCalculation(reason);
-            scheduleAutoSubmit(120);
+        };
+        const finalizeTickerLoad = (reason = "ticker-change", delay = 120) => {
+            syncCommittedTickerSelection(reason);
+            scheduleAutoSubmit(delay);
         };
         const showRecentItems = async () => {
             try {
@@ -2707,7 +2893,7 @@
                 closePanel();
             }
         };
-        const applySuggestion = (item) => {
+        const applySuggestion = (item, {autoLoad = false} = {}) => {
             const selectedSymbol = sanitizeTicker(item.symbol || "");
             input.value = selectedSymbol;
             input.dataset.unknown = "";
@@ -2717,7 +2903,11 @@
             input.setCustomValidity("");
             syncTickerInputDecoration(input, item);
             input.focus();
-            commitTickerSelection("ticker-change");
+            if (autoLoad) {
+                finalizeTickerLoad("ticker-change", 72);
+                return;
+            }
+            syncCommittedTickerSelection("ticker-change");
         };
 
         const renderItems = (items) => {
@@ -2827,7 +3017,7 @@
                     input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
                     validateTickerInput(input);
                     if (exactMatch) {
-                        commitTickerSelection("ticker-change");
+                        syncCommittedTickerSelection("ticker-change");
                         return;
                     }
                     renderItems(payload);
@@ -2871,14 +3061,15 @@
         });
         input.addEventListener("keydown", (event) => {
             const buttons = getButtons();
-            if (!buttons.length) return;
             if (event.key === "ArrowDown") {
+                if (!buttons.length) return;
                 event.preventDefault();
                 activeIndex = Math.min(activeIndex + 1, buttons.length - 1);
                 syncActiveSuggestion();
                 return;
             }
             if (event.key === "ArrowUp") {
+                if (!buttons.length) return;
                 event.preventDefault();
                 activeIndex = Math.max(activeIndex - 1, 0);
                 syncActiveSuggestion();
@@ -2886,7 +3077,18 @@
             }
             if (event.key === "Enter" && activeIndex >= 0) {
                 event.preventDefault();
-                buttons[activeIndex]?.click();
+                const activeButton = buttons[activeIndex];
+                applySuggestion({
+                    symbol: activeButton?.dataset.symbol || "",
+                    logo_url: activeButton?.dataset.logoUrl || "",
+                    name: activeButton?.dataset.name || activeButton?.dataset.symbol || "",
+                }, {autoLoad: true});
+                return;
+            }
+            if (event.key === "Enter") {
+                event.preventDefault();
+                finalizeTickerLoad("ticker-change", 72);
+                input.blur();
                 return;
             }
             if (event.key === "Escape") {
@@ -2895,13 +3097,8 @@
         });
         input.addEventListener("change", () => {
             closePanel();
-            requestTickerCalculation("ticker-change");
-            validateAllTickerInputs();
             void validateTickerExistence(input, {preferFresh: true});
-            syncOneDayExtendedHoursSwitch();
-            syncDateConstraints();
-            if (isBacktestView) syncBacktestIntervals();
-            scheduleAutoSubmit();
+            finalizeTickerLoad("ticker-change");
         });
     };
 
