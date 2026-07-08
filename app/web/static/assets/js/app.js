@@ -101,11 +101,14 @@
     let activeScrollableTableHeaderCleanup = null;
     let scheduleWorkspaceSummaryMorphSync = null;
     let workspaceHydrationToken = 0;
+    let lastWorkspaceRangeNoticeFingerprint = "";
+    let lastWorkspaceRangeNoticeTexts = new Set();
     let pendingWorkspaceChartTransition = null;
     let optimisticNavigationFrame = 0;
     let optimisticNavigationSnapshot = null;
     const datePickerState = [];
     let validTradingDateSet = null;
+    let dateConstraintsRequestId = 0;
     const portfolioWeightState = {
         clock: 0,
         touchedAtByIndex: {},
@@ -118,6 +121,8 @@
     const workspaceModalOverlayIcon = $("#workspace_modal_overlay_icon");
     const canTransitionDom = typeof document.startViewTransition === "function";
     const progressiveResourceCache = new Map();
+    const localMarketPresenceRequestCache = new Map();
+    const localMarketPresencePendingRequest = new Map();
     const progressiveViewRegistry = {
         tickers: {
             masks: [
@@ -1402,16 +1407,44 @@
 
     const fetchMissingLocalMarketTickers = async (tickers) => {
         if (!Array.isArray(tickers) || !tickers.length || !endpoints.marketStorePresence) return [];
+        const canonicalTickers = tickers
+            .map((ticker) => String(ticker || "").trim().toUpperCase())
+            .filter(Boolean)
+            .filter((ticker, index, list) => list.indexOf(ticker) === index)
+            .sort();
+        if (!canonicalTickers.length) return [];
+        const tickerKey = canonicalTickers.join("|");
+        const now = Date.now();
+        const cached = localMarketPresenceRequestCache.get(tickerKey);
+        if (cached && cached.expiresAt > now) {
+            return [...cached.value];
+        }
+        if (localMarketPresencePendingRequest.has(tickerKey)) {
+            return localMarketPresencePendingRequest.get(tickerKey);
+        }
         const params = new URLSearchParams();
-        tickers.forEach((ticker) => {
+        canonicalTickers.forEach((ticker) => {
             if (ticker) params.append("ticker", ticker);
         });
-        const response = await fetch(`${endpoints.marketStorePresence}?${params.toString()}`, {
-            credentials: "same-origin",
-        });
-        if (!response.ok) throw new Error(`Market store presence fetch failed: ${response.status}`);
-        const payload = await response.json();
-        return Array.isArray(payload?.missingHistory) ? payload.missingHistory : [];
+        const request = (async () => {
+            const response = await fetch(`${endpoints.marketStorePresence}?${params.toString()}`, {
+                credentials: "same-origin",
+            });
+            if (!response.ok) throw new Error(`Market store presence fetch failed: ${response.status}`);
+            const payload = await response.json();
+            const missingHistory = Array.isArray(payload?.missingHistory) ? payload.missingHistory : [];
+            localMarketPresenceRequestCache.set(tickerKey, {
+                value: [...missingHistory],
+                expiresAt: Date.now() + 4000,
+            });
+            return [...missingHistory];
+        })();
+        localMarketPresencePendingRequest.set(tickerKey, request);
+        try {
+            return await request;
+        } finally {
+            localMarketPresencePendingRequest.delete(tickerKey);
+        }
     };
 
     const attachWorkspaceSummaryMorph = () => {
@@ -1946,14 +1979,74 @@
         currentRegion.replaceChildren(...Array.from(nextRegion.childNodes).map((node) => node.cloneNode(true)));
     };
 
-    const syncGlobalNoticeBanners = (doc) => {
+    const buildWorkspaceRangeNoticeFingerprint = (url = window.location.href) => {
+        try {
+            const targetUrl = new URL(url, window.location.origin);
+            const params = new URLSearchParams(targetUrl.search);
+            const tickers = params.getAll("ticker")
+                .map((ticker) => String(ticker || "").trim().toUpperCase())
+                .filter(Boolean)
+                .sort();
+            const rangeKeys = [
+                "range",
+                "period",
+                "trading_date",
+                "exact_trading_date",
+                "from",
+                "to",
+                "exact_start",
+                "exact_end",
+                "extended_hours",
+                "include_extended_hours",
+                "price_only",
+                "price_return_only",
+                "dividends",
+                "include_dividends",
+            ];
+            return [
+                `tickers=${tickers.join(",")}`,
+                ...rangeKeys.map((key) => `${key}=${params.get(key) || ""}`),
+            ].join("|");
+        } catch {
+            return "";
+        }
+    };
+
+    const normalizeBannerText = (value) => String(value || "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const syncGlobalNoticeBanners = (doc, targetUrl) => {
         const pageRoot = document.querySelector(".page");
         if (!(pageRoot instanceof HTMLElement) || !doc) return;
         document.querySelectorAll(".notice-floating-banner-global").forEach((node) => node.remove());
         const nextBanners = Array.from(doc.querySelectorAll(".notice-floating-banner-global"));
         if (!nextBanners.length) return;
+        const nextRangeFingerprint = buildWorkspaceRangeNoticeFingerprint(targetUrl);
+        const isRepeatRange = Boolean(nextRangeFingerprint)
+            && nextRangeFingerprint === lastWorkspaceRangeNoticeFingerprint;
+        const comparisonStartPrefix = "Comparison starts from ";
+        const nextRangeNoticeTexts = new Set();
+        const bannersToRender = nextBanners.filter((banner) => {
+            const text = normalizeBannerText(banner.textContent);
+            if (!text || nextRangeNoticeTexts.has(text)) return false;
+            nextRangeNoticeTexts.add(text);
+            if (isRepeatRange && (lastWorkspaceRangeNoticeTexts.has(text) || text.includes(comparisonStartPrefix))) {
+                return false;
+            }
+            return true;
+        });
+        if (nextRangeFingerprint) {
+            lastWorkspaceRangeNoticeFingerprint = nextRangeFingerprint;
+            lastWorkspaceRangeNoticeTexts = nextRangeNoticeTexts;
+        } else {
+            lastWorkspaceRangeNoticeTexts = new Set();
+        }
+        if (!bannersToRender.length) {
+            return;
+        }
         const anchor = pageRoot.querySelector(".app-shell");
-        nextBanners.forEach((banner) => {
+        bannersToRender.forEach((banner) => {
             const clonedBanner = banner.cloneNode(true);
             if (anchor) {
                 pageRoot.insertBefore(clonedBanner, anchor);
@@ -2153,7 +2246,7 @@
         const nextWorkspacePanel = doc.getElementById("workspace_panel");
         const workspacePanel = document.getElementById("workspace_panel");
         if (!nextWorkspacePanel || !workspacePanel) throw new Error("Workspace panel missing from response.");
-        syncGlobalNoticeBanners(doc);
+        syncGlobalNoticeBanners(doc, nextUrl);
         if (state.currentView === "tickers") {
             const hydratedCompareWorkspace = bootstrap.hydrateCompareWorkspace?.({
                 doc,
@@ -5527,6 +5620,7 @@
 
     const syncDateConstraints = async () => {
         if ((!exactStartInput || !exactEndInput) && !exactTradingDateInput) return;
+        const requestId = ++dateConstraintsRequestId;
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         if (rangeMode !== "exact") {
             validTradingDateSet = null;
@@ -5556,8 +5650,10 @@
         tickers.forEach((ticker) => params.append("ticker", ticker));
         try {
             const response = await fetch(`${endpoints.dateConstraints}?${params.toString()}`);
+            if (requestId !== dateConstraintsRequestId) return;
             if (!response.ok) return;
             const payload = await response.json();
+            if (requestId !== dateConstraintsRequestId) return;
             validTradingDateSet = payload.trading_dates?.length ? new Set(payload.trading_dates) : null;
             const tradingDateSet = new Set(payload.trading_dates || []);
             if (exactStartInput) {
