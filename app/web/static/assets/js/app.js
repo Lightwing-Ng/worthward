@@ -1,4 +1,4 @@
-/* Code version: v0.5.23 */
+/* Code version: v0.5.30 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -293,6 +293,205 @@
         return commands.join(" ");
     };
 
+    const toFiniteSvgNumber = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const getSvgRawDateMinuteOfDay = (value) => {
+        const match = String(value || "").match(/(?:[T ](\d{2}):(\d{2}))$/);
+        if (!match) return null;
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+        return (hours * 60) + minutes;
+    };
+
+    const getSvgRawDateSerialMinute = (value) => {
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const hours = match[4] ? Number(match[4]) : 0;
+        const minutes = match[5] ? Number(match[5]) : 0;
+        if (![year, month, day, hours, minutes].every(Number.isFinite)) return null;
+        return Math.floor(Date.UTC(year, month - 1, day) / 60000) + (hours * 60) + minutes;
+    };
+
+    const resolveSvgMarketTimeConfig = (ticker) => {
+        const normalized = String(ticker || "").toUpperCase();
+        const configs = [
+            {suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", session: {open: 9 * 60, close: (15 * 60) + 31}},
+            {suffixes: [".HK"], timezone: "Asia/Hong_Kong", session: {open: (9 * 60) + 30, close: 16 * 60}},
+            {suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", session: {open: 9 * 60, close: (15 * 60) + 31}},
+            {suffixes: [".SH", ".SS", ".SZ"], timezone: "Asia/Shanghai", session: {open: (9 * 60) + 30, close: 15 * 60}},
+            {suffixes: [".SG", ".SI"], timezone: "Asia/Singapore", session: {open: 9 * 60, close: 17 * 60}},
+            {suffixes: [".L"], timezone: "Europe/London", session: {open: 8 * 60, close: (16 * 60) + 30}},
+            {suffixes: [".AX"], timezone: "Australia/Sydney", session: {open: 10 * 60, close: 16 * 60}},
+            {suffixes: [".TO", ".V", ".NE", ".CN", ".CA"], timezone: "America/Toronto", session: {open: (9 * 60) + 30, close: 16 * 60}},
+            {suffixes: [".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS"], timezone: "Europe/Paris", session: {open: 9 * 60, close: (17 * 60) + 30}},
+            {suffixes: [".HE"], timezone: "Europe/Helsinki", session: {open: 9 * 60, close: (17 * 60) + 30}},
+            {suffixes: [".NS", ".BO"], timezone: "Asia/Kolkata", session: {open: (9 * 60) + 15, close: (15 * 60) + 30}},
+            {suffixes: [".TW", ".TWO"], timezone: "Asia/Taipei", session: {open: 9 * 60, close: (13 * 60) + 30}},
+            {suffixes: [".KL"], timezone: "Asia/Kuala_Lumpur", session: {open: 9 * 60, close: 17 * 60}},
+            {suffixes: [".BK"], timezone: "Asia/Bangkok", session: {open: 10 * 60, close: (16 * 60) + 30}},
+            {suffixes: [".JK"], timezone: "Asia/Jakarta", session: {open: 9 * 60, close: 16 * 60}},
+            {suffixes: [".NZ"], timezone: "Pacific/Auckland", session: {open: 10 * 60, close: (16 * 60) + 45}},
+            {suffixes: [".SA"], timezone: "America/Sao_Paulo", session: {open: 10 * 60, close: 17 * 60}},
+            {suffixes: [".BA", ".MX"], timezone: "America/Mexico_City", session: {open: (8 * 60) + 30, close: 15 * 60}},
+            {suffixes: [".TA"], timezone: "Asia/Jerusalem", session: {open: (9 * 60) + 30, close: (17 * 60) + 30}},
+            {suffixes: [".SR", ".SE"], timezone: "Asia/Riyadh", session: {open: 10 * 60, close: 15 * 60}},
+            {suffixes: [".JO"], timezone: "Africa/Johannesburg", session: {open: 9 * 60, close: 17 * 60}},
+            {suffixes: [".QA"], timezone: "Asia/Qatar", session: {open: (9 * 60) + 30, close: (13 * 60) + 10}},
+        ];
+        const match = configs.find((config) => config.suffixes.some((suffix) => normalized.endsWith(suffix)));
+        if (match) return match;
+        return { timezone: "America/New_York", session: { open: (9 * 60) + 30, close: 16 * 60 } };
+    };
+
+    const getSvgTimezoneOffsetMinutes = (timezone, utcMs) => {
+        try {
+            const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+            }).formatToParts(new Date(utcMs));
+            const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+            const localAsUtcMs = Date.UTC(
+                Number(values.year),
+                Number(values.month) - 1,
+                Number(values.day),
+                Number(values.hour),
+                Number(values.minute),
+            );
+            return Math.round((localAsUtcMs - utcMs) / 60000);
+        } catch (_error) {
+            return 0;
+        }
+    };
+
+    const localSvgMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => {
+        if (!dateText || !config || !Number.isFinite(marketMinute)) return null;
+        const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        if (![year, month, day].every(Number.isFinite)) return null;
+        const localWallUtcMs = Date.UTC(year, month - 1, day, Math.floor(marketMinute / 60), marketMinute % 60);
+        const marketOffset = getSvgTimezoneOffsetMinutes(config.timezone, localWallUtcMs);
+        const actualUtcMs = localWallUtcMs - (marketOffset * 60000);
+        const newYorkOffset = getSvgTimezoneOffsetMinutes("America/New_York", actualUtcMs);
+        const newYorkWallMs = actualUtcMs + (newYorkOffset * 60000);
+        return Math.round(newYorkWallMs / 60000);
+    };
+
+    const buildSvgOneDayTimestampRatio = (sourceSeries, rawDates) => {
+        const hasCrossMarketRange = sourceSeries.some((item) => /\.(AS|AX|BA|BE|BK|BO|BR|CA|CN|CO|DE|DU|F|HA|HE|HK|HM|IR|IS|JK|JP|KL|KQ|KS|L|MC|MI|MX|NE|NS|NZ|OL|PA|QA|SA|SE|SG|SH|SI|SR|SS|ST|SW|SZ|TA|T|TO|TWO|TW|V|VI)$/i.test(String(item?.ticker || "")));
+        if (hasCrossMarketRange) {
+            const selectedTradingDate = String(state.chart?.tradingDate || rawDates.find(Boolean) || "");
+            const sessionWindows = sourceSeries.flatMap((item) => {
+                const config = resolveSvgMarketTimeConfig(item?.ticker);
+                const openMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
+                const closeBoundaryMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+                if (!Number.isFinite(openMinute) || !Number.isFinite(closeBoundaryMinute)) return [];
+                return [{
+                    startBoundary: openMinute - 0.5,
+                    closeBoundary: closeBoundaryMinute - 0.5,
+                }];
+            });
+            if (sessionWindows.length) {
+                const startBoundary = Math.min(...sessionWindows.map((item) => item.startBoundary));
+                const endBoundary = Math.max(...sessionWindows.map((item) => item.closeBoundary));
+                const totalMinutes = endBoundary - startBoundary;
+                if (totalMinutes > 0) {
+                    return (value) => {
+                        const serialMinute = getSvgRawDateSerialMinute(value);
+                        if (!Number.isFinite(serialMinute)) return null;
+                        return Math.min(1, Math.max(0, (serialMinute - startBoundary) / totalMinutes));
+                    };
+                }
+            }
+        }
+
+        const hasExtendedHours = rawDates.some((value) => {
+            const minuteOfDay = getSvgRawDateMinuteOfDay(value);
+            return Number.isFinite(minuteOfDay) && (minuteOfDay < ((9 * 60) + 30) || minuteOfDay >= (16 * 60));
+        });
+        const sessionStart = hasExtendedHours ? (4 * 60) : ((9 * 60) + 30);
+        const sessionEnd = hasExtendedHours ? (20 * 60) : (16 * 60);
+        const totalSessionMinutes = sessionEnd - sessionStart;
+        return (value) => {
+            const minuteOfDay = getSvgRawDateMinuteOfDay(value);
+            if (!Number.isFinite(minuteOfDay) || totalSessionMinutes <= 0) return null;
+            return Math.min(1, Math.max(0, (minuteOfDay - sessionStart) / totalSessionMinutes));
+        };
+    };
+
+    const buildSvgCandlestickMarkup = ({ chart, chartArea, yScale, textColor }) => {
+        const sourceSeries = Array.isArray(state.chart?.series) ? state.chart.series : [];
+        const labels = Array.isArray(chart.data?.labels) ? chart.data.labels : [];
+        const rawDates = Array.isArray(sourceSeries[0]?.raw_dates) ? sourceSeries[0].raw_dates : [];
+        const hasCandles = labels.length > 0
+            && rawDates.length === labels.length
+            && sourceSeries.length === chart.data.datasets.length
+            && sourceSeries.every((item) => Array.isArray(item?.candlestick_returns) && item.candlestick_returns.length === labels.length);
+        if (!hasCandles) return "";
+
+        const timestampRatio = buildSvgOneDayTimestampRatio(sourceSeries, rawDates);
+        const datasetCount = Math.max(sourceSeries.length, 1);
+        const hasExtendedHours = rawDates.some((value) => {
+            const minuteOfDay = getSvgRawDateMinuteOfDay(value);
+            return Number.isFinite(minuteOfDay) && (minuteOfDay < ((9 * 60) + 30) || minuteOfDay >= (16 * 60));
+        });
+        const sessionStart = hasExtendedHours ? (4 * 60) : ((9 * 60) + 30);
+        const sessionEnd = hasExtendedHours ? (20 * 60) : (16 * 60);
+        const sessionMinuteWidth = (chartArea.right - chartArea.left) / Math.max(1, sessionEnd - sessionStart);
+        const groupWidth = Math.max(1, Math.min(sessionMinuteWidth * 0.78, 8));
+        const candleWidth = Math.max(0.55, groupWidth / datasetCount);
+        return sourceSeries.map((item, datasetIndex) => {
+            const dataset = chart.data.datasets[datasetIndex] || {};
+            const strokeColor = dataset.borderColor || item.color || textColor;
+            const xOffset = (datasetIndex - ((datasetCount - 1) / 2)) * candleWidth;
+            const candleMarkup = item.candlestick_returns.map((candle, candleIndex) => {
+                const high = toFiniteSvgNumber(candle?.h);
+                const low = toFiniteSvgNumber(candle?.l);
+                const open = toFiniteSvgNumber(candle?.o);
+                const close = toFiniteSvgNumber(candle?.c);
+                const volume = toFiniteSvgNumber(candle?.v);
+                if (candle?.synthetic === true) return "";
+                if (volume !== null && volume <= 0) return "";
+                if (![high, low, open, close].every((value) => value !== null)) return "";
+                const xRatio = timestampRatio(rawDates[candleIndex]);
+                if (!Number.isFinite(xRatio)) return "";
+                const x = chartArea.left + ((chartArea.right - chartArea.left) * xRatio) + xOffset;
+                const highY = yScale.getPixelForValue(high);
+                const lowY = yScale.getPixelForValue(low);
+                const openY = yScale.getPixelForValue(open);
+                const closeY = yScale.getPixelForValue(close);
+                if (![x, highY, lowY, openY, closeY].every(Number.isFinite)) return "";
+                const bodyTop = Math.min(openY, closeY);
+                const bodyHeight = Math.max(0.55, Math.abs(closeY - openY));
+                const bodyLeft = x - (candleWidth / 2);
+                return [
+                    `<line class="candle-wick" x1="${formatSvgNumber(x)}" y1="${formatSvgNumber(highY)}" x2="${formatSvgNumber(x)}" y2="${formatSvgNumber(lowY)}"/>`,
+                    `<rect class="candle-body" x="${formatSvgNumber(bodyLeft)}" y="${formatSvgNumber(bodyTop)}" width="${formatSvgNumber(candleWidth)}" height="${formatSvgNumber(bodyHeight)}"/>`,
+                ].join("");
+            }).join("");
+            if (!candleMarkup) return "";
+            return [
+                `<g class="candlestick-series" data-series="${escapeSvgAttribute(item.ticker || dataset.label || `series-${datasetIndex + 1}`)}" stroke="${escapeSvgAttribute(strokeColor)}" fill="${escapeSvgAttribute(strokeColor)}" fill-opacity="0.28" stroke-width="0.55">`,
+                candleMarkup,
+                "</g>",
+            ].join("");
+        }).join("");
+    };
+
     const buildSvgTextLines = ({ text, x, y, lineHeight, anchor = "middle", className = "", fill = "currentColor" }) => {
         const lines = String(text || "").split("\n").filter((line) => line !== "");
         if (!lines.length) return "";
@@ -335,7 +534,8 @@
 
         const yTicks = Array.isArray(yScale.ticks) ? yScale.ticks : [];
         const seriesLabels = [];
-        const datasetMarkup = chart.data.datasets.map((dataset, datasetIndex) => {
+        const candlestickMarkup = buildSvgCandlestickMarkup({ chart, chartArea, yScale, textColor });
+        const datasetMarkup = candlestickMarkup || chart.data.datasets.map((dataset, datasetIndex) => {
             const meta = chart.getDatasetMeta(datasetIndex);
             if (meta.hidden || dataset.hidden) return "";
             const pathData = buildSvgLinePath(meta.data || []);
@@ -5352,9 +5552,13 @@
             }
             if (isOneDayExactDateMode()) {
                 const adjustedTradingDate = payload.adjusted_start || payload.adjusted_end || payload.max_date || "";
-                if (adjustedTradingDate && exactTradingDateInput) exactTradingDateInput.value = adjustedTradingDate;
-                if (adjustedTradingDate && exactStartInput) exactStartInput.value = adjustedTradingDate;
-                if (adjustedTradingDate && exactEndInput) exactEndInput.value = adjustedTradingDate;
+                const currentTradingDate = exactTradingDateInput?.value || "";
+                const shouldUseAdjustedTradingDate = adjustedTradingDate
+                    && (!currentTradingDate || (tradingDateSet.size > 0 && !tradingDateSet.has(currentTradingDate)));
+                const resolvedTradingDate = shouldUseAdjustedTradingDate ? adjustedTradingDate : currentTradingDate;
+                if (resolvedTradingDate && exactTradingDateInput) exactTradingDateInput.value = resolvedTradingDate;
+                if (resolvedTradingDate && exactStartInput) exactStartInput.value = resolvedTradingDate;
+                if (resolvedTradingDate && exactEndInput) exactEndInput.value = resolvedTradingDate;
             } else {
                 if (payload.adjusted_start && exactStartInput) exactStartInput.value = payload.adjusted_start;
                 if (payload.adjusted_end && exactEndInput) exactEndInput.value = payload.adjusted_end;

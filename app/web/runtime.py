@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.28
+Code version: v0.4.37
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
@@ -66,6 +66,8 @@ from app.core.broker_settings import (
 from app.services.comparisons import (
     align_many_intraday_datasets_on_common_dates,
     build_series_payload,
+    complete_market_local_trading_days,
+    fill_intraday_market_session_gaps,
     filter_intraday_dataset_to_regular_session,
     prepare_intraday_dataset_for_compare,
     resolve_effective_period_for_datasets,
@@ -310,6 +312,7 @@ class WebRuntime:
     favicon_icon: Any
     symbol_search: Any
     date_constraints_api: Any
+    compare_live_api: Any
     trade_strategy_fields_api: Any
     settings_network_status_api: Any
     local_market_store_page_data_api: Any
@@ -425,6 +428,21 @@ def build_web_runtime() -> WebRuntime:
         dates = dataset["Date"].map(market_local_date).dropna().drop_duplicates().sort_values()
         return pd.DataFrame({"Date": pd.to_datetime(dates)})
 
+    def format_compare_intraday_market_local_display_range(
+            datasets: list[pd.DataFrame],
+            tickers: list[str],
+    ) -> str:
+        local_dates: list[pd.Timestamp] = []
+        for index, dataset in enumerate(datasets):
+            ticker = tickers[index] if index < len(tickers) else ""
+            frame = market_local_trading_dates_frame(dataset, ticker)
+            if frame.empty:
+                continue
+            local_dates.extend(pd.to_datetime(frame["Date"], errors="coerce").dropna().tolist())
+        if not local_dates:
+            return ""
+        return f"{format_display_date(min(local_dates))} - {format_display_date(max(local_dates))}"
+
     def build_one_day_intraday_date_constraint_payload(
             tickers: list[str],
             requested_start: str | None = None,
@@ -432,6 +450,8 @@ def build_web_runtime() -> WebRuntime:
     ) -> DateConstraintPayload:
         date_frames: list[pd.DataFrame] = []
         refresh_failures: list[str] = []
+        live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+        has_live_session_date = False
         for ticker in tickers:
             try:
                 refresh_recent_one_minute_store_with_yfinance(ticker)
@@ -449,13 +469,36 @@ def build_web_runtime() -> WebRuntime:
                 ticker,
                 regular_session_only=True,
             )
-            date_frames.append(market_local_trading_dates_frame(prepared_dataset, ticker))
+            date_frame = market_local_trading_dates_frame(prepared_dataset, ticker)
+            has_live_session_date = has_live_session_date or bool(
+                not date_frame.empty and (date_frame["Date"].dt.date == live_session_date).any()
+            )
+            date_frames.append(date_frame)
 
         payload = build_date_constraint_payload(
             *date_frames,
             requested_start=requested_start,
             requested_end=requested_end,
         )
+        if has_live_session_date:
+            live_date_value = pd.Timestamp(live_session_date).strftime("%Y-%m-%d")
+            trading_dates = sorted({*payload.trading_dates, live_date_value})
+            adjusted_start = payload.adjusted_start
+            adjusted_end = payload.adjusted_end
+            requested_start_date = pd.to_datetime(requested_start, errors="coerce") if requested_start else None
+            requested_end_date = pd.to_datetime(requested_end, errors="coerce") if requested_end else None
+            if requested_start_date is not None and not pd.isna(requested_start_date) and requested_start_date.date() == live_session_date:
+                adjusted_start = live_date_value
+            if requested_end_date is not None and not pd.isna(requested_end_date) and requested_end_date.date() == live_session_date:
+                adjusted_end = live_date_value
+            payload = DateConstraintPayload(
+                min_date=payload.min_date or live_date_value,
+                max_date=max([payload.max_date, live_date_value] if payload.max_date else [live_date_value]),
+                trading_dates=trading_dates,
+                adjusted_start=adjusted_start,
+                adjusted_end=adjusted_end,
+                message=payload.message,
+            )
         if refresh_failures:
             failed_preview = ", ".join(refresh_failures)
             refresh_notice = (
@@ -464,6 +507,47 @@ def build_web_runtime() -> WebRuntime:
             )
             payload.message = f"{payload.message} {refresh_notice}".strip() if payload.message else refresh_notice
         return payload
+
+    def resolve_compare_axis_trading_date(
+            tickers: list[str],
+            requested_trading_date: object,
+    ) -> str:
+        requested_date = pd.to_datetime(requested_trading_date, errors="coerce")
+        if pd.isna(requested_date):
+            raise ValueError(f"Invalid compare trading date: {requested_trading_date}.")
+        requested_date_value = requested_date.date()
+        live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+
+        date_frames: list[pd.DataFrame] = []
+        requested_date_is_complete = requested_date_value != live_session_date
+        for ticker in tickers:
+            intraday_dataset = fetch_history(
+                ticker,
+                include_dividends=False,
+                interval="1m",
+                dividend_mode="price",
+            )
+            prepared_dataset = prepare_intraday_dataset_for_compare(
+                intraday_dataset,
+                ticker,
+                regular_session_only=True,
+            )
+            date_frame = market_local_trading_dates_frame(prepared_dataset, ticker)
+            requested_date_is_complete = requested_date_is_complete and requested_date_value in complete_market_local_trading_days(
+                prepared_dataset,
+                ticker,
+            )
+            if not date_frame.empty:
+                date_frame = date_frame[date_frame["Date"].dt.date < requested_date_value].copy()
+            date_frames.append(date_frame)
+
+        if requested_date_is_complete:
+            return pd.Timestamp(requested_date_value).strftime("%Y-%m-%d")
+
+        payload = build_date_constraint_payload(*date_frames)
+        if not payload.trading_dates:
+            return pd.Timestamp(requested_date_value).strftime("%Y-%m-%d")
+        return payload.max_date or payload.trading_dates[-1]
 
     configured_money_market_tickers = {
         str(value).strip().upper()
@@ -1101,6 +1185,40 @@ def build_web_runtime() -> WebRuntime:
             return "Asia/Shanghai"
         if market == "UK":
             return "Europe/London"
+        if market == "SG":
+            return "Asia/Singapore"
+        if market == "AU":
+            return "Australia/Sydney"
+        if market == "CA":
+            return "America/Toronto"
+        if market == "EU":
+            return "Europe/Paris"
+        if market == "FI":
+            return "Europe/Helsinki"
+        if market == "IN":
+            return "Asia/Kolkata"
+        if market == "TW":
+            return "Asia/Taipei"
+        if market == "MY":
+            return "Asia/Kuala_Lumpur"
+        if market == "TH":
+            return "Asia/Bangkok"
+        if market == "ID":
+            return "Asia/Jakarta"
+        if market == "NZ":
+            return "Pacific/Auckland"
+        if market == "BR":
+            return "America/Sao_Paulo"
+        if market == "LATAM":
+            return "America/Mexico_City"
+        if market == "IL":
+            return "Asia/Jerusalem"
+        if market == "SA":
+            return "Asia/Riyadh"
+        if market == "ZA":
+            return "Africa/Johannesburg"
+        if market == "QA":
+            return "Asia/Qatar"
         return "America/New_York"
 
     def market_close_minute_for_ticker(ticker: str) -> int | None:
@@ -1113,6 +1231,30 @@ def build_web_runtime() -> WebRuntime:
             return (14 * 60) + 59
         if market == "UK":
             return (16 * 60) + 29
+        if market in {"AU", "CA", "ID"}:
+            return (16 * 60) - 1
+        if market == "SG":
+            return (17 * 60) - 1
+        if market in {"BR", "ZA"}:
+            return (17 * 60) - 1
+        if market in {"EU", "FI", "IL"}:
+            return (17 * 60) + 30
+        if market == "IN":
+            return (15 * 60) + 30
+        if market == "TW":
+            return (13 * 60) + 30
+        if market == "MY":
+            return (17 * 60) - 1
+        if market == "TH":
+            return (16 * 60) + 30
+        if market == "NZ":
+            return (16 * 60) + 44
+        if market == "LATAM":
+            return (15 * 60) - 1
+        if market == "SA":
+            return (15 * 60) - 1
+        if market == "QA":
+            return (13 * 60) + 9
         return None
 
     def apply_market_close_anchor(
@@ -1289,6 +1431,141 @@ def build_web_runtime() -> WebRuntime:
         if intraday_dataset.empty:
             raise ValueError(f"The selected trading date does not contain shared intraday data for {ticker}.")
         return intraday_dataset
+
+    def market_minute_key_for_compare_axis(value: object, ticker: str) -> str:
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("America/New_York")
+        else:
+            timestamp = timestamp.tz_convert("America/New_York")
+        localized = timestamp.tz_convert(market_timezone_for_ticker(ticker))
+        return f"{int(localized.hour):02d}:{int(localized.minute):02d}"
+
+    def load_live_compare_one_day_intraday_dataset(
+            ticker: str,
+            *,
+            live_trading_date: object,
+            include_extended_hours_flag: bool,
+            force_refresh: bool,
+    ) -> tuple[pd.DataFrame, str]:
+        source = "local"
+        if force_refresh:
+            try:
+                refresh_result = refresh_one_minute_store(ticker)
+                source = refresh_result.source
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Unable to refresh live 1-minute compare data for %s: %s", ticker, exc)
+
+        intraday_dataset = load_local_compare_one_day_intraday_dataset(ticker)
+        intraday_dataset = slice_intraday_dataset_to_market_trading_date(
+            intraday_dataset,
+            ticker,
+            live_trading_date,
+        )
+        if infer_ticker_market(ticker) == "US" and not include_extended_hours_flag:
+            intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
+        if intraday_dataset.empty:
+            raise ValueError(f"Live 1-minute data for {ticker} does not include {live_trading_date}.")
+        return intraday_dataset, source
+
+    def append_live_compare_intraday_dataset(
+            ticker: str,
+            intraday_dataset: pd.DataFrame,
+            *,
+            live_trading_date: object,
+            include_extended_hours_flag: bool,
+            force_refresh: bool,
+    ) -> tuple[pd.DataFrame, str | None]:
+        try:
+            live_dataset, source = load_live_compare_one_day_intraday_dataset(
+                ticker,
+                live_trading_date=live_trading_date,
+                include_extended_hours_flag=include_extended_hours_flag,
+                force_refresh=force_refresh,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Unable to append live intraday compare data for %s: %s", ticker, exc)
+            return intraday_dataset, None
+        combined = (
+            pd.concat([intraday_dataset, live_dataset], ignore_index=True)
+            .drop_duplicates(subset=["Date"], keep="last")
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+        return combined, source
+
+    def map_live_intraday_dataset_to_reference_axis(
+            reference_dataset: pd.DataFrame,
+            live_dataset: pd.DataFrame,
+            ticker: str,
+    ) -> pd.DataFrame:
+        reference_frame = build_empty_compare_axis_dataset(reference_dataset)
+
+        live_prepared = fill_intraday_market_session_gaps(
+            prepare_intraday_dataset_for_compare(live_dataset, ticker),
+            ticker,
+        )
+        if live_prepared.empty:
+            return reference_frame
+
+        live_rows_by_minute: dict[str, pd.Series] = {}
+        for _, live_row in live_prepared.sort_values("Date").iterrows():
+            live_rows_by_minute[market_minute_key_for_compare_axis(live_row["Date"], ticker)] = live_row
+
+        for row_index, reference_date in reference_frame["Date"].items():
+            live_row = live_rows_by_minute.get(market_minute_key_for_compare_axis(reference_date, ticker))
+            if live_row is None:
+                continue
+            for column in ("Open", "High", "Low", "Close", "Adj Close", "Volume"):
+                if column in live_row.index:
+                    reference_frame.at[row_index, column] = live_row[column]
+
+        return reference_frame
+
+    def build_empty_compare_axis_dataset(reference_dataset: pd.DataFrame) -> pd.DataFrame:
+        reference_frame = reference_dataset[["Date"]].copy().sort_values("Date").reset_index(drop=True)
+        for column in ("Open", "High", "Low", "Close", "Adj Close", "Volume"):
+            reference_frame[column] = pd.NA
+        return reference_frame
+
+    def build_empty_compare_axis_series_payload(
+            ticker: str,
+            reference_dataset: pd.DataFrame,
+            color: str | None = None,
+    ) -> SeriesPayload:
+        reference_dates = reference_dataset["Date"].map(lambda value: pd.Timestamp(value).strftime("%Y-%m-%d %H:%M")).tolist()
+        display_dates = reference_dataset["Date"].map(lambda value: format_display_datetime(value)).tolist()
+        # Keep the ticker on the shared axis even before that market has live bars.
+        return SeriesPayload(
+            ticker=ticker.upper(),
+            dates=display_dates,
+            raw_dates=reference_dates,
+            normalized_returns=[None for _ in reference_dates],
+            color=color,
+            glow=False,
+            candlestick_returns=[
+                {"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": True}
+                for index, _value in enumerate(reference_dates)
+            ],
+        )
+
+    def build_compare_series_payload(
+            ticker: str,
+            dataset: pd.DataFrame,
+            color: str | None = None,
+    ) -> SeriesPayload:
+        try:
+            return build_series_payload(ticker, dataset, color=color)
+        except ValueError:
+            if dataset.empty or "Date" not in dataset.columns:
+                raise
+            has_intraday_timestamps = dataset["Date"].map(
+                lambda value: pd.Timestamp(value).hour != 0 or pd.Timestamp(value).minute != 0
+            ).any()
+            close_values = pd.to_numeric(dataset.get("Close", pd.Series(dtype="float64")), errors="coerce").dropna()
+            if not has_intraday_timestamps or not close_values.empty:
+                raise
+            return build_empty_compare_axis_series_payload(ticker, dataset, color=color)
 
     def format_store_range_date(raw_value: object) -> str:
         return format_store_range_date_value(raw_value)
@@ -3156,6 +3433,7 @@ def build_web_runtime() -> WebRuntime:
             floating_banner_icon_class = "icon-modal-dialog-banner-default"  # Or some error icon
         exact_start_value = exact_start
         exact_end_value = exact_end
+        chart_trading_date_value = ""
         display_range = ""
         profiles: list[QuoteProfile] = []
         series: list[SeriesPayload] = []
@@ -3708,30 +3986,52 @@ def build_web_runtime() -> WebRuntime:
                             target_trading_date = date_constraints.adjusted_start or date_constraints.adjusted_end or date_constraints.max_date
                             if not target_trading_date:
                                 raise ValueError("Select a shared trading date.")
-                            intraday_datasets = [
+                            axis_trading_date = resolve_compare_axis_trading_date(
+                                validated_tickers,
+                                target_trading_date,
+                            ) if target_trading_date == date_constraints.max_date else target_trading_date
+                            reference_intraday_datasets = [
                                 load_compare_one_day_intraday_dataset(
                                     ticker,
                                     include_extended_hours_flag=include_extended_hours,
-                                    trading_date=target_trading_date,
+                                    trading_date=axis_trading_date,
                                 )
                                 for ticker in validated_tickers
                             ]
-                            common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
-                            aligned_datasets = slice_intraday_datasets_for_compare_period(
-                                intraday_datasets,
+                            reference_common_end_date = min(dataset["Date"].max() for dataset in reference_intraday_datasets)
+                            reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                reference_intraday_datasets,
                                 "1d",
-                                common_end_date,
+                                reference_common_end_date,
                                 validated_tickers,
                             )
-                            aligned_datasets = [
-                                apply_market_close_anchor(
-                                    dataset,
-                                    daily_dataset,
-                                    ticker,
-                                    target_trading_date,
-                                )
-                                for dataset, daily_dataset, ticker in zip(aligned_datasets, datasets, validated_tickers)
-                            ]
+                            if axis_trading_date != target_trading_date:
+                                aligned_datasets = []
+                                for reference_dataset, ticker in zip(reference_aligned_datasets, validated_tickers):
+                                    try:
+                                        live_dataset = load_live_compare_one_day_intraday_dataset(
+                                            ticker,
+                                            live_trading_date=target_trading_date,
+                                            include_extended_hours_flag=include_extended_hours,
+                                            force_refresh=True,
+                                        )[0]
+                                        aligned_datasets.append(
+                                            map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, ticker)
+                                        )
+                                    except Exception as exc:  # noqa: BLE001
+                                        LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, target_trading_date, exc)
+                                        aligned_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
+                            else:
+                                aligned_datasets = [
+                                    apply_market_close_anchor(
+                                        dataset,
+                                        daily_dataset,
+                                        ticker,
+                                        target_trading_date,
+                                    )
+                                    for dataset, daily_dataset, ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
+                                ]
+                            chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
                             exact_start_value = pd.to_datetime(target_trading_date).strftime("%Y-%m-%d")
                             exact_end_value = exact_start_value
                             period_label = "Trading date"
@@ -3740,14 +4040,28 @@ def build_web_runtime() -> WebRuntime:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
                             if is_exact_short_intraday_compare:
                                 intraday_datasets = []
+                                live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+                                should_append_exact_live = bool(exact_range_trading_dates) and pd.to_datetime(
+                                    exact_range_trading_dates[-1],
+                                    errors="coerce",
+                                ).date() == live_session_date
                                 for ticker in validated_tickers:
-                                    intraday_dataset = prepare_intraday_dataset_for_compare(
-                                        fetch_history(
+                                    raw_intraday_dataset = fetch_history(
+                                        ticker,
+                                        include_dividends=False,
+                                        interval="1m",
+                                        dividend_mode="price",
+                                    )
+                                    if should_append_exact_live:
+                                        raw_intraday_dataset = append_live_compare_intraday_dataset(
                                             ticker,
-                                            include_dividends=False,
-                                            interval="1m",
-                                            dividend_mode="price",
-                                        ),
+                                            raw_intraday_dataset,
+                                            live_trading_date=live_session_date,
+                                            include_extended_hours_flag=include_extended_hours,
+                                            force_refresh=True,
+                                        )[0]
+                                    intraday_dataset = prepare_intraday_dataset_for_compare(
+                                        raw_intraday_dataset,
                                         ticker,
                                         regular_session_only=True,
                                     )
@@ -3783,32 +4097,84 @@ def build_web_runtime() -> WebRuntime:
                                 elif intraday_notice:
                                     notice = f"{notice} {intraday_notice}"
                             intraday_datasets: list[pd.DataFrame] = []
+                            live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
                             for ticker in validated_tickers:
                                 if period == "1d":
-                                    intraday_datasets.append(
+                                    axis_trading_date = resolve_compare_axis_trading_date(
+                                        validated_tickers,
+                                        live_session_date,
+                                    )
+                                    reference_intraday_datasets = [
                                         load_compare_one_day_intraday_dataset(
-                                            ticker,
+                                            reference_ticker,
                                             include_extended_hours_flag=include_extended_hours,
+                                            trading_date=axis_trading_date,
                                         )
+                                        for reference_ticker in validated_tickers
+                                    ]
+                                    reference_common_end_date = min(dataset["Date"].max() for dataset in reference_intraday_datasets)
+                                    reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                        reference_intraday_datasets,
+                                        "1d",
+                                        reference_common_end_date,
+                                        validated_tickers,
                                     )
-                                    continue
-                                intraday_datasets.append(
-                                    fetch_history(
-                                        ticker,
-                                        include_dividends=False,
-                                        interval="1m",
-                                        dividend_mode="price",
-                                    )
+                                    if axis_trading_date != pd.Timestamp(live_session_date).strftime("%Y-%m-%d"):
+                                        aligned_datasets = []
+                                        for reference_dataset, live_ticker in zip(reference_aligned_datasets, validated_tickers):
+                                            try:
+                                                live_dataset = load_live_compare_one_day_intraday_dataset(
+                                                    live_ticker,
+                                                    live_trading_date=live_session_date,
+                                                    include_extended_hours_flag=include_extended_hours,
+                                                    force_refresh=True,
+                                                )[0]
+                                                aligned_datasets.append(
+                                                    map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, live_ticker)
+                                                )
+                                            except Exception as exc:  # noqa: BLE001
+                                                LOGGER.info("No live compare bars for %s on %s yet: %s", live_ticker, live_session_date, exc)
+                                                aligned_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
+                                    else:
+                                        aligned_datasets = [
+                                            apply_market_close_anchor(
+                                                dataset,
+                                                daily_dataset,
+                                                live_ticker,
+                                                live_session_date,
+                                            )
+                                            for dataset, daily_dataset, live_ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
+                                        ]
+                                    chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
+                                    exact_start_value = pd.Timestamp(live_session_date).strftime("%Y-%m-%d")
+                                    exact_end_value = exact_start_value
+                                    intraday_datasets = []
+                                    break
+                                intraday_dataset = fetch_history(
+                                    ticker,
+                                    include_dividends=False,
+                                    interval="1m",
+                                    dividend_mode="price",
                                 )
-                            common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
-                            aligned_datasets = slice_intraday_datasets_for_compare_period(
-                                intraday_datasets,
-                                period,
-                                common_end_date,
-                                validated_tickers,
-                            )
-                            exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
-                            exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
+                                if period in {"3d", "1w"}:
+                                    intraday_dataset = append_live_compare_intraday_dataset(
+                                        ticker,
+                                        intraday_dataset,
+                                        live_trading_date=live_session_date,
+                                        include_extended_hours_flag=include_extended_hours,
+                                        force_refresh=True,
+                                    )[0]
+                                intraday_datasets.append(intraday_dataset)
+                            if intraday_datasets:
+                                common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
+                                aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                    intraday_datasets,
+                                    period,
+                                    common_end_date,
+                                    validated_tickers,
+                                )
+                                exact_start_value = aligned_datasets[0]["Date"].min().strftime("%Y-%m-%d")
+                                exact_end_value = aligned_datasets[0]["Date"].max().strftime("%Y-%m-%d")
                             period_label = format_period_label(period)
                         else:
                             period, notice_resolve = resolve_effective_period_for_many(period, datasets)
@@ -3879,18 +4245,29 @@ def build_web_runtime() -> WebRuntime:
                             ]
                         else:
                             series = [
-                                build_series_payload(ticker, dataset, color=color)
+                                build_compare_series_payload(ticker, dataset, color=color)
                                 for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
                             ]
-                        def last_valid_return(item: SeriesPayload) -> float:
+                        def last_valid_return(item: SeriesPayload) -> float | None:
                             valid_returns = [value for value in item.normalized_returns if value is not None]
-                            return valid_returns[-1] if valid_returns else 0.0
+                            return valid_returns[-1] if valid_returns else None
 
-                        best_return = max(last_valid_return(item) for item in series)
+                        valid_performance_returns = [
+                            value for value in (last_valid_return(item) for item in series) if value is not None
+                        ]
+                        best_return = max(valid_performance_returns) if valid_performance_returns else None
                         common_start = aligned_datasets[0]["Date"].min()
                         common_end = aligned_datasets[0]["Date"].max()
-                        if current_view == "tickers" and range_mode == "exact" and period == "1d":
+                        if current_view == "tickers" and period == "1d" and (range_mode == "exact" or is_intraday_compare_period):
                             display_range = format_display_date(pd.to_datetime(exact_start_value or common_start))
+                        elif current_view == "tickers" and (
+                            (is_intraday_compare_period and period in {"3d", "1w"})
+                            or is_exact_short_intraday_compare
+                        ):
+                            display_range = format_compare_intraday_market_local_display_range(
+                                aligned_datasets,
+                                validated_tickers,
+                            ) or f"{format_display_date(common_start)} - {format_display_date(common_end)}"
                         else:
                             display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
                         if current_view != "portfolio":
@@ -3902,7 +4279,7 @@ def build_web_runtime() -> WebRuntime:
                                     "ending_return": last_valid_return(item),
                                     "color": item.color,
                                     "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
-                                    "is_winner": last_valid_return(item) == best_return,
+                                    "is_winner": best_return is not None and last_valid_return(item) == best_return,
                                 }
                                 for item, profile in zip(series, profiles)
                             ]
@@ -4034,6 +4411,7 @@ def build_web_runtime() -> WebRuntime:
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,
+            chart_trading_date=chart_trading_date_value or exact_start_value,
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
             current_view=current_view,
@@ -4112,6 +4490,7 @@ def build_web_runtime() -> WebRuntime:
             endpoints={
                 "symbolSearch": "/api/symbol-search",
                 "dateConstraints": "/api/date-constraints",
+                "compareLive": "/api/compare/live",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
                 # IBKR Gateway endpoints removed (Flex is reporting-only)
@@ -5037,6 +5416,195 @@ def build_web_runtime() -> WebRuntime:
             )
             payload.message = f"{payload.message} {freshness_notice}".strip() if payload.message else freshness_notice
         return jsonify(date_constraint_payload_to_json(payload))
+
+    def compare_live_api():
+        raw_tickers = [value.strip() for value in request.args.getlist("ticker") if value.strip()]
+        if not raw_tickers:
+            repeated = str(request.args.get("tickers", "")).strip()
+            raw_tickers = [value.strip() for value in repeated.split(",") if value.strip()]
+        if len(raw_tickers) < MIN_TICKERS:
+            response = jsonify({"success": False, "error": "At least two tickers are required for live comparison."})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+
+        try:
+            validated_tickers = list(dict.fromkeys(validate_ticker_or_raise(ticker) for ticker in raw_tickers))
+            if len(validated_tickers) < MIN_TICKERS:
+                raise ValueError("At least two distinct tickers are required for live comparison.")
+
+            live_date_value = request.args.get("live_date", "").strip()
+            live_trading_date = (
+                pd.to_datetime(live_date_value, errors="coerce")
+                if live_date_value
+                else pd.Timestamp.now(tz="Asia/Shanghai")
+            )
+            if pd.isna(live_trading_date):
+                raise ValueError(f"Invalid live trading date: {live_date_value}.")
+            live_trading_date = live_trading_date.date()
+
+            include_extended_hours_flag = request.args.get(
+                "extended_hours",
+                request.args.get("include_extended_hours", "0"),
+            ) == "1"
+            force_refresh = request.args.get("refresh", "1").strip() != "0"
+            requested_period = request.args.get("period", "1d").strip().lower() or "1d"
+
+            if requested_period in {"3d", "1w"}:
+                live_sources: list[str] = []
+                intraday_datasets: list[pd.DataFrame] = []
+                for ticker in validated_tickers:
+                    intraday_dataset = fetch_history(
+                        ticker,
+                        include_dividends=False,
+                        interval="1m",
+                        dividend_mode="price",
+                    )
+                    intraday_dataset, source = append_live_compare_intraday_dataset(
+                        ticker,
+                        intraday_dataset,
+                        live_trading_date=live_trading_date,
+                        include_extended_hours_flag=include_extended_hours_flag,
+                        force_refresh=force_refresh,
+                    )
+                    intraday_datasets.append(intraday_dataset)
+                    live_sources.append(source or "local")
+
+                common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
+                aligned_datasets = slice_intraday_datasets_for_compare_period(
+                    intraday_datasets,
+                    requested_period,
+                    common_end_date,
+                    validated_tickers,
+                )
+                colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
+                series = [
+                    build_compare_series_payload(ticker, dataset, color=color)
+                    for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
+                ]
+
+                def last_valid_return(item: SeriesPayload) -> float | None:
+                    valid_returns = [value for value in item.normalized_returns if value is not None]
+                    return valid_returns[-1] if valid_returns else None
+
+                valid_performance_returns = [
+                    value for value in (last_valid_return(item) for item in series) if value is not None
+                ]
+                best_return = max(valid_performance_returns) if valid_performance_returns else None
+                performance_items = [
+                    {
+                        "ticker": item.ticker,
+                        "ending_return": last_valid_return(item),
+                        "color": item.color,
+                        "is_winner": best_return is not None and last_valid_return(item) == best_return,
+                    }
+                    for item in series
+                ]
+                response = jsonify({
+                    "success": True,
+                    "series": [asdict(item) for item in series],
+                    "performanceItems": performance_items,
+                    "period": requested_period,
+                    "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
+                    "displayRange": format_compare_intraday_market_local_display_range(
+                        aligned_datasets,
+                        validated_tickers,
+                    ),
+                    "sources": {
+                        ticker: source
+                        for ticker, source in zip(validated_tickers, live_sources)
+                    },
+                    "fetchedAt": pd.Timestamp.now(tz="UTC").isoformat(),
+                })
+                return apply_no_store_headers(response)
+
+            axis_date_value = request.args.get("axis_date", request.args.get("trading_date", "")).strip()
+            if not axis_date_value and requested_period == "1d":
+                axis_date_value = resolve_compare_axis_trading_date(
+                    validated_tickers,
+                    live_trading_date,
+                )
+            if not axis_date_value:
+                raise ValueError("A reference axis trading date is required.")
+            axis_trading_date = pd.to_datetime(axis_date_value, errors="coerce")
+            if pd.isna(axis_trading_date):
+                raise ValueError(f"Invalid reference axis trading date: {axis_date_value}.")
+
+            reference_datasets = [
+                load_compare_one_day_intraday_dataset(
+                    ticker,
+                    include_extended_hours_flag=include_extended_hours_flag,
+                    trading_date=axis_trading_date,
+                )
+                for ticker in validated_tickers
+            ]
+            reference_common_end = min(dataset["Date"].max() for dataset in reference_datasets)
+            reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
+                reference_datasets,
+                "1d",
+                reference_common_end,
+                validated_tickers,
+            )
+
+            live_sources: list[str] = []
+            colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
+            mapped_live_datasets: list[pd.DataFrame] = []
+            for reference_dataset, ticker in zip(reference_aligned_datasets, validated_tickers):
+                try:
+                    live_dataset, source = load_live_compare_one_day_intraday_dataset(
+                        ticker,
+                        live_trading_date=live_trading_date,
+                        include_extended_hours_flag=include_extended_hours_flag,
+                        force_refresh=force_refresh,
+                    )
+                    mapped_live_datasets.append(
+                        map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, ticker)
+                    )
+                    live_sources.append(source)
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, live_trading_date, exc)
+                    mapped_live_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
+                    live_sources.append("pending")
+            series = [
+                build_compare_series_payload(ticker, dataset, color=color)
+                for ticker, dataset, color in zip(validated_tickers, mapped_live_datasets, colors)
+            ]
+
+            def last_valid_return(item: SeriesPayload) -> float | None:
+                valid_returns = [value for value in item.normalized_returns if value is not None]
+                return valid_returns[-1] if valid_returns else None
+
+            valid_performance_returns = [
+                value for value in (last_valid_return(item) for item in series) if value is not None
+            ]
+            best_return = max(valid_performance_returns) if valid_performance_returns else None
+            performance_items = [
+                {
+                    "ticker": item.ticker,
+                    "ending_return": last_valid_return(item),
+                    "color": item.color,
+                    "is_winner": best_return is not None and last_valid_return(item) == best_return,
+                }
+                for item in series
+            ]
+
+            response = jsonify({
+                "success": True,
+                "series": [asdict(item) for item in series],
+                "performanceItems": performance_items,
+                "axisDate": axis_trading_date.strftime("%Y-%m-%d"),
+                "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
+                "displayRange": format_display_date(pd.Timestamp(live_trading_date)),
+                "sources": {
+                    ticker: source
+                    for ticker, source in zip(validated_tickers, live_sources)
+                },
+                "fetchedAt": pd.Timestamp.now(tz="UTC").isoformat(),
+            })
+            return apply_no_store_headers(response)
+        except Exception as exc:  # noqa: BLE001
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 500
+            return apply_no_store_headers(response)
 
     def trade_strategy_fields_api():
         strategy_id = request.args.get("strategy", "").strip()
@@ -6039,6 +6607,7 @@ def build_web_runtime() -> WebRuntime:
         favicon_icon=favicon_icon,
         symbol_search=symbol_search,
         date_constraints_api=date_constraints_api,
+        compare_live_api=compare_live_api,
         trade_strategy_fields_api=trade_strategy_fields_api,
         settings_network_status_api=settings_network_status_api,
         local_market_store_page_data_api=local_market_store_page_data_api,

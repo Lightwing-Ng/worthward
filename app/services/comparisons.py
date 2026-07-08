@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.8
+Code version: v0.5.12
 """
 
 from __future__ import annotations
@@ -27,16 +27,48 @@ def _market_for_ticker(ticker: str | None) -> str:
     normalized = normalize_ticker(str(ticker or ""))
     if normalized.endswith(".HK"):
         return "HK"
-    if normalized.endswith(".KS"):
+    if normalized.endswith((".KS", ".KQ")):
         return "KR"
     if normalized.endswith((".T", ".JP")):
         return "JP"
     if normalized.endswith((".SH", ".SS", ".SZ")):
         return "CN"
-    if normalized.endswith(".SG"):
+    if normalized.endswith((".SG", ".SI")):
         return "SG"
     if normalized.endswith(".L"):
         return "UK"
+    if normalized.endswith(".AX"):
+        return "AU"
+    if normalized.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
+        return "CA"
+    if normalized.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
+        return "EU"
+    if normalized.endswith(".HE"):
+        return "FI"
+    if normalized.endswith((".NS", ".BO")):
+        return "IN"
+    if normalized.endswith((".TW", ".TWO")):
+        return "TW"
+    if normalized.endswith(".KL"):
+        return "MY"
+    if normalized.endswith(".BK"):
+        return "TH"
+    if normalized.endswith(".JK"):
+        return "ID"
+    if normalized.endswith(".NZ"):
+        return "NZ"
+    if normalized.endswith(".SA"):
+        return "BR"
+    if normalized.endswith((".BA", ".MX")):
+        return "LATAM"
+    if normalized.endswith(".TA"):
+        return "IL"
+    if normalized.endswith((".SR", ".SE")):
+        return "SA"
+    if normalized.endswith(".JO"):
+        return "ZA"
+    if normalized.endswith(".QA"):
+        return "QA"
     return "US"
 
 
@@ -58,18 +90,7 @@ def _timestamp_as_new_york(timestamp: object) -> pd.Timestamp:
 
 def _timestamp_as_market_local(timestamp: object, ticker: str | None = None) -> pd.Timestamp:
     new_york_timestamp = _timestamp_as_new_york(timestamp)
-    market = _market_for_ticker(ticker)
-    if market == "HK":
-        return new_york_timestamp.tz_convert(_HONG_KONG_TIMEZONE)
-    if market == "KR":
-        return new_york_timestamp.tz_convert(_SOUTH_KOREA_TIMEZONE)
-    if market == "JP":
-        return new_york_timestamp.tz_convert(_JAPAN_TIMEZONE)
-    if market == "CN":
-        return new_york_timestamp.tz_convert(_CHINA_TIMEZONE)
-    if market == "UK":
-        return new_york_timestamp.tz_convert(_UNITED_KINGDOM_TIMEZONE)
-    return new_york_timestamp
+    return new_york_timestamp.tz_convert(_market_timezone_for_ticker(ticker))
 
 
 def _market_timezone_for_ticker(ticker: str | None = None) -> str:
@@ -84,6 +105,40 @@ def _market_timezone_for_ticker(ticker: str | None = None) -> str:
         return _CHINA_TIMEZONE
     if market == "UK":
         return _UNITED_KINGDOM_TIMEZONE
+    if market == "SG":
+        return "Asia/Singapore"
+    if market == "AU":
+        return "Australia/Sydney"
+    if market == "CA":
+        return "America/Toronto"
+    if market == "EU":
+        return "Europe/Paris"
+    if market == "FI":
+        return "Europe/Helsinki"
+    if market == "IN":
+        return "Asia/Kolkata"
+    if market == "TW":
+        return "Asia/Taipei"
+    if market == "MY":
+        return "Asia/Kuala_Lumpur"
+    if market == "TH":
+        return "Asia/Bangkok"
+    if market == "ID":
+        return "Asia/Jakarta"
+    if market == "NZ":
+        return "Pacific/Auckland"
+    if market == "BR":
+        return "America/Sao_Paulo"
+    if market == "LATAM":
+        return "America/Mexico_City"
+    if market == "IL":
+        return "Asia/Jerusalem"
+    if market == "SA":
+        return "Asia/Riyadh"
+    if market == "ZA":
+        return "Africa/Johannesburg"
+    if market == "QA":
+        return "Asia/Qatar"
     return _NEW_YORK_TIMEZONE
 
 
@@ -103,7 +158,7 @@ def _is_market_session_timestamp(timestamp: pd.Timestamp, ticker: str | None = N
         return (9 * 60 <= minute_of_day < (11 * 60) + 30) or ((12 * 60) + 30 <= minute_of_day <= (15 * 60) + 30)
     if market == "UK":
         return 8 * 60 <= minute_of_day < (16 * 60) + 30
-    return _is_regular_session_timestamp(localized)
+    return any(start_minute <= minute_of_day <= end_minute for start_minute, end_minute in _market_session_segments(ticker))
 
 
 def _market_session_close_minute(ticker: str | None = None) -> int:
@@ -116,6 +171,30 @@ def _market_session_close_minute(ticker: str | None = None) -> int:
         return (15 * 60) + 30
     if market == "UK":
         return (16 * 60) + 29
+    if market in {"AU", "CA", "ID"}:
+        return (16 * 60) - 1
+    if market == "SG":
+        return (17 * 60) - 1
+    if market in {"BR", "ZA"}:
+        return (17 * 60) - 1
+    if market in {"EU", "FI", "IL"}:
+        return (17 * 60) + 30
+    if market == "IN":
+        return (15 * 60) + 30
+    if market == "TW":
+        return (13 * 60) + 30
+    if market == "MY":
+        return (17 * 60) - 1
+    if market == "TH":
+        return (16 * 60) + 30
+    if market == "NZ":
+        return (16 * 60) + 44
+    if market == "LATAM":
+        return (15 * 60) - 1
+    if market == "SA":
+        return (15 * 60) - 1
+    if market == "QA":
+        return (13 * 60) + 9
     return _REGULAR_SESSION_CLOSE_MINUTE
 
 
@@ -127,7 +206,40 @@ def _market_session_open_minute(ticker: str | None = None) -> int:
         return 9 * 60
     if market == "UK":
         return 8 * 60
+    if market in {"AU", "MY", "EU", "FI", "ID", "SG", "ZA"}:
+        return 9 * 60
+    if market == "CA":
+        return (9 * 60) + 30
+    if market == "IN":
+        return (9 * 60) + 15
+    if market == "TW":
+        return 9 * 60
+    if market == "TH":
+        return 10 * 60
+    if market == "NZ":
+        return 10 * 60
+    if market == "BR":
+        return 10 * 60
+    if market == "LATAM":
+        return (8 * 60) + 30
+    if market == "IL":
+        return (9 * 60) + 30
+    if market == "SA":
+        return 10 * 60
+    if market == "QA":
+        return (9 * 60) + 30
     return _REGULAR_SESSION_OPEN_MINUTE
+
+
+def _market_session_segments(ticker: str | None = None) -> list[tuple[int, int]]:
+    market = _market_for_ticker(ticker)
+    if market == "HK":
+        return [((9 * 60) + 30, (12 * 60) - 1), (13 * 60, (16 * 60) - 1)]
+    if market == "CN":
+        return [((9 * 60) + 30, (11 * 60) + 29), (13 * 60, (15 * 60) - 1)]
+    if market == "JP":
+        return [(9 * 60, (11 * 60) + 29), ((12 * 60) + 30, (15 * 60) + 30)]
+    return [(_market_session_open_minute(ticker), _market_session_close_minute(ticker))]
 
 
 def _timestamp_to_compare_axis(timestamp: object, ticker: str | None = None) -> pd.Timestamp:
@@ -239,6 +351,79 @@ def _pad_dataset_to_market_session_close(dataset: pd.DataFrame, ticker: str | No
 
     padded = pd.concat([dataset, pd.DataFrame(padding_rows)], ignore_index=True)
     return padded.drop_duplicates(subset=["Date"], keep="first").sort_values("Date").reset_index(drop=True)
+
+
+def _fill_intraday_market_session_gaps(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
+    if dataset.empty or "Date" not in dataset.columns:
+        return dataset
+
+    prepared = dataset.drop_duplicates(subset=["Date"], keep="last").sort_values("Date").copy()
+    if "Synthetic" not in prepared.columns:
+        prepared["Synthetic"] = False
+    local_dates = prepared["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date())
+    filled_segments: list[pd.DataFrame] = []
+
+    for trading_day in sorted(local_dates.dropna().unique()):
+        for start_minute, end_minute in _market_session_segments(ticker):
+            session_start_local = pd.Timestamp(
+                year=int(trading_day.year),
+                month=int(trading_day.month),
+                day=int(trading_day.day),
+                hour=start_minute // 60,
+                minute=start_minute % 60,
+                tz=_market_timezone_for_ticker(ticker),
+            )
+            session_end_local = pd.Timestamp(
+                year=int(trading_day.year),
+                month=int(trading_day.month),
+                day=int(trading_day.day),
+                hour=end_minute // 60,
+                minute=end_minute % 60,
+                tz=_market_timezone_for_ticker(ticker),
+            )
+            session_start = session_start_local.tz_convert(_NEW_YORK_TIMEZONE).tz_localize(None)
+            session_end = session_end_local.tz_convert(_NEW_YORK_TIMEZONE).tz_localize(None)
+            segment = prepared[(prepared["Date"] >= session_start) & (prepared["Date"] <= session_end)].copy()
+            if segment.empty:
+                continue
+
+            fill_start = max(pd.Timestamp(segment["Date"].min()), session_start)
+            fill_end = min(pd.Timestamp(segment["Date"].max()), session_end)
+            full_index = pd.date_range(fill_start, fill_end, freq="min")
+            if full_index.empty:
+                continue
+
+            indexed = segment.set_index("Date").sort_index().reindex(full_index)
+            if "Synthetic" in indexed.columns:
+                indexed["Synthetic"] = indexed["Synthetic"].fillna(True).astype(bool)
+            previous_close = pd.to_numeric(indexed["Close"], errors="coerce").ffill()
+            for column in ("Open", "High", "Low", "Close", "Adj Close"):
+                if column in indexed.columns:
+                    indexed[column] = pd.to_numeric(indexed[column], errors="coerce").fillna(previous_close)
+            for column in ("Volume", "Turnover"):
+                if column in indexed.columns:
+                    indexed[column] = pd.to_numeric(indexed[column], errors="coerce").fillna(0)
+            filled_segments.append(indexed.reset_index().rename(columns={"index": "Date"}))
+
+    if not filled_segments:
+        return prepared.reset_index(drop=True)
+
+    filled = pd.concat(filled_segments, ignore_index=True)
+    outside_segments = prepared.loc[~prepared["Date"].isin(filled["Date"])].copy()
+    return (
+        pd.concat([outside_segments, filled], ignore_index=True)
+        .drop_duplicates(subset=["Date"], keep="last")
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+
+def fill_intraday_market_session_gaps(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
+    return _fill_intraday_market_session_gaps(dataset, ticker)
+
+
+def complete_market_local_trading_days(dataset: pd.DataFrame, ticker: str | None = None) -> set[object]:
+    return _complete_market_local_trading_days(dataset, ticker)
 
 
 def _align_intraday_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
@@ -509,6 +694,7 @@ def slice_intraday_datasets_for_compare_period(
                     ) if _complete_market_local_trading_days(bounded_dataset, ticker) else _latest_market_local_trading_day(bounded_dataset, ticker)
                     trimmed = _slice_dataset_to_market_local_day(bounded_dataset, ticker, latest_day)
                 trimmed = _pad_dataset_to_market_session_close(trimmed, ticker)
+                trimmed = _fill_intraday_market_session_gaps(trimmed, ticker)
         else:
             trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
             requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0
@@ -519,6 +705,7 @@ def slice_intraday_datasets_for_compare_period(
             selected_days = set(target_trading_days or trading_days[-requested_day_count:])
             trimmed = bounded_dataset[bounded_dataset["Date"].dt.date.isin(selected_days)].copy()
             trimmed = trimmed[trimmed["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()
+            trimmed = _fill_intraday_market_session_gaps(trimmed, ticker)
 
         sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
 
@@ -548,16 +735,22 @@ def build_series_payload(
     candlestick_returns = None
     if has_ohlc:
         candlestick_returns = []
-        for index, (open_value, high_value, low_value, close_value) in enumerate(zip(
+        volume_values = dataset["Volume"] if "Volume" in dataset.columns else [None] * len(dataset)
+        synthetic_values = dataset["Synthetic"] if "Synthetic" in dataset.columns else [False] * len(dataset)
+        for index, (open_value, high_value, low_value, close_value, volume_value, synthetic_value) in enumerate(zip(
                 dataset["Open"],
                 dataset["High"],
                 dataset["Low"],
                 dataset["Close"],
+                volume_values,
+                synthetic_values,
         )):
+            is_synthetic = bool(synthetic_value) if pd.notna(synthetic_value) else False
             price_values = [open_value, high_value, low_value, close_value]
             if pd.isna(price_values).any():
-                candlestick_returns.append({"x": index, "o": None, "h": None, "l": None, "c": None})
+                candlestick_returns.append({"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": is_synthetic})
                 continue
+            volume = float(volume_value) if pd.notna(volume_value) else None
             candlestick_returns.append(
                 {
                     "x": index,
@@ -565,6 +758,8 @@ def build_series_payload(
                     "h": round(((float(high_value) / baseline_price) - 1.0) * 100.0, 4),
                     "l": round(((float(low_value) / baseline_price) - 1.0) * 100.0, 4),
                     "c": round(((float(close_value) / baseline_price) - 1.0) * 100.0, 4),
+                    "v": round(volume, 4) if volume is not None else None,
+                    "synthetic": is_synthetic,
                 }
             )
     return SeriesPayload(

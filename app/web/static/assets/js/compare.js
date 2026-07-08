@@ -1,8 +1,12 @@
-/* Code version: v0.4.4 */
+/* Code version: v0.4.11 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
 	const share = () => bootstrap.workspaceShare || {};
+	const COMPARE_LIVE_REFRESH_MS = 45000;
+	const COMPARE_LIVE_INITIAL_DELAY_MS = 1500;
+	let compareLiveRefreshTimer = 0;
+	let compareLiveRequestSerial = 0;
 
 	bootstrap.buildComparePendingWorkspaceMarkup = ({
 		currentValues = [],
@@ -189,6 +193,199 @@
 		return share().buildFilename?.("compare", tickers) || `compare-${tickers}.png`;
 	};
 
+	const normalizeTicker = (value) => String(value || "").trim().toUpperCase();
+
+	const getComparePeriod = () => {
+		const params = new URLSearchParams(window.location.search);
+		return (params.get("period") || "").trim().toLowerCase();
+	};
+
+	const getCompareRangeMode = () => {
+		const params = new URLSearchParams(window.location.search);
+		return (params.get("range") || params.get("range_mode") || "").trim().toLowerCase();
+	};
+
+	const formatLocalIsoDate = (date = new Date()) => {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, "0");
+		const day = String(date.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	};
+
+	const isExactOneDayComparePage = () => {
+		const state = appState();
+		if (state.currentView !== "tickers") return false;
+		const params = new URLSearchParams(window.location.search);
+		return getCompareRangeMode() === "exact"
+			&& getComparePeriod() === "1d"
+			&& Boolean(params.get("trading_date") || params.get("exact_trading_date") || params.get("from") || params.get("exact_start"));
+	};
+
+	const isRelativeMultiDayLiveComparePage = () => {
+		const state = appState();
+		if (state.currentView !== "tickers") return false;
+		const period = getComparePeriod();
+		return getCompareRangeMode() !== "exact" && (period === "1d" || period === "3d" || period === "1w");
+	};
+
+	const getCompareSelectedDate = () => {
+		const params = new URLSearchParams(window.location.search);
+		return params.get("trading_date")
+			|| params.get("exact_trading_date")
+			|| params.get("from")
+			|| params.get("exact_start")
+			|| "";
+	};
+
+	const getCompareAxisDate = () => {
+		return appState().chart?.tradingDate
+			|| getCompareSelectedDate()
+			|| "";
+	};
+
+	const shouldRefreshCompareLiveChart = () => {
+		if (isExactOneDayComparePage()) return getCompareSelectedDate() === formatLocalIsoDate();
+		return isRelativeMultiDayLiveComparePage();
+	};
+
+	const buildCompareLiveParams = () => {
+		const state = appState();
+		const tickers = (state.chart?.series || [])
+			.map((item) => normalizeTicker(item?.ticker))
+			.filter(Boolean);
+		const currentParams = new URLSearchParams(window.location.search);
+		const params = new URLSearchParams();
+		tickers.forEach((ticker) => params.append("ticker", ticker));
+		if (tickers.length < 2) return null;
+		if (isRelativeMultiDayLiveComparePage()) {
+			params.set("period", getComparePeriod());
+			params.set("live_date", formatLocalIsoDate());
+		} else {
+			const axisDate = getCompareAxisDate();
+			const liveDate = getCompareSelectedDate();
+			if (!axisDate || !liveDate) return null;
+			params.set("axis_date", axisDate);
+			params.set("live_date", liveDate);
+		}
+		params.set("refresh", "1");
+		if (currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1") {
+			params.set("extended_hours", "1");
+		}
+		return params;
+	};
+
+	const formatCompareLivePercent = (value) => {
+		if (value === null || value === undefined || value === "") return "—";
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return "—";
+		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+	};
+
+	const sanitizeCompareDisplayRange = (value) => String(value || "")
+		.replace(/\s*[·•]\s*axis\s+\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4}/g, "")
+		.trim();
+
+	const removeCompareAxisNotice = () => {
+		document.querySelectorAll(".notice-floating-banner-global").forEach((node) => {
+			const text = node.textContent || "";
+			if (/Live comparison for \d{1,2} [A-Z][a-z]{2} \d{4} uses the complete \d{1,2} [A-Z][a-z]{2} \d{4} cross-market axis\./.test(text)) {
+				node.remove();
+			}
+		});
+	};
+
+	const syncCompareLiveSummary = (payload) => {
+		const items = Array.isArray(payload?.performanceItems) ? payload.performanceItems : [];
+		items.forEach((item) => {
+			const ticker = normalizeTicker(item?.ticker);
+			if (!ticker) return;
+			const card = document.querySelector(`#compare_summary_region .performance-item[data-ticker="${CSS.escape(ticker)}"]`);
+			const valueNode = card?.querySelector?.('[data-workspace-mask="compare-return"]');
+			if (!(card instanceof HTMLElement) || !(valueNode instanceof HTMLElement)) return;
+			valueNode.textContent = formatCompareLivePercent(item.ending_return);
+			if (item.color) valueNode.style.color = item.color;
+			card.querySelectorAll(".winner-badge").forEach((node) => node.remove());
+			if (item.is_winner) {
+				const badge = document.createElement("span");
+				badge.className = "winner-badge";
+				badge.setAttribute("role", "img");
+				badge.setAttribute("aria-label", appState().labels?.winner_alt || "Winner");
+				valueNode.insertAdjacentElement("afterend", badge);
+			}
+		});
+		const rangeNode = document.getElementById("compare_summary_date_range");
+		if (rangeNode instanceof HTMLElement && payload?.displayRange) {
+			rangeNode.textContent = sanitizeCompareDisplayRange(payload.displayRange);
+		}
+		removeCompareAxisNotice();
+	};
+
+	const applyCompareLivePayload = (payload) => {
+		const liveSeries = Array.isArray(payload?.series) ? payload.series : [];
+		if (!liveSeries.length) return false;
+		const state = appState();
+		const currentTickers = (state.chart?.series || []).map((item) => normalizeTicker(item?.ticker)).join(",");
+		const liveTickers = liveSeries.map((item) => normalizeTicker(item?.ticker)).join(",");
+		if (!currentTickers || currentTickers !== liveTickers) return false;
+		if (isRelativeMultiDayLiveComparePage()) {
+			if (payload.period && payload.period !== getComparePeriod()) return false;
+		} else {
+			if (payload.liveDate && payload.liveDate !== getCompareSelectedDate()) return false;
+			if (payload.axisDate && payload.axisDate !== getCompareAxisDate()) return false;
+		}
+		state.chart.series = liveSeries;
+		state.chart.tradingDate = payload.axisDate || state.chart.tradingDate;
+		state.chart.liveComparison = {
+			axisDate: payload.axisDate || "",
+			liveDate: payload.liveDate || "",
+			fetchedAt: payload.fetchedAt || "",
+			sources: payload.sources || {},
+		};
+		syncCompareLiveSummary(payload);
+		bootstrap.initChartWorkspace?.();
+		return true;
+	};
+
+	const refreshCompareLiveChart = async () => {
+		if (!shouldRefreshCompareLiveChart()) return;
+		const endpoint = appState().endpoints?.compareLive;
+		const params = buildCompareLiveParams();
+		if (!endpoint || !params) return;
+		if (document.hidden) {
+			scheduleCompareLiveRefresh(COMPARE_LIVE_REFRESH_MS);
+			return;
+		}
+		const requestSerial = ++compareLiveRequestSerial;
+		try {
+			const response = await fetch(`${endpoint}?${params.toString()}`, {
+				credentials: "same-origin",
+				cache: "no-store",
+				headers: { "Cache-Control": "no-cache" },
+			});
+			const payload = await response.json().catch(() => ({}));
+			if (requestSerial !== compareLiveRequestSerial) return;
+			if (!response.ok || payload?.success === false) {
+				throw new Error(payload?.error || "Unable to refresh live comparison.");
+			}
+			applyCompareLivePayload(payload);
+		} catch (error) {
+			console.warn(error instanceof Error ? error.message : "Unable to refresh live comparison.");
+		} finally {
+			if (requestSerial === compareLiveRequestSerial) {
+				scheduleCompareLiveRefresh(COMPARE_LIVE_REFRESH_MS);
+			}
+		}
+	};
+
+	const scheduleCompareLiveRefresh = (delay = COMPARE_LIVE_INITIAL_DELAY_MS) => {
+		if (!shouldRefreshCompareLiveChart()) return;
+		if (compareLiveRefreshTimer) window.clearTimeout(compareLiveRefreshTimer);
+		compareLiveRefreshTimer = window.setTimeout(() => {
+			compareLiveRefreshTimer = 0;
+			void refreshCompareLiveChart();
+		}, delay);
+	};
+
 	bootstrap.registerWorkspaceShareProvider?.("tickers", {
 		isReady: () => {
 			const chartCanvas = document.getElementById("returnsChart");
@@ -200,5 +397,10 @@
 		modalLabels: {
 			failedTitle: "Screenshot export failed",
 		},
+	});
+	removeCompareAxisNotice();
+	scheduleCompareLiveRefresh();
+	document.addEventListener("visibilitychange", () => {
+		if (!document.hidden) scheduleCompareLiveRefresh(500);
 	});
 })();

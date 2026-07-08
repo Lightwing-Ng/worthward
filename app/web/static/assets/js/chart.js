@@ -1,4 +1,4 @@
-/* Code version: v0.7.12 */
+/* Code version: v0.7.21 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -179,7 +179,7 @@
 		const selectedTradingDate = String(chartState.tradingDate || "");
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
-		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
+		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "compareLiveMarkerPlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
 			try {
 				const registeredPlugin = Chart.registry?.plugins?.get?.(pluginId);
 				if (registeredPlugin) Chart.unregister(registeredPlugin);
@@ -206,7 +206,19 @@
 
 		const labels = series[0].dates;
 		const rawDates = Array.isArray(series[0].raw_dates) ? series[0].raw_dates : [];
-		const selectedPeriod = new URLSearchParams(window.location.search).get("period")?.trim().toLowerCase() || "";
+		const pageParams = new URLSearchParams(window.location.search);
+		const selectedPeriod = pageParams.get("period")?.trim().toLowerCase() || "";
+		const selectedTradingDateParam = pageParams.get("trading_date")
+			|| pageParams.get("exact_trading_date")
+			|| pageParams.get("from")
+			|| pageParams.get("exact_start")
+			|| "";
+		const formatLocalIsoDate = (date = new Date()) => {
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, "0");
+			const day = String(date.getDate()).padStart(2, "0");
+			return `${year}-${month}-${day}`;
+		};
 		const refreshTransition = consumeChartWorkspaceRefreshTransition(state.currentView);
 		const chartWrap = canvas.closest(".chart-wrap") || canvas.parentElement;
 		const chartYPaddingPx = readPxToken(chartWrap, "--trade-chart-y-padding-px", 5);
@@ -304,13 +316,32 @@
 
 		const resolveMarketTimeConfig = (ticker) => {
 			const normalized = String(ticker || "").toUpperCase();
-			if (normalized.endsWith(".KS")) return { timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: (15 * 60) + 30 } };
-			if (normalized.endsWith(".HK")) return { timezone: "Asia/Hong_Kong", label: "HKT", session: { open: (9 * 60) + 30, close: 16 * 60 } };
-			if (normalized.endsWith(".T") || normalized.endsWith(".JP")) return { timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: (15 * 60) + 30 } };
-			if (normalized.endsWith(".SH") || normalized.endsWith(".SS") || normalized.endsWith(".SZ")) {
-				return { timezone: "Asia/Shanghai", label: "CST", session: { open: (9 * 60) + 30, close: 15 * 60 } };
-			}
-			if (normalized.endsWith(".L")) return { timezone: "Europe/London", label: "LON", session: { open: 8 * 60, close: (16 * 60) + 30 } };
+			const configs = [
+				{ suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: (15 * 60) + 31 } },
+				{ suffixes: [".HK"], timezone: "Asia/Hong_Kong", label: "HKT", session: { open: (9 * 60) + 30, close: 16 * 60 } },
+				{ suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: (15 * 60) + 31 } },
+				{ suffixes: [".SH", ".SS", ".SZ"], timezone: "Asia/Shanghai", label: "CST", session: { open: (9 * 60) + 30, close: 15 * 60 } },
+				{ suffixes: [".SG", ".SI"], timezone: "Asia/Singapore", label: "SGT", session: { open: 9 * 60, close: 17 * 60 } },
+				{ suffixes: [".L"], timezone: "Europe/London", label: "LON", session: { open: 8 * 60, close: (16 * 60) + 30 } },
+				{ suffixes: [".AX"], timezone: "Australia/Sydney", label: "AET", session: { open: 10 * 60, close: 16 * 60 } },
+				{ suffixes: [".TO", ".V", ".NE", ".CN", ".CA"], timezone: "America/Toronto", label: "ET", session: { open: (9 * 60) + 30, close: 16 * 60 } },
+				{ suffixes: [".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS"], timezone: "Europe/Paris", label: "CET", session: { open: 9 * 60, close: (17 * 60) + 30 } },
+				{ suffixes: [".HE"], timezone: "Europe/Helsinki", label: "EET", session: { open: 9 * 60, close: (17 * 60) + 30 } },
+				{ suffixes: [".NS", ".BO"], timezone: "Asia/Kolkata", label: "IST", session: { open: (9 * 60) + 15, close: (15 * 60) + 30 } },
+				{ suffixes: [".TW", ".TWO"], timezone: "Asia/Taipei", label: "CST", session: { open: 9 * 60, close: (13 * 60) + 30 } },
+				{ suffixes: [".KL"], timezone: "Asia/Kuala_Lumpur", label: "MYT", session: { open: 9 * 60, close: 17 * 60 } },
+				{ suffixes: [".BK"], timezone: "Asia/Bangkok", label: "ICT", session: { open: 10 * 60, close: (16 * 60) + 30 } },
+				{ suffixes: [".JK"], timezone: "Asia/Jakarta", label: "WIB", session: { open: 9 * 60, close: 16 * 60 } },
+				{ suffixes: [".NZ"], timezone: "Pacific/Auckland", label: "NZT", session: { open: 10 * 60, close: (16 * 60) + 45 } },
+				{ suffixes: [".SA"], timezone: "America/Sao_Paulo", label: "BRT", session: { open: 10 * 60, close: 17 * 60 } },
+				{ suffixes: [".BA", ".MX"], timezone: "America/Mexico_City", label: "CT", session: { open: (8 * 60) + 30, close: 15 * 60 } },
+				{ suffixes: [".TA"], timezone: "Asia/Jerusalem", label: "IST", session: { open: (9 * 60) + 30, close: (17 * 60) + 30 } },
+				{ suffixes: [".SR", ".SE"], timezone: "Asia/Riyadh", label: "AST", session: { open: 10 * 60, close: 15 * 60 } },
+				{ suffixes: [".JO"], timezone: "Africa/Johannesburg", label: "SAST", session: { open: 9 * 60, close: 17 * 60 } },
+				{ suffixes: [".QA"], timezone: "Asia/Qatar", label: "AST", session: { open: (9 * 60) + 30, close: (13 * 60) + 10 } },
+			];
+			const match = configs.find((config) => config.suffixes.some((suffix) => normalized.endsWith(suffix)));
+			if (match) return match;
 			return { timezone: "America/New_York", label: "NYT", session: { open: (9 * 60) + 30, close: 16 * 60 } };
 		};
 
@@ -386,16 +417,17 @@
 		};
 
 		const buildCrossMarketTickDefinitions = () => {
-			if (!Number.isFinite(crossMarketWindowStartMinute) || !Number.isFinite(crossMarketWindowEndMinute)) return [];
-			const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+			if (!Number.isFinite(crossMarketWindowStartLabelMinute) || !Number.isFinite(crossMarketWindowEndLabelMinute) || !Number.isFinite(crossMarketWindowStartBoundaryMinute) || !Number.isFinite(crossMarketWindowEndBoundaryMinute)) return [];
+			const totalWindowMinutes = crossMarketWindowEndBoundaryMinute - crossMarketWindowStartBoundaryMinute;
+			const labeledWindowMinutes = crossMarketWindowEndLabelMinute - crossMarketWindowStartLabelMinute;
 			if (totalWindowMinutes <= 0) return [];
 			const tickCount = totalWindowMinutes >= 360 ? 4 : 3;
 			const indexes = tickCount === 4 ? [0, 1, 2, 3] : [0, 1, 2];
 			return indexes.map((index) => {
 				const ratio = tickCount === 1 ? 0 : index / (tickCount - 1);
-				const serialMinute = Math.round(crossMarketWindowStartMinute + (totalWindowMinutes * ratio));
+				const serialMinute = Math.round(crossMarketWindowStartLabelMinute + (labeledWindowMinutes * ratio));
 				return {
-					xRatio: ratio,
+					xRatio: (serialMinute - crossMarketWindowStartBoundaryMinute) / totalWindowMinutes,
 					align: index === 0 ? "left" : index === tickCount - 1 ? "right" : "center",
 					firstLine: formatSerialMinuteTime(serialMinute),
 					secondLine: formatSerialMinuteDate(serialMinute),
@@ -404,31 +436,35 @@
 		};
 
 		const buildCrossMarketGuideRatios = () => {
-			if (!Number.isFinite(crossMarketWindowStartMinute) || !Number.isFinite(crossMarketWindowEndMinute)) return [];
-			const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+			if (!Number.isFinite(crossMarketWindowStartBoundaryMinute) || !Number.isFinite(crossMarketWindowEndBoundaryMinute)) return [];
+			const totalWindowMinutes = crossMarketWindowEndBoundaryMinute - crossMarketWindowStartBoundaryMinute;
 			if (totalWindowMinutes <= 0) return [];
 			const markerMinutes = new Set();
 			series.forEach((item) => {
 				const config = resolveMarketTimeConfig(item?.ticker);
-				[config?.session?.open, config?.session?.close].forEach((marketMinute) => {
-					const serialMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, marketMinute, config);
-					if (!Number.isFinite(serialMinute)) return;
-					if (serialMinute <= crossMarketWindowStartMinute || serialMinute >= crossMarketWindowEndMinute) return;
-					markerMinutes.add(serialMinute);
+				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
+				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+				[
+					Number.isFinite(openMinute) ? openMinute - 0.5 : null,
+					Number.isFinite(closeBoundaryMinute) ? closeBoundaryMinute - 0.5 : null,
+				].forEach((boundaryMinute) => {
+					if (!Number.isFinite(boundaryMinute)) return;
+					if (boundaryMinute < crossMarketWindowStartBoundaryMinute || boundaryMinute > crossMarketWindowEndBoundaryMinute) return;
+					markerMinutes.add(boundaryMinute);
 				});
 			});
 			return Array.from(markerMinutes)
 				.sort((left, right) => left - right)
-				.map((serialMinute) => (serialMinute - crossMarketWindowStartMinute) / totalWindowMinutes)
-				.filter((ratio) => ratio > 0 && ratio < 1);
+				.map((serialMinute) => (serialMinute - crossMarketWindowStartBoundaryMinute) / totalWindowMinutes)
+				.filter((ratio) => ratio >= 0 && ratio <= 1);
 		};
 
 		const getOneDayTimestampRatio = (value) => {
-			if (isCrossMarketOneDayRange && Number.isFinite(crossMarketWindowStartMinute) && Number.isFinite(crossMarketWindowEndMinute)) {
+			if (isCrossMarketOneDayRange && Number.isFinite(crossMarketWindowStartBoundaryMinute) && Number.isFinite(crossMarketWindowEndBoundaryMinute)) {
 				const serialMinute = getRawDateSerialMinute(value);
 				if (!Number.isFinite(serialMinute)) return null;
-				const elapsedMinutes = serialMinute - crossMarketWindowStartMinute;
-				const totalWindowMinutes = crossMarketWindowEndMinute - crossMarketWindowStartMinute;
+				const elapsedMinutes = serialMinute - crossMarketWindowStartBoundaryMinute;
+				const totalWindowMinutes = crossMarketWindowEndBoundaryMinute - crossMarketWindowStartBoundaryMinute;
 				if (totalWindowMinutes <= 0) return null;
 				return Math.min(1, Math.max(0, elapsedMinutes / totalWindowMinutes));
 			}
@@ -450,20 +486,32 @@
 
 		const hasIntradayLabels = rawDates.some((value) => hasMeaningfulIntradayTime(value));
 		const isCompareOneDayRange = state.currentView === "tickers" && selectedPeriod === "1d" && hasIntradayLabels;
-		const isCrossMarketOneDayRange = isCompareOneDayRange && series.some((item) => /\.(HK|KS|T|JP|SH|SS|SZ|SG|L)$/i.test(String(item?.ticker || "")));
-		const crossMarketSerialMinutes = isCrossMarketOneDayRange
+		const isCrossMarketOneDayRange = isCompareOneDayRange && series.some((item) => /\.(AS|AX|BA|BE|BK|BO|BR|CA|CN|CO|DE|DU|F|HA|HE|HK|HM|IR|IS|JK|JP|KL|KQ|KS|L|MC|MI|MX|NE|NS|NZ|OL|PA|QA|SA|SE|SG|SH|SI|SR|SS|ST|SW|SZ|TA|T|TO|TWO|TW|V|VI)$/i.test(String(item?.ticker || "")));
+		const crossMarketSessionWindows = isCrossMarketOneDayRange
 			? series.flatMap((item) => {
-				const values = Array.isArray(item?.normalized_returns) ? item.normalized_returns : [];
-				return rawDates
-					.map((rawDate, index) => (values[index] === null || values[index] === undefined ? null : getRawDateSerialMinute(rawDate)))
-					.filter((value) => Number.isFinite(value));
+				const config = resolveMarketTimeConfig(item?.ticker);
+				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
+				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+				if (!Number.isFinite(openMinute) || !Number.isFinite(closeBoundaryMinute)) return [];
+				return [{
+					openCenter: openMinute,
+					startBoundary: openMinute - 0.5,
+					closeLabel: closeBoundaryMinute - 1,
+					closeBoundary: closeBoundaryMinute - 0.5,
+				}];
 			})
 			: [];
-		const crossMarketWindowStartMinute = crossMarketSerialMinutes.length
-			? Math.min(...crossMarketSerialMinutes)
+		const crossMarketWindowStartLabelMinute = crossMarketSessionWindows.length
+			? Math.min(...crossMarketSessionWindows.map((item) => item.openCenter))
 			: null;
-		const crossMarketWindowEndMinute = crossMarketSerialMinutes.length
-			? Math.max(...crossMarketSerialMinutes)
+		const crossMarketWindowEndLabelMinute = crossMarketSessionWindows.length
+			? Math.max(...crossMarketSessionWindows.map((item) => item.closeLabel))
+			: null;
+		const crossMarketWindowStartBoundaryMinute = crossMarketSessionWindows.length
+			? Math.min(...crossMarketSessionWindows.map((item) => item.startBoundary))
+			: null;
+		const crossMarketWindowEndBoundaryMinute = crossMarketSessionWindows.length
+			? Math.max(...crossMarketSessionWindows.map((item) => item.closeBoundary))
 			: null;
 		const hasOneDayExtendedHours = isCompareOneDayRange && rawDates.some((value) => {
 			const minuteOfDay = getRawDateMinuteOfDay(value);
@@ -584,7 +632,12 @@
 				if (!chartArea || !yScale) return;
 				const datasetCount = Math.max(series.length, 1);
 				const hairlineWidth = Math.max(0.35, 1 / Math.max(window.devicePixelRatio || 1, 1));
-				const sessionMinuteWidth = chartArea.width / (oneDaySessionEndMinute - oneDaySessionStartMinute);
+				const crossMarketWindowMinutes = Number.isFinite(crossMarketWindowStartBoundaryMinute) && Number.isFinite(crossMarketWindowEndBoundaryMinute)
+					? crossMarketWindowEndBoundaryMinute - crossMarketWindowStartBoundaryMinute
+					: 0;
+				const sessionMinuteWidth = chartArea.width / (isCrossMarketOneDayRange && crossMarketWindowMinutes > 0
+					? crossMarketWindowMinutes
+					: oneDaySessionEndMinute - oneDaySessionStartMinute);
 				const groupWidth = Math.max(1, Math.min(sessionMinuteWidth * 0.78, 8));
 				const candleWidth = Math.max(hairlineWidth, groupWidth / datasetCount);
 				ctx.save();
@@ -601,6 +654,9 @@
 						const low = toFiniteChartNumber(candle?.l);
 						const open = toFiniteChartNumber(candle?.o);
 						const close = toFiniteChartNumber(candle?.c);
+						const volume = toFiniteChartNumber(candle?.v);
+						if (candle?.synthetic === true) return;
+						if (volume !== null && volume <= 0) return;
 						if (![high, low, open, close].every((value) => value !== null)) return;
 						const xRatio = getOneDayTimestampRatio(rawDates[candleIndex]);
 						if (!Number.isFinite(xRatio)) return;
@@ -622,6 +678,75 @@
 					});
 				});
 				ctx.restore();
+			},
+		};
+
+		const compareLiveMarkerPlugin = {
+			id: "compareLiveMarkerPlugin",
+			afterDatasetsDraw(chartInstance) {
+				const isLiveOneDayCompare = hasOneDayCandlesticks
+					&& state.currentView === "tickers"
+					&& selectedPeriod === "1d"
+					&& (chartState.liveComparison?.liveDate || selectedTradingDateParam === formatLocalIsoDate());
+				if (!isLiveOneDayCompare) {
+					if (chartInstance.$compareLiveMarkerFrame) {
+						window.cancelAnimationFrame(chartInstance.$compareLiveMarkerFrame);
+						chartInstance.$compareLiveMarkerFrame = 0;
+					}
+					return;
+				}
+				const { ctx, chartArea, scales } = chartInstance;
+				const yScale = scales?.y;
+				if (!ctx || !chartArea || !yScale) return;
+				const cycleMs = 1800;
+				const phase = (performance.now() % cycleMs) / cycleMs;
+				let drewMarker = false;
+				const drawRing = (x, y, color, ringPhase, baseRadius, radiusRange, alpha) => {
+					const radius = baseRadius + (radiusRange * ringPhase);
+					ctx.beginPath();
+					ctx.arc(x, y, radius, 0, Math.PI * 2);
+					ctx.lineWidth = 1.6;
+					ctx.strokeStyle = hexToRgba(color, alpha * (1 - ringPhase));
+					ctx.stroke();
+				};
+				series.forEach((item, datasetIndex) => {
+					const candles = Array.isArray(item?.candlestick_returns) ? item.candlestick_returns : [];
+					let lastCandleIndex = candles.length - 1;
+					while (lastCandleIndex >= 0) {
+						const candidate = candles[lastCandleIndex];
+						const volume = toFiniteChartNumber(candidate?.v);
+						if (candidate?.synthetic !== true && (volume === null || volume > 0) && [candidate?.o, candidate?.h, candidate?.l, candidate?.c].every(isFiniteChartValue)) break;
+						lastCandleIndex -= 1;
+					}
+					if (lastCandleIndex < 0) return;
+					const xRatio = getOneDayTimestampRatio(rawDates[lastCandleIndex]);
+					const close = toFiniteChartNumber(candles[lastCandleIndex]?.c);
+					if (!Number.isFinite(xRatio) || close === null) return;
+					const x = chartArea.left + (chartArea.width * xRatio);
+					const y = yScale.getPixelForValue(close);
+					if (![x, y].every(Number.isFinite)) return;
+					if (x < chartArea.left || x > chartArea.right || y < chartArea.top || y > chartArea.bottom) return;
+					const color = String(item.color || chartInstance.data.datasets?.[datasetIndex]?.borderColor || resolvedTheme.accentPrimary || "#0055cc");
+					const innerPhase = (phase + 0.5) % 1;
+					ctx.save();
+					drawRing(x, y, color, phase, 7, 13, 0.44);
+					drawRing(x, y, color, innerPhase, 5, 9, 0.26);
+					ctx.beginPath();
+					ctx.arc(x, y, 3, 0, Math.PI * 2);
+					ctx.fillStyle = color;
+					ctx.shadowColor = hexToRgba(color, 0.42);
+					ctx.shadowBlur = 10;
+					ctx.fill();
+					ctx.restore();
+					drewMarker = true;
+				});
+				if (!drewMarker || chartInstance.$compareLiveMarkerFrame) return;
+				chartInstance.$compareLiveMarkerFrame = window.requestAnimationFrame(() => {
+					chartInstance.$compareLiveMarkerFrame = 0;
+					if (!chartInstance.canvas?.isConnected) return;
+					if (window.Chart?.getChart?.(chartInstance.canvas) !== chartInstance) return;
+					chartInstance.draw();
+				});
 			},
 		};
 
@@ -652,7 +777,9 @@
 					const profile = profiles.find((item) => item.ticker === dataset.label);
 					if (!profile?.logo_url) return;
 					const meta = chartInstance.getDatasetMeta(datasetIndex);
-					const lastPoint = meta?.data?.[meta.data.length - 1];
+					const lastPoint = [...(meta?.data || [])]
+						.reverse()
+						.find((point) => !point?.skip && Number.isFinite(point?.y));
 					if (!lastPoint) return;
 					const image = getLogoImage(profile.logo_url, chartInstance);
 					if (!image?.complete || !image.naturalWidth || !image.naturalHeight) return;
@@ -665,7 +792,8 @@
 						let lastCandleIndex = candles.length - 1;
 						while (lastCandleIndex >= 0) {
 							const candidate = candles[lastCandleIndex];
-							if ([candidate?.o, candidate?.h, candidate?.l, candidate?.c].every(isFiniteChartValue)) break;
+							const volume = toFiniteChartNumber(candidate?.v);
+							if (candidate?.synthetic !== true && (volume === null || volume > 0) && [candidate?.o, candidate?.h, candidate?.l, candidate?.c].every(isFiniteChartValue)) break;
 							lastCandleIndex -= 1;
 						}
 						const lastRawDate = rawDates[lastCandleIndex];
@@ -955,7 +1083,7 @@
 					},
 				},
 			},
-			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, oneDayCandlestickPlugin, hoverGuidePlugin, lineEndLogoPlugin, xAxisLabelPlugin],
+			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, oneDayCandlestickPlugin, hoverGuidePlugin, compareLiveMarkerPlugin, lineEndLogoPlugin, xAxisLabelPlugin],
 		});
 		bindColorSchemeRefresh(() => {
 			const nextTheme = readThemeTokens();

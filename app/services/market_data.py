@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.5.3
+Code version: v0.5.4
 """
 
 from __future__ import annotations
@@ -232,16 +232,48 @@ def infer_ticker_market(ticker: str) -> str:
     normalized_ticker = normalize_ticker(ticker)
     if normalized_ticker.endswith(".HK"):
         return "HK"
-    if normalized_ticker.endswith(".KS"):
+    if normalized_ticker.endswith((".KS", ".KQ")):
         return "KR"
     if normalized_ticker.endswith((".T", ".JP")):
         return "JP"
     if normalized_ticker.endswith((".SH", ".SS", ".SZ")):
         return "CN"
-    if normalized_ticker.endswith(".SG"):
+    if normalized_ticker.endswith((".SG", ".SI")):
         return "SG"
     if normalized_ticker.endswith(".L"):
         return "UK"
+    if normalized_ticker.endswith(".AX"):
+        return "AU"
+    if normalized_ticker.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
+        return "CA"
+    if normalized_ticker.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
+        return "EU"
+    if normalized_ticker.endswith(".HE"):
+        return "FI"
+    if normalized_ticker.endswith((".NS", ".BO")):
+        return "IN"
+    if normalized_ticker.endswith((".TW", ".TWO")):
+        return "TW"
+    if normalized_ticker.endswith(".KL"):
+        return "MY"
+    if normalized_ticker.endswith(".BK"):
+        return "TH"
+    if normalized_ticker.endswith(".JK"):
+        return "ID"
+    if normalized_ticker.endswith(".NZ"):
+        return "NZ"
+    if normalized_ticker.endswith(".SA"):
+        return "BR"
+    if normalized_ticker.endswith((".BA", ".MX")):
+        return "LATAM"
+    if normalized_ticker.endswith(".TA"):
+        return "IL"
+    if normalized_ticker.endswith((".SR", ".SE")):
+        return "SA"
+    if normalized_ticker.endswith(".JO"):
+        return "ZA"
+    if normalized_ticker.endswith(".QA"):
+        return "QA"
     return "US"
 
 
@@ -257,6 +289,40 @@ def market_timezone_for_ticker(ticker: str) -> str:
         return "Asia/Shanghai"
     if market == "UK":
         return "Europe/London"
+    if market == "SG":
+        return "Asia/Singapore"
+    if market == "AU":
+        return "Australia/Sydney"
+    if market == "CA":
+        return "America/Toronto"
+    if market == "EU":
+        return "Europe/Paris"
+    if market == "FI":
+        return "Europe/Helsinki"
+    if market == "IN":
+        return "Asia/Kolkata"
+    if market == "TW":
+        return "Asia/Taipei"
+    if market == "MY":
+        return "Asia/Kuala_Lumpur"
+    if market == "TH":
+        return "Asia/Bangkok"
+    if market == "ID":
+        return "Asia/Jakarta"
+    if market == "NZ":
+        return "Pacific/Auckland"
+    if market == "BR":
+        return "America/Sao_Paulo"
+    if market == "LATAM":
+        return "America/Mexico_City"
+    if market == "IL":
+        return "Asia/Jerusalem"
+    if market == "SA":
+        return "Asia/Riyadh"
+    if market == "ZA":
+        return "Africa/Johannesburg"
+    if market == "QA":
+        return "Asia/Qatar"
     return NEW_YORK_TIMEZONE
 
 

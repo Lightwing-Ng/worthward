@@ -45,7 +45,7 @@
                                 </span>
                             </div>
                             <p class="report-value">
-                                <span data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ "{:,.2f}".format(item.ending_return) }}%</span>
+                                <span data-workspace-mask="compare-return" style="color: {{ item.color }};">{% if item.ending_return is none %}—{% else %}{{ "{:,.2f}".format(item.ending_return) }}%{% endif %}</span>
                                 {% if item.is_winner %}
                                 <span class="winner-badge" role="img" aria-label="{{ labels.winner_alt }}"></span>
                                 {% endif %}

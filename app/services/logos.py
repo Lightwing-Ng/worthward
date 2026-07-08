@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.7
+Code version: v0.3.8
 """
 
 from __future__ import annotations
@@ -46,7 +46,12 @@ from app.infrastructure.storage import (
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 VALID_QUOTE_TYPES = {"EQUITY", "ETF"}
 US_EXCHANGES = {"NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS", "CXI"}
-SUPPORTED_MARKET_SUFFIXES = {"HK", "KS", "T", "JP", "SH", "SS", "SZ", "SG", "L"}
+SUPPORTED_MARKET_SUFFIXES = {
+    "AS", "AX", "BA", "BE", "BK", "BO", "BR", "CA", "CN", "CO", "DE", "DU", "F", "HA",
+    "HE", "HK", "HM", "IR", "IS", "JK", "JP", "KL", "KQ", "KS", "L", "MC", "MI",
+    "MX", "NE", "NS", "NZ", "OL", "PA", "QA", "SA", "SE", "SG", "SH", "SI", "SR",
+    "SS", "ST", "SW", "SZ", "TA", "T", "TO", "TWO", "TW", "V", "VI",
+}
 SUPPORTED_MARKET_EXCHANGES = US_EXCHANGES | {"HKG", "LSE"}
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOOKUP_LOCK = Lock()

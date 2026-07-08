@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.5.10
+    Code version: v0.5.11
 """
 
 from __future__ import annotations
@@ -773,16 +773,48 @@ def _infer_market_from_ticker(ticker: str | None) -> str:
     normalized = normalize_ticker(str(ticker or ""))
     if normalized.endswith(".HK"):
         return "HK"
-    if normalized.endswith(".KS"):
+    if normalized.endswith((".KS", ".KQ")):
         return "KR"
     if normalized.endswith((".T", ".JP")):
         return "JP"
     if normalized.endswith((".SH", ".SS", ".SZ")):
         return "CN"
-    if normalized.endswith(".SG"):
+    if normalized.endswith((".SG", ".SI")):
         return "SG"
     if normalized.endswith(".L"):
         return "UK"
+    if normalized.endswith(".AX"):
+        return "AU"
+    if normalized.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
+        return "CA"
+    if normalized.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
+        return "EU"
+    if normalized.endswith(".HE"):
+        return "FI"
+    if normalized.endswith((".NS", ".BO")):
+        return "IN"
+    if normalized.endswith((".TW", ".TWO")):
+        return "TW"
+    if normalized.endswith(".KL"):
+        return "MY"
+    if normalized.endswith(".BK"):
+        return "TH"
+    if normalized.endswith(".JK"):
+        return "ID"
+    if normalized.endswith(".NZ"):
+        return "NZ"
+    if normalized.endswith(".SA"):
+        return "BR"
+    if normalized.endswith((".BA", ".MX")):
+        return "LATAM"
+    if normalized.endswith(".TA"):
+        return "IL"
+    if normalized.endswith((".SR", ".SE")):
+        return "SA"
+    if normalized.endswith(".JO"):
+        return "ZA"
+    if normalized.endswith(".QA"):
+        return "QA"
     return "US"
 
 
@@ -818,6 +850,51 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
             return False
         total_minutes = (int(localized.hour) * 60) + int(localized.minute)
         return 8 * 60 <= total_minutes < (16 * 60) + 30
+    market_timezones = {
+        "AU": "Australia/Sydney",
+        "CA": "America/Toronto",
+        "SG": "Asia/Singapore",
+        "EU": "Europe/Paris",
+        "FI": "Europe/Helsinki",
+        "IN": "Asia/Kolkata",
+        "TW": "Asia/Taipei",
+        "MY": "Asia/Kuala_Lumpur",
+        "TH": "Asia/Bangkok",
+        "ID": "Asia/Jakarta",
+        "NZ": "Pacific/Auckland",
+        "BR": "America/Sao_Paulo",
+        "LATAM": "America/Mexico_City",
+        "IL": "Asia/Jerusalem",
+        "SA": "Asia/Riyadh",
+        "ZA": "Africa/Johannesburg",
+        "QA": "Asia/Qatar",
+    }
+    market_sessions = {
+        "AU": (10 * 60, 16 * 60),
+        "CA": ((9 * 60) + 30, 16 * 60),
+        "SG": (9 * 60, 17 * 60),
+        "EU": (9 * 60, (17 * 60) + 30),
+        "FI": (9 * 60, (17 * 60) + 30),
+        "IN": ((9 * 60) + 15, (15 * 60) + 30),
+        "TW": (9 * 60, (13 * 60) + 30),
+        "MY": (9 * 60, 17 * 60),
+        "TH": (10 * 60, (16 * 60) + 30),
+        "ID": (9 * 60, 16 * 60),
+        "NZ": (10 * 60, (16 * 60) + 45),
+        "BR": (10 * 60, 17 * 60),
+        "LATAM": ((8 * 60) + 30, 15 * 60),
+        "IL": ((9 * 60) + 30, (17 * 60) + 30),
+        "SA": (10 * 60, 15 * 60),
+        "ZA": (9 * 60, 17 * 60),
+        "QA": ((9 * 60) + 30, (13 * 60) + 10),
+    }
+    if market in market_timezones and market in market_sessions:
+        localized = timestamp.tz_convert(market_timezones[market])
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        start_minute, end_minute = market_sessions[market]
+        return start_minute <= total_minutes < end_minute
     return _is_regular_new_york_session(timestamp)
 
 
