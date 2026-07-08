@@ -1475,6 +1475,7 @@
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
 .range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); letter-spacing: 0; }
+.range-mode-shell > .segmented-control-option input:checked + span { color: var(--theme-muted); }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
 .segmented-control[data-active="period"] > .segmented-control-option:nth-child(1) > span,
 .range-mode-shell[data-active="period"] > .segmented-control-option:nth-child(1) > span,
@@ -1532,6 +1533,21 @@
 .range-mode-shell[data-active="period"] ~ #exact_panel { display: none !important; }
 .range-mode-shell[data-active="exact"] + #period_panel { display: none !important; }
 .range-mode-shell[data-active="exact"] ~ #exact_panel { display: block; }
+.sidebar-form:has(#range_period:checked) .range-mode-shell { --segmented-active-index: 0; }
+.sidebar-form:has(#range_exact:checked) .range-mode-shell { --segmented-active-index: 1; }
+.sidebar-form:has(#range_period:checked) #period_panel { display: grid !important; }
+.sidebar-form:has(#range_period:checked) #exact_panel { display: none !important; }
+.sidebar-form:has(#range_exact:checked) #period_panel { display: none !important; }
+.sidebar-form:has(#range_exact:checked) #exact_panel { display: block !important; }
+.sidebar-form:has(#range_period:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span,
+.sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(2) > span {
+	color: var(--color-white-adaptive);
+	letter-spacing: 0;
+}
+.sidebar-form:has(#range_period:checked) .range-mode-shell > .segmented-control-option:nth-child(2) > span,
+.sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span {
+	color: var(--theme-muted);
+}
 .chart-tooltip, .field-tooltip { background: var(--frosted-glass-extracted-background); box-shadow: var(--frosted-glass-extracted-shadow); backdrop-filter: var(--frosted-glass-extracted-blur); -webkit-backdrop-filter: var(--frosted-glass-extracted-blur); border: var(--frosted-glass-extracted-border); border-radius: var(--radius-soft); }
 .field-tooltip,
 .field-tooltip-validation {

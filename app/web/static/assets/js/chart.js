@@ -1,4 +1,4 @@
-/* Code version: v0.7.21 */
+/* Code version: v0.7.24 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -179,7 +179,7 @@
 		const selectedTradingDate = String(chartState.tradingDate || "");
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
-		["glowPlugin", "zeroBandPlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "compareLiveMarkerPlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
+		["glowPlugin", "zeroBandPlugin", "multiDaySessionGuidePlugin", "oneDaySessionGuidePlugin", "oneDayCandlestickPlugin", "hoverGuidePlugin", "compareLiveMarkerPlugin", "lineEndLogoPlugin", "xAxisLabelPlugin"].forEach((pluginId) => {
 			try {
 				const registeredPlugin = Chart.registry?.plugins?.get?.(pluginId);
 				if (registeredPlugin) Chart.unregister(registeredPlugin);
@@ -382,6 +382,28 @@
 			return `${hours}:${minutes} ${config.label}`;
 		};
 
+		const getSerialMinuteMarketDateParts = (serialMinute, config) => {
+			if (!Number.isFinite(serialMinute) || !config) return null;
+			const rawNewYorkMs = serialMinute * 60000;
+			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", rawNewYorkMs);
+			const actualUtcMs = rawNewYorkMs - (newYorkOffset * 60000);
+			const marketOffset = getTimezoneOffsetMinutes(config.timezone, actualUtcMs);
+			const localDate = new Date(actualUtcMs + (marketOffset * 60000));
+			return {
+				year: localDate.getUTCFullYear(),
+				monthIndex: localDate.getUTCMonth(),
+				day: localDate.getUTCDate(),
+			};
+		};
+
+		const formatDatePartsKey = (dateParts) => {
+			if (!dateParts) return "";
+			const year = String(dateParts.year).padStart(4, "0");
+			const month = String(dateParts.monthIndex + 1).padStart(2, "0");
+			const day = String(dateParts.day).padStart(2, "0");
+			return `${year}-${month}-${day}`;
+		};
+
 		const localMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => {
 			if (!dateText || !config || !Number.isFinite(marketMinute)) return null;
 			const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -486,6 +508,16 @@
 
 		const hasIntradayLabels = rawDates.some((value) => hasMeaningfulIntradayTime(value));
 		const isCompareOneDayRange = state.currentView === "tickers" && selectedPeriod === "1d" && hasIntradayLabels;
+		const shortMultiDayMarketConfig = resolveMarketTimeConfig(series[0]?.ticker);
+		const getShortMultiDayDateParts = (index) => (
+			getSerialMinuteMarketDateParts(getRawDateSerialMinute(rawDates[index]), shortMultiDayMarketConfig)
+		);
+		const uniqueIntradayDateKeys = Array.from(new Set(rawDates.map((_value, index) => formatDatePartsKey(getShortMultiDayDateParts(index)) || normalizeDateKey(rawDates[index])).filter(Boolean)));
+		const isExactCompareRange = state.currentView === "tickers" && (pageParams.get("range") || pageParams.get("range_mode") || "").trim().toLowerCase() === "exact";
+		const isCompareShortMultiDayRange = isExactCompareRange
+			&& hasIntradayLabels
+			&& uniqueIntradayDateKeys.length >= 2
+			&& uniqueIntradayDateKeys.length <= 5;
 		const isCrossMarketOneDayRange = isCompareOneDayRange && series.some((item) => /\.(AS|AX|BA|BE|BK|BO|BR|CA|CN|CO|DE|DU|F|HA|HE|HK|HM|IR|IS|JK|JP|KL|KQ|KS|L|MC|MI|MX|NE|NS|NZ|OL|PA|QA|SA|SE|SG|SH|SI|SR|SS|ST|SW|SZ|TA|T|TO|TWO|TW|V|VI)$/i.test(String(item?.ticker || "")));
 		const crossMarketSessionWindows = isCrossMarketOneDayRange
 			? series.flatMap((item) => {
@@ -554,6 +586,22 @@
 			)).filter((ratio) => ratio > 0 && ratio < 1);
 		};
 
+		const buildShortMultiDayGroups = () => {
+			if (!isCompareShortMultiDayRange) return [];
+			const groups = [];
+			rawDates.forEach((value, index) => {
+				const dateKey = formatDatePartsKey(getShortMultiDayDateParts(index)) || normalizeDateKey(value);
+				if (!dateKey) return;
+				const current = groups[groups.length - 1];
+				if (current?.dateKey === dateKey) {
+					current.endIndex = index;
+					return;
+				}
+				groups.push({ dateKey, startIndex: index, endIndex: index });
+			});
+			return groups;
+		};
+
 		const xAxisLabelPlugin = {
 			id: "xAxisLabelPlugin",
 			afterDraw(chartInstance) {
@@ -581,6 +629,26 @@
 					ctx.restore();
 					return;
 				}
+				if (isCompareShortMultiDayRange) {
+					buildShortMultiDayGroups().forEach((group) => {
+						const parsedDate = getShortMultiDayDateParts(group.startIndex);
+						if (!parsedDate) return;
+						const [firstLine, secondLine] = formatChartDateLines({
+							year: parsedDate.year,
+							monthIndex: parsedDate.monthIndex,
+							day: parsedDate.day,
+						});
+						const startX = xScale.getPixelForValue(group.startIndex);
+						const endX = xScale.getPixelForValue(group.endIndex);
+						const x = (startX + endX) / 2;
+						if (!Number.isFinite(x)) return;
+						ctx.textAlign = "center";
+						ctx.fillText(firstLine, x, baselineY + 4);
+						ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
+					});
+					ctx.restore();
+					return;
+				}
 				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
 				const tickIndexes = buildChartTickIndexes(labels, rawDates, viewportWidth, hasIntradayLabels);
 				tickIndexes.forEach((index, tickIndex) => {
@@ -594,6 +662,33 @@
 					else ctx.textAlign = "center";
 					ctx.fillText(firstLine, x, baselineY + 4);
 					ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
+				});
+				ctx.restore();
+			},
+		};
+
+		const multiDaySessionGuidePlugin = {
+			id: "multiDaySessionGuidePlugin",
+			beforeDatasetsDraw(chartInstance) {
+				if (!isCompareShortMultiDayRange) return;
+				const { ctx, chartArea, scales } = chartInstance;
+				const xScale = scales?.x;
+				if (!chartArea || !xScale) return;
+				const groups = buildShortMultiDayGroups();
+				if (groups.length < 2) return;
+				ctx.save();
+				ctx.strokeStyle = resolvedTheme.muted;
+				ctx.globalAlpha = 0.22;
+				ctx.lineWidth = 1;
+				groups.slice(1).forEach((group) => {
+					const previousX = xScale.getPixelForValue(group.startIndex - 1);
+					const currentX = xScale.getPixelForValue(group.startIndex);
+					const x = (previousX + currentX) / 2;
+					if (!Number.isFinite(x)) return;
+					ctx.beginPath();
+					ctx.moveTo(x, chartArea.top);
+					ctx.lineTo(x, chartArea.bottom);
+					ctx.stroke();
 				});
 				ctx.restore();
 			},
@@ -984,7 +1079,7 @@
 			chartYPaddingPx,
 		);
 		const axisFontSize = readPxToken(canvas, "--workspace-share-chart-axis-font-size", 12);
-		const xAxisBottomPadding = isCompareOneDayRange
+		const xAxisBottomPadding = isCompareOneDayRange || isCompareShortMultiDayRange
 			? Math.max(30, Math.round(axisFontSize * 3.1))
 			: Math.max(22, Math.round(axisFontSize * 2.6));
 		const chart = new Chart(canvas, {
@@ -1083,7 +1178,7 @@
 					},
 				},
 			},
-			plugins: [glowPlugin, zeroBandPlugin, oneDaySessionGuidePlugin, oneDayCandlestickPlugin, hoverGuidePlugin, compareLiveMarkerPlugin, lineEndLogoPlugin, xAxisLabelPlugin],
+			plugins: [glowPlugin, zeroBandPlugin, multiDaySessionGuidePlugin, oneDaySessionGuidePlugin, oneDayCandlestickPlugin, hoverGuidePlugin, compareLiveMarkerPlugin, lineEndLogoPlugin, xAxisLabelPlugin],
 		});
 		bindColorSchemeRefresh(() => {
 			const nextTheme = readThemeTokens();

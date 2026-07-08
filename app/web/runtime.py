@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.38
+Code version: v0.4.40
 """
 
 from __future__ import annotations
@@ -507,6 +507,32 @@ def build_web_runtime() -> WebRuntime:
             )
             payload.message = f"{payload.message} {refresh_notice}".strip() if payload.message else refresh_notice
         return payload
+
+    def build_short_intraday_date_constraint_payload(
+            tickers: list[str],
+            requested_start: str | None = None,
+            requested_end: str | None = None,
+    ) -> DateConstraintPayload:
+        date_frames: list[pd.DataFrame] = []
+        for ticker in tickers:
+            intraday_dataset = fetch_history(
+                ticker,
+                include_dividends=False,
+                interval="1m",
+                dividend_mode="price",
+            )
+            prepared_dataset = prepare_intraday_dataset_for_compare(
+                intraday_dataset,
+                ticker,
+                regular_session_only=True,
+            )
+            date_frames.append(market_local_trading_dates_frame(prepared_dataset, ticker))
+
+        return build_date_constraint_payload(
+            *date_frames,
+            requested_start=requested_start,
+            requested_end=requested_end,
+        )
 
     def resolve_compare_axis_trading_date(
             tickers: list[str],
@@ -1345,9 +1371,24 @@ def build_web_runtime() -> WebRuntime:
         market_dates = dataset["Date"].map(date_for_market)
         return dataset[market_dates == target_date].copy()
 
-    def slice_intraday_dataset_to_trading_dates(dataset: pd.DataFrame, trading_dates: list[str]) -> pd.DataFrame:
+    def slice_intraday_dataset_to_trading_dates(
+            dataset: pd.DataFrame,
+            ticker: str,
+            trading_dates: list[str],
+    ) -> pd.DataFrame:
         selected_dates = {pd.to_datetime(trading_date).date() for trading_date in trading_dates}
-        return dataset[dataset["Date"].dt.date.isin(selected_dates)].copy()
+        market_timezone = market_timezone_for_ticker(ticker)
+
+        def date_for_market(value: object) -> object:
+            timestamp = pd.Timestamp(value)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.tz_localize("America/New_York")
+            else:
+                timestamp = timestamp.tz_convert("America/New_York")
+            return timestamp.tz_convert(market_timezone).date()
+
+        market_dates = dataset["Date"].map(date_for_market)
+        return dataset[market_dates.isin(selected_dates)].copy()
 
     def load_local_compare_one_day_intraday_dataset(ticker: str) -> pd.DataFrame:
         path = intraday_history_store_path_for(ticker, "1m")
@@ -4008,6 +4049,16 @@ def build_web_runtime() -> WebRuntime:
                                 requested_start=exact_start or None,
                                 requested_end=exact_end or None,
                             )
+                        elif current_view == "tickers" and range_mode == "exact" and period in {"3d", "1w"}:
+                            intraday_date_constraints = build_short_intraday_date_constraint_payload(
+                                validated_tickers,
+                                requested_start=exact_start or None,
+                                requested_end=exact_end or None,
+                            )
+                            if intraday_date_constraints.trading_dates:
+                                date_constraints = intraday_date_constraints
+                                exact_range_trading_dates = exact_trading_dates_in_range(date_constraints)
+                                is_exact_short_intraday_compare = 2 <= len(exact_range_trading_dates) <= 5
 
                         if is_exact_one_day_compare:
                             if not date_constraints.trading_dates:
@@ -4098,6 +4149,7 @@ def build_web_runtime() -> WebRuntime:
                                     intraday_datasets.append(
                                         slice_intraday_dataset_to_trading_dates(
                                             intraday_dataset,
+                                            ticker,
                                             exact_range_trading_dates,
                                         )
                                     )
@@ -5434,6 +5486,14 @@ def build_web_runtime() -> WebRuntime:
                 requested_end=requested_end,
             )
             return jsonify(date_constraint_payload_to_json(payload))
+        if requested_view == "tickers" and requested_range == "exact" and requested_period in {"3d", "1w"}:
+            payload = build_short_intraday_date_constraint_payload(
+                validated_tickers,
+                requested_start=requested_start,
+                requested_end=requested_end,
+            )
+            if payload.trading_dates:
+                return jsonify(date_constraint_payload_to_json(payload))
         if requested_view in {"tickers", "portfolio", "dca"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [

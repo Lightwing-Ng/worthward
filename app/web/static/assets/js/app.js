@@ -1,4 +1,4 @@
-/* Code version: v0.5.30 */
+/* Code version: v0.5.36 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4700,6 +4700,10 @@
             day: date.getUTCDate(),
         });
     };
+    const parseDisplayDateTextToIso = (rawValue) => {
+        const parsedDate = parseManualDateInput(String(rawValue || "").trim());
+        return parsedDate ? formatIsoDate(parsedDate) : "";
+    };
     const parseMonthToken = (rawValue) => {
         const normalized = String(rawValue || "").trim().toLowerCase().replace(/\.$/, "");
         if (!normalized) return null;
@@ -4795,6 +4799,24 @@
     const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
 
     const getRenderedChartDateRange = () => {
+        if (state.currentView === "tickers" && state.chart?.tradingDate) {
+            const tradingDate = String(state.chart.tradingDate || "");
+            if (parseIsoDate(tradingDate)) {
+                return {
+                    start: tradingDate,
+                    end: tradingDate,
+                };
+            }
+        }
+        if (state.currentView === "tickers" && periodSelect?.value === "1d") {
+            const displayRangeDate = parseDisplayDateTextToIso($("#compare_summary_date_range")?.textContent || "");
+            if (displayRangeDate) {
+                return {
+                    start: displayRangeDate,
+                    end: displayRangeDate,
+                };
+            }
+        }
         if (isBacktestView) {
             const dates = state.backtestResult?.chart?.dates;
             if (Array.isArray(dates) && dates.length) {
@@ -5618,7 +5640,7 @@
         if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
         addTickerField();
     });
-    rangeModeInputs.forEach((input) => input.addEventListener("change", () => {
+    const handleRangeModeChange = (input) => {
         const nextRangeMode = input.value;
         const previousRangeMode = lastRangeMode;
         let shouldAutoSubmit = true;
@@ -5643,7 +5665,23 @@
         if (shouldAutoSubmit) {
             scheduleAutoSubmit();
         }
-    }));
+    };
+    rangeModeInputs.forEach((input) => {
+        input.addEventListener("change", () => handleRangeModeChange(input));
+        input.addEventListener("input", () => handleRangeModeChange(input));
+    });
+    const rangeModeShell = $(".range-mode-shell");
+    if (rangeModeShell instanceof HTMLElement) {
+        rangeModeShell.addEventListener("click", (event) => {
+            const option = event.target instanceof Element ? event.target.closest(".segmented-control-option") : null;
+            if (!(option instanceof HTMLElement) || !rangeModeShell.contains(option)) return;
+            const input = option.querySelector('input[name="range"]');
+            if (!(input instanceof HTMLInputElement) || input.disabled) return;
+            event.preventDefault();
+            input.checked = true;
+            handleRangeModeChange(input);
+        });
+    }
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
