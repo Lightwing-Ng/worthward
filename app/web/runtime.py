@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.37
+Code version: v0.4.38
 """
 
 from __future__ import annotations
@@ -1527,6 +1527,35 @@ def build_web_runtime() -> WebRuntime:
         for column in ("Open", "High", "Low", "Close", "Adj Close", "Volume"):
             reference_frame[column] = pd.NA
         return reference_frame
+
+    def truncate_intraday_datasets_to_common_live_timestamp(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
+        if not datasets:
+            return []
+
+        valid_end_dates: list[pd.Timestamp] = []
+        for dataset in datasets:
+            if dataset.empty or "Date" not in dataset.columns or "Close" not in dataset.columns:
+                return datasets
+            close_values = pd.to_numeric(dataset["Close"], errors="coerce")
+            valid_dates = pd.to_datetime(dataset.loc[close_values.notna(), "Date"], errors="coerce").dropna()
+            if valid_dates.empty:
+                return datasets
+            valid_end_dates.append(pd.Timestamp(valid_dates.max()))
+
+        common_live_end = min(valid_end_dates)
+        price_columns = ("Open", "High", "Low", "Close", "Adj Close")
+        muted_columns = (*price_columns, "Volume", "Turnover")
+        truncated_datasets: list[pd.DataFrame] = []
+        for dataset in datasets:
+            truncated = dataset.copy()
+            parsed_dates = pd.to_datetime(truncated["Date"], errors="coerce")
+            trailing_mask = parsed_dates > common_live_end
+            if trailing_mask.any():
+                for column in muted_columns:
+                    if column in truncated.columns:
+                        truncated.loc[trailing_mask, column] = pd.NA
+            truncated_datasets.append(truncated)
+        return truncated_datasets
 
     def build_empty_compare_axis_series_payload(
             ticker: str,
@@ -4031,6 +4060,7 @@ def build_web_runtime() -> WebRuntime:
                                     )
                                     for dataset, daily_dataset, ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
                                 ]
+                            aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                             chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
                             exact_start_value = pd.to_datetime(target_trading_date).strftime("%Y-%m-%d")
                             exact_end_value = exact_start_value
@@ -4072,6 +4102,8 @@ def build_web_runtime() -> WebRuntime:
                                         )
                                     )
                                 aligned_datasets = align_many_intraday_datasets_on_common_dates(intraday_datasets)
+                                if should_append_exact_live:
+                                    aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                             else:
                                 aligned_datasets = align_datasets_on_common_dates(datasets)
                                 aligned_datasets = slice_datasets_to_exact_range(
@@ -4145,6 +4177,7 @@ def build_web_runtime() -> WebRuntime:
                                             )
                                             for dataset, daily_dataset, live_ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
                                         ]
+                                    aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                                     chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
                                     exact_start_value = pd.Timestamp(live_session_date).strftime("%Y-%m-%d")
                                     exact_end_value = exact_start_value
@@ -5476,6 +5509,7 @@ def build_web_runtime() -> WebRuntime:
                     common_end_date,
                     validated_tickers,
                 )
+                aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                 colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                 series = [
                     build_compare_series_payload(ticker, dataset, color=color)
@@ -5564,6 +5598,7 @@ def build_web_runtime() -> WebRuntime:
                     LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, live_trading_date, exc)
                     mapped_live_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
                     live_sources.append("pending")
+            mapped_live_datasets = truncate_intraday_datasets_to_common_live_timestamp(mapped_live_datasets)
             series = [
                 build_compare_series_payload(ticker, dataset, color=color)
                 for ticker, dataset, color in zip(validated_tickers, mapped_live_datasets, colors)

@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.12
+Code version: v0.5.13
 """
 
 from __future__ import annotations
@@ -395,7 +395,7 @@ def _fill_intraday_market_session_gaps(dataset: pd.DataFrame, ticker: str | None
 
             indexed = segment.set_index("Date").sort_index().reindex(full_index)
             if "Synthetic" in indexed.columns:
-                indexed["Synthetic"] = indexed["Synthetic"].fillna(True).astype(bool)
+                indexed["Synthetic"] = indexed["Synthetic"].astype("boolean").fillna(True).astype(bool)
             previous_close = pd.to_numeric(indexed["Close"], errors="coerce").ffill()
             for column in ("Open", "High", "Low", "Close", "Adj Close"):
                 if column in indexed.columns:
