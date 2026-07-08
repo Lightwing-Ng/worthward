@@ -1,4 +1,4 @@
-/* Code version: v0.7.24 */
+/* Code version: v0.7.26 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -317,9 +317,9 @@
 		const resolveMarketTimeConfig = (ticker) => {
 			const normalized = String(ticker || "").toUpperCase();
 			const configs = [
-				{ suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: (15 * 60) + 31 } },
+				{ suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: 15 * 60 + 30 } },
 				{ suffixes: [".HK"], timezone: "Asia/Hong_Kong", label: "HKT", session: { open: (9 * 60) + 30, close: 16 * 60 } },
-				{ suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: (15 * 60) + 31 } },
+				{ suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: 15 * 60 + 30 } },
 				{ suffixes: [".SH", ".SS", ".SZ"], timezone: "Asia/Shanghai", label: "CST", session: { open: (9 * 60) + 30, close: 15 * 60 } },
 				{ suffixes: [".SG", ".SI"], timezone: "Asia/Singapore", label: "SGT", session: { open: 9 * 60, close: 17 * 60 } },
 				{ suffixes: [".L"], timezone: "Europe/London", label: "LON", session: { open: 8 * 60, close: (16 * 60) + 30 } },
@@ -468,7 +468,7 @@
 				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
 				[
 					Number.isFinite(openMinute) ? openMinute - 0.5 : null,
-					Number.isFinite(closeBoundaryMinute) ? closeBoundaryMinute - 0.5 : null,
+					Number.isFinite(closeBoundaryMinute) ? closeBoundaryMinute : null,
 				].forEach((boundaryMinute) => {
 					if (!Number.isFinite(boundaryMinute)) return;
 					if (boundaryMinute < crossMarketWindowStartBoundaryMinute || boundaryMinute > crossMarketWindowEndBoundaryMinute) return;
@@ -528,8 +528,8 @@
 				return [{
 					openCenter: openMinute,
 					startBoundary: openMinute - 0.5,
-					closeLabel: closeBoundaryMinute - 1,
-					closeBoundary: closeBoundaryMinute - 0.5,
+					closeLabel: closeBoundaryMinute,
+					closeBoundary: closeBoundaryMinute,
 				}];
 			})
 			: [];
@@ -779,10 +779,13 @@
 		const compareLiveMarkerPlugin = {
 			id: "compareLiveMarkerPlugin",
 			afterDatasetsDraw(chartInstance) {
+				const liveCompareDate = String(chartState.liveComparison?.liveDate || "");
 				const isLiveOneDayCompare = hasOneDayCandlesticks
 					&& state.currentView === "tickers"
 					&& selectedPeriod === "1d"
-					&& (chartState.liveComparison?.liveDate || selectedTradingDateParam === formatLocalIsoDate());
+					&& chartState.liveComparison?.active === true
+					&& liveCompareDate
+					&& (!selectedTradingDateParam || selectedTradingDateParam === liveCompareDate);
 				if (!isLiveOneDayCompare) {
 					if (chartInstance.$compareLiveMarkerFrame) {
 						window.cancelAnimationFrame(chartInstance.$compareLiveMarkerFrame);

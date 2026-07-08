@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.40
+Code version: v0.4.41
 """
 
 from __future__ import annotations
@@ -1283,6 +1283,66 @@ def build_web_runtime() -> WebRuntime:
             return (13 * 60) + 9
         return None
 
+    def market_session_segments_for_ticker(ticker: str) -> list[tuple[int, int]]:
+        market = infer_ticker_market(ticker)
+        if market == "HK":
+            return [((9 * 60) + 30, 12 * 60), (13 * 60, 16 * 60)]
+        if market == "CN":
+            return [((9 * 60) + 30, (11 * 60) + 30), (13 * 60, 15 * 60)]
+        if market == "KR":
+            return [(9 * 60, (15 * 60) + 30)]
+        if market == "JP":
+            return [(9 * 60, (11 * 60) + 30), ((12 * 60) + 30, (15 * 60) + 30)]
+        if market == "UK":
+            return [(8 * 60, (16 * 60) + 30)]
+        if market in {"AU", "MY", "EU", "FI", "ID", "SG", "ZA"}:
+            return [(9 * 60, market_close_minute_for_ticker(ticker) + 1)]
+        if market == "CA":
+            return [((9 * 60) + 30, 16 * 60)]
+        if market == "IN":
+            return [((9 * 60) + 15, (15 * 60) + 30)]
+        if market == "TW":
+            return [(9 * 60, (13 * 60) + 30)]
+        if market == "TH":
+            return [(10 * 60, (16 * 60) + 30)]
+        if market == "NZ":
+            return [(10 * 60, (16 * 60) + 45)]
+        if market == "BR":
+            return [(10 * 60, 17 * 60)]
+        if market == "LATAM":
+            return [((8 * 60) + 30, 15 * 60)]
+        if market == "IL":
+            return [((9 * 60) + 30, (17 * 60) + 30)]
+        if market == "SA":
+            return [(10 * 60, 15 * 60)]
+        if market == "QA":
+            return [((9 * 60) + 30, (13 * 60) + 10)]
+        return [((9 * 60) + 30, 16 * 60)]
+
+    def is_market_regular_session_active_for_ticker(
+            ticker: str,
+            reference_timestamp: object | None = None,
+    ) -> bool:
+        current_timestamp = (
+            pd.Timestamp.now(tz="UTC")
+            if reference_timestamp is None
+            else pd.to_datetime(reference_timestamp, errors="coerce")
+        )
+        if pd.isna(current_timestamp):
+            return False
+        if current_timestamp.tzinfo is None:
+            current_timestamp = current_timestamp.tz_localize("UTC")
+        else:
+            current_timestamp = current_timestamp.tz_convert("UTC")
+        localized = current_timestamp.tz_convert(market_timezone_for_ticker(ticker))
+        if int(localized.weekday()) >= 5:
+            return False
+        minute_of_day = (int(localized.hour) * 60) + int(localized.minute)
+        return any(
+            start_minute <= minute_of_day < end_minute
+            for start_minute, end_minute in market_session_segments_for_ticker(ticker)
+        )
+
     def apply_market_close_anchor(
             intraday_dataset: pd.DataFrame,
             daily_dataset: pd.DataFrame,
@@ -1508,6 +1568,41 @@ def build_web_runtime() -> WebRuntime:
         if intraday_dataset.empty:
             raise ValueError(f"Live 1-minute data for {ticker} does not include {live_trading_date}.")
         return intraday_dataset, source
+
+    def load_target_compare_one_day_intraday_dataset(
+            ticker: str,
+            *,
+            target_trading_date: object,
+            include_extended_hours_flag: bool,
+            live_session_date: object | None = None,
+            force_refresh: bool = False,
+    ) -> pd.DataFrame:
+        parsed_target_date = pd.to_datetime(target_trading_date, errors="coerce")
+        if pd.isna(parsed_target_date):
+            raise ValueError(f"Invalid compare trading date: {target_trading_date}.")
+
+        target_date_value = parsed_target_date.date()
+        if live_session_date is None:
+            current_live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+        else:
+            parsed_live_session_date = pd.to_datetime(live_session_date, errors="coerce")
+            if pd.isna(parsed_live_session_date):
+                raise ValueError(f"Invalid live session date: {live_session_date}.")
+            current_live_session_date = parsed_live_session_date.date()
+
+        if target_date_value == current_live_session_date:
+            return load_live_compare_one_day_intraday_dataset(
+                ticker,
+                live_trading_date=target_date_value,
+                include_extended_hours_flag=include_extended_hours_flag,
+                force_refresh=force_refresh,
+            )[0]
+
+        return load_compare_one_day_intraday_dataset(
+            ticker,
+            include_extended_hours_flag=include_extended_hours_flag,
+            trading_date=target_date_value,
+        )
 
     def append_live_compare_intraday_dataset(
             ticker: str,
@@ -4066,6 +4161,11 @@ def build_web_runtime() -> WebRuntime:
                             target_trading_date = date_constraints.adjusted_start or date_constraints.adjusted_end or date_constraints.max_date
                             if not target_trading_date:
                                 raise ValueError("Select a shared trading date.")
+                            live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+                            selected_markets = {
+                                infer_ticker_market(ticker)
+                                for ticker in validated_tickers
+                            }
                             axis_trading_date = resolve_compare_axis_trading_date(
                                 validated_tickers,
                                 target_trading_date,
@@ -4089,14 +4189,14 @@ def build_web_runtime() -> WebRuntime:
                                 aligned_datasets = []
                                 for reference_dataset, ticker in zip(reference_aligned_datasets, validated_tickers):
                                     try:
-                                        live_dataset = load_live_compare_one_day_intraday_dataset(
+                                        target_dataset = load_target_compare_one_day_intraday_dataset(
                                             ticker,
-                                            live_trading_date=target_trading_date,
+                                            target_trading_date=target_trading_date,
                                             include_extended_hours_flag=include_extended_hours,
                                             force_refresh=True,
-                                        )[0]
+                                        )
                                         aligned_datasets.append(
-                                            map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, ticker)
+                                            map_live_intraday_dataset_to_reference_axis(reference_dataset, target_dataset, ticker)
                                         )
                                     except Exception as exc:  # noqa: BLE001
                                         LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, target_trading_date, exc)
@@ -4111,7 +4211,11 @@ def build_web_runtime() -> WebRuntime:
                                     )
                                     for dataset, daily_dataset, ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
                                 ]
-                            aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
+                            if (
+                                    pd.to_datetime(target_trading_date, errors="coerce").date() == live_session_date
+                                    and len(selected_markets) == 1
+                            ):
+                                aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                             chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
                             exact_start_value = pd.to_datetime(target_trading_date).strftime("%Y-%m-%d")
                             exact_end_value = exact_start_value
@@ -4207,14 +4311,15 @@ def build_web_runtime() -> WebRuntime:
                                         aligned_datasets = []
                                         for reference_dataset, live_ticker in zip(reference_aligned_datasets, validated_tickers):
                                             try:
-                                                live_dataset = load_live_compare_one_day_intraday_dataset(
+                                                target_dataset = load_target_compare_one_day_intraday_dataset(
                                                     live_ticker,
-                                                    live_trading_date=live_session_date,
+                                                    target_trading_date=live_session_date,
                                                     include_extended_hours_flag=include_extended_hours,
+                                                    live_session_date=live_session_date,
                                                     force_refresh=True,
-                                                )[0]
+                                                )
                                                 aligned_datasets.append(
-                                                    map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, live_ticker)
+                                                    map_live_intraday_dataset_to_reference_axis(reference_dataset, target_dataset, live_ticker)
                                                 )
                                             except Exception as exc:  # noqa: BLE001
                                                 LOGGER.info("No live compare bars for %s on %s yet: %s", live_ticker, live_session_date, exc)
@@ -5534,6 +5639,15 @@ def build_web_runtime() -> WebRuntime:
             if pd.isna(live_trading_date):
                 raise ValueError(f"Invalid live trading date: {live_date_value}.")
             live_trading_date = live_trading_date.date()
+            current_live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+            selected_markets = {
+                infer_ticker_market(ticker)
+                for ticker in validated_tickers
+            }
+            live_session_active = (
+                live_trading_date == current_live_session_date
+                and any(is_market_regular_session_active_for_ticker(ticker) for ticker in validated_tickers)
+            )
 
             include_extended_hours_flag = request.args.get(
                 "extended_hours",
@@ -5599,6 +5713,7 @@ def build_web_runtime() -> WebRuntime:
                     "performanceItems": performance_items,
                     "period": requested_period,
                     "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
+                    "liveSessionActive": live_session_active,
                     "displayRange": format_compare_intraday_market_local_display_range(
                         aligned_datasets,
                         validated_tickers,
@@ -5658,7 +5773,8 @@ def build_web_runtime() -> WebRuntime:
                     LOGGER.info("No live compare bars for %s on %s yet: %s", ticker, live_trading_date, exc)
                     mapped_live_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
                     live_sources.append("pending")
-            mapped_live_datasets = truncate_intraday_datasets_to_common_live_timestamp(mapped_live_datasets)
+            if len(selected_markets) == 1:
+                mapped_live_datasets = truncate_intraday_datasets_to_common_live_timestamp(mapped_live_datasets)
             series = [
                 build_compare_series_payload(ticker, dataset, color=color)
                 for ticker, dataset, color in zip(validated_tickers, mapped_live_datasets, colors)
@@ -5688,6 +5804,7 @@ def build_web_runtime() -> WebRuntime:
                 "performanceItems": performance_items,
                 "axisDate": axis_trading_date.strftime("%Y-%m-%d"),
                 "liveDate": pd.Timestamp(live_trading_date).strftime("%Y-%m-%d"),
+                "liveSessionActive": live_session_active,
                 "displayRange": format_display_date(pd.Timestamp(live_trading_date)),
                 "sources": {
                     ticker: source

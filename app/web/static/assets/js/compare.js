@@ -1,4 +1,4 @@
-/* Code version: v0.4.11 */
+/* Code version: v0.4.12 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -336,6 +336,7 @@
 		state.chart.series = liveSeries;
 		state.chart.tradingDate = payload.axisDate || state.chart.tradingDate;
 		state.chart.liveComparison = {
+			active: payload.liveSessionActive === true,
 			axisDate: payload.axisDate || "",
 			liveDate: payload.liveDate || "",
 			fetchedAt: payload.fetchedAt || "",
