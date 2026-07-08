@@ -1,4 +1,4 @@
-/* Code version: v0.5.22 */
+/* Code version: v0.5.23 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -181,8 +181,7 @@
     const isExportableChartCanvas = (canvas) => {
         if (!(canvas instanceof HTMLCanvasElement)) return false;
         if (canvas.width <= 0 || canvas.height <= 0) return false;
-        if (window.Chart?.getChart?.(canvas)) return true;
-        return Boolean(canvas.closest(CHART_CONTEXT_HOST_SELECTOR));
+        return Boolean(window.Chart?.getChart?.(canvas));
     };
 
     const resolveChartCanvasFromTarget = (target) => {
@@ -222,6 +221,11 @@
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
 
+    const escapeSvgText = (value) => String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
     const readChartExportBackground = (canvas) => {
         const candidates = [
             canvas.closest(".chart-wrap, .trade-chart-canvas-wrap, .investment-equity-chart-stage, .investment-stock-details-price-chart-stage, .live-trading-chart-shell"),
@@ -237,18 +241,183 @@
         return getComputedStyle(document.body).getPropertyValue("--theme-panel").trim() || "#ffffff";
     };
 
-    const buildChartSvgMarkup = (canvas) => {
+    const readChartFontFamily = (canvas) => {
+        const computed = getComputedStyle(canvas);
+        return computed.fontFamily || '"GDS Transport", "Helvetica Neue", Arial, sans-serif';
+    };
+
+    const readChartTickFontSize = (canvas, fallbackValue = 12) => {
+        const raw = getComputedStyle(canvas).getPropertyValue("--workspace-share-chart-axis-font-size").trim();
+        const parsed = Number.parseFloat(raw);
+        return Number.isFinite(parsed) ? parsed : fallbackValue;
+    };
+
+    const formatSvgNumber = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return "0";
+        return String(Math.round(numeric * 1000) / 1000);
+    };
+
+    const formatSvgPercentLabel = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return "";
+        return `${numeric.toLocaleString("en-US", { maximumFractionDigits: 0 })}%`;
+    };
+
+    const normalizeSvgDateLabel = (value) => {
+        const raw = String(value || "");
+        const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+        if (!match) return raw;
+        const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+        const day = date.getUTCDate();
+        const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+        const year = date.getUTCFullYear();
+        if (match[4] && match[5] && (match[4] !== "00" || match[5] !== "00")) return `${match[4]}:${match[5]}\n${day} ${month} ${year}`;
+        return `${day} ${month}\n${year}`;
+    };
+
+    const buildSvgLinePath = (points) => {
+        const commands = [];
+        let isOpen = false;
+        points.forEach((point) => {
+            const x = Number(point?.x);
+            const y = Number(point?.y);
+            const skipped = Boolean(point?.skip) || !Number.isFinite(x) || !Number.isFinite(y);
+            if (skipped) {
+                isOpen = false;
+                return;
+            }
+            commands.push(`${isOpen ? "L" : "M"} ${formatSvgNumber(x)} ${formatSvgNumber(y)}`);
+            isOpen = true;
+        });
+        return commands.join(" ");
+    };
+
+    const buildSvgTextLines = ({ text, x, y, lineHeight, anchor = "middle", className = "", fill = "currentColor" }) => {
+        const lines = String(text || "").split("\n").filter((line) => line !== "");
+        if (!lines.length) return "";
+        const classAttr = className ? ` class="${escapeSvgAttribute(className)}"` : "";
+        return [
+            `<text${classAttr} x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" text-anchor="${anchor}" fill="${escapeSvgAttribute(fill)}">`,
+            ...lines.map((line, index) => (
+                `<tspan x="${formatSvgNumber(x)}" dy="${index === 0 ? 0 : formatSvgNumber(lineHeight)}">${escapeSvgText(line)}</tspan>`
+            )),
+            "</text>",
+        ].join("");
+    };
+
+    const buildVectorChartSvgMarkup = (canvas, chart) => {
         const rect = canvas.getBoundingClientRect();
         const displayWidth = Math.max(1, Math.round(rect.width || canvas.clientWidth || canvas.width));
         const displayHeight = Math.max(1, Math.round(rect.height || canvas.clientHeight || canvas.height));
-        const imageDataUrl = canvas.toDataURL("image/png");
         const background = readChartExportBackground(canvas);
+        const chartArea = chart.chartArea;
+        const yScale = chart.scales?.y;
+        const xScale = chart.scales?.x;
+        if (!chartArea || !yScale || !xScale) throw new Error("Chart scales are not available for vector export.");
+
+        const computed = getComputedStyle(document.body);
+        const mutedColor = computed.getPropertyValue("--theme-muted").trim() || "#5f6b7a";
+        const textColor = computed.getPropertyValue("--theme-text").trim() || "#111111";
+        const zeroColor = computed.getPropertyValue("--theme-muted").trim() || "#8a94a3";
+        const fontFamily = readChartFontFamily(canvas);
+        const axisFontSize = readChartTickFontSize(canvas);
+        const lineHeight = Math.round(axisFontSize * 1.08);
+        const labels = Array.isArray(chart.data?.labels) ? chart.data.labels : [];
+        const labelIndexes = labels.length <= 1
+            ? labels.map((_label, index) => index)
+            : Array.from(new Set([
+                0,
+                Math.round((labels.length - 1) / (displayWidth >= 768 ? 3 : 2)),
+                ...(displayWidth >= 768 ? [Math.round(((labels.length - 1) * 2) / 3)] : []),
+                labels.length - 1,
+            ])).sort((left, right) => left - right);
+
+        const yTicks = Array.isArray(yScale.ticks) ? yScale.ticks : [];
+        const seriesLabels = [];
+        const datasetMarkup = chart.data.datasets.map((dataset, datasetIndex) => {
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (meta.hidden || dataset.hidden) return "";
+            const pathData = buildSvgLinePath(meta.data || []);
+            if (!pathData) return "";
+            const color = dataset.borderColor || dataset.backgroundColor || textColor;
+            const lineWidth = Number(dataset.borderWidth || 1.5);
+            const lastPoint = [...(meta.data || [])].reverse().find((point) => !point?.skip && Number.isFinite(point?.x) && Number.isFinite(point?.y));
+            if (dataset.label) {
+                seriesLabels.push(buildSvgTextLines({
+                    text: dataset.label,
+                    x: Math.min(displayWidth - 2, Number(lastPoint?.x || chartArea.right) + 14),
+                    y: Number(lastPoint?.y || chartArea.top) + 4,
+                    lineHeight,
+                    anchor: "start",
+                    className: "series-label",
+                    fill: color,
+                }));
+            }
+            return [
+                `<g class="series" data-series="${escapeSvgAttribute(dataset.label || `series-${datasetIndex + 1}`)}">`,
+                `<path class="series-line" d="${pathData}" fill="none" stroke="${escapeSvgAttribute(color)}" stroke-width="${formatSvgNumber(lineWidth)}" stroke-linecap="round" stroke-linejoin="round"/>`,
+                "</g>",
+            ].join("");
+        }).join("");
+
+        const yTickMarkup = yTicks.map((tick, index) => {
+            if (index === 0 || index === yTicks.length - 1) return "";
+            const y = yScale.getPixelForValue(tick.value);
+            if (!Number.isFinite(y)) return "";
+            return buildSvgTextLines({
+                text: formatSvgPercentLabel(tick.value),
+                x: chartArea.left - 10,
+                y: y + (axisFontSize * 0.35),
+                lineHeight,
+                anchor: "end",
+                className: "axis-label y-axis-label",
+                fill: mutedColor,
+            });
+        }).join("");
+
+        const xTickMarkup = labelIndexes.map((index, tickIndex) => {
+            const x = xScale.getPixelForValue(index);
+            if (!Number.isFinite(x)) return "";
+            let anchor = "middle";
+            if (tickIndex === 0) anchor = "start";
+            else if (tickIndex === labelIndexes.length - 1) anchor = "end";
+            return buildSvgTextLines({
+                text: normalizeSvgDateLabel(labels[index]),
+                x,
+                y: chartArea.bottom + axisFontSize + 4,
+                lineHeight,
+                anchor,
+                className: "axis-label x-axis-label",
+                fill: mutedColor,
+            });
+        }).join("");
+
+        const zeroY = yScale.getPixelForValue(0);
+        const zeroLineMarkup = Number.isFinite(zeroY) && zeroY >= chartArea.top && zeroY <= chartArea.bottom
+            ? `<path class="zero-line" d="M ${formatSvgNumber(chartArea.left + 8)} ${formatSvgNumber(zeroY)} L ${formatSvgNumber(chartArea.right - 8)} ${formatSvgNumber(zeroY)}" fill="none" stroke="${escapeSvgAttribute(zeroColor)}" stroke-width="1"/>`
+            : "";
+
         return [
             `<svg xmlns="http://www.w3.org/2000/svg" width="${displayWidth}" height="${displayHeight}" viewBox="0 0 ${displayWidth} ${displayHeight}" role="img">`,
+            "<title>Editable vector chart export</title>",
+            "<desc>Chart geometry exported as SVG paths and text from Chart.js data, without embedding a raster screenshot.</desc>",
+            `<style>text{font-family:${escapeSvgText(fontFamily)};font-size:${formatSvgNumber(axisFontSize)}px;font-weight:400}.series-label{font-size:${formatSvgNumber(Math.max(9, axisFontSize * 0.86))}px;font-weight:500}</style>`,
             `<rect width="${displayWidth}" height="${displayHeight}" fill="${escapeSvgAttribute(background)}"/>`,
-            `<image href="${imageDataUrl}" x="0" y="0" width="${displayWidth}" height="${displayHeight}" preserveAspectRatio="none"/>`,
+            `<clipPath id="chart-plot-clip"><rect x="${formatSvgNumber(chartArea.left)}" y="${formatSvgNumber(chartArea.top)}" width="${formatSvgNumber(chartArea.right - chartArea.left)}" height="${formatSvgNumber(chartArea.bottom - chartArea.top)}"/></clipPath>`,
+            `<g class="axis y-axis">${yTickMarkup}</g>`,
+            `<g class="axis x-axis">${xTickMarkup}</g>`,
+            `<g class="plot-guides">${zeroLineMarkup}</g>`,
+            `<g class="plot-series" clip-path="url(#chart-plot-clip)">${datasetMarkup}</g>`,
+            `<g class="series-labels">${seriesLabels.join("")}</g>`,
             "</svg>",
         ].join("");
+    };
+
+    const buildChartSvgMarkup = (canvas) => {
+        const chart = window.Chart?.getChart?.(canvas);
+        if (!chart) throw new Error("Only Chart.js canvases can be exported as editable SVG.");
+        return buildVectorChartSvgMarkup(canvas, chart);
     };
 
     const downloadBlobFile = (filename, blob) => {
