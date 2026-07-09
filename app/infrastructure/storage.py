@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.4.3
+Code version: v0.4.4
 """
 
 from __future__ import annotations
@@ -190,6 +190,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
 PINNED_LOGO_TICKERS = frozenset({
     "AMD",
     "AVGO",
+    "COST",
     "DRAM",
     "GOOG",
     "GOOGL",
@@ -203,6 +204,7 @@ PINNED_LOGO_TICKERS = frozenset({
     "ORCL",
     "QQQ",
     "RAM",
+    "SPCX",
     "SPY",
     "TSM",
 })
