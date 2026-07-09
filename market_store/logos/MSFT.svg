@@ -1,1 +1,16 @@
-<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Microsoft</title><path d="M0 0v11.408h11.408V0zm12.594 0v11.408H24V0zM0 12.594V24h11.408V12.594zm12.594 0V24H24V12.594z"/></svg>
+<svg version="1.2" baseProfile="tiny-ps" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1528 1528" width="1528" height="1528">
+	<title>Microsoft_logo_(2012)-svg</title>
+	<style>
+		tspan { white-space:pre }
+		.shp0 { fill: #f25022 } 
+		.shp1 { fill: #7fba00 } 
+		.shp2 { fill: #00a4ef } 
+		.shp3 { fill: #ffb900 } 
+	</style>
+	<g id="Layer">
+		<path id="Layer" class="shp0" d="M0 0L724.96 0L724.96 725.8L0 725.8L0 0Z" />
+		<path id="Layer" class="shp1" d="M801.27 0L1526.24 0L1526.24 725.8L801.27 725.8L801.27 0Z" />
+		<path id="Layer" class="shp2" d="M0 802.2L724.96 802.2L724.96 1528L0 1528L0 802.2Z" />
+		<path id="Layer" class="shp3" d="M801.27 802.2L1526.24 802.2L1526.24 1528L801.27 1528L801.27 802.2Z" />
+	</g>
+</svg>

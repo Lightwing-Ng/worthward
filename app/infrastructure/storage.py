@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.4.2
+Code version: v0.4.3
 """
 
 from __future__ import annotations
@@ -186,6 +186,30 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "DRAM": "Roundhill Memory ETF",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
 }
+
+PINNED_LOGO_TICKERS = frozenset({
+    "AMD",
+    "AVGO",
+    "DRAM",
+    "GOOG",
+    "GOOGL",
+    "GS",
+    "IBKR",
+    "JPM",
+    "KO",
+    "MS",
+    "MSFT",
+    "MU",
+    "ORCL",
+    "QQQ",
+    "RAM",
+    "SPY",
+    "TSM",
+})
+
+
+def is_pinned_logo_ticker(ticker: str) -> bool:
+    return normalize_ticker(ticker) in PINNED_LOGO_TICKERS
 
 
 def resolve_known_ticker_company_name(ticker: str) -> str | None:
@@ -1088,6 +1112,7 @@ def clear_non_historical_market_cache() -> dict[str, int]:
         for ticker in money_market_settings.get("tickers", [])
         if str(ticker).strip()
     )
+    protected_tickers.update(PINNED_LOGO_TICKERS)
     with _parquet_table_lock(PROFILES_PARQUET_PATH), _parquet_table_lock(SEARCH_CACHE_PARQUET_PATH):
         search_cache_table = _load_search_cache_table()
         kept_queries: set[str] = set()
@@ -1155,7 +1180,7 @@ def delete_ticker_data(ticker: str) -> None:
     remove_search_cache_entries_for_ticker(normalized_ticker)
 
     logo_path = logo_store_path_for(normalized_ticker)
-    if logo_path.exists():
+    if logo_path.exists() and not is_pinned_logo_ticker(normalized_ticker):
         logo_path.unlink()
 
     legacy_search_json = SEARCH_STORE_DIR / f"{normalized_ticker}.json"

@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.8
+Code version: v0.3.9
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.infrastructure.storage import (
     has_profile_record,
     history_store_path_for,
     investment_ticker_store_aliases,
+    is_pinned_logo_ticker,
     list_local_tickers,
     resolve_known_ticker_company_name,
     load_profile_record,
@@ -450,6 +451,8 @@ def refresh_logo_store(
 ) -> None:
     ensure_market_store_dir()
     path = logo_store_path_for(ticker)
+    if is_pinned_logo_ticker(ticker) and path.exists():
+        return
     if path.exists() and not force_refresh:
         return
 

@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and pinyin-initial sort order.
 
-Code version: v0.2.0
+Code version: v0.2.1
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         code="ibkr",
         label="IBKR",
         pinyin_sort_key="ibkr",
-        icon_filename="IBKR.png",
+        icon_filename="IBKR.svg",
         description="Supported now for CSV import.",
     ),
     "schwab": BrokerCatalogEntry(
