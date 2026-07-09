@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.4.4
+Code version: v0.4.5
 """
 
 from __future__ import annotations
@@ -198,6 +198,7 @@ PINNED_LOGO_TICKERS = frozenset({
     "IBKR",
     "JPM",
     "KO",
+    "LITE",
     "MS",
     "MSFT",
     "MU",

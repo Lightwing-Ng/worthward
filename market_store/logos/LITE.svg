@@ -1,0 +1,41 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 837 1257" width="837" height="1257">
+	<title>logo (72)-svg</title>
+	<defs>
+		<clipPath clipPathUnits="userSpaceOnUse" id="cp1">
+			<path d="m65.88 1256.35l-66.03-66.02 562.13-562.32 66.03 66.02z"/>
+		</clipPath>
+		<linearGradient id="g1" x1="33" y1="1222.6" x2="594.2" y2="661.4" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#066cb4"/>
+			<stop offset=".1" stop-color="#0672ad"/>
+			<stop offset=".2" stop-color="#027f9a"/>
+			<stop offset=".4" stop-color="#029576"/>
+			<stop offset=".5" stop-color="#08a64e"/>
+			<stop offset="1" stop-color="#b3d036"/>
+		</linearGradient>
+		<clipPath clipPathUnits="userSpaceOnUse" id="cp2">
+			<path d="m274.72 628.05l-66.01-66.04 562.29-562.16 66.01 66.03z"/>
+		</clipPath>
+		<linearGradient id="g2" x1="246.4" y1="589.7" x2="803.2" y2="32.8" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#c91a88"/>
+			<stop offset=".1" stop-color="#cf2c7f"/>
+			<stop offset=".3" stop-color="#db4c63"/>
+			<stop offset=".6" stop-color="#ee6c25"/>
+			<stop offset=".7" stop-color="#f1822c"/>
+			<stop offset="1" stop-color="#f8b142"/>
+		</linearGradient>
+	</defs>
+	<style>
+		.s0 { fill: url(#g1) } 
+		.s1 { fill: url(#g2) } 
+	</style>
+	<g id="Layer">
+		<g id="Clip-Path" clip-path="url(#cp1)">
+			<path id="Layer" class="s0" d="m-314 942.2l627.3-628.8 628.8 628.8-628.8 627.3z"/>
+		</g>
+	</g>
+	<g id="Layer">
+		<g id="Clip-Path" clip-path="url(#cp2)">
+			<path id="Layer" class="s1" d="m-105.4 313.4l627.3-627.4 628.8 627.4-628.8 628.8z"/>
+		</g>
+	</g>
+</svg>
