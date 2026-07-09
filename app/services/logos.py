@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.3.9
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from app.infrastructure.storage import (
     resolve_known_ticker_company_name,
     load_profile_record,
     load_search_cache_items,
+    LOGOS_STORE_DIR,
     logo_store_path_for,
     normalize_ticker,
     resolve_logo_store_path,
@@ -62,6 +63,14 @@ TICKER_WEBSITE_OVERRIDES = {
     "JEPQ": "https://www.jpmorganchase.com",
     "DRAM": "https://www.roundhillinvestments.com/etf/dram/",
     "RAM": "https://www.roundhillinvestments.com/etf/ram/",
+}
+
+CURATED_LOGO_SVG_URLS = {
+    "AVGO": "https://companieslogo.com/img/orig/AVGO-77e10dd3.svg?t=1722952492&download=true",
+    "JPM": "https://companieslogo.com/img/orig/JPM-4f761fcf.svg?t=1720244492&download=true",
+    "MS": "https://companieslogo.com/img/orig/MS-0e9b40c7.svg?t=1720244493&download=true",
+    "MU": "https://companieslogo.com/img/orig/MU-2e3ad6fe.svg?t=1740419775&download=true",
+    "QQQ": "https://companieslogo.com/img/orig/invesco-qqq-82548dba.svg?t=1720244494&download=true",
 }
 
 ISSUER_WEBSITE_HINTS = {
@@ -444,6 +453,22 @@ def fetch_remote_logo_bytes(ticker: str, domain: str | None = None) -> bytes | N
     return None
 
 
+def fetch_curated_logo_svg_bytes(ticker: str) -> bytes | None:
+    source_url = CURATED_LOGO_SVG_URLS.get(normalize_ticker_input(ticker))
+    if not source_url:
+        return None
+    request_obj = Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urlopen(request_obj, timeout=20) as response:
+            content_type = response.headers.get_content_type()
+            if content_type not in {"image/svg+xml", "application/octet-stream", "text/plain"}:
+                return None
+            payload = response.read()
+    except (HTTPError, URLError, TimeoutError, ValueError, Exception):
+        return None
+    return payload if b"<svg" in payload[:512] else None
+
+
 def refresh_logo_store(
         ticker: str,
         website: str | None,
@@ -454,6 +479,11 @@ def refresh_logo_store(
     if is_pinned_logo_ticker(ticker) and path.exists():
         return
     if path.exists() and not force_refresh:
+        return
+    curated_logo_bytes = fetch_curated_logo_svg_bytes(ticker)
+    if curated_logo_bytes is not None:
+        curated_path = LOGOS_STORE_DIR / f"{normalize_ticker_input(ticker)}.svg"
+        curated_path.write_bytes(curated_logo_bytes)
         return
 
     if not has_remote_market_access() and not has_remote_logo_access():
