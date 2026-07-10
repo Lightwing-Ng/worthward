@@ -1,4 +1,4 @@
-/* Code version: v0.4.12 */
+/* Code version: v0.4.13 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -27,7 +27,7 @@
 					<div id="compare_summary_panel">
 						<p id="compare_summary_date_range" class="compare-summary-date-range is-pending-value">Loading range...</p>
 						<div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
-						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><p class="report-value"><span class="is-pending-value" data-workspace-mask="compare-return">0000</span></p></section>`).join("")}
+						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><div class="performance-metrics"><p class="report-value performance-metric-row performance-metric-row-total"><span class="performance-metric-label performance-metric-label-spacer" aria-hidden="true">TTM yield</span><span class="compare-percent-value is-pending-value" data-workspace-mask="compare-return">0000</span></p><p class="report-value performance-metric-row performance-metric-row-dividend"><span class="performance-metric-label">TTM yield</span><span class="compare-percent-value compare-percent-value-secondary is-pending-value" data-workspace-mask="compare-ttm-dividend-yield">0000</span></p></div></section>`).join("")}
 						</div>
 					</div>
 				</article>
@@ -281,6 +281,44 @@
 		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	};
 
+	const renderComparePercentValue = (valueNode, value) => {
+		if (!(valueNode instanceof HTMLElement)) return;
+		valueNode.textContent = "";
+		const display = formatCompareLivePercent(value);
+		if (display === "—") {
+			const empty = document.createElement("span");
+			empty.className = "compare-percent-empty";
+			empty.textContent = "—";
+			valueNode.appendChild(empty);
+			return;
+		}
+		const match = display.match(/^(.+)(\.)(\d{2})(%)$/);
+		if (!match) {
+			valueNode.textContent = display;
+			return;
+		}
+		[
+			["compare-percent-major", match[1]],
+			["compare-percent-dot", match[2]],
+			["compare-percent-minor", match[3]],
+			["compare-percent-suffix", match[4]],
+		].forEach(([className, text]) => {
+			const part = document.createElement("span");
+			part.className = className;
+			part.textContent = text;
+			valueNode.appendChild(part);
+		});
+	};
+
+	const appendCompareWinnerBadge = (targetNode, className = "winner-badge") => {
+		if (!(targetNode instanceof HTMLElement)) return;
+		const badge = document.createElement("span");
+		badge.className = className;
+		badge.setAttribute("role", "img");
+		badge.setAttribute("aria-label", appState().labels?.winner_alt || "Winner");
+		targetNode.insertAdjacentElement("afterend", badge);
+	};
+
 	const sanitizeCompareDisplayRange = (value) => String(value || "")
 		.replace(/\s*[·•]\s*axis\s+\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4}/g, "")
 		.trim();
@@ -301,16 +339,19 @@
 			if (!ticker) return;
 			const card = document.querySelector(`#compare_summary_region .performance-item[data-ticker="${CSS.escape(ticker)}"]`);
 			const valueNode = card?.querySelector?.('[data-workspace-mask="compare-return"]');
+			const dividendYieldNode = card?.querySelector?.('[data-workspace-mask="compare-ttm-dividend-yield"]');
 			if (!(card instanceof HTMLElement) || !(valueNode instanceof HTMLElement)) return;
-			valueNode.textContent = formatCompareLivePercent(item.ending_return);
+			renderComparePercentValue(valueNode, item.ending_return);
 			if (item.color) valueNode.style.color = item.color;
 			card.querySelectorAll(".winner-badge").forEach((node) => node.remove());
 			if (item.is_winner) {
-				const badge = document.createElement("span");
-				badge.className = "winner-badge";
-				badge.setAttribute("role", "img");
-				badge.setAttribute("aria-label", appState().labels?.winner_alt || "Winner");
-				valueNode.insertAdjacentElement("afterend", badge);
+				appendCompareWinnerBadge(valueNode, "winner-badge winner-badge-total-return");
+			}
+			if (dividendYieldNode instanceof HTMLElement) {
+				renderComparePercentValue(dividendYieldNode, item.ttm_dividend_yield);
+				if (item.is_dividend_yield_winner) {
+					appendCompareWinnerBadge(dividendYieldNode, "winner-badge winner-badge-dividend-yield");
+				}
 			}
 		});
 		const rangeNode = document.getElementById("compare_summary_date_range");

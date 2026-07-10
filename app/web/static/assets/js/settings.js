@@ -1,4 +1,4 @@
-/* Code version: v0.7.1 */
+/* Code version: v0.7.2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -986,6 +986,19 @@
     };
 
     const createStyleTokenShareDemoCompareSummarySection = () => {
+        const appendComparePercentValue = (node, value) => {
+            const match = String(value || "—").match(/^(.+)(\.)(\d{2})(%)$/);
+            if (!match) {
+                node.append(createStyleTokenDemoElement("span", "compare-percent-empty", value || "—"));
+                return;
+            }
+            [
+                ["compare-percent-major", match[1]],
+                ["compare-percent-dot", match[2]],
+                ["compare-percent-minor", match[3]],
+                ["compare-percent-suffix", match[4]],
+            ].forEach(([className, text]) => node.append(createStyleTokenDemoElement("span", className, text)));
+        };
         const section = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
         const card = createStyleTokenDemoElement("article", "report-card workspace-content-card compare-summary-content-card compare-share-summary-card");
         const panel = createStyleTokenDemoElement("div", "", null);
@@ -994,9 +1007,9 @@
         const grid = createStyleTokenDemoElement("div", "performance-grid");
         grid.id = "compare_summary_region";
         [
-            {ticker: "TQQQ", company: "ProShares UltraPro QQQ", value: "284.62%", color: "#0055cc", isWinner: true},
-            {ticker: "NVDA", company: "NVIDIA Corporation", value: "42.18%", color: "#16a34a"},
-            {ticker: "GOOGL", company: "Alphabet Inc.", value: "28.64%", color: "#f59e0b"},
+            {ticker: "TQQQ", company: "ProShares UltraPro QQQ", value: "284.62%", ttmYield: "0.00%", color: "#0055cc", isWinner: true},
+            {ticker: "NVDA", company: "NVIDIA Corporation", value: "42.18%", ttmYield: "0.03%", color: "#16a34a"},
+            {ticker: "GOOGL", company: "Alphabet Inc.", value: "28.64%", ttmYield: "0.46%", color: "#f59e0b", isDividendWinner: true},
         ].forEach((item) => {
             const performanceItem = createStyleTokenDemoElement("section", "performance-item");
             performanceItem.dataset.ticker = item.ticker;
@@ -1010,9 +1023,12 @@
                 createStyleTokenDemoElement("span", "suggestion-name ticker-identity-name", item.company),
             );
             row.append(logo, copy);
-            const value = createStyleTokenDemoElement("p", "report-value");
-            const valueSpan = createStyleTokenDemoElement("span", "", item.value);
+            const metrics = createStyleTokenDemoElement("div", "performance-metrics");
+            const value = createStyleTokenDemoElement("p", "report-value performance-metric-row performance-metric-row-total");
+            value.append(createStyleTokenDemoElement("span", "performance-metric-label performance-metric-label-spacer", "TTM yield"));
+            const valueSpan = createStyleTokenDemoElement("span", "compare-percent-value", "");
             valueSpan.style.color = item.color;
+            appendComparePercentValue(valueSpan, item.value);
             value.append(valueSpan);
             if (item.isWinner) {
                 const winnerBadge = createStyleTokenDemoElement("img", "winner-badge");
@@ -1022,7 +1038,21 @@
                 winnerBadge.setAttribute("aria-label", "Winner");
                 value.append(winnerBadge);
             }
-            performanceItem.append(row, value);
+            const yieldRow = createStyleTokenDemoElement("p", "report-value performance-metric-row performance-metric-row-dividend");
+            yieldRow.append(createStyleTokenDemoElement("span", "performance-metric-label", "TTM yield"));
+            const yieldSpan = createStyleTokenDemoElement("span", "compare-percent-value compare-percent-value-secondary", "");
+            appendComparePercentValue(yieldSpan, item.ttmYield);
+            yieldRow.append(yieldSpan);
+            if (item.isDividendWinner) {
+                const winnerBadge = createStyleTokenDemoElement("img", "winner-badge");
+                winnerBadge.src = "/static/images/checkmark.circle.fill.green.svg";
+                winnerBadge.alt = "";
+                winnerBadge.setAttribute("role", "img");
+                winnerBadge.setAttribute("aria-label", "Winner");
+                yieldRow.append(winnerBadge);
+            }
+            metrics.append(value, yieldRow);
+            performanceItem.append(row, metrics);
             grid.append(performanceItem);
         });
         panel.append(grid);

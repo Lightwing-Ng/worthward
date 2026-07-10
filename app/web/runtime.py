@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.41
+Code version: v0.4.42
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ from app.core.broker_settings import (
 from app.services.comparisons import (
     align_many_intraday_datasets_on_common_dates,
     build_series_payload,
+    calculate_ttm_dividend_yield,
     complete_market_local_trading_days,
     fill_intraday_market_session_gaps,
     filter_intraday_dataset_to_regular_session,
@@ -1731,6 +1732,25 @@ def build_web_runtime() -> WebRuntime:
             if not has_intraday_timestamps or not close_values.empty:
                 raise
             return build_empty_compare_axis_series_payload(ticker, dataset, color=color)
+
+    def build_ttm_dividend_yield_map(
+            tickers: list[str],
+            end_date: object | None = None,
+    ) -> dict[str, float | None]:
+        yields: dict[str, float | None] = {}
+        for ticker in tickers:
+            normalized_ticker = normalize_ticker_input(ticker)
+            try:
+                price_dataset = fetch_history(normalized_ticker, False, dividend_mode="price")
+                yields[normalized_ticker] = calculate_ttm_dividend_yield(price_dataset, end_date=end_date)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.info("Unable to calculate TTM dividend yield for %s: %s", normalized_ticker, exc)
+                yields[normalized_ticker] = None
+        return yields
+
+    def best_numeric_metric(values: list[float | None]) -> float | None:
+        numeric_values = [value for value in values if value is not None]
+        return max(numeric_values) if numeric_values else None
 
     def format_store_range_date(raw_value: object) -> str:
         return format_store_range_date_value(raw_value)
@@ -3984,7 +4004,17 @@ def build_web_runtime() -> WebRuntime:
                                 for t in validated_tickers
                             ]
                             performance_items = [
-                                {"ticker": t, "company_name": t, "logo_url": "", "ending_return": 0.0, "color": "transparent", "shadow_color": "transparent", "is_winner": False}
+                                {
+                                    "ticker": t,
+                                    "company_name": t,
+                                    "logo_url": "",
+                                    "ending_return": 0.0,
+                                    "ttm_dividend_yield": None,
+                                    "color": "transparent",
+                                    "shadow_color": "transparent",
+                                    "is_winner": False,
+                                    "is_dividend_yield_winner": False,
+                                }
                                 for t in validated_tickers]
                         display_range = "Loading range..."
                         ticker_slots = validated_tickers.copy()
@@ -4461,15 +4491,25 @@ def build_web_runtime() -> WebRuntime:
                         else:
                             display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
                         if current_view != "portfolio":
+                            dividend_yield_map = build_ttm_dividend_yield_map(validated_tickers, common_end)
+                            best_dividend_yield = best_numeric_metric([
+                                dividend_yield_map.get(ticker)
+                                for ticker in validated_tickers
+                            ])
                             performance_items = [
                                 {
                                     "ticker": item.ticker,
                                     "company_name": profile.company_name,
                                     "logo_url": profile.logo_url,
                                     "ending_return": last_valid_return(item),
+                                    "ttm_dividend_yield": dividend_yield_map.get(item.ticker),
                                     "color": item.color,
                                     "shadow_color": hex_to_rgba(item.color or theme["accent_primary"], 0.22),
                                     "is_winner": best_return is not None and last_valid_return(item) == best_return,
+                                    "is_dividend_yield_winner": (
+                                        best_dividend_yield is not None
+                                        and dividend_yield_map.get(item.ticker) == best_dividend_yield
+                                    ),
                                 }
                                 for item, profile in zip(series, profiles)
                             ]
@@ -5698,12 +5738,22 @@ def build_web_runtime() -> WebRuntime:
                     value for value in (last_valid_return(item) for item in series) if value is not None
                 ]
                 best_return = max(valid_performance_returns) if valid_performance_returns else None
+                dividend_yield_map = build_ttm_dividend_yield_map(validated_tickers, common_end_date)
+                best_dividend_yield = best_numeric_metric([
+                    dividend_yield_map.get(ticker)
+                    for ticker in validated_tickers
+                ])
                 performance_items = [
                     {
                         "ticker": item.ticker,
                         "ending_return": last_valid_return(item),
+                        "ttm_dividend_yield": dividend_yield_map.get(item.ticker),
                         "color": item.color,
                         "is_winner": best_return is not None and last_valid_return(item) == best_return,
+                        "is_dividend_yield_winner": (
+                            best_dividend_yield is not None
+                            and dividend_yield_map.get(item.ticker) == best_dividend_yield
+                        ),
                     }
                     for item in series
                 ]
@@ -5788,12 +5838,22 @@ def build_web_runtime() -> WebRuntime:
                 value for value in (last_valid_return(item) for item in series) if value is not None
             ]
             best_return = max(valid_performance_returns) if valid_performance_returns else None
+            dividend_yield_map = build_ttm_dividend_yield_map(validated_tickers, live_trading_date)
+            best_dividend_yield = best_numeric_metric([
+                dividend_yield_map.get(ticker)
+                for ticker in validated_tickers
+            ])
             performance_items = [
                 {
                     "ticker": item.ticker,
                     "ending_return": last_valid_return(item),
+                    "ttm_dividend_yield": dividend_yield_map.get(item.ticker),
                     "color": item.color,
                     "is_winner": best_return is not None and last_valid_return(item) == best_return,
+                    "is_dividend_yield_winner": (
+                        best_dividend_yield is not None
+                        and dividend_yield_map.get(item.ticker) == best_dividend_yield
+                    ),
                 }
                 for item in series
             ]

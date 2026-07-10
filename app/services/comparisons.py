@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.13
+Code version: v0.5.14
 """
 
 from __future__ import annotations
@@ -778,3 +778,35 @@ def build_series_payload(
         glow=glow,
         candlestick_returns=candlestick_returns,
     )
+
+
+def calculate_ttm_dividend_yield(
+        dataset: pd.DataFrame,
+        end_date: object | None = None,
+) -> float | None:
+    if dataset.empty or "Date" not in dataset.columns or "Close" not in dataset.columns or "Dividends" not in dataset.columns:
+        return None
+
+    prepared = dataset[["Date", "Close", "Dividends"]].copy()
+    prepared["Date"] = pd.to_datetime(prepared["Date"], errors="coerce")
+    prepared["Close"] = pd.to_numeric(prepared["Close"], errors="coerce")
+    prepared["Dividends"] = pd.to_numeric(prepared["Dividends"], errors="coerce").fillna(0.0)
+    prepared = prepared.dropna(subset=["Date", "Close"]).sort_values("Date")
+    if prepared.empty:
+        return None
+
+    requested_end = pd.to_datetime(end_date, errors="coerce") if end_date is not None else pd.NaT
+    cutoff_end = pd.Timestamp(requested_end) if pd.notna(requested_end) else pd.Timestamp(prepared["Date"].max())
+    cutoff_end = cutoff_end.tz_localize(None) if cutoff_end.tzinfo is not None else cutoff_end
+    bounded = prepared[prepared["Date"] <= cutoff_end].copy()
+    if bounded.empty:
+        return None
+
+    close_price = float(bounded["Close"].iloc[-1])
+    if close_price <= 0:
+        return None
+
+    cutoff_start = pd.Timestamp(bounded["Date"].iloc[-1]) - pd.DateOffset(years=1)
+    trailing = bounded[(bounded["Date"] > cutoff_start) & (bounded["Date"] <= pd.Timestamp(bounded["Date"].iloc[-1]))]
+    dividend_total = float(trailing["Dividends"].sum())
+    return (dividend_total / close_price) * 100.0

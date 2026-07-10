@@ -127,6 +127,7 @@
         tickers: {
             masks: [
                 '[data-workspace-mask="compare-return"]',
+                '[data-workspace-mask="compare-ttm-dividend-yield"]',
                 '[data-workspace-mask="chart-area"]',
             ],
         },

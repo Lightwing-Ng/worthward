@@ -1,4 +1,4 @@
-/* Code version: v1.1.14 */
+/* Code version: v1.1.15 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -567,7 +567,7 @@
 
 .performance-grid {
     display: grid;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto;
     gap: 6px;
     margin-bottom: 0;
     align-items: stretch;
@@ -587,8 +587,8 @@
     overflow: hidden;
     display: grid;
     grid-template-rows: subgrid;
-    grid-row: span 3;
-    row-gap: 2px;
+    grid-row: span 2;
+    row-gap: 6px;
     align-content: stretch;
 }
 
@@ -694,20 +694,87 @@
     text-overflow: ellipsis;
 }
 
-.performance-item:has(.winner-badge) .report-value {
+.performance-metrics {
+    display: grid;
+    grid-template-columns: max-content minmax(0, max-content) 16px;
+    column-gap: 6px;
+    row-gap: 5px;
+    align-items: baseline;
+    align-self: end;
+    justify-content: start;
+    margin: 8px 0 0;
+    max-width: 100%;
+    font-size: var(--font-metric-value);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+}
+
+.performance-metric-row {
+    display: contents;
+}
+
+.performance-metric-label {
+    grid-column: 1;
+    align-self: baseline;
+    color: var(--muted);
+    font-size: var(--font-ui-sm);
+    line-height: 1;
+    letter-spacing: 0;
+    font-weight: var(--font-weight-bold);
+    white-space: nowrap;
+}
+
+.performance-metric-label-spacer {
+    visibility: hidden;
+}
+
+.compare-percent-value {
+    grid-column: 2;
+    display: inline-grid;
+    grid-template-columns: minmax(0, 1fr) max-content 2ch max-content;
+    align-items: baseline;
+    justify-self: stretch;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    font-variant-numeric: tabular-nums;
+}
+
+.compare-percent-value-secondary {
+    color: var(--muted);
+}
+
+.compare-percent-major {
+    justify-self: end;
+    min-width: 0;
+}
+
+.compare-percent-dot,
+.compare-percent-minor,
+.compare-percent-suffix {
+    justify-self: start;
+}
+
+.compare-percent-empty {
+    grid-column: 1 / -1;
+}
+
+.performance-item:has(.winner-badge) .performance-metrics {
     max-width: calc(100% + 24px);
     overflow: visible;
 }
 
-.performance-item:last-child:has(.winner-badge) .report-value {
+.performance-item:last-child:has(.winner-badge) .performance-metrics {
     max-width: calc(100% - 20px);
 }
 
-.ticker-identity-row:has(.ticker-identity-logo) + .report-value {
+.ticker-identity-row:has(.ticker-identity-logo) + .performance-metrics {
     margin-inline-start: calc(var(--ticker-identity-logo-max-width) + var(--ticker-identity-gap));
 }
 
 .winner-badge {
+    grid-column: 3;
     position: static;
     width: 16px;
     height: 16px;

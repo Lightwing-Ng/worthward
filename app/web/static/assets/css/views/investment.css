@@ -1,4 +1,4 @@
-/* Code version: v1.16.19 */
+/* Code version: v1.16.20 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -1241,15 +1241,17 @@
     grid-row: 1;
 }
 
-.investment-community-share-card[data-share-view="compare"] .performance-item .ticker-identity-row + .report-value {
+.investment-community-share-card[data-share-view="compare"] .performance-item .ticker-identity-row + .performance-metrics {
     margin-inline-start: 0;
 }
 
-.investment-community-share-card[data-share-view="compare"] .performance-item .report-value {
+.investment-community-share-card[data-share-view="compare"] .performance-item .performance-metrics {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) max(16px, 4mm);
+    grid-template-columns: max-content minmax(0, max-content) max(16px, 4mm);
     column-gap: 8px;
-    align-items: center;
+    row-gap: 5px;
+    align-items: baseline;
+    justify-content: end;
     width: 100%;
     margin: 0;
     align-self: stretch;
@@ -1259,13 +1261,21 @@
     overflow: visible;
 }
 
-.investment-community-share-card[data-share-view="compare"] .performance-item .report-value > :first-child {
+.investment-community-share-card[data-share-view="compare"] .performance-item .performance-metric-row {
+    display: contents;
+}
+
+.investment-community-share-card[data-share-view="compare"] .performance-item .performance-metric-label {
+    font-size: max(var(--font-ui-sm), 3.2mm);
+}
+
+.investment-community-share-card[data-share-view="compare"] .performance-item .compare-percent-value {
     justify-self: end;
     text-align: right;
 }
 
 .investment-community-share-card[data-share-view="compare"] .performance-item .winner-badge {
-    grid-column: 2;
+    grid-column: 3;
     justify-self: end;
     align-self: center;
     width: max(16px, 4mm);
