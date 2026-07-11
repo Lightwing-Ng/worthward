@@ -1,4 +1,4 @@
-/* Code version: v1.16.20 */
+/* Code version: v1.16.21 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -310,6 +310,7 @@
     padding: 4px 0;
     vertical-align: middle;
     color: var(--scrollable-data-table-header-color);
+    pointer-events: auto;
 }
 
 .investment-broker-filter-field {
@@ -340,6 +341,7 @@
     background-color: transparent;
     box-shadow: none;
     border: 0;
+    pointer-events: auto;
 }
 
 .investment-broker-filter-trigger.live-trading-broker-trigger::before,

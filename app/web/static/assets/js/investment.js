@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.30
+ * Code version: v1.61.31
+ * - Fixed: Broker filter controls in extracted investment table headers now receive pointer input and portal their dropdowns outside clipped Frosted glass table layers.
  * - Fixed: Investment range segmented controls now scroll the active edge option fully into view when horizontal space is constrained.
  * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
  * - Fixed: Investment stock-details helper import now revs to the x-axis date label font-weight update.
@@ -294,7 +295,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.61.30',
+    entry: 'v1.61.31',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -5420,10 +5421,42 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.max(180, Math.min(360, 74 + (longestLabelLength * 8)));
     }
 
+    function getInvestmentBrokerFilterDropdown(field) {
+        if (!(field instanceof HTMLElement)) return null;
+        const nestedDropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        if (nestedDropdown instanceof HTMLElement) return nestedDropdown;
+        const filterId = String(field.dataset.filterId || '').trim();
+        if (!filterId) return null;
+        const portalledDropdown = document.querySelector(
+            `[data-investment-broker-filter-dropdown][data-investment-broker-filter-owner="${CSS.escape(filterId)}"]`
+        );
+        return portalledDropdown instanceof HTMLElement ? portalledDropdown : null;
+    }
+
+    function portalInvestmentBrokerFilterDropdown(field, dropdown) {
+        if (!(field instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return;
+        const filterId = String(field.dataset.filterId || '').trim();
+        if (filterId) {
+            dropdown.dataset.investmentBrokerFilterOwner = filterId;
+        }
+        if (dropdown.parentElement !== document.body) {
+            document.body.appendChild(dropdown);
+        }
+    }
+
+    function restoreInvestmentBrokerFilterDropdown(field, dropdown) {
+        if (!(field instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return;
+        const row = field.querySelector('.investment-broker-filter-row');
+        if (row instanceof HTMLElement && dropdown.parentElement !== row) {
+            row.appendChild(dropdown);
+        }
+        delete dropdown.dataset.investmentBrokerFilterOwner;
+    }
+
     function positionInvestmentBrokerFilterDropdown(field) {
         if (!(field instanceof HTMLElement)) return;
         const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
-        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        const dropdown = getInvestmentBrokerFilterDropdown(field);
         if (!(trigger instanceof HTMLElement)
             || !(dropdown instanceof HTMLElement)
             || dropdown.hidden) {
@@ -5473,14 +5506,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function setInvestmentBrokerFilterDropdownOpen(field, isOpen) {
         if (!(field instanceof HTMLElement)) return;
         const trigger = field.querySelector('[data-investment-broker-filter-trigger]');
-        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        const dropdown = getInvestmentBrokerFilterDropdown(field);
         if (!(trigger instanceof HTMLButtonElement) || !(dropdown instanceof HTMLElement)) return;
-        dropdown.hidden = !isOpen;
         trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         field.classList.toggle('is-open', isOpen);
         if (isOpen) {
+            portalInvestmentBrokerFilterDropdown(field, dropdown);
+            dropdown.hidden = false;
             positionInvestmentBrokerFilterDropdown(field);
         } else {
+            dropdown.hidden = true;
             dropdown.style.position = '';
             dropdown.style.left = '';
             dropdown.style.top = '';
@@ -5492,6 +5527,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dropdown.style.zIndex = '';
             dropdown.style.overflowY = '';
             dropdown.style.overscrollBehavior = '';
+            restoreInvestmentBrokerFilterDropdown(field, dropdown);
         }
     }
 
@@ -5585,7 +5621,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInvestmentBrokerFilterDropdown(field) {
         if (!(field instanceof HTMLElement)) return;
-        const dropdown = field.querySelector('[data-investment-broker-filter-dropdown]');
+        const dropdown = getInvestmentBrokerFilterDropdown(field);
         if (!(dropdown instanceof HTMLElement)) return;
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
@@ -5653,7 +5689,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         trigger.addEventListener('click', (event) => {
             event.stopPropagation();
-            const shouldOpen = field.querySelector('[data-investment-broker-filter-dropdown]')?.hidden !== false;
+            const shouldOpen = getInvestmentBrokerFilterDropdown(field)?.hidden !== false;
             closeInvestmentBrokerFilterDropdowns(field);
             if (shouldOpen) {
                 renderInvestmentBrokerFilterDropdown(field);
