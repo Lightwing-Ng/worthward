@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.1.2
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -15,12 +15,17 @@ from app.infrastructure.storage import (
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
     known_ticker_company_names_payload,
+    market_ticker_store_aliases,
     propagate_investment_lineage_identity_profiles,
     resolve_known_ticker_company_name,
 )
 
 
 class InvestmentTickerLineageTests(unittest.TestCase):
+    def test_sk_hynix_transition_prefers_requested_symbol_then_compatible_alias(self) -> None:
+        self.assertEqual(market_ticker_store_aliases("SKHYV"), ["SKHYV", "SKHY"])
+        self.assertEqual(market_ticker_store_aliases("SKHY"), ["SKHY", "SKHYV"])
+
     def test_splg_lineage_prefers_spym_before_spy_proxy(self) -> None:
         aliases = investment_ticker_store_aliases("SPLG.US")
 

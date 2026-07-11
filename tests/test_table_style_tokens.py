@@ -1,6 +1,8 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.0.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.2.1."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from app import create_app
 
@@ -28,5 +30,59 @@ def test_investment_table_header_is_interactive_and_body_is_measurable() -> None
     assert response.status_code == 200
     assert "data-table-interactive-header" in html
     assert 'aria-label="Side"' in html
+    assert '<th aria-label="Side">Type</th>' in html
     assert "data-table-body" in html
     assert 'aria-hidden="true"' not in html.split("investment-ledger-table", 1)[1].split("</table>", 1)[0]
+
+
+def test_interactive_table_header_retains_standard_frosted_material() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    investment_js = (
+        project_root / "app/web/static/assets/js/investment.js"
+    ).read_text(encoding="utf-8")
+
+    header_rule = investment_css.split(
+        ".scrollable-data-table-shell > .scrollable-data-table[data-table-header],",
+        1,
+    )[1].split("}", 1)[0]
+    assert "background: var(--frosted-glass-extracted-background);" in header_rule
+    assert "backdrop-filter: var(--frosted-glass-extracted-blur);" in header_rule
+    assert "border: var(--frosted-glass-extracted-border);" in header_rule
+    assert "[data-table-header], table[aria-hidden=\"true\"]" in investment_js
+
+
+def test_investment_type_filter_uses_progressive_disclosure() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    investment_js = (
+        project_root / "app/web/static/assets/js/investment.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'investment-side-filter-default-label" aria-hidden="true">Type<' in investment_js
+    assert 'aria-label="Type filter: ${selectedLabel}"' in investment_js
+    side_header_rule = investment_css.split(
+        ".investment-history-side-filter-header {",
+        1,
+    )[1].split("}", 1)[0]
+    default_label_rule = investment_css.split(
+        ".investment-side-filter-default-label {",
+        1,
+    )[1].split("}", 1)[0]
+    side_filter_rule = investment_css.split(
+        ".investment-side-filter-field {",
+        1,
+    )[1].split("}", 1)[0]
+
+    assert "padding: var(--scrollable-data-table-header-padding);" in side_header_rule
+    assert "vertical-align: top;" in side_header_rule
+    assert "position: static;" in default_label_rule
+    assert "font: inherit;" in default_label_rule
+    assert "text-align: inherit;" in default_label_rule
+    assert "position: absolute;" in side_filter_rule
+    assert ".investment-history-side-filter-header:hover .investment-side-filter-field" in investment_css
+    assert ".investment-history-side-filter-header:focus-within .investment-side-filter-field" in investment_css

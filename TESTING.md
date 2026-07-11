@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.0`
 
 ## Supported commands
 
@@ -63,6 +63,8 @@ All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
 Playwright starts a dedicated app server on `127.0.0.1:8699` through the `ANTIGRAVITY_PORT` override. This avoids reusing a developer server on port `8688`.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
+
+Flask integration tests that exercise investment import or transaction loading patch both `INVESTMENT_STORE_PATH` and `INVESTMENT_TRANSACTIONS_CACHE_PATH` to a per-test temporary directory. A regression assertion compares the real parquet bytes before and after a synthetic IBKR import.
 
 ## Writing new tests
 

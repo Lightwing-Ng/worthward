@@ -1,4 +1,4 @@
-/* Code version: v0.7.3 */
+/* Code version: v0.11.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2140,6 +2140,11 @@
             applyPortfolioPendingState();
             return;
         }
+		if (state.currentView === "prices") {
+			const workspacePanel = document.getElementById("workspace_panel");
+			if (workspacePanel) workspacePanel.dataset.workspacePending = "1";
+			return;
+		}
         if (state.currentView === "backtest" || state.currentView === "dca") {
             applyBacktestPendingState();
             return;
@@ -2305,7 +2310,7 @@
                 replaceDomRegion(currentChartRegion, nextChartRegion);
                 workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
             }
-        } else if (state.currentView === "backtest" || state.currentView === "dca") {
+        } else if (state.currentView === "prices" || state.currentView === "backtest" || state.currentView === "dca") {
             hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
         } else {
             workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
@@ -2574,9 +2579,14 @@
         if (!clearButton || !input) return;
         clearButton.classList.toggle("is-visible", Boolean(input.value.trim()));
     };
-    const buildMarketStoreLogoUrl = (ticker) => {
+    const buildMarketStoreLogoUrls = (ticker) => {
         const normalizedTicker = sanitizeTicker(ticker);
-        return normalizedTicker ? `/market-store/logos/${encodeURIComponent(normalizedTicker)}.png` : "";
+        if (!normalizedTicker) return [];
+        const encodedTicker = encodeURIComponent(normalizedTicker);
+        return [
+            `/market-store/logos/${encodedTicker}.png`,
+            `/market-store/logos/${encodedTicker}.svg`,
+        ];
     };
     const normalizeLogoUrlList = (logoUrl) => {
         const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
@@ -2651,6 +2661,10 @@
         const validatedTicker = sanitizeTicker(input.dataset.validatedTicker || "");
         const suggestedTicker = sanitizeTicker(suggestion?.symbol || "");
         const tickerValue = suggestedTicker || sanitizeTicker(value) || selectedTicker;
+		if (placeholder) {
+			placeholder.textContent = tickerValue ? tickerValue.slice(0, 2) : "";
+			placeholder.dataset.ticker = tickerValue;
+		}
         const profileLogoUrl = state.chart?.profiles?.find((item) => item.ticker === tickerValue)?.logo_url || "";
         const storedLogoUrl = selectedTicker && selectedTicker === tickerValue ? (input.dataset.logoUrl || "") : "";
         const existingLogoUrl = logo instanceof HTMLImageElement
@@ -2665,19 +2679,19 @@
             || existingLogoUrl
             || profileLogoUrl
         );
-        const fallbackLogoUrl = hasConfirmedTicker ? buildMarketStoreLogoUrl(tickerValue) : "";
+        const fallbackLogoUrls = hasConfirmedTicker ? buildMarketStoreLogoUrls(tickerValue) : [];
         const logoUrls = normalizeLogoUrlList([
             suggestion?.logo_url,
             storedLogoUrl,
             profileLogoUrl,
             existingLogoUrl,
-            fallbackLogoUrl,
+			...fallbackLogoUrls,
         ]);
         control.classList.toggle("has-value", hasTickerLikeValue);
         control.classList.toggle("has-logo", logoUrls.length > 0);
         syncTickerLogoAsset(logo, placeholder, logoUrls, logoUrls.length ? `${tickerValue} logo` : "");
         if (suggestion) {
-            input.dataset.logoUrl = suggestion.logo_url || profileLogoUrl || fallbackLogoUrl || "";
+            input.dataset.logoUrl = suggestion.logo_url || profileLogoUrl || fallbackLogoUrls[0] || "";
             input.dataset.symbol = suggestion.symbol || tickerValue;
             input.dataset.companyName = suggestion.name || suggestion.symbol || "";
         } else if (hasTickerLikeValue && selectedTicker && selectedTicker === tickerValue && !input.dataset.logoUrl && logoUrls.length) {
@@ -3458,12 +3472,15 @@
                     activeIndex = getButtons().indexOf(button);
                     syncActiveSuggestion();
                 });
+                button.addEventListener("pointerdown", (event) => {
+                    event.preventDefault();
+                });
                 button.addEventListener("click", () => {
                     applySuggestion({
                         symbol: button.dataset.symbol || "",
                         logo_url: button.dataset.logoUrl || "",
                         name: button.dataset.name || button.dataset.symbol || "",
-                    });
+                    }, {autoLoad: true});
                 });
             });
         };
@@ -3718,16 +3735,7 @@
     const syncMobilePageBottomPadMetrics = (page) => {
         if (!(page instanceof HTMLElement)) return {scrollBottomPad: 0, endBottomPad: 0};
         const scrollBottomPad = readElementCssPx(page, "--page-mobile-scroll-bottom-pad-base", readElementCssPx(page, "--page-edge-pad", 10));
-        let endBottomPad = readElementCssPx(page, "--page-mobile-end-bottom-pad-base", scrollBottomPad);
-        const dock = $(".sidebar-dock");
-        if (dock instanceof HTMLElement) {
-            const pageRect = page.getBoundingClientRect();
-            const dockRect = dock.getBoundingClientRect();
-            if (pageRect.height > 0 && dockRect.height > 0) {
-                const dockClearance = Math.max(0, pageRect.bottom - dockRect.top);
-                endBottomPad = Math.max(scrollBottomPad, Math.ceil(scrollBottomPad + dockClearance));
-            }
-        }
+        const endBottomPad = scrollBottomPad;
         page.style.setProperty("--page-mobile-scroll-bottom-pad", `${scrollBottomPad}px`);
         page.style.setProperty("--page-mobile-end-bottom-pad", `${endBottomPad}px`);
         return {scrollBottomPad, endBottomPad};
@@ -3968,6 +3976,15 @@
         }
         workspaceModalOverlay.hidden = false;
     };
+
+	const showImmediatePriceHistoryLoadingDialog = () => {
+		if (state.currentView !== "prices") return;
+		showWorkspaceModal({
+			title: "Updating price history",
+			copy: "Loading the selected New York market-time range while keeping the current chart context visible.",
+			iconClass: "icon-hourglass",
+		});
+	};
 
     const showCompareOverlay = () => {
         showWorkspaceModal({
@@ -4942,6 +4959,52 @@
         const timeText = `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
         return [firstLine, secondLineBase ? `${secondLineBase} ${timeText}` : timeText];
     };
+    const getTimezoneOffsetMinutes = (timezone, utcMs) => {
+        try {
+            const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+            }).formatToParts(new Date(utcMs));
+            const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+            const localAsUtcMs = Date.UTC(
+                Number(values.year),
+                Number(values.month) - 1,
+                Number(values.day),
+                Number(values.hour),
+                Number(values.minute),
+            );
+            return Math.round((localAsUtcMs - utcMs) / 60000);
+        } catch (_error) {
+            return 0;
+        }
+    };
+    const convertNewYorkWallTimeParts = (rawValue, timezone) => {
+        const match = String(rawValue || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+        if (!match || !match[4] || !timezone) return null;
+        const wallTimeUtcMs = Date.UTC(
+            Number(match[1]),
+            Number(match[2]) - 1,
+            Number(match[3]),
+            Number(match[4]),
+            Number(match[5]),
+        );
+        const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", wallTimeUtcMs);
+        const actualUtcMs = wallTimeUtcMs - (newYorkOffset * 60000);
+        const targetOffset = getTimezoneOffsetMinutes(timezone, actualUtcMs);
+        const targetWallTime = new Date(actualUtcMs + (targetOffset * 60000));
+        return {
+            year: targetWallTime.getUTCFullYear(),
+            monthIndex: targetWallTime.getUTCMonth(),
+            day: targetWallTime.getUTCDate(),
+            hours: targetWallTime.getUTCHours(),
+            minutes: targetWallTime.getUTCMinutes(),
+        };
+    };
     const formatPickerMonthLabel = (date) => {
         if (!(date instanceof Date)) return "";
         const monthLabel = MONTH_LABELS[date.getUTCMonth()] || "";
@@ -4996,6 +5059,7 @@
         formatFullDateParts,
         formatShortDateParts,
         formatFullDateLines,
+        convertNewYorkWallTimeParts,
         formatPickerMonthLabel,
         getShortDatePlaceholder,
     };
@@ -5282,7 +5346,11 @@
         if (!canAutoSubmit()) return;
         if (autoSubmitTimer) window.clearTimeout(autoSubmitTimer);
         autoSubmitTimer = window.setTimeout(() => {
-            if (!canAutoSubmit() || isSubmittingWithOverlay) return;
+			if (isSubmittingWithOverlay) {
+				scheduleAutoSubmit(80);
+				return;
+			}
+			if (!canAutoSubmit()) return;
             form.requestSubmit();
         }, delay);
     };
@@ -5948,6 +6016,7 @@
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
+			showImmediatePriceHistoryLoadingDialog();
             syncDateConstraints();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("range-controls");
             scheduleAutoSubmit();
@@ -5977,6 +6046,7 @@
     form?.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement && target.id === "period") {
+			showImmediatePriceHistoryLoadingDialog();
             refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
             syncExactDateModeControls();
             syncOneDayExtendedHoursSwitch();

@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.5.2
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import unittest
 import pandas as pd
 
 from app.services.comparisons import (
+    align_intraday_datasets_for_compare,
     align_datasets_on_common_dates,
     build_series_payload,
     latest_common_start,
@@ -90,6 +91,13 @@ class ComparisonServiceTests(unittest.TestCase):
                 {"x": 1, "o": 2.0, "h": 4.0, "l": 1.0, "c": 3.0},
             ],
         )
+        self.assertEqual(
+            payload.candlestick_prices,
+            [
+                {"x": 0, "o": 100.0, "h": 103.0, "l": 99.0, "c": 102.0},
+                {"x": 1, "o": 102.0, "h": 104.0, "l": 101.0, "c": 103.0},
+            ],
+        )
 
     def test_latest_common_start_uses_most_recent_listing_date(self) -> None:
         datasets = [
@@ -139,7 +147,7 @@ class ComparisonServiceTests(unittest.TestCase):
         self.assertEqual(period, "max")
         self.assertEqual(notice, "Comparison starts from 1 Sep 2024.")
 
-    def test_resolve_effective_period_for_datasets_falls_back_with_banner(self) -> None:
+    def test_resolve_effective_period_allows_partial_new_listing_history(self) -> None:
         datasets = [
             pd.DataFrame({"Date": pd.to_datetime(["2024-08-01", "2026-03-27"]), "Close": [50.0, 55.0]}),
             pd.DataFrame({"Date": pd.to_datetime(["2020-03-27", "2026-03-27"]), "Close": [100.0, 120.0]}),
@@ -148,8 +156,31 @@ class ComparisonServiceTests(unittest.TestCase):
         period, notice = resolve_effective_period_for_datasets("5y", datasets)
 
         self.assertEqual(period, "5y")
-        self.assertIn("Requested period 5 years exceeds the shared trading history.", notice or "")
-        self.assertIn("Using the latest available start date among the selected tickers: 1 Aug 2024.", notice or "")
+        self.assertIsNone(notice)
+
+    def test_six_month_daily_compare_preserves_history_before_new_listing(self) -> None:
+        established = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-01-10", "2026-06-16", "2026-07-10"]),
+                "Close": [100.0, 110.0, 105.0],
+            }
+        )
+        newly_listed = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-06-16", "2026-07-10"]),
+                "Close": [50.0, 48.0],
+            }
+        )
+
+        aligned = slice_datasets_for_compare_period(
+            [established, newly_listed],
+            "6mo",
+            pd.Timestamp("2026-07-10"),
+        )
+
+        self.assertEqual(aligned[0]["Date"].min(), pd.Timestamp("2026-01-10"))
+        self.assertTrue(pd.isna(aligned[1].loc[aligned[1]["Date"] < pd.Timestamp("2026-06-16"), "Close"]).all())
+        self.assertEqual(aligned[1].loc[aligned[1]["Date"] == pd.Timestamp("2026-06-16"), "Close"].tolist(), [50.0])
 
     def test_slice_dataset_for_period_uses_reference_end_date(self) -> None:
         dataset = pd.DataFrame(
@@ -263,9 +294,114 @@ class ComparisonServiceTests(unittest.TestCase):
 
         aligned = slice_intraday_datasets_for_compare_period(datasets, "3d", pd.Timestamp("2026-03-27 16:30"))
 
+        self.assertEqual(len(aligned[0]), 3 * 390)
         self.assertEqual(
-            aligned[0]["Date"].dt.strftime("%Y-%m-%d %H:%M").tolist(),
+            aligned[0].groupby(aligned[0]["Date"].dt.strftime("%Y-%m-%d")).size().tolist(),
+            [390, 390, 390],
+        )
+        self.assertEqual(
+            aligned[0].loc[aligned[0]["Close"].notna(), "Date"].dt.strftime("%Y-%m-%d %H:%M").tolist(),
             ["2026-03-25 09:30", "2026-03-26 09:30", "2026-03-27 09:30"],
+        )
+
+    def test_exact_four_day_intraday_alignment_keeps_equal_session_widths(self) -> None:
+        complete = pd.DataFrame(
+            {
+                "Date": pd.to_datetime([
+                    f"2026-07-{day:02d} {clock}"
+                    for day in range(7, 11)
+                    for clock in ("09:30", "15:59")
+                ]),
+                "Close": [float(value) for value in range(8)],
+            }
+        )
+        partial = complete.loc[
+            ~(
+                (complete["Date"].dt.strftime("%Y-%m-%d") == "2026-07-09")
+                & (complete["Date"].dt.strftime("%H:%M") == "15:59")
+            )
+        ].copy()
+
+        aligned = align_intraday_datasets_for_compare(
+            [complete, partial],
+            ["DRAM", "WDC"],
+        )
+
+        self.assertEqual(len(aligned[0]), 4 * 390)
+        self.assertEqual(
+            aligned[1].groupby(aligned[1]["Date"].dt.strftime("%Y-%m-%d")).size().tolist(),
+            [390, 390, 390, 390],
+        )
+        self.assertTrue(pd.isna(
+            aligned[1].loc[aligned[1]["Date"] == pd.Timestamp("2026-07-09 15:59"), "Close"]
+        ).all())
+
+    def test_multi_day_compare_preserves_axis_before_new_adr_first_quote(self) -> None:
+        established = pd.DataFrame(
+            {
+                "Date": pd.to_datetime([
+                    "2026-07-08 09:30", "2026-07-08 15:59",
+                    "2026-07-09 09:30", "2026-07-09 15:59",
+                    "2026-07-10 09:30", "2026-07-10 11:34", "2026-07-10 15:59",
+                ]),
+                "Close": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0],
+            }
+        )
+        new_adr = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-07-10 11:34", "2026-07-10 15:59"]),
+                "Close": [171.71, 170.0],
+            }
+        )
+
+        aligned = slice_intraday_datasets_for_compare_period(
+            [established, new_adr],
+            "3d",
+            pd.Timestamp("2026-07-10 15:59"),
+            ["DRAM", "SKHYV"],
+        )
+
+        self.assertEqual(aligned[0]["Date"].min(), pd.Timestamp("2026-07-08 09:30"))
+        self.assertTrue(pd.isna(aligned[1].loc[aligned[1]["Date"] < pd.Timestamp("2026-07-10 11:34"), "Close"]).all())
+        first_adr_quote = aligned[1].loc[aligned[1]["Date"] == pd.Timestamp("2026-07-10 11:34"), "Close"]
+        self.assertEqual(first_adr_quote.tolist(), [171.71])
+
+    def test_one_day_compare_accepts_partial_first_session_for_new_listing(self) -> None:
+        established = pd.DataFrame(
+            {
+                "Date": pd.to_datetime([
+                    "2026-07-10 09:30",
+                    "2026-07-10 09:44",
+                    "2026-07-10 15:59",
+                ]),
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [100.5, 101.5, 102.5],
+            }
+        )
+        debut = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-07-10 09:44", "2026-07-10 15:59"]),
+                "Open": [170.0, 168.0],
+                "High": [177.0, 169.0],
+                "Low": [166.19, 167.0],
+                "Close": [171.71, 168.01],
+            }
+        )
+
+        aligned = slice_intraday_datasets_for_compare_period(
+            [established, debut],
+            "1d",
+            pd.Timestamp("2026-07-10 15:59"),
+            ["DRAM", "SKHYV"],
+        )
+
+        self.assertEqual(aligned[0]["Date"].min(), pd.Timestamp("2026-07-10 09:30"))
+        self.assertTrue(pd.isna(aligned[1].loc[aligned[1]["Date"] == pd.Timestamp("2026-07-10 09:30"), "Close"]).all())
+        self.assertEqual(
+            aligned[1].loc[aligned[1]["Date"] == pd.Timestamp("2026-07-10 09:44"), "Close"].tolist(),
+            [171.71],
         )
 
     def test_slice_intraday_datasets_for_compare_period_aligns_krx_and_hk_one_day(self) -> None:

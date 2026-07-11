@@ -1,12 +1,15 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.4.8
+Code version: v0.5.2
 """
 
 from __future__ import annotations
 
+from html import unescape
+import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -36,6 +39,87 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_one_day_price_page_keeps_new_us_listing_pending_before_first_quote(self) -> None:
+        def _fetch_history(
+            ticker: str,
+            include_dividends: bool,
+            interval: str = "1d",
+            dividend_mode: str = "reinvest",
+        ) -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                raise AssertionError("Relative 1d should use the local 1m store.")
+            return _fake_compare_dataset(ticker)
+
+        current_us_day = pd.Timestamp.now(tz="America/New_York").strftime("%Y-%m-%d")
+        established = pd.DataFrame(
+            {
+                "Date": pd.to_datetime([f"{current_us_day} 09:30", f"{current_us_day} 15:59"]),
+                "Open": [100.0, 101.0],
+                "High": [101.0, 102.0],
+                "Low": [99.0, 100.0],
+                "Close": [100.5, 101.5],
+            }
+        )
+        with _write_intraday_stores({"QQQ": established}) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.refresh_one_minute_store"),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=QQQ&ticker=SKHYV&period=1d"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("do not share", html)
+        self.assertIn('"ticker": "SKHYV"', html)
+        self.assertIn('"prices": [null', html)
+        self.assertIn('data-ticker="SKHYV"', html)
+
+    def test_six_month_compare_keeps_established_history_before_new_listing(self) -> None:
+        def _fetch_history(
+            ticker: str,
+            include_dividends: bool,
+            interval: str = "1d",
+            dividend_mode: str = "reinvest",
+        ) -> pd.DataFrame:
+            del include_dividends, interval, dividend_mode
+            if ticker == "SNDK":
+                return pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime(["2026-06-16", "2026-07-10"]),
+                        "Close": [50.0, 48.0],
+                    }
+                )
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime(["2026-01-10", "2026-06-16", "2026-07-10"]),
+                    "Close": [100.0, 110.0, 105.0],
+                }
+            )
+
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/compare?ticker=DRAM&ticker=MU&ticker=STX&ticker=SNDK&period=6mo"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("10 Jan 2026 - 10 Jul 2026", html)
+        self.assertIn('value="6mo" selected', html)
+
     def test_compare_page_renders_logo_markup_for_selected_tickers(self) -> None:
         with (
             patch(
@@ -71,7 +155,7 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('class="investment-share-actions"', html)
         self.assertIn('id="share_mask_button"', html)
 
-    def test_compare_page_adapts_period_dropdown_to_shared_history(self) -> None:
+    def test_compare_page_keeps_periods_available_before_newer_listing(self) -> None:
         def _fetch_history(
             ticker: str,
             include_dividends: bool,
@@ -105,12 +189,12 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('<option value="6mo"', html)
         self.assertIn('<option value="1y"', html)
-        self.assertNotIn('<option value="2y"', html)
-        self.assertNotIn('<option value="3y"', html)
-        self.assertNotIn('<option value="5y"', html)
+        self.assertIn('<option value="2y"', html)
+        self.assertIn('<option value="3y"', html)
+        self.assertIn('<option value="5y" selected', html)
         self.assertIn('<option value="max"', html)
         self.assertNotIn('<option value="10y"', html)
-        self.assertIn("Using the latest available start date among the selected tickers: 1 Aug 2024.", html)
+        self.assertNotIn("Using the latest available start date among the selected tickers", html)
 
     def test_compare_page_includes_five_year_option_when_shared_history_allows(self) -> None:
         def _fetch_history(
@@ -372,9 +456,25 @@ class ComparePageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('"raw_dates": ["2026-06-29 09:30", "2026-06-29 15:59"', html)
-        self.assertIn('"2026-07-02 09:30", "2026-07-02 15:59"]', html)
-        self.assertNotIn('"raw_dates": ["2026-06-29 00:00", "2026-06-30 00:00"', html)
+        state_match = re.search(
+            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(state_match)
+        state = json.loads(unescape(state_match.group(1)))
+        series = state["chart"]["series"]
+        self.assertEqual(len(series), 2)
+        for item in series:
+            raw_dates = item["raw_dates"]
+            self.assertEqual(len(raw_dates), 4 * 390)
+            self.assertEqual(raw_dates[0], "2026-06-29 09:30")
+            self.assertEqual(raw_dates[-1], "2026-07-02 15:59")
+            for trading_day in ("2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"):
+                self.assertEqual(
+                    sum(value.startswith(trading_day) for value in raw_dates),
+                    390,
+                )
 
 
 if __name__ == "__main__":

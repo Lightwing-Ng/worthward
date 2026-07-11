@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.17.0`
+Documentation version: `v2.20.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -90,7 +90,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
 - `Grid Trading`
-  Run the grid-trading strategy from a dedicated workspace while retaining the shared strategy selector, parameter controls, metrics, transactions, and charts.
+  Run the locked grid-trading strategy from a parallel workspace with dedicated center-line, spacing, and asymmetric buy/sell level controls while reusing Backtest market, capital, metrics, transactions, and chart components.
 - `Trade`
   Inspect the `Timing`, `Investment`, and `Live trading` views.
 - `Settings`
@@ -189,6 +189,14 @@ This record keeps only the operational convention that remains compatible with t
   - `S-534157` / `1 Jul 2026` / `BOXX` / SELL / `12,885.400` USD
 
   - Total unsettled replay amount: `10,273.470` USD
+
+### HSBC paired monthly statement import
+
+- Statement mode uses one multi-file selector. It identifies HSBC One composite statements and Investment services composite statements from their contents, then requires one of each for every statement end date.
+- Batch uploads may contain many months. Each end date must have exactly one statement of each type; missing, duplicate, cross-account, cross-holder, or mismatched-period files are rejected before the store is changed.
+- The investment statement is authoritative for settled trades, closing holdings, transaction charges, and ticker-linked income such as cash dividends. The HSBC One composite statement is authoritative for USD cash postings and closing cash.
+- Every trade, charge, and dividend must reconcile to a same-date and same-amount USD cash posting in its paired composite statement. The statement import fails closed when reconciliation is incomplete.
+- Historical statement snapshots do not replace a newer copy/paste Portfolio or available-cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
 
 ## IBKR import convention (handover reference)
 

@@ -1,4 +1,4 @@
-/* Code version: v3.25.2 */
+/* Code version: v3.25.3 */
 .sidebar { width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); padding: 10px 10px var(--sidebar-bottom-pad); border-radius: var(--radius-panel); background: var(--glass-surface-background); box-shadow: 0 18px 44px var(--theme-shadow-ambient); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: calc(var(--sidebar-dock-bottom-gap) + 56px + 8px); margin-left: 0; opacity: 1; transform: none; will-change: margin-left, opacity; transform-origin: left center; transition: margin-left 560ms var(--motion-emphasized), opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
 .settings-round-icon-button,
 .global-quick-action-button,
@@ -122,11 +122,11 @@
 .app-shell.is-sidebar-collapsed .sidebar-toggle { transition-duration: 620ms; transition-delay: 70ms; transition-timing-function: var(--motion-reveal); }
 .app-shell.is-sidebar-open .sidebar { transition-delay: 40ms; }
 .app-shell.is-sidebar-open .sidebar-toggle { transition-delay: 0ms; }
-.app-shell.is-sidebar-collapsed ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) scale(0.95); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); }
-.app-shell.is-sidebar-open ~ .sidebar-dock { opacity: 1; pointer-events: auto; transform: translateX(-50%) scale(1); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); transition-delay: 40ms; }
+.app-shell.is-sidebar-collapsed ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px) scale(0.95); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); transition-delay: 90ms; }
+.app-shell.is-sidebar-open ~ .sidebar-dock { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0) scale(1); transition: opacity 420ms var(--motion-standard), transform 560ms var(--motion-emphasized); transition-delay: 140ms; }
 html.sidebar-memory-collapsed .app-shell { --sidebar-toggle-x: 0px; }
 html.sidebar-memory-collapsed .app-shell .sidebar { margin-left: -326px; opacity: 0; transform: scale(0.95); pointer-events: none; }
-html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) scale(0.95); }
+html.sidebar-memory-collapsed .app-shell ~ .sidebar-dock { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px) scale(0.95); transition-delay: 90ms; }
 .workspace { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 body.is-page-navigating .sidebar {
 	transition-duration: 360ms;

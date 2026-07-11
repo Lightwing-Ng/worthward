@@ -1,4 +1,4 @@
-/* Code version: v1.17.0 */
+/* Code version: v1.20.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -314,16 +314,48 @@
 }
 
 .investment-history-side-filter-header {
-    padding: 2px 1px;
-    vertical-align: middle;
+    position: relative;
+    padding: var(--scrollable-data-table-header-padding);
+    vertical-align: top;
     color: var(--scrollable-data-table-header-color);
     pointer-events: auto;
+}
+
+.investment-side-filter-default-label {
+    position: static;
+    display: block;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 160ms var(--motion-standard);
 }
 
 .investment-side-filter-field,
 .investment-side-filter-row {
     width: 100%;
     margin: 0;
+}
+
+.investment-side-filter-field {
+    position: absolute;
+    inset: 2px 1px;
+    opacity: 0;
+    transition: opacity 160ms var(--motion-standard);
+}
+
+.investment-history-side-filter-header:hover .investment-side-filter-field,
+.investment-history-side-filter-header:focus-within .investment-side-filter-field,
+.investment-history-side-filter-header:has(.investment-side-filter-field.is-open) .investment-side-filter-field {
+    opacity: 1;
+}
+
+.investment-history-side-filter-header:hover .investment-side-filter-default-label,
+.investment-history-side-filter-header:focus-within .investment-side-filter-default-label,
+.investment-history-side-filter-header:has(.investment-side-filter-field.is-open) .investment-side-filter-default-label {
+    opacity: 0;
 }
 
 .investment-side-filter-trigger.form-select {
@@ -2412,6 +2444,7 @@
 }
 
 .scrollable-data-table-visual-overlay {
+    display: none;
     position: absolute;
     inset-block-start: 0;
     inset-inline: 0;
@@ -2449,11 +2482,11 @@
     z-index: calc(var(--layer-surface-content) + 1);
     pointer-events: none;
     border-radius: 10px 10px 0 0;
-    background: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 0;
+    background: var(--frosted-glass-extracted-background);
+    box-shadow: var(--frosted-glass-extracted-shadow);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    border: var(--frosted-glass-extracted-border);
     border-bottom: 0;
     overflow: hidden;
     width: 100%;
@@ -3158,6 +3191,14 @@
     z-index: 10001;
 }
 
+#transaction_form_container .investment-import-broker-dropdown {
+    background: var(--apple-frosted-glass-background);
+    border: var(--apple-frosted-glass-border);
+    box-shadow: var(--apple-frosted-glass-shadow);
+    backdrop-filter: var(--apple-frosted-glass-blur);
+    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+}
+
 #transaction_form_container:has(.investment-import-broker-field.is-open) {
     overflow: visible;
 }
@@ -3451,6 +3492,18 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: var(--investment-import-label-row-height);
     max-height: 50px;
     overflow: visible;
+}
+
+.investment-import-label-trigger--single {
+    grid-template-columns: minmax(0, 1fr) var(--settings-round-icon-button-size);
+}
+
+.investment-import-label-trigger--single .investment-import-label-text {
+    grid-column: 1;
+}
+
+.investment-import-label-trigger--single .investment-import-status-icon {
+    grid-column: 2;
 }
 
 .investment-import-label-step {

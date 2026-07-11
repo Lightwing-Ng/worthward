@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.4.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -181,7 +181,7 @@
 .ticker-input-control { position: relative; }
 .ticker-leading-slot { position: absolute; top: 50%; left: 10px; width: 20px; height: 20px; transform: translateY(-50%); display: block; z-index: var(--layer-control-affordance); pointer-events: none; overflow: hidden; border-radius: 50%; }
 .ticker-logo-placeholder, .ticker-input-logo { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ticker-logo-placeholder { display: block; border-radius: inherit; background: var(--control-liquid-background); box-shadow: var(--control-liquid-shadow), inset 0 0 0 1px var(--theme-glass-border); backdrop-filter: var(--control-liquid-blur); -webkit-backdrop-filter: var(--control-liquid-blur); }
+.ticker-logo-placeholder { display: flex; align-items: center; justify-content: center; border-radius: inherit; background: var(--control-liquid-background); color: var(--theme-muted); font-size: 8px; line-height: 1; font-weight: var(--font-weight-bold); letter-spacing: -0.02em; box-shadow: var(--control-liquid-shadow), inset 0 0 0 1px var(--theme-glass-border); backdrop-filter: var(--control-liquid-blur); -webkit-backdrop-filter: var(--control-liquid-blur); }
 .ticker-input-logo {
 	box-sizing: border-box;
 	display: block;

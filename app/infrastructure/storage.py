@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.4.6
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -178,6 +178,25 @@ INVESTMENT_TICKER_LINEAGE: dict[str, tuple[str, ...]] = {
 }
 
 LINEAGE_IDENTITY_PROXY_TICKERS = frozenset({"SPY", "SPY.US"})
+
+# Ordered quote-symbol transitions for the same listed security. The requested
+# symbol remains first so SKHY automatically takes precedence once its stores
+# become available, while SKHYV remains usable during the temporary-symbol era.
+MARKET_TICKER_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "SKHY": ("SKHY", "SKHYV"),
+    "SKHYV": ("SKHYV", "SKHY"),
+}
+
+
+def market_ticker_store_aliases(ticker: str) -> list[str]:
+    normalized_ticker = normalize_ticker(ticker)
+    if not normalized_ticker:
+        return []
+    return list(dict.fromkeys(
+        normalize_ticker(candidate)
+        for candidate in MARKET_TICKER_TRANSITIONS.get(normalized_ticker, (normalized_ticker,))
+        if normalize_ticker(candidate)
+    ))
 
 # Canonical issuer names for tickers that are not yet populated by yfinance or
 # other remote profile providers. Keep ledger symbols unchanged; this only

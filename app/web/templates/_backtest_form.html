@@ -86,6 +86,19 @@
             </span>
         </label>
     </div>
+    {% if current_view == "grid-trading" %}
+    <div class="field grid-trading-parameters-field" data-trade-strategy-field data-grid-trading-parameters>
+        <input type="hidden" name="strategy" value="grid-trading">
+        <input type="hidden" name="workspace" value="grid-trading">
+        <div class="grid-trading-parameters-heading">
+            <span class="grid-trading-parameters-title">Grid parameters</span>
+            <span class="grid-trading-parameters-copy">Configure the rolling center and asymmetric buy/sell grid levels.</span>
+        </div>
+        <div class="grid-trading-parameters-panel" role="group" aria-label="Grid Trading parameters">
+            {% include "_trade_strategy_params_panel.html" %}
+        </div>
+    </div>
+    {% else %}
     <div class="field trade-strategy-field" data-trade-strategy-field>
         <label for="trade_strategy">{{ labels.backtest_strategy }}</label>
         <div class="trade-strategy-row">
@@ -139,4 +152,5 @@
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>
+    {% endif %}
 </form>

@@ -1,7 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.61.31
+ * Code version: v1.64.1
+ * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
+ * - Changed: Investment Type headers now show the legacy Type label by default and reveal the current side filter only on hover, focus, or open interaction.
+ * - Added: HSBC statement mode now accepts matched composite and investment PDF batches and refreshes from the committed store version before reporting success.
+ * - Fixed: Fixed table headers and holdings summaries render Frosted Glass extracted directly on their interactive header table, matching the pre-refactor material hierarchy.
  * - Fixed: Broker filter controls in extracted investment table headers now receive pointer input and portal their dropdowns outside clipped Frosted glass table layers.
  * - Fixed: Investment range segmented controls now scroll the active edge option fully into view when horizontal space is constrained.
  * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
@@ -288,14 +292,15 @@ import {
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
-} from './investment/data-utils.js?v=investment-data-utils-v1.47.7';
+    isCompleteHsbcStatementPdfBundle,
+} from './investment/data-utils.js?v=investment-data-utils-v1.48.0';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.61.31',
+    entry: 'v1.64.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -5744,6 +5749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'All'
             : investmentSideFilter[0].toUpperCase() + investmentSideFilter.slice(1);
         return `
+            <span class="investment-side-filter-default-label" aria-hidden="true">Type</span>
             <div class="field investment-side-filter-field backtest-shared-select-field"
                  data-investment-side-filter data-filter-id="${filterId}">
                 <div class="trade-strategy-row backtest-shared-select-row investment-side-filter-row">
@@ -5751,12 +5757,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger investment-side-filter-trigger"
                             data-investment-side-filter-trigger
                             aria-haspopup="listbox" aria-expanded="false"
-                            aria-label="Side filter: ${selectedLabel}">
+                            aria-label="Type filter: ${selectedLabel}">
                         <span class="trade-strategy-trigger-label" data-investment-side-filter-label>${selectedLabel}</span>
                         <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
                     </button>
                     <div class="trade-strategy-dropdown backtest-shared-select-dropdown investment-side-filter-dropdown"
-                         data-investment-side-filter-dropdown role="listbox" aria-label="Side filter" hidden></div>
+                         data-investment-side-filter-dropdown role="listbox" aria-label="Type filter" hidden></div>
                 </div>
             </div>
         `;
@@ -6308,7 +6314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentImportNote instanceof HTMLElement) {
             investmentImportNote.innerHTML = isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
-                    ? 'Upload one or more HSBC statement PDFs. The import records USD Foreign Currency Savings rows and keeps existing records.'
+                    ? 'Choose matching HSBC composite and investment statements together. File types and monthly pairs are identified automatically.'
                     : 'Paste the HSBC USD Savings, Portfolio, and Order Status pages. Supplementary captures are allowed; duplicate chunks are ignored.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
@@ -6846,7 +6852,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const getOverlayHeader = () => {
             const header = Array.from(tableShell.children).find((child) => (
                 child instanceof HTMLTableElement
-                && child.matches('table[aria-hidden="true"]')
+                && child.matches('[data-table-header], table[aria-hidden="true"]')
             ));
             return header instanceof HTMLElement ? header : null;
         };
@@ -8327,8 +8333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hsbcOrderStatusReady = isHsbcPaste && isLikelyHsbcOrderStatusText(hsbcOrderStatusText);
         const hsbcCashAccountReady = isHsbcPaste && isLikelyHsbcCashAccountText(hsbcCashAccountText);
         const hsbcStatementsReady = isHsbcStatementPdf
-            && hsbcStatementFiles.length > 0
-            && hsbcStatementFiles.every((file) => isLikelyPdfFile(file));
+            && isCompleteHsbcStatementPdfBundle(hsbcStatementFiles, isLikelyPdfFile);
         const futuhkStatementsReady = isFutuhk
             && futuhkStatementFiles.length > 0
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
@@ -8500,7 +8505,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    async function fetchInvestmentData() {
+    async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
         reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'starting transactions fetch', {
             pathname: window.location.pathname,
             search: window.location.search,
@@ -8508,7 +8513,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         let response;
         try {
-            response = await fetch('/api/investment/transactions', buildInvestmentRequestOptions());
+            const expectedVersion = String(expectedStoreVersion || '').trim();
+            const requestUrl = expectedVersion
+                ? `/api/investment/transactions?store_version=${encodeURIComponent(expectedVersion)}`
+                : '/api/investment/transactions';
+            response = await fetch(requestUrl, buildInvestmentRequestOptions());
         } catch (error) {
             reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions fetch failed before response', {
                 pathname: window.location.pathname,
@@ -8533,6 +8542,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 error: data.error || '',
             });
             throw new Error(data.error || `Failed to load investment data: ${response.status}`);
+        }
+        if (
+            String(expectedStoreVersion || '').trim()
+            && String(data.investment_store_version || '').trim() !== String(expectedStoreVersion).trim()
+        ) {
+            throw new Error('The refreshed investment table did not read the committed store version.');
         }
         reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload rendered successfully', {
             transactionCount: Array.isArray(data.transactions) ? data.transactions.length : -1,
@@ -8750,12 +8765,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('hsbc_import_mode', hsbcImportMode);
                 if (hsbcImportMode === 'statement_pdf') {
                     const statementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
-                    if (!statementFiles.length) {
-                        setImportFeedback('Please choose at least one HSBC statement PDF before importing.', 'error');
-                        return;
-                    }
-                    if (!statementFiles.every((file) => isLikelyPdfFile(file))) {
-                        setImportFeedback('Please upload valid HSBC statement PDF files.', 'error');
+                    if (!isCompleteHsbcStatementPdfBundle(statementFiles, isLikelyPdfFile)) {
+                        setImportFeedback('Please choose one matching HSBC composite and investment statement for each period.', 'error');
                         return;
                     }
                     statementFiles.forEach((file) => {
@@ -8849,31 +8860,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? `Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.map((ticker) => formatInvestmentTickerForDisplay(ticker)).join(', ')}.`
                         : '';
                     const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
-                    if (selectedBroker === 'ibkr') {
-                        setImportFeedback(
-                            buildIbkrImportFeedbackMessage({
-                                importSummary: result.summary,
-                                refreshNotice,
-                                valuationNotice: '',
-                                pendingTransferCount,
-                            }),
-                            'success',
-                            { allowHtml: true }
-                        );
-                    } else {
-                        setImportFeedback(
-                            `${result.message || 'Import complete.'}${refreshNotice ? ` ${refreshNotice}` : ''}`,
-                            'success'
-                        );
-                    }
                     closeInvestmentImportForm();
+                    setImportFeedback('Import committed. Refreshing the transaction table…', 'loading');
                     try {
-                        const { valuationStatus } = await fetchInvestmentData();
+                        const { valuationStatus } = await fetchInvestmentData({
+                            expectedStoreVersion: result.investment_store_version,
+                        });
                         const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
                         if (valuationNotice) {
                             setImportFeedback(
                                 `${result.message || 'Import complete.'} ${valuationNotice}`,
                                 'warning'
+                            );
+                        } else if (selectedBroker === 'ibkr') {
+                            setImportFeedback(
+                                buildIbkrImportFeedbackMessage({
+                                    importSummary: result.summary,
+                                    refreshNotice,
+                                    valuationNotice: '',
+                                    pendingTransferCount,
+                                }),
+                                'success',
+                                { allowHtml: true }
+                            );
+                        } else {
+                            setImportFeedback(
+                                `${result.message || 'Import complete.'}${refreshNotice ? ` ${refreshNotice}` : ''}`,
+                                'success'
                             );
                         }
                     } catch (error) {
@@ -10421,7 +10434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <th aria-label="Broker">${renderInvestmentBrokerFilterHeaderInnerMarkup('investment_stock_details_broker_filter')}</th>
                             <th>No.</th>
                             <th>Time</th>
-                            <th aria-label="Side"></th>
+                            <th aria-label="Side">Type</th>
                             <th>Description</th>
                             <th>Currency</th>
                             <th>Amount</th>

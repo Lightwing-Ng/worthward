@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.20
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -442,6 +442,38 @@ def _align_intraday_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> lis
     return aligned_datasets
 
 
+def _align_us_intraday_datasets_on_full_sessions(
+        datasets: list[pd.DataFrame],
+        trading_days: list[object] | None = None,
+) -> list[pd.DataFrame]:
+    if not datasets:
+        return []
+    selected_days = sorted({
+        pd.Timestamp(day).date()
+        for day in (
+            trading_days
+            if trading_days is not None
+            else [value for dataset in datasets for value in dataset["Date"].dt.date.tolist()]
+        )
+    })
+    if not selected_days:
+        raise ValueError("The selected tickers do not have intraday comparison data.")
+    full_axis = pd.DatetimeIndex([
+        timestamp
+        for day in selected_days
+        for timestamp in pd.date_range(
+            f"{day.isoformat()} 09:30",
+            f"{day.isoformat()} 15:59",
+            freq="1min",
+        )
+    ], name="Date")
+    aligned_datasets: list[pd.DataFrame] = []
+    for dataset in datasets:
+        indexed = dataset.drop_duplicates(subset=["Date"], keep="last").set_index("Date").sort_index()
+        aligned_datasets.append(indexed.reindex(full_axis).reset_index())
+    return aligned_datasets
+
+
 def latest_common_complete_intraday_trading_day(
         datasets: list[pd.DataFrame],
         reference_end_date: pd.Timestamp | None = None,
@@ -451,17 +483,34 @@ def latest_common_complete_intraday_trading_day(
         raise ValueError("At least one dataset is required.")
 
     common_days: set[object] | None = None
+    common_observed_days: set[object] | None = None
     ticker_values = tickers or [None] * len(datasets)
     for index, dataset in enumerate(datasets):
         bounded_dataset = dataset.copy()
         if reference_end_date is not None:
             bounded_dataset = bounded_dataset[bounded_dataset["Date"] <= pd.Timestamp(reference_end_date)].copy()
-        complete_days = _complete_intraday_trading_days(bounded_dataset, ticker_values[index] if index < len(ticker_values) else None)
+        ticker = ticker_values[index] if index < len(ticker_values) else None
+        complete_days = _complete_intraday_trading_days(bounded_dataset, ticker)
         common_days = complete_days if common_days is None else common_days & complete_days
+        observed_days = {
+            _timestamp_as_market_local(value, ticker).date()
+            for value in bounded_dataset["Date"].tolist()
+        }
+        common_observed_days = (
+            observed_days
+            if common_observed_days is None
+            else common_observed_days & observed_days
+        )
 
-    if not common_days:
-        raise ValueError("The selected tickers do not share a complete intraday trading day.")
-    return max(common_days)
+    if common_days:
+        return max(common_days)
+    if common_observed_days:
+        # A newly listed security can legitimately start after the opening
+        # bell, so its debut can never satisfy the normal full-session test.
+        # Use the latest shared observed day and preserve the pre-listing
+        # portion as empty data rather than rejecting the comparison.
+        return max(common_observed_days)
+    raise ValueError("The selected tickers do not share an intraday trading day.")
 
 
 def filter_intraday_dataset_to_regular_session(dataset: pd.DataFrame) -> pd.DataFrame:
@@ -496,6 +545,27 @@ def align_many_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd
     return [
         merged[["Date", f"Close_{index}"]].rename(columns={f"Close_{index}": "Close"}).copy()
         for index in range(len(datasets))
+    ]
+
+
+def align_many_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    if not datasets:
+        return []
+    union_dates = sorted({
+        pd.Timestamp(value)
+        for dataset in datasets
+        for value in dataset["Date"].tolist()
+    })
+    if not union_dates:
+        raise ValueError("The selected tickers do not have comparison data.")
+    return [
+        dataset[["Date", "Close"]]
+        .drop_duplicates(subset=["Date"], keep="last")
+        .set_index("Date")
+        .reindex(union_dates)
+        .rename_axis("Date")
+        .reset_index()
+        for dataset in datasets
     ]
 
 
@@ -540,6 +610,8 @@ def align_intraday_datasets_for_compare(
         _market_for_ticker(ticker_values[index] if index < len(ticker_values) else None)
         for index in range(len(datasets))
     }
+    if selected_markets == {"US"}:
+        return _align_us_intraday_datasets_on_full_sessions(datasets)
     if len(selected_markets) <= 1:
         return align_many_intraday_datasets_on_common_dates(datasets)
     return _align_intraday_datasets_on_union_dates(datasets)
@@ -590,6 +662,10 @@ def resolve_effective_period_for_datasets(
     if requested_start >= common_start.normalize():
         return requested_period, None
 
+    earliest_start = min(pd.Timestamp(dataset["Date"].min()) for dataset in datasets).normalize()
+    if earliest_start <= requested_start:
+        return requested_period, None
+
     if available_days <= 0:
         raise ValueError("The selected tickers do not have overlapping trading history.")
 
@@ -628,14 +704,10 @@ def slice_datasets_for_compare_period(
         raise ValueError("At least one dataset is required.")
 
     common_end = pd.Timestamp(reference_end_date)
-    common_start = latest_common_start(datasets).normalize()
-
     if period == "max":
-        effective_start = common_start
-        requested_start = None
+        effective_start = latest_common_start(datasets).normalize()
     else:
-        requested_start = (common_end - PERIOD_OFFSETS[period]).normalize()
-        effective_start = max(requested_start, common_start)
+        effective_start = (common_end - PERIOD_OFFSETS[period]).normalize()
 
     sliced_datasets: list[pd.DataFrame] = []
     for dataset in datasets:
@@ -646,7 +718,9 @@ def slice_datasets_for_compare_period(
         trimmed = bounded_dataset[bounded_dataset["Date"] >= effective_start].copy()
         sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
 
-    return align_many_datasets_on_common_dates(sliced_datasets)
+    if period == "max":
+        return align_many_datasets_on_common_dates(sliced_datasets)
+    return align_many_datasets_on_union_dates(sliced_datasets)
 
 
 def slice_intraday_datasets_for_compare_period(
@@ -744,6 +818,18 @@ def slice_intraday_datasets_for_compare_period(
         sliced_datasets.append(trimmed if not trimmed.empty else bounded_dataset.tail(1).copy())
 
     if all_tickers_are_us:
+        # A newly listed security can begin trading after the opening bell and
+        # has no legitimate bars before its first quote. Preserve the full
+        # comparison axis and leave those pre-listing points empty instead of
+        # collapsing every established constituent to the ADR's first minute.
+        if period != "1d":
+            return _align_us_intraday_datasets_on_full_sessions(
+                sliced_datasets,
+                target_trading_days,
+            )
+        first_dates = [pd.Timestamp(dataset["Date"].min()) for dataset in sliced_datasets if not dataset.empty]
+        if first_dates and len(set(first_dates)) > 1:
+            return _align_intraday_datasets_on_union_dates(sliced_datasets)
         return align_many_intraday_datasets_on_common_dates(sliced_datasets)
     return _align_intraday_datasets_on_union_dates(sliced_datasets)
 
@@ -767,8 +853,10 @@ def build_series_payload(
     close_values = pd.to_numeric(dataset["Close"], errors="coerce")
     normalized_returns = ((close_values / baseline_price) - 1.0) * 100.0
     candlestick_returns = None
+    candlestick_prices = None
     if has_ohlc:
         candlestick_returns = []
+        candlestick_prices = []
         has_volume = "Volume" in dataset.columns
         has_synthetic = "Synthetic" in dataset.columns
         volume_values = dataset["Volume"] if has_volume else [None] * len(dataset)
@@ -785,11 +873,15 @@ def build_series_payload(
             price_values = [open_value, high_value, low_value, close_value]
             if pd.isna(price_values).any():
                 candlestick = {"x": index, "o": None, "h": None, "l": None, "c": None}
+                price_candlestick = {"x": index, "o": None, "h": None, "l": None, "c": None}
                 if has_volume:
                     candlestick["v"] = None
+                    price_candlestick["v"] = None
                 if has_synthetic:
                     candlestick["synthetic"] = is_synthetic
+                    price_candlestick["synthetic"] = is_synthetic
                 candlestick_returns.append(candlestick)
+                candlestick_prices.append(price_candlestick)
                 continue
             volume = float(volume_value) if pd.notna(volume_value) else None
             candlestick = {
@@ -799,11 +891,21 @@ def build_series_payload(
                 "l": round(((float(low_value) / baseline_price) - 1.0) * 100.0, 4),
                 "c": round(((float(close_value) / baseline_price) - 1.0) * 100.0, 4),
             }
+            price_candlestick = {
+                "x": index,
+                "o": round(float(open_value), 4),
+                "h": round(float(high_value), 4),
+                "l": round(float(low_value), 4),
+                "c": round(float(close_value), 4),
+            }
             if has_volume:
                 candlestick["v"] = round(volume, 4) if volume is not None else None
+                price_candlestick["v"] = round(volume, 4) if volume is not None else None
             if has_synthetic:
                 candlestick["synthetic"] = is_synthetic
+                price_candlestick["synthetic"] = is_synthetic
             candlestick_returns.append(candlestick)
+            candlestick_prices.append(price_candlestick)
     return SeriesPayload(
         ticker=ticker.upper(),
         dates=dataset["Date"].map(
@@ -819,6 +921,7 @@ def build_series_payload(
         color=color,
         glow=glow,
         candlestick_returns=candlestick_returns,
+        candlestick_prices=candlestick_prices,
         prices=[
             round(float(value), 4) if pd.notna(value) else None
             for value in close_values.tolist()

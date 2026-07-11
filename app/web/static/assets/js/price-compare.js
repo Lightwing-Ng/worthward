@@ -1,16 +1,18 @@
-/* Code version: v0.2.1 */
+/* Code version: v0.7.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
 	if (!state) return;
 
 	const REFRESH_MS = 45000;
-	const Y_AXIS_WIDTH = 78;
+	const Y_AXIS_WIDTH = 92;
 	const LOGO_SIZE = 20;
 	const RIGHT_GUTTER = 44;
 	const imageCache = new Map();
 	const priceCharts = new Map();
 	let refreshTimer = 0;
+	let liveRequestSerial = 0;
+	let liveRequestController = null;
 	let sharedHoverIndex = -1;
 
 	const currencyForTicker = (ticker) => {
@@ -48,12 +50,40 @@
 		return `${match[3]} ${new Date(Date.UTC(2000, Number(match[2]) - 1, 1)).toLocaleString("en-US", {month: "short", timeZone: "UTC"})}`;
 	};
 
+	const formatXAxisDate = (rawValue) => {
+		const match = String(rawValue || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+		if (!match) return "";
+		const dateParts = {
+			year: Number(match[1]),
+			monthIndex: Number(match[2]) - 1,
+			day: Number(match[3]),
+		};
+		if (typeof bootstrap.dateDisplay?.formatFullDateParts === "function") {
+			return bootstrap.dateDisplay.formatFullDateParts(dateParts);
+		}
+		const month = new Date(Date.UTC(2000, dateParts.monthIndex, 1)).toLocaleString("en-US", {month: "short", timeZone: "UTC"});
+		return `${dateParts.day} ${month} ${dateParts.year}`;
+	};
+
+	const buildIntradayDayGroups = (rawDates) => {
+		const groups = [];
+		rawDates.forEach((value, index) => {
+			const dateKey = String(value || "").slice(0, 10);
+			if (!dateKey) return;
+			const current = groups[groups.length - 1];
+			if (current?.dateKey === dateKey) {
+				current.endIndex = index;
+				return;
+			}
+			groups.push({dateKey, startIndex: index, endIndex: index});
+		});
+		return groups;
+	};
+
 	const formatPrice = (value, currency, showCurrency) => {
 		const numeric = finiteNumber(value);
 		if (numeric === null) return "";
-		const absolute = Math.abs(numeric);
-		const digits = absolute >= 1000 ? 0 : absolute >= 100 ? 1 : 2;
-		const formatted = numeric.toLocaleString("en-US", {minimumFractionDigits: digits, maximumFractionDigits: digits});
+		const formatted = numeric.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 		return showCurrency ? `${currency} ${formatted}` : formatted;
 	};
 
@@ -119,11 +149,20 @@
 	const formatSharedTooltipDate = (value) => {
 		const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
 		if (!match) return String(value || "");
-		const month = new Date(Date.UTC(2000, Number(match[2]) - 1, 1)).toLocaleString("en-US", {month: "short", timeZone: "UTC"});
-		const date = `${Number(match[3])} ${month} ${match[1]}`;
-		return match[4] && `${match[4]}:${match[5]}` !== "00:00"
-			? `${date} · ${match[4]}:${match[5]} New York`
-			: date;
+		const convertedParts = bootstrap.dateDisplay?.convertNewYorkWallTimeParts?.(value, "Asia/Hong_Kong");
+		const dateParts = convertedParts || {
+			year: Number(match[1]),
+			monthIndex: Number(match[2]) - 1,
+			day: Number(match[3]),
+		};
+		const month = new Date(Date.UTC(2000, dateParts.monthIndex, 1)).toLocaleString("en-US", {month: "short", timeZone: "UTC"});
+		const date = typeof bootstrap.dateDisplay?.formatFullDateParts === "function"
+			? bootstrap.dateDisplay.formatFullDateParts(dateParts)
+			: `${dateParts.day} ${month} ${dateParts.year}`;
+		const dateMarkup = `<span class="chart-tooltip-primary-date">${escapeTooltipHtml(date)}</span>`;
+		if (!convertedParts) return dateMarkup;
+		const time = `${String(convertedParts.hours).padStart(2, "0")}:${String(convertedParts.minutes).padStart(2, "0")} HKT`;
+		return `${dateMarkup}<span class="chart-tooltip-market-times"><span class="chart-tooltip-market-time">${time}</span></span>`;
 	};
 
 	const getOrCreateSharedTooltip = () => {
@@ -166,7 +205,7 @@
 		const rawDate = rawDates[dataIndex] || fallbackDates[dataIndex] || "";
 		const dateElement = tooltip.querySelector(".chart-tooltip-date");
 		const listElement = tooltip.querySelector(".chart-tooltip-list");
-		if (dateElement) dateElement.textContent = formatSharedTooltipDate(rawDate);
+		if (dateElement) dateElement.innerHTML = formatSharedTooltipDate(rawDate);
 		if (listElement) {
 			listElement.innerHTML = series.map((item, index) => {
 				const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
@@ -215,6 +254,7 @@
 
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			const index = Number.parseInt(canvas.dataset.seriesIndex || "", 10);
+			const isBottomSubplot = index === series.length - 1;
 			const item = series[index];
 			if (!item) return;
 			const prices = Array.isArray(item.prices) ? item.prices.map(finiteNumber) : [];
@@ -227,7 +267,36 @@
 			const lastPrice = prices[lastIndex];
 			const currency = currencies[index];
 			const intraday = rawDates.some((value) => /[ T]\d{2}:\d{2}$/.test(String(value)) && !/[ T]00:00$/.test(String(value)));
+			const intradayDayGroups = intraday ? buildIntradayDayGroups(rawDates) : [];
+			const isShortMultiDayRange = intradayDayGroups.length >= 2 && intradayDayGroups.length <= 5;
+			const dayLabelByIndex = new Map(isShortMultiDayRange
+				? intradayDayGroups.map((group) => [
+					Math.floor((group.startIndex + group.endIndex) / 2),
+					formatXAxisDate(rawDates[group.startIndex]),
+				])
+				: []);
 			const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
+			const seriesColor = item.color || theme.accent;
+			const requestedPeriod = new URLSearchParams(window.location.search).get("period")?.toLowerCase() || "";
+			const priceCandles = Array.isArray(item.candlestick_prices) ? item.candlestick_prices : [];
+			const hasOneDayCandlesticks = requestedPeriod === "1d"
+				&& priceCandles.length === labels.length
+				&& priceCandles.some((candle) => (
+					candle?.synthetic !== true
+					&& [candle?.o, candle?.h, candle?.l, candle?.c].every((value) => finiteNumber(value) !== null)
+				));
+			const candlePriceValues = hasOneDayCandlesticks
+				? priceCandles.flatMap((candle) => [candle?.l, candle?.h]).map(finiteNumber).filter((value) => value !== null)
+				: [];
+			const candlePriceMin = candlePriceValues.length ? Math.min(...candlePriceValues) : null;
+			const candlePriceMax = candlePriceValues.length ? Math.max(...candlePriceValues) : null;
+			const candlePricePadding = candlePriceMin !== null && candlePriceMax !== null
+				? Math.max((candlePriceMax - candlePriceMin) * 0.06, Math.abs(candlePriceMax) * 0.001)
+				: 0;
+			canvas.dataset.chartRenderMode = hasOneDayCandlesticks ? "candlestick" : "line";
+			canvas.dataset.seriesColor = seriesColor;
+			canvas.dataset.tradingDayCount = String(intradayDayGroups.length);
+			canvas.dataset.tradingDaySeparators = String(isShortMultiDayRange ? intradayDayGroups.length - 1 : 0);
 
 			const fixedScaleWidthPlugin = {
 				id: `priceFixedScaleWidth${index}`,
@@ -270,6 +339,71 @@
 					chart.ctx.restore();
 				},
 			};
+			const multiDaySessionDividerPlugin = {
+				id: `priceMultiDaySessionDivider${index}`,
+				beforeDatasetsDraw(chart) {
+					if (!isShortMultiDayRange || !chart.chartArea || !chart.scales?.x) return;
+					chart.ctx.save();
+					chart.ctx.strokeStyle = theme.muted;
+					chart.ctx.globalAlpha = 0.22;
+					chart.ctx.lineWidth = 1;
+					intradayDayGroups.slice(1).forEach((group) => {
+						const previousX = chart.scales.x.getPixelForValue(group.startIndex - 1);
+						const currentX = chart.scales.x.getPixelForValue(group.startIndex);
+						const x = (previousX + currentX) / 2;
+						if (!Number.isFinite(x)) return;
+						chart.ctx.beginPath();
+						chart.ctx.moveTo(x, chart.chartArea.top);
+						chart.ctx.lineTo(x, chart.chartArea.bottom);
+						chart.ctx.stroke();
+					});
+					chart.ctx.restore();
+				},
+			};
+			const oneDayPriceCandlestickPlugin = {
+				id: `oneDayPriceCandlestick${index}`,
+				afterDatasetsDraw(chart) {
+					if (!hasOneDayCandlesticks || !chart.chartArea || !chart.scales?.x || !chart.scales?.y) return;
+					const validCandleCount = priceCandles.filter((candle) => (
+						candle?.synthetic !== true
+						&& [candle?.o, candle?.h, candle?.l, candle?.c].every((value) => finiteNumber(value) !== null)
+					)).length;
+					const slotWidth = chart.chartArea.width / Math.max(validCandleCount, 1);
+					const candleWidth = Math.max(0.7, Math.min(slotWidth * 0.68, 5));
+					const hairlineWidth = Math.max(0.5, 1 / Math.max(window.devicePixelRatio || 1, 1));
+					priceCandles.forEach((candle, candleIndex) => {
+						const open = finiteNumber(candle?.o);
+						const high = finiteNumber(candle?.h);
+						const low = finiteNumber(candle?.l);
+						const close = finiteNumber(candle?.c);
+						const volume = finiteNumber(candle?.v);
+						if (candle?.synthetic === true || (volume !== null && volume <= 0)) return;
+						if ([open, high, low, close].some((value) => value === null)) return;
+						const x = chart.scales.x.getPixelForValue(candleIndex);
+						const highY = chart.scales.y.getPixelForValue(high);
+						const lowY = chart.scales.y.getPixelForValue(low);
+						const openY = chart.scales.y.getPixelForValue(open);
+						const closeY = chart.scales.y.getPixelForValue(close);
+						if (![x, highY, lowY, openY, closeY].every(Number.isFinite)) return;
+						const bodyTop = Math.min(openY, closeY);
+						const bodyHeight = Math.max(hairlineWidth, Math.abs(closeY - openY));
+						chart.ctx.save();
+						chart.ctx.strokeStyle = seriesColor;
+						chart.ctx.fillStyle = seriesColor;
+						chart.ctx.lineWidth = hairlineWidth;
+						chart.ctx.globalAlpha = 0.82;
+						chart.ctx.beginPath();
+						chart.ctx.moveTo(x, highY);
+						chart.ctx.lineTo(x, lowY);
+						chart.ctx.stroke();
+						chart.ctx.globalAlpha = 0.28;
+						chart.ctx.fillRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
+						chart.ctx.globalAlpha = 0.82;
+						chart.ctx.strokeRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
+						chart.ctx.restore();
+					});
+				},
+			};
 
 			const chart = new Chart(canvas, {
 				type: "line",
@@ -278,21 +412,22 @@
 					datasets: [{
 						label: item.ticker,
 						data: prices,
-						borderColor: item.color || theme.accent,
+						borderColor: seriesColor,
 						borderWidth: 1.5,
 						pointRadius: 0,
 						pointHitRadius: 12,
 						pointHoverRadius: 3,
+						showLine: !hasOneDayCandlesticks,
 						tension: 0,
 						spanGaps: false,
 						segment: {
 							borderColor(context) {
-								if (!intraday) return item.color || theme.accent;
+								if (!intraday) return seriesColor;
 								const left = parseRawMinute(rawDates[context.p0DataIndex]);
 								const right = parseRawMinute(rawDates[context.p1DataIndex]);
 								return Number.isFinite(left) && Number.isFinite(right) && right - left > 5
 									? "transparent"
-									: item.color || theme.accent;
+									: seriesColor;
 							},
 						},
 					}],
@@ -321,20 +456,24 @@
 					},
 					scales: {
 						x: {
+							display: isBottomSubplot,
 							grid: {display: false},
 							border: {display: false},
 							ticks: {
 								autoSkip: false,
 								maxRotation: 0,
 								color: theme.muted,
-								callback(_value, tickIndex) {
-									return tickIndex === firstIndex || tickIndex === lastIndex
+							callback(_value, tickIndex) {
+								if (isShortMultiDayRange) return dayLabelByIndex.get(tickIndex) || "";
+								return tickIndex === firstIndex || tickIndex === lastIndex
 										? formatXAxisValue(rawDates[tickIndex], intraday)
 										: "";
 								},
 							},
 						},
 						y: {
+							suggestedMin: candlePriceMin === null ? undefined : candlePriceMin - candlePricePadding,
+							suggestedMax: candlePriceMax === null ? undefined : candlePriceMax + candlePricePadding,
 							grid: {display: false},
 							border: {display: false},
 							ticks: {
@@ -345,7 +484,7 @@
 						},
 					},
 				},
-				plugins: [fixedScaleWidthPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
+				plugins: [fixedScaleWidthPlugin, multiDaySessionDividerPlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
 			});
 			priceCharts.set(index, chart);
 			canvas.onmouseleave = hideSharedHover;
@@ -367,20 +506,43 @@
 		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || pageParams.get("trading_date") || "");
 		if (pageParams.get("extended_hours") === "1") params.set("extended_hours", "1");
 		params.set("refresh", "1");
+		const requestFingerprint = `${window.location.pathname}?${pageParams.toString()}`;
+		const requestSerial = ++liveRequestSerial;
+		liveRequestController?.abort();
+		const requestController = new AbortController();
+		liveRequestController = requestController;
 		try {
-			const response = await fetch(`${state.endpoints.compareLive}?${params.toString()}`, {headers: {Accept: "application/json"}});
+			const response = await fetch(`${state.endpoints.compareLive}?${params.toString()}`, {
+				headers: {Accept: "application/json"},
+				signal: requestController.signal,
+			});
 			const payload = await response.json();
+			const currentParams = new URLSearchParams(window.location.search);
+			const currentFingerprint = `${window.location.pathname}?${currentParams.toString()}`;
+			if (requestSerial !== liveRequestSerial || requestFingerprint !== currentFingerprint) return;
 			if (!response.ok || !payload.success || !Array.isArray(payload.series)) return;
+			const hasLivePrice = payload.series.some((item) => (
+				Array.isArray(item?.prices)
+				&& item.prices.some((value) => finiteNumber(value) !== null)
+			));
+			if (!hasLivePrice) return;
 			state.chart.series = payload.series;
 			renderPriceSubplots();
 		} catch (_error) {
+		} finally {
+			if (liveRequestController === requestController) liveRequestController = null;
 		}
 	};
 
 	bootstrap.initPriceCompareWorkspace = () => {
+		liveRequestSerial += 1;
+		liveRequestController?.abort();
+		liveRequestController = null;
 		renderPriceSubplots();
 		if (!refreshTimer) refreshTimer = window.setInterval(refreshLivePrices, REFRESH_MS);
 	};
+	bootstrap.refreshPriceCompareLive = refreshLivePrices;
+	bootstrap.formatPriceSharedTooltipDate = formatSharedTooltipDate;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);
 		destroyPriceCharts();

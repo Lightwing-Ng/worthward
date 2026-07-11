@@ -1,4 +1,40 @@
-/* Code version: v3.25.0 */
+/* Code version: v3.26.0 */
+
+.grid-trading-parameters-field {
+    display: grid;
+    gap: 8px;
+}
+
+.grid-trading-parameters-heading {
+    display: grid;
+    gap: 3px;
+}
+
+.grid-trading-parameters-title {
+    color: var(--text);
+    font-size: var(--font-form-label);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+}
+
+.grid-trading-parameters-copy {
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
+}
+
+.grid-trading-parameters-panel {
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-soft);
+    background: var(--glass-surface-background-soft);
+    border: var(--glass-surface-border);
+}
+
+.grid-trading-parameters-panel .trade-strategy-params-grid {
+    max-height: none;
+    overflow: visible;
+}
 .trade-sidebar-card {
     padding: 12px 12px 10px;
     background: var(--glass-surface-background);

@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.1.1
+Code version: v1.2.1
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_JS = ROOT / "app/web/static/assets/js/app.js"
 SETTINGS_JS = ROOT / "app/web/static/assets/js/settings.js"
 SHELL_CSS = ROOT / "app/web/static/assets/css/layout/shell.css"
+RESPONSIVE_CSS = ROOT / "app/web/static/assets/css/utilities/responsive.css"
 
 
 def _slice_between(html: str, start_marker: str, end_marker: str) -> str:
@@ -99,6 +100,43 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.client = create_app().test_client()
+
+    def test_overlay_sidebar_dock_and_backtest_height_contracts(self) -> None:
+        responsive_source = RESPONSIVE_CSS.read_text(encoding="utf-8")
+        app_source = APP_JS.read_text(encoding="utf-8")
+        shell_source = SHELL_CSS.read_text(encoding="utf-8")
+
+        collapsed_dock_rule = responsive_source.split(
+            ".app-shell.is-sidebar-collapsed ~ .sidebar-dock {",
+            1,
+        )[1].split("}", 1)[0]
+        backtest_surface_rule = responsive_source.split(
+            ".chart-surface.backtest-surface {",
+            1,
+        )[1].split("}", 1)[0]
+        bottom_pad_logic = app_source.split(
+            "const syncMobilePageBottomPadMetrics = (page) => {",
+            1,
+        )[1].split("const syncMobilePageBottomPadding", 1)[0]
+
+        self.assertIn("opacity: 0", collapsed_dock_rule)
+        self.assertIn("pointer-events: none", collapsed_dock_rule)
+        self.assertIn("flex: 1 1 auto", backtest_surface_rule)
+        self.assertIn("const endBottomPad = scrollBottomPad", bottom_pad_logic)
+        self.assertNotIn("dockClearance", bottom_pad_logic)
+
+        collapsed_motion = shell_source.split(
+            ".app-shell.is-sidebar-collapsed ~ .sidebar-dock {",
+            1,
+        )[1].split("}", 1)[0]
+        open_motion = shell_source.split(
+            ".app-shell.is-sidebar-open ~ .sidebar-dock {",
+            1,
+        )[1].split("}", 1)[0]
+        self.assertIn("translateY(8px)", collapsed_motion)
+        self.assertIn("transition-delay: 90ms", collapsed_motion)
+        self.assertIn("translateY(0)", open_motion)
+        self.assertIn("transition-delay: 140ms", open_motion)
 
     def _assert_workspace_contract(self, html: str, *, control_class: str) -> None:
         sidebar_html = _slice_between(

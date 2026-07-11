@@ -1,4 +1,4 @@
-{# Code version: v1.6.0 #}
+{# Code version: v1.8.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -595,8 +595,7 @@
                                 <div data-hsbc-import-mode-panel="statement_pdf" hidden>
                                     <div class="investment-import-field investment-import-bridge-field investment-import-plain-field">
                                         <label class="trade-strategy-param-label" for="hsbc_statement_pdfs">
-                                            <span class="investment-import-label-trigger">
-                                                <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-trigger investment-import-label-trigger--single">
                                                 <span class="investment-import-label-text">HSBC statement PDFs</span>
                                                 <span class="investment-import-status-icon" id="hsbc_statement_pdfs_status" aria-hidden="true"></span>
                                             </span>
@@ -656,7 +655,7 @@
                         <th aria-label="Broker"></th>
                         <th>No.</th>
                         <th>Time</th>
-                        <th aria-label="Side"></th>
+                        <th aria-label="Side">Type</th>
                         <th>Description</th>
                         <th>Currency</th>
                         <th>Amount</th>
@@ -698,5 +697,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.61.31') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.64.1') }}"></script>
 {% endblock %}

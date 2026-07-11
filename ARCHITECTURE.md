@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.4.0`
 
 ## Runtime flow
 
@@ -46,6 +46,8 @@ Settings             /settings/<section>
 
 Older `/compare`, `/portfolio`, `/backtest`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects.
 
+Backtest and Grid Trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid Trading locks strategy execution to `grid-trading` and owns its parameter surface.
+
 ## Data ownership
 
 - `market_store/`: cached price histories, profiles, and logos.
@@ -59,6 +61,7 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - Broker imports are incremental and must remain idempotent.
 - Authoritative broker position snapshots reconcile synthesized grant quantities.
 - HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
+- HSBC monthly PDF imports accept one unordered file bundle, classify composite and investment statements from extracted content, and require a matched pair for every end date. Investment rows own security identity; composite rows own cash reconciliation, and historical statement snapshots cannot supersede a newer live paste snapshot.
 - `.US` broker aliases normalize to the bare US ticker while preserving lineage aliases where required.
 - Live-order APIs remain locked unless the server has a strong access token and the request presents it.
 

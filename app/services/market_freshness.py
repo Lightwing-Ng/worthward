@@ -1,7 +1,7 @@
 """
 Reusable market freshness helpers.
 
-Code version: v0.3.1
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.infrastructure.broker_market_data import is_one_minute_store_fresh
-from app.infrastructure.storage import investment_ticker_store_aliases, normalize_ticker
+from app.infrastructure.storage import investment_ticker_store_aliases, market_ticker_store_aliases, normalize_ticker
 from app.services.market_data import ensure_fresh_history_store, refresh_one_minute_store
 
 _NON_MARKET_TICKER_TYPES = {"forex_trade", "forex_trade_component", "fx_translation_pnl"}
@@ -23,9 +23,15 @@ def ensure_latest_daily_caches(tickers: list[str]) -> list[str]:
     """
     failed_tickers: list[str] = []
     for ticker in tickers:
-        try:
-            ensure_fresh_history_store(ticker)
-        except (ImportError, OSError, ValueError, KeyError, TypeError):
+        refreshed = False
+        for candidate in market_ticker_store_aliases(ticker):
+            try:
+                ensure_fresh_history_store(candidate)
+                refreshed = True
+                break
+            except (ImportError, OSError, ValueError, KeyError, TypeError):
+                continue
+        if not refreshed:
             failed_tickers.append(ticker)
     return failed_tickers
 

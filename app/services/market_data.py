@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.5.6
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from app.infrastructure.storage import (
     ensure_market_store_dir,
     history_store_path_for,
     intraday_history_store_path_for,
+    market_ticker_store_aliases,
     market_store_file_lock,
     normalize_ticker,
     write_parquet_atomic,
@@ -880,7 +881,15 @@ def fetch_history(
     normalized_ticker = normalize_ticker(ticker)
     normalized_interval = normalize_market_interval(interval)
     ensure_market_store_dir()
-    path = history_store_path_for_interval(normalized_ticker, normalized_interval)
+    path = next(
+        (
+            candidate_path
+            for candidate in market_ticker_store_aliases(normalized_ticker)
+            if (candidate_path := history_store_path_for_interval(candidate, normalized_interval)).exists()
+            and candidate_path.stat().st_size > 0
+        ),
+        history_store_path_for_interval(normalized_ticker, normalized_interval),
+    )
     if path.exists():
         should_refresh_for_dividends = False
         with market_store_file_lock(path):

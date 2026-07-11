@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.7.0
+Code version: v0.7.2
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ from app.services.dca import simulate_recurring_investment
 from app.services.investment_import import (
     build_investment_payload_from_futuhk_statement_pdfs,
     build_investment_payload_from_hsbc_pasted_text,
-    build_investment_payload_from_hsbc_statement_pdfs,
+    build_investment_payload_from_hsbc_statement_bundle,
     build_investment_payload_from_ibkr_csvs,
     build_investment_payload_from_ibkr_flex,
     build_investment_payload_from_ibkr_gainskeeper_files,
@@ -218,6 +218,7 @@ from app.infrastructure.storage import (
     list_historical_tickers,
     load_investment_store_payload,
     load_profile_record,
+    market_ticker_store_aliases,
     market_store_file_lock,
     investment_ticker_identity_store_aliases,
     investment_ticker_lineage_payload,
@@ -744,6 +745,50 @@ def build_web_runtime() -> WebRuntime:
         invalidate_investment_transactions_cache()
 
     def merge_and_write_investment_payload(imported_payload: dict[str, Any]) -> dict[str, Any]:
+        def is_test_account_identifier(value: object) -> bool:
+            normalized = re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+            return normalized.endswith("TEST") or normalized.endswith("E2E")
+
+        imported_broker = str(imported_payload.get("broker") or "").strip().lower()
+        imported_records = [
+            record
+            for record in imported_payload.get("transactions", [])
+            if isinstance(record, dict)
+        ]
+        has_test_account = imported_broker == "ibkr" and (
+            is_test_account_identifier(imported_payload.get("account"))
+            or any(
+                is_test_account_identifier(record.get("account"))
+                or is_test_account_identifier(
+                    record.get("source", {}).get("account")
+                    if isinstance(record.get("source"), dict)
+                    else ""
+                )
+                for record in imported_records
+            )
+        )
+        if has_test_account:
+            raise ValueError(
+                "Refusing to persist an IBKR test-fixture account into the investment store."
+            )
+
+        def commit_signature(record: dict[str, Any]) -> tuple[str, ...]:
+            source = record.get("source") if isinstance(record.get("source"), dict) else {}
+            return (
+                str(record.get("broker") or imported_payload.get("broker") or "").strip().lower(),
+                str(record.get("account") or imported_payload.get("account") or "").strip(),
+                str(record.get("date") or "").strip(),
+                str(record.get("type") or "").strip().lower(),
+                str(record.get("ticker") or "").strip().upper(),
+                str(record.get("net_amount_raw") or "").strip(),
+                str(
+                    source.get("statement_order_id")
+                    or source.get("corporate_action_reference")
+                    or source.get("reference_id")
+                    or ""
+                ).strip(),
+            )
+
         def merge_payload(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, Any]]:
             investment_payload = merge_investment_payloads(
                 normalize_investment_payload_tickers(current_payload),
@@ -757,7 +802,26 @@ def build_web_runtime() -> WebRuntime:
             update_investment_store_payload(merge_payload, INVESTMENT_STORE_PATH),
         )
         invalidate_investment_transactions_cache()
-        return investment_payload
+        persisted_payload = load_normalized_investment_payload()
+        expected_signatures = {
+            commit_signature(record)
+            for record in imported_payload.get("transactions", [])
+            if isinstance(record, dict)
+        }
+        persisted_signatures = {
+            commit_signature(record)
+            for record in persisted_payload.get("transactions", [])
+            if isinstance(record, dict)
+        }
+        missing_signatures = expected_signatures - persisted_signatures
+        if missing_signatures:
+            raise RuntimeError(
+                "Investment import did not survive the authoritative store readback; "
+                f"{len(missing_signatures)} imported record(s) are missing."
+            )
+        if len(persisted_payload.get("transactions", [])) != len(investment_payload.get("transactions", [])):
+            raise RuntimeError("Investment import store readback returned an unexpected transaction count.")
+        return persisted_payload
 
     def refresh_investment_import_price_caches(
         imported_payload: dict[str, Any],
@@ -770,6 +834,31 @@ def build_web_runtime() -> WebRuntime:
             )
         except Exception as exc:
             return [f"Price cache refresh failed after import: {exc}"]
+
+    def load_local_investment_dividend_actions(
+        tickers: set[str],
+    ) -> dict[str, list[dict[str, str]]]:
+        actions: dict[str, list[dict[str, str]]] = {}
+        for ticker in sorted(tickers):
+            path = history_store_path_for(ticker)
+            if not path.exists():
+                continue
+            try:
+                dataset = pd.read_parquet(path, columns=["Date", "Dividends"])
+            except Exception:
+                continue
+            dividend_values = pd.to_numeric(dataset["Dividends"], errors="coerce").fillna(0.0)
+            ticker_actions = [
+                {
+                    "date": pd.Timestamp(row_date).date().isoformat(),
+                    "dividend_per_share": str(dividend_value),
+                }
+                for row_date, dividend_value in zip(dataset["Date"], dividend_values)
+                if float(dividend_value) > 0
+            ]
+            if ticker_actions:
+                actions[ticker] = ticker_actions
+        return actions
 
     def refresh_investment_open_tickers_in_background(tickers: list[str]) -> None:
         if not investment_daily_refresh_lock.acquire(blocking=False):
@@ -1465,10 +1554,26 @@ def build_web_runtime() -> WebRuntime:
         return dataset[market_dates.isin(selected_dates)].copy()
 
     def load_local_compare_one_day_intraday_dataset(ticker: str) -> pd.DataFrame:
-        path = intraday_history_store_path_for(ticker, "1m")
+        path = next(
+            (
+                candidate_path
+                for candidate in market_ticker_store_aliases(ticker)
+                if (candidate_path := intraday_history_store_path_for(candidate, "1m")).exists()
+                and candidate_path.stat().st_size > 0
+            ),
+            intraday_history_store_path_for(ticker, "1m"),
+        )
         if not path.exists() or path.stat().st_size == 0:
             refresh_one_minute_store(ticker)
-            path = intraday_history_store_path_for(ticker, "1m")
+            path = next(
+                (
+                    candidate_path
+                    for candidate in market_ticker_store_aliases(ticker)
+                    if (candidate_path := intraday_history_store_path_for(candidate, "1m")).exists()
+                    and candidate_path.stat().st_size > 0
+                ),
+                intraday_history_store_path_for(ticker, "1m"),
+            )
         if not path.exists() or path.stat().st_size == 0:
             raise ValueError(f"Local 1-minute market data for {ticker} is unavailable.")
         with market_store_file_lock(path):
@@ -1723,6 +1828,10 @@ def build_web_runtime() -> WebRuntime:
             color=color,
             glow=False,
             candlestick_returns=[
+                {"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": True}
+                for index, _value in enumerate(reference_dates)
+            ],
+            candlestick_prices=[
                 {"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": True}
                 for index, _value in enumerate(reference_dates)
             ],
@@ -2018,12 +2127,20 @@ def build_web_runtime() -> WebRuntime:
             trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
 
         strategy_options = list_enabled_strategies()
+        is_grid_workspace = (
+            request.path == VIEW_PATHS["grid-trading"]
+            or request.args.get("workspace", "").strip().lower() == "grid-trading"
+        )
         default_strategy_id = (
             "grid-trading"
-            if request.path == VIEW_PATHS["grid-trading"]
+            if is_grid_workspace
             else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
         )
-        selected_strategy_id = request.args.get("strategy", default_strategy_id).strip()
+        selected_strategy_id = (
+            "grid-trading"
+            if is_grid_workspace
+            else request.args.get("strategy", default_strategy_id).strip()
+        )
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
@@ -3502,6 +3619,14 @@ def build_web_runtime() -> WebRuntime:
                 return pd.Series(dtype="datetime64[ns]")
         return merged["Date"].reset_index(drop=True)
 
+    def extract_union_dates(datasets: list[pd.DataFrame]) -> pd.Series:
+        if not datasets:
+            return pd.Series(dtype="datetime64[ns]")
+        return pd.concat(
+            [dataset["Date"] for dataset in datasets if "Date" in dataset.columns],
+            ignore_index=True,
+        ).drop_duplicates().sort_values().reset_index(drop=True)
+
     def build_supported_periods_from_dates(
             date_values: pd.Series,
             interval: str = "1d",
@@ -3569,7 +3694,19 @@ def build_web_runtime() -> WebRuntime:
         return fallback_period, notice
 
     def build_supported_periods_for_history_store(ticker: str, interval: str = "1d") -> list[str]:
-        path = intraday_history_store_path_for(ticker, interval) if interval == "1m" else history_store_path_for(ticker)
+        path = next(
+            (
+                candidate_path
+                for candidate in market_ticker_store_aliases(ticker)
+                if (
+                    candidate_path := intraday_history_store_path_for(candidate, interval)
+                    if interval == "1m"
+                    else history_store_path_for(candidate)
+                ).exists()
+                and candidate_path.stat().st_size > 0
+            ),
+            intraday_history_store_path_for(ticker, interval) if interval == "1m" else history_store_path_for(ticker),
+        )
         if not path.exists() or path.stat().st_size == 0:
             return ["1d"] if interval == "1m" else ["max"]
         try:
@@ -3685,14 +3822,16 @@ def build_web_runtime() -> WebRuntime:
         validated_tickers: list[str] = []
         strategy_options = list_enabled_strategies()
         strategy_option_groups = build_strategy_option_groups(strategy_options)
-        selected_strategy_id = request.args.get(
-            "strategy",
+        selected_strategy_id = (
             "grid-trading"
             if current_view == "grid-trading"
-            else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
-            if current_view == "backtest"
-            else (strategy_options[0]["id"] if strategy_options else ""),
-        ).strip()
+            else request.args.get(
+                "strategy",
+                defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
+                if current_view == "backtest"
+                else (strategy_options[0]["id"] if strategy_options else ""),
+            ).strip()
+        )
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
@@ -4160,14 +4299,17 @@ def build_web_runtime() -> WebRuntime:
                             intraday_supported_periods = [
                                 candidate
                                 for candidate in ("1d", "3d", "1w")
-                                if all(candidate in period_set for period_set in intraday_period_sets)
+                                if (
+                                    candidate == "1d"
+                                    or any(candidate in period_set for period_set in intraday_period_sets)
+                                )
                             ]
                         supported_periods = [
                             *intraday_supported_periods,
                             *[
                                 candidate
                                 for candidate in build_supported_periods_from_dates(
-                                    extract_shared_dates(datasets),
+                                    extract_union_dates(datasets),
                                     interval="1d",
                                     candidate_periods=COMPARE_PERIODS_1D,
                                 )
@@ -4314,11 +4456,16 @@ def build_web_runtime() -> WebRuntime:
                                 raise ValueError("The selected tickers do not share any common trading dates.")
                             if is_exact_short_intraday_compare:
                                 intraday_datasets = []
-                                live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+                                live_session_date = pd.Timestamp.now(
+                                    tz=market_timezone_for_ticker(validated_tickers[0])
+                                ).date()
                                 should_append_exact_live = bool(exact_range_trading_dates) and pd.to_datetime(
                                     exact_range_trading_dates[-1],
                                     errors="coerce",
-                                ).date() == live_session_date
+                                ).date() == live_session_date and any(
+                                    is_market_regular_session_active_for_ticker(ticker)
+                                    for ticker in validated_tickers
+                                )
                                 for ticker in validated_tickers:
                                     raw_intraday_dataset = fetch_history(
                                         ticker,
@@ -4380,14 +4527,75 @@ def build_web_runtime() -> WebRuntime:
                                 elif intraday_notice:
                                     notice = f"{notice} {intraday_notice}"
                             intraday_datasets: list[pd.DataFrame] = []
-                            live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
+                            live_session_date = pd.Timestamp.now(
+                                tz=market_timezone_for_ticker(validated_tickers[0])
+                            ).date()
+                            should_append_relative_live = any(
+                                is_market_regular_session_active_for_ticker(ticker)
+                                for ticker in validated_tickers
+                            )
                             if period == "1d":
-                                intraday_datasets = [
-                                    load_compare_one_day_intraday_dataset(
-                                        ticker,
-                                        include_extended_hours_flag=include_extended_hours,
-                                    )
+                                all_selected_tickers_are_us = all(
+                                    infer_ticker_market(ticker) == "US"
                                     for ticker in validated_tickers
+                                )
+                                loaded_intraday_datasets: list[pd.DataFrame | None] = []
+                                first_intraday_error: Exception | None = None
+                                for ticker in validated_tickers:
+                                    try:
+                                        loaded_intraday_datasets.append(
+                                            load_compare_one_day_intraday_dataset(
+                                                ticker,
+                                                include_extended_hours_flag=include_extended_hours,
+                                            )
+                                        )
+                                    except Exception as exc:  # noqa: BLE001
+                                        if not all_selected_tickers_are_us:
+                                            raise
+                                        first_intraday_error = first_intraday_error or exc
+                                        loaded_intraday_datasets.append(None)
+                                        LOGGER.info(
+                                            "Keeping %s pending on the one-day axis until its first regular-session quote: %s",
+                                            ticker,
+                                            exc,
+                                        )
+                                available_intraday_datasets = [
+                                    dataset
+                                    for dataset in loaded_intraday_datasets
+                                    if dataset is not None and not dataset.empty
+                                ]
+                                if not available_intraday_datasets:
+                                    if first_intraday_error is not None:
+                                        raise first_intraday_error
+                                    raise ValueError("The selected tickers do not have one-day intraday data yet.")
+                                latest_available_timestamp = max(
+                                    pd.Timestamp(dataset["Date"].max())
+                                    for dataset in available_intraday_datasets
+                                )
+                                latest_available_day = latest_available_timestamp.date()
+                                has_pending_ticker = any(dataset is None for dataset in loaded_intraday_datasets)
+                                if (
+                                        has_pending_ticker
+                                        and not should_append_relative_live
+                                        and latest_available_day != live_session_date
+                                ):
+                                    if first_intraday_error is not None:
+                                        raise first_intraday_error
+                                    raise ValueError("A selected ticker does not have one-day intraday data yet.")
+                                reference_dataset = max(
+                                    available_intraday_datasets,
+                                    key=lambda dataset: pd.Timestamp(dataset["Date"].max()),
+                                )
+                                reference_latest_day = pd.Timestamp(reference_dataset["Date"].max()).date()
+                                reference_latest_session = reference_dataset.loc[
+                                    pd.to_datetime(reference_dataset["Date"], errors="coerce").dt.date
+                                    == reference_latest_day
+                                ].copy()
+                                intraday_datasets = [
+                                    dataset
+                                    if dataset is not None
+                                    else build_empty_compare_axis_dataset(reference_latest_session)
+                                    for dataset in loaded_intraday_datasets
                                 ]
                                 common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
                                 aligned_datasets = slice_intraday_datasets_for_compare_period(
@@ -4413,7 +4621,7 @@ def build_web_runtime() -> WebRuntime:
                                     interval="1m",
                                     dividend_mode="price",
                                 )
-                                if period in {"3d", "1w"}:
+                                if period in {"3d", "1w"} and should_append_relative_live:
                                     intraday_dataset = append_live_compare_intraday_dataset(
                                         ticker,
                                         intraday_dataset,
@@ -4636,7 +4844,7 @@ def build_web_runtime() -> WebRuntime:
             "portfolio": "portfolio.html",
             "dca": "dca.html",
             "backtest": "backtest.html",
-            "grid-trading": "backtest.html",
+            "grid-trading": "grid_trading.html",
             "trade": (
                 "investment.html"
                 if trade_section == "investment"
@@ -6064,6 +6272,9 @@ def build_web_runtime() -> WebRuntime:
                 cached_data["ticker_lineage"] = investment_ticker_lineage_payload()
                 cached_data["known_ticker_company_names"] = known_ticker_company_names_payload()
                 cached_data["success"] = True
+                cached_data["investment_store_version"] = str(
+                    investment_store_fingerprint.get("mtime_ns", 0)
+                )
                 cached_data["investment_cache"] = {
                     "status": "hit",
                     "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
@@ -6102,6 +6313,9 @@ def build_web_runtime() -> WebRuntime:
             data["freshness_refresh_failures"] = freshness_refresh_failures
             data["section_freshness"] = section_freshness
             data["success"] = True
+            data["investment_store_version"] = str(
+                investment_store_fingerprint.get("mtime_ns", 0)
+            )
             data["investment_cache"] = {
                 "status": "miss",
                 "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
@@ -6325,21 +6539,14 @@ def build_web_runtime() -> WebRuntime:
                             pdf_bytes,
                             str(getattr(statement_pdf_file, "filename", "") or "").strip(),
                         ))
-                    imported_payload = build_investment_payload_from_hsbc_statement_pdfs(
+                    imported_payload = build_investment_payload_from_hsbc_statement_bundle(
                         statement_pdf_payloads,
                     )
-                    if not imported_payload.get("transactions"):
-                        dry_run = True
-                        success_message = (
-                            "HSBC statement import complete. The uploaded PDFs were parsed in memory, but no USD "
-                            "Foreign Currency Savings rows were found, so the local investment store was left unchanged."
-                        )
-                    else:
-                        success_message = (
-                            "HSBC statement import complete. USD Foreign Currency Savings rows were parsed in memory "
-                            "from the uploaded PDFs and merged incrementally into the local investment store without "
-                            "clearing older data first."
-                        )
+                    success_message = (
+                        "HSBC statement import complete. Matching composite and investment statements were reconciled "
+                        "by period, account, holdings, trades, fees, dividends, and USD cash before the committed store "
+                        "was read back."
+                    )
                 else:
                     imported_payload = build_investment_payload_from_hsbc_pasted_text(
                         portfolio_text=str(
@@ -6351,6 +6558,7 @@ def build_web_runtime() -> WebRuntime:
                         cash_account_text=str(
                             request.form.get("hsbc_cash_account_text", "")
                         ).strip(),
+                        dividend_action_loader=load_local_investment_dividend_actions,
                     )
                     success_message = (
                         "HSBC sync complete. The pasted USD Savings, Portfolio, and Order Status text were normalized and "
@@ -6428,6 +6636,10 @@ def build_web_runtime() -> WebRuntime:
                 "message": success_message,
                 "summary": investment_payload.get("summary", {}),
                 "freshness_refresh_failures": freshness_refresh_failures,
+                "investment_store_version": str(build_file_fingerprint(
+                    investment_store_path_for(INVESTMENT_STORE_PATH)
+                ).get("mtime_ns", 0)),
+                "transaction_count": len(investment_payload.get("transactions", [])),
             })
         except ValueError as exc:
             report_fetch_abort_debug_event(

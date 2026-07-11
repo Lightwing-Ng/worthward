@@ -1,6 +1,84 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.4.0`
+Documentation version: `v1.17.0`
+
+## Equal-width short intraday sessions corrected on 12 Jul 2026
+
+- Price comparisons spanning 2–5 US trading days now use a canonical 09:30–15:59 minute axis for every selected day. A ticker with missing afternoon bars remains blank for those minutes instead of compressing that day for every series.
+- The bottom subplot labels each trading date using the configured full-date format. Every subplot draws `N-1` shared vertical session dividers, covering 3D, 1W, and exact 2-day or 4-day ranges selected through the date picker.
+
+## Price subplot tooltip time corrected on 12 Jul 2026
+
+- The shared price tooltip now renders its date and time on separate lines. The date uses the full-date format selected in Settings, while the time converts the New York chart timestamp to Hong Kong time and uses the `HKT` market abbreviation.
+- The implementation reuses the application date-display helpers and the existing chart tooltip market-time classes instead of maintaining a price-workspace-only date style.
+
+## One-day candlestick series colors corrected on 12 Jul 2026
+
+- One-day price candlesticks no longer introduce directional green/red coloring. Every subplot uses its ticker's single comparison-series color for both wicks and bodies.
+- The colors come from the same blue-to-red token interpolation used by the return-comparison workspace: the first and last tickers use the endpoint tokens, while 3–5 ticker layouts receive evenly spaced intermediate colors.
+
+## New US listing intraday completeness corrected on 11 Jul 2026
+
+- A US IPO or ADR debut is no longer required to contain a 09:30 opening bar before it can participate in a one-day comparison. The latest shared observed trading day is accepted when no fully complete common session exists, and the shared axis remains empty before the security's first real quote.
+- During the current US session, a validated ticker whose one-minute store has not received its first quote remains selected as a pending empty series. Once bars arrive, the normal live refresh fills that series without changing the requested period. This behavior is ticker-agnostic and covers temporary-to-permanent symbol transitions such as `SKHYV` to `SKHY`, as well as future US listings.
+- A closed-session or pre-quote live response containing no valid prices is ignored, so it cannot erase the most recent valid debut-day chart.
+
+## One-day price candlesticks and stale refreshes corrected on 11 Jul 2026
+
+- The `1d` price-performance view now renders each ticker from its absolute one-minute OHLC values as a candlestick subplot. Longer intraday ranges remain line charts to preserve density.
+- Live price refreshes carry a request generation and URL fingerprint. A delayed response for `3d` or `1w` can no longer overwrite a newly selected `1d` chart while leaving the control and URL unchanged.
+
+## Short-range price interaction and formatting corrected on 11 Jul 2026
+
+- Ticker-logo fallbacks use a neutral glass treatment rather than the application accent, and the application asset version is `v2.24.0` so JavaScript and CSS cannot remain on mismatched cached revisions.
+- `3d` and `1w` requests append live minute data only while at least one selected market is in its regular session. Weekends and closed sessions no longer perform sequential, futile live refreshes for every ticker.
+- Price axes and shared-tooltip prices use fixed `#,###.##` formatting, including trailing zeroes, with a widened fixed axis gutter for decimal alignment.
+- Chromium coverage exercises `3d` to `1d` to `3d` transitions and verifies that both the URL and visible Period control reach the requested state.
+
+## Price-performance optimistic hydration corrected on 11 Jul 2026
+
+- Period and exact-date changes immediately open the standard centered frosted-glass progress dialog.
+- The price-history heading, known date range, and current charts remain visible behind the dialog until the replacement result is ready.
+- Price hydration replaces only the right-side results region. The left controls retain their original event handlers, so Period, Relative / Exact, and Add ticker remain operable after repeated updates.
+
+## Price-performance controls and subplot density corrected on 11 Jul 2026
+
+- Stacked price charts render date or time labels only on the bottom subplot. All charts retain the shared New York comparison axis and synchronized hover behavior.
+- Ticker inputs try profile, PNG, and SVG logo sources in order. If every image source fails, a visible ticker monogram remains in the leading slot instead of an empty circle.
+- Price-performance refreshes no longer replace the controls with pending markup. Range-mode changes made during an active hydration request are retained and submitted after the current request settles.
+
+## Comparison selection and listing-window behavior corrected on 11 Jul 2026
+
+- Clicking a ticker autocomplete candidate now commits the candidate before focus can leave the input and immediately reloads the workspace with that ticker.
+- Relative daily periods use the requested horizon whenever at least one selected security has that history. Securities listed later remain blank before their first daily bar instead of shortening every established security to the newest listing date.
+- `Max` retains the shared-history convention because it has no explicit requested start date.
+
+## New ADR comparison handling added on 11 Jul 2026
+
+- Price and return comparisons treat `SKHYV` and `SKHY` as ordered aliases for the same SK hynix ADR transition. The explicitly requested symbol wins when its cache exists; the alternate symbol is a compatibility fallback.
+- A newly listed ADR may begin producing usable quotes after the regular-session open. Multi-day intraday comparisons preserve the established securities' full time axis and leave the ADR blank before its first quote instead of truncating every series to the ADR's first timestamp.
+- A short-history constituent no longer removes an otherwise available `3d` or `1w` intraday option when another selected constituent supplies that full comparison window.
+
+## IBKR test-fixture ledger leakage corrected on 11 Jul 2026
+
+- Flask investment-import tests now patch both the investment parquet path and the derived transaction-cache path into a per-test temporary directory. They never write synthetic transactions into the real `settings_store/investment.parquet`.
+- The persisted test fixture `1 Mar 2026 / U***TEST / QQQ / Buy 1 / USD 101 net cost` was never present in the authoritative broker exports. A running browser could briefly observe it only while an older integration test had replaced the real store.
+- The production commit path rejects IBKR account identifiers ending in `TEST` or `E2E`, providing a second fail-closed boundary if test isolation regresses.
+
+## HSBC paired monthly statement import added on 11 Jul 2026
+
+- HSBC statement mode uses one multi-file input, identifies composite and investment statements from PDF content, and pairs them by statement end date.
+- The client marks an upload set ready only when it contains an even number of PDF files with at least one pair; the server remains authoritative for statement type, account, holder, period, and reconciliation validation.
+- Settled trades, closing holdings, transaction charges, and dividends come from the investment statement and must reconcile against the composite statement USD cash ledger before commit.
+- Import success is reported only after authoritative store readback. The browser then requests that exact store version before presenting the final success banner.
+- Ledger-price fallback tickers remain available as diagnostic metadata but no longer produce a user-facing warning banner when valuation is otherwise complete.
+
+## HSBC pasted corporate-event payments corrected on 11 Jul 2026
+
+- Positive `CORP EVT PAYMENT` rows from pasted HSBC USD Savings text are dividend income, not external deposits.
+- Ticker attribution is accepted only when one locally cached dividend action matches the eligible pre-ex-date order quantity and the net cash amount under a supported retention rate. Ambiguous or unavailable matches remain unattributed dividends and surface a warning instead of guessing a security.
+- HSBC cash-row merge identity is stable across this classification upgrade, so re-importing replaces a legacy deposit classification rather than duplicating the same ledger entry.
+- Fully executed orders older than the first visible USD Savings cash row are no longer labeled as unsettled merely because their settlement rows have rolled off the pasted page window.
 
 ## Standard table and filter contract recorded on 11 Jul 2026
 
@@ -8,6 +86,7 @@ Documentation version: `v1.4.0`
 - Interactive header tables are accessible and distinct from the pointer-inert Frosted Glass visual overlay.
 - Fixed summaries declare an explicit `all`, `filtered`, or `both` scope. Holdings currently use `all`; filtered tables can opt into the other scopes without changing the visual default.
 - Investment History and Stock Details share an All / Buy / Sell side filter in the Type column. Broker and side filters compose before pagination.
+- The Investment History Type header inherits the standard header typography, padding, and top alignment while idle. Its compact filter replaces the label only during hover, keyboard focus, or an open selection menu.
 
 ## SF Symbols 7.2 asset audit on 11 Jul 2026
 
@@ -17,8 +96,8 @@ Documentation version: `v1.4.0`
 
 ## Grid trading workspace added on 11 Jul 2026
 
-- `/workspaces/grid-trading` is a canonical Workspace route and defaults to the `Grid Trading` strategy.
-- The initial grid model uses rolling-center entry and exit bands with configurable center-line window and percentage spacing. It reuses the long-only single-position backtest engine; multi-level inventory sizing and live order placement are outside this module's current scope.
+- `/workspaces/grid-trading` is a canonical, parallel Workspace route and locks execution to the `Grid Trading` strategy even if another strategy is supplied in the query string.
+- The grid model supports SMA or EMA centers, center-line window, percentage spacing, and asymmetric buy/sell grid levels. It reuses the long-only single-position backtest engine; multi-position inventory sizing and live order placement remain outside this module's current scope.
 
 ## Apple 27 design alignment recorded on 11 Jul 2026
 

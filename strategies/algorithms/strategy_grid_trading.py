@@ -1,7 +1,7 @@
 """
 Grid trading strategy.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -27,6 +27,14 @@ class GridTradingStrategy(BaseStrategy):
     def get_parameter_definitions(self) -> tuple[StrategyParameterDefinition, ...]:
         return (
             StrategyParameterDefinition(
+                key="center_mode",
+                label="Center line type",
+                kind="choice",
+                default="SMA",
+                options=("SMA", "EMA"),
+                help_text="Selects a simple or exponential moving center for the grid.",
+            ),
+            StrategyParameterDefinition(
                 key="center_window",
                 label="Center line window",
                 kind="integer",
@@ -47,6 +55,26 @@ class GridTradingStrategy(BaseStrategy):
                 unit_hint="%",
                 help_text="Buys below the lower grid line and sells above the upper grid line.",
             ),
+            StrategyParameterDefinition(
+                key="entry_level",
+                label="Buy grid level",
+                kind="integer",
+                default=1,
+                minimum=1,
+                maximum=10,
+                unit_hint="levels",
+                help_text="Sets how many grid intervals below the center trigger an entry.",
+            ),
+            StrategyParameterDefinition(
+                key="exit_level",
+                label="Sell grid level",
+                kind="integer",
+                default=1,
+                minimum=1,
+                maximum=10,
+                unit_hint="levels",
+                help_text="Sets how many grid intervals above the center trigger an exit.",
+            ),
         )
 
     def compute_signals(self, dataset: pd.DataFrame, params: dict | None = None) -> StrategySignalResult:
@@ -54,13 +82,18 @@ class GridTradingStrategy(BaseStrategy):
         normalized_params = self.normalize_params(params)
         center_window = int(normalized_params["center_window"])
         grid_spacing = float(normalized_params["grid_spacing_pct"]) / 100.0
+        entry_level = int(normalized_params["entry_level"])
+        exit_level = int(normalized_params["exit_level"])
 
-        frame["grid_center"] = frame["Close"].rolling(
-            window=center_window,
-            min_periods=1,
-        ).mean()
-        frame["grid_lower"] = frame["grid_center"] * (1.0 - grid_spacing)
-        frame["grid_upper"] = frame["grid_center"] * (1.0 + grid_spacing)
+        if normalized_params["center_mode"] == "EMA":
+            frame["grid_center"] = frame["Close"].ewm(span=center_window, adjust=False).mean()
+        else:
+            frame["grid_center"] = frame["Close"].rolling(
+                window=center_window,
+                min_periods=1,
+            ).mean()
+        frame["grid_lower"] = frame["grid_center"] * (1.0 - (grid_spacing * entry_level))
+        frame["grid_upper"] = frame["grid_center"] * (1.0 + (grid_spacing * exit_level))
 
         previous_close = frame["Close"].shift(1)
         previous_lower = frame["grid_lower"].shift(1)

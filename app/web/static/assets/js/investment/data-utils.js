@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.47.7
+ * Code version: v1.48.0
+ * - Added: HSBC statement-bundle readiness validates complete even PDF pairs for the smart multi-file selector.
+ * - Changed: Ledger-price valuation fallbacks remain diagnostic metadata but no longer surface a user warning banner.
  * - Fixed: Daily equity chart points now preserve pending-settlement display cash so same-day HSBC pasted imports keep cash and equity aligned.
  * - Added: Longbridge HK cash-equivalent MMF income is summarized as Holdings rows even after the funds are fully redeemed.
  * - Fixed: Longbridge HK cash-equivalent transfers now expose actual cash deltas and synthetic valuation tickers so MMF placements/redemptions do not create saw-tooth overnight equity.
@@ -28,6 +30,22 @@
  * - Added: Stock details range filtering now supports a 1Y window plus an Auto lifecycle mode that keeps all buy and sell dates visible while trimming unrelated post-exit history
  * - Added: Equity range filtering now supports a 1Y window for the main portfolio overview chart
  */
+
+export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
+    const normalizedFiles = Array.from(files || []);
+    const pdfPredicate = typeof isPdfFile === 'function'
+        ? isPdfFile
+        : (file) => {
+            const filename = String(file?.name || '').trim().toLowerCase();
+            const mimeType = String(file?.type || '').trim().toLowerCase();
+            return filename.endsWith('.pdf') || mimeType === 'application/pdf';
+        };
+    return (
+        normalizedFiles.length >= 2
+        && normalizedFiles.length % 2 === 0
+        && normalizedFiles.every((file) => pdfPredicate(file))
+    );
+}
 
 export function createInvestmentDataUtils({
     noCommissionTransactionTypes,
@@ -1493,7 +1511,7 @@ export function createInvestmentDataUtils({
             return true;
         });
         const hasBackendFailures = filteredBackendFailures.length > 0;
-        const isDegraded = hasBackendFailures || normalizedFallbackTickers.length > 0 || normalizedMissingTickers.length > 0;
+        const isDegraded = hasBackendFailures || normalizedMissingTickers.length > 0;
         if (!isDegraded) {
             return {
                 isDegraded: false,
@@ -1507,9 +1525,6 @@ export function createInvestmentDataUtils({
         const messageParts = [];
         if (normalizedMissingTickers.length) {
             messageParts.push(`Valuation is incomplete for ${normalizedMissingTickers.map((ticker) => formatDisplayTicker(ticker)).join(', ')} because no usable local close history was found.`);
-        }
-        if (normalizedFallbackTickers.length) {
-            messageParts.push(`Using the latest ledger price fallback for ${normalizedFallbackTickers.map((ticker) => formatDisplayTicker(ticker)).join(', ')} until local market history is refreshed.`);
         }
         if (hasBackendFailures) {
             messageParts.push(filteredBackendFailures.map((entry) => {
@@ -2157,4 +2172,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.47.7';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.0';
