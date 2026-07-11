@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.5.14
+Code version: v0.5.20
 """
 
 from __future__ import annotations
@@ -239,6 +239,8 @@ def _market_session_segments(ticker: str | None = None) -> list[tuple[int, int]]
         return [((9 * 60) + 30, (11 * 60) + 29), (13 * 60, (15 * 60) - 1)]
     if market == "JP":
         return [(9 * 60, (11 * 60) + 29), ((12 * 60) + 30, (15 * 60) + 30)]
+    if market == "SG":
+        return [(9 * 60, (12 * 60) - 1), (13 * 60, (17 * 60) - 1)]
     return [(_market_session_open_minute(ticker), _market_session_close_minute(ticker))]
 
 
@@ -258,7 +260,7 @@ def prepare_intraday_dataset_for_compare(
     prepared = dataset.copy()
     prepared["Date"] = prepared["Date"].map(lambda value: _timestamp_to_compare_axis(value, ticker))
     prepared = prepared.dropna(subset=["Date"]).drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
-    if regular_session_only or _market_for_ticker(ticker) in {"HK", "KR", "JP", "CN", "UK"}:
+    if regular_session_only or _market_for_ticker(ticker) in {"HK", "KR", "JP", "CN", "UK", "SG", "TW"}:
         prepared = prepared[prepared["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()
     return prepared.reset_index(drop=True)
 
@@ -269,7 +271,9 @@ def _has_complete_regular_session(dataset: pd.DataFrame, ticker: str | None = No
     regular_session = dataset[dataset["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))]
     if regular_session.empty:
         return False
-    regular_minutes = regular_session["Date"].map(_minute_of_day)
+    regular_minutes = regular_session["Date"].map(
+        lambda value: _minute_of_day(_timestamp_as_market_local(value, ticker))
+    )
     return (
         int(regular_minutes.min()) <= _market_session_open_minute(ticker)
         and int(regular_minutes.max()) >= _market_session_close_minute(ticker)
@@ -295,13 +299,6 @@ def _complete_market_local_trading_days(dataset: pd.DataFrame, ticker: str | Non
         for trading_day in sorted(local_dates.dropna().unique())
         if _has_complete_regular_session(dataset.loc[local_dates == trading_day], ticker)
     }
-
-
-def _latest_market_local_trading_day(dataset: pd.DataFrame, ticker: str | None = None) -> object:
-    local_dates = dataset["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date()).dropna()
-    if local_dates.empty:
-        raise ValueError("The selected ticker does not have intraday trading data.")
-    return max(local_dates)
 
 
 def _slice_dataset_to_market_local_day(dataset: pd.DataFrame, ticker: str | None, trading_day: object) -> pd.DataFrame:
@@ -534,6 +531,20 @@ def align_many_intraday_datasets_on_common_dates(datasets: list[pd.DataFrame]) -
     ]
 
 
+def align_intraday_datasets_for_compare(
+        datasets: list[pd.DataFrame],
+        tickers: list[str] | None = None,
+) -> list[pd.DataFrame]:
+    ticker_values = tickers or [None] * len(datasets)
+    selected_markets = {
+        _market_for_ticker(ticker_values[index] if index < len(ticker_values) else None)
+        for index in range(len(datasets))
+    }
+    if len(selected_markets) <= 1:
+        return align_many_intraday_datasets_on_common_dates(datasets)
+    return _align_intraday_datasets_on_union_dates(datasets)
+
+
 def build_compare_start_notice(effective_start: pd.Timestamp) -> str:
     return f"Comparison starts from {format_display_date(effective_start)}."
 
@@ -664,16 +675,39 @@ def slice_intraday_datasets_for_compare_period(
     sliced_datasets: list[pd.DataFrame] = []
     target_trading_days: list[object] | None = None
     target_one_day: object | None = None
+    common_market_local_days: set[object] | None = None
+    if not all_tickers_are_us:
+        for index, dataset in enumerate(prepared_datasets):
+            ticker = ticker_values[index] if index < len(ticker_values) else None
+            market_local_days = set(
+                dataset["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date())
+            )
+            common_market_local_days = (
+                market_local_days
+                if common_market_local_days is None
+                else common_market_local_days & market_local_days
+            )
+        if not common_market_local_days:
+            raise ValueError("The selected tickers do not share a market-local trading date.")
     if period == "1d":
         if all_tickers_are_us:
             target_one_day = latest_common_complete_intraday_trading_day(prepared_datasets, common_end, ticker_values)
         else:
-            target_one_day = max(
-                max(_complete_market_local_trading_days(dataset, ticker_values[index] if index < len(ticker_values) else None))
-                if _complete_market_local_trading_days(dataset, ticker_values[index] if index < len(ticker_values) else None)
-                else _latest_market_local_trading_day(dataset, ticker_values[index] if index < len(ticker_values) else None)
-                for index, dataset in enumerate(prepared_datasets)
-            )
+            common_complete_days: set[object] | None = None
+            for index, dataset in enumerate(prepared_datasets):
+                ticker = ticker_values[index] if index < len(ticker_values) else None
+                complete_days = _complete_market_local_trading_days(dataset, ticker)
+                common_complete_days = (
+                    complete_days
+                    if common_complete_days is None
+                    else common_complete_days & complete_days
+                )
+            target_one_day = max(common_complete_days or common_market_local_days or set())
+    elif not all_tickers_are_us:
+        requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0
+        if requested_day_count <= 0:
+            raise ValueError(f"Unsupported intraday comparison period: {period}")
+        target_trading_days = sorted(common_market_local_days or set())[-requested_day_count:]
 
     for index, dataset in enumerate(prepared_datasets):
         ticker = ticker_values[index] if index < len(ticker_values) else None
@@ -688,22 +722,22 @@ def slice_intraday_datasets_for_compare_period(
                 trimmed = bounded_dataset[bounded_dataset["Date"].dt.date == target_one_day].copy()
             else:
                 trimmed = _slice_dataset_to_market_local_day(bounded_dataset, ticker, target_one_day)
-                if trimmed.empty:
-                    latest_day = max(
-                        day for day in _complete_market_local_trading_days(bounded_dataset, ticker)
-                    ) if _complete_market_local_trading_days(bounded_dataset, ticker) else _latest_market_local_trading_day(bounded_dataset, ticker)
-                    trimmed = _slice_dataset_to_market_local_day(bounded_dataset, ticker, latest_day)
                 trimmed = _pad_dataset_to_market_session_close(trimmed, ticker)
-                trimmed = _fill_intraday_market_session_gaps(trimmed, ticker)
         else:
-            trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
             requested_day_count = 3 if period == "3d" else 5 if period == "1w" else 0
             if requested_day_count <= 0:
                 raise ValueError(f"Unsupported intraday comparison period: {period}")
-            if target_trading_days is None:
+            if all_tickers_are_us and target_trading_days is None:
+                trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
                 target_trading_days = trading_days[-requested_day_count:]
-            selected_days = set(target_trading_days or trading_days[-requested_day_count:])
-            trimmed = bounded_dataset[bounded_dataset["Date"].dt.date.isin(selected_days)].copy()
+            selected_days = set(target_trading_days or [])
+            if all_tickers_are_us:
+                selected_mask = bounded_dataset["Date"].dt.date.isin(selected_days)
+            else:
+                selected_mask = bounded_dataset["Date"].map(
+                    lambda value: _timestamp_as_market_local(value, ticker).date() in selected_days
+                )
+            trimmed = bounded_dataset[selected_mask].copy()
             trimmed = trimmed[trimmed["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()
             trimmed = _fill_intraday_market_session_gaps(trimmed, ticker)
 
@@ -735,8 +769,10 @@ def build_series_payload(
     candlestick_returns = None
     if has_ohlc:
         candlestick_returns = []
-        volume_values = dataset["Volume"] if "Volume" in dataset.columns else [None] * len(dataset)
-        synthetic_values = dataset["Synthetic"] if "Synthetic" in dataset.columns else [False] * len(dataset)
+        has_volume = "Volume" in dataset.columns
+        has_synthetic = "Synthetic" in dataset.columns
+        volume_values = dataset["Volume"] if has_volume else [None] * len(dataset)
+        synthetic_values = dataset["Synthetic"] if has_synthetic else [False] * len(dataset)
         for index, (open_value, high_value, low_value, close_value, volume_value, synthetic_value) in enumerate(zip(
                 dataset["Open"],
                 dataset["High"],
@@ -748,20 +784,26 @@ def build_series_payload(
             is_synthetic = bool(synthetic_value) if pd.notna(synthetic_value) else False
             price_values = [open_value, high_value, low_value, close_value]
             if pd.isna(price_values).any():
-                candlestick_returns.append({"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": is_synthetic})
+                candlestick = {"x": index, "o": None, "h": None, "l": None, "c": None}
+                if has_volume:
+                    candlestick["v"] = None
+                if has_synthetic:
+                    candlestick["synthetic"] = is_synthetic
+                candlestick_returns.append(candlestick)
                 continue
             volume = float(volume_value) if pd.notna(volume_value) else None
-            candlestick_returns.append(
-                {
-                    "x": index,
-                    "o": round(((float(open_value) / baseline_price) - 1.0) * 100.0, 4),
-                    "h": round(((float(high_value) / baseline_price) - 1.0) * 100.0, 4),
-                    "l": round(((float(low_value) / baseline_price) - 1.0) * 100.0, 4),
-                    "c": round(((float(close_value) / baseline_price) - 1.0) * 100.0, 4),
-                    "v": round(volume, 4) if volume is not None else None,
-                    "synthetic": is_synthetic,
-                }
-            )
+            candlestick = {
+                "x": index,
+                "o": round(((float(open_value) / baseline_price) - 1.0) * 100.0, 4),
+                "h": round(((float(high_value) / baseline_price) - 1.0) * 100.0, 4),
+                "l": round(((float(low_value) / baseline_price) - 1.0) * 100.0, 4),
+                "c": round(((float(close_value) / baseline_price) - 1.0) * 100.0, 4),
+            }
+            if has_volume:
+                candlestick["v"] = round(volume, 4) if volume is not None else None
+            if has_synthetic:
+                candlestick["synthetic"] = is_synthetic
+            candlestick_returns.append(candlestick)
     return SeriesPayload(
         ticker=ticker.upper(),
         dates=dataset["Date"].map(
@@ -777,6 +819,10 @@ def build_series_payload(
         color=color,
         glow=glow,
         candlestick_returns=candlestick_returns,
+        prices=[
+            round(float(value), 4) if pd.notna(value) else None
+            for value in close_values.tolist()
+        ],
     )
 
 

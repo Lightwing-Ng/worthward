@@ -30,6 +30,9 @@ function getShortestOrbitAngleDelta(fromAngle, toAngle) {
 }
 
 function easeInOutCubic(progress) {
+    if (window.AntigravityMotion?.easing?.inOut) {
+        return window.AntigravityMotion.easing.inOut(progress);
+    }
     if (progress <= 0) return 0;
     if (progress >= 1) return 1;
     return progress < 0.5

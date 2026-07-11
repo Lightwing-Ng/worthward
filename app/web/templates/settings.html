@@ -1148,6 +1148,10 @@
                                     <th>{{ column }}</th>
                                     {% endfor %}
                                 </tr>
+                                <tr data-table-summary-row data-summary-scope="both">
+                                    <td colspan="3"><span class="investment-holdings-summary-copy">4 filtered of 12 total</span></td>
+                                    <td colspan="2"><span class="investment-holdings-summary-copy">Net $7,089.68</span></td>
+                                </tr>
                                 </thead>
                             </table>
                             <div class="trade-transactions-wrap scrollable-data-table-scroll style-token-scrollable-table-scroll style-token-table-demo-scroll">
@@ -1162,6 +1166,25 @@
                                     {% endfor %}
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "shared-select-filter" %}
+                    <div class="style-token-shared-select-shell">
+                        <div class="field backtest-shared-select-field is-open">
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" aria-expanded="true">
+                                    <span class="trade-strategy-trigger-label">{{ row.sample_button }}</span>
+                                    <span class="trade-strategy-trigger-chevron" aria-hidden="true"></span>
+                                </button>
+                                <div class="trade-strategy-dropdown backtest-shared-select-dropdown" role="listbox">
+                                    {% for option in ["All", "Buy", "Sell"] %}
+                                    <button type="button" class="trade-strategy-dropdown-option{% if option == row.sample_button %} is-selected is-active{% endif %}" role="option" aria-selected="{{ 'true' if option == row.sample_button else 'false' }}">
+                                        <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
+                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ option }}</span></span>
+                                    </button>
+                                    {% endfor %}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1309,7 +1332,7 @@
                                 <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" data-share-template="stable-v1" aria-label="Compare community share template">
                                     <div class="investment-community-share-header">
                                         <div class="investment-community-share-heading">
-                                            <p class="investment-community-share-title">Compare stocks</p>
+                                            <p class="investment-community-share-title">Return comparison</p>
                                         </div>
                                     </div>
                                     <div class="investment-community-share-body"></div>

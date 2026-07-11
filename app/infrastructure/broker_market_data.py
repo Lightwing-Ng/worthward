@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-    Code version: v0.5.11
+Code version: v0.5.14
 """
 
 from __future__ import annotations
@@ -247,27 +247,8 @@ def _ibkr_cp_validate_failed(settings: BrokerSettings) -> bool:
 
 
 def _ibkr_auth_not_ready_message(settings: BrokerSettings | None = None) -> str:
-    # Gateway removed
+    del settings
     return "IBKR Client Portal Gateway has been removed. Use Flex for ledger import (reporting-only)."
-    if cp_failure:
-        return (
-            "IBKR showed Client login succeeds in the browser, but the local Gateway could not validate "
-            f"the Client Portal session ({cp_failure}). "
-            "Open the login tab again, finish password and MFA without switching back to this page, "
-            "wait until Client login succeeds, then click Test connection. "
-            "Close TWS, IBKR Mobile, and other IBKR sessions first."
-        )
-    if settings is not None and _ibkr_cp_validate_failed(settings):
-        return (
-            "IBKR showed Client login succeeds in the browser, but /v1/api/sso/validate still returns Access Denied. "
-            "The brokerage API session was never established. "
-            "Restart the Gateway, wait 30 seconds, log in once in the new tab, then test again."
-        )
-    return (
-        "IBKR Gateway shows Client login succeeds in the browser, but the brokerage API session is not ready yet. "
-        "Wait 10-15 seconds after that message, then test again. "
-        "If it keeps failing, restart the Gateway, log in once, and avoid opening TWS or another IBKR session at the same time."
-    )
 
 
 def _fetch_ibkr_auth_status(settings: BrokerSettings) -> dict[str, Any]:
@@ -697,6 +678,9 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
         raise ValueError("Ticker is required.")
+    if normalized_ticker.endswith(".SS"):
+        symbol, _ = normalized_ticker.rsplit(".", 1)
+        return f"{symbol}.SH"
     if "." in normalized_ticker:
         return normalized_ticker
     return f"{normalized_ticker}.US"
@@ -850,10 +834,15 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
             return False
         total_minutes = (int(localized.hour) * 60) + int(localized.minute)
         return 8 * 60 <= total_minutes < (16 * 60) + 30
+    if market == "SG":
+        localized = timestamp.tz_convert("Asia/Singapore")
+        if localized.weekday() >= 5:
+            return False
+        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+        return (9 * 60 <= total_minutes < 12 * 60) or (13 * 60 <= total_minutes < 17 * 60)
     market_timezones = {
         "AU": "Australia/Sydney",
         "CA": "America/Toronto",
-        "SG": "Asia/Singapore",
         "EU": "Europe/Paris",
         "FI": "Europe/Helsinki",
         "IN": "Asia/Kolkata",
@@ -872,7 +861,6 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
     market_sessions = {
         "AU": (10 * 60, 16 * 60),
         "CA": ((9 * 60) + 30, 16 * 60),
-        "SG": (9 * 60, 17 * 60),
         "EU": (9 * 60, (17 * 60) + 30),
         "FI": (9 * 60, (17 * 60) + 30),
         "IN": ((9 * 60) + 15, (15 * 60) + 30),

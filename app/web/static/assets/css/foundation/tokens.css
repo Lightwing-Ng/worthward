@@ -1,4 +1,4 @@
-/* Code version: v0.3.17 */
+/* Code version: v0.5.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -226,6 +226,21 @@
 	--scrollable-data-table-cell-padding: 2px 1px;
 	--scrollable-data-table-summary-line-height: 0.75;
 	--scrollable-data-table-summary-padding: 6px 8px;
+	--scrollable-data-table-header-height: 28px;
+	--scrollable-data-table-min-width: 376px;
+	--scrollable-data-table-header-color: var(--theme-muted);
+	--scrollable-data-table-scrollbar-gutter: stable;
+	--scrollable-data-table-row-background: var(--panel-strong);
+	--scrollable-data-table-row-background-alt: color-mix(in srgb, var(--panel-strong) 82%, var(--glass-surface-background-strong));
+	--scrollable-data-table-summary-background: var(--frosted-glass-extracted-background);
+	--scrollable-data-table-summary-border: var(--frosted-glass-extracted-border);
+	--scrollable-data-table-summary-shadow: var(--frosted-glass-extracted-shadow);
+	--scrollable-data-table-summary-blur: var(--frosted-glass-extracted-blur);
+	--shared-select-dropdown-padding: 10px;
+	--shared-select-dropdown-radius: var(--radius-soft);
+	--shared-select-dropdown-max-height: min(360px, 55vh);
+	--shared-select-option-padding: 9px 10px;
+	--shared-select-option-gap: 8px;
 	--investment-holdings-cell-padding: 4px 6px;
 	--color-white-adaptive: var(--theme-color-white-adaptive);
 	--glass-surface-background-soft: var(--theme-glass-surface-background-soft);
@@ -304,14 +319,19 @@
 	--layer-fixed-dock: 120;
 	--layer-modal-overlay: 200;
 	--layer-modal-dialog: 210;
-	--motion-standard: ease;
-	--motion-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
-	--motion-inertial: cubic-bezier(0.2, 0.9, 0.22, 1);
+	--motion-duration-instant: 100ms;
+	--motion-duration-fast: 160ms;
+	--motion-duration-standard: 240ms;
+	--motion-duration-emphasized: 420ms;
+	--motion-duration-spatial: 560ms;
+	--motion-standard: cubic-bezier(0.2, 0, 0, 1);
+	--motion-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+	--motion-inertial: cubic-bezier(0.16, 1, 0.3, 1);
 	--motion-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
-	--motion-press: cubic-bezier(0.16, 1, 0.3, 1);
-	--motion-reveal: cubic-bezier(0.2, 0.85, 0.22, 1);
-	--motion-overshoot: cubic-bezier(0.22, 1.18, 0.28, 1);
-	--motion-shimmer: ease-in-out;
+	--motion-press: cubic-bezier(0.2, 0, 0, 1);
+	--motion-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+	--motion-overshoot: cubic-bezier(0.34, 1.32, 0.64, 1);
+	--motion-shimmer: cubic-bezier(0.45, 0, 0.55, 1);
 	--font-size-1: 11px;
 	--font-size-2: 12px;
 	--font-size-3: 13px;
@@ -435,5 +455,5 @@ html.is-theme-transitioning,
 html.is-theme-transitioning *,
 html.is-theme-transitioning *::before,
 html.is-theme-transitioning *::after {
-    transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease, fill 0.4s ease, stroke 0.4s ease, box-shadow 0.4s ease !important;
+    transition: background-color 0.4s var(--motion-standard), border-color 0.4s var(--motion-standard), color 0.4s var(--motion-standard), fill 0.4s var(--motion-standard), stroke 0.4s var(--motion-standard), box-shadow 0.4s var(--motion-standard) !important;
 }

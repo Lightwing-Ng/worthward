@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.5.4
+Code version: v0.5.6
 """
 
 from __future__ import annotations
@@ -93,6 +93,9 @@ def list_available_market_intervals(ticker: str) -> list[str]:
 
 def yfinance_lookup_symbol(ticker: str) -> str:
     normalized_ticker = normalize_ticker(ticker)
+    if normalized_ticker.endswith(".SH"):
+        symbol, _ = normalized_ticker.rsplit(".", 1)
+        return f"{symbol}.SS"
     if normalized_ticker.endswith(".HK"):
         symbol, suffix = normalized_ticker.rsplit(".", 1)
         if symbol.isdigit():
@@ -275,6 +278,15 @@ def infer_ticker_market(ticker: str) -> str:
     if normalized_ticker.endswith(".QA"):
         return "QA"
     return "US"
+
+
+def supports_compare_extended_hours(tickers: list[str], period: str) -> bool:
+    normalized_tickers = [normalize_ticker(ticker) for ticker in tickers if str(ticker or "").strip()]
+    return (
+        bool(normalized_tickers)
+        and str(period or "").strip().lower() == "1d"
+        and all(infer_ticker_market(ticker) == "US" for ticker in normalized_tickers)
+    )
 
 
 def market_timezone_for_ticker(ticker: str) -> str:

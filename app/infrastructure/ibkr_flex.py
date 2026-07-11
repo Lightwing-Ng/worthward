@@ -1,7 +1,7 @@
 """
 IBKR Flex Web Service v3 client (reporting-only).
 
-Code version: v1.0.2
+Code version: v1.1.0
 
 This module implements read-only import via IBKR Flex Web Service version 3.
 It provides no trading, order placement, market data, realtime positions,
@@ -109,18 +109,18 @@ def redact_flex_token_from_url(url: str | None) -> str:
     return _TOKEN_RE.sub(r"\1REDACTED", url)
 
 
-def _validate_https_ibkr_host(url: str) -> None:
+def _validate_https_ibkr_host(url: str, *, endpoint_label: str = "Flex response URL") -> None:
     """Enforce HTTPS and approved IBKR host only. Raises on SSRF risk."""
     if not isinstance(url, str) or not url:
-        raise IbkrFlexError("Flex response URL is empty.")
+        raise IbkrFlexError(f"{endpoint_label} is empty.")
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        raise IbkrFlexError("Flex response URL must use HTTPS.")
+        raise IbkrFlexError(f"{endpoint_label} must use HTTPS.")
     if parsed.username or parsed.password:
-        raise IbkrFlexError("Flex response URL must not embed credentials.")
+        raise IbkrFlexError(f"{endpoint_label} must not embed credentials.")
     host = (parsed.hostname or "").lower().rstrip(".")
     if not (host == "interactivebrokers.com" or host.endswith(".interactivebrokers.com")):
-        raise IbkrFlexError(f"Flex response URL uses unapproved host: {host}")
+        raise IbkrFlexError(f"{endpoint_label} uses unapproved host: {host}")
     # Path must look like a statement endpoint (heuristic, do not hard-require specific path)
     if parsed.path and "getstatement" not in parsed.path.lower() and "flex" not in parsed.path.lower():
         # Still allow; IBKR may use opaque paths. We already validated host+scheme.
@@ -222,6 +222,7 @@ def send_flex_request(
     if to_date:
         params["td"] = str(to_date).strip()
 
+    _validate_https_ibkr_host(send_request_url, endpoint_label="Flex SendRequest URL")
     base = send_request_url.rstrip("?")
     sep = "&" if "?" in base else "?"
     # Build for request (we will redact in any error path)

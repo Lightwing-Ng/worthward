@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.15.8`
+Documentation version: `v2.17.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -81,12 +81,16 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 
 ## Workspace map
 
-- `Compare`
-  Compare up to 5 tickers with optional cash dividend inclusion.
+- `Return comparison`
+  Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
+- `Price performance`
+  Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
+- `Grid Trading`
+  Run the grid-trading strategy from a dedicated workspace while retaining the shared strategy selector, parameter controls, metrics, transactions, and charts.
 - `Trade`
   Inspect the `Timing`, `Investment`, and `Live trading` views.
 - `Settings`
@@ -208,6 +212,12 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 - Preferred source for `1m` history refresh
 - Can also serve as the fallback source for `1d` history
 - Requires App Key, App Secret, and Access Token
+- Live account balances, positions, and order submission are locked unless the server starts with a random access token of at least 32 characters:
+  ```bash
+  export ANTIGRAVITY_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  ./scripts/run_app.sh
+  ```
+- Enter that token in the `Live trading access token` field for the current page. The browser does not persist it.
 
 ### IBKR
 
@@ -242,7 +252,12 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 main.py                         -> Flask runtime entry point
 config.toml                     -> App metadata, defaults, server bind, labels, and integration settings
 README.md                       -> Project documentation
+AGENTS.md                       -> Agent workflow, safety, and quality boundaries
+ARCHITECTURE.md                 -> Runtime layers, routes, data ownership, and invariants
+TESTING.md                      -> Test commands, factories, coverage, and E2E isolation
+KNOWN_ISSUES.md                 -> Current debt and classified historical failures
 requirements.txt                -> Python dependency pin set
+requirements-dev.txt            -> Pinned test, coverage, and static-check dependencies
 scripts/setup_python.sh         -> Pinned host-Python dependency installer
 scripts/run_app.sh              -> Pinned host-Python app launcher
 scripts/test.sh                 -> Pinned host-Python pytest wrapper
@@ -264,7 +279,7 @@ The version displayed in the web UI comes from `config.toml` under `[app].versio
 
 ## Running tests
 
-Run pytest through the pinned host interpreter:
+Run Python tests through the pinned host interpreter:
 
 ```bash
 ./scripts/test.sh
@@ -276,4 +291,10 @@ You can also pass normal `pytest` arguments through the wrapper:
 ./scripts/test.sh -q
 ```
 
-At the time of writing, the repository does not include a committed `tests/` directory because that path is ignored by `.gitignore`. The wrapper is still useful for local or untracked tests you add in your own workspace.
+Run the complete Python, JavaScript, coverage, static, and browser quality gate:
+
+```bash
+./scripts/check.sh
+```
+
+The committed test suite, coverage baseline, shared factories, and E2E isolation rules are documented in `TESTING.md`.

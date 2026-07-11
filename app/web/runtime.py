@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.4.42
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -47,6 +47,10 @@ from app.core.language_settings import (
     translate_labels,
     translate_text,
 )
+from app.core.live_trading_security import (
+    LIVE_TRADING_TOKEN_HEADER,
+    validate_live_trading_access_token,
+)
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
@@ -64,7 +68,7 @@ from app.core.broker_settings import (
     uses_longbridge_cli_oauth,
 )
 from app.services.comparisons import (
-    align_many_intraday_datasets_on_common_dates,
+    align_intraday_datasets_for_compare,
     build_series_payload,
     calculate_ttm_dividend_yield,
     complete_market_local_trading_days,
@@ -179,6 +183,7 @@ from app.services.market_data import (
     refresh_one_minute_store,
     refresh_recent_one_minute_store_with_yfinance,
     select_price_series,
+    supports_compare_extended_hours,
 )
 from app.services.market_freshness import (
     ensure_latest_daily_caches,
@@ -244,7 +249,8 @@ PORTFOLIO_BENCHMARK_COLORS = {
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
-SUPPORTED_VIEWS = {"tickers", "portfolio", "dca", "backtest", "trade", "settings"}
+SUPPORTED_VIEWS = {"tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings"}
+BACKTEST_VIEWS = {"backtest", "grid-trading"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
                                "clear-caches", "style-tokens", "export-image", "cash-equivalents"}
 SUPPORTED_TRADE_SECTIONS = {"investment", "live-trading"}
@@ -263,9 +269,11 @@ STRATEGY_CATEGORY_LABELS = {
 }
 VIEW_PATHS = {
     "tickers": "/workspaces/compare",
+    "prices": "/workspaces/prices",
     "portfolio": "/workspaces/portfolio",
     "dca": "/workspaces/dca",
     "backtest": "/workspaces/backtest",
+    "grid-trading": "/workspaces/grid-trading",
     "trade": "/trade/investment",
     "settings": "/settings/about",
 }
@@ -283,11 +291,13 @@ class WebRuntime:
     root: Any
     compare_page: Any
     legacy_compare_page: Any
+    price_compare_page: Any
     portfolio_page: Any
     legacy_portfolio_page: Any
     dca_page: Any
     legacy_dca_page: Any
     backtest_page: Any
+    grid_trading_page: Any
     legacy_backtest_page: Any
     legacy_trade_messages_page: Any
     trade_root: Any
@@ -970,6 +980,7 @@ def build_web_runtime() -> WebRuntime:
         daily_path = history_store_path_for(normalized_ticker) if normalized_ticker else None
         intraday_path = intraday_history_store_path_for(normalized_ticker, "1m") if normalized_ticker else None
         params = [
+            request.path,
             request.args.get("ticker", ""),
             request.args.get("strategy", ""),
             request.args.get("capital", ""),
@@ -1296,7 +1307,9 @@ def build_web_runtime() -> WebRuntime:
             return [(9 * 60, (11 * 60) + 30), ((12 * 60) + 30, (15 * 60) + 30)]
         if market == "UK":
             return [(8 * 60, (16 * 60) + 30)]
-        if market in {"AU", "MY", "EU", "FI", "ID", "SG", "ZA"}:
+        if market == "SG":
+            return [(9 * 60, 12 * 60), (13 * 60, 17 * 60)]
+        if market in {"AU", "MY", "EU", "FI", "ID", "ZA"}:
             return [(9 * 60, market_close_minute_for_ticker(ticker) + 1)]
         if market == "CA":
             return [((9 * 60) + 30, 16 * 60)]
@@ -1713,6 +1726,7 @@ def build_web_runtime() -> WebRuntime:
                 {"x": index, "o": None, "h": None, "l": None, "c": None, "v": None, "synthetic": True}
                 for index, _value in enumerate(reference_dates)
             ],
+            prices=[None for _ in reference_dates],
         )
 
     def build_compare_series_payload(
@@ -2004,7 +2018,12 @@ def build_web_runtime() -> WebRuntime:
             trade_dataset = slice_dataset_for_period(trade_dataset, period, common_end_date)
 
         strategy_options = list_enabled_strategies()
-        selected_strategy_id = request.args.get("strategy", defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")).strip()
+        default_strategy_id = (
+            "grid-trading"
+            if request.path == VIEW_PATHS["grid-trading"]
+            else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
+        )
+        selected_strategy_id = request.args.get("strategy", default_strategy_id).strip()
         strategy_ids = {str(item["id"]) for item in strategy_options}
         if selected_strategy_id not in strategy_ids and strategy_options:
             selected_strategy_id = str(strategy_options[0]["id"])
@@ -2304,6 +2323,28 @@ def build_web_runtime() -> WebRuntime:
                 "related_styles": [],
             },
             {
+                "id": style_token_id("Shared select filter"),
+                "name": "Shared select filter",
+                "sample_kind": "shared-select-filter",
+                "sample_title": "Side filter",
+                "sample_copy": "The standard trigger, dropdown, selected state, and filter options shared by table headers and forms.",
+                "sample_button": "All",
+                "sample_button_class": "",
+                "sample_icon_class": "",
+                "sample_icon_shell_class": "",
+                "tokens": [
+                    px_token("--shared-select-dropdown-padding", 10, 0),
+                    raw_token("--shared-select-dropdown-radius", "var(--radius-soft)"),
+                    raw_token("--shared-select-dropdown-max-height", "min(360px, 55vh)"),
+                    raw_token("--shared-select-option-padding", "9px 10px"),
+                    px_token("--shared-select-option-gap", 8, 0),
+                    raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
+                    raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),
+                    raw_token("--control-liquid-border", "1px solid transparent"),
+                ],
+                "related_styles": [],
+            },
+            {
                 "id": style_token_id("Settings action package"),
                 "name": "Settings action package",
                 "sample_kind": "action-package",
@@ -2346,11 +2387,11 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-round-icon-button-size", 36, 1),
                     px_token("--settings-round-icon-button-icon-size", 18, 1),
                     raw_token("--settings-round-icon-button-radius", "var(--radius-pill)"),
-                    raw_token("--settings-round-icon-button-background", "var(--glass-chip-background-strong)"),
-                    raw_token("--settings-round-icon-button-background-hover", "var(--glass-chip-background-hover)"),
-                    raw_token("--settings-round-icon-button-shadow", "var(--glass-chip-shadow)"),
-                    raw_token("--settings-round-icon-button-shadow-hover", "var(--glass-chip-shadow-hover)"),
-                    raw_token("--settings-round-icon-button-shadow-active", "var(--glass-chip-shadow-active)"),
+                    raw_token("--settings-round-icon-button-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--settings-round-icon-button-background-hover", "var(--frosted-glass-extracted-background-hover)"),
+                    raw_token("--settings-round-icon-button-shadow", "var(--frosted-glass-extracted-shadow)"),
+                    raw_token("--settings-round-icon-button-shadow-hover", "var(--frosted-glass-extracted-shadow-hover)"),
+                    raw_token("--settings-round-icon-button-shadow-active", "var(--frosted-glass-extracted-shadow-active)"),
                     raw_token("--settings-round-icon-button-color", "color-mix(in srgb, var(--theme-text) 70%, transparent)"),
                     raw_token("--settings-round-icon-button-color-hover", "var(--accent-text)"),
                 ],
@@ -2459,13 +2500,23 @@ def build_web_runtime() -> WebRuntime:
                 ],
                 "tokens": [
                     raw_token("--radius-panel", "10px"),
-                    raw_token("--glass-surface-border", "1px solid color-mix(in srgb, var(--theme-text) 8%, transparent)"),
+                    raw_token("--glass-surface-border", "0px solid transparent"),
                     raw_token("--glass-surface-background-soft", "var(--theme-glass-surface-background-soft)"),
                     raw_token("--panel-strong", "var(--theme-panel-strong)"),
                     raw_token("--scrollable-data-table-header-padding", "4px 1px"),
                     raw_token("--scrollable-data-table-cell-padding", "2px 1px"),
                     raw_token("--scrollable-data-table-summary-line-height", "0.75"),
                     raw_token("--scrollable-data-table-summary-padding", "6px 8px"),
+                    px_token("--scrollable-data-table-header-height", 28, 1),
+                    px_token("--scrollable-data-table-min-width", 376, 1),
+                    raw_token("--scrollable-data-table-header-color", "var(--theme-muted)"),
+                    raw_token("--scrollable-data-table-scrollbar-gutter", "stable"),
+                    raw_token("--scrollable-data-table-row-background", "var(--panel-strong)"),
+                    raw_token("--scrollable-data-table-row-background-alt", "color-mix(in srgb, var(--panel-strong) 82%, var(--glass-surface-background-strong))"),
+                    raw_token("--scrollable-data-table-summary-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--scrollable-data-table-summary-border", "var(--frosted-glass-extracted-border)"),
+                    raw_token("--scrollable-data-table-summary-shadow", "var(--frosted-glass-extracted-shadow)"),
+                    raw_token("--scrollable-data-table-summary-blur", "var(--frosted-glass-extracted-blur)"),
                     raw_token("--investment-holdings-cell-padding", "4px 6px"),
                 ],
                 "related_styles": [],
@@ -2645,7 +2696,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
                     raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-extracted-shadow)"),
                     raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-extracted-blur)"),
-                    raw_token("--local-store-pagination-motion-duration", "325ms"),
+                    raw_token("--local-store-pagination-motion-duration", "500ms"),
                     raw_token("--local-store-pagination-motion-easing", "var(--motion-bouncy)"),
                 ],
                 "related_styles": [],
@@ -2952,7 +3003,7 @@ def build_web_runtime() -> WebRuntime:
                 "sample_surface_shadow": "var(--glass-surface-shadow)",
                 "tokens": standard_material_tokens(
                     "var(--theme-glass-surface-background)",
-                    "1px solid color-mix(in srgb, var(--color-white-adaptive) 26%, transparent)",
+                    "0px solid transparent",
                     "0 18px 40px var(--theme-shadow-ambient)",
                     "saturate(180%) blur(24px)",
                 ),
@@ -3552,14 +3603,17 @@ def build_web_runtime() -> WebRuntime:
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
         include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
+        if current_view == "prices":
+            price_only = True
+            include_dividends = False
         include_extended_hours = (
-            current_view == "tickers"
+            current_view in {"tickers", "prices"}
             and period == "1d"
             and parse_bool_flag("extended_hours", "include_extended_hours")
         )
         show_extended_hours_toggle = False
 
-        if current_view == "tickers" and not requested_tickers:
+        if current_view in {"tickers", "prices"} and not requested_tickers:
             requested_tickers = [
                 normalize_ticker_input(defaults.get("ticker_a", DEFAULT_TICKERS[0])),
                 normalize_ticker_input(defaults.get("ticker_b", DEFAULT_TICKERS[1])),
@@ -3572,7 +3626,7 @@ def build_web_runtime() -> WebRuntime:
                                     if normalize_ticker_input(value)
                                 ][:MAX_TICKERS]
             include_dividends = False
-        elif current_view == "backtest" and not requested_tickers:
+        elif current_view in BACKTEST_VIEWS and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
                 defaults.get("backtest_ticker", defaults.get("ticker_a", DEFAULT_TICKERS[0]))
             )
@@ -3633,7 +3687,9 @@ def build_web_runtime() -> WebRuntime:
         strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = request.args.get(
             "strategy",
-            defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
+            "grid-trading"
+            if current_view == "grid-trading"
+            else defaults.get("backtest_strategy", strategy_options[0]["id"] if strategy_options else "")
             if current_view == "backtest"
             else (strategy_options[0]["id"] if strategy_options else ""),
         ).strip()
@@ -3645,7 +3701,7 @@ def build_web_runtime() -> WebRuntime:
         backtest_initial_capital = max(
             parse_float_value(
                 request.args.get("capital", request.args.get("initial_capital")),
-                float(defaults.get("backtest_capital", 10000.0)) if current_view == "backtest" else 10000.0,
+                float(defaults.get("backtest_capital", 10000.0)) if current_view in BACKTEST_VIEWS else 10000.0,
             ),
             1.0,
         )
@@ -3665,7 +3721,7 @@ def build_web_runtime() -> WebRuntime:
         dca_month_day = min(max(parse_int_value(request.args.get("month_day"), parse_int_value(defaults.get("dca_month_day"), 15)), 1), 28)
         requested_interval = request.args.get("interval", defaults.get("backtest_interval", DEFAULT_INTERVAL)).strip().lower()
         supported_intervals = ["1d"]
-        if current_view == "backtest" and requested_tickers:
+        if current_view in BACKTEST_VIEWS and requested_tickers:
             try:
                 trade_ticker = validate_ticker_or_raise(requested_tickers[0])
                 supported_intervals = list_available_market_intervals(trade_ticker)
@@ -3735,7 +3791,11 @@ def build_web_runtime() -> WebRuntime:
             error = None
             notice = None
 
-        if current_view == "portfolio":
+        if current_view == "prices":
+            page_title = labels.get("dock_prices", "Price performance")
+            report_heading = labels.get("dock_prices", "Price performance")
+            chart_heading = "Price history"
+        elif current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
             chart_heading = labels["portfolio_chart"]
@@ -3743,8 +3803,8 @@ def build_web_runtime() -> WebRuntime:
             page_title = labels["dca_title"]
             report_heading = labels["dca_metrics"]
             chart_heading = labels["dca_chart"]
-        elif current_view == "backtest":
-            page_title = labels["backtest_title"]
+        elif current_view in BACKTEST_VIEWS:
+            page_title = labels.get("grid_trading_title", "Grid Trading") if current_view == "grid-trading" else labels["backtest_title"]
         elif current_view == "settings":
             page_title = labels["settings_title"]
             if settings_section == "network":
@@ -3785,7 +3845,7 @@ def build_web_runtime() -> WebRuntime:
 
         supported_periods = (
             list(COMPARE_PERIODS_1D)
-            if current_view in {"tickers", "portfolio"}
+            if current_view in {"tickers", "prices", "portfolio"}
             else list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals
             else list(ADAPTIVE_PERIODS_1D)
         )
@@ -3815,7 +3875,7 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"No market data returned for {ticker}.")
 
         try:
-            if current_view == "backtest":
+            if current_view in BACKTEST_VIEWS:
                 if requested_tickers:
                     backtest_refresh_ticker = validate_ticker_or_raise(requested_tickers[0])
                     backtest_market_refresh = ensure_latest_backtest_caches(backtest_refresh_ticker)
@@ -3967,7 +4027,7 @@ def build_web_runtime() -> WebRuntime:
                         notice = refresh_notice
                     else:
                         notice += " " + refresh_notice
-            elif current_view in {"tickers", "portfolio"}:
+            elif current_view in {"tickers", "prices", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
                         validated_tickers = [normalize_ticker_input(t) or t for t in requested_tickers]
@@ -4027,7 +4087,7 @@ def build_web_runtime() -> WebRuntime:
                             raise ValueError("Ticker symbols must be unique.")
 
                         freshness_refresh_failures: list[str] = []
-                        if current_view in {"tickers", "portfolio"}:
+                        if current_view in {"tickers", "prices", "portfolio"}:
                             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
 
                         # Try to fetch datasets, handle missing remote data by falling back to any available local data
@@ -4081,9 +4141,8 @@ def build_web_runtime() -> WebRuntime:
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         show_extended_hours_toggle = (
-                            current_view == "tickers"
-                            and period == "1d"
-                            and all(infer_ticker_market(ticker) == "US" for ticker in validated_tickers)
+                            current_view in {"tickers", "prices"}
+                            and supports_compare_extended_hours(validated_tickers, period)
                         )
                         if not show_extended_hours_toggle:
                             include_extended_hours = False
@@ -4159,11 +4218,11 @@ def build_web_runtime() -> WebRuntime:
                             else:
                                 notice += " " + freshness_notice
 
-                        is_exact_one_day_compare = current_view == "tickers" and range_mode == "exact" and period == "1d"
+                        is_exact_one_day_compare = current_view in {"tickers", "prices"} and range_mode == "exact" and period == "1d"
                         is_intraday_compare_period = range_mode != "exact" and period in {"1d", "3d", "1w"}
                         exact_range_trading_dates = exact_trading_dates_in_range(date_constraints)
                         is_exact_short_intraday_compare = (
-                            current_view == "tickers"
+                            current_view in {"tickers", "prices"}
                             and range_mode == "exact"
                             and not is_exact_one_day_compare
                             and 2 <= len(exact_range_trading_dates) <= 5
@@ -4174,7 +4233,7 @@ def build_web_runtime() -> WebRuntime:
                                 requested_start=exact_start or None,
                                 requested_end=exact_end or None,
                             )
-                        elif current_view == "tickers" and range_mode == "exact" and period in {"3d", "1w"}:
+                        elif current_view in {"tickers", "prices"} and range_mode == "exact" and period in {"3d", "1w"}:
                             intraday_date_constraints = build_short_intraday_date_constraint_payload(
                                 validated_tickers,
                                 requested_start=exact_start or None,
@@ -4287,8 +4346,14 @@ def build_web_runtime() -> WebRuntime:
                                             exact_range_trading_dates,
                                         )
                                     )
-                                aligned_datasets = align_many_intraday_datasets_on_common_dates(intraday_datasets)
-                                if should_append_exact_live:
+                                aligned_datasets = align_intraday_datasets_for_compare(
+                                    intraday_datasets,
+                                    validated_tickers,
+                                )
+                                if should_append_exact_live and len({
+                                    infer_ticker_market(ticker)
+                                    for ticker in validated_tickers
+                                }) == 1:
                                     aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                             else:
                                 aligned_datasets = align_datasets_on_common_dates(datasets)
@@ -4316,60 +4381,32 @@ def build_web_runtime() -> WebRuntime:
                                     notice = f"{notice} {intraday_notice}"
                             intraday_datasets: list[pd.DataFrame] = []
                             live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
-                            for ticker in validated_tickers:
-                                if period == "1d":
-                                    axis_trading_date = resolve_compare_axis_trading_date(
-                                        validated_tickers,
-                                        live_session_date,
+                            if period == "1d":
+                                intraday_datasets = [
+                                    load_compare_one_day_intraday_dataset(
+                                        ticker,
+                                        include_extended_hours_flag=include_extended_hours,
                                     )
-                                    reference_intraday_datasets = [
-                                        load_compare_one_day_intraday_dataset(
-                                            reference_ticker,
-                                            include_extended_hours_flag=include_extended_hours,
-                                            trading_date=axis_trading_date,
-                                        )
-                                        for reference_ticker in validated_tickers
-                                    ]
-                                    reference_common_end_date = min(dataset["Date"].max() for dataset in reference_intraday_datasets)
-                                    reference_aligned_datasets = slice_intraday_datasets_for_compare_period(
-                                        reference_intraday_datasets,
-                                        "1d",
-                                        reference_common_end_date,
-                                        validated_tickers,
-                                    )
-                                    if axis_trading_date != pd.Timestamp(live_session_date).strftime("%Y-%m-%d"):
-                                        aligned_datasets = []
-                                        for reference_dataset, live_ticker in zip(reference_aligned_datasets, validated_tickers):
-                                            try:
-                                                target_dataset = load_target_compare_one_day_intraday_dataset(
-                                                    live_ticker,
-                                                    target_trading_date=live_session_date,
-                                                    include_extended_hours_flag=include_extended_hours,
-                                                    live_session_date=live_session_date,
-                                                    force_refresh=True,
-                                                )
-                                                aligned_datasets.append(
-                                                    map_live_intraday_dataset_to_reference_axis(reference_dataset, target_dataset, live_ticker)
-                                                )
-                                            except Exception as exc:  # noqa: BLE001
-                                                LOGGER.info("No live compare bars for %s on %s yet: %s", live_ticker, live_session_date, exc)
-                                                aligned_datasets.append(build_empty_compare_axis_dataset(reference_dataset))
-                                    else:
-                                        aligned_datasets = [
-                                            apply_market_close_anchor(
-                                                dataset,
-                                                daily_dataset,
-                                                live_ticker,
-                                                live_session_date,
-                                            )
-                                            for dataset, daily_dataset, live_ticker in zip(reference_aligned_datasets, datasets, validated_tickers)
-                                        ]
-                                    aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
-                                    chart_trading_date_value = pd.to_datetime(axis_trading_date).strftime("%Y-%m-%d")
-                                    exact_start_value = pd.Timestamp(live_session_date).strftime("%Y-%m-%d")
-                                    exact_end_value = exact_start_value
-                                    intraday_datasets = []
-                                    break
+                                    for ticker in validated_tickers
+                                ]
+                                common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
+                                aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                    intraday_datasets,
+                                    period,
+                                    common_end_date,
+                                    validated_tickers,
+                                )
+                                reference_timestamp = pd.Timestamp(aligned_datasets[0]["Date"].max())
+                                if reference_timestamp.tzinfo is None:
+                                    reference_timestamp = reference_timestamp.tz_localize("America/New_York")
+                                else:
+                                    reference_timestamp = reference_timestamp.tz_convert("America/New_York")
+                                chart_trading_date_value = reference_timestamp.tz_convert(
+                                    market_timezone_for_ticker(validated_tickers[0])
+                                ).strftime("%Y-%m-%d")
+                                exact_start_value = chart_trading_date_value
+                                exact_end_value = chart_trading_date_value
+                            for ticker in ([] if period == "1d" else validated_tickers):
                                 intraday_dataset = fetch_history(
                                     ticker,
                                     include_dividends=False,
@@ -4385,7 +4422,7 @@ def build_web_runtime() -> WebRuntime:
                                         force_refresh=True,
                                     )[0]
                                 intraday_datasets.append(intraday_dataset)
-                            if intraday_datasets:
+                            if period != "1d" and intraday_datasets:
                                 common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
                                 aligned_datasets = slice_intraday_datasets_for_compare_period(
                                     intraday_datasets,
@@ -4478,9 +4515,9 @@ def build_web_runtime() -> WebRuntime:
                         best_return = max(valid_performance_returns) if valid_performance_returns else None
                         common_start = aligned_datasets[0]["Date"].min()
                         common_end = aligned_datasets[0]["Date"].max()
-                        if current_view == "tickers" and period == "1d" and (range_mode == "exact" or is_intraday_compare_period):
+                        if current_view in {"tickers", "prices"} and period == "1d" and (range_mode == "exact" or is_intraday_compare_period):
                             display_range = format_display_date(pd.to_datetime(exact_start_value or common_start))
-                        elif current_view == "tickers" and (
+                        elif current_view in {"tickers", "prices"} and (
                             (is_intraday_compare_period and period in {"3d", "1w"})
                             or is_exact_short_intraday_compare
                         ):
@@ -4490,7 +4527,7 @@ def build_web_runtime() -> WebRuntime:
                             ) or f"{format_display_date(common_start)} - {format_display_date(common_end)}"
                         else:
                             display_range = f"{format_display_date(common_start)} - {format_display_date(common_end)}"
-                        if current_view != "portfolio":
+                        if current_view == "tickers":
                             dividend_yield_map = build_ttm_dividend_yield_map(validated_tickers, common_end)
                             best_dividend_yield = best_numeric_metric([
                                 dividend_yield_map.get(ticker)
@@ -4578,7 +4615,7 @@ def build_web_runtime() -> WebRuntime:
             if trade_section == "live-trading":
                 live_trading_account_label = load_longbridge_account_label(load_broker_settings())
 
-        if current_view in {"backtest", "dca"}:
+        if current_view in {*BACKTEST_VIEWS, "dca"}:
             ticker_slots = ticker_slots[:1] if ticker_slots else [""]
         else:
             while len(ticker_slots) < MIN_TICKERS:
@@ -4595,9 +4632,11 @@ def build_web_runtime() -> WebRuntime:
 
         template_name = {
             "tickers": "compare.html",
+            "prices": "price_compare.html",
             "portfolio": "portfolio.html",
             "dca": "dca.html",
             "backtest": "backtest.html",
+            "grid-trading": "backtest.html",
             "trade": (
                 "investment.html"
                 if trade_section == "investment"
@@ -4688,7 +4727,7 @@ def build_web_runtime() -> WebRuntime:
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "portfolio", "dca", "backtest", "trade", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
@@ -4980,6 +5019,9 @@ def build_web_runtime() -> WebRuntime:
     def legacy_compare_page():
         return build_legacy_workspace_redirect("tickers")
 
+    def price_compare_page():
+        return render_workspace_page("prices")
+
     def portfolio_page():
         return render_workspace_page("portfolio")
 
@@ -4994,6 +5036,9 @@ def build_web_runtime() -> WebRuntime:
 
     def backtest_page():
         return render_workspace_page("backtest")
+
+    def grid_trading_page():
+        return render_workspace_page("grid-trading")
 
     def legacy_backtest_page():
         return build_legacy_workspace_redirect("backtest")
@@ -5624,7 +5669,7 @@ def build_web_runtime() -> WebRuntime:
         requested_range = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
         requested_period = request.args.get("period", "").strip().lower()
         freshness_refresh_failures: list[str] = []
-        if requested_view == "tickers" and requested_range == "exact" and requested_period == "1d":
+        if requested_view in {"tickers", "prices"} and requested_range == "exact" and requested_period == "1d":
             payload = build_one_day_intraday_date_constraint_payload(
                 validated_tickers,
                 requested_start=requested_start,
@@ -5689,12 +5734,16 @@ def build_web_runtime() -> WebRuntime:
                 and any(is_market_regular_session_active_for_ticker(ticker) for ticker in validated_tickers)
             )
 
-            include_extended_hours_flag = request.args.get(
+            requested_period = request.args.get("period", "1d").strip().lower() or "1d"
+            requested_extended_hours = request.args.get(
                 "extended_hours",
                 request.args.get("include_extended_hours", "0"),
             ) == "1"
+            include_extended_hours_flag = (
+                requested_extended_hours
+                and supports_compare_extended_hours(validated_tickers, requested_period)
+            )
             force_refresh = request.args.get("refresh", "1").strip() != "0"
-            requested_period = request.args.get("period", "1d").strip().lower() or "1d"
 
             if requested_period in {"3d", "1w"}:
                 live_sources: list[str] = []
@@ -5723,7 +5772,8 @@ def build_web_runtime() -> WebRuntime:
                     common_end_date,
                     validated_tickers,
                 )
-                aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
+                if len(selected_markets) == 1:
+                    aligned_datasets = truncate_intraday_datasets_to_common_live_timestamp(aligned_datasets)
                 colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
                 series = [
                     build_compare_series_payload(ticker, dataset, color=color)
@@ -6746,6 +6796,15 @@ def build_web_runtime() -> WebRuntime:
 
     def live_trading_get_positions():
         """Load current Longbridge stock positions for the Live trading workspace."""
+        access_granted, error_status, error_message = validate_live_trading_access_token(
+            request.headers.get(LIVE_TRADING_TOKEN_HEADER)
+        )
+        if not access_granted:
+            response = jsonify({"success": False, "error": error_message})
+            response.status_code = error_status
+            if error_status == 401:
+                response.headers["WWW-Authenticate"] = 'Bearer realm="antigravity-live-trading"'
+            return apply_no_store_headers(response)
         try:
             settings = load_broker_settings()
             account_balances = load_longbridge_account_balances(settings)
@@ -6811,6 +6870,15 @@ def build_web_runtime() -> WebRuntime:
 
     def live_trading_submit_order():
         """Submit a Longbridge live limit order from the Live trading workspace."""
+        access_granted, error_status, error_message = validate_live_trading_access_token(
+            request.headers.get(LIVE_TRADING_TOKEN_HEADER)
+        )
+        if not access_granted:
+            response = jsonify({"success": False, "error": error_message})
+            response.status_code = error_status
+            if error_status == 401:
+                response.headers["WWW-Authenticate"] = 'Bearer realm="antigravity-live-trading"'
+            return apply_no_store_headers(response)
         payload = request.get_json(silent=True) or {}
         try:
             order = submit_longbridge_limit_order(
@@ -6850,11 +6918,13 @@ def build_web_runtime() -> WebRuntime:
         root=root,
         compare_page=compare_page,
         legacy_compare_page=legacy_compare_page,
+        price_compare_page=price_compare_page,
         portfolio_page=portfolio_page,
         legacy_portfolio_page=legacy_portfolio_page,
         dca_page=dca_page,
         legacy_dca_page=legacy_dca_page,
         backtest_page=backtest_page,
+        grid_trading_page=grid_trading_page,
         legacy_backtest_page=legacy_backtest_page,
         legacy_trade_messages_page=legacy_trade_messages_page,
         trade_root=trade_root,

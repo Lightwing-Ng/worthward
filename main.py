@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.4.4
+Code version: v0.4.6
 """
 
 from json import JSONDecodeError
@@ -17,7 +17,7 @@ from app.infrastructure.broker_market_data import prewarm_longbridge_quote_conte
 from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance
 
 LOG_PREFIX = "[compareStocks]"
-DEFAULT_DEBUG = True
+DEFAULT_DEBUG = False
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8688
 
@@ -65,8 +65,8 @@ def _build_run_options(config: dict) -> dict:
     # Note: IBKR is reporting-only via Flex Web Service; no local Gateway process is managed.
     return {
         "debug": debug_enabled,
-        "host": config["server"].get("host", DEFAULT_HOST),
-        "port": config["server"].get("port", DEFAULT_PORT),
+        "host": os.environ.get("ANTIGRAVITY_HOST") or config["server"].get("host", DEFAULT_HOST),
+        "port": int(os.environ.get("ANTIGRAVITY_PORT") or config["server"].get("port", DEFAULT_PORT)),
         "use_reloader": use_reloader,
     }
 

@@ -1,0 +1,4 @@
+# Development and quality dependencies. Versions verified on 11 Jul 2026.
+pytest==9.0.2
+pytest-cov==7.1.0
+ruff==0.15.21

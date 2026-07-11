@@ -1,4 +1,4 @@
-/* Code version: v0.4.13 */
+/* Code version: v0.4.15 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -173,7 +173,7 @@
 
 		const frame = share().createTemplateFrame?.({
 			shareView: "compare",
-			title: "Compare stocks",
+			title: "Return comparison",
 		});
 		if (!frame?.host || !frame?.card || !frame?.body) {
 			throw new Error("Compare share template is unavailable.");
@@ -194,6 +194,9 @@
 	};
 
 	const normalizeTicker = (value) => String(value || "").trim().toUpperCase();
+	const nonUsMarketSuffixPattern = /\.(AS|AX|BA|BE|BK|BO|BR|CA|CN|CO|DE|DU|F|HA|HE|HK|HM|IR|IS|JK|JP|KL|KQ|KS|L|MC|MI|MX|NE|NS|NZ|OL|PA|QA|SA|SE|SG|SH|SI|SR|SS|ST|SW|SZ|T|TA|TO|TWO|TW|V|VI)$/i;
+	const areAllCompareTickersUs = (tickers) => tickers.length > 0
+		&& tickers.every((ticker) => !nonUsMarketSuffixPattern.test(normalizeTicker(ticker)));
 
 	const getComparePeriod = () => {
 		const params = new URLSearchParams(window.location.search);
@@ -268,7 +271,11 @@
 			params.set("live_date", liveDate);
 		}
 		params.set("refresh", "1");
-		if (currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1") {
+		if (
+			areAllCompareTickersUs(tickers)
+			&& getComparePeriod() === "1d"
+			&& (currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1")
+		) {
 			params.set("extended_hours", "1");
 		}
 		return params;

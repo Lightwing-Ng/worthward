@@ -1,4 +1,4 @@
-/* Code version: v0.7.26 */
+/* Code version: v0.7.29 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -141,18 +141,20 @@
 		};
 	};
 
-	const drawContainedImage = (ctx, image, drawX, drawY, boxSize) => {
+	const drawContainedImage = (ctx, image, drawX, drawY, boxSize, padding = 2) => {
 		const sourceWidth = Number(image?.naturalWidth || 0);
 		const sourceHeight = Number(image?.naturalHeight || 0);
 		if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
-			ctx.drawImage(image, drawX, drawY, boxSize, boxSize);
 			return;
 		}
-		const scale = Math.min(boxSize / sourceWidth, boxSize / sourceHeight);
+		const contentSize = Math.max(1, boxSize - (Math.max(0, padding) * 2));
+		const scale = Math.min(contentSize / sourceWidth, contentSize / sourceHeight);
 		const drawWidth = sourceWidth * scale;
 		const drawHeight = sourceHeight * scale;
 		const offsetX = drawX + ((boxSize - drawWidth) / 2);
 		const offsetY = drawY + ((boxSize - drawHeight) / 2);
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = "high";
 		ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 	};
 
@@ -198,7 +200,10 @@
 			const image = new Image();
 			image.decoding = "async";
 			image.src = url;
-			image.onload = () => chartInstance.update("none");
+			image.onload = () => {
+				if (!chartInstance.canvas?.isConnected || window.Chart?.getChart?.(chartInstance.canvas) !== chartInstance) return;
+				chartInstance.update("none");
+			};
 			image.onerror = () => logoCache.delete(url);
 			logoCache.set(url, image);
 			return image;
@@ -1222,5 +1227,4 @@
 
 	bootstrap.renderReturnsChart = renderReturnsChart;
 	bootstrap.initChartWorkspace = initChartWorkspace;
-	initChartWorkspace();
 })();

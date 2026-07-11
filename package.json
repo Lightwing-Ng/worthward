@@ -1,0 +1,15 @@
+{
+  "name": "antigravity-quality",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser quality checks for the antigravity Flask application.",
+  "scripts": {
+    "test:js": "node --test tests/test_investment_data_utils.mjs tests/test_table_filter_contracts.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run test:js && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

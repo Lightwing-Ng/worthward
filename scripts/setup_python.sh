@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.3.0
+# Code version: v0.4.0
 
 set -euo pipefail
 
@@ -25,9 +25,19 @@ PY
 
 echo "Using host Python: $PYTHON_BIN"
 "$PYTHON_BIN" -m pip install --upgrade pip
-"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements.txt" pytest
+"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements.txt"
+"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements-dev.txt"
+
+if command -v npm >/dev/null 2>&1; then
+	(cd "$ROOT_DIR" && npm install)
+	(cd "$ROOT_DIR" && npx playwright install chromium)
+else
+	echo "Node.js/npm is required for JavaScript and browser tests." >&2
+	exit 1
+fi
 
 echo
 echo "Host Python is ready."
 echo "Run tests with: $ROOT_DIR/scripts/test.sh"
+echo "Run the complete quality gate with: $ROOT_DIR/scripts/check.sh"
 echo "Run the app with: $ROOT_DIR/scripts/run_app.sh"

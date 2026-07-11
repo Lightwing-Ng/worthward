@@ -1,0 +1,23 @@
+/* Code version: v1.0.0 */
+
+/* Keep motion composited and deterministic when controls are interrupted. */
+[data-motion-state="running"] {
+	backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html:focus-within {
+		scroll-behavior: auto;
+	}
+
+	*,
+	*::before,
+	*::after {
+		scroll-behavior: auto !important;
+		animation-delay: 0ms !important;
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		transition-delay: 0ms !important;
+		transition-duration: 1ms !important;
+	}
+}

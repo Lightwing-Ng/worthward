@@ -1,4 +1,4 @@
-/* Code version: v0.5.6 */
+/* Code version: v0.6.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -206,7 +206,7 @@
     background: var(--settings-general-option-background);
     border: var(--settings-general-option-border);
     cursor: pointer;
-    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    transition: background-color 180ms var(--motion-standard), border-color 180ms var(--motion-standard), box-shadow 180ms var(--motion-standard);
 }
 
 .settings-general-option--action {
@@ -265,11 +265,11 @@
     align-items: flex-start;
     padding: var(--settings-action-package-pad-block) var(--settings-action-package-pad-inline);
     border-radius: var(--settings-action-package-radius);
-    background: var(--settings-action-package-background);
+    background: var(--panel-strong);
     border: var(--settings-action-package-border);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    box-shadow: var(--shadow);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     max-width: var(--settings-action-package-max-width);
 }
 
@@ -437,7 +437,7 @@
 
 .settings-ibkr-gateway-status[data-status="pending"] .settings-ibkr-gateway-status-dot,
 .settings-ibkr-gateway-status[data-status="running"] .settings-ibkr-gateway-status-dot {
-    animation: settingsIbkrGatewayPulse 1.4s ease-in-out infinite;
+    animation: settingsIbkrGatewayPulse 1.4s var(--motion-shimmer) infinite;
 }
 
 .settings-ibkr-gateway-status:has([data-ibkr-gateway-status-text]:empty) {

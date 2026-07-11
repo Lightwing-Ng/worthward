@@ -59,9 +59,13 @@ market_store/logos/*
 !market_store/logos/dollarsign.ring.svg
 debug-frontend-fetch-aborts.md
 Longbridge_OpenAPI_Complete_Asset_Inspection_Manual_for_Agents.md
-tests/
 settings_store/
 node_modules/
+coverage.json
+.coverage
+htmlcov/
+playwright-report/
+test-results/
 .vercel/
 .vercelignore
 .lb-home/

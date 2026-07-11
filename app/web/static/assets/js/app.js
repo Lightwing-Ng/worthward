@@ -1,4 +1,4 @@
-/* Code version: v0.5.36 */
+/* Code version: v0.7.3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -65,6 +65,20 @@
         return keys;
     };
     const tickersEquivalent = (left, right) => {
+        const leftTicker = sanitizeTicker(left || "");
+        const rightTicker = sanitizeTicker(right || "");
+        if (!leftTicker || !rightTicker) return false;
+        if (leftTicker === rightTicker) return true;
+        const [leftHead, leftSuffix = ""] = leftTicker.split(".", 2);
+        const [rightHead, rightSuffix = ""] = rightTicker.split(".", 2);
+        const normalizedLeftHead = /^\d+$/.test(leftHead) ? (leftHead.replace(/^0+/, "") || "0") : leftHead;
+        const normalizedRightHead = /^\d+$/.test(rightHead) ? (rightHead.replace(/^0+/, "") || "0") : rightHead;
+        if (leftSuffix && rightSuffix) {
+            const shanghaiAliases = new Set(["SH", "SS"]);
+            return normalizedLeftHead === normalizedRightHead
+                && shanghaiAliases.has(leftSuffix)
+                && shanghaiAliases.has(rightSuffix);
+        }
         const leftKeys = tickerMatchKeys(left);
         const rightKeys = tickerMatchKeys(right);
         for (const key of leftKeys) {
@@ -74,7 +88,7 @@
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-    const WORKSPACE_VIEWS = new Set(["tickers", "portfolio", "dca", "backtest"]);
+    const WORKSPACE_VIEWS = new Set(["tickers", "prices", "portfolio", "dca", "backtest"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -130,6 +144,9 @@
                 '[data-workspace-mask="compare-ttm-dividend-yield"]',
                 '[data-workspace-mask="chart-area"]',
             ],
+        },
+        prices: {
+            masks: ['[data-workspace-mask="price-subplots"]'],
         },
         portfolio: {
             masks: [
@@ -775,7 +792,8 @@
         "live-trading": {title: "Live trading"},
     });
     const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({
-        tickers: {title: labels.dock_tickers || "Compare stocks"},
+        tickers: {title: labels.dock_tickers || "Return comparison"},
+        prices: {title: labels.dock_prices || "Price performance"},
         portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
         dca: {title: labels.dock_dca || "Dollar-cost averaging"},
         backtest: {title: labels.dock_backtest || "Backtest"},
@@ -839,7 +857,7 @@
 
     const buildWorkspaceNavigationSkeleton = (targetView) => {
         const profile = WORKSPACE_NAVIGATION_PROFILES[targetView] || WORKSPACE_NAVIGATION_PROFILES.backtest;
-        if (targetView === "tickers") {
+        if (targetView === "tickers" || targetView === "prices") {
             return `
                 <section class="workspace-header workspace-mobile-summary-shell navigation-skeleton-page">
                     ${buildNavigationTitleCard(profile.title)}
@@ -1053,6 +1071,7 @@
                 || path === "/workspaces/compare"
                 || path.startsWith("/workspaces/compare/")
             ) return "tickers";
+            if (path === "/workspaces/prices" || path.startsWith("/workspaces/prices/")) return "prices";
             if (
                 path === "/portfolio"
                 || path.startsWith("/portfolio/")
@@ -1246,7 +1265,7 @@
     const sidebarToggle = $("#sidebar_toggle");
     const appSidebar = $("#app_sidebar");
     const sidebarBackdrop = $("#sidebar_backdrop");
-    const mobileSidebarMedia = window.matchMedia("(max-width: 767px)");
+    const mobileSidebarMedia = window.matchMedia("(max-width: 820px)");
     let isSidebarOpen = true;
     let isSidebarAnimating = false;
 
@@ -1257,7 +1276,7 @@
             if (storedValue === "false") return false;
         } catch (_error) {
         }
-        return true;
+        return !mobileSidebarMedia.matches;
     };
 
     const writeSidebarMemory = (value) => {
@@ -1339,7 +1358,18 @@
     const getTickerFields = () => $$(".ticker-field");
     const getTickerInputs = () => getTickerFields().map((field) => field.querySelector("[data-ticker-input]")).filter(Boolean);
     const getFilledTickers = () => getTickerInputs().map((input) => sanitizeTicker(input.value.trim())).filter(Boolean);
-    const isUsTicker = (ticker) => !/\.(HK|KS|T|JP|SH|SS|SZ|SG|L)$/i.test(sanitizeTicker(ticker));
+    const nonUsMarketSuffixes = new Set([
+        "AS", "AX", "BA", "BE", "BK", "BO", "BR", "CA", "CN", "CO", "DE", "DU", "F", "HA",
+        "HE", "HK", "HM", "IR", "IS", "JK", "JP", "KL", "KQ", "KS", "L", "MC", "MI",
+        "MX", "NE", "NS", "NZ", "OL", "PA", "QA", "SA", "SE", "SG", "SH", "SI", "SR",
+        "SS", "ST", "SW", "SZ", "T", "TA", "TO", "TWO", "TW", "V", "VI",
+    ]);
+    const isUsTicker = (ticker) => {
+        const normalizedTicker = sanitizeTicker(ticker);
+        if (!normalizedTicker.includes(".")) return true;
+        const suffix = normalizedTicker.split(".").pop() || "";
+        return suffix === "US" || !nonUsMarketSuffixes.has(suffix);
+    };
     const areAllFilledTickersUs = () => {
         const tickers = getFilledTickers();
         return tickers.length > 0 && tickers.every(isUsTicker);
@@ -1616,6 +1646,12 @@
             activeScrollableTableHeaderCleanup();
             activeScrollableTableHeaderCleanup = null;
         }
+        if (window.ANTIGRAVITY_TABLES?.attachAll) {
+            activeScrollableTableHeaderCleanup = window.ANTIGRAVITY_TABLES.attachAll(
+                document.getElementById("workspace_panel") || document,
+            );
+            return;
+        }
         const headerHeightProperty = "--scrollable-data-table-header-height";
         const scrollbarWidthProperty = "--scrollable-data-table-scrollbar-width";
         const overlayBorderCompensationProperty = "--scrollable-data-table-overlay-border-compensation";
@@ -1818,6 +1854,7 @@
         });
         window.requestAnimationFrame(() => {
             window.ANTIGRAVITY_BOOTSTRAP?.initChartWorkspace?.();
+            window.ANTIGRAVITY_BOOTSTRAP?.initPriceCompareWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initPortfolioWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initDcaWorkspace?.();
             window.ANTIGRAVITY_BOOTSTRAP?.initBacktestWorkspace?.();
@@ -2156,7 +2193,7 @@
     };
 
     const mergeKnownTickerProfilesIntoState = (nextState) => {
-        if (!nextState || !["tickers", "portfolio"].includes(nextState.currentView)) return nextState;
+        if (!nextState || !["tickers", "prices", "portfolio"].includes(nextState.currentView)) return nextState;
         if (!nextState.chart) return nextState;
         const profileMap = collectKnownTickerProfileMap();
         if (!profileMap.size) return nextState;
@@ -2499,7 +2536,7 @@
             const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(value)}&limit=5`);
             if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
             const payload = await response.json();
-            const isKnown = Boolean(payload.find((item) => String(item.symbol || "").toUpperCase() === value));
+            const isKnown = Boolean(payload.find((item) => tickersEquivalent(item?.symbol || "", value)));
             if (input.dataset.validationTicker === value) {
                 input.dataset.unknown = isKnown ? "" : "1";
                 if (isKnown) {
@@ -3291,10 +3328,16 @@
                 await showRecentItems();
                 return;
             }
+            const requestId = ++autocompleteRequestSequence;
             try {
                 const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(queryValue)}&limit=${limit}`);
                 if (!response.ok) return closePanel();
                 const payload = await response.json();
+                if (
+                    requestId !== autocompleteRequestSequence
+                    || input.dataset.composing === "1"
+                    || sanitizeTicker(input.value.trim()) !== queryValue
+                ) return;
                 if (!Array.isArray(payload) || !payload.length) {
                     if (!preserveUnknown) setUnknown(true);
                     closePanel();
@@ -3425,7 +3468,7 @@
             });
         };
 
-        input.addEventListener("input", async () => {
+        const handleTickerInput = async () => {
             if (isPortfolioView) requestWorkspaceChartTransition("ticker-edit");
             else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
             hideTickerValidationTooltip(input);
@@ -3496,6 +3539,31 @@
                     if (requestId === autocompleteRequestSequence) closePanel();
                 }
             }, 50);
+        };
+        input.addEventListener("compositionstart", () => {
+            input.dataset.composing = "1";
+            autocompleteRequestSequence += 1;
+            closePanel();
+            if (autocompleteTimer) {
+                window.clearTimeout(autocompleteTimer);
+                autocompleteTimer = 0;
+            }
+        });
+        input.addEventListener("compositionend", () => {
+            delete input.dataset.composing;
+            input.dataset.skipComposedInput = "1";
+            void handleTickerInput();
+            window.queueMicrotask(() => {
+                delete input.dataset.skipComposedInput;
+            });
+        });
+        input.addEventListener("input", (event) => {
+            if (event.isComposing || input.dataset.composing === "1") return;
+            if (input.dataset.skipComposedInput === "1") {
+                delete input.dataset.skipComposedInput;
+                return;
+            }
+            void handleTickerInput();
         });
         input.addEventListener("focus", async () => {
             hideTickerValidationTooltip(input);
@@ -3520,9 +3588,11 @@
         });
         input.addEventListener("blur", () => {
             window.setTimeout(closePanel, 120);
+            if (input.dataset.composing === "1") return;
             void validateTickerExistence(input, {preferFresh: true});
         });
         input.addEventListener("keydown", (event) => {
+            if (event.isComposing || input.dataset.composing === "1" || event.keyCode === 229) return;
             const buttons = getButtons();
             if (event.key === "ArrowDown") {
                 if (!buttons.length) return;
@@ -4082,7 +4152,7 @@
         .filter((field) => field instanceof HTMLElement);
 
     const isOneDayExactDateMode = () => (
-        state.currentView === "tickers"
+        ["tickers", "prices"].includes(state.currentView)
         && (periodSelect?.value || defaults.period) === "1d"
     );
 
@@ -4098,13 +4168,14 @@
 
     const syncDividendModeSwitches = () => {
         if (!priceOnlyInput || !includeDividendsInput) return;
-        const isOneDayPeriod = state.currentView === "tickers" && (periodSelect?.value || defaults.period) === "1d";
+        const isPriceCompare = state.currentView === "prices";
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         if (priceOnlyField instanceof HTMLElement) {
-            priceOnlyField.hidden = isOneDayPeriod;
+            priceOnlyField.hidden = isOneDayPeriod || isPriceCompare;
         }
-        priceOnlyInput.disabled = isOneDayPeriod;
-        includeDividendsInput.disabled = isOneDayPeriod;
-        if (isOneDayPeriod) {
+        priceOnlyInput.disabled = isOneDayPeriod || isPriceCompare;
+        includeDividendsInput.disabled = isOneDayPeriod || isPriceCompare;
+        if (isOneDayPeriod || isPriceCompare) {
             priceOnlyInput.checked = false;
             includeDividendsInput.checked = false;
             if (dividendReinvestField instanceof HTMLElement) {
@@ -4121,7 +4192,7 @@
 
     const syncOneDayExtendedHoursSwitch = () => {
         if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) return;
-        const isOneDayPeriod = state.currentView === "tickers" && (periodSelect?.value || defaults.period) === "1d";
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const canUseExtendedHours = isOneDayPeriod && areAllFilledTickersUs();
         extendedHoursField.hidden = !canUseExtendedHours;
         extendedHoursInput.disabled = !canUseExtendedHours;
@@ -4308,6 +4379,7 @@
         if (isOpen) {
             positionSharedSelectDropdown(field);
         } else {
+            parts.trigger.removeAttribute("aria-activedescendant");
             resetSidebarDropdownPosition(parts.dropdown);
         }
     };
@@ -4346,10 +4418,12 @@
         if (!parts) return;
         const currentSelection = String(parts.select.value || "");
         parts.dropdown.innerHTML = "";
-        Array.from(parts.select.options).forEach((option) => {
+        Array.from(parts.select.options).forEach((option, optionIndex) => {
             const optionButton = document.createElement("button");
             optionButton.type = "button";
             optionButton.className = "trade-strategy-dropdown-option";
+            optionButton.id = `${parts.dropdown.id || parts.select.id || "shared_select"}_option_${optionIndex}`;
+            optionButton.tabIndex = -1;
             optionButton.dataset.value = option.value;
             optionButton.setAttribute("role", "option");
             optionButton.setAttribute("aria-selected", option.value === currentSelection ? "true" : "false");
@@ -4422,12 +4496,14 @@
             optionButton.addEventListener("click", () => {
                 if (parts.select.value === option.value) {
                     setSharedSelectDropdownOpen(field, false);
+                    parts.trigger.focus({preventScroll: true});
                     return;
                 }
                 syncNativeSelectSelection(parts.select, option.value);
                 syncSharedSelectTriggerLabel(field);
                 renderSharedSelectDropdown(field);
                 setSharedSelectDropdownOpen(field, false);
+                parts.trigger.focus({preventScroll: true});
                 parts.select.dispatchEvent(new Event("change", {bubbles: true}));
 
                 // Extra safety for the investment import broker dropdown (uses fixed positioning in constrained form).
@@ -4439,6 +4515,82 @@
             });
             parts.dropdown.appendChild(optionButton);
         });
+    };
+
+    const getSharedSelectOptionButtons = (field) => {
+        const parts = getSharedSelectParts(field);
+        if (!parts) return [];
+        return Array.from(parts.dropdown.querySelectorAll('[role="option"]'))
+            .filter((option) => option instanceof HTMLButtonElement);
+    };
+
+    const focusSharedSelectOption = (field, targetIndex = null) => {
+        const parts = getSharedSelectParts(field);
+        const options = getSharedSelectOptionButtons(field);
+        if (!parts || !options.length) return;
+        const selectedIndex = Math.max(0, options.findIndex((option) => option.getAttribute("aria-selected") === "true"));
+        const resolvedIndex = targetIndex === null
+            ? selectedIndex
+            : Math.max(0, Math.min(options.length - 1, targetIndex));
+        options.forEach((option, index) => {
+            option.classList.toggle("is-active", index === resolvedIndex);
+        });
+        const target = options[resolvedIndex];
+        parts.trigger.setAttribute("aria-activedescendant", target.id);
+        target.focus({preventScroll: true});
+        target.scrollIntoView({block: "nearest"});
+    };
+
+    const handleSharedSelectTriggerKeydown = (field, event) => {
+        const parts = getSharedSelectParts(field);
+        if (!parts) return;
+        if (event.key === "Escape") {
+            if (parts.dropdown.hidden) return;
+            event.preventDefault();
+            setSharedSelectDropdownOpen(field, false);
+            return;
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        closeSharedSelectDropdowns(field);
+        setTradeStrategyDropdownOpen(false);
+        setTradeStrategyPanelOpen(false);
+        renderSharedSelectDropdown(field);
+        setSharedSelectDropdownOpen(field, true);
+        const options = getSharedSelectOptionButtons(field);
+        const targetIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : null;
+        focusSharedSelectOption(field, targetIndex);
+    };
+
+    const handleSharedSelectDropdownKeydown = (field, event) => {
+        const parts = getSharedSelectParts(field);
+        const options = getSharedSelectOptionButtons(field);
+        if (!parts || !options.length) return;
+        const currentIndex = Math.max(0, options.indexOf(document.activeElement));
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+            event.preventDefault();
+            const targetIndex = event.key === "Home"
+                ? 0
+                : event.key === "End"
+                    ? options.length - 1
+                    : currentIndex + (event.key === "ArrowDown" ? 1 : -1);
+            focusSharedSelectOption(field, targetIndex);
+            return;
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            setSharedSelectDropdownOpen(field, false);
+            parts.trigger.focus({preventScroll: true});
+            return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            options[currentIndex]?.click();
+            return;
+        }
+        if (event.key === "Tab") {
+            setSharedSelectDropdownOpen(field, false);
+        }
     };
 
     const BROKER_PINYIN_SORT_KEYS = {
@@ -4509,6 +4661,12 @@
             setTradeStrategyPanelOpen(false);
             renderSharedSelectDropdown(field);
             setSharedSelectDropdownOpen(field, shouldOpen);
+        });
+        parts.trigger.addEventListener("keydown", (event) => {
+            handleSharedSelectTriggerKeydown(field, event);
+        });
+        parts.dropdown.addEventListener("keydown", (event) => {
+            handleSharedSelectDropdownKeydown(field, event);
         });
         parts.select.addEventListener("change", () => {
             syncNativeSelectSelection(parts.select, parts.select.value);
@@ -4613,8 +4771,16 @@
             if (input.dataset.bound === "1") return;
             input.dataset.bound = "1";
             input.addEventListener("change", () => {
+                if (input.checked && input.value === "shares") {
+                    getWeightFields().forEach(({tickerInput, shares}) => {
+                        if (!shares || !sanitizeTicker(tickerInput?.value || "")) return;
+                        const currentShares = Number.parseInt(shares.value || "0", 10) || 0;
+                        if (currentShares <= 0) shares.value = "1";
+                    });
+                }
                 syncPortfolioAllocationSegmentedControl();
                 requestWorkspaceChartTransition("portfolio-allocation");
+                scheduleAutoSubmit(80);
             });
         });
         syncPortfolioAllocationSegmentedControl();
@@ -4893,7 +5059,7 @@
     const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
 
     const getRenderedChartDateRange = () => {
-        if (state.currentView === "tickers" && state.chart?.tradingDate) {
+        if (["tickers", "prices"].includes(state.currentView) && state.chart?.tradingDate) {
             const tradingDate = String(state.chart.tradingDate || "");
             if (parseIsoDate(tradingDate)) {
                 return {
@@ -4902,7 +5068,7 @@
                 };
             }
         }
-        if (state.currentView === "tickers" && periodSelect?.value === "1d") {
+        if (["tickers", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
             const displayRangeDate = parseDisplayDateTextToIso($("#compare_summary_date_range")?.textContent || "");
             if (displayRangeDate) {
                 return {
@@ -6108,6 +6274,7 @@
         panel.hidden = !shouldOpen;
         tuneButton.classList.toggle("is-active", shouldOpen);
         tuneButton.setAttribute("aria-pressed", shouldOpen ? "true" : "false");
+        tuneButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
         if (select instanceof HTMLSelectElement) {
             select.disabled = shouldOpen;
         }
@@ -6245,6 +6412,7 @@
         if (isOpen) {
             positionTradeStrategyDropdown();
         } else {
+            trigger.removeAttribute("aria-activedescendant");
             resetSidebarDropdownPosition(dropdown);
         }
     };
@@ -6283,6 +6451,7 @@
         if (!(select instanceof HTMLSelectElement) || !(dropdown instanceof HTMLElement)) return;
         const currentSelection = String(select.value || "");
         const groups = Array.from(select.querySelectorAll("optgroup"));
+        let optionIndex = 0;
         dropdown.innerHTML = "";
         groups.forEach((group) => {
             const groupElement = document.createElement("section");
@@ -6297,6 +6466,9 @@
                 const optionButton = document.createElement("button");
                 optionButton.type = "button";
                 optionButton.className = "trade-strategy-dropdown-option";
+                optionButton.id = `${dropdown.id || "trade_strategy_dropdown"}_option_${optionIndex}`;
+                optionButton.tabIndex = -1;
+                optionIndex += 1;
                 optionButton.dataset.value = option.value;
                 optionButton.setAttribute("role", "option");
                 optionButton.setAttribute("aria-selected", option.value === currentSelection ? "true" : "false");
@@ -6319,6 +6491,7 @@
                     if (!(currentSelect instanceof HTMLSelectElement)) return;
                     if (currentSelect.value === option.value) {
                         setTradeStrategyDropdownOpen(false);
+                        getTradeStrategyRefs().trigger?.focus({preventScroll: true});
                         return;
                     }
                     currentSelect.value = option.value;
@@ -6326,6 +6499,7 @@
                     syncTradeStrategyTriggerLabel();
                     renderTradeStrategyDropdown();
                     setTradeStrategyDropdownOpen(false);
+                    getTradeStrategyRefs().trigger?.focus({preventScroll: true});
                     currentSelect.dispatchEvent(new Event("change", {bubbles: true}));
                 });
                 groupElement.appendChild(optionButton);
@@ -6333,6 +6507,79 @@
 
             dropdown.appendChild(groupElement);
         });
+    };
+
+    const getTradeStrategyOptionButtons = () => {
+        const {dropdown} = getTradeStrategyRefs();
+        if (!(dropdown instanceof HTMLElement)) return [];
+        return Array.from(dropdown.querySelectorAll('[role="option"]'))
+            .filter((option) => option instanceof HTMLButtonElement);
+    };
+
+    const focusTradeStrategyOption = (targetIndex = null) => {
+        const {trigger} = getTradeStrategyRefs();
+        const options = getTradeStrategyOptionButtons();
+        if (!(trigger instanceof HTMLButtonElement) || !options.length) return;
+        const selectedIndex = Math.max(0, options.findIndex((option) => option.getAttribute("aria-selected") === "true"));
+        const resolvedIndex = targetIndex === null
+            ? selectedIndex
+            : Math.max(0, Math.min(options.length - 1, targetIndex));
+        options.forEach((option, index) => option.classList.toggle("is-active", index === resolvedIndex));
+        const target = options[resolvedIndex];
+        trigger.setAttribute("aria-activedescendant", target.id);
+        target.focus({preventScroll: true});
+        target.scrollIntoView({block: "nearest"});
+    };
+
+    const handleTradeStrategyTriggerKeydown = (event) => {
+        const {dropdown} = getTradeStrategyRefs();
+        if (!(dropdown instanceof HTMLElement)) return;
+        if (event.key === "Escape") {
+            if (dropdown.hidden) return;
+            event.preventDefault();
+            setTradeStrategyDropdownOpen(false);
+            return;
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        closeSharedSelectDropdowns();
+        setTradeStrategyPanelOpen(false);
+        renderTradeStrategyDropdown();
+        setTradeStrategyDropdownOpen(true);
+        const options = getTradeStrategyOptionButtons();
+        const targetIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : null;
+        focusTradeStrategyOption(targetIndex);
+    };
+
+    const handleTradeStrategyDropdownKeydown = (event) => {
+        const {trigger} = getTradeStrategyRefs();
+        const options = getTradeStrategyOptionButtons();
+        if (!(trigger instanceof HTMLButtonElement) || !options.length) return;
+        const currentIndex = Math.max(0, options.indexOf(document.activeElement));
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+            event.preventDefault();
+            const targetIndex = event.key === "Home"
+                ? 0
+                : event.key === "End"
+                    ? options.length - 1
+                    : currentIndex + (event.key === "ArrowDown" ? 1 : -1);
+            focusTradeStrategyOption(targetIndex);
+            return;
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            setTradeStrategyDropdownOpen(false);
+            trigger.focus({preventScroll: true});
+            return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            options[currentIndex]?.click();
+            return;
+        }
+        if (event.key === "Tab") {
+            setTradeStrategyDropdownOpen(false);
+        }
     };
 
     const pulseStrategySwitch = () => {
@@ -6405,6 +6652,10 @@
                 renderTradeStrategyDropdown();
                 setTradeStrategyDropdownOpen(shouldOpen);
             });
+            refs.trigger.addEventListener("keydown", handleTradeStrategyTriggerKeydown);
+        }
+        if (refs.dropdown instanceof HTMLElement) {
+            refs.dropdown.addEventListener("keydown", handleTradeStrategyDropdownKeydown);
         }
         if (refs.select instanceof HTMLSelectElement) {
             refs.select.addEventListener("change", async () => {
@@ -6448,9 +6699,27 @@
         const clickedInsideSharedField = getSharedSelectFields().some((sharedField) => sharedField.contains(event.target));
         if (!clickedInsideStrategyField) {
             setTradeStrategyDropdownOpen(false);
+            setTradeStrategyPanelOpen(false);
         }
         if (!clickedInsideSharedField) {
             closeSharedSelectDropdowns();
+        }
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const {trigger, tuneButton, dropdown, panel} = getTradeStrategyRefs();
+        const sharedField = getSharedSelectFields().find((field) => field.contains(document.activeElement));
+        if (sharedField) {
+            setSharedSelectDropdownOpen(sharedField, false);
+            getSharedSelectParts(sharedField)?.trigger.focus({preventScroll: true});
+        }
+        if (dropdown instanceof HTMLElement && !dropdown.hidden) {
+            setTradeStrategyDropdownOpen(false);
+            trigger?.focus({preventScroll: true});
+        }
+        if (panel instanceof HTMLElement && !panel.hidden) {
+            setTradeStrategyPanelOpen(false);
+            tuneButton?.focus({preventScroll: true});
         }
     });
     if (typeof MutationObserver === "function") {
@@ -6574,7 +6843,7 @@
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
             } else if (
-                state.currentView === "tickers"
+                ["tickers", "prices"].includes(state.currentView)
                 && !missingLocalTickers.length
                 && pendingWorkspaceChartTransition?.view === state.currentView
                 && String(pendingWorkspaceChartTransition.reason || "").startsWith("ticker")
@@ -6584,7 +6853,7 @@
                     copy: "Rebuilding the return curve and performance summary for the selected tickers. You can close this dialog while loading continues.",
                     iconClass: "icon-hourglass",
                 });
-            } else if (state.currentView === "tickers" && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
+            } else if (["tickers", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
                 showWorkspaceModal({
                     title: "Calculating comparison",
                     copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",

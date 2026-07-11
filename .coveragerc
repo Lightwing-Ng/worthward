@@ -1,0 +1,16 @@
+[run]
+branch = True
+source =
+    app
+    strategies
+omit =
+    */__pycache__/*
+    tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+precision = 1
+show_missing = True
+skip_covered = False

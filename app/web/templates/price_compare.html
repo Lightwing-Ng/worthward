@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set sidebar_title = "Workspaces" %}
+
+{% block sidebar_content %}
+{% include "_workspace_mode_nav.html" %}
+{% endblock %}
+
+{% block workspace_content %}
+<section class="workspace-mode-shell price-compare-workspace">
+    <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
+        <div class="report-heading-row">
+            <p class="report-heading">{{ labels.dock_prices }}</p>
+        </div>
+    </article>
+    <div class="workspace-mode-layout">
+        <article class="chart-surface workspace-mode-controls-surface">
+            {% include "_compare_portfolio_sidebar.html" %}
+        </article>
+        <article class="workspace-mode-main">
+            <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
+                <article class="report-card workspace-article-card workspace-summary-card">
+                    <div class="report-heading-row">
+                        <p class="report-heading">Price history</p>
+                        {% if display_range %}<span class="price-compare-range">{{ display_range }}</span>{% endif %}
+                    </div>
+                </article>
+                <article class="chart-surface price-subplots-surface">
+                    {% if series %}
+                    <div id="price_subplot_region"
+                         class="price-subplot-grid"
+                         data-workspace-mask="price-subplots"
+                        style="--price-subplot-count: {{ series | length }};">
+                        {% for item in series %}
+                        <section class="price-subplot" data-price-subplot data-ticker="{{ item.ticker }}">
+                            <div class="price-subplot-canvas-wrap">
+                                <canvas id="price_subplot_{{ loop.index }}" data-price-subplot-canvas data-series-index="{{ loop.index0 }}"></canvas>
+                            </div>
+                        </section>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="placeholder-copy chart-placeholder-copy">
+                        <p>Please configure at least two tickers to compare.</p>
+                    </div>
+                    {% endif %}
+                </article>
+            </article>
+        </article>
+    </div>
+</section>
+{% endblock %}

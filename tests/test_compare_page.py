@@ -1,0 +1,381 @@
+"""
+Tests for compare page ticker control rendering.
+
+Code version: v0.4.8
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import pandas as pd
+
+from app import create_app
+from tests.factories.market import quote_profile_stub
+
+
+def _fake_compare_dataset(ticker: str) -> pd.DataFrame:
+    base = 100.0 if ticker == "QQQ" else 200.0
+    return pd.DataFrame(
+        {
+            "Date": pd.to_datetime(["2026-03-26", "2026-03-27"]),
+            "Close": [base, base + 1.0],
+        }
+    )
+
+
+def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfile.TemporaryDirectory[str]:
+    tempdir = tempfile.TemporaryDirectory()
+    root = Path(tempdir.name)
+    for ticker, frame in frames_by_ticker.items():
+        frame.to_parquet(root / f"{ticker}.parquet", index=False)
+    return tempdir
+
+
+class ComparePageTests(unittest.TestCase):
+    def test_compare_page_renders_logo_markup_for_selected_tickers(self) -> None:
+        with (
+            patch(
+                "app.web.runtime.fetch_history",
+                side_effect=lambda ticker, include_dividends, interval="1d", dividend_mode="reinvest": _fake_compare_dataset(ticker),
+            ),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y&dividends=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('value="QQQ"', html)
+        self.assertIn('value="AAPL"', html)
+        self.assertIn("/api/market-store/logos/QQQ.png", html)
+        self.assertIn("/api/market-store/logos/AAPL.png", html)
+        self.assertIn("QQQ Holdings", html)
+        self.assertIn("AAPL Holdings", html)
+        self.assertIn('data-price-only-field', html)
+        self.assertNotIn('data-price-only-field hidden', html)
+        self.assertIn('id="price_only" name="price_only" type="checkbox" value="1" ', html)
+        self.assertNotIn('id="price_only" name="price_only" type="checkbox" value="1"  disabled', html)
+        self.assertIn('data-dividend-reinvest-field', html)
+        self.assertNotIn('id="include_dividends" name="dividends" type="checkbox" value="1"  disabled', html)
+        self.assertIn('id="compare_summary_date_range"', html)
+        self.assertIn('class="compare-summary-date-range"', html)
+        self.assertIn('id="workspace_share_drawer_tickers"', html)
+        self.assertIn('data-share-drawer="tickers"', html)
+        self.assertIn('id="share_capture_button"', html)
+        self.assertIn('id="export_transactions_button"', html)
+        self.assertIn('class="investment-share-actions"', html)
+        self.assertIn('id="share_mask_button"', html)
+
+    def test_compare_page_adapts_period_dropdown_to_shared_history(self) -> None:
+        def _fetch_history(
+            ticker: str,
+            include_dividends: bool,
+            interval: str = "1d",
+            dividend_mode: str = "reinvest",
+        ) -> pd.DataFrame:
+            del include_dividends, interval, dividend_mode
+            if ticker == "JEPQ":
+                return pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime(["2024-08-01", "2026-03-27"]),
+                        "Close": [50.0, 55.0],
+                    }
+                )
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime(["2020-03-27", "2024-08-01", "2026-03-27"]),
+                    "Close": [100.0, 110.0, 120.0],
+                }
+            )
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=5y&dividends=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="6mo"', html)
+        self.assertIn('<option value="1y"', html)
+        self.assertNotIn('<option value="2y"', html)
+        self.assertNotIn('<option value="3y"', html)
+        self.assertNotIn('<option value="5y"', html)
+        self.assertIn('<option value="max"', html)
+        self.assertNotIn('<option value="10y"', html)
+        self.assertIn("Using the latest available start date among the selected tickers: 1 Aug 2024.", html)
+
+    def test_compare_page_includes_five_year_option_when_shared_history_allows(self) -> None:
+        def _fetch_history(
+            ticker: str,
+            include_dividends: bool,
+            interval: str = "1d",
+            dividend_mode: str = "reinvest",
+        ) -> pd.DataFrame:
+            del include_dividends, interval, dividend_mode
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime(["2018-01-01", "2026-03-27"]),
+                    "Close": [100.0, 150.0],
+                }
+            )
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/compare?ticker=QQQ&ticker=SPY&period=max&dividends=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="5y"', html)
+        self.assertIn('<option value="max"', html)
+        self.assertNotIn('<option value="10y"', html)
+
+    def test_compare_page_defaults_one_day_compare_to_regular_session(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                raise AssertionError("Relative 1d should use local 1m store.")
+            return _fake_compare_dataset(ticker)
+
+        def _intraday_frame(ticker: str) -> pd.DataFrame:
+            base = 100.0 if ticker == "QQQ" else 200.0
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime([
+                        "2026-03-27 08:00",
+                        "2026-03-27 09:30",
+                        "2026-03-27 15:59",
+                        "2026-03-27 16:30",
+                    ]),
+                    "Close": [base, base + 1.0, base + 2.0, base + 3.0],
+                }
+            )
+
+        with _write_intraday_stores({"QQQ": _intraday_frame("QQQ"), "TQQQ": _intraday_frame("TQQQ")}) as tempdir:
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet"),
+                patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=AssertionError("Relative 1d should use local 1m store.")),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                client = create_app().test_client()
+                response = client.get("/workspaces/compare?ticker=QQQ&ticker=TQQQ&period=1d")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
+        self.assertIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1"', html)
+        self.assertNotIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1" checked', html)
+        self.assertIn('data-price-only-field hidden', html)
+        self.assertIn('id="price_only" name="price_only" type="checkbox" value="1"  disabled', html)
+        self.assertIn('data-dividend-reinvest-field hidden', html)
+        self.assertIn('id="include_dividends" name="dividends" type="checkbox" value="1"  disabled', html)
+
+    def test_compare_page_renders_one_day_extended_hours_when_requested(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                raise AssertionError("Relative 1d should use local 1m store.")
+            return _fake_compare_dataset(ticker)
+
+        def _intraday_frame(ticker: str) -> pd.DataFrame:
+            base = 100.0 if ticker == "QQQ" else 200.0
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime([
+                        "2026-03-27 08:00",
+                        "2026-03-27 09:30",
+                        "2026-03-27 15:59",
+                        "2026-03-27 16:30",
+                    ]),
+                    "Close": [base, base + 1.0, base + 2.0, base + 3.0],
+                }
+            )
+
+        with _write_intraday_stores({"QQQ": _intraday_frame("QQQ"), "TQQQ": _intraday_frame("TQQQ")}) as tempdir:
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet"),
+                patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=AssertionError("Relative 1d should use local 1m store.")),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                client = create_app().test_client()
+                response = client.get("/workspaces/compare?ticker=QQQ&ticker=TQQQ&period=1d&extended_hours=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"raw_dates": ["2026-03-27 08:00", "2026-03-27 09:30", "2026-03-27 15:59", "2026-03-27 16:30"]', html)
+        self.assertIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1" checked', html)
+
+    def test_compare_page_one_day_uses_previous_complete_intraday_day(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                raise AssertionError("Relative 1d should use local 1m store.")
+            return _fake_compare_dataset(ticker)
+
+        def _intraday_frame(ticker: str) -> pd.DataFrame:
+            base = 100.0 if ticker == "QQQ" else 200.0
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime([
+                        "2026-03-26 08:00",
+                        "2026-03-26 09:30",
+                        "2026-03-26 15:59",
+                        "2026-03-26 16:30",
+                        "2026-03-27 08:00",
+                        "2026-03-27 09:30",
+                    ]),
+                    "Close": [base, base + 1.0, base + 2.0, base + 3.0, base + 4.0, base + 5.0],
+                }
+            )
+
+        with _write_intraday_stores({"QQQ": _intraday_frame("QQQ"), "TQQQ": _intraday_frame("TQQQ")}) as tempdir:
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet"),
+                patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=AssertionError("Relative 1d should use local 1m store.")),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                client = create_app().test_client()
+                response = client.get("/workspaces/compare?ticker=QQQ&ticker=TQQQ&period=1d&extended_hours=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"raw_dates": ["2026-03-26 08:00", "2026-03-26 09:30", "2026-03-26 15:59", "2026-03-26 16:30"]', html)
+        self.assertNotIn("2026-03-27 09:30", html)
+
+    def test_compare_page_one_day_refreshes_missing_intraday_store(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                raise AssertionError("Relative 1d should read the refreshed local 1m store.")
+            return _fake_compare_dataset(ticker)
+
+        def _intraday_frame(ticker: str) -> pd.DataFrame:
+            base = 100.0 if ticker == "QQQ" else 200.0
+            return pd.DataFrame(
+                {
+                    "Date": pd.to_datetime([
+                        "2026-03-27 09:30",
+                        "2026-03-27 15:59",
+                    ]),
+                    "Close": [base, base + 2.0],
+                }
+            )
+
+        with _write_intraday_stores({"QQQ": _intraday_frame("QQQ")}) as tempdir:
+            temp_root = Path(tempdir)
+
+            def _store_path(ticker: str, interval: str = "1m") -> Path:
+                del interval
+                return temp_root / f"{ticker}.parquet"
+
+            def _refresh_missing_store(ticker: str):
+                _intraday_frame(ticker).to_parquet(_store_path(ticker), index=False)
+                return object()
+
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
+                patch("app.web.runtime.refresh_one_minute_store", side_effect=_refresh_missing_store) as refresh_mock,
+                patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=AssertionError("Relative 1d should use local 1m store.")),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                client = create_app().test_client()
+                response = client.get("/workspaces/compare?ticker=QQQ&ticker=TQQQ&period=1d")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(refresh_mock.call_count, 1)
+        self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
+
+    def test_compare_page_exact_one_day_uses_single_trading_date_picker(self) -> None:
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            if interval == "1m":
+                base = 100.0 if ticker == "QQQ" else 200.0
+                return pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime([
+                            "2026-03-27 08:00",
+                            "2026-03-27 09:30",
+                            "2026-03-27 15:59",
+                            "2026-03-27 16:30",
+                        ]),
+                        "Close": [base, base + 1.0, base + 2.0, base + 3.0],
+                    }
+                )
+            return _fake_compare_dataset(ticker)
+
+        with (
+            patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=lambda ticker: _fetch_history(ticker, False, interval="1m", dividend_mode="price")),
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/compare?ticker=QQQ&ticker=TQQQ&period=1d&range=exact&trading_date=2026-03-27")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-exact-single-date-grid', html)
+        self.assertIn('id="exact_trading_date" name="trading_date" type="hidden" value="2026-03-27"', html)
+        self.assertIn('id="exact_start" name="from" type="hidden" value="2026-03-27" disabled', html)
+        self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
+
+    def test_compare_page_exact_short_range_uses_intraday_curve(self) -> None:
+        daily_dates = pd.to_datetime(["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"])
+
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            base = 100.0 if ticker == "QQQ" else 200.0
+            if interval == "1m":
+                intraday_dates = []
+                intraday_closes = []
+                for day_index, trading_day in enumerate(daily_dates):
+                    for minute_index, clock in enumerate(("08:00", "09:30", "15:59", "16:30")):
+                        intraday_dates.append(pd.Timestamp(f"{trading_day.strftime('%Y-%m-%d')} {clock}"))
+                        intraday_closes.append(base + (day_index * 10.0) + minute_index)
+                return pd.DataFrame({"Date": pd.to_datetime(intraday_dates), "Close": intraday_closes})
+            return pd.DataFrame(
+                {
+                    "Date": daily_dates,
+                    "Close": [base, base + 1.0, base + 2.0, base + 3.0],
+                }
+            )
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get(
+                "/workspaces/compare?ticker=QQQ&ticker=TQQQ&range=exact&period=1w&from=2026-06-29&to=2026-07-02"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"raw_dates": ["2026-06-29 09:30", "2026-06-29 15:59"', html)
+        self.assertIn('"2026-07-02 09:30", "2026-07-02 15:59"]', html)
+        self.assertNotIn('"raw_dates": ["2026-06-29 00:00", "2026-06-30 00:00"', html)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -369,6 +369,9 @@ def resolve_website(ticker: str, company_name: str, website: str | None) -> str 
 
 def quote_lookup_symbol(ticker: str) -> str:
     normalized_ticker = normalize_ticker_input(ticker)
+    if normalized_ticker.endswith(".SH"):
+        symbol, _ = normalized_ticker.rsplit(".", 1)
+        return f"{symbol}.SS"
     if normalized_ticker.endswith(".US"):
         bare_ticker = normalized_ticker[:-3].strip()
         return bare_ticker or normalized_ticker

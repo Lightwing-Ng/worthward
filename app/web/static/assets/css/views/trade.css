@@ -1,3 +1,4 @@
+/* Code version: v3.25.0 */
 .trade-sidebar-card {
     padding: 12px 12px 10px;
     background: var(--glass-surface-background);
@@ -563,12 +564,12 @@
     transform: translateX(-0.5px);
     pointer-events: none;
     opacity: 0;
-    transition: opacity 120ms var(--motion-standard), left 120ms ease-out;
+    transition: opacity 120ms var(--motion-standard), left 120ms var(--motion-emphasized);
     z-index: var(--layer-chart-overlay-line);
 }
 
 .trade-transactions-table tr.is-metric-hover-target {
-    animation: trade-history-row-pulse 1.4s ease;
+    animation: trade-history-row-pulse 1.4s var(--motion-standard);
 }
 
 .trade-transactions-table tr.is-metric-hover-active td {
@@ -745,7 +746,7 @@
     white-space: nowrap;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 140ms var(--motion-standard), visibility 140ms ease, transform 140ms ease;
+    transition: opacity 140ms var(--motion-standard), visibility 140ms var(--motion-standard), transform 140ms var(--motion-press);
     pointer-events: none;
 }
 
@@ -772,6 +773,10 @@
     height: 22px;
 }
 
+.sidebar-dock-label {
+    display: none;
+}
+
 .icon-dock-compare {
     background-color: currentColor;
     mask: url("/static/images/lines.measurement.horizontal.aligned.bottom.svg") center/contain no-repeat;
@@ -794,6 +799,12 @@
     background-color: currentColor;
     mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/square.stack.3d.down.forward.fill.svg") center/contain no-repeat;
+}
+
+.icon-dock-grid-trading {
+    background-color: currentColor;
+    mask: url("/static/images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/square.grid.3x3.topleft.filled.svg") center/contain no-repeat;
 }
 
 .icon-dock-trade {
@@ -819,8 +830,8 @@
 }
 
 .icon-trade-live-trading {
-    mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/waveform.and.person.filled.svg") center/contain no-repeat;
+    mask: url("/static/images/waveform.and.person.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/waveform.and.person.svg") center/contain no-repeat;
 }
 
 .icon-settings-about {

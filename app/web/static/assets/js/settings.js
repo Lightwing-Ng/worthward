@@ -1,4 +1,4 @@
-/* Code version: v0.7.2 */
+/* Code version: v0.7.3 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -750,7 +750,7 @@
     ];
 
     const WORKSPACE_SHARE_PREVIEW_VIEWS = [
-        {id: "compare", title: "Compare stocks", subtitle: ""},
+        {id: "compare", title: "Return comparison", subtitle: ""},
         {id: "portfolio", title: "Portfolio", subtitle: ""},
         {id: "dca", title: "DCA", subtitle: ""},
         {id: "backtest", title: "Backtest", subtitle: ""},

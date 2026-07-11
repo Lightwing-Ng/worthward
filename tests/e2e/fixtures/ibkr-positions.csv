@@ -1,0 +1,4 @@
+Statement,Header,Field Name,Field Value
+Statement,Data,Title,Realized Summary
+Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Open,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code
+Open Positions,Data,Summary,Stocks,USD,QQQ,-,1,1,100,100,105,105,5,

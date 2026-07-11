@@ -1,11 +1,11 @@
 [app]
 name = "antigravity"
-version = "v2.15.23"
-debug = true
-updated_on = "10 Jul 2026"
+version = "v2.20.0"
+debug = false
+updated_on = "11 Jul 2026"
 
 [server]
-host = "0.0.0.0"
+host = "127.0.0.1"
 port = 8688
 
 [persistence]
@@ -32,8 +32,8 @@ include_dividends = false
 price_only = false
 
 [ui.labels]
-page_title = "Compare stocks"
-hero_title = "Compare stocks"
+page_title = "Return comparison"
+hero_title = "Return comparison"
 portfolio_title = "Compute your portfolio"
 settings_title = "Settings"
 hero_subtitle = "Compare up to five tickers across the same daily window with local caching and optional cash dividend inclusion."
@@ -48,10 +48,12 @@ include_dividends = "Reinvest cash dividends"
 price_only = "Price return only"
 performance_summary = "Performance summary"
 chart_summary = "Stock return comparison"
-dock_tickers = "Compare stocks"
+dock_tickers = "Return comparison"
+dock_prices = "Price performance"
 dock_portfolio = "Compute your portfolio"
 dock_dca = "Dollar-cost averaging"
 dock_backtest = "Backtest"
+dock_grid_trading = "Grid Trading"
 dock_workspace = "Workspace"
 dock_settings = "Settings"
 dock_trade = "Trade"
@@ -59,6 +61,7 @@ portfolio_summary = "Portfolio summary"
 portfolio_chart = "Portfolio return chart"
 portfolio_placeholder = "Add ticker weights to compute the portfolio return."
 backtest_title = "Backtest"
+grid_trading_title = "Grid Trading"
 backtest_summary = "A full-screen workspace for strategy trading notifications and operator review."
 backtest_stream = "Backtest controls"
 backtest_stream_placeholder = "Configure a ticker, strategy, and isolated capital amount, then run a single-ticker backtest."

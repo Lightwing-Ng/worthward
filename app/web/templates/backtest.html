@@ -10,7 +10,7 @@
     <section class="workspace-mode-shell">
         <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
             <div class="report-heading-row">
-                <p class="report-heading">{{ labels.dock_backtest }}</p>
+                <p class="report-heading">{{ labels.get('dock_grid_trading', 'Grid Trading') if current_view == 'grid-trading' else labels.dock_backtest }}</p>
             </div>
         </article>
         <div class="workspace-mode-layout">

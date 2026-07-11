@@ -129,7 +129,10 @@
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
 <script>
     try {
-        if (window.sessionStorage.getItem("antigravity:sidebar-open") === "false") {
+        const storedSidebarState = window.sessionStorage.getItem("antigravity:sidebar-open");
+        const shouldStartCollapsed = storedSidebarState === "false"
+            || (storedSidebarState === null && window.matchMedia("(max-width: 820px)").matches);
+        if (shouldStartCollapsed) {
             document.documentElement.classList.add("sidebar-memory-collapsed");
         }
     } catch (_error) {
@@ -186,17 +189,17 @@
         </section>
     </div>
     <nav class="sidebar-dock" aria-label="Workspace modes">
-        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'portfolio', 'backtest'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'portfolio', 'backtest'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
+        <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
-            <span class="sr-only">{{ dock_workspace_label }}</span>
+            <span class="sidebar-dock-label" aria-hidden="true">{{ dock_workspace_label }}</span>
         </a>
         <a href="{{ dock_urls.trade }}" class="sidebar-dock-item sidebar-dock-item-trade{% if current_view == 'trade' %} is-active{% endif %}" aria-current="{% if current_view == 'trade' %}page{% endif %}" aria-label="{{ labels.dock_trade }}" data-tooltip="{{ labels.dock_trade }}">
             <span class="icon icon-dock-trade" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_trade }}</span>
+            <span class="sidebar-dock-label" aria-hidden="true">{{ labels.dock_trade }}</span>
         </a>
         <a href="{{ dock_urls.settings }}" class="sidebar-dock-item sidebar-dock-item-settings{% if current_view == 'settings' %} is-active{% endif %}" aria-current="{% if current_view == 'settings' %}page{% endif %}" aria-label="{{ labels.dock_settings }}" data-tooltip="{{ labels.dock_settings }}">
             <span class="icon icon-dock-settings" aria-hidden="true"></span>
-            <span class="sr-only">{{ labels.dock_settings }}</span>
+            <span class="sidebar-dock-label" aria-hidden="true">{{ labels.dock_settings }}</span>
         </a>
     </nav>
 </main>
@@ -243,15 +246,21 @@
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
-{% if current_view in ["tickers", "portfolio", "dca", "backtest", "trade"] %}
+<script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.0.0') }}"></script>
+{% if current_view in ["tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.3.0') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
+{% if current_view in ["tickers", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
 {% if current_view == "tickers" or current_view == "portfolio" %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}
-{% if current_view == "backtest" %}
+{% if current_view in ["backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version) }}"></script>
 {% endif %}
 </body>

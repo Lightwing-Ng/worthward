@@ -1,4 +1,4 @@
-/* Code version: v1.16.21 */
+/* Code version: v1.17.0 */
 
 .investment-workspace-header {
     flex: 1 1 auto;
@@ -311,6 +311,48 @@
     vertical-align: middle;
     color: var(--scrollable-data-table-header-color);
     pointer-events: auto;
+}
+
+.investment-history-side-filter-header {
+    padding: 2px 1px;
+    vertical-align: middle;
+    color: var(--scrollable-data-table-header-color);
+    pointer-events: auto;
+}
+
+.investment-side-filter-field,
+.investment-side-filter-row {
+    width: 100%;
+    margin: 0;
+}
+
+.investment-side-filter-trigger.form-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    height: 22px;
+    padding: 0 14px 0 4px;
+    border: 0 !important;
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--font-tooltip);
+    color: inherit;
+}
+
+.investment-side-filter-trigger .trade-strategy-trigger-label {
+    justify-content: center;
+    width: 100%;
+}
+
+.investment-side-filter-trigger .trade-strategy-trigger-chevron {
+    position: absolute;
+    inset-inline-end: 3px;
+    width: 7px;
+    height: 5px;
+}
+
+.investment-side-filter-dropdown {
+    min-width: 120px;
 }
 
 .investment-broker-filter-field {
@@ -1766,14 +1808,14 @@
 .investment-equity-live-marker-ring-outer {
     width: 20px;
     height: 20px;
-    animation: investment-live-marker-breath-outer 1.8s ease-out infinite;
+    animation: investment-live-marker-breath-outer 1.8s var(--motion-emphasized) infinite;
 }
 
 .investment-equity-live-marker-ring-inner {
     width: 14px;
     height: 14px;
     opacity: 0.28;
-    animation: investment-live-marker-breath-inner 1.8s ease-out infinite 0.9s;
+    animation: investment-live-marker-breath-inner 1.8s var(--motion-emphasized) infinite 0.9s;
 }
 
 .investment-equity-live-marker-core {
@@ -1861,7 +1903,7 @@
 }
 
 .investment-dummy-chart .portfolio-donut-logo.is-orbit-animated {
-    transition: opacity 220ms ease;
+    transition: opacity 220ms var(--motion-standard);
     will-change: left, top, opacity;
 }
 
@@ -1879,14 +1921,14 @@
 }
 
 #investment_holdings_panel {
-    --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
-    --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
-    --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
-    --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
+    --investment-holdings-summary-frosted-background: var(--scrollable-data-table-summary-background);
+    --investment-holdings-summary-frosted-border: var(--scrollable-data-table-summary-border);
+    --investment-holdings-summary-frosted-shadow: var(--scrollable-data-table-summary-shadow);
+    --investment-holdings-summary-frosted-blur: var(--scrollable-data-table-summary-blur);
     --investment-holdings-summary-frosted-highlight: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 55%, transparent);
     --investment-holdings-summary-cell-separator: transparent;
-    --investment-holdings-row-background: var(--panel-strong);
-    --investment-holdings-row-background-alt: color-mix(in srgb, var(--panel-strong) 82%, var(--glass-surface-background-strong));
+    --investment-holdings-row-background: var(--scrollable-data-table-row-background);
+    --investment-holdings-row-background-alt: var(--scrollable-data-table-row-background-alt);
     --investment-holdings-row-blur: none;
     display: flex;
     flex-direction: column;
@@ -2120,14 +2162,14 @@
 .investment-stock-details-live-marker-ring-outer {
     width: 20px;
     height: 20px;
-    animation: investment-live-marker-breath-outer 1.8s ease-out infinite;
+    animation: investment-live-marker-breath-outer 1.8s var(--motion-emphasized) infinite;
 }
 
 .investment-stock-details-live-marker-ring-inner {
     width: 14px;
     height: 14px;
     opacity: 0.28;
-    animation: investment-live-marker-breath-inner 1.8s ease-out infinite 0.9s;
+    animation: investment-live-marker-breath-inner 1.8s var(--motion-emphasized) infinite 0.9s;
 }
 
 .investment-stock-details-live-marker-core {
@@ -2175,7 +2217,7 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: var(--scrollable-data-table-scrollbar-gutter);
     padding: 14px 4px;
 }
 
@@ -2293,7 +2335,7 @@
 }
 
 .investment-stock-details-donut-card .investment-stock-details-donut-logo {
-    transition: opacity 220ms ease;
+    transition: opacity 220ms var(--motion-standard);
     will-change: left, top, opacity;
 }
 
@@ -2306,7 +2348,7 @@
     --investment-stock-details-scrollbar-width: 0px;
 }
 
-.investment-stock-details-table-shell > .investment-stock-details-table[aria-hidden="true"] {
+.investment-stock-details-table-shell > .investment-stock-details-table[data-table-header] {
     width: calc(100% - var(--investment-stock-details-scrollbar-width));
 }
 
@@ -2353,7 +2395,7 @@
     --scrollable-data-table-underlay-offset-y: 0px;
 }
 
-.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] {
     width: 100%;
 }
 
@@ -2369,26 +2411,14 @@
     opacity: 0.74;
 }
 
-.scrollable-data-table-frosted-underlay-table {
-    transform: translateY(var(--scrollable-data-table-underlay-offset-y));
-    will-change: transform;
-}
-
-.investment-holdings-frosted-underlay-table {
-    width: calc(100% - var(--investment-holdings-scrollbar-width));
-}
-
-.investment-history-frosted-underlay-table {
-    width: calc(100% - var(--investment-history-scrollbar-width));
-}
-
-.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"],
-.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] {
+.scrollable-data-table-visual-overlay {
     position: absolute;
     inset-block-start: 0;
-    inset-inline-start: calc(-1 * var(--scrollable-data-table-overlay-border-compensation));
-    z-index: calc(var(--layer-surface-content) + 1);
+    inset-inline: 0;
+    height: var(--scrollable-data-table-header-height);
+    z-index: var(--layer-surface-content);
     pointer-events: none;
+    overflow: hidden;
     border-radius: 10px 10px 0 0;
     background: var(--frosted-glass-extracted-background);
     box-shadow: var(--frosted-glass-extracted-shadow);
@@ -2396,22 +2426,55 @@
     -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
     border: var(--frosted-glass-extracted-border);
     border-bottom: 0;
+}
+
+.scrollable-data-table-frosted-underlay-table {
+    transform: translateY(var(--scrollable-data-table-underlay-offset-y));
+    will-change: transform;
+}
+
+.investment-holdings-frosted-underlay-table {
+    width: calc(100% - var(--scrollable-data-table-scrollbar-width));
+}
+
+.investment-history-frosted-underlay-table {
+    width: calc(100% - var(--scrollable-data-table-scrollbar-width));
+}
+
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header],
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: calc(-1 * var(--scrollable-data-table-overlay-border-compensation));
+    z-index: calc(var(--layer-surface-content) + 1);
+    pointer-events: none;
+    border-radius: 10px 10px 0 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    border-bottom: 0;
     overflow: hidden;
     width: 100%;
 }
 
-.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] th,
-.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] td,
-.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] th,
-.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] td {
+.scrollable-data-table-shell > [data-table-interactive-header] {
+    pointer-events: auto;
+}
+
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header] th,
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header] td,
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] th,
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] td {
     box-sizing: border-box;
 }
 
-.scrollable-data-table-shell > .scrollable-data-table[aria-hidden="true"] tr > :last-child {
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header] tr > :last-child {
     padding-inline-end: calc(1px + var(--scrollable-data-table-scrollbar-width));
 }
 
-.investment-holdings-table-shell > .investment-holdings-table[aria-hidden="true"] tr > :last-child {
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] tr > :last-child {
     padding-inline-end: calc(6px + var(--scrollable-data-table-scrollbar-width));
 }
 
@@ -2457,7 +2520,7 @@
 .scrollable-data-table,
 .investment-holdings-table {
     width: 100%;
-    min-width: 376px;
+    min-width: var(--scrollable-data-table-min-width);
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
@@ -2517,8 +2580,8 @@
     border-left: 0;
 }
 
-.scrollable-data-table[aria-hidden="true"] thead th+th,
-.investment-holdings-table[aria-hidden="true"] thead th+th {
+.scrollable-data-table[data-table-header] thead th+th,
+.investment-holdings-table[data-table-header] thead th+th {
     border-left: 0;
 }
 
@@ -2778,14 +2841,14 @@
     box-shadow: none;
 }
 
-.investment-holdings-table[aria-hidden="true"] .investment-holdings-summary-row {
+.investment-holdings-table[data-table-header] .investment-holdings-summary-row {
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     box-shadow: none;
 }
 
-.investment-holdings-table[aria-hidden="true"] .investment-holdings-summary-row td {
+.investment-holdings-table[data-table-header] .investment-holdings-summary-row td {
     border: 0;
 }
 
@@ -3637,7 +3700,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     --scrollable-data-table-underlay-offset-y: 0px;
 }
 
-.investment-history-table-shell > .investment-history-table[aria-hidden="true"] {
+.investment-history-table-shell > .investment-history-table[data-table-header] {
     min-width: 0;
     width: 100%;
 }
@@ -3838,7 +3901,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-history-table tr.is-metric-hover-target {
-    animation: investment-history-row-pulse 1.4s ease;
+    animation: investment-history-row-pulse 1.4s var(--motion-standard);
 }
 
 .investment-history-table tr.is-metric-hover-active td {

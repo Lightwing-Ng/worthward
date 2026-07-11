@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.3.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 
@@ -368,5 +368,4 @@
 	});
 
 	bootstrap.initPortfolioWorkspace = initPortfolioWorkspace;
-	initPortfolioWorkspace();
 })();

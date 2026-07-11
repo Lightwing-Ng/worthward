@@ -1,4 +1,4 @@
-/* Code version: v0.3.9 */
+/* Code version: v0.3.10 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
@@ -1027,5 +1027,4 @@
 	});
 
 	bootstrap.initBacktestWorkspace = initBacktestWorkspace;
-	initBacktestWorkspace();
 })();

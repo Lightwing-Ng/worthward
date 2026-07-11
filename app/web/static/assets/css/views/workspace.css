@@ -1,4 +1,4 @@
-/* Code version: v1.1.15 */
+/* Code version: v1.3.2 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -58,6 +58,12 @@
     --workspace-article-background: var(--workspace-content-article-background);
     --workspace-article-shadow: var(--workspace-content-article-shadow);
     --workspace-article-blur: var(--workspace-content-article-blur);
+}
+
+/* Apple platform guidance keeps Liquid Glass in the functional layer. */
+.workspace-article-card:not(.workspace-summary-card) {
+    --workspace-article-background: var(--panel-strong);
+    --workspace-article-blur: none;
 }
 
 .workspace-header > .report-card {
@@ -387,7 +393,7 @@
     transition:
         left 300ms var(--motion-standard),
         top 300ms var(--motion-standard),
-        opacity 220ms ease;
+        opacity 220ms var(--motion-standard);
     will-change: left, top, opacity;
 }
 
@@ -842,7 +848,7 @@
     box-shadow: none;
     min-height: 0;
     transform: none;
-    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+    transition: background 140ms var(--motion-standard), color 140ms var(--motion-standard), box-shadow 140ms var(--motion-standard);
 }
 
 .suggestion-item + .suggestion-item {
@@ -1830,7 +1836,7 @@ footer {
     right: 0;
     top: 2px;
     height: 48px;
-    border-radius: var(--radius-pill);
+    border-radius: 12px;
     background: var(--accent-surface-muted);
     transform: translateY(calc(var(--settings-active-index, 0) * 56px)) scale(1.01);
     transition: transform 500ms var(--motion-bouncy);
@@ -1884,7 +1890,7 @@ footer {
     gap: 12px;
     padding: 10px 12px;
     min-height: 48px;
-    border-radius: var(--radius-pill);
+    border-radius: 12px;
     background: transparent;
     color: var(--text);
     text-decoration: none;
@@ -1893,7 +1899,7 @@ footer {
     font-weight: var(--font-weight-medium);
     position: relative;
     z-index: var(--layer-surface-content);
-    transition: background 140ms ease, color 140ms ease, transform 180ms ease;
+    transition: background 140ms var(--motion-standard), color 140ms var(--motion-standard), transform 180ms var(--motion-press);
 }
 
 .settings-nav-item:hover, .settings-nav-item:focus-visible {
@@ -1903,7 +1909,7 @@ footer {
 .settings-nav-item.is-active {
     background: transparent;
     color: var(--accent-text);
-    border-radius: var(--radius-pill);
+    border-radius: 12px;
     box-shadow: none;
 }
 
@@ -2003,6 +2009,19 @@ footer {
     background-color: var(--accent-fill);
 }
 
+/* Sidebar symbols use one visual weight and inherit the app tint. */
+.settings-nav-item:not(.settings-nav-item-clear-cache) {
+    --settings-icon-tint: var(--theme-muted);
+    --settings-icon-surface: transparent;
+}
+
+.settings-nav-icon-shell,
+.settings-nav-item.is-active .settings-nav-icon-shell {
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
 .workspace-nav-item-compare {
     --settings-icon-tint: color-mix(in srgb, var(--theme-accent-primary) 88%, var(--theme-text) 12%);
     --settings-icon-surface: color-mix(in srgb, var(--theme-accent-primary) 14%, transparent);
@@ -2016,6 +2035,11 @@ footer {
 .workspace-nav-item-backtest {
     --settings-icon-tint: color-mix(in srgb, var(--theme-warning) 76%, var(--theme-accent-secondary) 24%);
     --settings-icon-surface: color-mix(in srgb, var(--theme-warning) 14%, transparent);
+}
+
+.workspace-nav-item-grid-trading {
+    --settings-icon-tint: color-mix(in srgb, var(--theme-accent-positive) 72%, var(--theme-accent-primary) 28%);
+    --settings-icon-surface: color-mix(in srgb, var(--theme-accent-positive) 14%, transparent);
 }
 
 .settings-status-check {
@@ -2207,4 +2231,70 @@ footer {
     font-size: var(--font-tooltip);
     line-height: 1.4;
     color: var(--muted);
+}
+.price-compare-range {
+    margin-inline-start: auto;
+    color: var(--muted);
+    font-size: var(--font-ui-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.price-subplots-surface {
+    position: relative;
+    overflow: hidden;
+    padding: 10px 12px 14px;
+}
+
+.price-subplot-grid {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: repeat(var(--price-subplot-count), minmax(0, 1fr));
+    gap: 6px;
+    height: 100%;
+    min-height: 0;
+}
+
+.price-subplot {
+    position: relative;
+    min-height: 0;
+    display: block;
+    border-bottom: 0;
+}
+
+.price-subplot:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -5px;
+    height: 1px;
+    background: var(--theme-glass-border);
+    pointer-events: none;
+}
+
+.price-subplot-canvas-wrap {
+    position: relative;
+    height: 100%;
+    min-height: 0;
+}
+
+.price-subplot-canvas-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.price-shared-tooltip {
+    position: absolute;
+    z-index: var(--layer-chart-tooltip);
+}
+
+@media (max-width: 767px) {
+    .price-subplots-surface {
+        overflow: visible;
+    }
+
+    .price-subplot-grid {
+        grid-template-rows: repeat(var(--price-subplot-count), 190px);
+        height: auto;
+        min-height: 0;
+    }
 }

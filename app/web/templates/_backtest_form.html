@@ -120,6 +120,8 @@
                     data-trade-strategy-tune-button
                     aria-label="Tune strategy parameters"
                     aria-pressed="false"
+                    aria-expanded="false"
+                    aria-controls="trade_strategy_params_panel"
                     {% if not strategy_form_fields %}aria-hidden="true" tabindex="-1" disabled{% endif %}
             >
                 <span class="icon icon-strategy-tune" aria-hidden="true"></span>
@@ -133,7 +135,7 @@
                     hidden
             ></div>
         </div>
-        <div class="trade-strategy-params-popover" data-trade-strategy-panel hidden>
+        <div id="trade_strategy_params_panel" class="trade-strategy-params-popover" data-trade-strategy-panel role="region" aria-label="Strategy parameters" hidden>
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>

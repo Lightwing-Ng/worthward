@@ -1,4 +1,4 @@
-/* Code version: v0.1.9 */
+/* Code version: v0.1.10 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -564,5 +564,4 @@
     });
 
     bootstrap.initDcaWorkspace = initDcaWorkspace;
-    initDcaWorkspace();
 })();
