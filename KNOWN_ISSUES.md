@@ -1,6 +1,12 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.25.0`
+Documentation version: `v1.26.0`
+
+## Unconfigured Longbridge market-data fallback completed on 13 Jul 2026
+
+- Every public 1-minute history download path now falls back to bounded `yfinance` windows when Longbridge is unconfigured or unavailable.
+- Daily history, current and extended-hours quotes, comparison charts, portfolio views, backtests, and investment valuation can operate without Longbridge credentials.
+- Longbridge remains the preferred 1-minute source when configured. The fallback preserves authoritative unknowns when neither provider returns data and never fabricates market records.
 
 ## Comparison workspace memory added on 13 Jul 2026
 

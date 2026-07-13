@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -230,6 +230,57 @@ def _download_recent_one_minute_history_with_yfinance(
     if combined.empty:
         raise ValueError(f"No recent 1-minute market data returned for {ticker} via yfinance.")
     return combined.reset_index(drop=True)
+
+
+def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
+    """
+    Download recent 1-minute history with Longbridge as the optional primary source.
+
+    A machine without Longbridge configuration must remain fully capable of
+    serving market views. A configured but unavailable Longbridge connection is
+    treated the same way and falls through to bounded yfinance windows.
+    """
+    normalized_ticker = normalize_ticker(ticker)
+    longbridge_error: Exception | None = None
+
+    if _load_longbridge_market_settings() is not None:
+        for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
+            delay = (
+                DOWNLOAD_RETRY_DELAYS_SECONDS[attempt]
+                if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS)
+                else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
+            )
+            if delay > 0:
+                sleep(delay)
+            try:
+                return _download_one_minute_history_with_longbridge(normalized_ticker)
+            except Exception as exc:
+                longbridge_error = exc
+
+    fallback_errors: list[tuple[int, Exception]] = []
+    for days in (
+        YFINANCE_INTRADAY_FALLBACK_DAYS,
+        YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+    ):
+        try:
+            return _download_recent_one_minute_history_with_yfinance(
+                normalized_ticker,
+                days=days,
+            )
+        except Exception as exc:
+            fallback_errors.append((days, exc))
+
+    failure_details: list[str] = []
+    if longbridge_error is not None:
+        failure_details.append(f"Longbridge failed: {longbridge_error}")
+    failure_details.extend(
+        f"yfinance {days}-day fallback failed: {error}"
+        for days, error in fallback_errors
+    )
+    detail = ". ".join(failure_details)
+    raise ValueError(
+        f"Unable to download 1-minute market data for {normalized_ticker}. {detail}."
+    ) from fallback_errors[-1][1]
 
 
 def infer_ticker_market(ticker: str) -> str:
@@ -854,18 +905,7 @@ def download_full_history(ticker: str, interval: str = "1d") -> pd.DataFrame:
     normalized_ticker = normalize_ticker(ticker)
     normalized_interval = normalize_market_interval(interval)
     if is_intraday_market_interval(normalized_interval):
-        last_error: Exception | None = None
-        for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
-            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt] if attempt < len(DOWNLOAD_RETRY_DELAYS_SECONDS) else DOWNLOAD_RETRY_DELAYS_SECONDS[-1]
-            if delay > 0:
-                sleep(delay)
-            try:
-                return _download_one_minute_history_with_longbridge(normalized_ticker)
-            except Exception as exc:
-                last_error = exc
-        if last_error is not None:
-            raise last_error
-        raise ValueError(f"Unable to download market data for {ticker}.")
+        return _download_one_minute_history_with_fallback(normalized_ticker)
     return _download_daily_history_with_fallback(
         normalized_ticker,
         period="max",
@@ -911,10 +951,7 @@ def fetch_history(
                 LOGGER.warning("Unable to refresh dividend actions for %s at %s: %s", normalized_ticker, path, exc)
         return select_price_series(dataset, include_dividends, dividend_mode=dividend_mode)
 
-    if is_intraday_market_interval(normalized_interval) and _load_longbridge_market_settings() is None:
-        history = _download_recent_one_minute_history_with_yfinance(normalized_ticker)
-    else:
-        history = download_full_history(normalized_ticker, interval=normalized_interval)
+    history = download_full_history(normalized_ticker, interval=normalized_interval)
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     with market_store_file_lock(path):
         write_parquet_atomic(path, normalized_dataset, index=False)

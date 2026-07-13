@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.20.0`
+Documentation version: `v2.21.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -133,9 +133,13 @@ The current `Settings` navigation includes:
 
 - Stored in `market_store/historical/` as parquet
 - Preferred source is Longbridge
-- Refresh can fall back to recent `yfinance` windows when Longbridge is unavailable
+- Every initial download and refresh path falls back to recent `yfinance` windows when Longbridge is unconfigured or unavailable
 - Persisted data is trimmed to the latest 6 months of trading days
 - Used when local `1m` data exists for the selected ticker
+
+Longbridge is optional for every market-data view. Daily history, intraday charts,
+extended-hours comparisons, and investment realtime quotes continue to use
+`yfinance` when no Longbridge market-data source is configured.
 
 ### Metadata and search caches
 

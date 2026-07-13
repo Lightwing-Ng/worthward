@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.3.9
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from app.services.market_data import (
     refresh_history_store,
 )
 from app.models.schemas import QuoteProfile
+from tests.factories.market import market_frame
 
 
 def _fake_dataset_for(ticker: str) -> pd.DataFrame:
@@ -326,6 +327,44 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         self.assertFalse(result.empty)
         self.assertEqual(download_mock.call_args.kwargs["tickers"], "BRK-B")
+
+    def test_download_full_intraday_history_uses_yfinance_without_longbridge(self) -> None:
+        yfinance_history = market_frame("QQQ", intraday=True)
+
+        with (
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+            patch("app.services.market_data._download_one_minute_history_with_longbridge") as longbridge_mock,
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                return_value=yfinance_history,
+            ) as yfinance_mock,
+        ):
+            result = download_full_history("QQQ", interval="1m")
+
+        pd.testing.assert_frame_equal(result, yfinance_history)
+        longbridge_mock.assert_not_called()
+        yfinance_mock.assert_called_once_with("QQQ", days=30)
+
+    def test_download_full_intraday_history_falls_back_when_longbridge_fails(self) -> None:
+        yfinance_history = market_frame("AAPL", intraday=True)
+
+        with (
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=object()),
+            patch(
+                "app.services.market_data._download_one_minute_history_with_longbridge",
+                side_effect=ConnectionError("Longbridge unavailable"),
+            ) as longbridge_mock,
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                return_value=yfinance_history,
+            ) as yfinance_mock,
+            patch("app.services.market_data.sleep"),
+        ):
+            result = download_full_history("AAPL", interval="1m")
+
+        pd.testing.assert_frame_equal(result, yfinance_history)
+        self.assertEqual(longbridge_mock.call_count, 3)
+        yfinance_mock.assert_called_once_with("AAPL", days=30)
 
     def test_ensure_fresh_history_store_refreshes_stale_daily_cache(self) -> None:
         with (
