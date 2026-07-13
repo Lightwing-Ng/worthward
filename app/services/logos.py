@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.4.1
+Code version: v0.4.4
 """
 
 from __future__ import annotations
@@ -84,6 +84,11 @@ ISSUER_WEBSITE_HINTS = {
     "SPDR": "https://www.ssga.com",
 }
 
+STORED_LOGO_ALIASES = {
+    "SKHY": ("000660.KS",),
+    "SKHYV": ("000660.KS",),
+}
+
 
 def _run_yfinance_silently(callback):
     stderr_buffer = io.StringIO()
@@ -129,7 +134,12 @@ def build_market_store_logo_url(filename: str, modified_at_ns: int | None = None
 
 
 def resolve_stored_logo_url(ticker: str) -> str:
-    for candidate in investment_ticker_store_aliases(ticker):
+    normalized_ticker = normalize_ticker(ticker)
+    candidates = [
+        *investment_ticker_store_aliases(normalized_ticker),
+        *STORED_LOGO_ALIASES.get(normalized_ticker, ()),
+    ]
+    for candidate in dict.fromkeys(candidates):
         logo_path = resolve_logo_store_path(candidate)
         if logo_path is not None:
             return build_market_store_logo_url(logo_path.name, logo_path.stat().st_mtime_ns)
@@ -504,10 +514,10 @@ def fetch_and_store_logo(
         force_refresh: bool = False,
 ) -> str | None:
     ensure_market_store_dir()
-    path = logo_store_path_for(ticker)
+    existing_logo = resolve_stored_logo_url(ticker)
+    if existing_logo and not force_refresh:
+        return existing_logo
     refresh_logo_store(ticker, website, force_refresh=force_refresh)
-    if not path.exists():
-        return None
     return resolve_stored_logo_url(ticker) or None
 
 
@@ -534,8 +544,8 @@ def _fetch_quote_profile_for_scope(
 
     if record and (
             (not force_refresh and _record_is_fresh(record.get("updated_at")))
-            or not has_remote_market_access()
             or (not force_refresh and not ticker_name_fallback)
+            or not has_remote_market_access()
     ):
         return QuoteProfile(
             ticker=record["ticker"],

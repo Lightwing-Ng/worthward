@@ -1,4 +1,4 @@
-/* Code version: v0.4.15 */
+/* Code version: v0.4.16 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -27,7 +27,7 @@
 					<div id="compare_summary_panel">
 						<p id="compare_summary_date_range" class="compare-summary-date-range is-pending-value">Loading range...</p>
 						<div id="compare_summary_region" class="performance-grid" style="grid-template-columns: repeat(${itemCount}, minmax(0, 1fr));">
-						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><div class="performance-metrics"><p class="report-value performance-metric-row performance-metric-row-total"><span class="performance-metric-label performance-metric-label-spacer" aria-hidden="true">TTM yield</span><span class="compare-percent-value is-pending-value" data-workspace-mask="compare-return">0000</span></p><p class="report-value performance-metric-row performance-metric-row-dividend"><span class="performance-metric-label">TTM yield</span><span class="compare-percent-value compare-percent-value-secondary is-pending-value" data-workspace-mask="compare-ttm-dividend-yield">0000</span></p></div></section>`).join("")}
+						${Array.from({ length: itemCount }, (_, index) => `<section class="performance-item is-pending-card" data-ticker="${currentValues[index] || "..."}"><div class="ticker-identity-row"><span class="ticker-identity-copy"><span class="suggestion-symbol ticker-identity-symbol">${currentValues[index] || "..."}</span><span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name" title="Loading">Loading</span></span></div><div class="performance-metrics"><p class="report-value performance-metric-row performance-metric-row-total"><span class="compare-percent-value is-pending-value" data-workspace-mask="compare-return">0000</span></p><p class="report-value performance-metric-row performance-metric-row-dividend"><span class="compare-percent-value compare-percent-value-secondary is-pending-value" data-workspace-mask="compare-ttm-dividend-yield">0000</span></p></div></section>`).join("")}
 						</div>
 					</div>
 				</article>

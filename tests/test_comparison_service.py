@@ -443,10 +443,12 @@ class ComparisonServiceTests(unittest.TestCase):
             ["000660.KS", "7709.HK"],
         )
 
-        # Cross-market 1d uses union of (NY-label) timestamps from both; each series keeps its values, NaN where the other has exclusive slots.
-        expected_dates = ["2026-07-02 20:00", "2026-07-02 21:30", "2026-07-03 01:00", "2026-07-03 02:29", "2026-07-03 02:30", "2026-07-03 03:59"]
-        self.assertEqual(aligned[0]["Date"].dt.strftime("%Y-%m-%d %H:%M").tolist(), expected_dates)
-        self.assertEqual(aligned[1]["Date"].dt.strftime("%Y-%m-%d %H:%M").tolist(), expected_dates)
+        # Cross-market 1d preserves elapsed New York wall time and leaves closed-market minutes empty.
+        self.assertEqual(aligned[0]["Date"].min(), pd.Timestamp("2026-07-02 20:00"))
+        self.assertEqual(aligned[0]["Date"].max(), pd.Timestamp("2026-07-03 03:59"))
+        self.assertEqual(len(aligned[0]), 480)
+        self.assertTrue(pd.isna(aligned[0].loc[aligned[0]["Date"] == pd.Timestamp("2026-07-03 03:59"), "Close"]).all())
+        self.assertEqual(aligned[1]["Date"].tolist(), aligned[0]["Date"].tolist())
         # KR (index 0) values at its original slots, NaN at HK-only end
         self.assertTrue(pd.isna(aligned[0]["Open"].iloc[-1]))
         self.assertEqual(aligned[0]["Open"].iloc[0], 100.0)

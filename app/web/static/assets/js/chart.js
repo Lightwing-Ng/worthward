@@ -1,4 +1,4 @@
-/* Code version: v0.7.29 */
+/* Code version: v0.8.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -556,8 +556,20 @@
 		});
 		const oneDaySessionStartMinute = hasOneDayExtendedHours ? (4 * 60) : ((9 * 60) + 30);
 		const oneDaySessionEndMinute = hasOneDayExtendedHours ? (20 * 60) : (16 * 60);
+		const hasDrawableOneDayCandles = (item) => (
+			Array.isArray(item?.candlestick_returns)
+			&& item.candlestick_returns.length === labels.length
+			&& item.candlestick_returns.some((candle) => {
+				const volume = toFiniteChartNumber(candle?.v);
+				return candle?.synthetic !== true
+					&& (volume === null || volume > 0)
+					&& [candle?.o, candle?.h, candle?.l, candle?.c].every(isFiniteChartValue);
+			})
+		);
 		const hasOneDayCandlesticks = isCompareOneDayRange
-			&& series.every((item) => Array.isArray(item?.candlestick_returns) && item.candlestick_returns.length === labels.length);
+			&& !isCrossMarketOneDayRange
+			&& series.every(hasDrawableOneDayCandles);
+		canvas.dataset.chartRenderMode = hasOneDayCandlesticks ? "candlestick" : "line";
 
 		const buildOneDaySessionTickDefinitions = () => {
 			const anchorDateParts = parseRawDate(rawDates[0]);
@@ -1227,4 +1239,5 @@
 
 	bootstrap.renderReturnsChart = renderReturnsChart;
 	bootstrap.initChartWorkspace = initChartWorkspace;
+	initChartWorkspace();
 })();

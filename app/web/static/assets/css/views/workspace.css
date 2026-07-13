@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -702,7 +702,7 @@
 
 .performance-metrics {
     display: grid;
-    grid-template-columns: max-content minmax(0, max-content) 16px;
+    grid-template-columns: minmax(0, max-content) 16px;
     column-gap: 6px;
     row-gap: 5px;
     align-items: baseline;
@@ -720,23 +720,8 @@
     display: contents;
 }
 
-.performance-metric-label {
-    grid-column: 1;
-    align-self: baseline;
-    color: var(--muted);
-    font-size: var(--font-ui-sm);
-    line-height: 1;
-    letter-spacing: 0;
-    font-weight: var(--font-weight-bold);
-    white-space: nowrap;
-}
-
-.performance-metric-label-spacer {
-    visibility: hidden;
-}
-
 .compare-percent-value {
-    grid-column: 2;
+    grid-column: 1;
     display: inline-grid;
     grid-template-columns: minmax(0, 1fr) max-content 2ch max-content;
     align-items: baseline;
@@ -780,7 +765,7 @@
 }
 
 .winner-badge {
-    grid-column: 3;
+    grid-column: 2;
     position: static;
     width: 16px;
     height: 16px;

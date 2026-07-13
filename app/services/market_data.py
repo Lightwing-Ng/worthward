@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -286,7 +286,7 @@ def supports_compare_extended_hours(tickers: list[str], period: str) -> bool:
     return (
         bool(normalized_tickers)
         and str(period or "").strip().lower() == "1d"
-        and all(infer_ticker_market(ticker) == "US" for ticker in normalized_tickers)
+        and any(infer_ticker_market(ticker) == "US" for ticker in normalized_tickers)
     )
 
 

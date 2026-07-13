@@ -1,6 +1,45 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.17.0`
+Documentation version: `v1.25.0`
+
+## Comparison workspace memory added on 13 Jul 2026
+
+- Return comparison and Price performance now remember their own ticker and range selections when users switch between the two workspace modes.
+- The first switch into either mode inherits the current comparison query when that destination has no saved state yet. Later switches restore the destination mode's most recently used state for the current browser session.
+
+## Korea–US market-time geometry corrected on 12 Jul 2026
+
+- Cross-market one-day price comparisons now preserve every elapsed New York wall-time minute between the earliest and latest selected sessions. Closed-market gaps remain empty, so South Korea open, South Korea close, and US pre-market open landmarks keep their true spacing.
+- Any one-day comparison containing a US security exposes the pre-market and after-hours control, including mixed-market comparisons.
+- The SK hynix USD 149.00 first-day reference begins at 09:30 New York time and ends at the first normal trade. Axis labels show a currency code only on the top tick; KRW and JPY use zero minor units globally.
+
+## Korea–US debut-day price comparison corrected on 12 Jul 2026
+
+- One-day price comparisons between a Korean primary listing and a US security draw solid shared-session landmarks for the South Korea close and New York open. The landmarks reuse the standard session-divider stroke treatment.
+- Cached quote profiles no longer trigger a remote connectivity probe before the page can render. Cross-market minute timestamps are converted with vectorized timezone operations, removing tens of thousands of per-row Python callbacks from a typical request.
+- A newly listed US security remains blank before its first authoritative quote; the Korean close and New York open landmarks do not fabricate pre-listing prices.
+
+## Cross-market one-day return comparison corrected on 12 Jul 2026
+
+- One-day return comparisons spanning multiple exchanges render normalized-return lines on the shared market-time axis. They no longer hide those lines in favor of a same-market candlestick overlay.
+- Same-market one-day comparisons retain candlesticks only when every selected series contains at least one drawable OHLC record. A length-matched but empty candlestick payload now falls back to visible return lines.
+- The return-chart module initializes the canvas after registering its renderer, removing a startup-order race in which the application bootstrap could run before the chart module was available.
+
+## Multi-market intraday landmarks added on 12 Jul 2026
+
+- One-day price comparisons spanning Hong Kong, London, and New York draw shared solid vertical landmarks for London open, Hong Kong close, and New York open. These landmarks reuse the existing session-divider stroke treatment; the bottom subplot labels each landmark with its market-local time and timezone abbreviation.
+- Shared hover tooltips retain one Settings-formatted HKT date, then list HKT and each distinct compared market timezone once. A different local calendar day is annotated with a signed day offset such as `EDT (-1)`.
+
+## Price workspace startup stall corrected on 12 Jul 2026
+
+- Chart.js, Luxon, the Luxon adapter, and the financial chart extension are now served from versioned local static assets. An unavailable external CDN can no longer leave populated price canvases permanently blank.
+- Period-based 1D, 3D, and 1W price requests use the existing local intraday and daily stores for initial rendering instead of synchronously refreshing every selected daily cache. Live refresh remains asynchronous after the page becomes usable.
+
+## SK hynix first-day price presentation completed on 12 Jul 2026
+
+- Temporary `SKHYV` and future `SKHY` reuse the stored `000660.KS` butterfly SVG until a dedicated US listing asset is available.
+- A one-day US comparison labels the bottom axis at the beginning, midpoint, and end with time above the Settings-formatted full date.
+- The authoritative USD 149.00 previous close is preserved as a thin reference segment from its first-day marker to the first normal trade. Missing minutes remain unknown rather than being fabricated as market bars.
 
 ## Equal-width short intraday sessions corrected on 12 Jul 2026
 

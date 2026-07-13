@@ -1,4 +1,4 @@
-/* Code version: v0.7.3 */
+/* Code version: v0.7.4 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -1025,7 +1025,6 @@
             row.append(logo, copy);
             const metrics = createStyleTokenDemoElement("div", "performance-metrics");
             const value = createStyleTokenDemoElement("p", "report-value performance-metric-row performance-metric-row-total");
-            value.append(createStyleTokenDemoElement("span", "performance-metric-label performance-metric-label-spacer", "TTM yield"));
             const valueSpan = createStyleTokenDemoElement("span", "compare-percent-value", "");
             valueSpan.style.color = item.color;
             appendComparePercentValue(valueSpan, item.value);
@@ -1039,7 +1038,6 @@
                 value.append(winnerBadge);
             }
             const yieldRow = createStyleTokenDemoElement("p", "report-value performance-metric-row performance-metric-row-dividend");
-            yieldRow.append(createStyleTokenDemoElement("span", "performance-metric-label", "TTM yield"));
             const yieldSpan = createStyleTokenDemoElement("span", "compare-percent-value compare-percent-value-secondary", "");
             appendComparePercentValue(yieldSpan, item.ttmYield);
             yieldRow.append(yieldSpan);

@@ -148,6 +148,8 @@ class ComparePageTests(unittest.TestCase):
         self.assertNotIn('id="include_dividends" name="dividends" type="checkbox" value="1"  disabled', html)
         self.assertIn('id="compare_summary_date_range"', html)
         self.assertIn('class="compare-summary-date-range"', html)
+        self.assertNotIn("TTM yield", html)
+        self.assertIn('data-workspace-mask="compare-ttm-dividend-yield"', html)
         self.assertIn('id="workspace_share_drawer_tickers"', html)
         self.assertIn('data-share-drawer="tickers"', html)
         self.assertIn('id="share_capture_button"', html)

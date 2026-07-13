@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.7.2
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -4226,7 +4226,15 @@ def build_web_runtime() -> WebRuntime:
                             raise ValueError("Ticker symbols must be unique.")
 
                         freshness_refresh_failures: list[str] = []
-                        if current_view in {"tickers", "prices", "portfolio"}:
+                        is_local_intraday_price_request = (
+                            current_view == "prices"
+                            and range_mode != "exact"
+                            and period in {"1d", "3d", "1w"}
+                        )
+                        if (
+                                current_view in {"tickers", "prices", "portfolio"}
+                                and not is_local_intraday_price_request
+                        ):
                             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
 
                         # Try to fetch datasets, handle missing remote data by falling back to any available local data

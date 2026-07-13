@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 <head>
@@ -5,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title or labels.page_title }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('market_store_logo', filename='favicon.svg', v=version) }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.min.js"></script>
+    <script src="{{ url_for('static', filename='assets/js/vendor/chart/chart.umd.min.js', v=version) }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/vendor/chart/luxon.min.js', v=version) }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/vendor/chart/chartjs-adapter-luxon.umd.min.js', v=version) }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/vendor/chart/chartjs-chart-financial.min.js', v=version) }}"></script>
     <style>
         :root {
             color-scheme: light dark;

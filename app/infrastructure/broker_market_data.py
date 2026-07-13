@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.5.14
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -887,18 +887,84 @@ def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = Non
 
 
 def _count_regular_session_rows(values: pd.Series, ticker: str | None = None) -> int:
-    timestamps = pd.to_datetime(values, errors="coerce").dropna()
-    if timestamps.empty:
-        return 0
-    count = 0
-    for timestamp in timestamps:
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.tz_localize(NEW_YORK_TIMEZONE)
-        else:
-            timestamp = timestamp.tz_convert(NEW_YORK_TIMEZONE)
-        if _is_regular_market_session(timestamp, ticker):
-            count += 1
-    return count
+    return int(_regular_market_session_mask(values, ticker).sum())
+
+
+def _regular_market_session_mask(values: pd.Series, ticker: str | None = None) -> pd.Series:
+    timestamps = pd.to_datetime(values, errors="coerce")
+    if getattr(timestamps.dt, "tz", None) is None:
+        timestamps = timestamps.dt.tz_localize(
+            NEW_YORK_TIMEZONE,
+            ambiguous="NaT",
+            nonexistent="NaT",
+        )
+    else:
+        timestamps = timestamps.dt.tz_convert(NEW_YORK_TIMEZONE)
+
+    market = _infer_market_from_ticker(ticker)
+    market_timezones = {
+        "US": NEW_YORK_TIMEZONE,
+        "HK": HONG_KONG_TIMEZONE,
+        "KR": "Asia/Seoul",
+        "JP": "Asia/Tokyo",
+        "CN": "Asia/Shanghai",
+        "UK": "Europe/London",
+        "SG": "Asia/Singapore",
+        "AU": "Australia/Sydney",
+        "CA": "America/Toronto",
+        "EU": "Europe/Paris",
+        "FI": "Europe/Helsinki",
+        "IN": "Asia/Kolkata",
+        "TW": "Asia/Taipei",
+        "MY": "Asia/Kuala_Lumpur",
+        "TH": "Asia/Bangkok",
+        "ID": "Asia/Jakarta",
+        "NZ": "Pacific/Auckland",
+        "BR": "America/Sao_Paulo",
+        "LATAM": "America/Mexico_City",
+        "IL": "Asia/Jerusalem",
+        "SA": "Asia/Riyadh",
+        "ZA": "Africa/Johannesburg",
+        "QA": "Asia/Qatar",
+    }
+    localized = timestamps.dt.tz_convert(market_timezones.get(market, NEW_YORK_TIMEZONE))
+    total_minutes = (localized.dt.hour * 60) + localized.dt.minute
+    weekday_mask = localized.notna() & (localized.dt.dayofweek < 5)
+
+    if market == "HK":
+        session_mask = total_minutes.between((9 * 60) + 30, (12 * 60) - 1) | total_minutes.between(13 * 60, (16 * 60) - 1)
+    elif market == "KR":
+        session_mask = total_minutes.between(9 * 60, (15 * 60) + 30)
+    elif market == "JP":
+        session_mask = total_minutes.between(9 * 60, (11 * 60) + 29) | total_minutes.between((12 * 60) + 30, (15 * 60) + 30)
+    elif market == "CN":
+        session_mask = total_minutes.between((9 * 60) + 30, (11 * 60) + 29) | total_minutes.between(13 * 60, (15 * 60) - 1)
+    elif market == "SG":
+        session_mask = total_minutes.between(9 * 60, (12 * 60) - 1) | total_minutes.between(13 * 60, (17 * 60) - 1)
+    else:
+        market_sessions = {
+            "US": ((9 * 60) + 30, 16 * 60),
+            "UK": (8 * 60, (16 * 60) + 30),
+            "AU": (10 * 60, 16 * 60),
+            "CA": ((9 * 60) + 30, 16 * 60),
+            "EU": (9 * 60, (17 * 60) + 30),
+            "FI": (9 * 60, (17 * 60) + 30),
+            "IN": ((9 * 60) + 15, (15 * 60) + 30),
+            "TW": (9 * 60, (13 * 60) + 30),
+            "MY": (9 * 60, 17 * 60),
+            "TH": (10 * 60, (16 * 60) + 30),
+            "ID": (9 * 60, 16 * 60),
+            "NZ": (10 * 60, (16 * 60) + 45),
+            "BR": (10 * 60, 17 * 60),
+            "LATAM": ((8 * 60) + 30, 15 * 60),
+            "IL": ((9 * 60) + 30, (17 * 60) + 30),
+            "SA": (10 * 60, 15 * 60),
+            "ZA": (9 * 60, 17 * 60),
+            "QA": ((9 * 60) + 30, (13 * 60) + 10),
+        }
+        session_open, session_close = market_sessions.get(market, market_sessions["US"])
+        session_mask = (total_minutes >= session_open) & (total_minutes < session_close)
+    return (weekday_mask & session_mask).fillna(False)
 
 
 def _series_to_new_york_naive(values: pd.Series) -> pd.Series:
@@ -936,9 +1002,7 @@ def normalize_one_minute_store_frame(dataset: pd.DataFrame, ticker: str | None =
     else:
         normalized["Date"] = _series_to_new_york_naive(current_dates).to_numpy()
 
-    session_mask = normalized["Date"].apply(
-        lambda value: _is_regular_market_session(pd.Timestamp(value).tz_localize(NEW_YORK_TIMEZONE), ticker)
-    )
+    session_mask = _regular_market_session_mask(normalized["Date"], ticker)
     normalized = normalized.loc[session_mask].copy()
     if normalized.empty:
         return normalized.reset_index(drop=True)

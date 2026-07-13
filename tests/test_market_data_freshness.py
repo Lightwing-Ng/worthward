@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.3.8
+Code version: v0.3.9
 """
 
 from __future__ import annotations
@@ -367,6 +367,20 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(refresh_requests, [["QQQ", "AAPL"]])
+
+    def test_intraday_price_page_does_not_block_on_daily_cache_refresh(self) -> None:
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches") as refresh_mock,
+            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval="1d", **kwargs: _fake_dataset_for(ticker)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/prices?ticker=QQQ&ticker=AAPL&period=1d"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        refresh_mock.assert_not_called()
 
     def test_portfolio_page_uses_the_same_freshness_checks(self) -> None:
         refresh_requests: list[list[str]] = []

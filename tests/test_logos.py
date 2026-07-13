@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.3.2
+Code version: v0.3.5
 """
 
 from __future__ import annotations
@@ -22,14 +22,58 @@ from app.infrastructure.storage import (
 from app.services.logos import (
     build_logo_provider_ticker_candidates,
     build_quote_profile_payload,
+    fetch_and_store_logo,
     fetch_quote_profile,
     quote_lookup_symbol,
     refresh_logo_store,
+    resolve_stored_logo_url,
     search_tickers,
 )
 
 
 class LogoServiceTests(unittest.TestCase):
+    def test_cached_named_profile_skips_remote_connectivity_probe(self) -> None:
+        cached_record = {
+            "ticker": "SKHYV",
+            "company_name": "SK hynix Inc.",
+            "website": "https://www.skhynix.com",
+            "updated_at": "2000-01-01T00:00:00+00:00",
+        }
+        with patch("app.services.logos.load_profile_record", return_value=cached_record), \
+                patch("app.services.logos.resolve_logo_url_with_fallback", return_value="/market-store/logos/000660.KS.svg"), \
+                patch("app.services.logos.has_remote_market_access") as remote_access_mock:
+            profile = fetch_quote_profile("SKHYV", force_refresh=False)
+
+        self.assertEqual(profile.company_name, "SK hynix Inc.")
+        remote_access_mock.assert_not_called()
+
+    def test_sk_hynix_us_symbols_reuse_korean_primary_listing_logo(self) -> None:
+        with create_app().test_request_context():
+            with patch("app.services.logos.resolve_logo_store_path") as resolve_mock:
+                resolve_mock.side_effect = lambda ticker: (
+                    Path("/tmp/000660.KS.svg")
+                    if ticker == "000660.KS"
+                    else None
+                )
+                with patch.object(Path, "stat") as stat_mock:
+                    stat_mock.return_value.st_mtime_ns = 123
+                    for ticker in ("SKHYV", "SKHY"):
+                        with self.subTest(ticker=ticker):
+                            self.assertIn(
+                                "/market-store/logos/000660.KS.svg",
+                                resolve_stored_logo_url(ticker),
+                            )
+
+    def test_sk_hynix_alias_logo_bypasses_remote_refresh(self) -> None:
+        with patch(
+            "app.services.logos.resolve_stored_logo_url",
+            return_value="/market-store/logos/000660.KS.svg?v=123",
+        ), patch("app.services.logos.refresh_logo_store") as refresh_mock:
+            logo_url = fetch_and_store_logo("SKHYV", None)
+
+        self.assertEqual(logo_url, "/market-store/logos/000660.KS.svg?v=123")
+        refresh_mock.assert_not_called()
+
     def test_build_logo_provider_ticker_candidates_supports_share_class_spacing(self) -> None:
         candidates = build_logo_provider_ticker_candidates("BRK B")
 

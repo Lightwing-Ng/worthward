@@ -1,4 +1,4 @@
-/* Code version: v0.11.0 */
+/* Code version: v0.14.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2372,6 +2372,30 @@
         writeViewMemory(memory);
     };
 
+    const resolveWorkspaceModeMemoryUrl = (link, fallbackUrl) => {
+        if (!(link instanceof HTMLAnchorElement) || !link.closest(".workspace-mode-nav")) {
+            return fallbackUrl;
+        }
+        const targetView = resolveViewFromUrl(fallbackUrl);
+        const comparisonViews = new Set(["tickers", "prices"]);
+        if (!comparisonViews.has(state.currentView) || !comparisonViews.has(targetView)) {
+            return fallbackUrl;
+        }
+        const rememberedUrl = readViewMemory()[targetView];
+        if (rememberedUrl && resolveViewFromUrl(rememberedUrl) === targetView) {
+            return rememberedUrl;
+        }
+        try {
+            const target = new URL(fallbackUrl, window.location.origin);
+            const current = new URL(window.location.href);
+            target.search = current.search;
+            target.hash = "";
+            return sanitizeRememberedUrl(`${target.pathname}${target.search}`);
+        } catch (_error) {
+            return fallbackUrl;
+        }
+    };
+
     const attachDockMemory = () => {
         const dockGroupByIndex = ["workspace", "trade", "settings"];
         $$(".sidebar-dock-item").forEach((link, index) => {
@@ -2429,10 +2453,11 @@
         document.addEventListener("click", (event) => {
             const link = event.target?.closest?.("a[href]");
             if (!shouldHandleOptimisticLinkClick(event, link)) return;
-            const nextUrl = link.getAttribute("href") || "";
+            const fallbackUrl = link.getAttribute("href") || "";
+            rememberCurrentViewUrl();
+            const nextUrl = resolveWorkspaceModeMemoryUrl(link, fallbackUrl);
             const normalizedNextUrl = normalizeNavigationUrl(nextUrl);
             if (!normalizedNextUrl) return;
-            rememberCurrentViewUrl();
             event.preventDefault();
             beginOptimisticPageNavigation(normalizedNextUrl, {link});
         });
@@ -5003,6 +5028,7 @@
             day: targetWallTime.getUTCDate(),
             hours: targetWallTime.getUTCHours(),
             minutes: targetWallTime.getUTCMinutes(),
+            offsetMinutes: targetOffset,
         };
     };
     const formatPickerMonthLabel = (date) => {
@@ -5062,6 +5088,21 @@
         convertNewYorkWallTimeParts,
         formatPickerMonthLabel,
         getShortDatePlaceholder,
+    };
+    bootstrap.currencyDisplay = {
+        minorUnits(currency) {
+            return new Set(["JPY", "KRW"]).has(String(currency || "").toUpperCase()) ? 0 : 2;
+        },
+        format(value, currency, showCurrency = true) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return "";
+            const fractionDigits = this.minorUnits(currency);
+            const formatted = numeric.toLocaleString("en-US", {
+                minimumFractionDigits: fractionDigits,
+                maximumFractionDigits: fractionDigits,
+            });
+            return showCurrency ? `${currency} ${formatted}` : formatted;
+        },
     };
 
     const startOfMonthUtc = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));

@@ -55,14 +55,12 @@
                             </div>
                             <div class="performance-metrics">
                                 <p class="report-value performance-metric-row performance-metric-row-total">
-                                    <span class="performance-metric-label performance-metric-label-spacer" aria-hidden="true">TTM yield</span>
                                     <span class="compare-percent-value" data-workspace-mask="compare-return" style="color: {{ item.color }};">{{ render_compare_percent_value(item.ending_return) }}</span>
                                     {% if item.is_winner %}
                                     <span class="winner-badge winner-badge-total-return" role="img" aria-label="{{ labels.winner_alt }}"></span>
                                     {% endif %}
                                 </p>
                                 <p class="report-value performance-metric-row performance-metric-row-dividend">
-                                    <span class="performance-metric-label">TTM yield</span>
                                     <span class="compare-percent-value compare-percent-value-secondary" data-workspace-mask="compare-ttm-dividend-yield">{{ render_compare_percent_value(item.ttm_dividend_yield) }}</span>
                                     {% if item.is_dividend_yield_winner %}
                                     <span class="winner-badge winner-badge-dividend-yield" role="img" aria-label="{{ labels.winner_alt }}"></span>

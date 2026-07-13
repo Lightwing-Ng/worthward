@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.7.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -91,6 +91,33 @@ def _timestamp_as_new_york(timestamp: object) -> pd.Timestamp:
 def _timestamp_as_market_local(timestamp: object, ticker: str | None = None) -> pd.Timestamp:
     new_york_timestamp = _timestamp_as_new_york(timestamp)
     return new_york_timestamp.tz_convert(_market_timezone_for_ticker(ticker))
+
+
+def _market_local_datetime_series(values: pd.Series, ticker: str | None = None) -> pd.Series:
+    parsed = pd.to_datetime(values, errors="coerce")
+    try:
+        if isinstance(parsed.dtype, pd.DatetimeTZDtype):
+            new_york_values = parsed.dt.tz_convert(_NEW_YORK_TIMEZONE)
+        else:
+            new_york_values = parsed.dt.tz_localize(
+                _NEW_YORK_TIMEZONE,
+                ambiguous="NaT",
+                nonexistent="shift_forward",
+            )
+        return new_york_values.dt.tz_convert(_market_timezone_for_ticker(ticker))
+    except (TypeError, ValueError):
+        return values.map(lambda value: _timestamp_as_market_local(value, ticker))
+
+
+def _market_session_mask(values: pd.Series, ticker: str | None = None) -> pd.Series:
+    localized = _market_local_datetime_series(values, ticker)
+    minutes = (localized.dt.hour * 60) + localized.dt.minute
+    mask = localized.dt.weekday < 5
+    segments = _market_session_segments(ticker)
+    session_mask = pd.Series(False, index=values.index)
+    for start_minute, end_minute in segments:
+        session_mask |= minutes.between(start_minute, end_minute, inclusive="both")
+    return mask & session_mask
 
 
 def _market_timezone_for_ticker(ticker: str | None = None) -> str:
@@ -258,10 +285,14 @@ def prepare_intraday_dataset_for_compare(
     if dataset.empty or "Date" not in dataset.columns:
         return dataset.copy()
     prepared = dataset.copy()
-    prepared["Date"] = prepared["Date"].map(lambda value: _timestamp_to_compare_axis(value, ticker))
+    parsed_dates = pd.to_datetime(prepared["Date"], errors="coerce")
+    if isinstance(parsed_dates.dtype, pd.DatetimeTZDtype):
+        prepared["Date"] = parsed_dates.dt.tz_convert(_NEW_YORK_TIMEZONE).dt.tz_localize(None)
+    else:
+        prepared["Date"] = parsed_dates
     prepared = prepared.dropna(subset=["Date"]).drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
     if regular_session_only or _market_for_ticker(ticker) in {"HK", "KR", "JP", "CN", "UK", "SG", "TW"}:
-        prepared = prepared[prepared["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()
+        prepared = prepared[_market_session_mask(prepared["Date"], ticker)].copy()
     return prepared.reset_index(drop=True)
 
 
@@ -293,23 +324,30 @@ def _complete_intraday_trading_days(dataset: pd.DataFrame, ticker: str | None = 
 def _complete_market_local_trading_days(dataset: pd.DataFrame, ticker: str | None = None) -> set[object]:
     if dataset.empty:
         return set()
-    local_dates = dataset["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date())
-    return {
-        trading_day
-        for trading_day in sorted(local_dates.dropna().unique())
-        if _has_complete_regular_session(dataset.loc[local_dates == trading_day], ticker)
-    }
+    localized = _market_local_datetime_series(dataset["Date"], ticker)
+    session_rows = pd.DataFrame({
+        "trading_day": localized.dt.date,
+        "minute": (localized.dt.hour * 60) + localized.dt.minute,
+    }, index=dataset.index)
+    session_rows = session_rows[_market_session_mask(dataset["Date"], ticker)].dropna()
+    if session_rows.empty:
+        return set()
+    minute_bounds = session_rows.groupby("trading_day")["minute"].agg(["min", "max"])
+    open_minute = _market_session_open_minute(ticker)
+    close_minute = _market_session_close_minute(ticker)
+    complete_bounds = minute_bounds[(minute_bounds["min"] <= open_minute) & (minute_bounds["max"] >= close_minute)]
+    return set(complete_bounds.index)
 
 
 def _slice_dataset_to_market_local_day(dataset: pd.DataFrame, ticker: str | None, trading_day: object) -> pd.DataFrame:
-    local_dates = dataset["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date())
+    local_dates = _market_local_datetime_series(dataset["Date"], ticker).dt.date
     return dataset.loc[local_dates == trading_day].copy()
 
 
 def _pad_dataset_to_market_session_close(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
     if dataset.empty or _market_for_ticker(ticker) == "US":
         return dataset
-    regular_session = dataset[dataset["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()
+    regular_session = dataset[_market_session_mask(dataset["Date"], ticker)].copy()
     if regular_session.empty:
         return dataset
 
@@ -439,6 +477,29 @@ def _align_intraday_datasets_on_union_dates(datasets: list[pd.DataFrame]) -> lis
         indexed = dataset.drop_duplicates(subset=["Date"], keep="last").set_index("Date").sort_index()
         reindexed = indexed.reindex(union_dates).reset_index().rename(columns={"index": "Date"})
         aligned_datasets.append(reindexed)
+    return aligned_datasets
+
+
+def _align_intraday_datasets_on_continuous_minutes(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    if not datasets:
+        return []
+    available_dates = [
+        pd.Timestamp(value)
+        for dataset in datasets
+        for value in dataset["Date"].tolist()
+    ]
+    if not available_dates:
+        raise ValueError("The selected tickers do not have intraday comparison data.")
+    full_axis = pd.date_range(
+        min(available_dates).floor("min"),
+        max(available_dates).ceil("min"),
+        freq="1min",
+        name="Date",
+    )
+    aligned_datasets: list[pd.DataFrame] = []
+    for dataset in datasets:
+        indexed = dataset.drop_duplicates(subset=["Date"], keep="last").set_index("Date").sort_index()
+        aligned_datasets.append(indexed.reindex(full_axis).reset_index())
     return aligned_datasets
 
 
@@ -831,6 +892,8 @@ def slice_intraday_datasets_for_compare_period(
         if first_dates and len(set(first_dates)) > 1:
             return _align_intraday_datasets_on_union_dates(sliced_datasets)
         return align_many_intraday_datasets_on_common_dates(sliced_datasets)
+    if period == "1d":
+        return _align_intraday_datasets_on_continuous_minutes(sliced_datasets)
     return _align_intraday_datasets_on_union_dates(sliced_datasets)
 
 
