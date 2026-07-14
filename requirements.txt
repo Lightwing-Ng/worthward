@@ -1,7 +1,7 @@
 Flask==3.1.0
 pandas==2.2.3
 pyarrow==19.0.1
-yfinance==1.1.0
+yfinance==1.5.1
 # Keep urllib3 on the 1.26.x line to avoid NotOpenSSLWarning
 # in Python environments linked against LibreSSL.
 urllib3<2
@@ -10,5 +10,5 @@ openpyxl==3.1.5
 tomli>=2.0.1; python_version < "3.11"
 
 pathlib~=1.0.1
-curl_cffi~=0.13.0
+curl_cffi~=0.15.0
 numpy~=2.2.1

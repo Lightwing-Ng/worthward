@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import io
 import logging
 import math
 import contextlib
+import re
 from time import sleep
 from pathlib import Path
 from threading import Lock
@@ -21,6 +22,7 @@ import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
 from app.infrastructure.connectivity import has_remote_market_access
+from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.infrastructure.broker_market_data import (
     HONG_KONG_TIMEZONE,
     NEW_YORK_TIMEZONE,
@@ -58,6 +60,42 @@ SPLIT_MATCH_TOLERANCE = math.log(1.12)
 SPLIT_MIN_EVENT_DISTANCE = math.log(1.5)
 SPLIT_MIN_IMPROVEMENT = 0.08
 LOGGER = logging.getLogger(__name__)
+YFINANCE_LOGGER = logging.getLogger("yfinance")
+NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
+NETWORK_SECRET_QUERY_PATTERN = re.compile(
+    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
+)
+
+
+class YfinanceDownloadError(ValueError):
+    """Raised when yfinance returns no usable frame or raises a transport error."""
+
+
+def _sanitize_network_diagnostic(value: object) -> str:
+    diagnostic = " ".join(str(value or "").split())
+    diagnostic = NETWORK_URL_USERINFO_PATTERN.sub(r"\1REDACTED@", diagnostic)
+    return NETWORK_SECRET_QUERY_PATTERN.sub(r"\1REDACTED", diagnostic)
+
+
+def _yfinance_failure_detail(
+        *,
+        stderr_value: str,
+        stdout_value: str,
+        log_value: str,
+        exception: Exception | None = None,
+) -> str:
+    candidates = [
+        log_value,
+        stderr_value,
+        stdout_value,
+        f"{type(exception).__name__}: {exception}" if exception is not None else "",
+    ]
+    details: list[str] = []
+    for candidate in candidates:
+        sanitized = _sanitize_network_diagnostic(candidate)
+        if sanitized and sanitized not in details:
+            details.append(sanitized)
+    return " | ".join(details) or "No diagnostic was emitted."
 
 
 @dataclass(frozen=True)
@@ -114,12 +152,12 @@ def _download_daily_history_with_yfinance(
         prepost: bool = False,
 ) -> pd.DataFrame:
     """
-    Serialize yfinance downloads because yfinance 1.2.0 mutates module-level
-    shared state during each request and is not safe under concurrent calls.
+    Serialize yfinance downloads for cross-version thread safety and to keep
+    the temporary diagnostic handler scoped to one request.
 
     yfinance may also emit noisy diagnostics directly to stderr when it cannot
     resolve symbols like `MSFT.US`. We silence that low-level output here and
-    let the caller decide whether to fall back to Longbridge.
+    preserve a sanitized explanation for the caller's fallback decision.
     """
     lookup_ticker: str | list[str]
     if isinstance(ticker, list):
@@ -129,21 +167,51 @@ def _download_daily_history_with_yfinance(
     with YFINANCE_DOWNLOAD_LOCK:
         stderr_buffer = io.StringIO()
         stdout_buffer = io.StringIO()
-        with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
-            return yf.download(
-                tickers=lookup_ticker,
-                start=start,
-                end=end,
-                period=period,
-                interval=interval,
-                actions=normalize_market_interval(interval) == "1d",
-                auto_adjust=False,
-                prepost=prepost,
-                progress=False,
-                multi_level_index=False,
-                threads=False,
-                timeout=12,
+        log_buffer = io.StringIO()
+        diagnostic_handler = logging.StreamHandler(log_buffer)
+        diagnostic_handler.setLevel(logging.ERROR)
+        YFINANCE_LOGGER.addHandler(diagnostic_handler)
+        try:
+            with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
+                try:
+                    dataset = yf.download(
+                        tickers=lookup_ticker,
+                        start=start,
+                        end=end,
+                        period=period,
+                        interval=interval,
+                        actions=normalize_market_interval(interval) == "1d",
+                        auto_adjust=False,
+                        prepost=prepost,
+                        progress=False,
+                        multi_level_index=False,
+                        threads=False,
+                        timeout=12,
+                    )
+                except Exception as exc:
+                    detail = _yfinance_failure_detail(
+                        stderr_value=stderr_buffer.getvalue(),
+                        stdout_value=stdout_buffer.getvalue(),
+                        log_value=log_buffer.getvalue(),
+                        exception=exc,
+                    )
+                    raise YfinanceDownloadError(
+                        f"yfinance request for {lookup_ticker} failed: {detail}"
+                    ) from exc
+        finally:
+            YFINANCE_LOGGER.removeHandler(diagnostic_handler)
+            diagnostic_handler.close()
+
+        if dataset is None or dataset.empty:
+            detail = _yfinance_failure_detail(
+                stderr_value=stderr_buffer.getvalue(),
+                stdout_value=stdout_buffer.getvalue(),
+                log_value=log_buffer.getvalue(),
             )
+            raise YfinanceDownloadError(
+                f"yfinance returned no data for {lookup_ticker}: {detail}"
+            )
+        return dataset
 
 
 def _load_longbridge_market_settings():
@@ -727,8 +795,9 @@ def _download_daily_history_with_fallback(
         start: str | None = None,
         period: str | None = None,
 ) -> pd.DataFrame:
-    yfinance_error: Exception | None = None
-    for candidate_period in _daily_history_period_candidates(start=start, period=period):
+    candidate_periods = _daily_history_period_candidates(start=start, period=period)
+    yfinance_errors: list[tuple[str | None, Exception]] = []
+    for candidate_period in candidate_periods:
         try:
             dataset = _download_daily_history_with_yfinance(
                 ticker,
@@ -736,24 +805,43 @@ def _download_daily_history_with_fallback(
                 period=candidate_period,
                 interval="1d",
             )
-            if dataset is not None and not dataset.empty:
-                return dataset
-            yfinance_error = ValueError(f"No 1-day market data returned for {ticker} via yfinance.")
+            return dataset
         except Exception as exc:
-            yfinance_error = exc
+            yfinance_errors.append((candidate_period, exc))
+
+    yahoo_chart_errors: list[tuple[str | None, Exception]] = []
+    lookup_ticker = yfinance_lookup_symbol(ticker)
+    for candidate_period in candidate_periods:
+        try:
+            return download_yahoo_chart_daily_history(
+                lookup_ticker,
+                start=start,
+                period=candidate_period,
+            )
+        except Exception as exc:
+            yahoo_chart_errors.append((candidate_period, exc))
+
+    last_yfinance_error = yfinance_errors[-1][1]
+    last_yahoo_chart_error = yahoo_chart_errors[-1][1]
+    yahoo_failure_detail = (
+        f"yfinance failed after {len(yfinance_errors)} request(s): {last_yfinance_error}. "
+        f"Direct Yahoo Chart fallback failed after {len(yahoo_chart_errors)} request(s): "
+        f"{last_yahoo_chart_error}"
+    )
 
     settings = _load_longbridge_market_settings()
     if settings is None:
         raise ValueError(
-            f"Unable to fetch 1-day market data for {ticker} via yfinance. "
-            "Configure Longbridge App Key, App Secret, and Access Token in Settings > Broker Access to enable automatic fallback."
-        ) from yfinance_error
+            f"Unable to fetch 1-day market data for {ticker} from Yahoo. "
+            f"{yahoo_failure_detail}. Optional Longbridge fallback is not configured."
+        ) from last_yahoo_chart_error
 
     try:
         return _download_daily_history_with_longbridge(ticker, start=start)
     except Exception as exc:
         raise ValueError(
-            f"Unable to fetch 1-day market data for {ticker}. yfinance failed and Longbridge fallback also failed: {exc}"
+            f"Unable to fetch 1-day market data for {ticker}. {yahoo_failure_detail}. "
+            f"Optional Longbridge fallback also failed: {exc}"
         ) from exc
 
 

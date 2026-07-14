@@ -1,6 +1,18 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.29.0`
+Documentation version: `v1.31.0`
+
+## Investment split viewport shrink corrected on 14 Jul 2026
+
+- A user-adjusted Overview and Transaction history split now reflows from the workspace's actual available height after the viewport becomes shorter.
+- The calculation excludes the title card, separator, padding, and grid gaps instead of reusing already-overflowing child heights.
+- Chromium coverage drags the split to its lower limit, shrinks to a `922 px` by `773 px` viewport, switches to Holdings, and verifies that the complete Transaction history surface remains inside the workspace and viewport.
+
+## Windows Yahoo daily-history fallback corrected on 14 Jul 2026
+
+- A failed `yfinance` daily request now retries the authoritative Yahoo Chart endpoint through Python's standard-library network stack before considering the optional Longbridge fallback.
+- Yahoo transport diagnostics are retained with URL credentials and secret query values redacted. An unconfigured Longbridge account no longer replaces the actual Yahoo failure with a broker-configuration instruction.
+- The pinned `yfinance` and `curl_cffi` versions now match the current supported transport pair. Pulling source changes on another machine still requires reinstalling the pinned Python dependencies.
 
 ## Responsive investment surface split added on 14 Jul 2026
 

@@ -1,11 +1,12 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import unittest
@@ -23,6 +24,8 @@ from app.infrastructure.broker_market_data import (
 )
 from app.infrastructure.storage import history_store_path_for, intraday_history_store_path_for
 from app.services.market_data import (
+    YfinanceDownloadError,
+    _download_daily_history_with_yfinance,
     _download_daily_history_with_fallback,
     classify_hk_equity_session,
     classify_kr_equity_session,
@@ -281,6 +284,71 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         self.assertEqual(max_active_calls, 1)
         self.assertCountEqual(requested_tickers, ["QQQ", "AAPL"])
+
+    def test_yfinance_empty_download_preserves_sanitized_transport_diagnostic(self) -> None:
+        def fake_download(**kwargs) -> pd.DataFrame:
+            del kwargs
+            logging.getLogger("yfinance").error(
+                "curl failed via https://user:contact@example.invalid/?crumb=secret-value"
+            )
+            return pd.DataFrame()
+
+        with patch("app.services.market_data.yf.download", side_effect=fake_download):
+            with self.assertRaises(YfinanceDownloadError) as raised:
+                _download_daily_history_with_yfinance("DRAM", period="5d")
+
+        message = str(raised.exception)
+        self.assertIn("curl failed", message)
+        self.assertIn("https://redacted@example.invalid/", message)
+        self.assertIn("crumb=REDACTED", message)
+        self.assertNotIn("user:password", message)
+        self.assertNotIn("secret-value", message)
+
+    def test_daily_history_uses_direct_yahoo_chart_before_optional_longbridge(self) -> None:
+        chart_history = market_frame("DRAM").set_index("Date")
+
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=ConnectionError("curl transport unavailable"),
+            ),
+            patch(
+                "app.services.market_data.download_yahoo_chart_daily_history",
+                return_value=chart_history,
+            ) as chart_mock,
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+            patch("app.services.market_data._download_daily_history_with_longbridge") as longbridge_mock,
+        ):
+            result = _download_daily_history_with_fallback("DRAM", start="2026-07-10")
+
+        pd.testing.assert_frame_equal(result, chart_history)
+        chart_mock.assert_called_once_with(
+            "DRAM",
+            start="2026-07-10",
+            period=None,
+        )
+        longbridge_mock.assert_not_called()
+
+    def test_daily_history_failure_reports_both_yahoo_transports_without_requiring_longbridge(self) -> None:
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=ConnectionError("curl TLS failure"),
+            ),
+            patch(
+                "app.services.market_data.download_yahoo_chart_daily_history",
+                side_effect=ConnectionError("urllib TLS failure"),
+            ),
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+        ):
+            with self.assertRaises(ValueError) as raised:
+                _download_daily_history_with_fallback("QQQI", start="2026-07-10")
+
+        message = str(raised.exception)
+        self.assertIn("curl TLS failure", message)
+        self.assertIn("urllib TLS failure", message)
+        self.assertIn("Optional Longbridge fallback is not configured", message)
+        self.assertNotIn("Configure Longbridge", message)
 
     def test_download_daily_history_with_fallback_steps_down_from_max_for_newly_listed_tickers(self) -> None:
         short_history = pd.DataFrame(

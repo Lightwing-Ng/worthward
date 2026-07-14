@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.65.0
+ * Code version: v1.65.1
+ * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
  * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
  * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
  * - Changed: Investment Type headers now show the legacy Type label by default and reveal the current side filter only on hover, focus, or open interaction.
@@ -301,7 +302,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.65.0',
+    entry: 'v1.65.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -474,26 +475,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let overviewRatio = null;
         let resizeFrame = 0;
+        const investmentSummaryCard = investmentWorkspaceHeader.querySelector(':scope > .workspace-summary-card');
         const getMinimumHeight = () => {
             const value = Number.parseFloat(
                 getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-section-min-height'),
             );
             return Number.isFinite(value) ? value : 132;
         };
-        const getCombinedTrackHeight = () => (
-            investmentReportCard.getBoundingClientRect().height
-            + investmentHistorySurface.getBoundingClientRect().height
-        );
+        const getAvailableTrackHeight = () => {
+            const styles = getComputedStyle(investmentWorkspaceHeader);
+            const rowGap = Number.parseFloat(styles.rowGap) || 0;
+            const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+            const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+            const summaryHeight = investmentSummaryCard instanceof HTMLElement
+                ? investmentSummaryCard.getBoundingClientRect().height
+                : 0;
+            const resizerHeight = investmentSectionResizer.getBoundingClientRect().height;
+            const availableHeight = (
+                investmentWorkspaceHeader.clientHeight
+                - paddingTop
+                - paddingBottom
+                - summaryHeight
+                - resizerHeight
+                - (rowGap * 3)
+            );
+            if (availableHeight > 0) return availableHeight;
+            return (
+                investmentReportCard.getBoundingClientRect().height
+                + investmentHistorySurface.getBoundingClientRect().height
+            );
+        };
         const getRange = () => {
             const minimum = getMinimumHeight();
-            const total = getCombinedTrackHeight();
-            return {minimum, maximum: Math.max(minimum, total - minimum)};
+            const availableHeight = getAvailableTrackHeight();
+            return {minimum, maximum: Math.max(minimum, availableHeight - minimum)};
         };
         const getValue = () => investmentReportCard.getBoundingClientRect().height;
         const setValue = (height) => {
-            const total = getCombinedTrackHeight();
-            if (!(total > 0)) return;
-            overviewRatio = height / total;
+            const availableHeight = getAvailableTrackHeight();
+            if (!(availableHeight > 0)) return;
+            overviewRatio = height / availableHeight;
             investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${height}px`);
             investmentSectionResizer.setAttribute(
                 'aria-valuetext',
@@ -509,9 +530,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const reflowRatio = () => {
             resizeFrame = 0;
             if (!Number.isFinite(overviewRatio)) return;
-            const total = getCombinedTrackHeight();
+            const availableHeight = getAvailableTrackHeight();
             const range = getRange();
-            const nextHeight = Math.min(Math.max(total * overviewRatio, range.minimum), range.maximum);
+            const nextHeight = Math.min(
+                Math.max(availableHeight * overviewRatio, range.minimum),
+                range.maximum,
+            );
             if (Math.abs(nextHeight - getValue()) < 0.5) return;
             investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${nextHeight}px`);
         };
