@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.3.3
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import yfinance as yf
+
+from app.infrastructure.runtime_network import get_yfinance_session
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d&interval=1d"
 PRIMARY_LOGO_PING_URL = "https://eodhd.com/img/logos/US/TQQQ.png"
@@ -92,7 +94,15 @@ def _probe_yfinance_history() -> bool:
     stderr_buffer = io.StringIO()
     stdout_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
-        probe = yf.download("AAPL", period="5d", interval="1d", progress=False, threads=False, timeout=6)
+        probe = yf.download(
+            "AAPL",
+            period="5d",
+            interval="1d",
+            progress=False,
+            threads=False,
+            timeout=6,
+            session=get_yfinance_session(),
+        )
     return not probe.empty and "Close" in probe.columns
 
 

@@ -1,6 +1,17 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.37.0`
+Documentation version: `v1.38.0`
+
+## Yahoo corporate HTTPS proxy trust supported on 14 Jul 2026
+
+- The yfinance transport accepts a corporate CA PEM through
+  `ANTIGRAVITY_YAHOO_CA_PEM` or `[network].yahoo_ca_pem` in `config.toml`.
+- The corporate CA is appended to certifi's public CA bundle for one shared
+  curl_cffi session. TLS verification stays enabled, and other public HTTPS
+  certificate chains remain trusted.
+- When no corporate CA is configured, the secure curl_cffi default is retained.
+  Certificate verification failures now identify both supported configuration
+  entries without weakening process-wide TLS behavior.
 
 ## US overnight companion fallback completed on 14 Jul 2026
 

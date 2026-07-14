@@ -1,12 +1,17 @@
 [app]
 name = "antigravity"
-version = "v2.42.2"
+version = "v2.43.0"
 debug = false
 updated_on = "14 Jul 2026"
 
 [server]
 host = "127.0.0.1"
 port = 8688
+
+[network]
+# Optional corporate CA PEM for Yahoo Finance. The ANTIGRAVITY_YAHOO_CA_PEM
+# environment variable takes precedence over this value.
+yahoo_ca_pem = ""
 
 [persistence]
 directory = "market_store"

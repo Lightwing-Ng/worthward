@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.24.0`
+Documentation version: `v2.25.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -141,6 +141,12 @@ The current `Settings` navigation includes:
 Longbridge is optional for every market-data view. Daily history, intraday charts,
 extended-hours comparisons, and investment realtime quotes use `yfinance` by
 default. Batched realtime requests retry missing tickers individually.
+
+In a corporate HTTPS interception environment, point
+`ANTIGRAVITY_YAHOO_CA_PEM` at the corporate CA PEM before starting the app. The
+same path can instead be set as `[network].yahoo_ca_pem` in `config.toml`; the
+environment variable takes precedence. The Yahoo transport combines that CA
+with certifi's public roots and keeps TLS certificate verification enabled.
 
 After pulling a dependency update on Windows, refresh the active Python `3.13`
 environment before launching the app:

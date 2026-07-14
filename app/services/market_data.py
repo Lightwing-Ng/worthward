@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
 from app.infrastructure.connectivity import has_remote_market_access
+from app.infrastructure.runtime_network import (
+    add_yahoo_tls_configuration_hint,
+    get_yfinance_session,
+)
 from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.infrastructure.broker_market_data import (
@@ -106,7 +110,8 @@ def _yfinance_failure_detail(
         sanitized = _sanitize_network_diagnostic(candidate)
         if sanitized and sanitized not in details:
             details.append(sanitized)
-    return " | ".join(details) or "No diagnostic was emitted."
+    detail = " | ".join(details) or "No diagnostic was emitted."
+    return add_yahoo_tls_configuration_hint(detail)
 
 
 @dataclass(frozen=True)
@@ -198,6 +203,7 @@ def _download_daily_history_with_yfinance(
                         multi_level_index=False,
                         threads=False,
                         timeout=12,
+                        session=get_yfinance_session(),
                     )
                 except Exception as exc:
                     detail = _yfinance_failure_detail(

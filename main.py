@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.4.6
+Code version: v0.4.7
 """
 
 from json import JSONDecodeError
@@ -74,7 +74,8 @@ def _build_run_options(config: dict) -> dict:
 def _initialize_runtime():
     runtime_settings = get_settings()
     debug_enabled = runtime_settings["app"].get("debug", DEFAULT_DEBUG)
-    bootstrap_runtime_network_for_yfinance()
+    network_settings = runtime_settings.get("network", {})
+    bootstrap_runtime_network_for_yfinance(network_settings.get("yahoo_ca_pem"))
     _prewarm_broker_context(debug_enabled)
     from app import create_app
     return create_app(), runtime_settings
