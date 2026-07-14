@@ -1,4 +1,4 @@
-/* Code version: v0.16.0 */
+/* Code version: v0.16.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4350,7 +4350,10 @@
     };
 
     const syncOneDayExtendedHoursSwitch = () => {
-        if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) return;
+        if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) {
+            syncOneDayOvernightSwitch();
+            return;
+        }
         const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const canUseExtendedHours = isOneDayPeriod && areAllFilledTickersUs();
         extendedHoursField.hidden = !canUseExtendedHours;

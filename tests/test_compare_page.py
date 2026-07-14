@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -43,15 +43,15 @@ class ComparePageTests(unittest.TestCase):
         intraday_frames = {
             "000660.KS": ohlc_frame_for_dates(
                 "000660.KS",
-                ["2026-07-13 20:00", "2026-07-14 02:30"],
+                ["2026-07-12 20:00", "2026-07-13 02:30"],
             ),
             "7709.HK": ohlc_frame_for_dates(
                 "7709.HK",
-                ["2026-07-13 21:30", "2026-07-14 03:59"],
+                ["2026-07-12 21:30", "2026-07-13 03:59"],
             ),
             "SKHY": ohlc_frame_for_dates(
                 "SKHY",
-                ["2026-07-13 20:00", "2026-07-14 04:40"],
+                ["2026-07-12 20:00", "2026-07-13 04:00", "2026-07-13 19:55"],
             ),
         }
         def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
@@ -79,7 +79,7 @@ class ComparePageTests(unittest.TestCase):
             ):
                 response = create_app().test_client().get(
                     "/workspaces/prices?ticker=000660.KS&ticker=7709.HK&range=exact&period=1d"
-                    "&trading_date=2026-07-14&overnight=1"
+                    "&trading_date=2026-07-13&overnight=1"
                 )
 
         html = response.get_data(as_text=True)
@@ -87,16 +87,20 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(ticker_inputs, ["000660.KS", "7709.HK"])
         self.assertIn('id="include_overnight_hours" name="overnight" type="checkbox" value="1" checked', html)
-        self.assertIn('data-overnight-source-policy="longbridge-yfinance"', html)
-        self.assertIn("US overnight companion (best available)", html)
+        self.assertIn('data-overnight-source-policy="longbridge"', html)
+        self.assertIn(">Overnight</span>", html)
+        self.assertNotIn("US overnight companion", html)
         self.assertIn('data-ticker="SKHY"', html)
         self.assertNotIn("SKHYV", html)
+        self.assertIn('"2026-07-12 20:00"', html)
+        self.assertIn('"2026-07-13 04:00"', html)
+        self.assertIn('"2026-07-13 19:55"', html)
         refresh_intraday_mock.assert_not_called()
         refresh_target_mock.assert_not_called()
         exact_day_fetch_mock.assert_not_called()
         broker_overnight_mock.assert_called_once_with(
             "SKHY",
-            include_extended_hours=True,
+            trading_date="2026-07-13",
         )
 
     def test_live_compare_api_reports_yfinance_overnight_fallback_source(self) -> None:
@@ -114,7 +118,7 @@ class ComparePageTests(unittest.TestCase):
                 ["2026-07-13 20:00", "2026-07-14 04:40"],
             ),
         }
-        intraday_frames["SKHY"].attrs["market_data_source"] = "yfinance_extended_fallback"
+        intraday_frames["SKHY"].attrs["market_data_source"] = "yfinance_extended"
         intraday_frames["SKHY"].attrs["provider_ticker"] = "SKHYV"
 
         def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
@@ -144,7 +148,7 @@ class ComparePageTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(response.status_code, 200, payload)
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["sources"]["SKHY"], "yfinance_extended_fallback")
+        self.assertEqual(payload["sources"]["SKHY"], "yfinance_extended")
         self.assertNotIn("SKHYV", payload["sources"])
         skhy_series = next(item for item in payload["series"] if item["ticker"] == "SKHY")
         self.assertEqual(skhy_series["raw_dates"][-1], "2026-07-14 04:40")
@@ -337,7 +341,7 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('<option value="max"', html)
         self.assertNotIn('<option value="10y"', html)
 
-    def test_compare_page_defaults_one_day_compare_to_regular_session(self) -> None:
+    def test_compare_page_defaults_one_day_compare_to_extended_hours(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
             del include_dividends, dividend_mode
             if interval == "1m":
@@ -371,15 +375,14 @@ class ComparePageTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
-        self.assertIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1"', html)
-        self.assertNotIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1" checked', html)
+        self.assertIn('"raw_dates": ["2026-03-27 08:00", "2026-03-27 09:30", "2026-03-27 15:59", "2026-03-27 16:30"]', html)
+        self.assertNotIn('id="include_extended_hours"', html)
         self.assertIn('data-price-only-field hidden', html)
         self.assertIn('id="price_only" name="price_only" type="checkbox" value="1"  disabled', html)
         self.assertIn('data-dividend-reinvest-field hidden', html)
         self.assertIn('id="include_dividends" name="dividends" type="checkbox" value="1"  disabled', html)
 
-    def test_compare_page_renders_one_day_extended_hours_when_requested(self) -> None:
+    def test_compare_page_legacy_extended_hours_query_keeps_automatic_behavior(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
             del include_dividends, dividend_mode
             if interval == "1m":
@@ -414,7 +417,7 @@ class ComparePageTests(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('"raw_dates": ["2026-03-27 08:00", "2026-03-27 09:30", "2026-03-27 15:59", "2026-03-27 16:30"]', html)
-        self.assertIn('id="include_extended_hours" name="extended_hours" type="checkbox" value="1" checked', html)
+        self.assertNotIn('id="include_extended_hours"', html)
 
     def test_compare_page_one_day_uses_previous_complete_intraday_day(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:
@@ -520,7 +523,15 @@ class ComparePageTests(unittest.TestCase):
             return _fake_compare_dataset(ticker)
 
         with (
-            patch("app.web.runtime.fetch_compare_one_day_extended_history", side_effect=lambda ticker: _fetch_history(ticker, False, interval="1m", dividend_mode="price")),
+            patch(
+                "app.web.runtime.fetch_compare_one_day_extended_history",
+                side_effect=lambda ticker, **_kwargs: _fetch_history(
+                    ticker,
+                    False,
+                    interval="1m",
+                    dividend_mode="price",
+                ),
+            ),
             patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
@@ -533,7 +544,10 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('data-exact-single-date-grid', html)
         self.assertIn('id="exact_trading_date" name="trading_date" type="hidden" value="2026-03-27"', html)
         self.assertIn('id="exact_start" name="from" type="hidden" value="2026-03-27" disabled', html)
-        self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
+        self.assertIn(
+            '"raw_dates": ["2026-03-27 08:00", "2026-03-27 09:30", "2026-03-27 15:59", "2026-03-27 16:30"]',
+            html,
+        )
 
     def test_compare_page_exact_short_range_uses_intraday_curve(self) -> None:
         daily_dates = pd.to_datetime(["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"])

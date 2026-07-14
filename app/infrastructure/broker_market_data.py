@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -1199,8 +1199,10 @@ def _cli_daily_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> 
 def fetch_longbridge_compare_one_day_history(
         ticker: str,
         settings: BrokerSettings,
+        *,
+        trading_date: object | None = None,
 ) -> pd.DataFrame:
-    """Fetch the latest full US session, including overnight, without persisting it."""
+    """Fetch a full US session, including overnight, without persisting it."""
     if not has_longbridge_market_data_source(settings):
         raise ValueError(
             "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
@@ -1210,10 +1212,31 @@ def fetch_longbridge_compare_one_day_history(
     if not symbol.endswith(".US"):
         raise ValueError("Longbridge overnight candlesticks are currently available for US securities only.")
 
+    parsed_trading_date = pd.to_datetime(trading_date, errors="coerce") if trading_date is not None else None
+    if trading_date is not None and pd.isna(parsed_trading_date):
+        raise ValueError(f"Invalid Longbridge comparison trading date: {trading_date}.")
+
     if uses_longbridge_cli_oauth(settings):
-        payload = run_longbridge_cli_json(
-            settings,
-            [
+        if parsed_trading_date is not None:
+            target_date = parsed_trading_date.date()
+            start_date = target_date - timedelta(days=1)
+            arguments = [
+                "kline",
+                "history",
+                symbol,
+                "--period",
+                "5m",
+                "--start",
+                start_date.isoformat(),
+                "--end",
+                target_date.isoformat(),
+                "--session",
+                "all",
+                "--format",
+                "json",
+            ]
+        else:
+            arguments = [
                 "kline",
                 symbol,
                 "--period",
@@ -1224,7 +1247,10 @@ def fetch_longbridge_compare_one_day_history(
                 "all",
                 "--format",
                 "json",
-            ],
+            ]
+        payload = run_longbridge_cli_json(
+            settings,
+            arguments,
             timeout_seconds=45,
             enable_overnight=True,
         )

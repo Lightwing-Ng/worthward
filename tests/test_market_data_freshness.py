@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.10.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from app.services.market_data import (
     classify_kr_equity_session,
     classify_us_equity_session,
     download_full_history,
+    fetch_compare_one_day_extended_history,
     ensure_fresh_history_store,
     fetch_compare_one_day_overnight_history,
     fetch_history,
@@ -96,12 +97,12 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
             ["000660.KS", "7709.HK", "SKHY"],
         )
 
-    def test_compare_overnight_remains_available_without_longbridge(self) -> None:
+    def test_compare_overnight_switch_requires_true_overnight_provider(self) -> None:
         with (
             patch("app.services.market_data._load_compare_overnight_market_settings", return_value=None),
             patch("app.services.market_data.yf.download", create=True),
         ):
-            self.assertTrue(has_compare_overnight_market_data_source())
+            self.assertFalse(has_compare_overnight_market_data_source())
 
     def test_compare_overnight_yfinance_fallback_hides_temporary_provider_symbol(self) -> None:
         provider_calls: list[str] = []
@@ -124,7 +125,7 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
             result = fetch_compare_one_day_overnight_history("SKHYV")
 
         self.assertEqual(provider_calls, ["SKHY", "SKHYV"])
-        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended_fallback")
+        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended")
         self.assertEqual(result.attrs["provider_ticker"], "SKHYV")
         self.assertEqual(list(result.columns), ["Date", "Open", "High", "Low", "Close"])
 
@@ -134,7 +135,7 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
             longbridge_auth_mode="cli_oauth",
         )
         fallback = market_frame("SKHY", intraday=True)
-        fallback.attrs["market_data_source"] = "yfinance_extended_fallback"
+        fallback.attrs["market_data_source"] = "yfinance_extended"
         fallback.attrs["provider_ticker"] = "SKHY"
 
         with (
@@ -144,14 +145,64 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
                 side_effect=ConnectionError("Longbridge is unavailable."),
             ),
             patch(
-                "app.services.market_data.fetch_compare_one_day_extended_history",
+                "app.services.market_data._fetch_yfinance_compare_one_day_extended_history",
                 return_value=fallback,
             ) as fallback_mock,
         ):
             result = fetch_compare_one_day_overnight_history("SKHY")
 
-        fallback_mock.assert_called_once_with("SKHY")
-        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended_fallback")
+        fallback_mock.assert_called_once_with("SKHY", trading_date=None)
+        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended")
+
+    def test_compare_extended_hours_fall_back_to_longbridge_without_overnight(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        full_session = ohlc_frame_for_dates(
+            "DRAM",
+            [
+                "2026-07-13 03:55",
+                "2026-07-13 04:00",
+                "2026-07-13 09:30",
+                "2026-07-13 16:00",
+                "2026-07-13 19:55",
+                "2026-07-13 20:00",
+            ],
+        )
+        full_session["Session"] = ["overnight", "pre", "intraday", "post", "post", "overnight"]
+
+        with (
+            patch("app.services.market_data._load_compare_overnight_market_settings", return_value=settings),
+            patch(
+                "app.services.market_data._fetch_yfinance_compare_one_day_extended_history",
+                side_effect=ValueError("Yahoo unavailable."),
+            ),
+            patch(
+                "app.services.market_data.fetch_longbridge_compare_one_day_history",
+                return_value=full_session,
+            ) as longbridge_mock,
+        ):
+            result = fetch_compare_one_day_extended_history(
+                "DRAM",
+                trading_date="2026-07-13",
+            )
+
+        self.assertEqual(
+            result["Date"].tolist(),
+            [
+                pd.Timestamp("2026-07-13 04:00"),
+                pd.Timestamp("2026-07-13 09:30"),
+                pd.Timestamp("2026-07-13 16:00"),
+                pd.Timestamp("2026-07-13 19:55"),
+            ],
+        )
+        self.assertEqual(result.attrs["market_data_source"], "longbridge_extended_fallback")
+        longbridge_mock.assert_called_once_with(
+            "DRAM",
+            settings,
+            trading_date="2026-07-13",
+        )
 
     def test_compare_overnight_keeps_premarket_continuation_by_default(self) -> None:
         settings = BrokerSettings(
@@ -163,6 +214,8 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
             ["2026-07-14 03:59", "2026-07-14 04:00", "2026-07-14 04:40"],
         )
         full_session["Session"] = ["overnight", "pre", "pre"]
+        extended_session = full_session.iloc[1:].copy()
+        extended_session.attrs["market_data_source"] = "yfinance_extended"
 
         with (
             patch("app.services.market_data._load_compare_overnight_market_settings", return_value=settings),
@@ -170,13 +223,17 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
                 "app.services.market_data.fetch_longbridge_compare_one_day_history",
                 return_value=full_session,
             ),
-            patch("app.services.market_data.fetch_compare_one_day_extended_history") as fallback_mock,
+            patch(
+                "app.services.market_data._fetch_yfinance_compare_one_day_extended_history",
+                return_value=extended_session,
+            ) as extended_mock,
         ):
             result = fetch_compare_one_day_overnight_history("SKHY")
 
         self.assertEqual(result["Date"].max(), pd.Timestamp("2026-07-14 04:40"))
         self.assertEqual(result.attrs["market_data_source"], "longbridge_overnight")
-        fallback_mock.assert_not_called()
+        self.assertEqual(result["Date"].min(), pd.Timestamp("2026-07-14 03:59"))
+        extended_mock.assert_called_once_with("SKHY", trading_date=None)
 
 
 class MarketDataFreshnessTests(unittest.TestCase):

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.13.0
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -435,17 +435,19 @@ def build_web_runtime() -> WebRuntime:
     def fetch_request_compare_one_day_overnight_history(
             ticker: str,
             *,
-            include_extended_hours: bool = True,
+            trading_date: object | None = None,
     ) -> pd.DataFrame:
         cache = getattr(g, "compare_overnight_history_cache", None)
         if cache is None:
             cache = {}
             g.compare_overnight_history_cache = cache
-        cache_key = (normalize_ticker_input(ticker), bool(include_extended_hours))
+        parsed_trading_date = pd.to_datetime(trading_date, errors="coerce") if trading_date is not None else None
+        cache_date = "" if parsed_trading_date is None or pd.isna(parsed_trading_date) else parsed_trading_date.date().isoformat()
+        cache_key = (normalize_ticker_input(ticker), cache_date)
         if cache_key not in cache:
             cache[cache_key] = fetch_compare_one_day_overnight_history(
                 ticker,
-                include_extended_hours=include_extended_hours,
+                trading_date=trading_date,
             )
         return cache[cache_key].copy()
 
@@ -492,7 +494,10 @@ def build_web_runtime() -> WebRuntime:
             use_overnight_source = include_overnight_flag and infer_ticker_market(ticker) == "US"
             if use_overnight_source:
                 try:
-                    intraday_dataset = fetch_request_compare_one_day_overnight_history(ticker)
+                    intraday_dataset = fetch_request_compare_one_day_overnight_history(
+                        ticker,
+                        trading_date=requested_start or requested_end,
+                    )
                 except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
                     LOGGER.warning("Unable to load overnight date constraints for %s: %s", ticker, exc)
                     refresh_failures.append(ticker)
@@ -1608,7 +1613,7 @@ def build_web_runtime() -> WebRuntime:
         if infer_ticker_market(ticker) == "US" and include_overnight_flag:
             intraday_dataset = fetch_request_compare_one_day_overnight_history(
                 ticker,
-                include_extended_hours=True,
+                trading_date=trading_date,
             )
             if trading_date is not None:
                 intraday_dataset = slice_intraday_dataset_to_market_trading_date(
@@ -1665,7 +1670,10 @@ def build_web_runtime() -> WebRuntime:
             return intraday_dataset
 
         try:
-            intraday_dataset = fetch_compare_one_day_extended_history(ticker)
+            intraday_dataset = fetch_compare_one_day_extended_history(
+                ticker,
+                trading_date=trading_date,
+            )
             dated_dataset = slice_intraday_dataset_to_market_trading_date(intraday_dataset, ticker, trading_date)
             if dated_dataset.empty:
                 raise ValueError(f"Extended-hours data for {ticker} does not include {trading_date}.")
@@ -1713,7 +1721,7 @@ def build_web_runtime() -> WebRuntime:
         if infer_ticker_market(ticker) == "US" and include_overnight_flag:
             intraday_dataset = fetch_request_compare_one_day_overnight_history(
                 ticker,
-                include_extended_hours=True,
+                trading_date=live_trading_date,
             )
             source = str(
                 intraday_dataset.attrs.get("market_data_source")
@@ -1729,6 +1737,34 @@ def build_web_runtime() -> WebRuntime:
                     f"Overnight companion data for {ticker} does not include {live_trading_date}."
                 )
             return intraday_dataset, source
+
+        if infer_ticker_market(ticker) == "US" and include_extended_hours_flag:
+            try:
+                intraday_dataset = fetch_compare_one_day_extended_history(
+                    ticker,
+                    trading_date=live_trading_date,
+                )
+                source = str(
+                    intraday_dataset.attrs.get("market_data_source")
+                    or "extended_hours"
+                )
+                intraday_dataset = slice_intraday_dataset_to_market_trading_date(
+                    intraday_dataset,
+                    ticker,
+                    live_trading_date,
+                )
+                if intraday_dataset.empty:
+                    raise ValueError(
+                        f"Extended-hours data for {ticker} does not include {live_trading_date}."
+                    )
+                return intraday_dataset, source
+            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.warning(
+                    "Unable to load default extended-hours data for %s on %s: %s",
+                    ticker,
+                    live_trading_date,
+                    exc,
+                )
 
         source = "local"
         if force_refresh:
@@ -3808,11 +3844,7 @@ def build_web_runtime() -> WebRuntime:
         if current_view == "prices":
             price_only = True
             include_dividends = False
-        include_extended_hours = (
-            current_view in {"tickers", "prices"}
-            and period == "1d"
-            and parse_bool_flag("extended_hours", "include_extended_hours")
-        )
+        include_extended_hours = current_view in {"tickers", "prices"} and period == "1d"
         include_overnight = (
             current_view in {"tickers", "prices"}
             and period == "1d"
@@ -4378,12 +4410,11 @@ def build_web_runtime() -> WebRuntime:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
-                        show_extended_hours_toggle = (
+                        include_extended_hours = (
                             current_view in {"tickers", "prices"}
                             and supports_compare_extended_hours(validated_tickers, period)
                         )
-                        if not show_extended_hours_toggle:
-                            include_extended_hours = False
+                        show_extended_hours_toggle = False
                         intraday_supported_periods: list[str] = []
                         intraday_period_candidates = {"1d", "3d", "1w"}
                         intraday_period_sets = [
@@ -6071,13 +6102,9 @@ def build_web_runtime() -> WebRuntime:
                 and any(is_market_regular_session_active_for_ticker(ticker) for ticker in validated_tickers)
             )
 
-            requested_extended_hours = request.args.get(
-                "extended_hours",
-                request.args.get("include_extended_hours", "0"),
-            ) == "1"
-            include_extended_hours_flag = (
-                requested_extended_hours
-                and supports_compare_extended_hours(validated_tickers, requested_period)
+            include_extended_hours_flag = supports_compare_extended_hours(
+                validated_tickers,
+                requested_period,
             )
             force_refresh = request.args.get("refresh", "1").strip() != "0"
 

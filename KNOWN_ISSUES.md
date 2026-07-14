@@ -1,6 +1,6 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.39.0`
+Documentation version: `v1.40.0`
 
 ## Price subplot ordering and compact labels completed on 14 Jul 2026
 
@@ -9,7 +9,8 @@ Documentation version: `v1.39.0`
 - Reordering preserves existing Chart.js instances, aborts any obsolete in-flight live response, and never starts a calculation or live request by itself. The bottom time axis follows the newly bottommost subplot.
 - Local symbol suggestions replace symbol-only cached names with canonical issuer names. `SKHY` therefore displays `SK hynix Inc.` even when an older local profile stores only `SKHY`.
 - One-day cross-market session labels are measured and laid out inside the chart bounds with a minimum gap, preventing neighboring labels such as `02:30` and `04:00` from colliding.
-- The overnight comparison now treats the US overnight, pre-market, regular, and post-market sessions as one continuous full-session feed. Longbridge pre-market bars after `04:00` New York time are no longer filtered out, so a mixed Hong Kong / Korea / US axis can continue after the Hong Kong close while US pre-market trading remains active.
+- US pre-market and after-hours bars are now automatic in every one-day comparison containing a US security. The `Overnight` switch adds only the true 20:00–04:00 New York session.
+- Historical Longbridge overnight requests use a bounded five-minute date window, avoiding the latest-1,000-candle truncation that previously removed the beginning of 13 Jul 2026. yfinance remains the preferred one-minute source for pre-market and after-hours bars, with Longbridge full-session data as the configured fallback.
 
 ## Yahoo corporate HTTPS proxy trust supported on 14 Jul 2026
 
@@ -25,10 +26,10 @@ Documentation version: `v1.39.0`
   The Yahoo fallback never injects a proxy of its own, so computers without
   proxy environment variables continue to connect directly with `verify=True`.
 
-## US overnight companion fallback completed on 14 Jul 2026
+## US overnight and extended-hours policy completed on 14 Jul 2026
 
-- The US overnight companion path now prefers authenticated Longbridge full-session bars and automatically falls back to yfinance pre-market, regular-session, and after-hours bars when Longbridge is unconfigured or fails.
-- The fallback remains available on test machines without Longbridge, including Windows. It does not claim that yfinance supplies the unsupported US overnight session, and the live comparison API reports the provider actually used.
+- yfinance pre-market and after-hours bars are automatic and remain available on test machines without Longbridge, including Windows. A configured Longbridge source can fill those extended sessions when Yahoo is unavailable.
+- The `Overnight` switch appears only when Longbridge can provide the unsupported-by-yfinance overnight session. A transient Longbridge failure leaves the automatic extended-hours curve intact and never claims that Yahoo supplied overnight bars.
 - SKHY is the only user-visible identity. The yfinance fallback tries SKHY first and then the temporary SKHYV provider symbol without adding SKHYV to ticker controls, chart labels, or URLs.
 - Neither provider's chart-specific frame is written into the production 1-minute market store.
 
@@ -150,12 +151,12 @@ Documentation version: `v1.39.0`
 
 ## Broker-backed US overnight comparison added on 14 Jul 2026
 
-- `yfinance` supplies pre-market and post-market minute bars but does not expose the US overnight session. The switch now exposes the best available US companion path: full Overnight through Longbridge when authenticated, or explicit yfinance extended-hours fallback otherwise.
+- `yfinance` supplies pre-market and post-market minute bars but does not expose the US overnight session. Those extended sessions are always included; the concise `Overnight` switch adds broker-backed 20:00–04:00 bars when Longbridge is authenticated.
 - Overnight bars remain chart-specific and are never persisted into the regular-session local market store. Longbridge CLI requests explicitly enable overnight access and request all trade sessions; the legacy SDK path selects the same sessions through its trade-session API.
 - US bars at or after 20:00 New York time belong to the following trading date. This keeps the full SKHY overnight curve aligned with the corresponding South Korean and Hong Kong trading date instead of dropping the pre-midnight segment.
 - `SKHYV` is canonicalized to `SKHY` on the overnight path. Selecting `000660.KS` can add SKHY as its known US overnight companion without adding the temporary symbol to the visible ticker controls or URL.
 - SKHY and SKHYV share a local canonical issuer profile and the Korean primary-listing logo. Rendering the overnight comparison never waits for a remote Yahoo profile lookup merely to obtain display metadata.
-- Exact one-day date constraints obtain SKHY's eligible trading dates from the authenticated overnight provider. They do not launch yfinance backfills for pre-listing SKHY windows before rendering the page.
+- Exact one-day date constraints obtain SKHY's eligible trading dates from the authenticated overnight provider. Historical overnight retrieval is explicitly bounded to the selected trading date instead of using an incomplete latest-candle window.
 - When an explicitly selected exact trading date already exists in a local 1-minute store, the page renders that cache immediately and leaves the existing live endpoint to append intraday updates. A synchronous yfinance refresh is retained only when the requested date is missing.
 - Mapping a current target session onto an older common comparison axis also reuses the available target-day cache on the initial HTML response. The live comparison endpoint remains responsible for the network refresh after the page becomes interactive.
 - Overnight date constraints, reference-axis loading, and target-axis mapping share one request-scoped broker frame. The cache is discarded at the end of the HTTP request and is never persisted as ordinary-session market history.
