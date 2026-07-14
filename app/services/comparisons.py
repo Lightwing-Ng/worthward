@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -91,6 +91,14 @@ def _timestamp_as_new_york(timestamp: object) -> pd.Timestamp:
 def _timestamp_as_market_local(timestamp: object, ticker: str | None = None) -> pd.Timestamp:
     new_york_timestamp = _timestamp_as_new_york(timestamp)
     return new_york_timestamp.tz_convert(_market_timezone_for_ticker(ticker))
+
+
+def market_trading_date_for_timestamp(timestamp: object, ticker: str | None = None) -> object:
+    """Resolve the exchange trading date, including next-day US overnight bars."""
+    localized = _timestamp_as_market_local(timestamp, ticker)
+    if _market_for_ticker(ticker) == "US" and _minute_of_day(localized) >= 20 * 60:
+        return (localized + pd.Timedelta(days=1)).date()
+    return localized.date()
 
 
 def _market_local_datetime_series(values: pd.Series, ticker: str | None = None) -> pd.Series:
@@ -314,9 +322,12 @@ def _has_complete_regular_session(dataset: pd.DataFrame, ticker: str | None = No
 def _complete_intraday_trading_days(dataset: pd.DataFrame, ticker: str | None = None) -> set[object]:
     if dataset.empty:
         return set()
+    trading_days = dataset["Date"].map(
+        lambda value: market_trading_date_for_timestamp(value, ticker)
+    )
     return {
-        new_york_day
-        for new_york_day, day_frame in dataset.groupby(dataset["Date"].dt.date)
+        trading_day
+        for trading_day, day_frame in dataset.groupby(trading_days)
         if _has_complete_regular_session(day_frame, ticker)
     }
 
@@ -340,8 +351,10 @@ def _complete_market_local_trading_days(dataset: pd.DataFrame, ticker: str | Non
 
 
 def _slice_dataset_to_market_local_day(dataset: pd.DataFrame, ticker: str | None, trading_day: object) -> pd.DataFrame:
-    local_dates = _market_local_datetime_series(dataset["Date"], ticker).dt.date
-    return dataset.loc[local_dates == trading_day].copy()
+    trading_dates = dataset["Date"].map(
+        lambda value: market_trading_date_for_timestamp(value, ticker)
+    )
+    return dataset.loc[trading_dates == trading_day].copy()
 
 
 def _pad_dataset_to_market_session_close(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:
@@ -554,7 +567,7 @@ def latest_common_complete_intraday_trading_day(
         complete_days = _complete_intraday_trading_days(bounded_dataset, ticker)
         common_days = complete_days if common_days is None else common_days & complete_days
         observed_days = {
-            _timestamp_as_market_local(value, ticker).date()
+            market_trading_date_for_timestamp(value, ticker)
             for value in bounded_dataset["Date"].tolist()
         }
         common_observed_days = (
@@ -572,6 +585,26 @@ def latest_common_complete_intraday_trading_day(
         # portion as empty data rather than rejecting the comparison.
         return max(common_observed_days)
     raise ValueError("The selected tickers do not share an intraday trading day.")
+
+
+def shift_intraday_compare_axis_to_trading_date(
+        dataset: pd.DataFrame,
+        source_trading_date: object,
+        target_trading_date: object,
+) -> pd.DataFrame:
+    """Move a reference intraday axis onto the displayed trading date without changing its geometry."""
+    source_date = pd.to_datetime(source_trading_date, errors="coerce")
+    target_date = pd.to_datetime(target_trading_date, errors="coerce")
+    if pd.isna(source_date) or pd.isna(target_date):
+        raise ValueError("Intraday comparison axis dates must be valid.")
+
+    shifted = dataset.copy()
+    parsed_dates = pd.to_datetime(shifted["Date"], errors="coerce")
+    if parsed_dates.isna().any():
+        raise ValueError("Intraday comparison axis contains an invalid timestamp.")
+    day_offset = target_date.normalize() - source_date.normalize()
+    shifted["Date"] = parsed_dates + day_offset
+    return shifted
 
 
 def filter_intraday_dataset_to_regular_session(dataset: pd.DataFrame) -> pd.DataFrame:
@@ -815,7 +848,9 @@ def slice_intraday_datasets_for_compare_period(
         for index, dataset in enumerate(prepared_datasets):
             ticker = ticker_values[index] if index < len(ticker_values) else None
             market_local_days = set(
-                dataset["Date"].map(lambda value: _timestamp_as_market_local(value, ticker).date())
+                dataset["Date"].map(
+                    lambda value: market_trading_date_for_timestamp(value, ticker)
+                )
             )
             common_market_local_days = (
                 market_local_days
@@ -854,7 +889,10 @@ def slice_intraday_datasets_for_compare_period(
 
         if period == "1d":
             if all_tickers_are_us:
-                trimmed = bounded_dataset[bounded_dataset["Date"].dt.date == target_one_day].copy()
+                trading_dates = bounded_dataset["Date"].map(
+                    lambda value: market_trading_date_for_timestamp(value, ticker)
+                )
+                trimmed = bounded_dataset[trading_dates == target_one_day].copy()
             else:
                 trimmed = _slice_dataset_to_market_local_day(bounded_dataset, ticker, target_one_day)
                 trimmed = _pad_dataset_to_market_session_close(trimmed, ticker)
@@ -863,14 +901,19 @@ def slice_intraday_datasets_for_compare_period(
             if requested_day_count <= 0:
                 raise ValueError(f"Unsupported intraday comparison period: {period}")
             if all_tickers_are_us and target_trading_days is None:
-                trading_days = sorted(bounded_dataset["Date"].dt.date.unique())
+                trading_days = sorted({
+                    market_trading_date_for_timestamp(value, ticker)
+                    for value in bounded_dataset["Date"].tolist()
+                })
                 target_trading_days = trading_days[-requested_day_count:]
             selected_days = set(target_trading_days or [])
             if all_tickers_are_us:
-                selected_mask = bounded_dataset["Date"].dt.date.isin(selected_days)
+                selected_mask = bounded_dataset["Date"].map(
+                    lambda value: market_trading_date_for_timestamp(value, ticker) in selected_days
+                )
             else:
                 selected_mask = bounded_dataset["Date"].map(
-                    lambda value: _timestamp_as_market_local(value, ticker).date() in selected_days
+                    lambda value: market_trading_date_for_timestamp(value, ticker) in selected_days
                 )
             trimmed = bounded_dataset[selected_mask].copy()
             trimmed = trimmed[trimmed["Date"].map(lambda value: _is_market_session_timestamp(pd.Timestamp(value), ticker))].copy()

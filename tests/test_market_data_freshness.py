@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.7.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from app.core.broker_settings import BrokerSettings
 from app.infrastructure.broker_market_data import (
     _is_market_data_fresh,
     classify_daily_store_status,
@@ -33,11 +34,14 @@ from app.services.market_data import (
     classify_us_equity_session,
     download_full_history,
     ensure_fresh_history_store,
+    fetch_compare_one_day_overnight_history,
     fetch_history,
     fetch_yfinance_realtime_quotes,
+    has_compare_overnight_market_data_source,
     infer_ticker_market,
     refresh_history_store,
     refresh_one_minute_store,
+    resolve_compare_overnight_tickers,
 )
 from app.models.schemas import QuoteProfile
 from tests.factories.market import market_frame
@@ -82,8 +86,72 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
         self.assertEqual(classify_us_equity_session("2026-06-25 08:15"), "pre")
         self.assertEqual(classify_us_equity_session("2026-06-25 10:00"), "intraday")
         self.assertEqual(classify_us_equity_session("2026-06-25 17:30"), "post")
-        self.assertEqual(classify_us_equity_session("2026-06-25 03:30"), "off")
-        self.assertEqual(classify_us_equity_session("2026-06-25 20:15"), "off")
+        self.assertEqual(classify_us_equity_session("2026-06-25 03:30"), "overnight")
+        self.assertEqual(classify_us_equity_session("2026-06-25 20:15"), "overnight")
+        self.assertEqual(classify_us_equity_session("2026-06-27 20:15"), "off")
+
+    def test_resolve_compare_overnight_tickers_hides_temporary_skhynix_symbol(self) -> None:
+        self.assertEqual(
+            resolve_compare_overnight_tickers(["000660.KS", "7709.HK", "SKHYV"]),
+            ["000660.KS", "7709.HK", "SKHY"],
+        )
+
+    def test_compare_overnight_remains_available_without_longbridge(self) -> None:
+        with (
+            patch("app.services.market_data._load_compare_overnight_market_settings", return_value=None),
+            patch("app.services.market_data.yf.download", create=True),
+        ):
+            self.assertTrue(has_compare_overnight_market_data_source())
+
+    def test_compare_overnight_yfinance_fallback_hides_temporary_provider_symbol(self) -> None:
+        provider_calls: list[str] = []
+        raw_history = market_frame("SKHYV", intraday=True).set_index("Date")
+        raw_history.index.name = "Datetime"
+
+        def download_history(ticker: str, **_kwargs: object) -> pd.DataFrame:
+            provider_calls.append(ticker)
+            if ticker == "SKHY":
+                raise ValueError("Permanent symbol is not live yet.")
+            return raw_history
+
+        with (
+            patch("app.services.market_data._load_compare_overnight_market_settings", return_value=None),
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=download_history,
+            ),
+        ):
+            result = fetch_compare_one_day_overnight_history("SKHYV")
+
+        self.assertEqual(provider_calls, ["SKHY", "SKHYV"])
+        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended_fallback")
+        self.assertEqual(result.attrs["provider_ticker"], "SKHYV")
+        self.assertEqual(list(result.columns), ["Date", "Open", "High", "Low", "Close"])
+
+    def test_compare_overnight_falls_back_to_yfinance_after_longbridge_failure(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        fallback = market_frame("SKHY", intraday=True)
+        fallback.attrs["market_data_source"] = "yfinance_extended_fallback"
+        fallback.attrs["provider_ticker"] = "SKHY"
+
+        with (
+            patch("app.services.market_data._load_compare_overnight_market_settings", return_value=settings),
+            patch(
+                "app.services.market_data.fetch_longbridge_compare_one_day_history",
+                side_effect=ConnectionError("Longbridge is unavailable."),
+            ),
+            patch(
+                "app.services.market_data.fetch_compare_one_day_extended_history",
+                return_value=fallback,
+            ) as fallback_mock,
+        ):
+            result = fetch_compare_one_day_overnight_history("SKHY")
+
+        fallback_mock.assert_called_once_with("SKHY")
+        self.assertEqual(result.attrs["market_data_source"], "yfinance_extended_fallback")
 
 
 class MarketDataFreshnessTests(unittest.TestCase):

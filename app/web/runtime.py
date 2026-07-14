@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.9.1
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any, cast
 from urllib.parse import urlencode
 import hashlib
 import pandas as pd
-from flask import jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
+from flask import g, jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
 from openpyxl import Workbook, load_workbook
 
 LOGGER = logging.getLogger(__name__)
@@ -74,8 +74,10 @@ from app.services.comparisons import (
     complete_market_local_trading_days,
     fill_intraday_market_session_gaps,
     filter_intraday_dataset_to_regular_session,
+    market_trading_date_for_timestamp,
     prepare_intraday_dataset_for_compare,
     resolve_effective_period_for_datasets,
+    shift_intraday_compare_axis_to_trading_date,
     slice_dataset_for_period,
     slice_datasets_for_compare_period,
     slice_intraday_datasets_for_compare_period,
@@ -172,18 +174,24 @@ from app.services.live_trading import (
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
+    COMPARE_OVERNIGHT_COMPANION_SYMBOLS,
+    canonical_compare_overnight_ticker,
     fetch_compare_one_day_extended_history,
+    fetch_compare_one_day_overnight_history,
     fetch_history,
     fetch_one_minute_history_for_trading_date,
     fetch_yfinance_realtime_quote,
     fetch_yfinance_realtime_quotes,
+    has_compare_overnight_market_data_source,
     infer_ticker_market,
     list_available_market_intervals,
     refresh_history_store,
     refresh_one_minute_store,
     refresh_recent_one_minute_store_with_yfinance,
+    resolve_compare_overnight_tickers,
     select_price_series,
     supports_compare_extended_hours,
+    supports_compare_overnight,
 )
 from app.services.market_freshness import (
     ensure_latest_daily_caches,
@@ -424,18 +432,28 @@ def build_web_runtime() -> WebRuntime:
             "message": payload.message,
         }
 
+    def fetch_request_compare_one_day_overnight_history(
+            ticker: str,
+            *,
+            include_extended_hours: bool = False,
+    ) -> pd.DataFrame:
+        cache = getattr(g, "compare_overnight_history_cache", None)
+        if cache is None:
+            cache = {}
+            g.compare_overnight_history_cache = cache
+        cache_key = (normalize_ticker_input(ticker), bool(include_extended_hours))
+        if cache_key not in cache:
+            cache[cache_key] = fetch_compare_one_day_overnight_history(
+                ticker,
+                include_extended_hours=include_extended_hours,
+            )
+        return cache[cache_key].copy()
+
     def market_local_trading_dates_frame(dataset: pd.DataFrame, ticker: str) -> pd.DataFrame:
         if dataset.empty or "Date" not in dataset.columns:
             return pd.DataFrame({"Date": pd.Series(dtype="datetime64[ns]")})
-        market_timezone = market_timezone_for_ticker(ticker)
-
         def market_local_date(value: object) -> object:
-            timestamp = pd.Timestamp(value)
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.tz_localize("America/New_York")
-            else:
-                timestamp = timestamp.tz_convert("America/New_York")
-            return timestamp.tz_convert(market_timezone).date()
+            return market_trading_date_for_timestamp(value, ticker)
 
         dates = dataset["Date"].map(market_local_date).dropna().drop_duplicates().sort_values()
         return pd.DataFrame({"Date": pd.to_datetime(dates)})
@@ -459,29 +477,67 @@ def build_web_runtime() -> WebRuntime:
             tickers: list[str],
             requested_start: str | None = None,
             requested_end: str | None = None,
+            include_overnight_flag: bool = False,
     ) -> DateConstraintPayload:
         date_frames: list[pd.DataFrame] = []
         refresh_failures: list[str] = []
         live_session_date = pd.Timestamp.now(tz="Asia/Shanghai").date()
         has_live_session_date = False
+        requested_dates = {
+            parsed.date()
+            for value in (requested_start, requested_end)
+            if value and not pd.isna(parsed := pd.to_datetime(value, errors="coerce"))
+        }
         for ticker in tickers:
-            try:
-                refresh_recent_one_minute_store_with_yfinance(ticker)
-            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
-                LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
-                refresh_failures.append(ticker)
-            intraday_dataset = fetch_history(
-                ticker,
-                include_dividends=False,
-                interval="1m",
-                dividend_mode="price",
-            )
+            use_overnight_source = include_overnight_flag and infer_ticker_market(ticker) == "US"
+            if use_overnight_source:
+                try:
+                    intraday_dataset = fetch_request_compare_one_day_overnight_history(ticker)
+                except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                    LOGGER.warning("Unable to load overnight date constraints for %s: %s", ticker, exc)
+                    refresh_failures.append(ticker)
+                    intraday_dataset = fetch_history(
+                        ticker,
+                        include_dividends=False,
+                        interval="1m",
+                        dividend_mode="price",
+                    )
+            else:
+                intraday_dataset = fetch_history(
+                    ticker,
+                    include_dividends=False,
+                    interval="1m",
+                    dividend_mode="price",
+                )
             prepared_dataset = prepare_intraday_dataset_for_compare(
                 intraday_dataset,
                 ticker,
-                regular_session_only=True,
+                regular_session_only=not use_overnight_source,
             )
             date_frame = market_local_trading_dates_frame(prepared_dataset, ticker)
+            available_dates = set(date_frame["Date"].dt.date) if not date_frame.empty else set()
+            should_refresh_public_data = (
+                not use_overnight_source
+                and (not requested_dates or not requested_dates.issubset(available_dates))
+            )
+            if should_refresh_public_data:
+                try:
+                    refresh_recent_one_minute_store_with_yfinance(ticker)
+                    intraday_dataset = fetch_history(
+                        ticker,
+                        include_dividends=False,
+                        interval="1m",
+                        dividend_mode="price",
+                    )
+                    prepared_dataset = prepare_intraday_dataset_for_compare(
+                        intraday_dataset,
+                        ticker,
+                        regular_session_only=True,
+                    )
+                    date_frame = market_local_trading_dates_frame(prepared_dataset, ticker)
+                except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                    LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
+                    refresh_failures.append(ticker)
             has_live_session_date = has_live_session_date or bool(
                 not date_frame.empty and (date_frame["Date"].dt.date == live_session_date).any()
             )
@@ -1494,15 +1550,8 @@ def build_web_runtime() -> WebRuntime:
             trading_date: object,
     ) -> pd.DataFrame:
         target_date = pd.to_datetime(trading_date).date()
-        market_timezone = market_timezone_for_ticker(ticker)
-
         def date_for_market(value: object) -> object:
-            timestamp = pd.Timestamp(value)
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.tz_localize("America/New_York")
-            else:
-                timestamp = timestamp.tz_convert("America/New_York")
-            return timestamp.tz_convert(market_timezone).date()
+            return market_trading_date_for_timestamp(value, ticker)
 
         market_dates = dataset["Date"].map(date_for_market)
         return dataset[market_dates == target_date].copy()
@@ -1513,15 +1562,8 @@ def build_web_runtime() -> WebRuntime:
             trading_dates: list[str],
     ) -> pd.DataFrame:
         selected_dates = {pd.to_datetime(trading_date).date() for trading_date in trading_dates}
-        market_timezone = market_timezone_for_ticker(ticker)
-
         def date_for_market(value: object) -> object:
-            timestamp = pd.Timestamp(value)
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.tz_localize("America/New_York")
-            else:
-                timestamp = timestamp.tz_convert("America/New_York")
-            return timestamp.tz_convert(market_timezone).date()
+            return market_trading_date_for_timestamp(value, ticker)
 
         market_dates = dataset["Date"].map(date_for_market)
         return dataset[market_dates.isin(selected_dates)].copy()
@@ -1560,8 +1602,26 @@ def build_web_runtime() -> WebRuntime:
             ticker: str,
             *,
             include_extended_hours_flag: bool,
+            include_overnight_flag: bool = False,
             trading_date: object | None = None,
     ) -> pd.DataFrame:
+        if infer_ticker_market(ticker) == "US" and include_overnight_flag:
+            intraday_dataset = fetch_request_compare_one_day_overnight_history(
+                ticker,
+                include_extended_hours=include_extended_hours_flag,
+            )
+            if trading_date is not None:
+                intraday_dataset = slice_intraday_dataset_to_market_trading_date(
+                    intraday_dataset,
+                    ticker,
+                    trading_date,
+                )
+            if intraday_dataset.empty:
+                raise ValueError(
+                    f"Overnight companion data for {ticker} does not include {trading_date}."
+                )
+            return intraday_dataset
+
         if trading_date is None:
             intraday_dataset = load_local_compare_one_day_intraday_dataset(ticker)
             if infer_ticker_market(ticker) == "US" and not include_extended_hours_flag:
@@ -1571,6 +1631,14 @@ def build_web_runtime() -> WebRuntime:
             return intraday_dataset
 
         if infer_ticker_market(ticker) != "US":
+            intraday_dataset = load_local_compare_one_day_intraday_dataset(ticker)
+            dated_dataset = slice_intraday_dataset_to_market_trading_date(
+                intraday_dataset,
+                ticker,
+                trading_date,
+            )
+            if not dated_dataset.empty:
+                return dated_dataset
             try:
                 intraday_dataset = fetch_one_minute_history_for_trading_date(
                     ticker,
@@ -1640,7 +1708,28 @@ def build_web_runtime() -> WebRuntime:
             live_trading_date: object,
             include_extended_hours_flag: bool,
             force_refresh: bool,
+            include_overnight_flag: bool = False,
     ) -> tuple[pd.DataFrame, str]:
+        if infer_ticker_market(ticker) == "US" and include_overnight_flag:
+            intraday_dataset = fetch_request_compare_one_day_overnight_history(
+                ticker,
+                include_extended_hours=include_extended_hours_flag,
+            )
+            source = str(
+                intraday_dataset.attrs.get("market_data_source")
+                or "overnight_companion"
+            )
+            intraday_dataset = slice_intraday_dataset_to_market_trading_date(
+                intraday_dataset,
+                ticker,
+                live_trading_date,
+            )
+            if intraday_dataset.empty:
+                raise ValueError(
+                    f"Overnight companion data for {ticker} does not include {live_trading_date}."
+                )
+            return intraday_dataset, source
+
         source = "local"
         if force_refresh:
             try:
@@ -1666,6 +1755,7 @@ def build_web_runtime() -> WebRuntime:
             *,
             target_trading_date: object,
             include_extended_hours_flag: bool,
+            include_overnight_flag: bool = False,
             live_session_date: object | None = None,
             force_refresh: bool = False,
     ) -> pd.DataFrame:
@@ -1687,12 +1777,14 @@ def build_web_runtime() -> WebRuntime:
                 ticker,
                 live_trading_date=target_date_value,
                 include_extended_hours_flag=include_extended_hours_flag,
+                include_overnight_flag=include_overnight_flag,
                 force_refresh=force_refresh,
             )[0]
 
         return load_compare_one_day_intraday_dataset(
             ticker,
             include_extended_hours_flag=include_extended_hours_flag,
+            include_overnight_flag=include_overnight_flag,
             trading_date=target_date_value,
         )
 
@@ -3721,7 +3813,13 @@ def build_web_runtime() -> WebRuntime:
             and period == "1d"
             and parse_bool_flag("extended_hours", "include_extended_hours")
         )
+        include_overnight = (
+            current_view in {"tickers", "prices"}
+            and period == "1d"
+            and parse_bool_flag("overnight", "include_overnight")
+        )
         show_extended_hours_toggle = False
+        show_overnight_toggle = False
 
         if current_view in {"tickers", "prices"} and not requested_tickers:
             requested_tickers = [
@@ -3793,6 +3891,7 @@ def build_web_runtime() -> WebRuntime:
         portfolio_allocation_mode = parse_portfolio_allocation_mode()
         portfolio_total_return = None
         validated_tickers: list[str] = []
+        control_tickers: list[str] = []
         strategy_options = list_enabled_strategies()
         strategy_option_groups = build_strategy_option_groups(strategy_options)
         selected_strategy_id = (
@@ -4189,7 +4288,7 @@ def build_web_runtime() -> WebRuntime:
                                 }
                                 for t in validated_tickers]
                         display_range = "Loading range..."
-                        ticker_slots = validated_tickers.copy()
+                        ticker_slots = (control_tickers or validated_tickers).copy()
                         continue_process_tickers = False
                     else:
                         validated_tickers = [validate_ticker_or_raise(ticker) for ticker in requested_tickers]
@@ -4197,6 +4296,25 @@ def build_web_runtime() -> WebRuntime:
                     if continue_process_tickers:
                         if len(set(validated_tickers)) != len(validated_tickers):
                             raise ValueError("Ticker symbols must be unique.")
+
+                        control_tickers = validated_tickers.copy()
+                        overnight_tickers = resolve_compare_overnight_tickers(control_tickers)
+                        show_overnight_toggle = (
+                            current_view in {"tickers", "prices"}
+                            and len(overnight_tickers) <= MAX_TICKERS
+                            and supports_compare_overnight(control_tickers, period)
+                            and has_compare_overnight_market_data_source()
+                        )
+                        if not show_overnight_toggle:
+                            include_overnight = False
+                        elif include_overnight:
+                            control_tickers = [
+                                canonical_compare_overnight_ticker(ticker)
+                                for ticker in control_tickers
+                            ]
+                            if len(set(control_tickers)) != len(control_tickers):
+                                raise ValueError("SKHYV and SKHY identify the same security.")
+                            validated_tickers = overnight_tickers
 
                         freshness_refresh_failures: list[str] = []
                         is_local_intraday_price_request = (
@@ -4355,6 +4473,7 @@ def build_web_runtime() -> WebRuntime:
                                 validated_tickers,
                                 requested_start=exact_start or None,
                                 requested_end=exact_end or None,
+                                include_overnight_flag=include_overnight,
                             )
                         elif current_view in {"tickers", "prices"} and range_mode == "exact" and period in {"3d", "1w"}:
                             intraday_date_constraints = build_short_intraday_date_constraint_payload(
@@ -4386,6 +4505,7 @@ def build_web_runtime() -> WebRuntime:
                                 load_compare_one_day_intraday_dataset(
                                     ticker,
                                     include_extended_hours_flag=include_extended_hours,
+                                    include_overnight_flag=include_overnight,
                                     trading_date=axis_trading_date,
                                 )
                                 for ticker in validated_tickers
@@ -4398,14 +4518,23 @@ def build_web_runtime() -> WebRuntime:
                                 validated_tickers,
                             )
                             if axis_trading_date != target_trading_date:
+                                display_reference_aligned_datasets = [
+                                    shift_intraday_compare_axis_to_trading_date(
+                                        dataset,
+                                        axis_trading_date,
+                                        target_trading_date,
+                                    )
+                                    for dataset in reference_aligned_datasets
+                                ]
                                 aligned_datasets = []
-                                for reference_dataset, ticker in zip(reference_aligned_datasets, validated_tickers):
+                                for reference_dataset, ticker in zip(display_reference_aligned_datasets, validated_tickers):
                                     try:
                                         target_dataset = load_target_compare_one_day_intraday_dataset(
                                             ticker,
                                             target_trading_date=target_trading_date,
                                             include_extended_hours_flag=include_extended_hours,
-                                            force_refresh=True,
+                                            include_overnight_flag=include_overnight,
+                                            force_refresh=False,
                                         )
                                         aligned_datasets.append(
                                             map_live_intraday_dataset_to_reference_axis(reference_dataset, target_dataset, ticker)
@@ -4528,6 +4657,7 @@ def build_web_runtime() -> WebRuntime:
                                             load_compare_one_day_intraday_dataset(
                                                 ticker,
                                                 include_extended_hours_flag=include_extended_hours,
+                                                include_overnight_flag=include_overnight,
                                             )
                                         )
                                     except Exception as exc:  # noqa: BLE001
@@ -4739,7 +4869,7 @@ def build_web_runtime() -> WebRuntime:
                                 }
                                 for item, profile in zip(series, profiles)
                             ]
-                        ticker_slots = validated_tickers.copy()
+                        ticker_slots = (control_tickers or validated_tickers).copy()
                         record_ticker_usage(validated_tickers)
         except Exception as exc:  # noqa: BLE001
             error = str(exc) or None
@@ -4866,6 +4996,9 @@ def build_web_runtime() -> WebRuntime:
             price_only=price_only,
             include_extended_hours=include_extended_hours,
             show_extended_hours_toggle=show_extended_hours_toggle,
+            include_overnight=include_overnight,
+            show_overnight_toggle=show_overnight_toggle,
+            overnight_companion_tickers=sorted(COMPARE_OVERNIGHT_COMPANION_SYMBOLS),
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,
@@ -5904,6 +6037,21 @@ def build_web_runtime() -> WebRuntime:
             if len(validated_tickers) < MIN_TICKERS:
                 raise ValueError("At least two distinct tickers are required for live comparison.")
 
+            requested_period = request.args.get("period", "1d").strip().lower() or "1d"
+            requested_overnight = request.args.get(
+                "overnight",
+                request.args.get("include_overnight", "0"),
+            ) == "1"
+            include_overnight_flag = (
+                requested_overnight
+                and supports_compare_overnight(validated_tickers, requested_period)
+                and has_compare_overnight_market_data_source()
+            )
+            if include_overnight_flag:
+                validated_tickers = resolve_compare_overnight_tickers(validated_tickers)
+                if len(validated_tickers) > MAX_TICKERS:
+                    raise ValueError(f"Overnight comparison supports at most {MAX_TICKERS} tickers.")
+
             live_date_value = request.args.get("live_date", "").strip()
             live_trading_date = (
                 pd.to_datetime(live_date_value, errors="coerce")
@@ -5923,7 +6071,6 @@ def build_web_runtime() -> WebRuntime:
                 and any(is_market_regular_session_active_for_ticker(ticker) for ticker in validated_tickers)
             )
 
-            requested_period = request.args.get("period", "1d").strip().lower() or "1d"
             requested_extended_hours = request.args.get(
                 "extended_hours",
                 request.args.get("include_extended_hours", "0"),
@@ -6031,6 +6178,7 @@ def build_web_runtime() -> WebRuntime:
                 load_compare_one_day_intraday_dataset(
                     ticker,
                     include_extended_hours_flag=include_extended_hours_flag,
+                    include_overnight_flag=include_overnight_flag,
                     trading_date=axis_trading_date,
                 )
                 for ticker in validated_tickers
@@ -6042,6 +6190,15 @@ def build_web_runtime() -> WebRuntime:
                 reference_common_end,
                 validated_tickers,
             )
+            if pd.Timestamp(axis_trading_date).date() != pd.Timestamp(live_trading_date).date():
+                reference_aligned_datasets = [
+                    shift_intraday_compare_axis_to_trading_date(
+                        dataset,
+                        axis_trading_date,
+                        live_trading_date,
+                    )
+                    for dataset in reference_aligned_datasets
+                ]
 
             live_sources: list[str] = []
             colors = build_series_colors(len(validated_tickers), theme["accent_primary"], theme["accent_secondary"])
@@ -6053,6 +6210,7 @@ def build_web_runtime() -> WebRuntime:
                         live_trading_date=live_trading_date,
                         include_extended_hours_flag=include_extended_hours_flag,
                         force_refresh=force_refresh,
+                        include_overnight_flag=include_overnight_flag,
                     )
                     mapped_live_datasets.append(
                         map_live_intraday_dataset_to_reference_axis(reference_dataset, live_dataset, ticker)

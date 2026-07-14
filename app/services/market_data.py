@@ -1,12 +1,12 @@
 """
 Market data retrieval services.
 
-Code version: v0.10.1
+Code version: v0.12.0
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import io
 import logging
@@ -22,10 +22,12 @@ import yfinance as yf
 
 from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
 from app.infrastructure.connectivity import has_remote_market_access
+from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.infrastructure.broker_market_data import (
     HONG_KONG_TIMEZONE,
     NEW_YORK_TIMEZONE,
+    fetch_longbridge_compare_one_day_history,
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
     has_recent_one_minute_store,
@@ -61,6 +63,13 @@ SPLIT_MIN_EVENT_DISTANCE = math.log(1.5)
 SPLIT_MIN_IMPROVEMENT = 0.08
 DIVIDEND_ACTION_LOOKBACK_DAYS = 370
 DIVIDEND_ADJUSTMENT_SHIFT_TOLERANCE = 0.00001
+COMPARE_OVERNIGHT_CANONICAL_SYMBOLS = {
+    "SKHYV": "SKHY",
+    "SKHYV.US": "SKHY",
+}
+COMPARE_OVERNIGHT_COMPANION_SYMBOLS = {
+    "000660.KS": "SKHY",
+}
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOGGER = logging.getLogger("yfinance")
 NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
@@ -221,6 +230,24 @@ def _load_longbridge_market_settings():
     if not has_longbridge_market_data_source(settings):
         return None
     return settings
+
+
+def _load_compare_overnight_market_settings():
+    settings = load_broker_settings()
+    if has_longbridge_market_data_source(settings):
+        return settings
+
+    cli_settings = replace(
+        settings,
+        selected_broker="longbridge",
+        longbridge_auth_mode="cli_oauth",
+    )
+    try:
+        auth_status = get_longbridge_cli_auth_status(cli_settings)
+    except Exception:  # noqa: BLE001
+        return None
+    token_status = str(((auth_status.get("token") or {}).get("status") or "")).strip().lower()
+    return cli_settings if token_status == "valid" else None
 
 
 def _download_one_minute_history_with_longbridge(
@@ -409,6 +436,42 @@ def supports_compare_extended_hours(tickers: list[str], period: str) -> bool:
     )
 
 
+def canonical_compare_overnight_ticker(ticker: str) -> str:
+    normalized = normalize_ticker(ticker)
+    return COMPARE_OVERNIGHT_CANONICAL_SYMBOLS.get(normalized, normalized)
+
+
+def resolve_compare_overnight_tickers(tickers: list[str]) -> list[str]:
+    """Return canonical chart symbols and add known US overnight companions."""
+    requested = [normalize_ticker(ticker) for ticker in tickers if str(ticker or "").strip()]
+    resolved: list[str] = []
+    for ticker in requested:
+        canonical = canonical_compare_overnight_ticker(ticker)
+        if canonical not in resolved:
+            resolved.append(canonical)
+    for ticker in requested:
+        companion = COMPARE_OVERNIGHT_COMPANION_SYMBOLS.get(ticker)
+        if companion and companion not in resolved:
+            resolved.append(companion)
+    return resolved
+
+
+def supports_compare_overnight(tickers: list[str], period: str) -> bool:
+    resolved_tickers = resolve_compare_overnight_tickers(tickers)
+    return (
+        bool(resolved_tickers)
+        and str(period or "").strip().lower() == "1d"
+        and any(infer_ticker_market(ticker) == "US" for ticker in resolved_tickers)
+    )
+
+
+def has_compare_overnight_market_data_source() -> bool:
+    """Return whether the application can attempt the overnight companion path."""
+    if callable(getattr(yf, "download", None)):
+        return True
+    return _load_compare_overnight_market_settings() is not None
+
+
 def market_timezone_for_ticker(ticker: str) -> str:
     market = infer_ticker_market(ticker)
     if market == "HK":
@@ -542,18 +605,26 @@ def classify_kr_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
 
 
 def classify_us_equity_session(timestamp: pd.Timestamp | datetime | str) -> str:
-    """Classify a US equity bar timestamp into pre, intraday, post, or off."""
+    """Classify a US equity bar timestamp into overnight, pre, intraday, post, or off."""
     parsed_timestamp = pd.to_datetime(timestamp, errors="coerce")
     if pd.isna(parsed_timestamp):
         return "off"
     localized = parsed_timestamp
     if localized.tzinfo is not None:
         localized = localized.tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
+    weekday = int(localized.weekday())
     total_minutes = (int(localized.hour) * 60) + int(localized.minute)
     regular_open = (9 * 60) + 30
     regular_close = 16 * 60
     premarket_open = 4 * 60
     postmarket_close = 20 * 60
+    if (
+            (total_minutes >= postmarket_close and weekday in {0, 1, 2, 3, 6})
+            or (total_minutes < premarket_open and weekday in {0, 1, 2, 3, 4})
+    ):
+        return "overnight"
+    if weekday >= 5:
+        return "off"
     if regular_open <= total_minutes < regular_close:
         return "intraday"
     if premarket_open <= total_minutes < regular_open:
@@ -624,17 +695,79 @@ def fetch_compare_one_day_extended_history(ticker: str) -> pd.DataFrame:
     The result is intentionally not written to the local 1-minute store because
     this is a chart-specific view that needs pre-market and post-market bars.
     """
-    normalized_ticker = normalize_ticker(ticker)
-    history = _download_daily_history_with_yfinance(
-        normalized_ticker,
-        period="5d",
-        interval="1m",
-        prepost=True,
-    )
-    if history is None or history.empty:
-        raise ValueError(f"No extended-hours 1-minute data returned for {normalized_ticker} via yfinance.")
-    normalized = normalize_history_frame(history, normalized_ticker, interval="1m")
-    return select_price_series(normalized, include_dividends=False, dividend_mode="price")
+    normalized_ticker = canonical_compare_overnight_ticker(ticker)
+    last_error: Exception | None = None
+    for provider_ticker in market_ticker_store_aliases(normalized_ticker):
+        try:
+            history = _download_daily_history_with_yfinance(
+                provider_ticker,
+                period="5d",
+                interval="1m",
+                prepost=True,
+            )
+            if history is None or history.empty:
+                raise ValueError(
+                    f"No extended-hours 1-minute data returned for {provider_ticker} via yfinance."
+                )
+            normalized = normalize_history_frame(history, normalized_ticker, interval="1m")
+            result = select_price_series(
+                normalized,
+                include_dividends=False,
+                dividend_mode="price",
+            )
+            result.attrs["market_data_source"] = "yfinance_extended_fallback"
+            result.attrs["provider_ticker"] = provider_ticker
+            return result
+        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+            last_error = exc
+            LOGGER.info(
+                "Unable to load yfinance extended-hours bars for %s via alias %s: %s",
+                normalized_ticker,
+                provider_ticker,
+                exc,
+            )
+    raise ValueError(
+        f"No extended-hours 1-minute data returned for {normalized_ticker} via yfinance aliases."
+    ) from last_error
+
+
+def fetch_compare_one_day_overnight_history(
+        ticker: str,
+        *,
+        include_extended_hours: bool = False,
+) -> pd.DataFrame:
+    """Fetch US overnight bars, with yfinance extended-hours as the fallback."""
+    normalized_ticker = canonical_compare_overnight_ticker(ticker)
+    settings = _load_compare_overnight_market_settings()
+    if settings is not None:
+        try:
+            history = fetch_longbridge_compare_one_day_history(normalized_ticker, settings)
+            allowed_sessions = {"intraday", "normal", "overnight"}
+            if include_extended_hours:
+                allowed_sessions.update({"pre", "post"})
+            if "Session" in history.columns:
+                session_values = history["Session"].astype(str).str.strip().str.lower()
+                history = history.loc[session_values.isin(allowed_sessions)].copy()
+            if history.empty:
+                raise ValueError(
+                    f"No enabled-session 1-minute data returned for {normalized_ticker} via Longbridge."
+                )
+            result = select_price_series(
+                history,
+                include_dividends=False,
+                dividend_mode="price",
+            )
+            result.attrs["market_data_source"] = "longbridge_overnight"
+            result.attrs["provider_ticker"] = normalized_ticker
+            return result
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Unable to load Longbridge overnight bars for %s; using yfinance extended-hours fallback: %s",
+                normalized_ticker,
+                exc,
+            )
+
+    return fetch_compare_one_day_extended_history(normalized_ticker)
 
 
 def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:

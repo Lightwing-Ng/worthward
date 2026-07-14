@@ -1,4 +1,4 @@
-/* Code version: v0.14.0 */
+/* Code version: v0.15.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -85,6 +85,14 @@
             if (rightKeys.has(key)) return true;
         }
         return false;
+    };
+    const tickersExplicitlyEquivalent = (candidate, query) => {
+        const normalizedCandidate = sanitizeTicker(candidate || "");
+        const normalizedQuery = sanitizeTicker(query || "");
+        if (!normalizedCandidate || !normalizedQuery) return false;
+        if (normalizedCandidate === normalizedQuery) return true;
+        if (/^\d+$/.test(normalizedQuery)) return false;
+        return tickersEquivalent(normalizedCandidate, normalizedQuery);
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -1252,7 +1260,7 @@
         const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
         if (currentTickers !== nextTickers) return true;
 
-        const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "price_only", "price_return_only", "dividends", "include_dividends"];
+        const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
         for (const key of xAxisKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -2036,6 +2044,8 @@
                 "exact_end",
                 "extended_hours",
                 "include_extended_hours",
+                "overnight",
+                "include_overnight",
                 "price_only",
                 "price_return_only",
                 "dividends",
@@ -2566,7 +2576,7 @@
             const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(value)}&limit=5`);
             if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
             const payload = await response.json();
-            const isKnown = Boolean(payload.find((item) => tickersEquivalent(item?.symbol || "", value)));
+            const isKnown = Boolean(payload.find((item) => tickersExplicitlyEquivalent(item?.symbol || "", value)));
             if (input.dataset.validationTicker === value) {
                 input.dataset.unknown = isKnown ? "" : "1";
                 if (isKnown) {
@@ -2731,7 +2741,7 @@
 
     const applyExactTickerMatch = (input, items, ticker) => {
         if (!input || !Array.isArray(items) || !ticker) return null;
-        const exactItem = items.find((item) => tickersEquivalent(item?.symbol || "", ticker)) || null;
+        const exactItem = items.find((item) => tickersExplicitlyEquivalent(item?.symbol || "", ticker)) || null;
         if (!exactItem) return null;
         const exactSymbol = sanitizeTicker(exactItem.symbol || ticker);
         if (exactSymbol) input.value = exactSymbol;
@@ -4038,7 +4048,7 @@
     };
 
     const didCompareRequestChangeRange = (currentParams, nextParams) => {
-        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours"];
+        const rangeKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight"];
         for (const key of rangeKeys) {
             const current = (currentParams.get(key) || "").toString().trim();
             const next = (nextParams.get(key) || "").toString().trim();
@@ -4183,6 +4193,8 @@
     const exactSingleDateGrid = $("[data-exact-single-date-grid]");
     const extendedHoursInput = $("#include_extended_hours");
     const extendedHoursField = $("[data-one-day-extended-hours-field]");
+    const overnightInput = $("#include_overnight_hours");
+    const overnightField = $("[data-one-day-overnight-field]");
     const priceOnlyInput = $("#price_only");
     const priceOnlyField = $("[data-price-only-field]");
     const includeDividendsInput = $("#include_dividends");
@@ -4232,6 +4244,28 @@
         }
     };
 
+    const syncOneDayOvernightSwitch = () => {
+        if (!(overnightField instanceof HTMLElement) || !overnightInput) return;
+        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const companionTickers = new Set(
+            String(overnightField.dataset.overnightCompanionTickers || "")
+                .split(",")
+                .map((ticker) => sanitizeTicker(ticker))
+                .filter(Boolean),
+        );
+        const hasEligibleTicker = getFilledTickers().some((ticker) => (
+            isUsTicker(ticker) || companionTickers.has(ticker)
+        ));
+        const canUseOvernight = (
+            overnightField.dataset.overnightSourceReady === "1"
+            && isOneDayPeriod
+            && hasEligibleTicker
+        );
+        overnightField.hidden = !canUseOvernight;
+        overnightInput.disabled = !canUseOvernight;
+        if (!canUseOvernight) overnightInput.checked = false;
+    };
+
     const syncOneDayExtendedHoursSwitch = () => {
         if (!(extendedHoursField instanceof HTMLElement) || !extendedHoursInput) return;
         const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
@@ -4239,6 +4273,7 @@
         extendedHoursField.hidden = !canUseExtendedHours;
         extendedHoursInput.disabled = !canUseExtendedHours;
         if (!canUseExtendedHours) extendedHoursInput.checked = false;
+        syncOneDayOvernightSwitch();
     };
 
     const getSharedSelectParts = (field) => {
@@ -5778,6 +5813,9 @@
         if (extendedHoursInput?.checked && !extendedHoursInput.disabled) {
             params.set("extended_hours", "1");
         }
+        if (overnightInput?.checked && !overnightInput.disabled) {
+            params.set("overnight", "1");
+        }
 
         if (isPortfolioView) {
             const allocationMode = getPortfolioAllocationMode();
@@ -6081,6 +6119,13 @@
         syncOneDayExtendedHoursSwitch();
         extendedHoursInput.addEventListener("change", () => {
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("extended-hours");
+            scheduleAutoSubmit(80);
+        });
+    }
+    if (overnightInput && form) {
+        syncOneDayOvernightSwitch();
+        overnightInput.addEventListener("change", () => {
+            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("overnight");
             scheduleAutoSubmit(80);
         });
     }

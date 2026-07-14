@@ -1,4 +1,4 @@
-/* Code version: v0.11.0 */
+/* Code version: v0.13.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -100,12 +100,53 @@
 		US: "America/New_York",
 	}[market] || "America/New_York");
 
-	const timezoneLabel = (timezone, offsetMinutes) => {
+	const timezoneLabel = (timezone, offsetMinutes, referenceDate = new Date()) => {
 		if (timezone === "Asia/Hong_Kong") return "HKT";
 		if (timezone === "Asia/Seoul") return "KST";
+		if (timezone === "Asia/Shanghai" || timezone === "Asia/Taipei") return "CST";
+		if (timezone === "Asia/Singapore") return "SGT";
+		if (timezone === "Asia/Tokyo") return "JST";
 		if (timezone === "Europe/London") return Number(offsetMinutes) === 60 ? "BST" : "GMT";
 		if (timezone === "America/New_York") return Number(offsetMinutes) === -240 ? "EDT" : "EST";
-		return timezone;
+		try {
+			return new Intl.DateTimeFormat("en-US", {timeZone: timezone, timeZoneName: "short"})
+				.formatToParts(referenceDate)
+				.find((part) => part.type === "timeZoneName")?.value || timezone;
+		} catch (_error) {
+			return timezone;
+		}
+	};
+
+	const formatPriceCompareHeadingDate = (
+		tradingDate,
+		timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+	) => {
+		const match = String(tradingDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+		if (!match) return "";
+		const dateParts = {
+			year: Number(match[1]),
+			monthIndex: Number(match[2]) - 1,
+			day: Number(match[3]),
+		};
+		const formattedDate = typeof bootstrap.dateDisplay?.formatFullDateParts === "function"
+			? bootstrap.dateDisplay.formatFullDateParts(dateParts)
+			: `${dateParts.day} ${new Date(Date.UTC(2000, dateParts.monthIndex, 1)).toLocaleString("en-US", {month: "short", timeZone: "UTC"})} ${dateParts.year}`;
+		const referenceDate = new Date(Date.UTC(dateParts.year, dateParts.monthIndex, dateParts.day, 12));
+		const convertedParts = bootstrap.dateDisplay?.convertNewYorkWallTimeParts?.(`${tradingDate} 12:00`, timezone);
+		const label = timezoneLabel(timezone, convertedParts?.offsetMinutes, referenceDate);
+		return label ? `${formattedDate} ${label}` : formattedDate;
+	};
+
+	const updatePriceCompareHeadingDate = (tradingDateOverride = "") => {
+		const params = new URLSearchParams(window.location.search);
+		if ((params.get("period") || "").toLowerCase() !== "1d") return;
+		const rangeMode = (params.get("range") || "period").toLowerCase();
+		const tradingDate = rangeMode === "exact"
+			? (params.get("trading_date") || params.get("exact_trading_date") || tradingDateOverride || state.chart?.tradingDate)
+			: (tradingDateOverride || state.chart?.tradingDate);
+		const headingDate = formatPriceCompareHeadingDate(tradingDate);
+		const displayRange = document.querySelector(".price-compare-range");
+		if (displayRange instanceof HTMLElement && headingDate) displayRange.textContent = headingDate;
 	};
 
 	const dateSerial = (parts) => Math.floor(Date.UTC(parts.year, parts.monthIndex, parts.day) / 86400000);
@@ -114,11 +155,11 @@
 		const markets = new Set((tickers || []).map(marketForTicker));
 		if (markets.size <= 1) return [];
 		const eventDefinitions = [
-			{market: "KR", timezone: "Asia/Seoul", hours: 9, minutes: 0, label: "South Korea open"},
-			{market: "UK", timezone: "Europe/London", hours: 8, minutes: 0, label: "London open"},
-			{market: "HK", timezone: "Asia/Hong_Kong", hours: 16, minutes: 0, label: "Hong Kong close"},
-			{market: "KR", timezone: "Asia/Seoul", hours: 15, minutes: 30, label: "South Korea close"},
-			{market: "US", timezone: "America/New_York", hours: 4, minutes: 0, label: "US pre-market open"},
+			{market: "KR", timezone: "Asia/Seoul", hours: 9, minutes: 0},
+			{market: "UK", timezone: "Europe/London", hours: 8, minutes: 0},
+			{market: "HK", timezone: "Asia/Hong_Kong", hours: 16, minutes: 0},
+			{market: "KR", timezone: "Asia/Seoul", hours: 15, minutes: 30},
+			{market: "US", timezone: "America/New_York", hours: 4, minutes: 0},
 		];
 		return eventDefinitions
 			.filter((event) => markets.has(event.market))
@@ -128,14 +169,10 @@
 					return parts?.hours === event.hours && parts?.minutes === event.minutes;
 				});
 				if (index < 0) return null;
-				const parts = bootstrap.dateDisplay.convertNewYorkWallTimeParts(rawDates[index], event.timezone);
 				return {
 					...event,
 					index,
-					labelLines: [
-						`${String(parts.hours).padStart(2, "0")}:${String(parts.minutes).padStart(2, "0")} ${timezoneLabel(event.timezone, parts.offsetMinutes)}`,
-						event.label,
-					],
+					labelLines: [formatXAxisValue(rawDates[index], true)],
 				};
 			})
 			.filter(Boolean)
@@ -629,7 +666,7 @@
 					responsive: true,
 					maintainAspectRatio: false,
 					animation: false,
-					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot && marketSessionEvents.length ? 40 : 4, left: 0}},
+					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot && marketSessionEvents.length ? 22 : 4, left: 0}},
 					interaction: {mode: "index", intersect: false},
 					onHover(event, activeElements, chartInstance) {
 						if (!activeElements.length) {
@@ -695,12 +732,15 @@
 		const rangeMode = (pageParams.get("range") || "period").toLowerCase();
 		if (!state.endpoints?.compareLive || !["1d", "3d", "1w"].includes(period)) return;
 		if (rangeMode === "exact" && period !== "1d") return;
+		const selectedTradingDate = pageParams.get("trading_date") || pageParams.get("exact_trading_date") || "";
+		if (rangeMode === "exact" && selectedTradingDate !== formatLocalIsoDate()) return;
 		const params = new URLSearchParams();
 		(state.chart?.series || []).forEach((item) => params.append("ticker", item.ticker));
 		params.set("period", period);
 		params.set("live_date", formatLocalIsoDate());
 		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || pageParams.get("trading_date") || "");
 		if (pageParams.get("extended_hours") === "1") params.set("extended_hours", "1");
+		if (pageParams.get("overnight") === "1") params.set("overnight", "1");
 		params.set("refresh", "1");
 		const requestFingerprint = `${window.location.pathname}?${pageParams.toString()}`;
 		const requestSerial = ++liveRequestSerial;
@@ -723,6 +763,10 @@
 			));
 			if (!hasLivePrice) return;
 			state.chart.series = payload.series;
+			if (rangeMode !== "exact" && payload.liveDate) {
+				state.chart.tradingDate = payload.liveDate;
+			}
+			updatePriceCompareHeadingDate(rangeMode === "exact" ? selectedTradingDate : payload.liveDate);
 			renderPriceSubplots();
 		} catch (_error) {
 		} finally {
@@ -735,10 +779,15 @@
 		liveRequestController?.abort();
 		liveRequestController = null;
 		renderPriceSubplots();
+		updatePriceCompareHeadingDate();
+		const initialParams = new URLSearchParams(window.location.search);
+		const initialPeriod = (initialParams.get("period") || "").toLowerCase();
+		if (initialPeriod === "1d") void refreshLivePrices();
 		if (!refreshTimer) refreshTimer = window.setInterval(refreshLivePrices, REFRESH_MS);
 	};
 	bootstrap.refreshPriceCompareLive = refreshLivePrices;
 	bootstrap.formatPriceSharedTooltipDate = formatSharedTooltipDate;
+	bootstrap.formatPriceCompareHeadingDate = formatPriceCompareHeadingDate;
 	bootstrap.buildPriceMarketSessionEvents = buildMarketSessionEvents;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);

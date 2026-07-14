@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.4.4
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -63,6 +63,8 @@ TICKER_WEBSITE_OVERRIDES = {
     "JEPQ": "https://www.jpmorganchase.com",
     "DRAM": "https://www.roundhillinvestments.com/etf/dram/",
     "RAM": "https://www.roundhillinvestments.com/etf/ram/",
+    "SKHY": "https://www.skhynix.com",
+    "SKHYV": "https://www.skhynix.com",
 }
 
 CURATED_LOGO_SVG_URLS = {
@@ -538,9 +540,27 @@ def _fetch_quote_profile_for_scope(
     ensure_market_store_dir()
     normalized_ticker = normalize_ticker_input(ticker)
     record = load_profile_record(normalized_ticker)
+    known_company_name = resolve_known_ticker_company_name(normalized_ticker)
 
     record_company_name = str((record or {}).get("company_name") or "").strip()
     ticker_name_fallback = record_company_name.upper() == normalized_ticker if record_company_name else False
+
+    if not force_refresh and known_company_name and (not record or ticker_name_fallback):
+        website = resolve_website(
+            normalized_ticker,
+            known_company_name,
+            (record or {}).get("website"),
+        )
+        return QuoteProfile(
+            ticker=normalized_ticker,
+            company_name=known_company_name,
+            website=website,
+            logo_url=resolve_logo_url_with_fallback(
+                normalized_ticker,
+                website,
+                force_refresh=False,
+            ),
+        )
 
     if record and (
             (not force_refresh and _record_is_fresh(record.get("updated_at")))

@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -15,11 +15,14 @@ from app.services.comparisons import (
     align_datasets_on_common_dates,
     build_series_payload,
     latest_common_start,
+    market_trading_date_for_timestamp,
     resolve_effective_period_for_datasets,
+    shift_intraday_compare_axis_to_trading_date,
     slice_dataset_for_period,
     slice_datasets_for_compare_period,
     slice_intraday_datasets_for_compare_period,
 )
+from tests.factories.market import ohlc_frame_for_dates
 
 
 class ComparisonServiceTests(unittest.TestCase):
@@ -44,6 +47,30 @@ class ComparisonServiceTests(unittest.TestCase):
 
         self.assertEqual(aligned_a["Date"].dt.strftime("%Y-%m-%d").tolist(), ["2026-01-03", "2026-01-06"])
         self.assertEqual(aligned_b["Date"].dt.strftime("%Y-%m-%d").tolist(), ["2026-01-03", "2026-01-06"])
+
+    def test_shift_intraday_compare_axis_preserves_geometry_on_live_trading_date(self) -> None:
+        reference = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-07-12 20:00", "2026-07-13 03:59"]),
+                "Close": [100.0, 101.0],
+            }
+        )
+
+        shifted = shift_intraday_compare_axis_to_trading_date(
+            reference,
+            source_trading_date="2026-07-13",
+            target_trading_date="2026-07-14",
+        )
+
+        self.assertEqual(
+            shifted["Date"].tolist(),
+            [pd.Timestamp("2026-07-13 20:00"), pd.Timestamp("2026-07-14 03:59")],
+        )
+        self.assertEqual(shifted["Close"].tolist(), [100.0, 101.0])
+        self.assertEqual(
+            shifted["Date"].iloc[-1] - shifted["Date"].iloc[0],
+            reference["Date"].iloc[-1] - reference["Date"].iloc[0],
+        )
 
     def test_build_series_payload_uses_first_shared_row_as_baseline(self) -> None:
         dataset = pd.DataFrame(
@@ -455,6 +482,36 @@ class ComparisonServiceTests(unittest.TestCase):
         # HK (index 1) has NaN at KR early exclusive, values at its slots
         self.assertTrue(pd.isna(aligned[1]["Open"].iloc[0]))
         self.assertEqual(aligned[1]["Open"].iloc[-1], 204.0)
+
+    def test_cross_market_one_day_keeps_full_us_overnight_session(self) -> None:
+        krx_dataset = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-13 20:00", "2026-07-14 02:30"],
+        )
+        hk_dataset = ohlc_frame_for_dates(
+            "7709.HK",
+            ["2026-07-13 21:30", "2026-07-14 03:59"],
+        )
+        skhy_dataset = ohlc_frame_for_dates(
+            "SKHY",
+            ["2026-07-13 20:00", "2026-07-14 03:59"],
+        )
+
+        aligned = slice_intraday_datasets_for_compare_period(
+            [krx_dataset, hk_dataset, skhy_dataset],
+            "1d",
+            pd.Timestamp("2026-07-14 03:59"),
+            ["000660.KS", "7709.HK", "SKHY"],
+        )
+
+        self.assertEqual(
+            market_trading_date_for_timestamp("2026-07-13 20:00", "SKHY"),
+            pd.Timestamp("2026-07-14").date(),
+        )
+        self.assertEqual(aligned[2]["Date"].min(), pd.Timestamp("2026-07-13 20:00"))
+        self.assertEqual(aligned[2]["Date"].max(), pd.Timestamp("2026-07-14 03:59"))
+        self.assertEqual(aligned[2]["Open"].iloc[0], 149.5)
+        self.assertEqual(aligned[2]["Open"].iloc[-1], 150.5)
 
 
 if __name__ == "__main__":

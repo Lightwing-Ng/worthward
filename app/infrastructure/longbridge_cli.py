@@ -1,7 +1,7 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -55,11 +55,17 @@ def resolve_longbridge_cli_path(settings: BrokerSettings) -> str:
     )
 
 
-def _build_longbridge_cli_env(settings: BrokerSettings) -> dict[str, str]:
+def _build_longbridge_cli_env(
+        settings: BrokerSettings,
+        *,
+        enable_overnight: bool = False,
+) -> dict[str, str]:
     env = os.environ.copy()
     cli_home = resolve_longbridge_cli_home(settings)
     Path(cli_home).mkdir(parents=True, exist_ok=True)
     env["HOME"] = cli_home
+    if enable_overnight:
+        env["LONGBRIDGE_ENABLE_OVERNIGHT"] = "true"
     return env
 
 
@@ -68,6 +74,7 @@ def run_longbridge_cli(
         arguments: list[str],
         *,
         timeout_seconds: int = 30,
+        enable_overnight: bool = False,
 ) -> LongbridgeCliResult:
     cli_path = resolve_longbridge_cli_path(settings)
     completed = subprocess.run(
@@ -75,7 +82,7 @@ def run_longbridge_cli(
         capture_output=True,
         text=True,
         timeout=timeout_seconds,
-        env=_build_longbridge_cli_env(settings),
+        env=_build_longbridge_cli_env(settings, enable_overnight=enable_overnight),
     )
     return LongbridgeCliResult(
         stdout=completed.stdout.strip(),
@@ -89,8 +96,14 @@ def run_longbridge_cli_json(
         arguments: list[str],
         *,
         timeout_seconds: int = 30,
+        enable_overnight: bool = False,
 ) -> Any:
-    result = run_longbridge_cli(settings, arguments, timeout_seconds=timeout_seconds)
+    result = run_longbridge_cli(
+        settings,
+        arguments,
+        timeout_seconds=timeout_seconds,
+        enable_overnight=enable_overnight,
+    )
     if result.exit_code != 0:
         stderr = result.stderr or result.stdout or "Longbridge CLI command failed."
         raise RuntimeError(stderr)

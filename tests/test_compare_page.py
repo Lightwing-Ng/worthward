@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.5.2
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
-from tests.factories.market import quote_profile_stub
+from tests.factories.market import ohlc_frame_for_dates, quote_profile_stub
 
 
 def _fake_compare_dataset(ticker: str) -> pd.DataFrame:
@@ -39,6 +39,114 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_price_page_overnight_adds_canonical_skhynix_companion(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-07-13 20:00", "2026-07-14 02:30"],
+            ),
+            "7709.HK": ohlc_frame_for_dates(
+                "7709.HK",
+                ["2026-07-13 21:30", "2026-07-14 03:59"],
+            ),
+            "SKHY": ohlc_frame_for_dates(
+                "SKHY",
+                ["2026-07-13 20:00", "2026-07-14 03:59"],
+            ),
+        }
+        def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return _fake_compare_dataset(ticker)
+
+        with _write_intraday_stores(intraday_frames) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_overnight_history",
+                    return_value=intraday_frames["SKHY"],
+                ) as broker_overnight_mock,
+                patch("app.web.runtime.refresh_recent_one_minute_store_with_yfinance") as refresh_intraday_mock,
+                patch("app.web.runtime.refresh_one_minute_store") as refresh_target_mock,
+                patch("app.web.runtime.fetch_one_minute_history_for_trading_date") as exact_day_fetch_mock,
+                patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=7709.HK&range=exact&period=1d"
+                    "&trading_date=2026-07-14&overnight=1"
+                )
+
+        html = response.get_data(as_text=True)
+        ticker_inputs = re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ticker_inputs, ["000660.KS", "7709.HK"])
+        self.assertIn('id="include_overnight_hours" name="overnight" type="checkbox" value="1" checked', html)
+        self.assertIn('data-overnight-source-policy="longbridge-yfinance"', html)
+        self.assertIn("US overnight companion (best available)", html)
+        self.assertIn('data-ticker="SKHY"', html)
+        self.assertNotIn("SKHYV", html)
+        refresh_intraday_mock.assert_not_called()
+        refresh_target_mock.assert_not_called()
+        exact_day_fetch_mock.assert_not_called()
+        broker_overnight_mock.assert_called_once_with(
+            "SKHY",
+            include_extended_hours=False,
+        )
+
+    def test_live_compare_api_reports_yfinance_overnight_fallback_source(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-07-13 20:00", "2026-07-14 02:30"],
+            ),
+            "7709.HK": ohlc_frame_for_dates(
+                "7709.HK",
+                ["2026-07-13 21:30", "2026-07-14 03:59"],
+            ),
+            "SKHY": ohlc_frame_for_dates(
+                "SKHY",
+                ["2026-07-13 20:00", "2026-07-14 03:59"],
+            ),
+        }
+        intraday_frames["SKHY"].attrs["market_data_source"] = "yfinance_extended_fallback"
+        intraday_frames["SKHY"].attrs["provider_ticker"] = "SKHYV"
+
+        def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return _fake_compare_dataset(ticker)
+
+        with _write_intraday_stores(intraday_frames) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_overnight_history",
+                    return_value=intraday_frames["SKHY"],
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
+                patch("app.web.runtime.refresh_one_minute_store"),
+            ):
+                response = create_app().test_client().get(
+                    "/api/compare/live?ticker=000660.KS&ticker=7709.HK&period=1d"
+                    "&axis_date=2026-07-14&live_date=2026-07-14&overnight=1&refresh=0"
+                )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["sources"]["SKHY"], "yfinance_extended_fallback")
+        self.assertNotIn("SKHYV", payload["sources"])
+
     def test_one_day_price_page_keeps_new_us_listing_pending_before_first_quote(self) -> None:
         def _fetch_history(
             ticker: str,

@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -557,6 +557,20 @@ def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:
     )
 
 
+def _load_longbridge_trade_session_enum() -> Any:
+    for module_name in ("longbridge.openapi", "longport.openapi"):
+        try:
+            module = import_module(module_name)
+        except ImportError:
+            continue
+        trade_session_enum = getattr(module, "TradeSession", None)
+        if trade_session_enum is not None:
+            return trade_session_enum
+    raise RuntimeError(
+        "The installed Longbridge OpenAPI package does not expose trade-session selection."
+    )
+
+
 def _resolve_longbridge_adjust_type(adjust_type_enum: Any) -> Any:
     """
     Prefer split-adjusted bars so reverse splits and ordinary splits do not
@@ -678,6 +692,8 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
         raise ValueError("Ticker is required.")
+    if normalized_ticker in {"SKHY", "SKHYV", "SKHY.US", "SKHYV.US"}:
+        return "SKHY.US"
     if normalized_ticker.endswith(".SS"):
         symbol, _ = normalized_ticker.rsplit(".", 1)
         return f"{symbol}.SH"
@@ -1095,6 +1111,68 @@ def _cli_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]], ticker: s
     return pd.DataFrame(rows)
 
 
+def _normalize_longbridge_trade_session(value: object) -> str:
+    normalized = str(value or "").strip().rsplit(".", 1)[-1].lower()
+    if normalized == "normal":
+        return "intraday"
+    return normalized
+
+
+def _extended_candlestick_rows_to_frame(candlesticks: list[Any]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for candle in candlesticks:
+        raw_ts = getattr(candle, "timestamp", None)
+        if raw_ts is None:
+            continue
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        session = _normalize_longbridge_trade_session(
+            getattr(candle, "trade_session", getattr(candle, "session", ""))
+        )
+        rows.append(
+            {
+                "Date": ts_nyt.tz_localize(None),
+                "Open": float(getattr(candle, "open")),
+                "High": float(getattr(candle, "high")),
+                "Low": float(getattr(candle, "low")),
+                "Close": float(getattr(candle, "close")),
+                "Volume": float(getattr(candle, "volume")),
+                "Turnover": float(getattr(candle, "turnover")),
+                "Session": session,
+            }
+        )
+    if not rows:
+        return pd.DataFrame(
+            columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover", "Session"]
+        )
+    return pd.DataFrame(rows)
+
+
+def _cli_extended_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for candle in candlesticks:
+        raw_ts = candle.get("time")
+        if raw_ts is None:
+            continue
+        ts_nyt = _parse_longbridge_timestamp(raw_ts).tz_convert(NEW_YORK_TIMEZONE)
+        rows.append(
+            {
+                "Date": ts_nyt.tz_localize(None),
+                "Open": float(candle.get("open", 0)),
+                "High": float(candle.get("high", 0)),
+                "Low": float(candle.get("low", 0)),
+                "Close": float(candle.get("close", 0)),
+                "Volume": float(candle.get("volume", 0)),
+                "Turnover": float(candle.get("turnover", 0)),
+                "Session": _normalize_longbridge_trade_session(candle.get("session")),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(
+            columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover", "Session"]
+        )
+    return pd.DataFrame(rows)
+
+
 def _cli_daily_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candle in candlesticks:
@@ -1116,6 +1194,75 @@ def _cli_daily_candlestick_rows_to_frame(candlesticks: list[dict[str, Any]]) -> 
     if not rows:
         return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume", "Turnover"])
     return pd.DataFrame(rows)
+
+
+def fetch_longbridge_compare_one_day_history(
+        ticker: str,
+        settings: BrokerSettings,
+) -> pd.DataFrame:
+    """Fetch the latest full US session, including overnight, without persisting it."""
+    if not has_longbridge_market_data_source(settings):
+        raise ValueError(
+            "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
+        )
+
+    symbol = _normalize_longbridge_symbol(ticker)
+    if not symbol.endswith(".US"):
+        raise ValueError("Longbridge overnight candlesticks are currently available for US securities only.")
+
+    if uses_longbridge_cli_oauth(settings):
+        payload = run_longbridge_cli_json(
+            settings,
+            [
+                "kline",
+                symbol,
+                "--period",
+                "1m",
+                "--count",
+                "1000",
+                "--session",
+                "all",
+                "--format",
+                "json",
+            ],
+            timeout_seconds=45,
+            enable_overnight=True,
+        )
+        frame = _cli_extended_candlestick_rows_to_frame(payload if isinstance(payload, list) else [])
+    else:
+        _, _, period_enum, adjust_type_enum = _load_longbridge_openapi()
+        trade_session_enum = _load_longbridge_trade_session_enum()
+        trade_sessions = [
+            session
+            for name in ("Intraday", "Normal", "Pre", "Post", "Overnight")
+            if (session := getattr(trade_session_enum, name, None)) is not None
+        ]
+        if not trade_sessions or getattr(trade_session_enum, "Overnight", None) is None:
+            raise RuntimeError(
+                "Upgrade the Longbridge OpenAPI package to a version that supports overnight candlesticks."
+            )
+        quote_context = get_longbridge_quote_context(settings)
+        try:
+            candlesticks = quote_context.candlesticks(
+                symbol,
+                period_enum.Min_1,
+                1000,
+                adjust_type_enum.NoAdjust,
+                trade_sessions,
+            )
+        except TypeError as exc:
+            raise RuntimeError(
+                "Upgrade the Longbridge OpenAPI package to a version that accepts trade-session selection."
+            ) from exc
+        frame = _extended_candlestick_rows_to_frame(list(candlesticks or []))
+
+    if frame.empty:
+        raise ValueError(f"No full-session 1-minute market data returned for {ticker} via Longbridge.")
+    return (
+        frame.drop_duplicates(subset=["Date"], keep="last")
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
 
 
 def fetch_longbridge_one_minute_history(

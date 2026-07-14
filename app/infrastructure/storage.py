@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -204,6 +204,8 @@ def market_ticker_store_aliases(ticker: str) -> list[str]:
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "DRAM": "Roundhill Memory ETF",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
+    "SKHY": "SK hynix Inc.",
+    "SKHYV": "SK hynix Inc.",
 }
 
 ROUNDHILL_PRODUCT_LOGO_TICKERS = frozenset({

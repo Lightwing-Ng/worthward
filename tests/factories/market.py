@@ -1,4 +1,4 @@
-"""Factories for test market data and results. Code version: v1.0.0."""
+"""Factories for test market data and results. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -21,21 +21,53 @@ class FakeStrategy:
         return values
 
 
+def ohlc_frame_for_dates(ticker: str, dates: list[str]) -> pd.DataFrame:
+    """Return an OHLC frame for explicit timestamps with stable ticker-specific prices."""
+    base = {"QQQ": 100.0, "AAPL": 200.0, "NVDA": 300.0, "DRAM": 25.0}.get(ticker, 150.0)
+    offsets = [float(index) for index, _value in enumerate(dates)]
+    return pd.DataFrame({
+        "Date": pd.to_datetime(dates),
+        "Close": [base + offset for offset in offsets],
+        "Open": [base - 0.5 + offset for offset in offsets],
+        "High": [base + 0.5 + offset for offset in offsets],
+        "Low": [base - 1.0 + offset for offset in offsets],
+    })
+
+
 def market_frame(ticker: str = "QQQ", *, intraday: bool = False) -> pd.DataFrame:
     """Return a two-row OHLC frame with stable ticker-specific prices."""
-    base = {"QQQ": 100.0, "AAPL": 200.0, "NVDA": 300.0, "DRAM": 25.0}.get(ticker, 150.0)
     dates = (
         ["2026-04-02 09:30", "2026-04-02 15:59"]
         if intraday
         else ["2026-03-26", "2026-03-27"]
     )
-    return pd.DataFrame({
-        "Date": pd.to_datetime(dates),
-        "Close": [base, base + 1.0],
-        "Open": [base - 0.5, base + 0.5],
-        "High": [base + 0.5, base + 1.5],
-        "Low": [base - 1.0, base],
-    })
+    return ohlc_frame_for_dates(ticker, dates)
+
+
+def longbridge_candlestick_rows() -> list[dict[str, str]]:
+    """Return deterministic CLI candlesticks spanning the US overnight date boundary."""
+    return [
+        {
+            "time": "2026-07-14T00:00:00Z",
+            "open": "160.000",
+            "high": "161.000",
+            "low": "159.500",
+            "close": "160.500",
+            "volume": "1000",
+            "turnover": "160500.000",
+            "session": "Overnight",
+        },
+        {
+            "time": "2026-07-14T05:00:00Z",
+            "open": "162.000",
+            "high": "163.000",
+            "low": "161.500",
+            "close": "162.500",
+            "volume": "1200",
+            "turnover": "195000.000",
+            "session": "Overnight",
+        },
+    ]
 
 
 def fetch_history_stub(

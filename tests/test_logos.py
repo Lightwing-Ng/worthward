@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.3.5
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -32,6 +32,33 @@ from app.services.logos import (
 
 
 class LogoServiceTests(unittest.TestCase):
+    def test_known_sk_hynix_profile_skips_remote_yfinance_lookup(self) -> None:
+        for cached_record in (
+            None,
+            {
+                "ticker": "SKHY",
+                "company_name": "SKHY",
+                "website": None,
+                "updated_at": "2026-07-14T00:00:00+00:00",
+            },
+        ):
+            with self.subTest(cached_record=cached_record):
+                with patch("app.services.logos.load_profile_record", return_value=cached_record), \
+                        patch(
+                            "app.services.logos.resolve_logo_url_with_fallback",
+                            return_value="/market-store/logos/000660.KS.svg",
+                        ), \
+                        patch("app.services.logos._load_yfinance_ticker_info") as info_mock, \
+                        patch("app.services.logos.has_remote_market_access") as remote_access_mock:
+                    profile = fetch_quote_profile("SKHY", force_refresh=False)
+
+                self.assertEqual(profile.ticker, "SKHY")
+                self.assertEqual(profile.company_name, "SK hynix Inc.")
+                self.assertEqual(profile.website, "https://www.skhynix.com")
+                self.assertEqual(profile.logo_url, "/market-store/logos/000660.KS.svg")
+                info_mock.assert_not_called()
+                remote_access_mock.assert_not_called()
+
     def test_cached_named_profile_skips_remote_connectivity_probe(self) -> None:
         cached_record = {
             "ticker": "SKHYV",

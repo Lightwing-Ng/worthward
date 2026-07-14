@@ -1,4 +1,4 @@
-/* Code version: v0.4.16 */
+/* Code version: v0.5.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -110,7 +110,7 @@
 		const nextTickers = Array.from(nextParams.getAll("ticker")).sort().join(",");
 		if (currentTickers !== nextTickers) return true;
 
-		const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "price_only", "price_return_only", "dividends", "include_dividends"];
+		const xAxisKeys = ["period", "range", "trading_date", "exact_trading_date", "from", "exact_start", "to", "exact_end", "extended_hours", "include_extended_hours", "overnight", "include_overnight", "price_only", "price_return_only", "dividends", "include_dividends"];
 		for (const key of xAxisKeys) {
 			const current = (currentParams.get(key) || "").toString().trim();
 			const next = (nextParams.get(key) || "").toString().trim();
@@ -277,6 +277,9 @@
 			&& (currentParams.get("extended_hours") === "1" || currentParams.get("include_extended_hours") === "1")
 		) {
 			params.set("extended_hours", "1");
+		}
+		if (currentParams.get("overnight") === "1" || currentParams.get("include_overnight") === "1") {
+			params.set("overnight", "1");
 		}
 		return params;
 	};

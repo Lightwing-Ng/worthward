@@ -85,6 +85,20 @@
             </span>
         </label>
     </div>
+    <div class="field-checkbox field-switch"
+         data-one-day-overnight-field
+         data-overnight-source-ready="{{ 1 if show_overnight_toggle else 0 }}"
+         data-overnight-source-policy="longbridge-yfinance"
+         data-overnight-companion-tickers="{{ overnight_companion_tickers | join(',') }}"
+         {% if not show_overnight_toggle %}hidden{% endif %}>
+        <label class="switch-row" for="include_overnight_hours">
+            <span class="switch-label" title="Longbridge supplies full overnight bars; yfinance falls back to pre-market, regular, and after-hours bars.">US overnight companion (best available)</span>
+            <span class="ios-switch-shell">
+                <input id="include_overnight_hours" name="overnight" type="checkbox" value="1" {% if include_overnight and show_overnight_toggle %}checked{% endif %} {% if not show_overnight_toggle %}disabled{% endif %}>
+                <span class="ios-switch-slider" aria-hidden="true"></span>
+            </span>
+        </label>
+    </div>
     {% set hide_dividend_switches = current_view == "prices" or (current_view == "tickers" and period == "1d") %}
     <div class="field-checkbox field-switch" data-price-only-field {% if hide_dividend_switches %}hidden{% endif %}>
         <label class="switch-row" for="price_only">
