@@ -1,6 +1,18 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.31.0`
+Documentation version: `v1.33.0`
+
+## Investment split content-aware limits added on 14 Jul 2026
+
+- The upper resize limit protects the equity chart stage itself, excluding the range selector, with a viewport-responsive minimum drawing height.
+- The lower resize limit measures the rendered Transaction history header and first three data rows, so wrapped labels and taller transaction descriptions automatically receive enough space.
+- When an exceptionally short viewport cannot satisfy both preferred limits, the two protected regions scale their discretionary height proportionally while retaining the existing emergency floor.
+
+## TTM dividend cache completeness corrected on 14 Jul 2026
+
+- A daily cache with a present but empty `Dividends` column is no longer assumed to contain complete corporate actions.
+- A material step in the trailing adjusted-close ratio without a matching cash action triggers one full `yfinance`-first repair, restoring dividend-paying securities such as MSFT while leaving true non-payers unchanged.
+- Isolated Parquet tests cover both the damaged dividend cache and a stable zero-dividend cache without reading or writing the production market store.
 
 ## Investment split viewport shrink corrected on 14 Jul 2026
 

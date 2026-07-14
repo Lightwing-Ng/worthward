@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -59,6 +59,8 @@ SPLIT_FACTOR_CANDIDATES = tuple(
 SPLIT_MATCH_TOLERANCE = math.log(1.12)
 SPLIT_MIN_EVENT_DISTANCE = math.log(1.5)
 SPLIT_MIN_IMPROVEMENT = 0.08
+DIVIDEND_ACTION_LOOKBACK_DAYS = 370
+DIVIDEND_ADJUSTMENT_SHIFT_TOLERANCE = 0.00001
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOGGER = logging.getLogger("yfinance")
 NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
@@ -956,6 +958,34 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
     return _apply_inferred_split_adjustments(dataset)
 
 
+def _daily_history_has_incomplete_dividend_actions(dataset: pd.DataFrame) -> bool:
+    if "Dividends" not in dataset.columns:
+        return True
+    required_columns = {"Date", "Close", "Adj Close"}
+    if dataset.empty or not required_columns.issubset(dataset.columns):
+        return False
+
+    prepared = dataset[["Date", "Close", "Adj Close", "Dividends"]].copy()
+    prepared["Date"] = pd.to_datetime(prepared["Date"], errors="coerce")
+    prepared["Close"] = pd.to_numeric(prepared["Close"], errors="coerce")
+    prepared["Adj Close"] = pd.to_numeric(prepared["Adj Close"], errors="coerce")
+    prepared["Dividends"] = pd.to_numeric(prepared["Dividends"], errors="coerce").fillna(0.0)
+    prepared = prepared.dropna(subset=["Date", "Close", "Adj Close"]).sort_values("Date")
+    prepared = prepared[(prepared["Close"] > 0) & (prepared["Adj Close"] > 0)]
+    if len(prepared) < 2:
+        return False
+
+    cutoff = pd.Timestamp(prepared["Date"].max()) - pd.Timedelta(days=DIVIDEND_ACTION_LOOKBACK_DAYS)
+    trailing = prepared[prepared["Date"] >= cutoff].copy()
+    if len(trailing) < 2:
+        return False
+
+    adjustment_ratio = trailing["Adj Close"] / trailing["Close"]
+    material_adjustment = adjustment_ratio.pct_change().abs() > DIVIDEND_ADJUSTMENT_SHIFT_TOLERANCE
+    missing_cash_action = trailing["Dividends"] <= 0
+    return bool((material_adjustment & missing_cash_action).any())
+
+
 def _build_cash_dividend_close_series(dataset: pd.DataFrame) -> pd.Series:
     close = pd.to_numeric(dataset["Close"], errors="coerce").astype("float64")
     if "Dividends" not in dataset.columns:
@@ -1040,7 +1070,7 @@ def fetch_history(
                     write_parquet_atomic(path, normalized_intraday, index=False)
                 dataset = normalized_intraday
             else:
-                should_refresh_for_dividends = "Dividends" not in dataset.columns
+                should_refresh_for_dividends = _daily_history_has_incomplete_dividend_actions(dataset)
                 dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
         if should_refresh_for_dividends:
             try:

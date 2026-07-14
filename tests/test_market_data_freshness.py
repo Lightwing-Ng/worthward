@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import pandas as pd
@@ -32,6 +33,7 @@ from app.services.market_data import (
     classify_us_equity_session,
     download_full_history,
     ensure_fresh_history_store,
+    fetch_history,
     fetch_yfinance_realtime_quotes,
     infer_ticker_market,
     refresh_history_store,
@@ -242,6 +244,65 @@ class MarketDataFreshnessTests(unittest.TestCase):
                 path.write_bytes(original_bytes)
             elif path.exists():
                 path.unlink()
+
+    def test_fetch_history_repairs_missing_dividend_actions_from_adjustment_steps(self) -> None:
+        broken_dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime([
+                    "2025-08-20",
+                    "2025-08-21",
+                    "2025-11-19",
+                    "2025-11-20",
+                    "2026-07-13",
+                ]),
+                "Close": [504.0, 504.24, 478.0, 478.43, 390.99],
+                "Adj Close": [500.0, 501.07, 473.0, 476.31, 390.99],
+                "Dividends": [0.0, 0.0, 0.0, 0.0, 0.0],
+            }
+        )
+        repaired_dataset = broken_dataset.copy()
+        repaired_dataset.loc[
+            repaired_dataset["Date"].isin(pd.to_datetime(["2025-08-21", "2025-11-20"])),
+            "Dividends",
+        ] = [0.83, 0.91]
+
+        with TemporaryDirectory() as tempdir:
+            history_path = Path(tempdir) / "MSFT.parquet"
+            broken_dataset.to_parquet(history_path, index=False)
+
+            def repair_store(ticker: str, *, force_full: bool = False) -> Path:
+                self.assertEqual(ticker, "MSFT")
+                self.assertTrue(force_full)
+                repaired_dataset.to_parquet(history_path, index=False)
+                return history_path
+
+            with (
+                patch("app.services.market_data.market_ticker_store_aliases", return_value=["MSFT"]),
+                patch("app.services.market_data.history_store_path_for_interval", return_value=history_path),
+                patch("app.services.market_data.refresh_history_store", side_effect=repair_store) as refresh_mock,
+            ):
+                result = fetch_history("MSFT", False, dividend_mode="price")
+
+        refresh_mock.assert_called_once_with("MSFT", force_full=True)
+        self.assertAlmostEqual(float(result["Dividends"].sum()), 1.74)
+
+    def test_fetch_history_keeps_zero_dividend_cache_when_adjustment_ratio_is_stable(self) -> None:
+        non_dividend_dataset = market_frame("ADBE")
+        non_dividend_dataset["Adj Close"] = non_dividend_dataset["Close"]
+        non_dividend_dataset["Dividends"] = 0.0
+
+        with TemporaryDirectory() as tempdir:
+            history_path = Path(tempdir) / "ADBE.parquet"
+            non_dividend_dataset.to_parquet(history_path, index=False)
+            with (
+                patch("app.services.market_data.market_ticker_store_aliases", return_value=["ADBE"]),
+                patch("app.services.market_data.history_store_path_for_interval", return_value=history_path),
+                patch("app.services.market_data.refresh_history_store") as refresh_mock,
+            ):
+                result = fetch_history("ADBE", False, dividend_mode="price")
+
+        refresh_mock.assert_not_called()
+        self.assertEqual(float(result["Dividends"].sum()), 0.0)
 
     def test_download_full_history_serializes_concurrent_yfinance_requests(self) -> None:
         fake_history = pd.DataFrame(

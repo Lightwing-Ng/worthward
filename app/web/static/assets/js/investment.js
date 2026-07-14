@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.65.1
+ * Code version: v1.65.2
+ * - Changed: The Investment split now derives its limits from the chart stage and three visible transaction rows at the current resolution.
  * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
  * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
  * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
@@ -302,7 +303,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.65.1',
+    entry: 'v1.65.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -475,12 +476,64 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let overviewRatio = null;
         let resizeFrame = 0;
+        let overviewChromeHeight = 0;
+        let historyChromeHeight = 0;
         const investmentSummaryCard = investmentWorkspaceHeader.querySelector(':scope > .workspace-summary-card');
-        const getMinimumHeight = () => {
+        const getBaselineMinimumHeight = () => {
             const value = Number.parseFloat(
                 getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-section-min-height'),
             );
             return Number.isFinite(value) ? value : 132;
+        };
+        const readPixelProperty = (element, propertyName, fallback = 0) => {
+            if (!(element instanceof HTMLElement)) return fallback;
+            const value = Number.parseFloat(getComputedStyle(element).getPropertyValue(propertyName));
+            return Number.isFinite(value) ? value : fallback;
+        };
+        const getOverviewMinimumHeight = (baselineMinimum) => {
+            const stage = investmentReportCard.querySelector('.investment-equity-chart-stage');
+            if (!(stage instanceof HTMLElement)) return baselineMinimum;
+            const reportHeight = investmentReportCard.getBoundingClientRect().height;
+            const stageHeight = stage.getBoundingClientRect().height;
+            if (reportHeight > 0 && stageHeight > 0 && reportHeight >= stageHeight) {
+                overviewChromeHeight = Math.max(overviewChromeHeight, reportHeight - stageHeight);
+            }
+            const stageMinimum = readPixelProperty(
+                stage,
+                'min-height',
+                readPixelProperty(investmentWorkspaceHeader, '--investment-equity-stage-min-height', 180),
+            );
+            return Math.max(baselineMinimum, overviewChromeHeight + stageMinimum);
+        };
+        const getHistoryMinimumHeight = (baselineMinimum) => {
+            const tableShell = investmentHistorySurface.querySelector('#history_table_wrap');
+            const headerTable = tableShell?.querySelector('[data-table-header]');
+            const historyRows = Array.from(
+                tableShell?.querySelectorAll('#investment_history > tr:not([data-table-empty-row])') || [],
+            ).slice(0, 3);
+            const surfaceHeight = investmentHistorySurface.getBoundingClientRect().height;
+            const tableShellHeight = tableShell instanceof HTMLElement
+                ? tableShell.getBoundingClientRect().height
+                : 0;
+            if (surfaceHeight > 0 && tableShellHeight > 0 && surfaceHeight >= tableShellHeight) {
+                historyChromeHeight = Math.max(historyChromeHeight, surfaceHeight - tableShellHeight);
+            }
+            const fallbackRowHeight = readPixelProperty(
+                investmentWorkspaceHeader,
+                '--investment-history-row-min-height',
+                40,
+            );
+            const visibleRowsHeight = historyRows.reduce(
+                (total, row) => total + Math.max(row.getBoundingClientRect().height, fallbackRowHeight),
+                fallbackRowHeight * (3 - historyRows.length),
+            );
+            const headerHeight = headerTable instanceof HTMLElement
+                ? headerTable.getBoundingClientRect().height
+                : readPixelProperty(tableShell, '--scrollable-data-table-header-height', 28);
+            return Math.max(
+                baselineMinimum,
+                historyChromeHeight + Math.max(0, headerHeight) + visibleRowsHeight + 1,
+            );
         };
         const getAvailableTrackHeight = () => {
             const styles = getComputedStyle(investmentWorkspaceHeader);
@@ -506,9 +559,32 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         };
         const getRange = () => {
-            const minimum = getMinimumHeight();
             const availableHeight = getAvailableTrackHeight();
-            return {minimum, maximum: Math.max(minimum, availableHeight - minimum)};
+            const baselineMinimum = Math.min(getBaselineMinimumHeight(), availableHeight / 2);
+            const desiredOverviewMinimum = getOverviewMinimumHeight(baselineMinimum);
+            const desiredHistoryMinimum = getHistoryMinimumHeight(baselineMinimum);
+            const desiredExtraHeight = (
+                (desiredOverviewMinimum - baselineMinimum)
+                + (desiredHistoryMinimum - baselineMinimum)
+            );
+            const availableExtraHeight = Math.max(0, availableHeight - (baselineMinimum * 2));
+            const minimumScale = desiredExtraHeight > 0
+                ? Math.min(1, availableExtraHeight / desiredExtraHeight)
+                : 1;
+            const overviewMinimum = (
+                baselineMinimum
+                + ((desiredOverviewMinimum - baselineMinimum) * minimumScale)
+            );
+            const historyMinimum = (
+                baselineMinimum
+                + ((desiredHistoryMinimum - baselineMinimum) * minimumScale)
+            );
+            investmentWorkspaceHeader.style.setProperty('--investment-overview-min-height', `${overviewMinimum}px`);
+            investmentWorkspaceHeader.style.setProperty('--investment-history-min-height', `${historyMinimum}px`);
+            return {
+                minimum: overviewMinimum,
+                maximum: Math.max(overviewMinimum, availableHeight - historyMinimum),
+            };
         };
         const getValue = () => investmentReportCard.getBoundingClientRect().height;
         const setValue = (height) => {
@@ -529,11 +605,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const reflowRatio = () => {
             resizeFrame = 0;
-            if (!Number.isFinite(overviewRatio)) return;
             const availableHeight = getAvailableTrackHeight();
             const range = getRange();
+            const requestedHeight = Number.isFinite(overviewRatio)
+                ? availableHeight * overviewRatio
+                : getValue();
             const nextHeight = Math.min(
-                Math.max(availableHeight * overviewRatio, range.minimum),
+                Math.max(requestedHeight, range.minimum),
                 range.maximum,
             );
             if (Math.abs(nextHeight - getValue()) < 0.5) return;
@@ -556,14 +634,24 @@ document.addEventListener('DOMContentLoaded', () => {
             onEnd: () => window.dispatchEvent(new Event('resize')),
         });
         let observer = null;
+        let mutationObserver = null;
         if (typeof ResizeObserver === 'function') {
             observer = new ResizeObserver(scheduleRatioReflow);
             observer.observe(investmentWorkspaceHeader);
+            observer.observe(investmentReportCard);
+            observer.observe(investmentHistorySurface);
         }
+        if (typeof MutationObserver === 'function') {
+            mutationObserver = new MutationObserver(scheduleRatioReflow);
+            mutationObserver.observe(investmentReportCard, {childList: true, subtree: true});
+            mutationObserver.observe(investmentHistorySurface, {childList: true, subtree: true});
+        }
+        scheduleRatioReflow();
         window.addEventListener('resize', scheduleRatioReflow, {passive: true});
         window.addEventListener('pagehide', () => {
             unbind();
             observer?.disconnect();
+            mutationObserver?.disconnect();
             window.removeEventListener('resize', scheduleRatioReflow);
             if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
         }, {once: true});

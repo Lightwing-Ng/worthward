@@ -1,16 +1,20 @@
-/* Code version: v1.23.0 */
+/* Code version: v1.23.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 16px;
     --investment-section-min-height: 148px;
+    --investment-overview-min-height: var(--investment-section-min-height);
+    --investment-history-min-height: var(--investment-section-min-height);
+    --investment-equity-stage-min-height: clamp(180px, 24dvh, 240px);
+    --investment-history-row-min-height: 40px;
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
     grid-template-rows:
         auto
-        minmax(var(--investment-section-min-height), var(--investment-overview-track, 1fr))
+        minmax(var(--investment-overview-min-height), var(--investment-overview-track, 1fr))
         var(--investment-section-resizer-size)
-        minmax(var(--investment-section-min-height), 1fr);
+        minmax(var(--investment-history-min-height), 1fr);
     align-items: stretch;
     margin-bottom: 0;
 }
@@ -1816,7 +1820,7 @@
 .investment-equity-chart-stage {
     position: relative;
     flex: 1 1 0;
-    min-height: 0;
+    min-height: var(--investment-equity-stage-min-height);
 }
 
 .investment-equity-live-marker {
@@ -4280,9 +4284,9 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         --investment-section-min-height: 132px;
         grid-template-rows:
             auto
-            minmax(var(--investment-section-min-height), var(--investment-overview-track, 1fr))
+            minmax(var(--investment-overview-min-height), var(--investment-overview-track, 1fr))
             var(--investment-section-resizer-size)
-            minmax(var(--investment-section-min-height), 1fr);
+            minmax(var(--investment-history-min-height), 1fr);
     }
 
     .investment-history-surface {
