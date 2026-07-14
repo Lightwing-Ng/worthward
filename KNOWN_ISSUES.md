@@ -1,12 +1,36 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.26.0`
+Documentation version: `v1.29.0`
+
+## Responsive investment surface split added on 14 Jul 2026
+
+- The Style token width handle and the new Investment height handle now share one direction-aware resizer component with pointer, touch, and keyboard behavior.
+- Both orientations reuse the extracted Frosted Glass material. The Investment separator remains visually hidden until hover, keyboard focus, or active resizing.
+- Overview and Transaction history keep independent minimum heights, and a user-selected split is proportionally reflowed when the portrait viewport changes size.
+
+## Investment import popover and scroll containment corrected on 14 Jul 2026
+
+- The broker dropdown now layers the standard Frosted glass extracted material over the strong glass surface, reducing background bleed while preserving the shared popover treatment.
+- The import field stack is the sole vertical scroll owner. The overlay itself remains fixed to the viewport, while the action package occupies a dedicated bottom layout row and never covers the first field.
+- The import E2E checks the popover material, single-scroll-owner contract, and bottom alignment of the action package.
+
+## HSBC authoritative import readback corrected on 14 Jul 2026
+
+- Post-import verification now compares the committed merged transaction set with the authoritative store readback.
+- A pasted HSBC dividend that is correctly absorbed by a stronger matching monthly-statement record no longer produces a false missing-record banner.
+- Genuine persistence divergence still fails closed, while tests continue to use an isolated temporary investment store.
+
+## yfinance-first market-data policy completed on 14 Jul 2026
+
+- Free `yfinance` data is now the default for daily history, 1-minute history, extended-hours comparisons, and investment realtime quotes.
+- Longbridge is contacted for market history only after the supported `yfinance` windows fail and only when broker credentials are configured.
+- Batched realtime quotes retry every missing ticker individually, and partial responses are not cached as complete results.
 
 ## Unconfigured Longbridge market-data fallback completed on 13 Jul 2026
 
 - Every public 1-minute history download path now falls back to bounded `yfinance` windows when Longbridge is unconfigured or unavailable.
 - Daily history, current and extended-hours quotes, comparison charts, portfolio views, backtests, and investment valuation can operate without Longbridge credentials.
-- Longbridge remains the preferred 1-minute source when configured. The fallback preserves authoritative unknowns when neither provider returns data and never fabricates market records.
+- This interim Longbridge-first policy was superseded by the `yfinance`-first policy recorded above. Both revisions preserve authoritative unknowns when no provider returns data and never fabricate market records.
 
 ## Comparison workspace memory added on 13 Jul 2026
 

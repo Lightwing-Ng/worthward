@@ -1,4 +1,4 @@
-/* Code version: v0.7.4 */
+/* Code version: v0.8.0 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -259,21 +259,24 @@
         handle.dataset.bound = "1";
         const scrollViewport = shell.closest("[data-settings-workspace-region], #settings_workspace_shell");
         const minWidth = 220;
-        const clampWidth = (desiredWidth) => {
+        const getWidthRange = () => {
             const rect = shell.getBoundingClientRect();
-            if (!rect.width) return null;
             const computed = getComputedStyle(shell);
             const columnGap = Number.parseFloat(computed.getPropertyValue("--style-token-column-gap")) || 24;
             const maxWidth = Math.max(minWidth, rect.width - columnGap - 280);
-            return Math.min(Math.max(desiredWidth, minWidth), maxWidth);
+            return {minimum: minWidth, maximum: maxWidth};
         };
-        const syncWidth = (clientX) => {
+        const widthFromPointer = (clientX) => {
             const rect = shell.getBoundingClientRect();
-            if (!rect.width) return;
             const computed = getComputedStyle(shell);
             const columnGap = Number.parseFloat(computed.getPropertyValue("--style-token-column-gap")) || 24;
-            const nextWidth = clampWidth(clientX - rect.left - (columnGap / 2));
-            if (!Number.isFinite(nextWidth)) return;
+            return clientX - rect.left - (columnGap / 2);
+        };
+        const getCurrentWidth = () => {
+            const demo = shell.querySelector(".style-token-demo");
+            return demo instanceof HTMLElement ? demo.getBoundingClientRect().width : minWidth;
+        };
+        const setCurrentWidth = (nextWidth) => {
             shell.style.setProperty("--style-token-demo-width-current", `${nextWidth}px`);
             refreshStyleTokenDemoDensity?.();
         };
@@ -289,38 +292,6 @@
                 syncWidthToViewport();
             });
         };
-        const stopResize = () => {
-            shell.classList.remove("is-resizing");
-            if (typeof handle.releasePointerCapture === "function" && activePointerId !== null) {
-                try {
-                    handle.releasePointerCapture(activePointerId);
-                } catch (_error) {
-                }
-            }
-            activePointerId = null;
-            window.removeEventListener("pointermove", onPointerMove);
-            window.removeEventListener("pointerup", stopResize);
-            window.removeEventListener("pointercancel", stopResize);
-        };
-        const onPointerMove = (event) => {
-            syncWidth(event.clientX);
-        };
-        let activePointerId = null;
-        handle.addEventListener("pointerdown", (event) => {
-            event.preventDefault();
-            activePointerId = typeof event.pointerId === "number" ? event.pointerId : null;
-            if (typeof handle.setPointerCapture === "function" && activePointerId !== null) {
-                try {
-                    handle.setPointerCapture(activePointerId);
-                } catch (_error) {
-                }
-            }
-            shell.classList.add("is-resizing");
-            syncWidth(event.clientX);
-            window.addEventListener("pointermove", onPointerMove);
-            window.addEventListener("pointerup", stopResize);
-            window.addEventListener("pointercancel", stopResize);
-        });
         const syncHandleY = () => {
             const rect = shell.getBoundingClientRect();
             if (!rect.height) return;
@@ -338,6 +309,15 @@
             shell.style.setProperty("--style-token-resizer-y", `${targetY}px`);
         };
 
+        const unbindResizer = window.ANTIGRAVITY_RESIZER?.bind(handle, {
+            axis: "inline",
+            root: shell,
+            getRange: getWidthRange,
+            getValue: getCurrentWidth,
+            setValue: setCurrentWidth,
+            valueFromPointer: widthFromPointer,
+        });
+
         window.addEventListener("scroll", scheduleGeometrySync, {passive: true});
         scrollViewport?.addEventListener?.("scroll", scheduleGeometrySync, {passive: true});
         window.addEventListener("resize", scheduleGeometrySync, {passive: true});
@@ -353,7 +333,7 @@
         scheduleGeometrySync();
         setTimeout(scheduleGeometrySync, 150);
         activeStyleTokenResizerCleanup = () => {
-            stopResize();
+            unbindResizer?.();
             window.removeEventListener("scroll", scheduleGeometrySync);
             scrollViewport?.removeEventListener?.("scroll", scheduleGeometrySync);
             window.removeEventListener("resize", scheduleGeometrySync);

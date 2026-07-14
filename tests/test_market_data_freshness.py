@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -29,8 +29,10 @@ from app.services.market_data import (
     classify_us_equity_session,
     download_full_history,
     ensure_fresh_history_store,
+    fetch_yfinance_realtime_quotes,
     infer_ticker_market,
     refresh_history_store,
+    refresh_one_minute_store,
 )
 from app.models.schemas import QuoteProfile
 from tests.factories.market import market_frame
@@ -345,26 +347,95 @@ class MarketDataFreshnessTests(unittest.TestCase):
         longbridge_mock.assert_not_called()
         yfinance_mock.assert_called_once_with("QQQ", days=30)
 
-    def test_download_full_intraday_history_falls_back_when_longbridge_fails(self) -> None:
+    def test_download_full_intraday_history_uses_yfinance_before_configured_longbridge(self) -> None:
         yfinance_history = market_frame("AAPL", intraday=True)
 
         with (
             patch("app.services.market_data._load_longbridge_market_settings", return_value=object()),
-            patch(
-                "app.services.market_data._download_one_minute_history_with_longbridge",
-                side_effect=ConnectionError("Longbridge unavailable"),
-            ) as longbridge_mock,
+            patch("app.services.market_data._download_one_minute_history_with_longbridge") as longbridge_mock,
             patch(
                 "app.services.market_data._download_recent_one_minute_history_with_yfinance",
                 return_value=yfinance_history,
             ) as yfinance_mock,
-            patch("app.services.market_data.sleep"),
         ):
             result = download_full_history("AAPL", interval="1m")
 
         pd.testing.assert_frame_equal(result, yfinance_history)
-        self.assertEqual(longbridge_mock.call_count, 3)
+        longbridge_mock.assert_not_called()
         yfinance_mock.assert_called_once_with("AAPL", days=30)
+
+    def test_download_full_intraday_history_uses_longbridge_only_after_yfinance_fails(self) -> None:
+        longbridge_history = market_frame("AAPL", intraday=True)
+
+        with (
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=object()),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                side_effect=ConnectionError("Yahoo unavailable"),
+            ) as yfinance_mock,
+            patch(
+                "app.services.market_data._download_one_minute_history_with_longbridge",
+                return_value=longbridge_history,
+            ) as longbridge_mock,
+        ):
+            result = download_full_history("AAPL", interval="1m")
+
+        pd.testing.assert_frame_equal(result, longbridge_history)
+        self.assertEqual(yfinance_mock.call_count, 2)
+        longbridge_mock.assert_called_once_with("AAPL")
+
+    def test_refresh_one_minute_store_uses_yfinance_before_configured_longbridge(self) -> None:
+        yfinance_history = market_frame("QQQ", intraday=True)
+        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+
+        with (
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=object()),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                return_value=yfinance_history,
+            ) as yfinance_mock,
+            patch("app.services.market_data._upsert_one_minute_store", return_value=expected_path),
+            patch("app.services.market_data.refresh_longbridge_one_minute_store") as longbridge_mock,
+        ):
+            result = refresh_one_minute_store("QQQ")
+
+        self.assertEqual(result.path, expected_path)
+        self.assertEqual(result.source, "yfinance_30d")
+        yfinance_mock.assert_called_once_with("QQQ", days=30)
+        longbridge_mock.assert_not_called()
+
+    def test_realtime_quote_batch_retries_each_ticker_after_batch_failure(self) -> None:
+        def fake_download(tickers, **kwargs):
+            del kwargs
+            if isinstance(tickers, list):
+                raise ConnectionError("Batch response unavailable")
+            return market_frame(str(tickers), intraday=True)
+
+        with patch(
+            "app.services.market_data._download_daily_history_with_yfinance",
+            side_effect=fake_download,
+        ) as download_mock:
+            quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
+
+        self.assertEqual([quote["ticker"] for quote in quotes], ["QQQ", "AAPL"])
+        self.assertEqual(download_mock.call_count, 3)
+
+    def test_realtime_quote_endpoint_does_not_cache_partial_batches(self) -> None:
+        qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}
+        aapl_quote = {"ticker": "AAPL", "price": 200.0, "source": "yfinance"}
+
+        with patch(
+            "app.web.runtime.fetch_yfinance_realtime_quotes",
+            side_effect=[[qqq_quote], [qqq_quote, aapl_quote]],
+        ) as quote_mock:
+            client = create_app().test_client()
+            first = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
+            second = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(quote_mock.call_count, 2)
+        self.assertEqual(second.get_json()["count"], 2)
 
     def test_ensure_fresh_history_store_refreshes_stale_daily_cache(self) -> None:
         with (

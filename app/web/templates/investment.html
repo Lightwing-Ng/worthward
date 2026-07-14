@@ -1,4 +1,4 @@
-{# Code version: v1.8.0 #}
+{# Code version: v1.9.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -116,6 +116,14 @@
                 <div class="investment-share-preview-shell" id="investment_share_preview_shell"></div>
             </section>
         </article>
+
+        <button type="button"
+                class="surface-resizer surface-resizer--block surface-resizer--reveal investment-section-resizer"
+                id="investment_section_resizer"
+                data-investment-section-resizer
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize investment overview and transaction history"></button>
 
         <article class="chart-surface investment-history-surface" id="investment_history_surface">
             <div class="chart-heading-row investment-history-heading-row">
@@ -697,5 +705,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.64.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.65.0') }}"></script>
 {% endblock %}

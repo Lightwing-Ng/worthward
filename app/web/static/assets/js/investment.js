@@ -1,7 +1,8 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.64.1
+ * Code version: v1.65.0
+ * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
  * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
  * - Changed: Investment Type headers now show the legacy Type label by default and reveal the current side filter only on hover, focus, or open interaction.
  * - Added: HSBC statement mode now accepts matched composite and investment PDF batches and refreshes from the committed store version before reporting success.
@@ -300,7 +301,7 @@ import {
 } from './investment/stock-details.js?v=investment-stock-details-v0.2.14';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.64.1',
+    entry: 'v1.65.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -349,6 +350,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const formContainer = document.getElementById('transaction_form_container');
     const historyTable = document.getElementById('history_table_wrap');
     const investmentHistorySurface = document.getElementById('investment_history_surface');
+    const investmentWorkspaceHeader = document.querySelector('.investment-workspace-header');
+    const investmentReportCard = investmentWorkspaceHeader?.querySelector(':scope > .investment-report-card');
+    const investmentSectionResizer = document.getElementById('investment_section_resizer');
     const investmentForm = document.getElementById('investment_form');
     const importFeedback = document.getElementById('investment_import_feedback');
     const importFeedbackMessage = document.getElementById('investment_import_feedback_message');
@@ -458,6 +462,88 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
     const INVESTMENT_LIVE_DIGIT_ANIMATION_MS = 520;
+
+    function initInvestmentSectionResizer() {
+        if (
+            !(investmentWorkspaceHeader instanceof HTMLElement)
+            || !(investmentReportCard instanceof HTMLElement)
+            || !(investmentHistorySurface instanceof HTMLElement)
+            || !(investmentSectionResizer instanceof HTMLElement)
+            || typeof window.ANTIGRAVITY_RESIZER?.bind !== 'function'
+        ) return;
+
+        let overviewRatio = null;
+        let resizeFrame = 0;
+        const getMinimumHeight = () => {
+            const value = Number.parseFloat(
+                getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-section-min-height'),
+            );
+            return Number.isFinite(value) ? value : 132;
+        };
+        const getCombinedTrackHeight = () => (
+            investmentReportCard.getBoundingClientRect().height
+            + investmentHistorySurface.getBoundingClientRect().height
+        );
+        const getRange = () => {
+            const minimum = getMinimumHeight();
+            const total = getCombinedTrackHeight();
+            return {minimum, maximum: Math.max(minimum, total - minimum)};
+        };
+        const getValue = () => investmentReportCard.getBoundingClientRect().height;
+        const setValue = (height) => {
+            const total = getCombinedTrackHeight();
+            if (!(total > 0)) return;
+            overviewRatio = height / total;
+            investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${height}px`);
+            investmentSectionResizer.setAttribute(
+                'aria-valuetext',
+                `Overview ${Math.round(overviewRatio * 100)} percent`,
+            );
+        };
+        const valueFromPointer = (clientY) => {
+            const reportRect = investmentReportCard.getBoundingClientRect();
+            const handleRect = investmentSectionResizer.getBoundingClientRect();
+            const rowGap = Number.parseFloat(getComputedStyle(investmentWorkspaceHeader).rowGap) || 0;
+            return clientY - reportRect.top - rowGap - (handleRect.height / 2);
+        };
+        const reflowRatio = () => {
+            resizeFrame = 0;
+            if (!Number.isFinite(overviewRatio)) return;
+            const total = getCombinedTrackHeight();
+            const range = getRange();
+            const nextHeight = Math.min(Math.max(total * overviewRatio, range.minimum), range.maximum);
+            if (Math.abs(nextHeight - getValue()) < 0.5) return;
+            investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${nextHeight}px`);
+        };
+        const scheduleRatioReflow = () => {
+            if (resizeFrame) return;
+            resizeFrame = window.requestAnimationFrame(reflowRatio);
+        };
+
+        const unbind = window.ANTIGRAVITY_RESIZER.bind(investmentSectionResizer, {
+            axis: 'block',
+            root: investmentWorkspaceHeader,
+            getRange,
+            getValue,
+            setValue,
+            valueFromPointer,
+            step: 16,
+            largeStep: 48,
+            onEnd: () => window.dispatchEvent(new Event('resize')),
+        });
+        let observer = null;
+        if (typeof ResizeObserver === 'function') {
+            observer = new ResizeObserver(scheduleRatioReflow);
+            observer.observe(investmentWorkspaceHeader);
+        }
+        window.addEventListener('resize', scheduleRatioReflow, {passive: true});
+        window.addEventListener('pagehide', () => {
+            unbind();
+            observer?.disconnect();
+            window.removeEventListener('resize', scheduleRatioReflow);
+            if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+        }, {once: true});
+    }
     const INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS = {
         '1w': 5,
         '1m': 23,
@@ -8560,6 +8646,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     bindInvestmentHistoryPagination();
+    initInvestmentSectionResizer();
     initInvestmentViewTabs();
     initInvestmentDummyDonut();
     mountInvestmentBrokerFilterHeaders();

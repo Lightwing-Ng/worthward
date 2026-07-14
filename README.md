@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.21.0`
+Documentation version: `v2.23.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -26,7 +26,7 @@ Documentation version: `v2.21.0`
 - Python `3.13`
 - Dependencies from `requirements.txt`
 - `pyarrow` for parquet persistence
-- Optional Longbridge credentials for broker-backed market data and the preferred `1m` refresh path
+- Optional Longbridge credentials for broker-backed market-data fallback
 - Optional `tradingview_ta` if you want TradingView timing analysis
 - Yahoo Mail app password for SMTP alerts
 
@@ -132,14 +132,14 @@ The current `Settings` navigation includes:
 ### 1-minute history
 
 - Stored in `market_store/historical/` as parquet
-- Preferred source is Longbridge
-- Every initial download and refresh path falls back to recent `yfinance` windows when Longbridge is unconfigured or unavailable
+- Preferred source is `yfinance`, using bounded recent-data windows supported by the free service
+- Falls back to Longbridge only after both `yfinance` windows fail and valid Longbridge credentials are configured
 - Persisted data is trimmed to the latest 6 months of trading days
 - Used when local `1m` data exists for the selected ticker
 
 Longbridge is optional for every market-data view. Daily history, intraday charts,
-extended-hours comparisons, and investment realtime quotes continue to use
-`yfinance` when no Longbridge market-data source is configured.
+extended-hours comparisons, and investment realtime quotes use `yfinance` by
+default. Batched realtime requests retry missing tickers individually.
 
 ### Metadata and search caches
 
@@ -163,6 +163,7 @@ extended-hours comparisons, and investment realtime quotes continue to use
 - Investment transactions are read from `settings_store/investment.parquet`
 - The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these files are ignored by Git and are rebuilt from `investment.parquet` plus local market history files
 - The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
+- The Overview and Transaction history surfaces share a responsive horizontal separator that appears on hover or focus and supports pointer, touch, and keyboard resizing
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
 - IBKR internal FX conversion symbols such as `USD.HKD` are treated as ledger-only cash-conversion artifacts rather than queryable securities
@@ -221,8 +222,7 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 ### Longbridge
 
 - Used for broker-backed market data
-- Preferred source for `1m` history refresh
-- Can also serve as the fallback source for `1d` history
+- Optional fallback source for `1m` and `1d` history when `yfinance` fails
 - Requires App Key, App Secret, and Access Token
 - Live account balances, positions, and order submission are locked unless the server starts with a random access token of at least 32 characters:
   ```bash

@@ -248,6 +248,7 @@
     window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 </script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.0.0') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}

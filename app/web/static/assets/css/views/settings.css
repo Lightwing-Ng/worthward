@@ -1,4 +1,4 @@
-/* Code version: v0.6.0 */
+/* Code version: v0.7.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -1137,51 +1137,7 @@ div.style-token-modal-demo::-webkit-scrollbar,
     bottom: 0;
     left: calc(var(--style-token-divider-center) - (var(--style-token-resizer-width) / 2));
     width: var(--style-token-resizer-width);
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-pill);
-    background: transparent;
-    box-shadow: none;
-    cursor: col-resize;
-    z-index: var(--layer-inline-overlay);
-    touch-action: none;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.style-token-resizer::before {
-    content: "";
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 50%;
-    width: 2px;
-    transform: translateX(-50%);
-    border-radius: var(--radius-pill);
-    background: var(--theme-glass-border);
-}
-
-.style-token-resizer::after {
-    content: "";
-    position: absolute;
-    top: var(--style-token-resizer-y, 50%);
-    left: 50%;
-    width: 12px;
-    height: 48px;
-    transform: translate(-50%, -50%);
-    border-radius: var(--radius-pill);
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    border: var(--frosted-glass-extracted-border);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    will-change: top;
-}
-
-.style-token-resizer:hover::after,
-.style-token-resizer:focus-visible::after,
-.style-token-shell.is-resizing .style-token-resizer::after {
-    background: var(--frosted-glass-extracted-background-hover);
-    border-color: var(--accent-border-medium);
+    --surface-resizer-handle-position: var(--style-token-resizer-y, 50%);
 }
 
 .style-token-demo[data-style-token-density="compact"] .settings-action-package,

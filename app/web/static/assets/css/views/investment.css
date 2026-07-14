@@ -1,12 +1,25 @@
-/* Code version: v1.20.0 */
+/* Code version: v1.23.0 */
 
 .investment-workspace-header {
+    --investment-section-resizer-size: 16px;
+    --investment-section-min-height: 148px;
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows:
+        auto
+        minmax(var(--investment-section-min-height), var(--investment-overview-track, 1fr))
+        var(--investment-section-resizer-size)
+        minmax(var(--investment-section-min-height), 1fr);
     align-items: stretch;
     margin-bottom: 0;
+}
+
+.investment-section-resizer {
+    width: 100%;
+    height: var(--investment-section-resizer-size);
+    margin-block: -4px;
+    align-self: center;
 }
 
 .investment-surface-stack {
@@ -3046,6 +3059,11 @@
     box-sizing: border-box;
 }
 
+.investment-workspace-header.is-surface-resizing {
+    cursor: row-resize;
+    user-select: none;
+}
+
 .investment-history-surface.is-stock-details-table-visible {
     gap: 10px;
 }
@@ -3177,10 +3195,10 @@
     border: var(--glass-surface-border);
     border-radius: 10px;
     box-shadow: var(--glass-surface-shadow);
+    height: calc(100dvh - 32px);
     max-height: calc(100dvh - 32px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     scrollbar-gutter: stable;
@@ -3192,11 +3210,13 @@
 }
 
 #transaction_form_container .investment-import-broker-dropdown {
-    background: var(--apple-frosted-glass-background);
-    border: var(--apple-frosted-glass-border);
-    box-shadow: var(--apple-frosted-glass-shadow);
-    backdrop-filter: var(--apple-frosted-glass-blur);
-    -webkit-backdrop-filter: var(--apple-frosted-glass-blur);
+    background:
+        var(--frosted-glass-extracted-background),
+        var(--glass-surface-background-strong);
+    border: var(--frosted-glass-extracted-border);
+    box-shadow: var(--frosted-glass-extracted-shadow-hover);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 }
 
 #transaction_form_container:has(.investment-import-broker-field.is-open) {
@@ -3228,7 +3248,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
     padding-right: 4px;
 }
 
@@ -3694,8 +3714,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     margin-top: 0;
     align-self: start;
     flex: 0 0 auto;
-    position: sticky;
-    bottom: 0;
+    position: relative;
     z-index: 2;
     padding-top: 10px;
     border-radius: var(--settings-action-package-radius);
@@ -4258,7 +4277,12 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         flex: 1 1 auto;
         min-height: 0;
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+        --investment-section-min-height: 132px;
+        grid-template-rows:
+            auto
+            minmax(var(--investment-section-min-height), var(--investment-overview-track, 1fr))
+            var(--investment-section-resizer-size)
+            minmax(var(--investment-section-min-height), 1fr);
     }
 
     .investment-history-surface {
@@ -4286,7 +4310,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     .investment-import-stack {
         width: 100%;
         max-width: none;
-        padding-bottom: calc(var(--sidebar-dock-bottom-gap, 14px) + var(--sidebar-dock-hit-size, 56px) + 10px);
+        padding-bottom: 0;
     }
 
     .investment-import-action-package {
@@ -4294,6 +4318,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     }
 
     #transaction_form_container {
+        height: calc(100dvh - 24px);
         max-height: calc(100dvh - 24px);
     }
 

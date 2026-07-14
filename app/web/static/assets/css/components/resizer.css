@@ -1,0 +1,114 @@
+/* Code version: v1.0.0 */
+
+.surface-resizer {
+	--surface-resizer-line-size: 2px;
+	--surface-resizer-handle-short: 12px;
+	--surface-resizer-handle-long: 48px;
+	position: relative;
+	box-sizing: border-box;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-pill);
+	background: transparent;
+	box-shadow: none;
+	z-index: var(--layer-inline-overlay);
+	touch-action: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.surface-resizer::before,
+.surface-resizer::after {
+	content: "";
+	position: absolute;
+	border-radius: var(--radius-pill);
+	pointer-events: none;
+	transition:
+		opacity 160ms var(--motion-standard),
+		background 160ms var(--motion-standard),
+		border-color 160ms var(--motion-standard),
+		box-shadow 160ms var(--motion-standard);
+}
+
+.surface-resizer::before {
+	background: var(--theme-glass-border);
+}
+
+.surface-resizer::after {
+	background: var(--frosted-glass-extracted-background);
+	border: var(--frosted-glass-extracted-border);
+	box-shadow: var(--frosted-glass-extracted-shadow);
+	backdrop-filter: var(--frosted-glass-extracted-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+}
+
+.surface-resizer--inline {
+	cursor: col-resize;
+}
+
+.surface-resizer--inline::before {
+	top: 4px;
+	bottom: 4px;
+	left: 50%;
+	width: var(--surface-resizer-line-size);
+	transform: translateX(-50%);
+}
+
+.surface-resizer--inline::after {
+	top: var(--surface-resizer-handle-position, 50%);
+	left: 50%;
+	width: var(--surface-resizer-handle-short);
+	height: var(--surface-resizer-handle-long);
+	transform: translate(-50%, -50%);
+}
+
+.surface-resizer--block {
+	cursor: row-resize;
+}
+
+.surface-resizer--block::before {
+	top: 50%;
+	left: 4px;
+	right: 4px;
+	height: var(--surface-resizer-line-size);
+	transform: translateY(-50%);
+}
+
+.surface-resizer--block::after {
+	top: 50%;
+	left: 50%;
+	width: var(--surface-resizer-handle-long);
+	height: var(--surface-resizer-handle-short);
+	transform: translate(-50%, -50%);
+}
+
+.surface-resizer:hover::after,
+.surface-resizer:focus-visible::after,
+.surface-resizer.is-resizing::after,
+.is-surface-resizing .surface-resizer::after {
+	background: var(--frosted-glass-extracted-background-hover);
+	border-color: var(--accent-border-medium);
+	box-shadow: var(--frosted-glass-extracted-shadow-hover);
+}
+
+.surface-resizer--reveal::before,
+.surface-resizer--reveal::after {
+	opacity: 0;
+}
+
+.surface-resizer--reveal:hover::before,
+.surface-resizer--reveal:hover::after,
+.surface-resizer--reveal:focus-visible::before,
+.surface-resizer--reveal:focus-visible::after,
+.surface-resizer--reveal.is-resizing::before,
+.surface-resizer--reveal.is-resizing::after,
+.is-surface-resizing .surface-resizer--reveal::before,
+.is-surface-resizing .surface-resizer--reveal::after {
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.surface-resizer::before,
+	.surface-resizer::after {
+		transition: none;
+	}
+}

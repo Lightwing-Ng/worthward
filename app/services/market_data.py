@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -234,15 +234,27 @@ def _download_recent_one_minute_history_with_yfinance(
 
 def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
     """
-    Download recent 1-minute history with Longbridge as the optional primary source.
+    Download recent 1-minute history with yfinance as the default source.
 
-    A machine without Longbridge configuration must remain fully capable of
-    serving market views. A configured but unavailable Longbridge connection is
-    treated the same way and falls through to bounded yfinance windows.
+    Longbridge is an optional final fallback. Most installations do not have a
+    brokerage account, so ordinary market views must never probe Longbridge
+    before the free provider has been exhausted.
     """
     normalized_ticker = normalize_ticker(ticker)
-    longbridge_error: Exception | None = None
+    yfinance_errors: list[tuple[int, Exception]] = []
+    for days in (
+        YFINANCE_INTRADAY_FALLBACK_DAYS,
+        YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+    ):
+        try:
+            return _download_recent_one_minute_history_with_yfinance(
+                normalized_ticker,
+                days=days,
+            )
+        except Exception as exc:
+            yfinance_errors.append((days, exc))
 
+    longbridge_error: Exception | None = None
     if _load_longbridge_market_settings() is not None:
         for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
             delay = (
@@ -257,30 +269,16 @@ def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
             except Exception as exc:
                 longbridge_error = exc
 
-    fallback_errors: list[tuple[int, Exception]] = []
-    for days in (
-        YFINANCE_INTRADAY_FALLBACK_DAYS,
-        YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
-    ):
-        try:
-            return _download_recent_one_minute_history_with_yfinance(
-                normalized_ticker,
-                days=days,
-            )
-        except Exception as exc:
-            fallback_errors.append((days, exc))
-
-    failure_details: list[str] = []
+    failure_details = [
+        f"yfinance {days}-day request failed: {error}"
+        for days, error in yfinance_errors
+    ]
     if longbridge_error is not None:
-        failure_details.append(f"Longbridge failed: {longbridge_error}")
-    failure_details.extend(
-        f"yfinance {days}-day fallback failed: {error}"
-        for days, error in fallback_errors
-    )
+        failure_details.append(f"optional Longbridge fallback failed: {longbridge_error}")
     detail = ". ".join(failure_details)
     raise ValueError(
         f"Unable to download 1-minute market data for {normalized_ticker}. {detail}."
-    ) from fallback_errors[-1][1]
+    ) from (longbridge_error or yfinance_errors[-1][1])
 
 
 def infer_ticker_market(ticker: str) -> str:
@@ -571,17 +569,20 @@ def fetch_compare_one_day_extended_history(ticker: str) -> pd.DataFrame:
 
 def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
     """
-    Efficient batch version: performs a single yfinance download for the list of tickers
-    (instead of N separate calls). This dramatically speeds up the case of many holdings
-    after an IBKR (or other) import that produces a large number of open positions.
+    Fetch realtime quotes in one batch, then retry missing tickers individually.
+
+    yfinance can return a partial or differently shaped batch on some platforms.
+    Per-ticker recovery prevents one malformed Windows batch from appearing as
+    many unrelated quote failures.
     """
     if not tickers:
         return []
-    normalized_list = [
+    normalized_list = list(dict.fromkeys(
         normalize_ticker(t) for t in tickers if str(t or "").strip()
-    ]
+    ))
     if not normalized_list:
         return []
+    results: list[dict[str, object]] = []
     try:
         history = _download_daily_history_with_yfinance(
             normalized_list,
@@ -589,11 +590,9 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
             interval="1m",
             prepost=True,
         )
-        if history is None or history.empty:
-            return []
-        is_multi = isinstance(history.columns, pd.MultiIndex)
-        results: list[dict[str, object]] = []
-        for normalized_ticker in normalized_list:
+        is_multi = history is not None and isinstance(history.columns, pd.MultiIndex)
+        batch_tickers = normalized_list if is_multi or len(normalized_list) == 1 else []
+        for normalized_ticker in batch_tickers:
             lookup_ticker = yfinance_lookup_symbol(normalized_ticker)
             try:
                 if is_multi:
@@ -649,9 +648,22 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
                 })
             except Exception:  # noqa: BLE001
                 continue
-        return results
-    except Exception:  # noqa: BLE001
-        return []
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Unable to download batched yfinance realtime quotes: %s", exc)
+
+    resolved_tickers = {str(item.get("ticker") or "") for item in results}
+    for normalized_ticker in normalized_list:
+        if normalized_ticker in resolved_tickers:
+            continue
+        try:
+            results.append(fetch_yfinance_realtime_quote(normalized_ticker))
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Unable to download yfinance realtime quote for %s after batch recovery: %s",
+                normalized_ticker,
+                exc,
+            )
+    return results
 
 
 def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
@@ -1021,56 +1033,52 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
 
 def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
     normalized_ticker = normalize_ticker(ticker)
-    settings = _load_longbridge_market_settings()
-    longbridge_error: Exception | None = None
+    yfinance_errors: list[tuple[int, Exception]] = []
+    for days in (
+        YFINANCE_INTRADAY_FALLBACK_DAYS,
+        YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+    ):
+        try:
+            dataset = _download_recent_one_minute_history_with_yfinance(
+                normalized_ticker,
+                days=days,
+            )
+            path = _upsert_one_minute_store(normalized_ticker, dataset)
+            return OneMinuteRefreshResult(
+                path=path,
+                source=f"yfinance_{days}d",
+                fetched_days=days,
+            )
+        except Exception as exc:
+            yfinance_errors.append((days, exc))
 
+    longbridge_error: Exception | None = None
+    settings = _load_longbridge_market_settings()
     if settings is not None:
         try:
             refresh_longbridge_one_minute_store(normalized_ticker, settings)
             return OneMinuteRefreshResult(
                 path=intraday_history_store_path_for(normalized_ticker, "1m"),
-                source="longbridge",
+                source="longbridge_fallback",
                 fetched_days=180,
             )
         except Exception as exc:
             longbridge_error = exc
 
-    try:
-        fallback_dataset = _download_recent_one_minute_history_with_yfinance(
-            normalized_ticker,
-            days=YFINANCE_INTRADAY_FALLBACK_DAYS,
-        )
-        fallback_path = _upsert_one_minute_store(normalized_ticker, fallback_dataset)
-        return OneMinuteRefreshResult(
-            path=fallback_path,
-            source="yfinance_30d",
-            fetched_days=YFINANCE_INTRADAY_FALLBACK_DAYS,
-        )
-    except Exception as thirty_day_error:
-        try:
-            fallback_dataset = _download_recent_one_minute_history_with_yfinance(
-                normalized_ticker,
-                days=YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
-            )
-            fallback_path = _upsert_one_minute_store(normalized_ticker, fallback_dataset)
-            return OneMinuteRefreshResult(
-                path=fallback_path,
-                source="yfinance_7d",
-                fetched_days=YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
-            )
-        except Exception as seven_day_error:
-            if longbridge_error is not None:
-                raise ValueError(
-                    f"Unable to refresh 1-minute market data for {normalized_ticker}. "
-                    f"Longbridge failed: {longbridge_error}. "
-                    f"yfinance 30-day fallback failed: {thirty_day_error}. "
-                    f"yfinance 7-day fallback failed: {seven_day_error}."
-                ) from seven_day_error
-            raise ValueError(
-                f"Unable to refresh 1-minute market data for {normalized_ticker}. "
-                f"yfinance 30-day fallback failed: {thirty_day_error}. "
-                f"yfinance 7-day fallback failed: {seven_day_error}."
-            ) from seven_day_error
+    detail = ". ".join([
+        *(
+            f"yfinance {days}-day request failed: {error}"
+            for days, error in yfinance_errors
+        ),
+        *(
+            [f"optional Longbridge fallback failed: {longbridge_error}"]
+            if longbridge_error is not None
+            else []
+        ),
+    ])
+    raise ValueError(
+        f"Unable to refresh 1-minute market data for {normalized_ticker}. {detail}."
+    ) from (longbridge_error or yfinance_errors[-1][1])
 
 
 def refresh_recent_one_minute_store_with_yfinance(

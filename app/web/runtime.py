@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.8.0
+Code version: v0.9.1
 """
 
 from __future__ import annotations
@@ -772,23 +772,6 @@ def build_web_runtime() -> WebRuntime:
                 "Refusing to persist an IBKR test-fixture account into the investment store."
             )
 
-        def commit_signature(record: dict[str, Any]) -> tuple[str, ...]:
-            source = record.get("source") if isinstance(record.get("source"), dict) else {}
-            return (
-                str(record.get("broker") or imported_payload.get("broker") or "").strip().lower(),
-                str(record.get("account") or imported_payload.get("account") or "").strip(),
-                str(record.get("date") or "").strip(),
-                str(record.get("type") or "").strip().lower(),
-                str(record.get("ticker") or "").strip().upper(),
-                str(record.get("net_amount_raw") or "").strip(),
-                str(
-                    source.get("statement_order_id")
-                    or source.get("corporate_action_reference")
-                    or source.get("reference_id")
-                    or ""
-                ).strip(),
-            )
-
         def merge_payload(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, Any]]:
             investment_payload = merge_investment_payloads(
                 normalize_investment_payload_tickers(current_payload),
@@ -803,24 +786,12 @@ def build_web_runtime() -> WebRuntime:
         )
         invalidate_investment_transactions_cache()
         persisted_payload = load_normalized_investment_payload()
-        expected_signatures = {
-            commit_signature(record)
-            for record in imported_payload.get("transactions", [])
-            if isinstance(record, dict)
-        }
-        persisted_signatures = {
-            commit_signature(record)
-            for record in persisted_payload.get("transactions", [])
-            if isinstance(record, dict)
-        }
-        missing_signatures = expected_signatures - persisted_signatures
-        if missing_signatures:
+        expected_transactions = investment_payload.get("transactions", [])
+        persisted_transactions = persisted_payload.get("transactions", [])
+        if persisted_transactions != expected_transactions:
             raise RuntimeError(
-                "Investment import did not survive the authoritative store readback; "
-                f"{len(missing_signatures)} imported record(s) are missing."
+                "Investment import store readback did not match the committed merged transactions."
             )
-        if len(persisted_payload.get("transactions", [])) != len(investment_payload.get("transactions", [])):
-            raise RuntimeError("Investment import store readback returned an unexpected transaction count.")
         return persisted_payload
 
     def refresh_investment_import_price_caches(
@@ -941,11 +912,13 @@ def build_web_runtime() -> WebRuntime:
         # the (possibly large) list of tickers. This is much faster than many individual
         # calls, especially after an import that brings in a large number of holdings.
         quotes = fetch_yfinance_realtime_quotes(requested_tickers)
-        with investment_realtime_quote_cache_lock:
-            investment_realtime_quote_cache[cache_key] = (
-                time.monotonic(),
-                [dict(item) for item in quotes],
-            )
+        resolved_tickers = {str(item.get("ticker") or "").strip().upper() for item in quotes}
+        if resolved_tickers.issuperset(requested_tickers):
+            with investment_realtime_quote_cache_lock:
+                investment_realtime_quote_cache[cache_key] = (
+                    time.monotonic(),
+                    [dict(item) for item in quotes],
+                )
         return quotes
 
     def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
@@ -5767,22 +5740,22 @@ def build_web_runtime() -> WebRuntime:
                 )
             elif action == "refresh-1m":
                 refresh_result = refresh_one_minute_store(ticker)
-                if refresh_result.source == "longbridge":
+                if refresh_result.source == "longbridge_fallback":
                     notice = (
                         f"Saved the latest 6 months of 1-minute market data for {ticker} "
-                        "to local cache (via Longbridge)."
+                        "to local cache (via optional Longbridge fallback after yfinance failed)."
                     )
                 elif refresh_result.source == "yfinance_30d":
                     notice = (
-                        f"Longbridge was unavailable for {ticker}, so the app saved the latest "
+                        "Saved the latest "
                         f"{refresh_result.fetched_days} days of 1-minute market data to local cache "
-                        "(via yfinance fallback window stitching)."
+                        f"for {ticker} (via the default yfinance window stitching)."
                     )
                 else:
                     notice = (
-                        f"Longbridge was unavailable for {ticker}, so the app saved the latest "
+                        "Saved the latest "
                         f"{refresh_result.fetched_days} days of 1-minute market data to local cache "
-                        "(via yfinance fallback)."
+                        f"for {ticker} (via the default yfinance source)."
                     )
                 return _redirect_with_settings_feedback(
                     "local-market-store",

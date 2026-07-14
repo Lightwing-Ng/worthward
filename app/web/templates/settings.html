@@ -903,7 +903,7 @@
     </section>
     {% elif settings_section == "material-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
-            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in material_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
@@ -993,7 +993,7 @@
     </section>
     {% elif settings_section == "style-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
-            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize style token demos"></button>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize style token demos"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
@@ -1269,7 +1269,7 @@
     </section>
     {% elif settings_section == "export-image" %}
     <section class="style-token-shell export-image-shell" data-export-image-shell>
-            <button type="button" class="style-token-resizer" data-style-token-resizer aria-label="Resize export image previews"></button>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize export image previews"></button>
             <div class="style-token-list export-image-list">
             {% for row in export_image_rows %}
             <section id="{{ row.id }}" class="style-token-card export-image-card" data-style-token-card="{{ row.id }}">
