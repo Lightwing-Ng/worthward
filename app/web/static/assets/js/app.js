@@ -1,4 +1,4 @@
-/* Code version: v0.15.0 */
+/* Code version: v0.16.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -2864,6 +2864,89 @@
             }
         });
         updateAddButtonState();
+    };
+
+    const tickerOrderIdentity = (value) => {
+        const ticker = sanitizeTicker(value || "");
+        return ["SKHY", "SKHYV"].includes(ticker) ? "SKHY" : ticker;
+    };
+
+    const animateTickerFieldOrder = (fields, previousTopByField) => {
+        fields.forEach((field) => {
+            const previousTop = previousTopByField.get(field);
+            const nextTop = field.getBoundingClientRect().top;
+            const deltaY = Number(previousTop) - nextTop;
+            if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
+            field.getAnimations?.().forEach((animation) => {
+                if (animation.id === "ticker-field-order") animation.cancel();
+            });
+            const animation = window.AntigravityMotion?.animate?.(
+                field,
+                [
+                    {
+                        transform: `translate3d(0, ${deltaY}px, 0) scale(0.985)`,
+                        filter: "drop-shadow(0 14px 22px rgba(15, 23, 42, 0.12))",
+                    },
+                    {
+                        transform: "translate3d(0, 0, 0) scale(1)",
+                        filter: "drop-shadow(0 0 0 rgba(15, 23, 42, 0))",
+                    },
+                ],
+                {
+                    id: "ticker-field-order",
+                    duration: 420,
+                    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                },
+            );
+            if (!animation) return;
+            field.dataset.orderMotion = "y-z";
+            animation.finished.catch(() => {}).finally(() => {
+                if (field.dataset.orderMotion === "y-z") delete field.dataset.orderMotion;
+            });
+        });
+    };
+
+    bootstrap.reorderTickerFieldsByTicker = (tickerOrder = []) => {
+        if (state.currentView !== "prices") return [];
+        const container = document.getElementById("ticker_fields");
+        if (!(container instanceof HTMLElement)) return [];
+        const fields = getTickerFields();
+        const previousTopByField = new Map(
+            fields.map((field) => [field, field.getBoundingClientRect().top]),
+        );
+        const fieldQueues = new Map();
+        fields.forEach((field) => {
+            const input = field.querySelector("[data-ticker-input]");
+            const identity = tickerOrderIdentity(input?.value || "");
+            if (!identity) return;
+            const queue = fieldQueues.get(identity) || [];
+            queue.push(field);
+            fieldQueues.set(identity, queue);
+        });
+        const orderedFields = [];
+        tickerOrder.forEach((ticker) => {
+            const queue = fieldQueues.get(tickerOrderIdentity(ticker));
+            const field = queue?.shift();
+            if (field && !orderedFields.includes(field)) orderedFields.push(field);
+        });
+        fields.forEach((field) => {
+            if (!orderedFields.includes(field)) orderedFields.push(field);
+        });
+        orderedFields.forEach((field) => container.appendChild(field));
+        reindexTickerFields();
+        animateTickerFieldOrder(orderedFields, previousTopByField);
+
+        const orderedTickers = getFilledTickers();
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("ticker");
+        orderedTickers.forEach((ticker) => nextUrl.searchParams.append("ticker", ticker));
+        const relativeUrl = `${nextUrl.pathname}?${nextUrl.searchParams.toString()}${nextUrl.hash}`;
+        window.history.replaceState(window.history.state, "", relativeUrl);
+        rememberCurrentViewUrl(relativeUrl);
+        window.dispatchEvent(new CustomEvent("antigravity:ticker-order-change", {
+            detail: {tickers: orderedTickers},
+        }));
+        return orderedTickers;
     };
 
     const syncPortfolioWeightDisabledState = () => {

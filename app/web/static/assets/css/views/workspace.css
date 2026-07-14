@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.4.0 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -2244,6 +2244,9 @@ footer {
     min-height: 0;
     display: block;
     border-bottom: 0;
+    border-radius: var(--radius-lg);
+    isolation: isolate;
+    transform: translate3d(0, 0, 0);
 }
 
 .price-subplot:not(:last-child)::after {
@@ -2267,6 +2270,95 @@ footer {
     height: 100% !important;
 }
 
+.price-subplot-order-handle {
+    --surface-resizer-handle-position: 50%;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: max(12px, env(safe-area-inset-right, 0px));
+    width: 48px;
+    min-width: 48px;
+    height: 100%;
+    cursor: grab;
+    z-index: calc(var(--layer-inline-overlay) + 1);
+}
+
+.price-subplot-order-handle::after {
+    width: 12px;
+    height: 48px;
+}
+
+.price-subplot.is-order-handle-visible .price-subplot-order-handle::after,
+.price-subplot:focus-within .price-subplot-order-handle::after,
+.price-subplot.is-order-dragging .price-subplot-order-handle::after {
+    opacity: 1;
+}
+
+.price-subplot-order-handle:active,
+.price-subplot.is-order-dragging .price-subplot-order-handle {
+    cursor: grabbing;
+}
+
+.price-subplot.is-order-dragging {
+    z-index: calc(var(--layer-inline-overlay) + 2);
+    transform:
+        translate3d(0, var(--price-subplot-order-y, 0px), 0)
+        scale(var(--price-subplot-order-z, 1));
+    background: color-mix(in srgb, var(--frosted-glass-extracted-background-hover) 78%, transparent);
+    box-shadow:
+        0 22px 52px rgba(15, 23, 42, 0.18),
+        0 0 0 1px var(--accent-border-medium);
+    backdrop-filter: var(--frosted-glass-extracted-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    will-change: transform, box-shadow;
+}
+
+.price-subplot.is-order-insert-before::before,
+.price-subplot.is-order-insert-after::before {
+    content: "";
+    position: absolute;
+    z-index: calc(var(--layer-inline-overlay) + 3);
+    inset-inline: 10px max(24px, env(safe-area-inset-right, 0px));
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--theme-accent-primary);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--theme-accent-primary) 35%, transparent),
+        0 8px 24px color-mix(in srgb, var(--theme-accent-primary) 34%, transparent);
+    pointer-events: none;
+    animation: price-subplot-insertion-pulse 420ms var(--motion-emphasized) both;
+}
+
+.price-subplot.is-order-insert-before::before {
+    top: -5px;
+}
+
+.price-subplot.is-order-insert-after::before {
+    bottom: -5px;
+}
+
+.price-subplot-order-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@keyframes price-subplot-insertion-pulse {
+    0% {
+        opacity: 0;
+        transform: scaleX(0.72);
+    }
+    100% {
+        opacity: 1;
+        transform: scaleX(1);
+    }
+}
+
 .price-shared-tooltip {
     position: absolute;
     z-index: var(--layer-chart-tooltip);
@@ -2281,5 +2373,12 @@ footer {
         grid-template-rows: repeat(var(--price-subplot-count), 190px);
         height: auto;
         min-height: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .price-subplot.is-order-insert-before::before,
+    .price-subplot.is-order-insert-after::before {
+        animation: none;
     }
 }

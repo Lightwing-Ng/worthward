@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 {% extends "base.html" %}
 {% set sidebar_title = "Workspaces" %}
 
@@ -35,9 +36,18 @@
                             <div class="price-subplot-canvas-wrap">
                                 <canvas id="price_subplot_{{ loop.index }}" data-price-subplot-canvas data-series-index="{{ loop.index0 }}"></canvas>
                             </div>
+                            <button
+                                type="button"
+                                class="surface-resizer surface-resizer--inline surface-resizer--handle-only surface-resizer--reveal price-subplot-order-handle"
+                                data-price-subplot-order-handle
+                                aria-label="Reorder {{ item.ticker }} subplot; position {{ loop.index }} of {{ series | length }}"
+                                aria-keyshortcuts="ArrowUp ArrowDown Home End"
+                                aria-roledescription="sortable chart handle"
+                            ></button>
                         </section>
                         {% endfor %}
                     </div>
+                    <p class="price-subplot-order-status" data-price-subplot-order-status aria-live="polite"></p>
                     {% else %}
                     <div class="placeholder-copy chart-placeholder-copy">
                         <p>Please configure at least two tickers to compare.</p>

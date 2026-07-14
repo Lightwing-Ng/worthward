@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 
 .surface-resizer {
 	--surface-resizer-line-size: 2px;
@@ -27,6 +27,10 @@
 		background 160ms var(--motion-standard),
 		border-color 160ms var(--motion-standard),
 		box-shadow 160ms var(--motion-standard);
+}
+
+.surface-resizer--handle-only::before {
+	display: none;
 }
 
 .surface-resizer::before {

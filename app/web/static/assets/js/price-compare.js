@@ -1,4 +1,4 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.14.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -14,6 +14,7 @@
 	let liveRequestSerial = 0;
 	let liveRequestController = null;
 	let sharedHoverIndex = -1;
+	let teardownPriceSubplotOrdering = () => {};
 
 	const currencyForTicker = (ticker) => {
 		const normalized = String(ticker || "").trim().toUpperCase();
@@ -317,7 +318,7 @@
 		drawSharedHoverGuides();
 	};
 
-	const updateSharedHover = (dataIndex, sourceChart, event, {series, profiles, currencies, showCurrency}) => {
+	const updateSharedHover = (dataIndex, sourceChart, event, {series, profiles, showCurrency}) => {
 		if (!Number.isInteger(dataIndex) || dataIndex < 0 || !(sourceChart?.canvas instanceof HTMLCanvasElement)) {
 			hideSharedHover();
 			return;
@@ -336,7 +337,7 @@
 			series.map((item) => item.ticker),
 		);
 		if (listElement) {
-			listElement.innerHTML = series.map((item, index) => {
+			listElement.innerHTML = series.map((item) => {
 				const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
 				const price = Array.isArray(item.prices) ? item.prices[dataIndex] : null;
 				const value = finiteNumber(price);
@@ -345,7 +346,7 @@
 						<span class="chart-tooltip-dot" style="background:${escapeTooltipHtml(item.color || "currentColor")}"></span>
 						${profile.logo_url ? `<img class="chart-tooltip-logo" src="${escapeTooltipHtml(profile.logo_url)}" alt="">` : "<span></span>"}
 						<span class="chart-tooltip-label">${escapeTooltipHtml(item.ticker)}</span>
-						<span class="chart-tooltip-value">${value === null ? "—" : escapeTooltipHtml(formatPrice(value, currencies[index], showCurrency))}</span>
+						<span class="chart-tooltip-value">${value === null ? "—" : escapeTooltipHtml(formatPrice(value, currencyForTicker(item.ticker), showCurrency))}</span>
 					</div>
 				`;
 			}).join("");
@@ -371,6 +372,262 @@
 		drawSharedHoverGuides();
 	};
 
+	const tickerOrderIdentity = (value) => {
+		const ticker = String(value || "").trim().toUpperCase();
+		return ["SKHY", "SKHYV"].includes(ticker) ? "SKHY" : ticker;
+	};
+
+	const getPriceSubplotSections = () => Array.from(
+		document.querySelectorAll("#price_subplot_region > [data-price-subplot]"),
+	).filter((section) => section instanceof HTMLElement);
+
+	const reorderSeriesInPlace = (tickerOrder) => {
+		const series = Array.isArray(state.chart?.series) ? state.chart.series : [];
+		const remaining = [...series];
+		const ordered = [];
+		tickerOrder.forEach((ticker) => {
+			const identity = tickerOrderIdentity(ticker);
+			const matchIndex = remaining.findIndex((item) => tickerOrderIdentity(item?.ticker) === identity);
+			if (matchIndex < 0) return;
+			ordered.push(remaining.splice(matchIndex, 1)[0]);
+		});
+		ordered.push(...remaining);
+		series.splice(0, series.length, ...ordered);
+	};
+
+	const syncPriceSubplotOrderMetadata = () => {
+		const sections = getPriceSubplotSections();
+		sections.forEach((section, index) => {
+			const ticker = String(section.dataset.ticker || "").trim().toUpperCase();
+			const handle = section.querySelector("[data-price-subplot-order-handle]");
+			const canvas = section.querySelector("[data-price-subplot-canvas]");
+			if (handle instanceof HTMLButtonElement) {
+				handle.setAttribute(
+					"aria-label",
+					`Reorder ${ticker} subplot; position ${index + 1} of ${sections.length}`,
+				);
+			}
+			if (!(canvas instanceof HTMLCanvasElement)) return;
+			canvas.dataset.seriesIndex = String(index);
+			const chart = window.Chart?.getChart?.(canvas);
+			if (!chart) return;
+			const isBottom = index === sections.length - 1;
+			if (chart.options.scales?.x) chart.options.scales.x.display = isBottom;
+			if (chart.options.layout?.padding && typeof chart.options.layout.padding === "object") {
+				chart.options.layout.padding.bottom = isBottom && Number(canvas.dataset.marketSessionEvents || 0) > 0
+					? 22
+					: 4;
+			}
+			chart.update("none");
+		});
+	};
+
+	const animatePriceSubplotOrder = (sections, previousTopBySection) => {
+		sections.forEach((section) => {
+			const previousTop = previousTopBySection.get(section);
+			const nextTop = section.getBoundingClientRect().top;
+			const deltaY = Number(previousTop) - nextTop;
+			if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
+			window.AntigravityMotion?.animate?.(
+				section,
+				[
+					{
+						transform: `translate3d(0, ${deltaY}px, 0) scale(0.985)`,
+						filter: "drop-shadow(0 18px 30px rgba(15, 23, 42, 0.14))",
+					},
+					{
+						transform: "translate3d(0, 0, 0) scale(1)",
+						filter: "drop-shadow(0 0 0 rgba(15, 23, 42, 0))",
+					},
+				],
+				{
+					duration: 420,
+					easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+				},
+			);
+		});
+	};
+
+	const commitPriceSubplotOrder = (sourceSection, destinationIndex, {focusHandle = false} = {}) => {
+		const grid = document.getElementById("price_subplot_region");
+		const sections = getPriceSubplotSections();
+		const sourceIndex = sections.indexOf(sourceSection);
+		const boundedDestination = Math.max(0, Math.min(Number(destinationIndex), sections.length - 1));
+		if (!(grid instanceof HTMLElement) || sourceIndex < 0 || sourceIndex === boundedDestination) return false;
+		const previousTopBySection = new Map(
+			sections.map((section) => [section, section.getBoundingClientRect().top]),
+		);
+		const remaining = sections.filter((section) => section !== sourceSection);
+		grid.insertBefore(sourceSection, remaining[boundedDestination] || null);
+		const reorderedSections = getPriceSubplotSections();
+		const orderedTickers = reorderedSections.map((section) => section.dataset.ticker || "");
+		reorderSeriesInPlace(orderedTickers);
+		bootstrap.reorderTickerFieldsByTicker?.(orderedTickers);
+		liveRequestSerial += 1;
+		liveRequestController?.abort();
+		liveRequestController = null;
+		hideSharedHover();
+		syncPriceSubplotOrderMetadata();
+		animatePriceSubplotOrder(reorderedSections, previousTopBySection);
+		const status = document.querySelector("[data-price-subplot-order-status]");
+		if (status instanceof HTMLElement) {
+			status.textContent = `${sourceSection.dataset.ticker || "Ticker"} moved to position ${boundedDestination + 1}.`;
+		}
+		if (focusHandle) {
+			sourceSection.querySelector("[data-price-subplot-order-handle]")?.focus({preventScroll: true});
+		}
+		return true;
+	};
+
+	const initializePriceSubplotOrdering = () => {
+		const sections = getPriceSubplotSections();
+		if (state.currentView !== "prices" || sections.length < 2) return () => {};
+		let activeDrag = null;
+		let insertionSection = null;
+		const disposers = [];
+
+		const clearInsertionMarker = () => {
+			insertionSection?.classList.remove("is-order-insert-before", "is-order-insert-after");
+			insertionSection = null;
+		};
+
+		const markInsertion = (sourceSection, destinationIndex) => {
+			clearInsertionMarker();
+			const currentSections = getPriceSubplotSections();
+			const sourceIndex = currentSections.indexOf(sourceSection);
+			if (sourceIndex < 0 || destinationIndex === sourceIndex) return;
+			const remaining = currentSections.filter((section) => section !== sourceSection);
+			const nextSection = remaining[destinationIndex];
+			const previousSection = remaining[destinationIndex - 1];
+			insertionSection = nextSection || previousSection || null;
+			insertionSection?.classList.add(nextSection ? "is-order-insert-before" : "is-order-insert-after");
+		};
+
+		const destinationIndexForY = (sourceSection, clientY) => {
+			const remaining = getPriceSubplotSections().filter((section) => section !== sourceSection);
+			const index = remaining.findIndex((section) => {
+				const rect = section.getBoundingClientRect();
+				return clientY < rect.top + (rect.height / 2);
+			});
+			return index < 0 ? remaining.length : index;
+		};
+
+		const updateDrag = (event) => {
+			if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
+			const {sourceSection, startY, sourceHeight} = activeDrag;
+			const rawDelta = event.clientY - startY;
+			const progress = Math.min(Math.abs(rawDelta) / Math.max(sourceHeight, 1), 2);
+			const acceleratedY = Math.sign(rawDelta) * Math.abs(rawDelta) * (1 + (0.14 * progress * progress));
+			const depthScale = 1 + (0.018 * (1 - Math.exp(-2.8 * progress)));
+			sourceSection.style.setProperty("--price-subplot-order-y", `${acceleratedY.toFixed(2)}px`);
+			sourceSection.style.setProperty("--price-subplot-order-z", depthScale.toFixed(4));
+			activeDrag.destinationIndex = destinationIndexForY(sourceSection, event.clientY);
+			markInsertion(sourceSection, activeDrag.destinationIndex);
+		};
+
+		const finishDrag = (event, {cancelled = false} = {}) => {
+			if (!activeDrag || (event?.pointerId !== undefined && event.pointerId !== activeDrag.pointerId)) return;
+			const drag = activeDrag;
+			activeDrag = null;
+			window.removeEventListener("pointermove", updateDrag);
+			window.removeEventListener("pointerup", finishDrag);
+			window.removeEventListener("pointercancel", cancelDrag);
+			drag.sourceSection.classList.remove("is-order-dragging");
+			drag.sourceSection.style.removeProperty("--price-subplot-order-y");
+			drag.sourceSection.style.removeProperty("--price-subplot-order-z");
+			drag.handle.classList.remove("is-resizing");
+			drag.handle.setAttribute("aria-grabbed", "false");
+			document.body.classList.remove("is-price-subplot-reordering");
+			clearInsertionMarker();
+			if (typeof drag.handle.releasePointerCapture === "function") {
+				try {
+					drag.handle.releasePointerCapture(drag.pointerId);
+				} catch (_error) {
+				}
+			}
+			if (!cancelled) commitPriceSubplotOrder(drag.sourceSection, drag.destinationIndex);
+		};
+
+		function cancelDrag(event) {
+			finishDrag(event, {cancelled: true});
+		}
+
+		sections.forEach((section) => {
+			const handle = section.querySelector("[data-price-subplot-order-handle]");
+			if (!(handle instanceof HTMLButtonElement)) return;
+			handle.dataset.bound = "1";
+			handle.setAttribute("aria-grabbed", "false");
+			const revealFromPointer = (event) => {
+				if (activeDrag || event.pointerType === "touch") return;
+				const rect = section.getBoundingClientRect();
+				section.classList.toggle("is-order-handle-visible", event.clientX >= rect.left + (rect.width / 2));
+			};
+			const hideHandle = () => {
+				if (!activeDrag && !section.contains(document.activeElement)) {
+					section.classList.remove("is-order-handle-visible");
+				}
+			};
+			const onPointerDown = (event) => {
+				if (event.pointerType === "mouse" && event.button !== 0) return;
+				event.preventDefault();
+				event.stopPropagation();
+				const sourceIndex = getPriceSubplotSections().indexOf(section);
+				if (sourceIndex < 0) return;
+				activeDrag = {
+					sourceSection: section,
+					handle,
+					pointerId: event.pointerId,
+					startY: event.clientY,
+					sourceHeight: section.getBoundingClientRect().height,
+					destinationIndex: sourceIndex,
+				};
+				handle.classList.add("is-resizing");
+				handle.setAttribute("aria-grabbed", "true");
+				section.classList.add("is-order-dragging", "is-order-handle-visible");
+				document.body.classList.add("is-price-subplot-reordering");
+				hideSharedHover();
+				if (typeof handle.setPointerCapture === "function") {
+					try {
+						handle.setPointerCapture(event.pointerId);
+					} catch (_error) {
+					}
+				}
+				window.addEventListener("pointermove", updateDrag);
+				window.addEventListener("pointerup", finishDrag);
+				window.addEventListener("pointercancel", cancelDrag);
+			};
+			const onKeyDown = (event) => {
+				const currentSections = getPriceSubplotSections();
+				const currentIndex = currentSections.indexOf(section);
+				let destinationIndex = null;
+				if (event.key === "ArrowUp") destinationIndex = currentIndex - 1;
+				if (event.key === "ArrowDown") destinationIndex = currentIndex + 1;
+				if (event.key === "Home") destinationIndex = 0;
+				if (event.key === "End") destinationIndex = currentSections.length - 1;
+				if (!Number.isFinite(destinationIndex)) return;
+				event.preventDefault();
+				commitPriceSubplotOrder(section, destinationIndex, {focusHandle: true});
+			};
+			section.addEventListener("pointermove", revealFromPointer);
+			section.addEventListener("pointerleave", hideHandle);
+			handle.addEventListener("pointerdown", onPointerDown);
+			handle.addEventListener("keydown", onKeyDown);
+			disposers.push(() => {
+				section.removeEventListener("pointermove", revealFromPointer);
+				section.removeEventListener("pointerleave", hideHandle);
+				handle.removeEventListener("pointerdown", onPointerDown);
+				handle.removeEventListener("keydown", onKeyDown);
+				delete handle.dataset.bound;
+			});
+		});
+		syncPriceSubplotOrderMetadata();
+		return () => {
+			if (activeDrag) cancelDrag({pointerId: activeDrag.pointerId});
+			disposers.forEach((dispose) => dispose());
+			clearInsertionMarker();
+		};
+	};
+
 	const renderPriceSubplots = () => {
 		if (state.currentView !== "prices" || !window.Chart) return;
 		const series = Array.isArray(state.chart?.series) ? state.chart.series : [];
@@ -391,7 +648,7 @@
 
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			const index = Number.parseInt(canvas.dataset.seriesIndex || "", 10);
-			const isBottomSubplot = index === series.length - 1;
+			const isBottomSubplot = () => canvas.closest("[data-price-subplot]") === document.querySelector("#price_subplot_region > [data-price-subplot]:last-child");
 			const item = series[index];
 			if (!item) return;
 			const prices = Array.isArray(item.prices) ? item.prices.map(finiteNumber) : [];
@@ -520,7 +777,7 @@
 			const multiMarketSessionLabelPlugin = {
 				id: `priceMultiMarketSessionLabel${index}`,
 				afterDraw(chart) {
-					if (!isBottomSubplot || !marketSessionEvents.length || !chart.chartArea || !chart.scales?.x) return;
+					if (!isBottomSubplot() || !marketSessionEvents.length || !chart.chartArea || !chart.scales?.x) return;
 					chart.ctx.save();
 					chart.ctx.fillStyle = theme.muted;
 					chart.ctx.font = "12px sans-serif";
@@ -666,7 +923,7 @@
 					responsive: true,
 					maintainAspectRatio: false,
 					animation: false,
-					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot && marketSessionEvents.length ? 22 : 4, left: 0}},
+					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot() && marketSessionEvents.length ? 22 : 4, left: 0}},
 					interaction: {mode: "index", intersect: false},
 					onHover(event, activeElements, chartInstance) {
 						if (!activeElements.length) {
@@ -686,7 +943,7 @@
 					},
 					scales: {
 						x: {
-							display: isBottomSubplot,
+							display: isBottomSubplot(),
 							grid: {display: false},
 							border: {display: false},
 							ticks: {
@@ -775,10 +1032,13 @@
 	};
 
 	bootstrap.initPriceCompareWorkspace = () => {
+		teardownPriceSubplotOrdering();
+		teardownPriceSubplotOrdering = () => {};
 		liveRequestSerial += 1;
 		liveRequestController?.abort();
 		liveRequestController = null;
 		renderPriceSubplots();
+		teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
 		updatePriceCompareHeadingDate();
 		const initialParams = new URLSearchParams(window.location.search);
 		const initialPeriod = (initialParams.get("period") || "").toLowerCase();
@@ -791,6 +1051,7 @@
 	bootstrap.buildPriceMarketSessionEvents = buildMarketSessionEvents;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);
+		teardownPriceSubplotOrdering();
 		destroyPriceCharts();
 	}, {once: true});
 	window.addEventListener("antigravity:theme-mode-change", () => window.requestAnimationFrame(renderPriceSubplots));
