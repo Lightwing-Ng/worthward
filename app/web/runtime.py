@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -435,7 +435,7 @@ def build_web_runtime() -> WebRuntime:
     def fetch_request_compare_one_day_overnight_history(
             ticker: str,
             *,
-            include_extended_hours: bool = False,
+            include_extended_hours: bool = True,
     ) -> pd.DataFrame:
         cache = getattr(g, "compare_overnight_history_cache", None)
         if cache is None:
@@ -1608,7 +1608,7 @@ def build_web_runtime() -> WebRuntime:
         if infer_ticker_market(ticker) == "US" and include_overnight_flag:
             intraday_dataset = fetch_request_compare_one_day_overnight_history(
                 ticker,
-                include_extended_hours=include_extended_hours_flag,
+                include_extended_hours=True,
             )
             if trading_date is not None:
                 intraday_dataset = slice_intraday_dataset_to_market_trading_date(
@@ -1713,7 +1713,7 @@ def build_web_runtime() -> WebRuntime:
         if infer_ticker_market(ticker) == "US" and include_overnight_flag:
             intraday_dataset = fetch_request_compare_one_day_overnight_history(
                 ticker,
-                include_extended_hours=include_extended_hours_flag,
+                include_extended_hours=True,
             )
             source = str(
                 intraday_dataset.attrs.get("market_data_source")

@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from app.services.market_data import (
     resolve_compare_overnight_tickers,
 )
 from app.models.schemas import QuoteProfile
-from tests.factories.market import market_frame
+from tests.factories.market import market_frame, ohlc_frame_for_dates
 
 
 def _fake_dataset_for(ticker: str) -> pd.DataFrame:
@@ -152,6 +152,31 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
 
         fallback_mock.assert_called_once_with("SKHY")
         self.assertEqual(result.attrs["market_data_source"], "yfinance_extended_fallback")
+
+    def test_compare_overnight_keeps_premarket_continuation_by_default(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        full_session = ohlc_frame_for_dates(
+            "SKHY",
+            ["2026-07-14 03:59", "2026-07-14 04:00", "2026-07-14 04:40"],
+        )
+        full_session["Session"] = ["overnight", "pre", "pre"]
+
+        with (
+            patch("app.services.market_data._load_compare_overnight_market_settings", return_value=settings),
+            patch(
+                "app.services.market_data.fetch_longbridge_compare_one_day_history",
+                return_value=full_session,
+            ),
+            patch("app.services.market_data.fetch_compare_one_day_extended_history") as fallback_mock,
+        ):
+            result = fetch_compare_one_day_overnight_history("SKHY")
+
+        self.assertEqual(result["Date"].max(), pd.Timestamp("2026-07-14 04:40"))
+        self.assertEqual(result.attrs["market_data_source"], "longbridge_overnight")
+        fallback_mock.assert_not_called()
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
@@ -432,6 +457,25 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertIn("crumb=REDACTED", message)
         self.assertNotIn("user:password", message)
         self.assertNotIn("secret-value", message)
+
+    def test_yfinance_fallback_download_receives_shared_verified_session(self) -> None:
+        fake_history = market_frame("QQQ").set_index("Date")
+        shared_session = object()
+
+        with (
+            patch(
+                "app.services.market_data.get_yfinance_session",
+                return_value=shared_session,
+            ),
+            patch(
+                "app.services.market_data.yf.download",
+                return_value=fake_history,
+            ) as download_mock,
+        ):
+            result = _download_daily_history_with_yfinance("QQQ", period="5d")
+
+        self.assertFalse(result.empty)
+        self.assertIs(download_mock.call_args.kwargs["session"], shared_session)
 
     def test_daily_history_uses_direct_yahoo_chart_before_optional_longbridge(self) -> None:
         chart_history = market_frame("DRAM").set_index("Date")

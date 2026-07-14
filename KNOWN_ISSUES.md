@@ -1,6 +1,15 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.38.0`
+Documentation version: `v1.39.0`
+
+## Price subplot ordering and compact labels completed on 14 Jul 2026
+
+- Price-performance subplot cards reveal the standard frosted-glass handle only while the pointer is in a card's right half, or while the keyboard-accessible handle is focused. This ordering variant omits the divider line and retains a 48 px touch target with safe-area clearance.
+- Pointer and keyboard reordering highlight both the lifted card and its insertion boundary. The chart stack, ticker controls, application series, and URL ticker order update together with Y-axis translation and Z-axis depth motion.
+- Reordering preserves existing Chart.js instances, aborts any obsolete in-flight live response, and never starts a calculation or live request by itself. The bottom time axis follows the newly bottommost subplot.
+- Local symbol suggestions replace symbol-only cached names with canonical issuer names. `SKHY` therefore displays `SK hynix Inc.` even when an older local profile stores only `SKHY`.
+- One-day cross-market session labels are measured and laid out inside the chart bounds with a minimum gap, preventing neighboring labels such as `02:30` and `04:00` from colliding.
+- The overnight comparison now treats the US overnight, pre-market, regular, and post-market sessions as one continuous full-session feed. Longbridge pre-market bars after `04:00` New York time are no longer filtered out, so a mixed Hong Kong / Korea / US axis can continue after the Hong Kong close while US pre-market trading remains active.
 
 ## Yahoo corporate HTTPS proxy trust supported on 14 Jul 2026
 
@@ -12,6 +21,9 @@ Documentation version: `v1.38.0`
 - When no corporate CA is configured, the secure curl_cffi default is retained.
   Certificate verification failures now identify both supported configuration
   entries without weakening process-wide TLS behavior.
+- Proxy and direct-connect environments have separate offline regression tests.
+  The Yahoo fallback never injects a proxy of its own, so computers without
+  proxy environment variables continue to connect directly with `verify=True`.
 
 ## US overnight companion fallback completed on 14 Jul 2026
 

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.3.0`
 
 ## Supported commands
 
@@ -14,6 +14,14 @@ Run Python tests only:
 
 ```bash
 ./scripts/test.sh
+```
+
+Run the focused, fully offline Yahoo transport regression tests:
+
+```bash
+./scripts/test.sh \
+  tests/test_security_boundaries.py \
+  tests/test_market_data_freshness.py
 ```
 
 Run the complete quality gate:
@@ -65,6 +73,24 @@ Playwright starts a dedicated app server on `127.0.0.1:8699` through the `ANTIGR
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
 
 Flask integration tests that exercise investment import or transaction loading patch both `INVESTMENT_STORE_PATH` and `INVESTMENT_TRANSACTIONS_CACHE_PATH` to a per-test temporary directory. A regression assertion compares the real parquet bytes before and after a synthetic IBKR import.
+
+## Yahoo transport isolation
+
+Yahoo transport unit tests never contact Yahoo, a corporate proxy, or any other
+remote endpoint. Temporary PEM files and mocked yfinance downloads cover:
+
+- macOS-style `HTTP_PROXY` and `HTTPS_PROXY` environments with a corporate CA;
+- direct-connect environments with all proxy and corporate CA variables absent;
+- environment-variable precedence over `[network].yahoo_ca_pem`;
+- fail-closed handling for missing or malformed enterprise CA files;
+- certifi public roots remaining present in the combined CA bundle;
+- `verify=True` as the unconfigured default;
+- reuse of one shared curl_cffi session by the yfinance fallback;
+- actionable certificate-failure diagnostics without credentials or query
+  secrets leaking into error messages.
+
+These tests must remain offline and must never replace certificate verification
+with `verify=False`, an unverified SSL context, or a process-wide TLS patch.
 
 ## Writing new tests
 

@@ -1,7 +1,7 @@
 """
 Tests for comparison logic.
 
-Code version: v0.8.0
+Code version: v0.8.1
 """
 
 from __future__ import annotations
@@ -494,13 +494,13 @@ class ComparisonServiceTests(unittest.TestCase):
         )
         skhy_dataset = ohlc_frame_for_dates(
             "SKHY",
-            ["2026-07-13 20:00", "2026-07-14 03:59"],
+            ["2026-07-13 20:00", "2026-07-14 04:40"],
         )
 
         aligned = slice_intraday_datasets_for_compare_period(
             [krx_dataset, hk_dataset, skhy_dataset],
             "1d",
-            pd.Timestamp("2026-07-14 03:59"),
+            pd.Timestamp("2026-07-14 04:40"),
             ["000660.KS", "7709.HK", "SKHY"],
         )
 
@@ -509,7 +509,7 @@ class ComparisonServiceTests(unittest.TestCase):
             pd.Timestamp("2026-07-14").date(),
         )
         self.assertEqual(aligned[2]["Date"].min(), pd.Timestamp("2026-07-13 20:00"))
-        self.assertEqual(aligned[2]["Date"].max(), pd.Timestamp("2026-07-14 03:59"))
+        self.assertEqual(aligned[2]["Date"].max(), pd.Timestamp("2026-07-14 04:40"))
         self.assertEqual(aligned[2]["Open"].iloc[0], 149.5)
         self.assertEqual(aligned[2]["Open"].iloc[-1], 150.5)
 

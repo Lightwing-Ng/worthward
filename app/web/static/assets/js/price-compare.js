@@ -1,4 +1,4 @@
-/* Code version: v0.14.0 */
+/* Code version: v0.15.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -177,7 +177,46 @@
 				};
 			})
 			.filter(Boolean)
-			.sort((left, right) => left.index - right.index);
+			.sort((left, right) => left.index - right.index)
+			.filter((event, index, events) => (
+				index === 0
+				|| event.index !== events[index - 1].index
+				|| event.labelLines.join("\n") !== events[index - 1].labelLines.join("\n")
+			));
+	};
+
+	const layoutMarketSessionLabels = ({events, getX, measureText, left, right, gap = 10}) => {
+		const labels = (events || []).map((event) => {
+			const lines = Array.isArray(event.labelLines) ? event.labelLines : [];
+			const width = Math.max(0, ...lines.map((line) => Number(measureText(String(line))) || 0));
+			const preferredX = Number(getX(event));
+			return {
+				event,
+				width,
+				preferredX,
+				x: Math.max(left + (width / 2), Math.min(preferredX, right - (width / 2))),
+			};
+		}).filter((label) => Number.isFinite(label.preferredX));
+		for (let index = 1; index < labels.length; index += 1) {
+			const previous = labels[index - 1];
+			const current = labels[index];
+			current.x = Math.max(current.x, previous.x + (previous.width / 2) + gap + (current.width / 2));
+		}
+		for (let index = labels.length - 1; index >= 0; index -= 1) {
+			const current = labels[index];
+			const maximumX = index === labels.length - 1
+				? right - (current.width / 2)
+				: labels[index + 1].x - (labels[index + 1].width / 2) - gap - (current.width / 2);
+			current.x = Math.min(current.x, maximumX);
+		}
+		for (let index = 0; index < labels.length; index += 1) {
+			const current = labels[index];
+			const minimumX = index === 0
+				? left + (current.width / 2)
+				: labels[index - 1].x + (labels[index - 1].width / 2) + gap + (current.width / 2);
+			current.x = Math.max(current.x, minimumX);
+		}
+		return labels;
 	};
 
 	const formatPrice = (value, currency, showCurrency) => {
@@ -781,22 +820,15 @@
 					chart.ctx.save();
 					chart.ctx.fillStyle = theme.muted;
 					chart.ctx.font = "12px sans-serif";
-					marketSessionEvents.forEach((event, eventIndex) => {
-						let x = chart.scales.x.getPixelForValue(event.index);
-						if (!Number.isFinite(x)) return;
-						const previous = marketSessionEvents[eventIndex - 1];
-						const next = marketSessionEvents[eventIndex + 1];
-						const previousX = previous ? chart.scales.x.getPixelForValue(previous.index) : null;
-						const nextX = next ? chart.scales.x.getPixelForValue(next.index) : null;
-						const closeToPrevious = Number.isFinite(previousX) && x - previousX < 150;
-						const closeToNext = Number.isFinite(nextX) && nextX - x < 150;
-						if (closeToNext && !closeToPrevious) {
-							chart.ctx.textAlign = "right";
-							x -= 6;
-						} else {
-							chart.ctx.textAlign = "left";
-							x += eventIndex === 0 ? 0 : 6;
-						}
+					chart.ctx.textAlign = "center";
+					const labels = layoutMarketSessionLabels({
+						events: marketSessionEvents,
+						getX: (event) => chart.scales.x.getPixelForValue(event.index),
+						measureText: (line) => chart.ctx.measureText(line).width,
+						left: chart.chartArea.left,
+						right: chart.chartArea.right,
+					});
+					labels.forEach(({event, x}) => {
 						event.labelLines.forEach((line, lineIndex) => {
 							chart.ctx.fillText(line, x, chart.chartArea.bottom + 18 + (lineIndex * 15));
 						});
@@ -1048,6 +1080,7 @@
 	bootstrap.refreshPriceCompareLive = refreshLivePrices;
 	bootstrap.formatPriceSharedTooltipDate = formatSharedTooltipDate;
 	bootstrap.formatPriceCompareHeadingDate = formatPriceCompareHeadingDate;
+	bootstrap.layoutPriceMarketSessionLabels = layoutMarketSessionLabels;
 	bootstrap.buildPriceMarketSessionEvents = buildMarketSessionEvents;
 	window.addEventListener("beforeunload", () => {
 		if (refreshTimer) window.clearInterval(refreshTimer);

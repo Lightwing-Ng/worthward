@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from app.infrastructure.storage import (
     logo_store_path_for,
 )
 from app.services.logos import (
+    _build_local_suggestion,
     build_logo_provider_ticker_candidates,
     build_quote_profile_payload,
     fetch_and_store_logo,
@@ -32,6 +33,21 @@ from app.services.logos import (
 
 
 class LogoServiceTests(unittest.TestCase):
+    def test_local_sk_hynix_suggestion_replaces_symbol_only_profile_name(self) -> None:
+        fallback_record = {
+            "ticker": "SKHY",
+            "company_name": "SKHY",
+            "website": "https://www.skhynix.com",
+        }
+        with patch("app.services.logos.has_profile_record", return_value=True), \
+                patch("app.services.logos.has_logo_asset", return_value=False), \
+                patch("app.services.logos.load_profile_record", return_value=fallback_record):
+            suggestion = _build_local_suggestion("SKHY", query="SKHY", seen=set())
+
+        self.assertIsNotNone(suggestion)
+        self.assertEqual(suggestion["symbol"], "SKHY")
+        self.assertEqual(suggestion["name"], "SK hynix Inc.")
+
     def test_known_sk_hynix_profile_skips_remote_yfinance_lookup(self) -> None:
         for cached_record in (
             None,

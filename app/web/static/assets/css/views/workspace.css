@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.4.1 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -2296,6 +2296,11 @@ footer {
 .price-subplot-order-handle:active,
 .price-subplot.is-order-dragging .price-subplot-order-handle {
     cursor: grabbing;
+}
+
+body.is-price-subplot-reordering {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .price-subplot.is-order-dragging {

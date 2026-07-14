@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.infrastructure.storage import (
     has_profile_record,
     history_store_path_for,
     investment_ticker_store_aliases,
+    is_ticker_fallback_company_name,
     is_pinned_logo_ticker,
     list_local_tickers,
     resolve_known_ticker_company_name,
@@ -666,9 +667,14 @@ def _build_local_suggestion(symbol: str, *, query: str, seen: set[str]) -> dict[
         return None
     profile_record = load_profile_record(normalized_symbol)
     display_symbol = display_search_symbol(normalized_symbol)
+    record_company_name = str((profile_record or {}).get("company_name") or "").strip()
+    known_company_name = resolve_known_ticker_company_name(normalized_symbol)
     company_name = (
-            str((profile_record or {}).get("company_name") or "").strip()
-            or resolve_known_ticker_company_name(normalized_symbol)
+            known_company_name
+            if is_ticker_fallback_company_name(record_company_name, normalized_symbol)
+            else record_company_name
+    ) or (
+            known_company_name
             or display_symbol
     )
     if not is_supported_local_symbol(normalized_symbol, query, company_name):

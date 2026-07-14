@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.13.0
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -740,9 +740,9 @@ def fetch_compare_one_day_extended_history(ticker: str) -> pd.DataFrame:
 def fetch_compare_one_day_overnight_history(
         ticker: str,
         *,
-        include_extended_hours: bool = False,
+        include_extended_hours: bool = True,
 ) -> pd.DataFrame:
-    """Fetch US overnight bars, with yfinance extended-hours as the fallback."""
+    """Fetch the continuous US full session, with yfinance as the fallback."""
     normalized_ticker = canonical_compare_overnight_ticker(ticker)
     settings = _load_compare_overnight_market_settings()
     if settings is not None:

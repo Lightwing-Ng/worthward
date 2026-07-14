@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class ComparePageTests(unittest.TestCase):
             ),
             "SKHY": ohlc_frame_for_dates(
                 "SKHY",
-                ["2026-07-13 20:00", "2026-07-14 03:59"],
+                ["2026-07-13 20:00", "2026-07-14 04:40"],
             ),
         }
         def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
@@ -96,7 +96,7 @@ class ComparePageTests(unittest.TestCase):
         exact_day_fetch_mock.assert_not_called()
         broker_overnight_mock.assert_called_once_with(
             "SKHY",
-            include_extended_hours=False,
+            include_extended_hours=True,
         )
 
     def test_live_compare_api_reports_yfinance_overnight_fallback_source(self) -> None:
@@ -111,7 +111,7 @@ class ComparePageTests(unittest.TestCase):
             ),
             "SKHY": ohlc_frame_for_dates(
                 "SKHY",
-                ["2026-07-13 20:00", "2026-07-14 03:59"],
+                ["2026-07-13 20:00", "2026-07-14 04:40"],
             ),
         }
         intraday_frames["SKHY"].attrs["market_data_source"] = "yfinance_extended_fallback"
@@ -146,6 +146,8 @@ class ComparePageTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["sources"]["SKHY"], "yfinance_extended_fallback")
         self.assertNotIn("SKHYV", payload["sources"])
+        skhy_series = next(item for item in payload["series"] if item["ticker"] == "SKHY")
+        self.assertEqual(skhy_series["raw_dates"][-1], "2026-07-14 04:40")
 
     def test_one_day_price_page_keeps_new_us_listing_pending_before_first_quote(self) -> None:
         def _fetch_history(
