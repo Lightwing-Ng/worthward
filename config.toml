@@ -1,6 +1,6 @@
 [app]
 name = "antigravity"
-version = "v2.45.0"
+version = "v2.49.0"
 debug = false
 updated_on = "14 Jul 2026"
 
@@ -54,6 +54,7 @@ price_only = "Price return only"
 performance_summary = "Performance summary"
 chart_summary = "Stock return comparison"
 dock_tickers = "Return comparison"
+dock_market_caps = "Market cap comparison"
 dock_prices = "Price performance"
 dock_portfolio = "Compute your portfolio"
 dock_dca = "Dollar-cost averaging"

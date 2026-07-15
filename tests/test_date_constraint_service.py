@@ -1,7 +1,7 @@
 """
 Tests for exact-range date alignment.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import pandas as pd
 
 from app.services.date_constraints import (
     align_requested_exact_dates,
+    build_date_constraint_availability,
     build_date_constraint_payload,
     latest_completed_nyse_trading_day,
 )
@@ -45,6 +46,20 @@ class DateConstraintServiceTests(unittest.TestCase):
         self.assertEqual(payload.min_date, "2026-01-03")
         self.assertEqual(payload.max_date, "2026-01-06")
         self.assertEqual(payload.trading_dates, ["2026-01-03", "2026-01-06"])
+
+    def test_date_constraint_availability_names_the_later_listing_boundary(self) -> None:
+        established = pd.DataFrame({"Date": pd.to_datetime(["2022-05-20", "2022-05-23", "2022-05-24"])})
+        newer_listing = pd.DataFrame({"Date": pd.to_datetime(["2022-05-23", "2022-05-24"])})
+        payload = build_date_constraint_payload(established, newer_listing)
+
+        availability = build_date_constraint_availability(
+            payload,
+            ["QQQ", "JEPQ"],
+            [established, newer_listing],
+        )
+
+        self.assertEqual(availability["earliest"]["limiting_tickers"], ["JEPQ"])
+        self.assertIn("JEPQ has no comparable history before 23 May 2022.", availability["earliest"]["message"])
 
 
 if __name__ == "__main__":

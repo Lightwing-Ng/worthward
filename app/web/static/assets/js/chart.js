@@ -1,4 +1,4 @@
-/* Code version: v0.8.1 */
+/* Code version: v0.9.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -91,6 +91,22 @@
 		return `${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	};
 
+	const formatMarketCapLabel = (value, maximumFractionDigits = 2) => {
+		const numeric = Number(value);
+		if (!Number.isFinite(numeric)) return "";
+		const units = [
+			{threshold: 1e12, suffix: "T"},
+			{threshold: 1e9, suffix: "B"},
+			{threshold: 1e6, suffix: "M"},
+		];
+		const unit = units.find((item) => Math.abs(numeric) >= item.threshold);
+		if (!unit) return `$${numeric.toLocaleString("en-US", {maximumFractionDigits: 0})}`;
+		return `$${(numeric / unit.threshold).toLocaleString("en-US", {
+			minimumFractionDigits: maximumFractionDigits,
+			maximumFractionDigits,
+		})}${unit.suffix}`;
+	};
+
 	const toFiniteChartNumber = (value) => {
 		if (value === null || value === undefined || value === "") return null;
 		const numeric = Number(value);
@@ -178,6 +194,7 @@
 		const { chart: chartState, theme, chartConfig } = state;
 		const resolvedTheme = readThemeTokens();
 		const { series, profiles } = chartState;
+		const isMarketCapView = state.currentView === "market-caps";
 		const selectedTradingDate = String(chartState.tradingDate || "");
 		if (!series || !series.length) return;
 		canvas.dataset.chartMounted = "1";
@@ -966,7 +983,7 @@
 					color: point.dataset.borderColor,
 					label: state.currentView === "portfolio" ? (portfolioLabelMap[point.dataset.label] || point.dataset.label) : point.dataset.label,
 					logoUrl: profile?.logo_url || "",
-					value: formatPercentTooltipLabel(point.parsed.y),
+					value: isMarketCapView ? formatMarketCapLabel(point.parsed.y) : formatPercentTooltipLabel(point.parsed.y),
 				};
 			});
 
@@ -1086,7 +1103,9 @@
 			});
 		};
 
-		const targetSeriesByIndex = series.map((item) => item.normalized_returns);
+		const targetSeriesByIndex = series.map((item) => (
+			isMarketCapView ? (item.market_caps || []) : item.normalized_returns
+		));
 		const candlestickSeriesByIndex = series.map((item) => (
 			Array.isArray(item?.candlestick_returns)
 				? item.candlestick_returns.flatMap((candle) => [candle?.o, candle?.h, candle?.l, candle?.c])
@@ -1116,9 +1135,9 @@
 								previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
 								previousSeriesMap.get(item.ticker)?.values || [],
 								labels,
-								item.normalized_returns,
+								isMarketCapView ? (item.market_caps || []) : item.normalized_returns,
 							)
-							: item.normalized_returns,
+							: (isMarketCapView ? (item.market_caps || []) : item.normalized_returns),
 						borderColor: strokeColor,
 						pointHoverBackgroundColor: strokeColor,
 						shadowColor: hexToRgba(strokeColor, 0.4),
@@ -1192,7 +1211,7 @@
 							},
 							callback(value, index, ticks) {
 								if (index === 0 || index === ticks.length - 1) return "";
-								return formatPercentAxisLabel(value);
+								return isMarketCapView ? formatMarketCapLabel(value, 1) : formatPercentAxisLabel(value);
 							},
 						},
 					},

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.26.0`
+Documentation version: `v2.28.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -83,6 +83,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 
 - `Return comparison`
   Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
+- `Market cap comparison`
+  Compare historical market capitalization using cached prices and point-in-time shares, with a Longbridge current-value cross-check and yfinance fallback.
 - `Price performance`
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`
@@ -267,7 +269,8 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 
 - Used for broker-backed market data
 - Optional fallback source for `1m` and `1d` history when `yfinance` fails
-- Requires App Key, App Secret, and Access Token
+- Broker Access launches the installed Longbridge CLI's browser OAuth flow; the CLI keeps its OAuth session in the signed-in user's CLI profile, and the app never receives or stores an authorization code or OAuth token
+- An existing terminal `longbridge auth login` session is detected automatically
 - Live account balances, positions, and order submission are locked unless the server starts with a random access token of at least 32 characters:
   ```bash
   export ANTIGRAVITY_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"

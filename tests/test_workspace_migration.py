@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.2.1
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
+from app.models.schemas import SeriesPayload
 from tests.factories.market import FakeStrategy, backtest_result, fetch_history_stub, quote_profile_stub
 
 
@@ -157,6 +158,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
 
         self.assertIn('aria-label="Workspace sections"', sidebar_html)
         self.assertIn("Return comparison", sidebar_html)
+        self.assertIn("Market cap comparison", sidebar_html)
         self.assertIn("Price performance", sidebar_html)
         self.assertIn("Compute your portfolio", sidebar_html)
         self.assertIn("Backtest", sidebar_html)
@@ -175,6 +177,13 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertNotIn('data-tooltip="Backtest"', dock_html)
 
     def test_compare_portfolio_and_backtest_pages_keep_controls_inside_workspace(self) -> None:
+        market_cap_series = SeriesPayload(
+            ticker="QQQ",
+            dates=["1 Jan 2026", "2 Jan 2026"],
+            raw_dates=["2026-01-01 00:00", "2026-01-02 00:00"],
+            normalized_returns=[None, None],
+            market_caps=[1_000_000_000.0, 1_100_000_000.0],
+        )
         with (
             patch("app.web.runtime.fetch_history", side_effect=fetch_history_stub),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
@@ -182,9 +191,11 @@ class WorkspaceMigrationTests(unittest.TestCase):
             patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
             patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
             patch("app.web.runtime.record_strategy_usage"),
+            patch("app.web.runtime.build_market_cap_series_payload", return_value=market_cap_series),
         ):
             responses = {
                 "compare": self.client.get("/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y&dividends=1"),
+                "market_caps": self.client.get("/workspaces/market-caps?ticker=QQQ&ticker=AAPL&period=1y"),
                 "portfolio": self.client.get("/workspaces/portfolio?ticker=NVDA&ticker=AAPL&weight=60&weight=40&period=1y&dividends=1"),
                 "backtest": self.client.get("/workspaces/backtest?ticker=QQQ&strategy=buy-and-hold&period=1y&capital=10000"),
             }
@@ -198,6 +209,23 @@ class WorkspaceMigrationTests(unittest.TestCase):
             responses["compare"].get_data(as_text=True),
             control_class='ticker-form-controls tickers-controls',
         )
+        market_cap_html = responses["market_caps"].get_data(as_text=True)
+        self._assert_workspace_contract(
+            market_cap_html,
+            control_class='ticker-form-controls market-caps-controls',
+        )
+        market_cap_sidebar = _slice_between(
+            market_cap_html,
+            '<aside class="panel sidebar" id="app_sidebar">',
+            "</aside>",
+        )
+        self.assertLess(market_cap_sidebar.index("Return comparison"), market_cap_sidebar.index("Market cap comparison"))
+        self.assertLess(market_cap_sidebar.index("Market cap comparison"), market_cap_sidebar.index("Price performance"))
+        self.assertIn('"market_caps": [1000000000.0, 1100000000.0]', market_cap_html)
+        self.assertIn('data-exact-range-date-grid', market_cap_html)
+        self.assertIn('data-exact-single-date-grid', market_cap_html)
+        self.assertIn('id="exact_start"', market_cap_html)
+        self.assertIn('id="exact_end"', market_cap_html)
         self._assert_workspace_contract(
             responses["portfolio"].get_data(as_text=True),
             control_class='ticker-form-controls portfolio-controls',
@@ -206,6 +234,11 @@ class WorkspaceMigrationTests(unittest.TestCase):
             responses["backtest"].get_data(as_text=True),
             control_class='ticker-controls trade-controls',
         )
+
+    def test_comparison_workspace_memory_includes_market_cap_view(self) -> None:
+        app_source = APP_JS.read_text(encoding="utf-8")
+        self.assertIn('const comparisonViews = new Set(["tickers", "market-caps", "prices"]);', app_source)
+        self.assertIn('path === "/workspaces/market-caps"', app_source)
 
 
 if __name__ == "__main__":

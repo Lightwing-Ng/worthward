@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.14.0
+Code version: v0.18.0
 """
 
 from __future__ import annotations
@@ -59,13 +59,12 @@ from app.infrastructure.broker_market_data import (
     one_minute_lookback_start,
     test_broker_connection,
 )
-from app.infrastructure.longbridge_cli import authenticate_longbridge_cli_with_auth_code
+from app.infrastructure.longbridge_cli import start_longbridge_cli_browser_oauth
 from app.core.broker_settings import (
     BrokerSettings,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
-    uses_longbridge_cli_oauth,
 )
 from app.services.comparisons import (
     align_intraday_datasets_for_compare,
@@ -111,17 +110,29 @@ from app.core.config import (
     DEFAULT_TICKERS,
     COMPARE_PERIODS_1D,
     MARKET_STORE_DIR,
+    PERIOD_DAY_SPANS,
+    PERIOD_LABELS,
+    PERIOD_MONTH_SPANS,
     PERIOD_OFFSETS,
     SETTINGS_STORE_DIR,
+    SUPPORTED_PERIODS_1D,
     SUPPORTED_PERIODS_1M,
 )
 from app.services.date_constraints import (
     build_date_constraint_payload,
+    build_date_constraint_availability,
     latest_completed_nyse_trading_day,
     nyse_market_session_state,
     nyse_recent_trading_days,
 )
 from app.services.dca import simulate_recurring_investment
+from app.services.market_cap import build_market_cap_series_payload
+from app.services.range_options import (
+    COMPARE_INTRADAY_PERIODS,
+    build_supported_compare_periods,
+    build_supported_periods_from_dates,
+    resolve_requested_period_from_supported,
+)
 from app.services.investment_import import (
     build_investment_payload_from_futuhk_statement_pdfs,
     build_investment_payload_from_hsbc_pasted_text,
@@ -258,7 +269,7 @@ PORTFOLIO_BENCHMARK_COLORS = {
 LEGACY_VIEW_ALIASES = {
     "trade-messages": "backtest",
 }
-SUPPORTED_VIEWS = {"tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings"}
+SUPPORTED_VIEWS = {"tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings"}
 BACKTEST_VIEWS = {"backtest", "grid-trading"}
 SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
                                "clear-caches", "style-tokens", "export-image", "cash-equivalents"}
@@ -278,6 +289,7 @@ STRATEGY_CATEGORY_LABELS = {
 }
 VIEW_PATHS = {
     "tickers": "/workspaces/compare",
+    "market-caps": "/workspaces/market-caps",
     "prices": "/workspaces/prices",
     "portfolio": "/workspaces/portfolio",
     "dca": "/workspaces/dca",
@@ -286,19 +298,13 @@ VIEW_PATHS = {
     "trade": "/trade/investment",
     "settings": "/settings/about",
 }
-ADAPTIVE_PERIODS_1D = ("6mo", "1y", "2y", "3y", "5y", "10y", "max")
-TRADING_DAY_REQUIREMENTS = {
-    "1d": 1,
-    "3d": 3,
-}
-
-
 @dataclass(frozen=True)
 class WebRuntime:
     """Callable handlers and helpers shared across split route modules."""
 
     root: Any
     compare_page: Any
+    market_cap_compare_page: Any
     legacy_compare_page: Any
     price_compare_page: Any
     portfolio_page: Any
@@ -422,7 +428,7 @@ def build_web_runtime() -> WebRuntime:
 
     def date_constraint_payload_to_json(
             payload: DateConstraintPayload,
-    ) -> dict[str, str | list[str] | None]:
+    ) -> dict[str, object]:
         return {
             "min_date": payload.min_date,
             "max_date": payload.max_date,
@@ -430,7 +436,16 @@ def build_web_runtime() -> WebRuntime:
             "adjusted_start": payload.adjusted_start,
             "adjusted_end": payload.adjusted_end,
             "message": payload.message,
+            "availability": payload.availability,
         }
+
+    def annotate_date_constraint_availability(
+            payload: DateConstraintPayload,
+            tickers: list[str],
+            datasets: list[pd.DataFrame],
+    ) -> DateConstraintPayload:
+        payload.availability = build_date_constraint_availability(payload, tickers, datasets)
+        return payload
 
     def fetch_request_compare_one_day_overnight_history(
             ticker: str,
@@ -579,7 +594,7 @@ def build_web_runtime() -> WebRuntime:
                 "Using currently cached intraday dates."
             )
             payload.message = f"{payload.message} {refresh_notice}".strip() if payload.message else refresh_notice
-        return payload
+        return annotate_date_constraint_availability(payload, tickers, date_frames)
 
     def build_short_intraday_date_constraint_payload(
             tickers: list[str],
@@ -601,11 +616,12 @@ def build_web_runtime() -> WebRuntime:
             )
             date_frames.append(market_local_trading_dates_frame(prepared_dataset, ticker))
 
-        return build_date_constraint_payload(
+        payload = build_date_constraint_payload(
             *date_frames,
             requested_start=requested_start,
             requested_end=requested_end,
         )
+        return annotate_date_constraint_availability(payload, tickers, date_frames)
 
     def resolve_compare_axis_trading_date(
             tickers: list[str],
@@ -3728,72 +3744,6 @@ def build_web_runtime() -> WebRuntime:
             ignore_index=True,
         ).drop_duplicates().sort_values().reset_index(drop=True)
 
-    def build_supported_periods_from_dates(
-            date_values: pd.Series,
-            interval: str = "1d",
-            *,
-            candidate_periods: tuple[str, ...] | None = None,
-    ) -> list[str]:
-        timestamps = pd.to_datetime(date_values, errors="coerce").dropna().sort_values().drop_duplicates()
-        if timestamps.empty:
-            return ["1d"] if interval == "1m" else ["1d"]
-
-        start = timestamps.iloc[0]
-        end = timestamps.iloc[-1]
-        trading_day_count = len(pd.Index(timestamps.dt.normalize()).unique())
-        if candidate_periods is None:
-            candidate_periods = SUPPORTED_PERIODS_1M if interval == "1m" else ADAPTIVE_PERIODS_1D
-        supported: list[str] = []
-
-        for candidate in candidate_periods:
-            if candidate == "max":
-                continue
-            if candidate in TRADING_DAY_REQUIREMENTS:
-                if trading_day_count >= TRADING_DAY_REQUIREMENTS[candidate]:
-                    supported.append(candidate)
-                continue
-            if candidate in PERIOD_OFFSETS:
-                candidate_start = (end - PERIOD_OFFSETS[candidate]).normalize()
-                if candidate_start >= start.normalize():
-                    supported.append(candidate)
-
-        if interval == "1m":
-            if not supported:
-                supported.append("1d")
-            if len(supported) >= 2:
-                supported.append("max")
-            return supported
-
-        if not supported:
-            return ["max"]
-        supported.append("max")
-        return supported
-
-    def resolve_requested_period_from_supported(
-            requested_period: str,
-            supported_periods: list[str],
-            earliest_available: pd.Timestamp | None = None,
-    ) -> tuple[str, str | None]:
-        if requested_period in supported_periods:
-            return requested_period, None
-
-        fallback_period = supported_periods[-1] if supported_periods else "1d"
-        if fallback_period == "max" and len(supported_periods) >= 2:
-            fallback_label = format_period_label(fallback_period)
-        else:
-            fallback_label = format_period_label(fallback_period)
-
-        notice = (
-            f"Requested period {requested_period} exceeds the available trading history. "
-            f"Automatically switched to {fallback_label}."
-        )
-        if earliest_available is not None:
-            notice = (
-                f"{notice[:-1]} Earliest available data starts on "
-                f"{format_display_date(earliest_available)}."
-            )
-        return fallback_period, notice
-
     def build_supported_periods_for_history_store(ticker: str, interval: str = "1d") -> list[str]:
         path = next(
             (
@@ -3841,19 +3791,19 @@ def build_web_runtime() -> WebRuntime:
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
         include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
-        if current_view == "prices":
+        if current_view in {"prices", "market-caps"}:
             price_only = True
             include_dividends = False
-        include_extended_hours = current_view in {"tickers", "prices"} and period == "1d"
+        include_extended_hours = current_view in {"tickers", "market-caps", "prices"} and period == "1d"
         include_overnight = (
-            current_view in {"tickers", "prices"}
+            current_view in {"tickers", "market-caps", "prices"}
             and period == "1d"
             and parse_bool_flag("overnight", "include_overnight")
         )
         show_extended_hours_toggle = False
         show_overnight_toggle = False
 
-        if current_view in {"tickers", "prices"} and not requested_tickers:
+        if current_view in {"tickers", "market-caps", "prices"} and not requested_tickers:
             requested_tickers = [
                 normalize_ticker_input(defaults.get("ticker_a", DEFAULT_TICKERS[0])),
                 normalize_ticker_input(defaults.get("ticker_b", DEFAULT_TICKERS[1])),
@@ -4023,7 +3973,7 @@ def build_web_runtime() -> WebRuntime:
         local_store_page_slots = [{"page": page_number, "is_active": page_number == 1} for page_number in range(1, 6)]
         local_store_next_slot = {"page": None}
         backtest_periods_by_interval: dict[str, list[str]] = {
-            "1d": list(ADAPTIVE_PERIODS_1D),
+            "1d": list(SUPPORTED_PERIODS_1D),
             "1m": list(SUPPORTED_PERIODS_1M),
         }
 
@@ -4038,6 +3988,10 @@ def build_web_runtime() -> WebRuntime:
             page_title = labels.get("dock_prices", "Price performance")
             report_heading = labels.get("dock_prices", "Price performance")
             chart_heading = "Price history"
+        elif current_view == "market-caps":
+            page_title = labels.get("dock_market_caps", "Market cap comparison")
+            report_heading = labels.get("dock_market_caps", "Market cap comparison")
+            chart_heading = "Historical market capitalization"
         elif current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
@@ -4088,9 +4042,9 @@ def build_web_runtime() -> WebRuntime:
 
         supported_periods = (
             list(COMPARE_PERIODS_1D)
-            if current_view in {"tickers", "prices", "portfolio"}
+            if current_view in {"tickers", "market-caps", "prices", "portfolio"}
             else list(SUPPORTED_PERIODS_1M) if requested_interval == "1m" and "1m" in supported_intervals
-            else list(ADAPTIVE_PERIODS_1D)
+            else list(SUPPORTED_PERIODS_1D)
         )
 
         if period not in supported_periods:
@@ -4184,7 +4138,7 @@ def build_web_runtime() -> WebRuntime:
                             notice = refresh_notice
                         else:
                             notice += " " + refresh_notice
-                supported_periods = backtest_periods_by_interval.get(requested_interval, list(ADAPTIVE_PERIODS_1D))
+                supported_periods = backtest_periods_by_interval.get(requested_interval, list(SUPPORTED_PERIODS_1D))
                 period, period_notice = resolve_requested_period_from_supported(
                     period,
                     supported_periods,
@@ -4270,7 +4224,7 @@ def build_web_runtime() -> WebRuntime:
                         notice = refresh_notice
                     else:
                         notice += " " + refresh_notice
-            elif current_view in {"tickers", "prices", "portfolio"}:
+            elif current_view in {"tickers", "market-caps", "prices", "portfolio"}:
                 if requested_tickers and len(requested_tickers) >= MIN_TICKERS:
                     if is_dock_prefetch:
                         validated_tickers = [normalize_ticker_input(t) or t for t in requested_tickers]
@@ -4332,7 +4286,7 @@ def build_web_runtime() -> WebRuntime:
                         control_tickers = validated_tickers.copy()
                         overnight_tickers = resolve_compare_overnight_tickers(control_tickers)
                         show_overnight_toggle = (
-                            current_view in {"tickers", "prices"}
+                            current_view in {"tickers", "market-caps", "prices"}
                             and len(overnight_tickers) <= MAX_TICKERS
                             and supports_compare_overnight(control_tickers, period)
                             and has_compare_overnight_market_data_source()
@@ -4350,12 +4304,12 @@ def build_web_runtime() -> WebRuntime:
 
                         freshness_refresh_failures: list[str] = []
                         is_local_intraday_price_request = (
-                            current_view == "prices"
+                            current_view in {"market-caps", "prices"}
                             and range_mode != "exact"
                             and period in {"1d", "3d", "1w"}
                         )
                         if (
-                                current_view in {"tickers", "prices", "portfolio"}
+                                current_view in {"tickers", "market-caps", "prices", "portfolio"}
                                 and not is_local_intraday_price_request
                         ):
                             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
@@ -4411,12 +4365,11 @@ def build_web_runtime() -> WebRuntime:
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
                         include_extended_hours = (
-                            current_view in {"tickers", "prices"}
+                            current_view in {"tickers", "market-caps", "prices"}
                             and supports_compare_extended_hours(validated_tickers, period)
                         )
                         show_extended_hours_toggle = False
-                        intraday_supported_periods: list[str] = []
-                        intraday_period_candidates = {"1d", "3d", "1w"}
+                        intraday_period_candidates = set(COMPARE_INTRADAY_PERIODS)
                         intraday_period_sets = [
                             {
                                 candidate
@@ -4425,27 +4378,25 @@ def build_web_runtime() -> WebRuntime:
                             }
                             for ticker in validated_tickers
                         ]
-                        if intraday_period_sets and all(period_set for period_set in intraday_period_sets):
-                            intraday_supported_periods = [
-                                candidate
-                                for candidate in ("1d", "3d", "1w")
-                                if (
-                                    candidate == "1d"
-                                    or any(candidate in period_set for period_set in intraday_period_sets)
-                                )
-                            ]
-                        supported_periods = [
-                            *intraday_supported_periods,
-                            *[
-                                candidate
-                                for candidate in build_supported_periods_from_dates(
-                                    extract_union_dates(datasets),
-                                    interval="1d",
-                                    candidate_periods=COMPARE_PERIODS_1D,
-                                )
-                                if candidate not in intraday_period_candidates
-                            ],
+                        supported_periods = build_supported_compare_periods(
+                            extract_union_dates(datasets),
+                            intraday_period_sets,
+                        )
+                        intraday_supported_periods = [
+                            candidate
+                            for candidate in supported_periods
+                            if candidate in intraday_period_candidates
                         ]
+                        if range_mode != "exact" and period not in intraday_period_candidates:
+                            period, period_notice = resolve_requested_period_from_supported(
+                                period,
+                                supported_periods,
+                                earliest_available=min(dataset["Date"].min() for dataset in datasets),
+                            )
+                            if period_notice and notice is None:
+                                notice = period_notice
+                            elif period_notice:
+                                notice = f"{notice} {period_notice}"
                         date_constraints = build_date_constraint_payload(
                             *datasets,
                             requested_start=exact_start or None,
@@ -4457,7 +4408,11 @@ def build_web_runtime() -> WebRuntime:
                             # Get the minimal max date across all datasets (latest available data is bounded by the ticker with incomplete data)
                             common_max_end = min(dataset["Date"].max() for dataset in datasets)
                             # The requested period offset stays the same but end is now at the latest available common date
-                            requested_start = (common_max_end - PERIOD_OFFSETS[period]).normalize()
+                            requested_start = (
+                                max(dataset["Date"].min() for dataset in datasets).normalize()
+                                if period == "max"
+                                else (common_max_end - PERIOD_OFFSETS[period]).normalize()
+                            )
                             adjusted_start = requested_start.strftime("%Y-%m-%d")
                             adjusted_end = common_max_end.strftime("%Y-%m-%d")
                             # Rebuild date constraints with the new exact range
@@ -4490,11 +4445,11 @@ def build_web_runtime() -> WebRuntime:
                             else:
                                 notice += " " + freshness_notice
 
-                        is_exact_one_day_compare = current_view in {"tickers", "prices"} and range_mode == "exact" and period == "1d"
+                        is_exact_one_day_compare = current_view in {"tickers", "market-caps", "prices"} and range_mode == "exact" and period == "1d"
                         is_intraday_compare_period = range_mode != "exact" and period in {"1d", "3d", "1w"}
                         exact_range_trading_dates = exact_trading_dates_in_range(date_constraints)
                         is_exact_short_intraday_compare = (
-                            current_view in {"tickers", "prices"}
+                            current_view in {"tickers", "market-caps", "prices"}
                             and range_mode == "exact"
                             and not is_exact_one_day_compare
                             and 2 <= len(exact_range_trading_dates) <= 5
@@ -4506,7 +4461,7 @@ def build_web_runtime() -> WebRuntime:
                                 requested_end=exact_end or None,
                                 include_overnight_flag=include_overnight,
                             )
-                        elif current_view in {"tickers", "prices"} and range_mode == "exact" and period in {"3d", "1w"}:
+                        elif current_view in {"tickers", "market-caps", "prices"} and range_mode == "exact" and period in {"3d", "1w"}:
                             intraday_date_constraints = build_short_intraday_date_constraint_payload(
                                 validated_tickers,
                                 requested_start=exact_start or None,
@@ -4851,10 +4806,16 @@ def build_web_runtime() -> WebRuntime:
                                 )
                             ]
                         else:
-                            series = [
-                                build_compare_series_payload(ticker, dataset, color=color)
-                                for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
-                            ]
+                            if current_view == "market-caps":
+                                series = [
+                                    build_market_cap_series_payload(ticker, dataset, color=color)
+                                    for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
+                                ]
+                            else:
+                                series = [
+                                    build_compare_series_payload(ticker, dataset, color=color)
+                                    for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
+                                ]
                         def last_valid_return(item: SeriesPayload) -> float | None:
                             valid_returns = [value for value in item.normalized_returns if value is not None]
                             return valid_returns[-1] if valid_returns else None
@@ -4865,9 +4826,9 @@ def build_web_runtime() -> WebRuntime:
                         best_return = max(valid_performance_returns) if valid_performance_returns else None
                         common_start = aligned_datasets[0]["Date"].min()
                         common_end = aligned_datasets[0]["Date"].max()
-                        if current_view in {"tickers", "prices"} and period == "1d" and (range_mode == "exact" or is_intraday_compare_period):
+                        if current_view in {"tickers", "market-caps", "prices"} and period == "1d" and (range_mode == "exact" or is_intraday_compare_period):
                             display_range = format_display_date(pd.to_datetime(exact_start_value or common_start))
-                        elif current_view in {"tickers", "prices"} and (
+                        elif current_view in {"tickers", "market-caps", "prices"} and (
                             (is_intraday_compare_period and period in {"3d", "1w"})
                             or is_exact_short_intraday_compare
                         ):
@@ -4982,6 +4943,7 @@ def build_web_runtime() -> WebRuntime:
 
         template_name = {
             "tickers": "compare.html",
+            "market-caps": "market_cap_compare.html",
             "prices": "price_compare.html",
             "portfolio": "portfolio.html",
             "dca": "dca.html",
@@ -5007,6 +4969,11 @@ def build_web_runtime() -> WebRuntime:
             display_range=display_range,
             periods=supported_periods,
             period_labels={item: format_period_label(item) for item in supported_periods},
+            period_metadata={
+                "labels": PERIOD_LABELS,
+                "daySpans": PERIOD_DAY_SPANS,
+                "monthSpans": PERIOD_MONTH_SPANS,
+            },
             series=series,
             profiles_json=[quote_profile_to_json(profile) for profile in profiles],
             performance_items=performance_items,
@@ -5080,7 +5047,7 @@ def build_web_runtime() -> WebRuntime:
             sidebar_title=labels["trade_title"] if current_view == "trade" else page_title,
             report_heading=report_heading,
             chart_heading=chart_heading,
-            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings")},
+            dock_urls={view_name: build_view_url(view_name) for view_name in ("tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings")},
             settings_urls={section_name: build_settings_url(section_name) for section_name in
                            ("about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store", "clear-caches",
                             "style-tokens", "export-image", "cash-equivalents")},
@@ -5368,6 +5335,9 @@ def build_web_runtime() -> WebRuntime:
 
     def compare_page():
         return render_workspace_page("tickers")
+
+    def market_cap_compare_page():
+        return render_workspace_page("market-caps")
 
     def legacy_compare_page():
         return build_legacy_workspace_redirect("tickers")
@@ -5697,11 +5667,9 @@ def build_web_runtime() -> WebRuntime:
         selected_broker = str(
             request.form.get("selected_broker", current_settings.selected_broker)
         ).strip().lower() or "longbridge"
-        longbridge_auth_code = str(request.form.get("longbridge_auth_code", "")).strip()
-        longbridge_auth_mode = str(
-            request.form.get("longbridge_auth_mode", current_settings.longbridge_auth_mode)
-        ).strip().lower() or current_settings.longbridge_auth_mode
-        if selected_broker == "longbridge" and longbridge_auth_code:
+        longbridge_auth_mode = current_settings.longbridge_auth_mode
+        action = request.form.get("action", "save")
+        if action == "authorize" and selected_broker == "longbridge":
             longbridge_auth_mode = "cli_oauth"
 
         # IBKR settings are now Flex Web Service (reporting-only). Only account filter and Flex config are persisted.
@@ -5710,9 +5678,11 @@ def build_web_runtime() -> WebRuntime:
             longbridge_auth_mode=longbridge_auth_mode,
             longbridge_cli_path=str(request.form.get("longbridge_cli_path", "")).strip() or current_settings.longbridge_cli_path,
             longbridge_cli_home=str(request.form.get("longbridge_cli_home", "")).strip() or current_settings.longbridge_cli_home,
-            longbridge_app_key=str(request.form.get("longbridge_app_key", "")).strip() or current_settings.longbridge_app_key,
-            longbridge_app_secret=str(request.form.get("longbridge_app_secret", "")).strip() or current_settings.longbridge_app_secret,
-            longbridge_access_token=str(request.form.get("longbridge_access_token", "")).strip() or current_settings.longbridge_access_token,
+            # Legacy Longbridge API credentials remain read-only for backward compatibility.
+            # This endpoint intentionally never accepts or stores new Longbridge secrets.
+            longbridge_app_key=current_settings.longbridge_app_key,
+            longbridge_app_secret=current_settings.longbridge_app_secret,
+            longbridge_access_token=current_settings.longbridge_access_token,
             ibkr_account_id=str(request.form.get("ibkr_account_id", "")).strip() or current_settings.ibkr_account_id,
             # Actual secrets: if blank in form, keep existing (like Longbridge password fields)
             ibkr_flex_token=str(request.form.get("ibkr_flex_token", "")).strip() or current_settings.ibkr_flex_token,
@@ -5731,26 +5701,19 @@ def build_web_runtime() -> WebRuntime:
             ibkr_flex_lookback_days=request.form.get("ibkr_flex_lookback_days", current_settings.ibkr_flex_lookback_days),
         )
         save_broker_settings(updated_settings)
-        action = request.form.get("action", "save")
-        if action == "test":
-            if uses_longbridge_cli_oauth(updated_settings) and longbridge_auth_code:
-                login_success, login_message = authenticate_longbridge_cli_with_auth_code(
-                    updated_settings,
-                    longbridge_auth_code,
+        if action == "authorize":
+            if selected_broker != "longbridge":
+                return _redirect_with_settings_feedback(
+                    "broker-access",
+                    error="Select Longbridge before starting browser authorization.",
                 )
-                if not login_success:
-                    checked_at = datetime.now().astimezone()
-                    checked_at_label = format_display_datetime(
-                        checked_at,
-                        include_seconds=True,
-                        timezone_suffix=checked_at.strftime("%Z"),
-                    )
-                    return _redirect_with_settings_feedback(
-                        "broker-access",
-                        broker_test_status="error",
-                        broker_test_message=login_message,
-                        broker_test_checked_at=checked_at_label,
-                    )
+            success, message = start_longbridge_cli_browser_oauth(updated_settings)
+            return _redirect_with_settings_feedback(
+                "broker-access",
+                notice=message if success else "",
+                error="" if success else message,
+            )
+        if action == "test":
             success, message = test_broker_connection(updated_settings)
             checked_at = datetime.now().astimezone()
             checked_at_label = format_display_datetime(
@@ -6022,14 +5985,14 @@ def build_web_runtime() -> WebRuntime:
         requested_range = request.args.get("range", request.args.get("range_mode", "")).strip().lower()
         requested_period = request.args.get("period", "").strip().lower()
         freshness_refresh_failures: list[str] = []
-        if requested_view in {"tickers", "prices"} and requested_range == "exact" and requested_period == "1d":
+        if requested_view in {"tickers", "market-caps", "prices"} and requested_range == "exact" and requested_period == "1d":
             payload = build_one_day_intraday_date_constraint_payload(
                 validated_tickers,
                 requested_start=requested_start,
                 requested_end=requested_end,
             )
             return jsonify(date_constraint_payload_to_json(payload))
-        if requested_view == "tickers" and requested_range == "exact" and requested_period in {"3d", "1w"}:
+        if requested_view in {"tickers", "market-caps"} and requested_range == "exact" and requested_period in {"3d", "1w"}:
             payload = build_short_intraday_date_constraint_payload(
                 validated_tickers,
                 requested_start=requested_start,
@@ -6037,13 +6000,14 @@ def build_web_runtime() -> WebRuntime:
             )
             if payload.trading_dates:
                 return jsonify(date_constraint_payload_to_json(payload))
-        if requested_view in {"tickers", "portfolio", "dca"}:
+        if requested_view in {"tickers", "market-caps", "portfolio", "dca"}:
             freshness_refresh_failures = ensure_latest_daily_caches(validated_tickers)
         datasets = [
             fetch_history(ticker, include_dividends_flag, dividend_mode=dividend_mode)
             for ticker in validated_tickers
         ]
         payload = build_date_constraint_payload(*datasets, requested_start=requested_start, requested_end=requested_end)
+        annotate_date_constraint_availability(payload, validated_tickers, datasets)
         if freshness_refresh_failures:
             failed_preview = ", ".join(freshness_refresh_failures)
             freshness_notice = (
@@ -7295,6 +7259,7 @@ def build_web_runtime() -> WebRuntime:
     return WebRuntime(
         root=root,
         compare_page=compare_page,
+        market_cap_compare_page=market_cap_compare_page,
         legacy_compare_page=legacy_compare_page,
         price_compare_page=price_compare_page,
         portfolio_page=portfolio_page,

@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -340,6 +340,28 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('<option value="5y"', html)
         self.assertIn('<option value="max"', html)
         self.assertNotIn('<option value="10y"', html)
+
+    def test_compare_page_keeps_rendered_and_effective_period_in_sync(self) -> None:
+        dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2018-01-01", "2026-03-27"]),
+                "Close": [100.0, 150.0],
+            }
+        )
+
+        with (
+            patch("app.web.runtime.fetch_history", return_value=dataset),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            client = create_app().test_client()
+            response = client.get("/workspaces/compare?ticker=QQQ&ticker=SPY&period=10y&dividends=1")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('<option value="10y"', html)
+        self.assertIn('<option value="max" selected', html)
+        self.assertIn("Requested period 10 years exceeds the available trading history", html)
 
     def test_compare_page_defaults_one_day_compare_to_extended_hours(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:

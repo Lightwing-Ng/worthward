@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and pinyin-initial sort order.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -34,6 +34,13 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         pinyin_sort_key="ibkr",
         icon_filename="IBKR.svg",
         description="Supported now for CSV import.",
+    ),
+    "longbridge": BrokerCatalogEntry(
+        code="longbridge",
+        label="Longbridge",
+        pinyin_sort_key="longbridge",
+        icon_filename="Longbridge.png",
+        description="Authorize the local Longbridge CLI through browser OAuth.",
     ),
     "schwab": BrokerCatalogEntry(
         code="schwab",

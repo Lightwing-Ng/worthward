@@ -1,6 +1,45 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.40.0`
+Documentation version: `v1.46.0`
+
+## Longbridge browser OAuth configuration completed on 14 Jul 2026
+
+- Settings > Broker access exposes Longbridge beside IBKR and changes the visible configuration fields when the broker selection changes.
+- Longbridge authorization starts the installed CLI's local browser OAuth flow in a separate process. The web application neither receives nor persists authorization codes or OAuth tokens, and it reuses the signed-in user's existing CLI profile.
+- Existing legacy API-key settings are preserved for backward compatibility but are no longer requested by the Settings interface.
+
+## Longbridge market-cap cross-check added on 14 Jul 2026
+
+- Longbridge `calc-index` supplies current `mktcap` and `last_done`; their quotient provides a same-timestamp implied total-share count without mixing live and closing prices.
+- The latest trading-day market-cap point prefers that Longbridge share count. Earlier history continues to use point-in-time yfinance shares, and Longbridge's current snapshot is never projected backward.
+- When both providers are available, the serialized series records the normalized percentage difference as `matched` at or below 2%, `review` above 2% through 10%, and `diverged` above 10%.
+- The provider boundary reuses the existing Longbridge CLI and SDK adapters. User-level CLI OAuth is attempted first even when IBKR is the selected broker; configured legacy Longbridge credentials are the secondary path, and yfinance remains the no-Longbridge fallback.
+
+## Exact-date year picker completed on 14 Jul 2026
+
+- Selecting the month-year heading opens an animated, stable 3-by-4 January-to-December grid; choosing an available month returns to its calendar-day view.
+- The picker derives its first and last years from the selected tickers' shared history. Every month remains in its normal grid position, while unavailable months and days are visually muted.
+- Muted dates, months, and boundary year arrows remain physically activatable. They explain the limiting ticker's comparable-history boundary or the selected date's unavailable trading status instead of silently ignoring the interaction.
+
+## Market cap comparison workspace added on 14 Jul 2026
+
+- `/workspaces/market-caps` appears between Return comparison and Price performance and reuses the shared ticker, range-option, exact-date-picker, and hydration infrastructure.
+- Historical market capitalization multiplies each authoritative market price by the latest point-in-time shares-outstanding observation known at that timestamp. It does not backfill periods before the first available disclosure.
+- Reported shares use an isolated derived cache under `market_store/fundamentals/shares/`; existing historical price stores are not rewritten.
+- Return comparison, Market cap comparison, and Price performance retain independent ticker and range selections in session memory. A destination with no prior state inherits the current comparison selection on first entry.
+
+## Workspace range-option policy unified on 14 Jul 2026
+
+- Return comparison, Price performance, Portfolio, DCA, Backtest, and Grid Trading now derive relative range options from one shared policy and one canonical period metadata source.
+- Multi-ticker workspaces retain a requested horizon when any selected security supplies that history, leaving newer listings blank before their first authoritative record. `Max` continues to use shared history.
+- Unsupported URL periods now resolve to an option that is actually rendered, preventing the calculation period and dropdown selection from diverging.
+- Period labels and exact-range span metadata are serialized from Python to the browser instead of being maintained in a second JavaScript table.
+
+## Date-picker viewport containment completed on 14 Jul 2026
+
+- The shared exact-date picker now measures the complete popover and opens above a low trigger when the remaining space below cannot contain it.
+- Popovers are clamped to the visual viewport on both axes and become internally scrollable on exceptionally short screens, keeping every calendar action physically reachable.
+- Chromium coverage verifies that the low one-day trading-date picker remains fully inside a 720 px-tall viewport and that selecting a day commits the hidden canonical ISO value.
 
 ## Price subplot ordering and compact labels completed on 14 Jul 2026
 

@@ -1,7 +1,7 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.2.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from threading import Lock
 from typing import Any
 
 from app.core.broker_settings import BrokerSettings, resolve_longbridge_cli_home
@@ -22,6 +23,8 @@ DEFAULT_LONGBRIDGE_CLI_CANDIDATES = (
     "/opt/homebrew/bin/longbridge",
     "/usr/local/bin/longbridge",
 )
+_BROWSER_OAUTH_LOCK = Lock()
+_BROWSER_OAUTH_PROCESS: subprocess.Popen[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,34 @@ def authenticate_longbridge_cli_with_auth_code(settings: BrokerSettings, auth_co
     return True, result.stdout or "Longbridge CLI authentication succeeded."
 
 
+def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, str]:
+    """Start the CLI's local browser OAuth flow without receiving any credential."""
+    global _BROWSER_OAUTH_PROCESS
+
+    with _BROWSER_OAUTH_LOCK:
+        if _BROWSER_OAUTH_PROCESS is not None and _BROWSER_OAUTH_PROCESS.poll() is None:
+            return False, "Longbridge browser authorization is already open. Complete it in the browser window."
+
+        try:
+            cli_path = resolve_longbridge_cli_path(settings)
+            _BROWSER_OAUTH_PROCESS = subprocess.Popen(
+                [cli_path, "auth", "login", "--auth-code", "--client-name", "antigravity"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                env=_build_longbridge_cli_env(settings),
+                start_new_session=True,
+            )
+        except Exception as exc:
+            return False, f"Could not start Longbridge browser authorization: {exc}"
+
+    return (
+        True,
+        "Longbridge authorization opened in your browser. Complete it there, then return here and test the connection.",
+    )
+
+
 def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]:
     try:
         auth_status = get_longbridge_cli_auth_status(settings)
@@ -151,7 +182,7 @@ def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]
         return (
             False,
             "Longbridge CLI is installed, but no valid OAuth session was found. "
-            "Authenticate with `longbridge auth login --auth-code <CODE>` first.",
+            "Start browser authorization from Settings > Broker access, then try again.",
         )
 
     try:

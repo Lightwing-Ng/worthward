@@ -1,4 +1,4 @@
-/* Code version: v0.16.1 */
+/* Code version: v0.19.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -96,7 +96,7 @@
     };
     const $ = (selector) => document.querySelector(selector);
     const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-    const WORKSPACE_VIEWS = new Set(["tickers", "prices", "portfolio", "dca", "backtest"]);
+    const WORKSPACE_VIEWS = new Set(["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"]);
     const UNKNOWN_MESSAGE = "Unknown or unsupported ticker.";
     const VIEW_MEMORY_KEY = "antigravity:view-memory";
     const TRANSIENT_VIEW_QUERY_KEYS = new Set(["notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"]);
@@ -130,6 +130,7 @@
     let optimisticNavigationSnapshot = null;
     const datePickerState = [];
     let validTradingDateSet = null;
+    let dateConstraintAvailability = {};
     let dateConstraintsRequestId = 0;
     const portfolioWeightState = {
         clock: 0,
@@ -801,6 +802,7 @@
     });
     const WORKSPACE_NAVIGATION_PROFILES = Object.freeze({
         tickers: {title: labels.dock_tickers || "Return comparison"},
+        "market-caps": {title: labels.dock_market_caps || "Market cap comparison"},
         prices: {title: labels.dock_prices || "Price performance"},
         portfolio: {title: labels.dock_portfolio || "Compute your portfolio"},
         dca: {title: labels.dock_dca || "Dollar-cost averaging"},
@@ -1079,6 +1081,7 @@
                 || path === "/workspaces/compare"
                 || path.startsWith("/workspaces/compare/")
             ) return "tickers";
+            if (path === "/workspaces/market-caps" || path.startsWith("/workspaces/market-caps/")) return "market-caps";
             if (path === "/workspaces/prices" || path.startsWith("/workspaces/prices/")) return "prices";
             if (
                 path === "/portfolio"
@@ -1226,7 +1229,7 @@
             series: state.chart.series.map((item) => ({
                 ticker: item.ticker,
                 dates: [...(item.dates || [])],
-                values: [...(item.normalized_returns || [])],
+                values: [...(state.currentView === "market-caps" ? (item.market_caps || []) : (item.normalized_returns || []))],
             })),
         };
     };
@@ -2150,7 +2153,7 @@
             applyPortfolioPendingState();
             return;
         }
-		if (state.currentView === "prices") {
+		if (["market-caps", "prices"].includes(state.currentView)) {
 			const workspacePanel = document.getElementById("workspace_panel");
 			if (workspacePanel) workspacePanel.dataset.workspacePending = "1";
 			return;
@@ -2208,7 +2211,7 @@
     };
 
     const mergeKnownTickerProfilesIntoState = (nextState) => {
-        if (!nextState || !["tickers", "prices", "portfolio"].includes(nextState.currentView)) return nextState;
+        if (!nextState || !["tickers", "market-caps", "prices", "portfolio"].includes(nextState.currentView)) return nextState;
         if (!nextState.chart) return nextState;
         const profileMap = collectKnownTickerProfileMap();
         if (!profileMap.size) return nextState;
@@ -2300,7 +2303,7 @@
         const workspacePanel = document.getElementById("workspace_panel");
         if (!nextWorkspacePanel || !workspacePanel) throw new Error("Workspace panel missing from response.");
         syncGlobalNoticeBanners(doc, nextUrl);
-        if (state.currentView === "tickers") {
+        if (["tickers", "market-caps"].includes(state.currentView)) {
             const hydratedCompareWorkspace = bootstrap.hydrateCompareWorkspace?.({
                 doc,
                 replaceDomRegion,
@@ -2320,7 +2323,7 @@
                 replaceDomRegion(currentChartRegion, nextChartRegion);
                 workspacePanel.querySelectorAll(".is-pending-value").forEach((node) => node.classList.remove("is-pending-value"));
             }
-        } else if (state.currentView === "prices" || state.currentView === "backtest" || state.currentView === "dca") {
+        } else if (["market-caps", "prices", "backtest", "dca"].includes(state.currentView)) {
             hydrateWorkspaceModeMain(workspacePanel, nextWorkspacePanel);
         } else {
             workspacePanel.innerHTML = nextWorkspacePanel.innerHTML;
@@ -2387,7 +2390,7 @@
             return fallbackUrl;
         }
         const targetView = resolveViewFromUrl(fallbackUrl);
-        const comparisonViews = new Set(["tickers", "prices"]);
+        const comparisonViews = new Set(["tickers", "market-caps", "prices"]);
         if (!comparisonViews.has(state.currentView) || !comparisonViews.has(targetView)) {
             return fallbackUrl;
         }
@@ -4289,7 +4292,7 @@
         .filter((field) => field instanceof HTMLElement);
 
     const isOneDayExactDateMode = () => (
-        ["tickers", "prices"].includes(state.currentView)
+        ["tickers", "market-caps", "prices"].includes(state.currentView)
         && (periodSelect?.value || defaults.period) === "1d"
     );
 
@@ -4305,8 +4308,8 @@
 
     const syncDividendModeSwitches = () => {
         if (!priceOnlyInput || !includeDividendsInput) return;
-        const isPriceCompare = state.currentView === "prices";
-        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isPriceCompare = ["market-caps", "prices"].includes(state.currentView);
+        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         if (priceOnlyField instanceof HTMLElement) {
             priceOnlyField.hidden = isOneDayPeriod || isPriceCompare;
         }
@@ -4329,7 +4332,7 @@
 
     const syncOneDayOvernightSwitch = () => {
         if (!(overnightField instanceof HTMLElement) || !overnightInput) return;
-        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const companionTickers = new Set(
             String(overnightField.dataset.overnightCompanionTickers || "")
                 .split(",")
@@ -4354,7 +4357,7 @@
             syncOneDayOvernightSwitch();
             return;
         }
-        const isOneDayPeriod = ["tickers", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
+        const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
         const canUseExtendedHours = isOneDayPeriod && areAllFilledTickersUs();
         extendedHoursField.hidden = !canUseExtendedHours;
         extendedHoursInput.disabled = !canUseExtendedHours;
@@ -5239,37 +5242,9 @@
         return date;
     };
     const MS_PER_DAY = 24 * 60 * 60 * 1000;
-    const PERIOD_DAY_SPANS = {
-        "1d": 1,
-        "3d": 3,
-        "1w": 7,
-        "2w": 14,
-    };
-    const PERIOD_MONTH_SPANS = {
-        "1mo": 1,
-        "3mo": 3,
-        "6mo": 6,
-        "1y": 12,
-        "2y": 24,
-        "3y": 36,
-        "5y": 60,
-        "10y": 120,
-    };
-    const PERIOD_LABELS = {
-        "1d": "1 day",
-        "3d": "3 days",
-        "1w": "1 week",
-        "2w": "2 weeks",
-        "1mo": "1 month",
-        "3mo": "3 months",
-        "6mo": "6 months",
-        "1y": "1 year",
-        "2y": "2 years",
-        "3y": "3 years",
-        "5y": "5 years",
-        "10y": "10 years",
-        "max": "Max",
-    };
+    const PERIOD_DAY_SPANS = state.periodMetadata?.daySpans || {};
+    const PERIOD_MONTH_SPANS = state.periodMetadata?.monthSpans || {};
+    const PERIOD_LABELS = state.periodMetadata?.labels || {};
 
     const shiftMonthsUtc = (date, months) => {
         const year = date.getUTCFullYear();
@@ -5285,7 +5260,7 @@
     const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
 
     const getRenderedChartDateRange = () => {
-        if (["tickers", "prices"].includes(state.currentView) && state.chart?.tradingDate) {
+        if (["tickers", "market-caps", "prices"].includes(state.currentView) && state.chart?.tradingDate) {
             const tradingDate = String(state.chart.tradingDate || "");
             if (parseIsoDate(tradingDate)) {
                 return {
@@ -5294,7 +5269,7 @@
                 };
             }
         }
-        if (["tickers", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
+        if (["tickers", "market-caps", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
             const displayRangeDate = parseDisplayDateTextToIso($("#compare_summary_date_range")?.textContent || "");
             if (displayRangeDate) {
                 return {
@@ -5521,6 +5496,7 @@
         datePickerState.forEach((picker) => {
             picker.popover.hidden = true;
             picker.trigger.setAttribute("aria-expanded", "false");
+            picker.view = "days";
         });
         syncDatePickerPeerHighlight();
     };
@@ -5536,12 +5512,29 @@
 
     const positionDatePickerPopover = (picker) => {
         const triggerRect = picker.trigger.getBoundingClientRect();
-        const popoverWidth = Math.min(320, window.innerWidth - 48);
-        const leftBoundary = 12;
-        const rightBoundary = window.innerWidth - 12;
+        const visualViewport = window.visualViewport;
+        const viewportLeft = visualViewport?.offsetLeft || 0;
+        const viewportTop = visualViewport?.offsetTop || 0;
+        const viewportWidth = visualViewport?.width || window.innerWidth;
+        const viewportHeight = visualViewport?.height || window.innerHeight;
+        const viewportPadding = 12;
+        const popoverGap = 8;
+        const popoverRect = picker.popover.getBoundingClientRect();
+        const popoverWidth = Math.min(320, viewportWidth - (viewportPadding * 2));
+        const popoverHeight = Math.min(popoverRect.height, viewportHeight - (viewportPadding * 2));
+        const leftBoundary = viewportLeft + viewportPadding;
+        const topBoundary = viewportTop + viewportPadding;
+        const rightBoundary = viewportLeft + viewportWidth - viewportPadding;
+        const bottomBoundary = viewportTop + viewportHeight - viewportPadding;
         const maxLeft = Math.max(leftBoundary, rightBoundary - popoverWidth);
-        const preferredTop = triggerRect.bottom + 8;
-        const top = Math.min(preferredTop, window.innerHeight - 24);
+        const maxTop = Math.max(topBoundary, bottomBoundary - popoverHeight);
+        const spaceBelow = bottomBoundary - triggerRect.bottom - popoverGap;
+        const spaceAbove = triggerRect.top - topBoundary - popoverGap;
+        let preferredTop = triggerRect.bottom + popoverGap;
+        if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
+            preferredTop = triggerRect.top - popoverGap - popoverHeight;
+        }
+        const top = Math.min(Math.max(preferredTop, topBoundary), maxTop);
         const left = Math.min(Math.max(triggerRect.left, leftBoundary), maxLeft);
         picker.popover.style.top = `${Math.round(top)}px`;
         picker.popover.style.left = `${Math.round(left)}px`;
@@ -5563,6 +5556,66 @@
         if (peerPicker) {
             peerPicker.wrapper.classList.add("is-peer-highlight");
         }
+    };
+
+    const getDatePickerBounds = (picker) => ({
+        minDate: parseIsoDate(picker.input.min),
+        maxDate: parseIsoDate(picker.input.max),
+    });
+
+    const getDatePickerBoundMessage = (bound) => {
+        const detail = dateConstraintAvailability?.[bound]?.message;
+        if (detail) return detail;
+        if (bound === "earliest") return "Choose a later shared trading date for the selected tickers.";
+        return "Choose an earlier shared trading date for the selected tickers.";
+    };
+
+    const getDatePickerDateAvailability = (picker, candidateDate, peerDate = null) => {
+        const {minDate, maxDate} = getDatePickerBounds(picker);
+        const isoValue = formatIsoDate(candidateDate);
+        if (minDate && candidateDate < minDate) {
+            return {selectable: false, message: getDatePickerBoundMessage("earliest")};
+        }
+        if (maxDate && candidateDate > maxDate) {
+            return {selectable: false, message: getDatePickerBoundMessage("latest")};
+        }
+        if (picker.role === "start" && peerDate && candidateDate > peerDate) {
+            return {selectable: false, message: `${labels.start} must be on or before ${labels.to}.`};
+        }
+        if (picker.role === "end" && peerDate && candidateDate < peerDate) {
+            return {selectable: false, message: `${labels.to} must be on or after ${labels.start}.`};
+        }
+        if (validTradingDateSet && !validTradingDateSet.has(isoValue)) {
+            return {
+                selectable: false,
+                message: `${formatDisplayDate(isoValue)} is not a shared trading day for the selected tickers.`,
+            };
+        }
+        return {selectable: true, message: ""};
+    };
+
+    const getDatePickerMonthAvailability = (picker, year, monthIndex, peerDate) => {
+        const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+        let fallbackMessage = "";
+        for (let day = 1; day <= lastDay; day += 1) {
+            const availability = getDatePickerDateAvailability(
+                picker,
+                new Date(Date.UTC(year, monthIndex, day)),
+                peerDate,
+            );
+            if (availability.selectable) return availability;
+            if (!fallbackMessage) fallbackMessage = availability.message;
+        }
+        return {selectable: false, message: fallbackMessage || "No shared trading days are available in this month."};
+    };
+
+    const showDatePickerFeedback = (picker, message) => {
+        picker.interactionMessage = message;
+        applyDatePickerValidationState(picker);
+    };
+
+    const clearDatePickerFeedback = (picker) => {
+        picker.interactionMessage = "";
     };
 
     const normalizeDatePickerDraft = (rawValue) => String(rawValue || "")
@@ -5618,12 +5671,13 @@
     };
 
     const applyDatePickerValidationState = (picker, workingState = getDatePickerWorkingState(picker)) => {
-        const message = String(workingState.validationMessage || "");
+        const validationMessage = String(workingState.validationMessage || "");
+        const message = validationMessage || String(picker.interactionMessage || "");
         syncDatePickerEditorText(picker, workingState.displayText, {force: Boolean(picker.forceDisplaySync)});
         picker.forceDisplaySync = false;
-        picker.trigger.classList.toggle("is-invalid", Boolean(message));
-        picker.triggerValue.classList.toggle("is-invalid", Boolean(message));
-        picker.triggerValue.setAttribute("aria-invalid", message ? "true" : "false");
+        picker.trigger.classList.toggle("is-invalid", Boolean(validationMessage));
+        picker.triggerValue.classList.toggle("is-invalid", Boolean(validationMessage));
+        picker.triggerValue.setAttribute("aria-invalid", validationMessage ? "true" : "false");
         if (picker.feedback) picker.feedback.textContent = message;
     };
 
@@ -5656,6 +5710,7 @@
     const updateDatePickerValue = (picker, isoValue, {emitChange = false, closePopover = false} = {}) => {
         picker.draftText = "";
         picker.validationMessage = "";
+        clearDatePickerFeedback(picker);
         picker.input.value = isoValue;
         picker.forceSyncMonth = true;
         picker.forceDisplaySync = true;
@@ -5665,6 +5720,7 @@
     };
 
     const commitDatePickerTextInput = (picker, {emitChange = false, closePopover = false} = {}) => {
+        clearDatePickerFeedback(picker);
         const rawValue = normalizeDatePickerDraft(picker.triggerValue.textContent);
         if (!rawValue) {
             picker.draftText = "";
@@ -5700,12 +5756,93 @@
         updateDatePickerValue(picker, isoValue, {emitChange, closePopover});
     };
 
+    const getDatePickerNavigationTarget = (picker, delta) => {
+        if (picker.view === "months") {
+            return new Date(Date.UTC(picker.visibleMonth.getUTCFullYear() + delta, 0, 1));
+        }
+        return addMonthsUtc(picker.visibleMonth, delta);
+    };
+
+    const getDatePickerNavigationAvailability = (picker, delta) => {
+        const targetMonth = getDatePickerNavigationTarget(picker, delta);
+        const peerPicker = getDatePickerPeer(picker);
+        const peerDate = parseIsoDate(getDatePickerComparableIsoValue(peerPicker));
+        if (picker.view === "months") {
+            const {minDate, maxDate} = getDatePickerBounds(picker);
+            const targetYear = targetMonth.getUTCFullYear();
+            return {
+                selectable: !(minDate && targetYear < minDate.getUTCFullYear())
+                    && !(maxDate && targetYear > maxDate.getUTCFullYear()),
+                message: minDate && targetYear < minDate.getUTCFullYear()
+                    ? getDatePickerBoundMessage("earliest")
+                    : maxDate && targetYear > maxDate.getUTCFullYear()
+                        ? getDatePickerBoundMessage("latest")
+                        : "",
+            };
+        }
+        return getDatePickerMonthAvailability(
+            picker,
+            targetMonth.getUTCFullYear(),
+            targetMonth.getUTCMonth(),
+            peerDate,
+        );
+    };
+
+    const syncDatePickerNavigationButtons = (picker) => {
+        picker.navButtons.forEach((button) => {
+            const direction = Number.parseInt(button.dataset.dateNav || "0", 10);
+            const availability = getDatePickerNavigationAvailability(picker, direction);
+            const periodLabel = picker.view === "months" ? "year" : "month";
+            button.classList.toggle("is-disabled", !availability.selectable);
+            button.dataset.selectable = availability.selectable ? "true" : "false";
+            button.removeAttribute("aria-disabled");
+            button.setAttribute(
+                "aria-label",
+                `${direction < 0 ? "Previous" : "Next"} ${periodLabel}${availability.selectable ? "" : ", unavailable; select to learn why"}`,
+            );
+        });
+    };
+
+    const renderDatePickerMonthGrid = (picker, selectedDate, peerDate) => {
+        const year = picker.visibleMonth.getUTCFullYear();
+        picker.monthGrid.innerHTML = "";
+        for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+            const availability = getDatePickerMonthAvailability(picker, year, monthIndex, peerDate);
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "date-picker-month";
+            const monthDate = new Date(Date.UTC(year, monthIndex, 1));
+            if (selectedDate && selectedDate.getUTCFullYear() === year && selectedDate.getUTCMonth() === monthIndex) {
+                button.classList.add("is-selected");
+            }
+            if (isSameUtcDay(startOfMonthUtc(new Date()), monthDate)) button.classList.add("is-current");
+            if (!availability.selectable) button.classList.add("is-disabled");
+            button.textContent = MONTH_ABBREVIATIONS[monthIndex];
+            button.dataset.monthValue = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+            button.dataset.selectable = availability.selectable ? "true" : "false";
+            button.removeAttribute("aria-disabled");
+            button.setAttribute("aria-label", `${MONTH_LABELS[monthIndex]} ${year}${availability.selectable ? "" : ", unavailable; select to learn why"}`);
+            button.addEventListener("click", () => {
+                if (!availability.selectable) {
+                    showDatePickerFeedback(picker, availability.message);
+                    return;
+                }
+                clearDatePickerFeedback(picker);
+                picker.visibleMonth = monthDate;
+                picker.view = "days";
+                picker.forceSyncMonth = false;
+                syncDatePickerView(picker);
+                positionDatePickerPopover(picker);
+            });
+            picker.monthGrid.appendChild(button);
+        }
+    };
+
     const syncDatePickerView = (picker) => {
         const workingState = getDatePickerWorkingState(picker);
         applyDatePickerValidationState(picker, workingState);
         const selectedDate = workingState.previewDate;
-        const minDate = parseIsoDate(picker.input.min);
-        const maxDate = parseIsoDate(picker.input.max);
+        const {minDate, maxDate} = getDatePickerBounds(picker);
         const peerPicker = getDatePickerPeer(picker);
         const peerDate = parseIsoDate(getDatePickerComparableIsoValue(peerPicker));
         const today = startOfMonthUtc(new Date());
@@ -5715,29 +5852,40 @@
             picker.visibleMonth = startOfMonthUtc(anchorDate);
             picker.forceSyncMonth = false;
         }
-        picker.monthLabel.textContent = formatPickerMonthLabel(picker.visibleMonth);
-        picker.grid.innerHTML = "";
+        const monthView = picker.view === "months";
+        picker.monthLabel.textContent = monthView
+            ? String(picker.visibleMonth.getUTCFullYear())
+            : formatPickerMonthLabel(picker.visibleMonth);
+        picker.title.setAttribute(
+            "aria-label",
+            monthView
+                ? `Return to ${formatPickerMonthLabel(picker.visibleMonth)}`
+                : `Choose month and year, currently ${formatPickerMonthLabel(picker.visibleMonth)}`,
+        );
+        picker.calendar.hidden = monthView;
+        picker.monthGrid.hidden = !monthView;
+        picker.popover.classList.toggle("is-month-view", monthView);
+        syncDatePickerNavigationButtons(picker);
+        if (monthView) {
+            renderDatePickerMonthGrid(picker, selectedDate, peerDate);
+            return;
+        }
 
+        picker.grid.innerHTML = "";
         const firstDay = startOfMonthUtc(picker.visibleMonth);
         const monthStartOffset = firstDay.getUTCDay();
         const gridStart = new Date(Date.UTC(firstDay.getUTCFullYear(), firstDay.getUTCMonth(), 1 - monthStartOffset));
         for (let offset = 0; offset < 42; offset += 1) {
             const cellDate = new Date(Date.UTC(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + offset));
             const isoValue = formatIsoDate(cellDate);
+            const availability = getDatePickerDateAvailability(picker, cellDate, peerDate);
             const isCurrentMonth = cellDate.getUTCMonth() === picker.visibleMonth.getUTCMonth();
-            const isBeforeMin = minDate && cellDate < minDate;
-            const isAfterMax = maxDate && cellDate > maxDate;
-            const violatesPeerRange = (
-                (picker.role === "start" && peerDate && cellDate > peerDate)
-                || (picker.role === "end" && peerDate && cellDate < peerDate)
-            );
-            const isTradingDay = !validTradingDateSet || validTradingDateSet.has(isoValue);
             const isPeerBoundary = peerDate && isSameUtcDay(cellDate, peerDate);
             const button = document.createElement("button");
             button.type = "button";
             button.className = "date-picker-day";
             if (!isCurrentMonth) button.classList.add("is-muted");
-            if (isBeforeMin || isAfterMax || !isTradingDay || violatesPeerRange) button.classList.add("is-disabled");
+            if (!availability.selectable) button.classList.add("is-disabled");
             if (selectedDate && isSameUtcDay(cellDate, selectedDate)) {
                 button.classList.add(hasPreviewValidationMessage ? "is-preview-invalid" : "is-selected");
             }
@@ -5745,8 +5893,14 @@
             if (isSameUtcDay(cellDate, new Date())) button.classList.add("is-today");
             button.textContent = String(cellDate.getUTCDate());
             button.dataset.value = isoValue;
-            button.disabled = Boolean(isBeforeMin || isAfterMax || !isTradingDay || violatesPeerRange);
+            button.dataset.selectable = availability.selectable ? "true" : "false";
+            button.removeAttribute("aria-disabled");
+            button.setAttribute("aria-label", `${formatDisplayDate(isoValue)}${availability.selectable ? "" : ", unavailable; select to learn why"}`);
             button.addEventListener("click", () => {
+                if (!availability.selectable) {
+                    showDatePickerFeedback(picker, availability.message);
+                    return;
+                }
                 updateDatePickerValue(picker, isoValue, {emitChange: true, closePopover: true});
             });
             picker.grid.appendChild(button);
@@ -5761,9 +5915,13 @@
             const triggerValue = wrapper.querySelector("[data-date-trigger-value]");
             const popover = wrapper.querySelector("[data-date-popover]");
             const feedback = wrapper.querySelector("[data-date-feedback]");
+            const title = wrapper.querySelector("[data-date-title]");
             const monthLabel = wrapper.querySelector("[data-date-month]");
             const grid = wrapper.querySelector("[data-date-grid]");
-            if (!input || !trigger || !triggerValue || !popover || !feedback || !monthLabel || !grid) return;
+            const calendar = wrapper.querySelector("[data-date-calendar]");
+            const monthGrid = wrapper.querySelector("[data-date-month-grid]");
+            const navButtons = Array.from(popover.querySelectorAll("[data-date-nav]"));
+            if (!input || !trigger || !triggerValue || !popover || !feedback || !title || !monthLabel || !grid || !calendar || !monthGrid) return;
             const picker = {
                 wrapper,
                 input,
@@ -5771,30 +5929,47 @@
                 triggerValue,
                 popover,
                 feedback,
+                title,
                 monthLabel,
                 grid,
+                calendar,
+                monthGrid,
+                navButtons,
                 role: wrapper.dataset.dateRole || "",
+                view: "days",
                 visibleMonth: null,
                 forceSyncMonth: true,
                 forceDisplaySync: true,
                 draftText: "",
                 validationMessage: "",
+                interactionMessage: "",
             };
             wrapper.dataset.bound = "1";
             // Ensure popover is not clipped by sidebar or parents with overflow/transform.
             // NOTE: nav buttons are inside the popover, so bind nav listeners BEFORE moving the popover.
-            popover.querySelectorAll("[data-date-nav]").forEach((button) => {
+            navButtons.forEach((button) => {
                 button.addEventListener("click", (event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    const direction = Number.parseInt(button.dataset.dateNav || "0", 10);
+                    const availability = getDatePickerNavigationAvailability(picker, direction);
+                    if (!availability.selectable) {
+                        showDatePickerFeedback(picker, availability.message);
+                        return;
+                    }
+                    clearDatePickerFeedback(picker);
                     picker.forceSyncMonth = false;
-                    picker.visibleMonth = addMonthsUtc(
-                        picker.visibleMonth || startOfMonthUtc(new Date()),
-                        Number.parseInt(button.dataset.dateNav || "0", 10),
-                    );
+                    picker.visibleMonth = getDatePickerNavigationTarget(picker, direction);
                     syncDatePickerView(picker);
                     positionDatePickerPopover(picker);
                 });
+            });
+            title.addEventListener("click", (event) => {
+                event.preventDefault();
+                picker.view = picker.view === "months" ? "days" : "months";
+                clearDatePickerFeedback(picker);
+                syncDatePickerView(picker);
+                positionDatePickerPopover(picker);
             });
             if (popover.parentElement !== document.body) {
                 document.body.appendChild(popover);
@@ -5805,6 +5980,8 @@
                 if (popover.hidden) {
                     closeAllDatePickers();
                 }
+                picker.view = "days";
+                clearDatePickerFeedback(picker);
                 picker.forceSyncMonth = true;
                 syncDatePickerView(picker);
                 popover.hidden = false;
@@ -5822,6 +5999,7 @@
             triggerValue.addEventListener("input", () => {
                 picker.draftText = normalizeDatePickerDraft(triggerValue.textContent);
                 picker.validationMessage = "";
+                clearDatePickerFeedback(picker);
                 triggerValue.dataset.empty = picker.draftText ? "0" : "1";
                 picker.forceSyncMonth = true;
                 refreshDatePickers();
@@ -5837,6 +6015,12 @@
                 }
                 if (event.key === "Escape") {
                     event.preventDefault();
+                    if (picker.view === "months") {
+                        picker.view = "days";
+                        syncDatePickerView(picker);
+                        positionDatePickerPopover(picker);
+                        return;
+                    }
                     picker.draftText = "";
                     picker.validationMessage = "";
                     picker.forceDisplaySync = true;
@@ -5850,6 +6034,7 @@
                 picker.forceDisplaySync = true;
                 picker.draftText = "";
                 picker.validationMessage = "";
+                clearDatePickerFeedback(picker);
                 syncDatePickerView(picker);
                 syncDatePickerPeerHighlight();
             });
@@ -6024,6 +6209,7 @@
         const rangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
         if (rangeMode !== "exact") {
             validTradingDateSet = null;
+            dateConstraintAvailability = {};
             return;
         }
         const tickers = getFilledTickers();
@@ -6055,6 +6241,9 @@
             const payload = await response.json();
             if (requestId !== dateConstraintsRequestId) return;
             validTradingDateSet = payload.trading_dates?.length ? new Set(payload.trading_dates) : null;
+            dateConstraintAvailability = payload.availability && typeof payload.availability === "object"
+                ? payload.availability
+                : {};
             const tradingDateSet = new Set(payload.trading_dates || []);
             if (exactStartInput) {
                 exactStartInput.min = payload.min_date || "";
@@ -7085,7 +7274,7 @@
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
             } else if (
-                ["tickers", "prices"].includes(state.currentView)
+                ["tickers", "market-caps", "prices"].includes(state.currentView)
                 && !missingLocalTickers.length
                 && pendingWorkspaceChartTransition?.view === state.currentView
                 && String(pendingWorkspaceChartTransition.reason || "").startsWith("ticker")
@@ -7095,7 +7284,7 @@
                     copy: "Rebuilding the return curve and performance summary for the selected tickers. You can close this dialog while loading continues.",
                     iconClass: "icon-hourglass",
                 });
-            } else if (["tickers", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
+            } else if (["tickers", "market-caps", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
                 showWorkspaceModal({
                     title: "Calculating comparison",
                     copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",

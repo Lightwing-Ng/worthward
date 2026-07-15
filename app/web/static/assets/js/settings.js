@@ -1,4 +1,4 @@
-/* Code version: v0.8.0 */
+/* Code version: v0.9.0 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -124,7 +124,15 @@
         const brokerSelect = document.getElementById("selected_broker");
         if (!(brokerSelect instanceof HTMLSelectElement) || brokerSelect.dataset.bound === "1") return;
         brokerSelect.dataset.bound = "1";
-        // IBKR Gateway JS removed (Flex Web Service)
+        const syncBrokerFields = () => {
+            const selectedBroker = brokerSelect.value.trim().toLowerCase();
+            document.querySelectorAll("[data-broker-fields]").forEach((fieldGroup) => {
+                if (!(fieldGroup instanceof HTMLElement)) return;
+                fieldGroup.hidden = fieldGroup.dataset.brokerFields !== selectedBroker;
+            });
+        };
+        brokerSelect.addEventListener("change", syncBrokerFields);
+        syncBrokerFields();
     };
 
     const applyTemplateInlineStyles = () => {

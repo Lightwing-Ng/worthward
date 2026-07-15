@@ -1,7 +1,7 @@
 """
 Exact-range date constraint logic.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -304,3 +304,59 @@ def build_date_constraint_payload(
         adjusted_end=aligned_end.strftime("%Y-%m-%d"),
         message=message,
     )
+
+
+def build_date_constraint_availability(
+        payload: DateConstraintPayload,
+        tickers: list[str],
+        datasets: list[pd.DataFrame],
+) -> dict[str, object]:
+    """Describe the selected symbols that constrain the shared date range."""
+    if not payload.min_date or not payload.max_date:
+        return {}
+
+    observed_bounds: list[tuple[str, pd.Timestamp, pd.Timestamp]] = []
+    for ticker, dataset in zip(tickers, datasets):
+        if dataset.empty or "Date" not in dataset.columns:
+            continue
+        dates = pd.to_datetime(dataset["Date"], errors="coerce").dropna().dt.normalize()
+        if dates.empty:
+            continue
+        observed_bounds.append((ticker, dates.min(), dates.max()))
+    if not observed_bounds:
+        return {}
+
+    latest_start = max(item[1] for item in observed_bounds)
+    earliest_end = min(item[2] for item in observed_bounds)
+    start_limiters = [ticker for ticker, first_date, _last_date in observed_bounds if first_date == latest_start]
+    end_limiters = [ticker for ticker, _first_date, last_date in observed_bounds if last_date == earliest_end]
+    shared_start = pd.Timestamp(payload.min_date)
+    shared_end = pd.Timestamp(payload.max_date)
+
+    def ticker_phrase(symbols: list[str]) -> str:
+        return ", ".join(symbols)
+
+    start_message = (
+        f"{ticker_phrase(start_limiters)} has no comparable history before "
+        f"{latest_start.strftime('%d %b %Y')}."
+    )
+    if shared_start != latest_start:
+        start_message = f"{start_message} Shared trading dates begin on {shared_start.strftime('%d %b %Y')}."
+    end_message = (
+        f"{ticker_phrase(end_limiters)} has no comparable history after "
+        f"{earliest_end.strftime('%d %b %Y')}."
+    )
+    if shared_end != earliest_end:
+        end_message = f"{end_message} Shared trading dates end on {shared_end.strftime('%d %b %Y')}."
+    return {
+        "earliest": {
+            "date": payload.min_date,
+            "limiting_tickers": start_limiters,
+            "message": start_message,
+        },
+        "latest": {
+            "date": payload.max_date,
+            "limiting_tickers": end_limiters,
+            "message": end_message,
+        },
+    }

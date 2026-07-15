@@ -1,10 +1,10 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v0.5.0
+Code version: v0.8.0
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Any
 
 
@@ -19,6 +19,9 @@ class SeriesPayload:
     candlestick_returns: Optional[List[dict[str, Any]]] = None
     candlestick_prices: Optional[List[dict[str, Any]]] = None
     prices: Optional[List[float | None]] = None
+    market_caps: Optional[List[float | None]] = None
+    market_cap_source: Optional[str] = None
+    market_cap_cross_check: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -37,3 +40,4 @@ class DateConstraintPayload:
     adjusted_start: Optional[str] = None
     adjusted_end: Optional[str] = None
     message: Optional[str] = None
+    availability: dict[str, Any] = field(default_factory=dict)

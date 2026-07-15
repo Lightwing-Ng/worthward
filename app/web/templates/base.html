@@ -1,4 +1,4 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.3.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 <head>
@@ -228,6 +228,7 @@
     "dcaResult": dca_result,
     "backtestResult": backtest_result,
     "backtestPeriodOptions": backtest_periods_by_interval,
+    "periodMetadata": period_metadata,
     "dateDisplay": {"full": date_display_full_format, "short": date_display_short_format},
     "language": {
         "code": language_code,
@@ -251,15 +252,15 @@
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.0.0') }}"></script>
-{% if current_view in ["tickers", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.3.0') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
-{% if current_view in ["tickers", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
+{% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version) }}"></script>
-{% if current_view == "tickers" or current_view == "portfolio" %}
+{% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}
 {% if current_view in ["backtest", "grid-trading"] %}

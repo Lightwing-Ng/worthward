@@ -1,12 +1,13 @@
 """
 Broker-backed market data services.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 import os
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
@@ -688,7 +689,7 @@ def prewarm_longbridge_quote_context() -> tuple[bool, str]:
     return True, "Longbridge quote context is warmed up and ready."
 
 
-def _normalize_longbridge_symbol(ticker: str) -> str:
+def normalize_longbridge_symbol(ticker: str) -> str:
     normalized_ticker = str(ticker or "").strip().upper()
     if not normalized_ticker:
         raise ValueError("Ticker is required.")
@@ -700,6 +701,86 @@ def _normalize_longbridge_symbol(ticker: str) -> str:
     if "." in normalized_ticker:
         return normalized_ticker
     return f"{normalized_ticker}.US"
+
+
+def _normalize_longbridge_market_cap_row(row: object, symbol: str) -> dict[str, Any] | None:
+    if isinstance(row, dict):
+        last_done = row.get("last_done")
+        market_cap = row.get("mktcap") or row.get("total_market_value")
+    else:
+        last_done = getattr(row, "last_done", None)
+        market_cap = getattr(row, "total_market_value", None)
+    try:
+        normalized_last_done = float(last_done)
+        normalized_market_cap = float(market_cap)
+    except (TypeError, ValueError):
+        return None
+    if normalized_last_done <= 0 or normalized_market_cap <= 0:
+        return None
+    return {
+        "symbol": symbol,
+        "last_done": normalized_last_done,
+        "market_cap": normalized_market_cap,
+        "implied_shares": normalized_market_cap / normalized_last_done,
+    }
+
+
+def _fetch_longbridge_cli_market_cap_snapshot(
+    symbol: str,
+    settings: BrokerSettings,
+) -> dict[str, Any] | None:
+    payload = run_longbridge_cli_json(
+        settings,
+        ["calc-index", symbol, "--fields", "last_done,mktcap", "--format", "json"],
+        timeout_seconds=12,
+    )
+    row = next(
+        (
+            item for item in payload
+            if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol
+        ),
+        None,
+    ) if isinstance(payload, list) else None
+    return _normalize_longbridge_market_cap_row(row, symbol)
+
+
+def fetch_longbridge_market_cap_snapshot(ticker: str, settings: BrokerSettings) -> dict[str, Any] | None:
+    """Fetch Longbridge's current market cap through the configured authentication mode."""
+    symbol = normalize_longbridge_symbol(ticker)
+    if uses_longbridge_cli_oauth(settings):
+        return _fetch_longbridge_cli_market_cap_snapshot(symbol, settings)
+
+    global_cli_settings = replace(
+        settings,
+        selected_broker="longbridge",
+        longbridge_auth_mode="cli_oauth",
+        longbridge_cli_home=os.path.expanduser("~"),
+    )
+    try:
+        cli_snapshot = _fetch_longbridge_cli_market_cap_snapshot(symbol, global_cli_settings)
+        if cli_snapshot is not None:
+            return cli_snapshot
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not has_longbridge_credentials(settings):
+        return None
+    quote_context = get_longbridge_quote_context(settings)
+    calc_index_enum = None
+    for module_name in ("longbridge.openapi", "longport.openapi"):
+        try:
+            calc_index_enum = getattr(import_module(module_name), "CalcIndex", None)
+        except ImportError:
+            continue
+        if calc_index_enum is not None:
+            break
+    if calc_index_enum is None:
+        raise RuntimeError("Longbridge OpenAPI does not expose calculated market-cap indexes.")
+    rows = quote_context.calc_indexes(
+        [symbol],
+        [calc_index_enum.LastDone, calc_index_enum.TotalMarketValue],
+    )
+    return _normalize_longbridge_market_cap_row(rows[0] if rows else None, symbol)
 
 
 def _resolve_daily_period(period_enum: Any) -> Any:
@@ -1208,7 +1289,7 @@ def fetch_longbridge_compare_one_day_history(
             "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
         )
 
-    symbol = _normalize_longbridge_symbol(ticker)
+    symbol = normalize_longbridge_symbol(ticker)
     if not symbol.endswith(".US"):
         raise ValueError("Longbridge overnight candlesticks are currently available for US securities only.")
 
@@ -1301,7 +1382,7 @@ def fetch_longbridge_one_minute_history(
             "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
         )
 
-    symbol = _normalize_longbridge_symbol(ticker)
+    symbol = normalize_longbridge_symbol(ticker)
     end_at = datetime.now(timezone.utc)
     global_start_at = one_minute_lookback_start(end_at)
     global_start_nyt = _normalize_to_new_york_naive(global_start_at)
@@ -1417,7 +1498,7 @@ def fetch_longbridge_daily_history(
             "Configure Longbridge CLI OAuth or save your Longbridge App Key, App Secret, and Access Token first."
         )
 
-    symbol = _normalize_longbridge_symbol(ticker)
+    symbol = normalize_longbridge_symbol(ticker)
     effective_start_nyt: pd.Timestamp | None = None
     if since is not None:
         effective_start_nyt = _normalize_to_new_york_naive(since) - timedelta(days=2)

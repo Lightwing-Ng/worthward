@@ -75,15 +75,20 @@
             <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
                 <span class="icon icon-page-prev" aria-hidden="true"></span>
             </button>
-            <p class="date-picker-month" data-date-month></p>
+            <button type="button" class="date-picker-title" data-date-title aria-label="Choose month and year">
+                <span data-date-month></span>
+            </button>
             <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
                 <span class="icon icon-page-next" aria-hidden="true"></span>
             </button>
         </div>
-        <div class="date-picker-weekdays" aria-hidden="true">
-            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        <div data-date-calendar>
+            <div class="date-picker-weekdays" aria-hidden="true">
+                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            </div>
+            <div class="date-picker-days" data-date-grid></div>
         </div>
-        <div class="date-picker-days" data-date-grid></div>
+        <div class="date-picker-months" data-date-month-grid hidden aria-label="Months"></div>
     </div>
 </div>
 {%- endmacro %}

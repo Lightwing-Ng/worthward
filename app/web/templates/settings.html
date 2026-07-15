@@ -800,46 +800,12 @@
                 </div>
 
                 <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
-                    <div class="settings-form-row settings-broker-auth-row">
-                        <label class="settings-form-label" id="longbridge_auth_mode_label" for="longbridge_auth_mode_cli_oauth">Auth method</label>
-                        <div
-                            id="longbridge_auth_mode"
-                            class="segmented-control settings-broker-auth-switch"
-                            data-option-count="2"
-                            role="radiogroup"
-                            aria-labelledby="longbridge_auth_mode_label"
-                            style="--segmented-option-count: 2; --segmented-active-index: {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}1{% else %}0{% endif %};"
-                        >
-                            <label class="segmented-control-option" for="longbridge_auth_mode_cli_oauth">
-                                <input id="longbridge_auth_mode_cli_oauth" name="longbridge_auth_mode" type="radio" value="cli_oauth" {% if broker_settings.longbridge_auth_mode == 'cli_oauth' %}checked{% endif %}>
-                                <span>CLI OAuth</span>
-                            </label>
-                            <label class="segmented-control-option" for="longbridge_auth_mode_legacy_apikey">
-                                <input id="longbridge_auth_mode_legacy_apikey" name="longbridge_auth_mode" type="radio" value="legacy_apikey" {% if broker_settings.longbridge_auth_mode == 'legacy_apikey' %}checked{% endif %}>
-                                <span>API Key</span>
-                            </label>
+                    <div class="settings-form-row">
+                        <div>
+                            <label class="settings-form-label">Longbridge OAuth</label>
+                            <p class="settings-service-note">Authorize through the installed Longbridge CLI in a separate browser window. Antigravity does not receive, display, or store the authorization code or OAuth token. Your existing terminal CLI profile is used automatically.</p>
                         </div>
-                    </div>
-                    <div data-longbridge-auth-fields="cli_oauth" {% if broker_settings.longbridge_auth_mode != 'cli_oauth' %}hidden{% endif %}>
-                        <div class="settings-form-row">
-                            <label class="settings-form-label" for="longbridge_auth_code">Authorization code</label>
-                            <input type="password" id="longbridge_auth_code" name="longbridge_auth_code" class="settings-form-control settings-form-control-secret">
-                        </div>
-                    </div>
-                    <div data-longbridge-auth-fields="legacy_apikey" {% if broker_settings.longbridge_auth_mode != 'legacy_apikey' %}hidden{% endif %}>
-                        <div class="settings-form-row">
-                        <label class="settings-form-label" for="longbridge_app_key">App Key</label>
-                        <input type="password" id="longbridge_app_key" name="longbridge_app_key" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_key %}••••••••••••{% else %}Enter your App Key{% endif %}">
-                        </div>
-                        <div class="settings-form-row">
-                        <label class="settings-form-label" for="longbridge_app_secret">App Secret</label>
-                        <input type="password" id="longbridge_app_secret" name="longbridge_app_secret" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_app_secret %}••••••••••••{% else %}Enter your App Secret{% endif %}">
-                        </div>
-                        <div class="settings-form-row">
-                        <label class="settings-form-label" for="longbridge_access_token">Access Token</label>
-                        <input type="password" id="longbridge_access_token" name="longbridge_access_token" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.longbridge_has_access_token %}••••••••••••{% else %}Enter your Access Token{% endif %}">
-                        <p class="settings-service-note">Paste the raw Access Token only. Do not include the <code>Bearer </code> prefix.</p>
-                        </div>
+                        <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>Authorize in browser</button>
                     </div>
                 </div>
 

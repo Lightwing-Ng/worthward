@@ -1,7 +1,7 @@
 """
-Broker credential persistence for local integrations.
+Broker connection preferences for local integrations.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -19,7 +19,10 @@ from app.core.settings_store import (
 
 SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
 BROKER_SETTINGS_PATH = LEGACY_SECTION_PATHS["brokers"]
-DEFAULT_LONGBRIDGE_CLI_HOME = str(BASE_DIR / ".lb-home")
+# Longbridge CLI owns OAuth tokens in the signed-in user's CLI profile. Keeping
+# this outside the application workspace lets an existing terminal session work
+# immediately and prevents the web app from retaining OAuth credentials.
+DEFAULT_LONGBRIDGE_CLI_HOME = os.path.expanduser("~")
 
 SUPPORTED_BROKERS = ("longbridge", "ibkr")
 SUPPORTED_LONGBRIDGE_AUTH_MODES = ("cli_oauth", "legacy_apikey")
@@ -157,7 +160,7 @@ def load_broker_settings() -> BrokerSettings:
 
 def save_broker_settings(settings: BrokerSettings) -> None:
     ensure_settings_store_dir()
-    # Only persist non-secret configuration. Flex tokens live exclusively in environment variables.
+    # OAuth tokens are never handled here; Longbridge CLI owns its token cache.
     payload = {
         "selected_broker": settings.selected_broker,
         "longbridge_auth_mode": settings.longbridge_auth_mode,

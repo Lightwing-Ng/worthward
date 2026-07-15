@@ -73,7 +73,7 @@
         labels,
         "segmented-control--compact-mobile",
         true,
-        current_view in ["tickers", "prices"] and period == "1d",
+        current_view in ["tickers", "market-caps", "prices"] and period == "1d",
         "Trading date"
     ) }}
     <div class="field-checkbox field-switch"
@@ -90,7 +90,7 @@
             </span>
         </label>
     </div>
-    {% set hide_dividend_switches = current_view == "prices" or (current_view == "tickers" and period == "1d") %}
+    {% set hide_dividend_switches = current_view in ["prices", "market-caps"] or (current_view == "tickers" and period == "1d") %}
     <div class="field-checkbox field-switch" data-price-only-field {% if hide_dividend_switches %}hidden{% endif %}>
         <label class="switch-row" for="price_only">
             <span class="switch-label">{{ labels.price_only }}</span>
