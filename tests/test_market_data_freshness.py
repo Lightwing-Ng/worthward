@@ -687,6 +687,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         expected_path = Path("isolated-market-store/QQQ-1m.parquet")
 
         with (
+            patch("app.services.market_data.has_recent_one_minute_store", return_value=False),
             patch("app.services.market_data._load_longbridge_market_settings", return_value=object()),
             patch(
                 "app.services.market_data._download_recent_one_minute_history_with_yfinance",
@@ -701,6 +702,25 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(result.source, "yfinance_30d")
         yfinance_mock.assert_called_once_with("QQQ", days=30)
         longbridge_mock.assert_not_called()
+
+    def test_refresh_one_minute_store_uses_one_recent_window_for_existing_cache(self) -> None:
+        yfinance_history = market_frame("QQQ", intraday=True)
+        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+
+        with (
+            patch("app.services.market_data.has_recent_one_minute_store", return_value=True),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                return_value=yfinance_history,
+            ) as yfinance_mock,
+            patch("app.services.market_data._upsert_one_minute_store", return_value=expected_path),
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+        ):
+            result = refresh_one_minute_store("QQQ")
+
+        self.assertEqual(result.path, expected_path)
+        self.assertEqual(result.source, "yfinance_7d")
+        yfinance_mock.assert_called_once_with("QQQ", days=7)
 
     def test_realtime_quote_batch_retries_each_ticker_after_batch_failure(self) -> None:
         def fake_download(tickers, **kwargs):

@@ -1,7 +1,7 @@
 """
-Direct Yahoo Chart API transport for daily market history fallback.
+Direct Yahoo Chart API transport for daily and intraday market history fallback.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -52,12 +52,17 @@ def _build_chart_url(
         *,
         start: str | None,
         period: str | None,
+        end: str | None = None,
+        interval: str = "1d",
+        prepost: bool = False,
 ) -> str:
     request_end = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)
+    normalized_interval = str(interval or "1d").strip().lower()
     params: dict[str, object] = {
-        "interval": "1d",
+        "interval": normalized_interval,
         "events": "div,splits,capitalGains",
         "includeAdjustedClose": "true",
+        "includePrePost": str(bool(prepost)).lower(),
     }
     if start is not None:
         parsed_start = pd.to_datetime(start, utc=True, errors="coerce")
@@ -78,12 +83,17 @@ def _build_chart_url(
         else:
             raise YahooChartError(f"Unsupported Yahoo Chart period: {period}.")
         params["period1"] = int(request_start.timestamp())
+    if end is not None:
+        parsed_end = pd.to_datetime(end, utc=True, errors="coerce")
+        if pd.isna(parsed_end):
+            raise YahooChartError(f"Invalid Yahoo Chart end date: {end}.")
+        request_end = parsed_end
     params["period2"] = int(request_end.timestamp())
     encoded_ticker = quote(str(ticker).strip(), safe="")
     return f"{YAHOO_CHART_ENDPOINT}/{encoded_ticker}?{urlencode(params)}"
 
 
-def _parse_chart_payload(payload: object, ticker: str) -> pd.DataFrame:
+def _parse_chart_payload(payload: object, ticker: str, *, interval: str = "1d") -> pd.DataFrame:
     if not isinstance(payload, dict):
         raise YahooChartError(f"Yahoo Chart returned an invalid payload for {ticker}.")
     chart = payload.get("chart")
@@ -113,6 +123,13 @@ def _parse_chart_payload(payload: object, ticker: str) -> pd.DataFrame:
     timezone_name = str(metadata.get("exchangeTimezoneName") or "UTC")
     quote_payload = quotes[0]
     row_count = len(timestamps)
+    is_intraday = str(interval or "1d").strip().lower() != "1d"
+    timestamps_index = pd.to_datetime(timestamps, unit="s", utc=True)
+    if not is_intraday:
+        try:
+            timestamps_index = timestamps_index.tz_convert(timezone_name).tz_localize(None).normalize()
+        except (KeyError, TypeError, ValueError):
+            timestamps_index = timestamps_index.tz_localize(None).normalize()
     frame = pd.DataFrame(
         {
             "Open": _bounded_values(quote_payload.get("open"), row_count),
@@ -120,8 +137,11 @@ def _parse_chart_payload(payload: object, ticker: str) -> pd.DataFrame:
             "Low": _bounded_values(quote_payload.get("low"), row_count),
             "Close": _bounded_values(quote_payload.get("close"), row_count),
         },
-        index=_daily_index(timestamps, timezone_name),
+        index=timestamps_index,
     )
+    volume_values = quote_payload.get("volume")
+    if isinstance(volume_values, list):
+        frame["Volume"] = _bounded_values(volume_values, row_count)
     adjusted = indicators.get("adjclose")
     if isinstance(adjusted, list) and adjusted and isinstance(adjusted[0], dict):
         frame["Adj Close"] = _bounded_values(adjusted[0].get("adjclose"), row_count)
@@ -171,4 +191,35 @@ def download_yahoo_chart_daily_history(
         payload = json.loads(raw_payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise YahooChartError(f"Yahoo Chart returned invalid JSON for {ticker}: {exc}.") from exc
-    return _parse_chart_payload(payload, ticker)
+    return _parse_chart_payload(payload, ticker, interval="1d")
+
+
+def download_yahoo_chart_history(
+        ticker: str,
+        *,
+        start: str | pd.Timestamp,
+        end: str | pd.Timestamp,
+        interval: str = "1m",
+        prepost: bool = False,
+) -> pd.DataFrame:
+    """Download bounded intraday bars directly from Yahoo's Chart endpoint."""
+    request_obj = Request(
+        _build_chart_url(
+            ticker,
+            start=str(start),
+            period=None,
+            end=str(end),
+            interval=interval,
+            prepost=prepost,
+        ),
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    with urlopen(request_obj, timeout=YAHOO_CHART_TIMEOUT_SECONDS) as response:
+        raw_payload = response.read(YAHOO_CHART_MAX_RESPONSE_BYTES + 1)
+    if len(raw_payload) > YAHOO_CHART_MAX_RESPONSE_BYTES:
+        raise YahooChartError(f"Yahoo Chart response exceeded the size limit for {ticker}.")
+    try:
+        payload = json.loads(raw_payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise YahooChartError(f"Yahoo Chart returned invalid JSON for {ticker}: {exc}.") from exc
+    return _parse_chart_payload(payload, ticker, interval=interval)

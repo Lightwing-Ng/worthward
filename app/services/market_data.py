@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.15.0
+Code version: v0.15.1
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from app.infrastructure.runtime_network import (
     get_yfinance_session,
 )
 from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status
-from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
+from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history, download_yahoo_chart_history
 from app.infrastructure.broker_market_data import (
     HONG_KONG_TIMEZONE,
     NEW_YORK_TIMEZONE,
@@ -291,6 +291,29 @@ def _download_one_minute_history_with_yfinance_window(
     ].copy()
 
 
+def _download_one_minute_history_with_yahoo_chart_window(
+        ticker: str,
+        *,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+) -> pd.DataFrame:
+    market = infer_ticker_market(ticker)
+    history = download_yahoo_chart_history(
+        yfinance_lookup_symbol(ticker),
+        start=start,
+        end=end + pd.Timedelta(minutes=1),
+        interval="1m",
+        prepost=(market != "US"),
+    )
+    if history.empty:
+        return history
+    normalized = normalize_history_frame(history, ticker, interval="1m")
+    return normalized.loc[
+        (normalized["Date"] >= start.tz_convert(None))
+        & (normalized["Date"] <= end.tz_convert(None))
+    ].copy()
+
+
 def _download_recent_one_minute_history_with_yfinance(
         ticker: str,
         *,
@@ -318,7 +341,21 @@ def _download_recent_one_minute_history_with_yfinance(
                 window_end,
                 exc,
             )
-            frame = pd.DataFrame()
+            try:
+                frame = _download_one_minute_history_with_yahoo_chart_window(
+                    ticker,
+                    start=cursor,
+                    end=window_end,
+                )
+            except Exception as fallback_exc:
+                LOGGER.warning(
+                    "Unable to download direct Yahoo Chart 1-minute window for %s between %s and %s: %s",
+                    ticker,
+                    cursor,
+                    window_end,
+                    fallback_exc,
+                )
+                frame = pd.DataFrame()
         if not frame.empty:
             frames.append(frame)
         if window_end >= now_utc:
@@ -1382,10 +1419,19 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
 def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
     normalized_ticker = normalize_ticker(ticker)
     yfinance_errors: list[tuple[int, Exception]] = []
-    for days in (
-        YFINANCE_INTRADAY_FALLBACK_DAYS,
-        YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
-    ):
+    # An existing store only needs an incremental recent window. Requesting
+    # the full 30-day range on every stale-cache check creates five separate
+    # Yahoo requests before the 7-day fallback, which makes rate limiting much
+    # more likely during ordinary page refreshes.
+    refresh_days = (
+        (YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,)
+        if has_recent_one_minute_store(normalized_ticker)
+        else (
+            YFINANCE_INTRADAY_FALLBACK_DAYS,
+            YFINANCE_INTRADAY_MINIMUM_FALLBACK_DAYS,
+        )
+    )
+    for days in refresh_days:
         try:
             dataset = _download_recent_one_minute_history_with_yfinance(
                 normalized_ticker,

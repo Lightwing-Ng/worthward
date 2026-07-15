@@ -1,6 +1,12 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.46.0`
+Documentation version: `v1.47.0`
+
+## Direct Yahoo Chart fallback for stale 1-minute caches added on 15 Jul 2026
+
+- Existing intraday caches now refresh with one recent 7-day window instead of repeatedly requesting the full 30-day range.
+- When `yfinance` is rate-limited or returns no usable 1-minute bars, the bounded request falls back to Yahoo Chart directly before the optional Longbridge provider.
+- The fallback preserves the local `America/New_York` regular-session storage convention and merges the new bars into the existing parquet cache.
 
 ## Longbridge browser OAuth configuration completed on 14 Jul 2026
 

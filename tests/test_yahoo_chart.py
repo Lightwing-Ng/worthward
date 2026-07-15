@@ -1,7 +1,7 @@
 """
 Tests for the direct Yahoo Chart daily-history transport.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -14,7 +14,11 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from app.infrastructure.yahoo_chart import YahooChartError, download_yahoo_chart_daily_history
+from app.infrastructure.yahoo_chart import (
+    YahooChartError,
+    download_yahoo_chart_daily_history,
+    download_yahoo_chart_history,
+)
 
 
 class YahooChartTests(unittest.TestCase):
@@ -87,3 +91,36 @@ class YahooChartTests(unittest.TestCase):
 
         self.assertIn("Not Found", str(raised.exception))
         self.assertIn("symbol may be delisted", str(raised.exception))
+
+    def test_download_intraday_history_keeps_utc_timestamps_and_volume(self) -> None:
+        payload = {
+            "chart": {
+                "error": None,
+                "result": [{
+                    "meta": {"exchangeTimezoneName": "America/New_York"},
+                    "timestamp": [1783603800],
+                    "indicators": {
+                        "quote": [{
+                            "open": [100.0],
+                            "high": [101.0],
+                            "low": [99.0],
+                            "close": [100.5],
+                            "volume": [1234],
+                        }],
+                    },
+                }],
+            },
+        }
+
+        with patch(
+            "app.infrastructure.yahoo_chart.urlopen",
+            return_value=io.BytesIO(json.dumps(payload).encode("utf-8")),
+        ):
+            frame = download_yahoo_chart_history(
+                "TQQQ",
+                start="2026-07-08T13:30:00Z",
+                end="2026-07-08T13:31:00Z",
+            )
+
+        self.assertEqual(frame.index[0], pd.Timestamp(1783603800, unit="s", tz="UTC"))
+        self.assertEqual(frame.iloc[0]["Volume"], 1234)
