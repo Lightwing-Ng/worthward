@@ -1,4 +1,4 @@
-/* Code version: v0.15.1 */
+/* Code version: v0.15.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -8,6 +8,15 @@
 	const Y_AXIS_WIDTH = 92;
 	const LOGO_SIZE = 20;
 	const RIGHT_GUTTER = 44;
+	const ONE_DAY_CANDLE_POLICY = Object.freeze({
+		version: "v1",
+		bodyStyle: "solid",
+		widthBasis: "shared-timeline",
+		alpha: 0.82,
+		minimumWidth: 0.7,
+		maximumWidth: 5,
+		slotRatio: 0.68,
+	});
 	const imageCache = new Map();
 	const priceCharts = new Map();
 	let refreshTimer = 0;
@@ -729,6 +738,10 @@
 				? Math.max((candlePriceMax - candlePriceMin) * 0.06, Math.abs(candlePriceMax) * 0.001)
 				: 0;
 			canvas.dataset.chartRenderMode = hasOneDayCandlesticks ? "candlestick" : "line";
+			canvas.dataset.candlePolicy = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.version : "";
+			canvas.dataset.candleBodyStyle = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.bodyStyle : "";
+			canvas.dataset.candleWidthBasis = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.widthBasis : "";
+			canvas.dataset.candleAlpha = hasOneDayCandlesticks ? ONE_DAY_CANDLE_POLICY.alpha.toFixed(2) : "";
 			canvas.dataset.seriesColor = seriesColor;
 			canvas.dataset.tradingDayCount = String(intradayDayGroups.length);
 			canvas.dataset.tradingDaySeparators = String(isShortMultiDayRange ? intradayDayGroups.length - 1 : 0);
@@ -840,12 +853,15 @@
 				id: `oneDayPriceCandlestick${index}`,
 				afterDatasetsDraw(chart) {
 					if (!hasOneDayCandlesticks || !chart.chartArea || !chart.scales?.x || !chart.scales?.y) return;
-					const validCandleCount = priceCandles.filter((candle) => (
-						candle?.synthetic !== true
-						&& [candle?.o, candle?.h, candle?.l, candle?.c].every((value) => finiteNumber(value) !== null)
-					)).length;
-					const slotWidth = chart.chartArea.width / Math.max(validCandleCount, 1);
-					const candleWidth = Math.max(0.7, Math.min(slotWidth * 0.68, 5));
+					const slotWidth = chart.chartArea.width / Math.max(labels.length, 1);
+					const candleWidth = Math.max(
+						ONE_DAY_CANDLE_POLICY.minimumWidth,
+						Math.min(
+							slotWidth * ONE_DAY_CANDLE_POLICY.slotRatio,
+							ONE_DAY_CANDLE_POLICY.maximumWidth,
+						),
+					);
+					canvas.dataset.candleWidth = candleWidth.toFixed(3);
 					const hairlineWidth = Math.max(0.5, 1 / Math.max(window.devicePixelRatio || 1, 1));
 					priceCandles.forEach((candle, candleIndex) => {
 						const open = finiteNumber(candle?.o);
@@ -867,14 +883,14 @@
 						chart.ctx.strokeStyle = seriesColor;
 						chart.ctx.fillStyle = seriesColor;
 						chart.ctx.lineWidth = hairlineWidth;
-						chart.ctx.globalAlpha = 0.82;
+						chart.ctx.globalAlpha = ONE_DAY_CANDLE_POLICY.alpha;
 						chart.ctx.beginPath();
 						chart.ctx.moveTo(x, highY);
 						chart.ctx.lineTo(x, lowY);
 						chart.ctx.stroke();
-						chart.ctx.globalAlpha = 0.28;
+						chart.ctx.globalAlpha = ONE_DAY_CANDLE_POLICY.alpha;
 						chart.ctx.fillRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
-						chart.ctx.globalAlpha = 0.82;
+						chart.ctx.globalAlpha = ONE_DAY_CANDLE_POLICY.alpha;
 						chart.ctx.strokeRect(x - (candleWidth / 2), bodyTop, candleWidth, bodyHeight);
 						chart.ctx.restore();
 					});

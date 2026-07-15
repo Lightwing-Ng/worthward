@@ -1,6 +1,6 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.47.0`
+Documentation version: `v1.47.3`
 
 ## Direct Yahoo Chart fallback for stale 1-minute caches added on 15 Jul 2026
 
@@ -206,6 +206,12 @@ Documentation version: `v1.47.0`
 - Mapping a current target session onto an older common comparison axis also reuses the available target-day cache on the initial HTML response. The live comparison endpoint remains responsible for the network refresh after the page becomes interactive.
 - Overnight date constraints, reference-axis loading, and target-axis mapping share one request-scoped broker frame. The cache is discarded at the end of the HTTP request and is never persisted as ordinary-session market history.
 - Exact-day reference loading now checks each local 1-minute store before contacting Yahoo. The remote exact-day request remains a gap-repair fallback when the selected session is genuinely absent.
+
+## One-day candlestick body fill corrected on 15 Jul 2026
+
+- One-day price candlestick bodies now use the same opacity as their outlines. Bright comparison-series colors no longer make US overnight candles appear hollow while darker Hong Kong series appear solid.
+- Candlestick width is derived from the shared one-day timeline rather than each ticker's number of observed bars. Sparse US overnight series therefore use the same body width as the Korean and Hong Kong subplots.
+- The one-day candlestick policy is immutable and versioned. Browser coverage asserts its solid body style, shared-timeline width basis, common computed width, and `0.82` opacity contract.
 
 ## One-day candlestick series colors corrected on 12 Jul 2026
 
