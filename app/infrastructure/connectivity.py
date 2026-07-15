@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -13,11 +13,14 @@ import io
 import json
 from time import monotonic, time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import yfinance as yf
 
-from app.infrastructure.runtime_network import get_yfinance_session
+from app.infrastructure.runtime_network import (
+    get_yfinance_session,
+    open_scoped_network_url as urlopen,
+)
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=5d&interval=1d"
 PRIMARY_LOGO_PING_URL = "https://eodhd.com/img/logos/US/TQQQ.png"

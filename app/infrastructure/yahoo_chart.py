@@ -1,16 +1,18 @@
 """
 Direct Yahoo Chart API transport for daily and intraday market history fallback.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
 
 import json
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 import pandas as pd
+
+from app.infrastructure.runtime_network import open_scoped_network_url as urlopen
 
 YAHOO_CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart"
 YAHOO_CHART_MAX_RESPONSE_BYTES = 32 * 1024 * 1024

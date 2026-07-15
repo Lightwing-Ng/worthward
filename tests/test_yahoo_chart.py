@@ -1,7 +1,7 @@
 """
 Tests for the direct Yahoo Chart daily-history transport.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.29.0`
+Documentation version: `v2.29.1`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -148,9 +148,11 @@ default. Batched realtime requests retry missing tickers individually.
 ### Yahoo Finance proxy and TLS configuration
 
 The Yahoo transport uses one shared curl_cffi session for daily, intraday,
-extended-hours, and realtime yfinance requests. It does not inject a proxy;
-curl_cffi reads the standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
-environment variables.
+extended-hours, realtime, search, and profile yfinance requests. Yahoo Chart
+fallbacks, remote logo downloads, and Network self-check probes reuse a separate
+scoped urllib opener with the same verified trust bundle. Neither transport
+injects a proxy; both read the standard `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY` environment variables.
 
 For a corporate HTTPS interception proxy, export the corporate CA PEM path
 before starting the app:
@@ -172,8 +174,10 @@ yahoo_ca_pem = "/absolute/path/to/corporate-ca.pem"
 `ANTIGRAVITY_YAHOO_CA_PEM` takes precedence over
 `[network].yahoo_ca_pem`. The configured corporate CA is appended to certifi's
 public CA bundle, so both intercepted Yahoo certificates and normal public
-certificate chains remain verified. Restart the app after changing either CA
-setting because the shared session is created during runtime bootstrap.
+certificate chains remain verified. The same scoped trust bundle is used only
+for Yahoo, remote logo providers, and Network self-check probes; broker, SMTP,
+and other transports are not changed. Restart the app after changing either CA
+setting because the verified clients are created during runtime bootstrap.
 
 On a computer that connects directly, leave both CA settings empty and do not
 set proxy environment variables. The session then uses `verify=True` with the

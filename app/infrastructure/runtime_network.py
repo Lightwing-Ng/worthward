@@ -1,7 +1,7 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -10,9 +10,11 @@ import atexit
 import os
 from pathlib import Path
 import shutil
+import ssl
 import tempfile
 from threading import RLock
 from typing import Mapping
+from urllib.request import HTTPSHandler, OpenerDirector, ProxyHandler, build_opener
 
 import certifi
 from curl_cffi import requests as curl_requests
@@ -27,6 +29,7 @@ _TLS_ERROR_MARKERS = (
 _SESSION_LOCK = RLock()
 _YFINANCE_SESSION: curl_requests.Session | None = None
 _YFINANCE_ENTERPRISE_CA_PATH: Path | None = None
+_SCOPED_NETWORK_OPENER: OpenerDirector | None = None
 _CA_BUNDLE_DIRECTORY: Path | None = None
 
 
@@ -98,15 +101,25 @@ def bootstrap_runtime_network() -> None:
     """Keep the process-wide TLS trust configuration unchanged.
 
     urllib and curl_cffi honor standard proxy environment variables. Yahoo's
-    curl_cffi transport receives its own verified session so no global TLS
-    behavior is changed.
+    curl_cffi transport and the explicitly scoped urllib consumers receive
+    their own verified clients so no global TLS behavior is changed.
     """
+
+
+def _build_scoped_network_opener(verify: bool | str) -> OpenerDirector:
+    """Build a proxy-aware opener without changing process-wide TLS defaults."""
+    context = ssl.create_default_context(cafile=verify if isinstance(verify, str) else None)
+    return build_opener(
+        ProxyHandler(),
+        HTTPSHandler(context=context),
+    )
 
 
 def configure_yfinance_for_proxy(
         configured_ca_pem: str | os.PathLike[str] | None = None,
 ) -> curl_requests.Session:
     """Create one verified curl_cffi session for all yfinance requests."""
+    global _SCOPED_NETWORK_OPENER
     global _YFINANCE_ENTERPRISE_CA_PATH, _YFINANCE_SESSION
 
     enterprise_ca_path = resolve_yahoo_enterprise_ca_path(configured_ca_pem)
@@ -117,6 +130,7 @@ def configure_yfinance_for_proxy(
     with _SESSION_LOCK:
         previous_session = _YFINANCE_SESSION
         _YFINANCE_SESSION = curl_requests.Session(verify=verify)
+        _SCOPED_NETWORK_OPENER = _build_scoped_network_opener(verify)
         _YFINANCE_ENTERPRISE_CA_PATH = enterprise_ca_path
         if previous_session is not None:
             previous_session.close()
@@ -129,6 +143,16 @@ def get_yfinance_session() -> curl_requests.Session:
         if _YFINANCE_SESSION is None:
             return configure_yfinance_for_proxy()
         return _YFINANCE_SESSION
+
+
+def open_scoped_network_url(request_obj, *, timeout: float):
+    """Open Yahoo, logo, or self-check URLs through the verified scoped client."""
+    with _SESSION_LOCK:
+        if _SCOPED_NETWORK_OPENER is None:
+            configure_yfinance_for_proxy()
+        opener = _SCOPED_NETWORK_OPENER
+    assert opener is not None
+    return opener.open(request_obj, timeout=timeout)
 
 
 def add_yahoo_tls_configuration_hint(diagnostic: str) -> str:

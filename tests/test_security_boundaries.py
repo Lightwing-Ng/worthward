@@ -1,6 +1,6 @@
 """Security boundary regression tests.
 
-Code version: v1.3.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -11,10 +11,12 @@ import ssl
 import tempfile
 import tomllib
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from urllib.request import ProxyHandler, Request
 
 import certifi
 
+from app.infrastructure import connectivity, runtime_network, yahoo_chart
 from app.infrastructure.ibkr_flex import IbkrFlexError, send_flex_request
 from app.infrastructure.runtime_network import (
     YAHOO_CA_PEM_ENV,
@@ -23,8 +25,10 @@ from app.infrastructure.runtime_network import (
     bootstrap_runtime_network_for_yfinance,
     build_yahoo_ca_bundle,
     get_yfinance_session,
+    open_scoped_network_url,
     resolve_yahoo_enterprise_ca_path,
 )
+from app.services import logos
 
 
 class IbkrFlexSecurityTests(unittest.TestCase):
@@ -72,10 +76,7 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
     def test_macos_proxy_session_uses_combined_ca_without_replacing_proxy_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             enterprise_ca = Path(directory) / "corporate.pem"
-            enterprise_ca.write_text(
-                "-----BEGIN CERTIFICATE-----\ncorporate-ca\n-----END CERTIFICATE-----\n",
-                encoding="ascii",
-            )
+            enterprise_ca.write_bytes(Path(certifi.where()).read_bytes())
             proxy_environment = {
                 "HTTP_PROXY": "http://127.0.0.1:8888",
                 "HTTPS_PROXY": "http://127.0.0.1:8888",
@@ -88,9 +89,34 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
                 self.assertEqual(os.environ["HTTP_PROXY"], proxy_environment["HTTP_PROXY"])
                 self.assertEqual(os.environ["HTTPS_PROXY"], proxy_environment["HTTPS_PROXY"])
                 bundle_bytes = Path(session.verify).read_bytes()
+                opener = runtime_network._SCOPED_NETWORK_OPENER
+                assert opener is not None
+                proxy_handler = next(
+                    handler for handler in opener.handlers
+                    if isinstance(handler, ProxyHandler)
+                )
 
             self.assertIn(Path(certifi.where()).read_bytes(), bundle_bytes)
             self.assertIn(enterprise_ca.read_bytes(), bundle_bytes)
+            self.assertEqual(proxy_handler.proxies["http"], proxy_environment["HTTP_PROXY"])
+            self.assertEqual(proxy_handler.proxies["https"], proxy_environment["HTTPS_PROXY"])
+
+    def test_scoped_network_opener_reuses_verified_proxy_aware_client(self) -> None:
+        opener = Mock()
+        response = object()
+        opener.open.return_value = response
+        request_obj = Request("https://query1.finance.yahoo.com/")
+
+        with patch("app.infrastructure.runtime_network._SCOPED_NETWORK_OPENER", opener):
+            opened = open_scoped_network_url(request_obj, timeout=4)
+
+        self.assertIs(opened, response)
+        opener.open.assert_called_once_with(request_obj, timeout=4)
+
+    def test_authorized_network_consumers_share_only_the_scoped_opener(self) -> None:
+        self.assertIs(yahoo_chart.urlopen, open_scoped_network_url)
+        self.assertIs(connectivity.urlopen, open_scoped_network_url)
+        self.assertIs(logos.urlopen, open_scoped_network_url)
 
     def test_direct_session_needs_neither_proxy_nor_enterprise_ca(self) -> None:
         with patch.dict(os.environ, {}, clear=True):

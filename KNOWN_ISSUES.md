@@ -1,6 +1,16 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.47.4`
+Documentation version: `v1.47.5`
+
+## Scoped proxy resilience completed on 15 Jul 2026
+
+- Yahoo Chart fallbacks, remote logo providers, and Network self-check probes
+  now reuse one proxy-aware urllib opener with the same verified enterprise-CA
+  bundle as yfinance.
+- The policy is capability-based rather than location-based. A blocked optional
+  website does not disable Yahoo, local caches, or unrelated application views.
+- Process-wide TLS defaults, IBKR Flex, Longbridge OpenAPI, and SMTP transports
+  remain unchanged.
 
 ## Ticker search and profile proxy trust corrected on 15 Jul 2026
 

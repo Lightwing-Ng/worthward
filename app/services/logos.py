@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import re
 from threading import Lock
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from curl_cffi.curl import CurlError
 from curl_cffi.requests.exceptions import RequestException
@@ -25,6 +25,7 @@ from app.infrastructure.connectivity import has_remote_logo_access, has_remote_m
 from app.infrastructure.runtime_network import (
     add_yahoo_tls_configuration_hint,
     get_yfinance_session,
+    open_scoped_network_url as urlopen,
 )
 from app.models.schemas import QuoteProfile
 from app.infrastructure.storage import (

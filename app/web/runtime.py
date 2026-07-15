@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.18.0
+Code version: v0.18.1
 """
 
 from __future__ import annotations
@@ -3495,7 +3495,7 @@ def build_web_runtime() -> WebRuntime:
                 "note": (
                     "Yahoo Finance is reachable, so missing price history can be refreshed from the network."
                     if remote_market_access
-                    else "Yahoo Finance is blocked here, so the app can only rely on bundled local market data."
+                    else "Yahoo Finance could not be reached. Check the proxy and corporate CA configuration; local market data remains available."
                 ),
                 "checked_at_text": format_checked_at(last_remote_market_check_at()),
                 "logo_url": service_logo_url("Yahoo-Logo.svg"),
@@ -3509,7 +3509,7 @@ def build_web_runtime() -> WebRuntime:
                 "note": (
                     "Logo providers are reachable, so missing brand marks can be fetched when needed."
                     if remote_logo_access
-                    else "Remote logo sources are blocked here, so only logos already stored locally will appear."
+                    else "Remote logo sources could not be reached. Check the proxy and corporate CA configuration; stored logos remain available."
                 ),
                 "checked_at_text": format_checked_at(last_remote_logo_check_at()),
                 "logo_url": service_logo_url("apple.logo.svg"),

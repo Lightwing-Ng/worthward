@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.3.1`
 
 ## Supported commands
 
@@ -86,6 +86,8 @@ remote endpoint. Temporary PEM files and mocked yfinance downloads cover:
 - certifi public roots remaining present in the combined CA bundle;
 - `verify=True` as the unconfigured default;
 - reuse of one shared curl_cffi session by the yfinance fallback;
+- reuse of one proxy-aware, verified urllib opener by Yahoo Chart, logo, and
+  Network self-check requests without changing broker or SMTP transports;
 - actionable certificate-failure diagnostics without credentials or query
   secrets leaking into error messages.
 
