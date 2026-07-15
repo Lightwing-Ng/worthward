@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.5.1
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ import yfinance as yf
 from flask import url_for
 
 from app.infrastructure.connectivity import has_remote_logo_access, has_remote_market_access
+from app.infrastructure.runtime_network import (
+    add_yahoo_tls_configuration_hint,
+    get_yfinance_session,
+)
 from app.models.schemas import QuoteProfile
 from app.infrastructure.storage import (
     PROFILE_SCOPE_LOCAL,
@@ -58,6 +62,10 @@ SUPPORTED_MARKET_SUFFIXES = {
 SUPPORTED_MARKET_EXCHANGES = US_EXCHANGES | {"HKG", "LSE"}
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOOKUP_LOCK = Lock()
+NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
+NETWORK_SECRET_QUERY_PATTERN = re.compile(
+    r"(?i)([?&](?:crumb|token|key|secret|password)=)[^&\s]+"
+)
 
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
@@ -101,6 +109,13 @@ def _run_yfinance_silently(callback):
             return callback()
 
 
+def _yfinance_failure_diagnostic(value: object) -> str:
+    diagnostic = " ".join(str(value or "").split())
+    diagnostic = NETWORK_URL_USERINFO_PATTERN.sub(r"\1REDACTED@", diagnostic)
+    diagnostic = NETWORK_SECRET_QUERY_PATTERN.sub(r"\1REDACTED", diagnostic)
+    return add_yahoo_tls_configuration_hint(diagnostic)
+
+
 def _search_yfinance_quotes(query: str) -> list[dict[str, object]]:
     search = _run_yfinance_silently(lambda: yf.Search(
         query,
@@ -109,13 +124,16 @@ def _search_yfinance_quotes(query: str) -> list[dict[str, object]]:
         lists_count=0,
         recommended=0,
         raise_errors=False,
+        session=get_yfinance_session(),
     ))
     quotes = getattr(search, "quotes", [])
     return quotes if isinstance(quotes, list) else []
 
 
 def _load_yfinance_ticker_info(ticker: str) -> dict[str, object]:
-    info = _run_yfinance_silently(lambda: yf.Ticker(ticker).info)
+    info = _run_yfinance_silently(
+        lambda: yf.Ticker(ticker, session=get_yfinance_session()).info
+    )
     return info if isinstance(info, dict) else {}
 
 
@@ -184,12 +202,20 @@ def is_known_ticker(ticker: str) -> bool:
             if symbol == normalized_ticker and quote_type in VALID_QUOTE_TYPES:
                 return True
     except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
-        LOGGER.warning("Ticker search validation failed for %s: %s", normalized_ticker, exc)
+        LOGGER.warning(
+            "Ticker search validation failed for %s: %s",
+            normalized_ticker,
+            _yfinance_failure_diagnostic(exc),
+        )
 
     try:
         info = _load_yfinance_ticker_info(normalized_ticker)
     except Exception as exc:
-        LOGGER.warning("Ticker info validation failed for %s: %s", normalized_ticker, exc)
+        LOGGER.warning(
+            "Ticker info validation failed for %s: %s",
+            normalized_ticker,
+            _yfinance_failure_diagnostic(exc),
+        )
         return False
 
     quote_type = str(info.get("quoteType", "")).upper()
@@ -397,7 +423,11 @@ def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
     try:
         info = _load_yfinance_ticker_info(lookup_symbol)
     except Exception as exc:
-        LOGGER.warning("Quote profile remote lookup failed for %s: %s", lookup_symbol, exc)
+        LOGGER.warning(
+            "Quote profile remote lookup failed for %s: %s",
+            lookup_symbol,
+            _yfinance_failure_diagnostic(exc),
+        )
         info = {}
     company_name = (
             info.get("longName")
@@ -771,7 +801,11 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         try:
             results = _search_yfinance_quotes(remote_search_query(query, normalized_query))
         except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
-            LOGGER.warning("Ticker search remote lookup failed for %s: %s", normalized_query, exc)
+            LOGGER.warning(
+                "Ticker search remote lookup failed for %s: %s",
+                normalized_query,
+                _yfinance_failure_diagnostic(exc),
+            )
             results = []
 
         filtered: list[dict[str, str]] = []

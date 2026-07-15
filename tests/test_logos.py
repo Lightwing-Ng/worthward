@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.4.1
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from app.infrastructure.storage import (
     logo_store_path_for,
 )
 from app.services.logos import (
+    _load_yfinance_ticker_info,
+    _search_yfinance_quotes,
     _build_local_suggestion,
     build_logo_provider_ticker_candidates,
     build_quote_profile_payload,
@@ -33,6 +35,79 @@ from app.services.logos import (
 
 
 class LogoServiceTests(unittest.TestCase):
+    def test_yfinance_search_reuses_shared_verified_session(self) -> None:
+        shared_session = object()
+        with patch(
+            "app.services.logos.get_yfinance_session",
+            return_value=shared_session,
+        ), patch("app.services.logos.yf.Search") as search_mock:
+            search_mock.return_value.quotes = [{"symbol": "ADBE"}]
+
+            quotes = _search_yfinance_quotes("ADBE")
+
+        self.assertEqual(quotes, [{"symbol": "ADBE"}])
+        search_mock.assert_called_once_with(
+            "ADBE",
+            max_results=20,
+            news_count=0,
+            lists_count=0,
+            recommended=0,
+            raise_errors=False,
+            session=shared_session,
+        )
+
+    def test_yfinance_ticker_profile_reuses_shared_verified_session(self) -> None:
+        shared_session = object()
+        with patch(
+            "app.services.logos.get_yfinance_session",
+            return_value=shared_session,
+        ), patch("app.services.logos.yf.Ticker") as ticker_mock:
+            ticker_mock.return_value.info = {"symbol": "ADBE"}
+
+            info = _load_yfinance_ticker_info("ADBE")
+
+        self.assertEqual(info, {"symbol": "ADBE"})
+        ticker_mock.assert_called_once_with("ADBE", session=shared_session)
+
+    def test_unconfigured_search_certificate_failure_logs_ca_guidance(self) -> None:
+        failure = (
+            "Failed to perform, curl: (60) SSL certificate problem: self signed "
+            "certificate in certificate chain at https://user:contact@example.invalid/"
+            "?token=private"
+        )
+        with patch(
+            "app.infrastructure.runtime_network._YFINANCE_ENTERPRISE_CA_PATH",
+            None,
+        ), patch(
+            "app.services.logos.ensure_market_store_dir",
+        ), patch(
+            "app.services.logos.top_used_tickers",
+            return_value=[],
+        ), patch(
+            "app.services.logos.build_local_alias_search_items",
+            return_value=[],
+        ), patch(
+            "app.services.logos.build_local_search_items",
+            return_value=[],
+        ), patch(
+            "app.services.logos.load_search_cache_items",
+            return_value=[],
+        ), patch(
+            "app.services.logos.has_remote_market_access",
+            return_value=True,
+        ), patch(
+            "app.services.logos._search_yfinance_quotes",
+            side_effect=ConnectionError(failure),
+        ), self.assertLogs("app.services.logos", level="WARNING") as captured:
+            results = search_tickers("ADBE")
+
+        message = " ".join(captured.output)
+        self.assertEqual(results, [])
+        self.assertIn("ANTIGRAVITY_YAHOO_CA_PEM", message)
+        self.assertIn("[network].yahoo_ca_pem", message)
+        self.assertNotIn("user:password", message)
+        self.assertNotIn("private", message)
+
     def test_local_sk_hynix_suggestion_replaces_symbol_only_profile_name(self) -> None:
         fallback_record = {
             "ticker": "SKHY",

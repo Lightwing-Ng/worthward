@@ -1,6 +1,16 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.47.3`
+Documentation version: `v1.47.4`
+
+## Ticker search and profile proxy trust corrected on 15 Jul 2026
+
+- Ticker autocomplete searches and yfinance profile lookups now reuse the shared
+  verified curl_cffi session created during runtime network bootstrap.
+- Corporate HTTPS interception remains supported through
+  `ANTIGRAVITY_YAHOO_CA_PEM` or `[network].yahoo_ca_pem`; certificate
+  verification is never disabled.
+- Certificate-failure logs include the existing enterprise-CA configuration
+  guidance while redacting proxy URL credentials and sensitive query values.
 
 ## Direct Yahoo Chart fallback for stale 1-minute caches added on 15 Jul 2026
 
