@@ -1,4 +1,4 @@
-/* Code version: v1.23.1 */
+/* Code version: v1.23.3 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 16px;
@@ -3198,8 +3198,7 @@
     -webkit-backdrop-filter: var(--glass-surface-blur);
     border: var(--glass-surface-border);
     border-radius: 10px;
-    box-shadow: var(--glass-surface-shadow);
-    height: calc(100dvh - 32px);
+    box-shadow: none;
     max-height: calc(100dvh - 32px);
     overflow: hidden;
     overscroll-behavior: none;
@@ -3211,16 +3210,6 @@
 
 #transaction_form_container .investment-import-broker-field.is-open .backtest-shared-select-dropdown {
     z-index: 10001;
-}
-
-#transaction_form_container .investment-import-broker-dropdown {
-    background:
-        var(--frosted-glass-extracted-background),
-        var(--glass-surface-background-strong);
-    border: var(--frosted-glass-extracted-border);
-    box-shadow: var(--frosted-glass-extracted-shadow-hover);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
 }
 
 #transaction_form_container:has(.investment-import-broker-field.is-open) {
@@ -4322,7 +4311,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     }
 
     #transaction_form_container {
-        height: calc(100dvh - 24px);
         max-height: calc(100dvh - 24px);
     }
 

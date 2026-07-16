@@ -160,9 +160,9 @@ Documentation version: `v1.48.3`
 
 ## Investment import popover and scroll containment corrected on 14 Jul 2026
 
-- The broker dropdown now layers the standard Frosted glass extracted material over the strong glass surface, reducing background bleed while preserving the shared popover treatment.
-- The import field stack is the sole vertical scroll owner. The overlay itself remains fixed to the viewport, while the action package occupies a dedicated bottom layout row and never covers the first field.
-- The import E2E checks the popover material, single-scroll-owner contract, and bottom alignment of the action package.
+- The broker dropdown directly reuses the standard Frosted glass extracted material, matching the shared popover treatment without a page-specific surface override.
+- The import field stack is the sole vertical scroll owner. The overlay now sizes to its content until it reaches the viewport limit, then scrolls the field stack while keeping the action package immediately adjacent to it.
+- The import overlay uses no physical shadow. The import E2E checks the popover material, bounded-scroll contract, mode-card height, and action-package alignment.
 
 ## HSBC authoritative import readback corrected on 14 Jul 2026
 
@@ -302,6 +302,12 @@ Documentation version: `v1.48.3`
 - Flask investment-import tests now patch both the investment parquet path and the derived transaction-cache path into a per-test temporary directory. They never write synthetic transactions into the real `settings_store/investment.parquet`.
 - The persisted test fixture `1 Mar 2026 / U***TEST / QQQ / Buy 1 / USD 101 net cost` was never present in the authoritative broker exports. A running browser could briefly observe it only while an older integration test had replaced the real store.
 - The production commit path rejects IBKR account identifiers ending in `TEST` or `E2E`, providing a second fail-closed boundary if test isolation regresses.
+
+## HSBC pasted three-page snapshot boundary added on 16 Jul 2026
+
+- HSBC USD Savings, Portfolio, and Order Status paste text is committed as one bundle with a persisted SHA-256 fingerprint and observable page-date metadata.
+- Account mismatches and explicit temporal contradictions fail closed before the investment store is changed. A bundle without enough timestamp evidence is imported only with a `review` status and an explicit warning.
+- Settlement lag remains valid: a fully executed order can be newer than the visible USD Savings posting and remains subject to the existing pending-cash replay path.
 
 ## HSBC paired monthly statement import added on 11 Jul 2026
 

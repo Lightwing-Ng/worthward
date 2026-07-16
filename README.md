@@ -233,6 +233,8 @@ py -3.13 -m pip install --upgrade -r requirements.txt
 
 This record keeps only the operational convention that remains compatible with the current HSBC paste-import path and does not change HSBC parsing or settlement logic. The app continues to run the current pending-cash replay flow, and small differences from the HSBC web "unsettled transferable cash" display can still appear in rare edge cases.
 
+- The three pasted pages are one snapshot bundle, not three independent imports. The server records a SHA-256 bundle fingerprint and observable date boundaries, rejects explicit boundary contradictions before changing the store, and marks missing boundaries for review instead of silently treating them as one exact moment.
+
 - Snapshot convention:
   - Treat `1.txt`, `2.txt`, and `3.txt` as a single pasted batch.
   - The current locally reproducible available-cash figure is `28,397.90` USD.
