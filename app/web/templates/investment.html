@@ -1,4 +1,4 @@
-{# Code version: v1.9.1 #}
+{# Code version: v1.9.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -498,7 +498,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open the USD Foreign Currency Savings account.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page text, including account number, available balance, transactions, and dates.</span>
-                                                <span class="investment-import-help-step">4. Paste it here. You may paste more than one capture; duplicate chunks are ignored.</span>
+                                                <span class="investment-import-help-step">4. Refresh and copy all three HSBC pages in one short session, then paste it here. You may paste supplementary captures; duplicate chunks are ignored.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -536,7 +536,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Portfolio.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page text, including holdings, quantities, market value, and currency.</span>
-                                                <span class="investment-import-help-step">4. Paste it here. This page is used as the current HSBC holding snapshot.</span>
+                                                <span class="investment-import-help-step">4. Copy it in the same short session as USD Savings and Order Status. This page is used as the current HSBC holding snapshot.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -574,7 +574,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open Investments, then Order Status.</span>
                                                 <span class="investment-import-help-step">3. Copy the filled order history for the period you want to import.</span>
-                                                <span class="investment-import-help-step">4. Paste it here. Use supplementary captures if HSBC splits the history across pages.</span>
+                                                <span class="investment-import-help-step">4. Use the same end date as the latest USD Savings posting, then copy it in the same short session. Use supplementary captures only if HSBC splits the history across pages.</span>
                                             </span>
                                         </span>
                                     </label>
