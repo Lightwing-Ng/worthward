@@ -1,6 +1,6 @@
 """Live trading access-token validation.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -11,10 +11,38 @@ import secrets
 LIVE_TRADING_TOKEN_ENV = "ANTIGRAVITY_LIVE_TRADING_TOKEN"
 LIVE_TRADING_TOKEN_HEADER = "X-Antigravity-Live-Trading-Token"
 MIN_LIVE_TRADING_TOKEN_LENGTH = 32
+LIVE_TRADING_PIN_ENV = "ANTIGRAVITY_LIVE_TRADING_PIN"
+LIVE_TRADING_PIN_LENGTH = 6
 
 
 def load_live_trading_access_token() -> str:
     return str(os.environ.get(LIVE_TRADING_TOKEN_ENV, "")).strip()
+
+
+def resolve_live_trading_pin(configured_pin: object) -> str:
+    environment_pin = str(os.environ.get(LIVE_TRADING_PIN_ENV, "")).strip()
+    if environment_pin:
+        return environment_pin
+    return str(configured_pin or "").strip()
+
+
+def validate_live_trading_pin(
+        presented_pin: str | None,
+        configured_pin: object,
+) -> tuple[bool, int, str]:
+    resolved_pin = resolve_live_trading_pin(configured_pin)
+    if len(resolved_pin) != LIVE_TRADING_PIN_LENGTH or not resolved_pin.isdigit():
+        return (
+            False,
+            503,
+            f"Live trading is locked. Configure a {LIVE_TRADING_PIN_LENGTH}-digit PIN.",
+        )
+
+    normalized_presented_pin = str(presented_pin or "").strip()
+    if not secrets.compare_digest(normalized_presented_pin, resolved_pin):
+        return False, 401, "The PIN is incorrect."
+
+    return True, 200, ""
 
 
 def validate_live_trading_access_token(presented_token: str | None) -> tuple[bool, int, str]:

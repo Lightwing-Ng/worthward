@@ -1,7 +1,7 @@
 """
 Trade route registration.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from flask import Flask
@@ -12,6 +12,7 @@ from app.web.runtime import WebRuntime
 def register_trade_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/trade")(runtime.trade_root)
     app.get("/trade/<section_name>")(runtime.trade_page)
+    app.post("/trade/live-trading/unlock")(runtime.live_trading_unlock)
     app.get("/more")(runtime.legacy_trade_root)
     app.get("/more/<section_name>")(runtime.legacy_trade_page)
     app.get("/invest")(runtime.investment_page)

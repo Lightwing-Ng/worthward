@@ -1,12 +1,17 @@
 [app]
 name = "antigravity"
-version = "v2.49.0"
+version = "v2.49.3"
 debug = false
-updated_on = "14 Jul 2026"
+updated_on = "15 Jul 2026"
 
 [server]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 8688
+
+[security]
+# Temporary browser gate for the Live trading workspace. Override with the
+# ANTIGRAVITY_LIVE_TRADING_PIN environment variable when needed.
+live_trading_pin = "195135"
 
 [network]
 # Optional corporate CA PEM for Yahoo Finance. The ANTIGRAVITY_YAHOO_CA_PEM

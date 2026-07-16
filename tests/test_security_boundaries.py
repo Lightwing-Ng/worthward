@@ -198,13 +198,15 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
 
 
 class DefaultServerSecurityTests(unittest.TestCase):
-    def test_versioned_config_disables_debug_and_binds_loopback(self) -> None:
+    def test_versioned_config_disables_debug_and_enables_lan_bind(self) -> None:
         config_path = Path(__file__).resolve().parents[1] / "config.toml"
         with config_path.open("rb") as handle:
             config = tomllib.load(handle)
 
         self.assertIs(config["app"]["debug"], False)
-        self.assertEqual(config["server"]["host"], "127.0.0.1")
+        self.assertEqual(config["server"]["host"], "0.0.0.0")
+        self.assertEqual(config["server"]["port"], 8688)
+        self.assertEqual(config["security"]["live_trading_pin"], "195135")
 
 
 if __name__ == "__main__":

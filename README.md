@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.29.1`
+Documentation version: `v2.30.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -64,7 +64,15 @@ The default server bind is:
 0.0.0.0:8688
 ```
 
-Open `http://127.0.0.1:8688` in your browser. Host and port are configured in `config.toml`.
+Open `http://127.0.0.1:8688` on the host computer or
+`http://<host-lan-ip>:8688` from another device on the same trusted local
+network. Host and port are configured in `config.toml`.
+
+The Live trading workspace is separately protected by a 6-digit browser PIN.
+The configured PIN can be overridden for one launch with
+`ANTIGRAVITY_LIVE_TRADING_PIN`. A successful unlock lasts for the current
+browser session; the existing strong access-token header remains available for
+non-browser API clients.
 
 ## Architecture at a glance
 

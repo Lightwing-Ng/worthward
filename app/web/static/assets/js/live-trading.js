@@ -1,9 +1,8 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.10.0
- * - Secured: Longbridge balances, positions, and order submissions now require the page-only live trading access token.
- * - Changed: Live trading price chart x-axis date labels now use weight 400 while preserving the existing font and size.
+ * Code version: v1.11.0
+ * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -32,7 +31,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const barsEmpty = document.getElementById("live_trading_bars_empty");
     const priceInput = document.getElementById("live_trading_price");
     const quantityInput = document.getElementById("live_trading_quantity");
-    const accessTokenInput = document.getElementById("live_trading_access_token");
     const liveTradingShell = document.getElementById("live_trading_shell");
     const liveTradingLayoutRow = document.getElementById("live_trading_layout_row");
     const positionsListShell = document.getElementById("live_trading_list_shell");
@@ -85,12 +83,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return String(brokerInput?.value || "longbridge").trim().toLowerCase() === "ibkr" ? "ibkr" : "longbridge";
     };
     const getQuantityInput = () => quantityInput || form?.querySelector('input[name="quantity"]');
-    const getLiveTradingAccessToken = () => (
-        accessTokenInput instanceof HTMLInputElement ? accessTokenInput.value.trim() : ""
-    );
-    const buildLiveTradingAuthHeaders = () => ({
-        "X-Antigravity-Live-Trading-Token": getLiveTradingAccessToken(),
-    });
     const normalizeTicker = (value) => String(value || "").trim().toUpperCase();
     const sanitizeTicker = (value) => normalizeTicker(value).replace(/[^A-Z0-9.-]/g, "").slice(0, 15);
     const normalizePositiveNumber = (value) => {
@@ -743,9 +735,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (swipePending) {
             return { ready: false, reason: "pending" };
         }
-        if (!getLiveTradingAccessToken()) {
-            return { ready: false, reason: "access-token" };
-        }
         if (broker !== "longbridge") {
             return { ready: false, reason: "broker" };
         }
@@ -779,7 +768,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "aria-label",
                 formState.ready
                     ? `Slide to submit a ${side} order`
-                    : "Complete access token, ticker, price, and quantity to enable live order submission",
+                    : "Complete ticker, price, and quantity to enable live order submission",
             );
         }
         if (swipeSubmitLabel) {
@@ -787,8 +776,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? `Submitting ${side} order...`
                 : formState.ready
                     ? `Slide to ${side}`
-                    : formState.reason === "access-token"
-                        ? "Enter live trading access token"
                     : getSelectedBroker() === "longbridge"
                         ? "Complete ticker, price, and quantity"
                         : "Switch broker to Longbridge";
@@ -979,14 +966,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(balanceGrid instanceof HTMLElement && positionList instanceof HTMLElement)) {
             return;
         }
-        if (!getLiveTradingAccessToken()) {
-            if (positionsMeta) {
-                positionsMeta.textContent = "Live trading access token required";
-            }
-            balanceGrid.innerHTML = buildPanelEmptyMarkup("Enter the live trading access token to load account balances.");
-            positionList.innerHTML = buildPanelEmptyMarkup("Positions remain locked until access is authenticated.");
-            return;
-        }
         const requestId = ++positionsRequestSerial;
         if (positionsMeta) {
             positionsMeta.textContent = "Loading Longbridge balances and positions...";
@@ -999,7 +978,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 cache: "no-store",
                 headers: {
                     "Cache-Control": "no-cache",
-                    ...buildLiveTradingAuthHeaders(),
                 },
             });
             const payload = await response.json().catch(() => ({}));
@@ -2111,7 +2089,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers: {
                     "Content-Type": "application/json",
                     "Cache-Control": "no-cache",
-                    ...buildLiveTradingAuthHeaders(),
                 },
                 body: JSON.stringify({
                     ticker,
@@ -2166,16 +2143,6 @@ document.addEventListener("DOMContentLoaded", () => {
         quantityInput.dataset.liveTradingBound = "1";
         quantityInput.addEventListener("input", () => {
             syncSwipeSubmitAvailability();
-        });
-    }
-    if (accessTokenInput instanceof HTMLInputElement && accessTokenInput.dataset.liveTradingBound !== "1") {
-        accessTokenInput.dataset.liveTradingBound = "1";
-        accessTokenInput.addEventListener("input", () => {
-            syncSwipeSubmitAvailability();
-            syncSwipeSubmitTheme();
-        });
-        accessTokenInput.addEventListener("change", () => {
-            void loadPortfolioSnapshot();
         });
     }
     const clearButton = form.querySelector(".ticker-clear");

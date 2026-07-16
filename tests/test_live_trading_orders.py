@@ -1,7 +1,7 @@
 """
 Tests for Longbridge live trading order flows.
 
-Code version: v0.2.0
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -142,10 +142,27 @@ class LongbridgeLiveTradingServiceTests(unittest.TestCase):
 
 
 class LiveTradingOrderApiTests(unittest.TestCase):
-    def test_live_trading_page_renders_longbridge_order_controls_disabled_until_complete(self) -> None:
+    def test_live_trading_page_requires_pin_then_renders_order_controls(self) -> None:
         client = create_app().test_client()
 
         response = client.get("/trade/live-trading")
+
+        self.assertEqual(response.status_code, 200)
+        locked_body = response.get_data(as_text=True)
+        self.assertNotIn('class="live-trading-pin-stage"', locked_body)
+        self.assertIn('class="workspace-modal-overlay live-trading-pin-overlay"', locked_body)
+        self.assertIn('class="workspace-modal-dialog live-trading-pin-dialog"', locked_body)
+        self.assertIn("assets/css/app.css", locked_body)
+        self.assertIn('id="live_trading_pin"', locked_body)
+        self.assertEqual(locked_body.count('class="live-trading-pin-slot"'), 6)
+        self.assertIn('slot.textContent = filled ? "•" : ""', locked_body)
+        self.assertNotIn('id="live_trading_broker"', locked_body)
+
+        response = client.post(
+            "/trade/live-trading/unlock",
+            data={"pin": "195135"},
+            follow_redirects=True,
+        )
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
@@ -153,12 +170,37 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertIn('id="live_trading_ticker"', body)
         self.assertIn('id="live_trading_price"', body)
         self.assertIn('id="live_trading_quantity"', body)
-        self.assertIn('id="live_trading_access_token"', body)
+        self.assertNotIn('id="live_trading_access_token"', body)
         self.assertIn('id="live_trading_swipe_submit"', body)
         self.assertIn('data-enabled="0"', body)
         self.assertIn('aria-disabled="true"', body)
         self.assertIn('id="live_trading_swipe_thumb"', body)
         self.assertIn("disabled", body)
+
+    def test_live_trading_page_rejects_incorrect_pin(self) -> None:
+        client = create_app().test_client()
+
+        response = client.post(
+            "/trade/live-trading/unlock",
+            data={"pin": "000000"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("The PIN is incorrect.", response.get_data(as_text=True))
+
+    def test_live_trading_pin_session_authorizes_positions_api(self) -> None:
+        client = create_app().test_client()
+        client.post("/trade/live-trading/unlock", data={"pin": "195135"})
+
+        with (
+            patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
+            patch("app.web.runtime.load_longbridge_account_balances", return_value=[]),
+            patch("app.web.runtime.load_longbridge_stock_positions", return_value=[]),
+        ):
+            response = client.get("/api/live-trading/positions")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
 
     def test_live_trading_orders_api_returns_submitted_longbridge_buy_order(self) -> None:
         client = create_app().test_client()

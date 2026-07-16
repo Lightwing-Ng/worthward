@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.18.1
+Code version: v0.19.1
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any, cast
 from urllib.parse import urlencode
 import hashlib
 import pandas as pd
-from flask import g, jsonify, make_response, redirect, render_template, request, send_from_directory, url_for, send_file
+from flask import g, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for, send_file
 from openpyxl import Workbook, load_workbook
 
 LOGGER = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ from app.core.language_settings import (
 from app.core.live_trading_security import (
     LIVE_TRADING_TOKEN_HEADER,
     validate_live_trading_access_token,
+    validate_live_trading_pin,
 )
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
@@ -319,6 +320,7 @@ class WebRuntime:
     trade_page: Any
     legacy_trade_root: Any
     legacy_trade_page: Any
+    live_trading_unlock: Any
     settings_root: Any
     settings_page: Any
     export_transactions_api: Any
@@ -411,6 +413,7 @@ def build_web_runtime() -> WebRuntime:
     chart_config = settings["ui"]["chart"]
     logos = settings["ui"]["logos"]
     app_meta = settings["app"]
+    live_trading_pin = settings.get("security", {}).get("live_trading_pin", "")
     investment_settings = settings.get("investment", {}) if isinstance(settings.get("investment"), dict) else {}
     money_market_settings = (
         investment_settings.get("money_market_funds", {})
@@ -5376,7 +5379,33 @@ def build_web_runtime() -> WebRuntime:
         normalized_section = normalize_trade_section(section_name)
         if normalized_section != (section_name or "").strip().lower():
             return redirect(build_trade_path(normalized_section))
+        if normalized_section == "live-trading" and not session.get("live_trading_unlocked"):
+            response = make_response(render_template(
+                "live_trading_unlock.html",
+                error_message="",
+                theme_light=theme_light,
+                version=app_meta.get("version", CODE_VERSION),
+            ))
+            return apply_no_store_headers(response)
         return render_workspace_page("trade", trade_section=normalized_section)
+
+    def live_trading_unlock():
+        access_granted, error_status, error_message = validate_live_trading_pin(
+            request.form.get("pin"),
+            live_trading_pin,
+        )
+        if not access_granted:
+            response = make_response(render_template(
+                "live_trading_unlock.html",
+                error_message=error_message,
+                theme_light=theme_light,
+                version=app_meta.get("version", CODE_VERSION),
+            ), error_status)
+            return apply_no_store_headers(response)
+
+        session.clear()
+        session["live_trading_unlocked"] = True
+        return redirect(build_trade_path("live-trading"), code=303)
 
     def legacy_trade_root():
         return redirect(build_trade_path("investment"))
@@ -7138,9 +7167,13 @@ def build_web_runtime() -> WebRuntime:
 
     def live_trading_get_positions():
         """Load current Longbridge stock positions for the Live trading workspace."""
-        access_granted, error_status, error_message = validate_live_trading_access_token(
-            request.headers.get(LIVE_TRADING_TOKEN_HEADER)
-        )
+        access_granted = bool(session.get("live_trading_unlocked"))
+        error_status = 200
+        error_message = ""
+        if not access_granted:
+            access_granted, error_status, error_message = validate_live_trading_access_token(
+                request.headers.get(LIVE_TRADING_TOKEN_HEADER)
+            )
         if not access_granted:
             response = jsonify({"success": False, "error": error_message})
             response.status_code = error_status
@@ -7212,9 +7245,13 @@ def build_web_runtime() -> WebRuntime:
 
     def live_trading_submit_order():
         """Submit a Longbridge live limit order from the Live trading workspace."""
-        access_granted, error_status, error_message = validate_live_trading_access_token(
-            request.headers.get(LIVE_TRADING_TOKEN_HEADER)
-        )
+        access_granted = bool(session.get("live_trading_unlocked"))
+        error_status = 200
+        error_message = ""
+        if not access_granted:
+            access_granted, error_status, error_message = validate_live_trading_access_token(
+                request.headers.get(LIVE_TRADING_TOKEN_HEADER)
+            )
         if not access_granted:
             response = jsonify({"success": False, "error": error_message})
             response.status_code = error_status
@@ -7274,6 +7311,7 @@ def build_web_runtime() -> WebRuntime:
         trade_page=trade_page,
         legacy_trade_root=legacy_trade_root,
         legacy_trade_page=legacy_trade_page,
+        live_trading_unlock=live_trading_unlock,
         settings_root=settings_root,
         settings_page=settings_page,
         export_transactions_api=export_transactions_api,

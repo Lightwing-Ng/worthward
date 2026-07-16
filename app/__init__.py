@@ -1,8 +1,10 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.3.1
+Code version: v0.4.0
 """
+
+import secrets
 
 from flask import Flask
 
@@ -20,6 +22,12 @@ def create_app() -> Flask:
         __name__,
         template_folder="web/templates",
         static_folder="web/static",
+    )
+    # Browser unlocks last only for this process and browser session.
+    app.secret_key = secrets.token_bytes(32)
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
     )
 
     @app.context_processor

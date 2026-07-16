@@ -1,6 +1,23 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.47.5`
+Documentation version: `v1.48.3`
+
+## Trusted-LAN access and Live trading PIN gate added on 15 Jul 2026
+
+- The default Flask bind now listens on `0.0.0.0:8688`, allowing another device
+  on the same trusted local network to open the application through the host's
+  LAN address.
+- General workspaces, Investment, and Settings remain directly accessible.
+  Live trading requires a 6-digit PIN before its page, account data, or browser
+  order requests are available.
+- The PIN unlock is stored in a signed, HTTP-only, same-site browser-session
+  cookie and expires when that browser session or application process ends.
+  The strong header token remains supported for non-browser API clients.
+- The unlock screen reuses the centered full-screen frosted-glass dialog
+  treatment. Its Apple-style PIN field has a visual 3-and-3 grouping, with an
+  empty underline for each unfilled digit and an Apple-style bullet for each
+  entered digit, while retaining the native numeric password input for form
+  submission and mobile keyboard support.
 
 ## Scoped proxy resilience completed on 15 Jul 2026
 

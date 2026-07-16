@@ -1,0 +1,247 @@
+{# Code version: v1.3.1 #}
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Unlock Live trading</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --color-scheme: {{ theme_light.color_scheme }};
+            --theme-background: {{ theme_light.background }};
+            --theme-panel: {{ theme_light.panel }};
+            --theme-panel-strong: {{ theme_light.panel_strong }};
+            --theme-text: {{ theme_light.text }};
+            --theme-muted: {{ theme_light.muted }};
+            --theme-accent-primary: {{ theme_light.accent_primary }};
+            --theme-accent-secondary: {{ theme_light.accent_secondary }};
+            --theme-shadow: {{ theme_light.shadow }};
+            --theme-glass-highlight: {{ theme_light.glass_highlight }};
+            --theme-color-white-adaptive: {{ theme_light.color_white_adaptive }};
+            --theme-glass-surface-background-soft: rgba(255, 255, 255, 0.46);
+            --theme-glass-surface-background: rgba(255, 255, 255, 0.48);
+            --theme-glass-surface-background-strong: rgba(255, 255, 255, 0.58);
+            --theme-glass-surface-background-dense: rgba(255, 255, 255, 0.68);
+            --theme-glass-chip-background: rgba(255, 255, 255, 0.72);
+            --theme-glass-chip-background-strong: rgba(255, 255, 255, 0.82);
+            --theme-glass-chip-background-hover: rgba(255, 255, 255, 0.94);
+            --theme-tooltip-background: rgba(255, 255, 255, 0.68);
+            --theme-glass-border: rgba(148, 163, 184, 0.22);
+            --theme-shadow-ambient: rgba(17, 24, 39, 0.12);
+            --theme-error: {{ theme_light.error }};
+            --theme-error-strong: {{ theme_light.error_strong }};
+            --theme-error-translucent: {{ theme_light.error_translucent }};
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">
+    <style>
+        html,
+        body {
+            min-height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+        }
+
+        .live-trading-pin-overlay {
+            isolation: isolate;
+        }
+
+        .live-trading-pin-dialog {
+            grid-template-rows: auto auto auto;
+        }
+
+        .live-trading-pin-icon {
+            background-color: var(--accent-fill);
+            mask: url("/static/images/key.circle.fill.svg") center / contain no-repeat;
+            -webkit-mask: url("/static/images/key.circle.fill.svg") center / contain no-repeat;
+        }
+
+        .live-trading-pin-form {
+            grid-column: 1 / -1;
+            grid-row: 3;
+            display: grid;
+            gap: 14px;
+            margin-top: 14px;
+        }
+
+        .live-trading-pin-field {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: max-content;
+            max-width: 100%;
+            min-height: 46px;
+            margin: 0 auto;
+            cursor: text;
+        }
+
+        .live-trading-pin-native-input {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            border: 0;
+            opacity: 0;
+            cursor: text;
+        }
+
+        .live-trading-pin-slot {
+            display: grid;
+            place-items: center;
+            width: 30px;
+            height: 42px;
+            border-bottom: 1px solid color-mix(in srgb, var(--theme-text) 24%, transparent);
+            color: var(--muted);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+            font-size: 23px;
+            font-weight: 400;
+            line-height: 1;
+            user-select: none;
+        }
+
+        .live-trading-pin-slot:nth-of-type(4) {
+            margin-left: 12px;
+        }
+
+        .live-trading-pin-slot.is-filled {
+            border-bottom-color: var(--accent);
+            color: var(--text);
+        }
+
+        .live-trading-pin-field:focus-within .live-trading-pin-slot {
+            border-bottom-color: var(--accent);
+        }
+
+        .live-trading-pin-error {
+            margin: -2px 0 0;
+            color: var(--theme-error-strong);
+            font-size: var(--font-form-label);
+            line-height: 1.45;
+            text-align: center;
+        }
+
+        .live-trading-pin-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .live-trading-pin-back,
+        .live-trading-pin-button {
+            min-height: 32px;
+            border-radius: var(--radius-pill);
+            font: inherit;
+            font-size: var(--font-form-control);
+            line-height: 1;
+        }
+
+        .live-trading-pin-back {
+            padding: 0 12px;
+            color: var(--muted);
+            text-decoration: none;
+        }
+
+        .live-trading-pin-back:hover,
+        .live-trading-pin-back:focus-visible {
+            color: var(--text);
+        }
+
+        .live-trading-pin-button {
+            min-width: 86px;
+            padding: 0 18px;
+            border: 0;
+            background: var(--accent-fill);
+            color: var(--accent-contrast);
+            cursor: pointer;
+        }
+
+        .live-trading-pin-button:disabled {
+            background: color-mix(in srgb, var(--muted) 28%, transparent);
+            color: color-mix(in srgb, var(--accent-contrast) 72%, transparent);
+            cursor: default;
+        }
+
+        .live-trading-pin-button:focus-visible,
+        .live-trading-pin-back:focus-visible,
+        .live-trading-pin-native-input:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+        }
+
+        @media (max-width: 420px) {
+            .live-trading-pin-slot {
+                width: 27px;
+            }
+
+            .live-trading-pin-slot:nth-of-type(4) {
+                margin-left: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="workspace-modal-overlay live-trading-pin-overlay" role="presentation">
+        <section class="workspace-modal-dialog live-trading-pin-dialog" role="dialog" aria-modal="true" aria-labelledby="live_trading_pin_title" aria-describedby="live_trading_pin_copy">
+            <a class="dismiss-button workspace-modal-close" href="/trade/investment" aria-label="Back to investment">
+                <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+            </a>
+            <span class="icon workspace-modal-icon live-trading-pin-icon" aria-hidden="true"></span>
+            <h1 class="workspace-modal-title" id="live_trading_pin_title">Unlock Live trading</h1>
+            <p class="workspace-modal-copy" id="live_trading_pin_copy">Enter the 6-digit PIN to open account data and live order controls.</p>
+            <form class="live-trading-pin-form" method="post" action="/trade/live-trading/unlock" id="live_trading_pin_form">
+                <label class="live-trading-pin-field" for="live_trading_pin" aria-label="6-digit PIN">
+                    <input class="live-trading-pin-native-input"
+                           id="live_trading_pin"
+                           name="pin"
+                           type="password"
+                           inputmode="numeric"
+                           pattern="[0-9]{6}"
+                           minlength="6"
+                           maxlength="6"
+                           autocomplete="one-time-code"
+                           autofocus
+                           required>
+                    {% for _ in range(6) %}<span class="live-trading-pin-slot" aria-hidden="true"></span>{% endfor %}
+                </label>
+                {% if error_message %}<p class="live-trading-pin-error" role="alert">{{ error_message }}</p>{% endif %}
+                <div class="live-trading-pin-actions">
+                    <a class="live-trading-pin-back" href="/trade/investment">Back</a>
+                    <button class="live-trading-pin-button" id="live_trading_pin_submit" type="submit" disabled>Unlock</button>
+                </div>
+            </form>
+        </section>
+    </main>
+<script>
+    (() => {
+        const input = document.getElementById("live_trading_pin");
+        const submit = document.getElementById("live_trading_pin_submit");
+        const slots = Array.from(document.querySelectorAll(".live-trading-pin-slot"));
+        if (!(input instanceof HTMLInputElement) || !(submit instanceof HTMLButtonElement)) return;
+
+        const sync = () => {
+            input.value = input.value.replace(/\D/g, "").slice(0, 6);
+            slots.forEach((slot, index) => {
+                const filled = index < input.value.length;
+                slot.textContent = filled ? "•" : "";
+                slot.classList.toggle("is-filled", filled);
+            });
+            submit.disabled = input.value.length !== 6;
+        };
+
+        input.addEventListener("input", sync);
+        input.addEventListener("change", sync);
+        sync();
+    })();
+</script>
+</body>
+</html>
