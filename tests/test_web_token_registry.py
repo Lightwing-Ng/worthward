@@ -1,12 +1,13 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.3.1
+Code version: v0.5.0
 """
 
 from __future__ import annotations
 
 import ast
+import re
 import unittest
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_c
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
+WEB_CSS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "css"
 
 
 def read_text(path: Path) -> str:
@@ -52,7 +54,7 @@ def collect_literal_runtime_defaults(function_name: str) -> dict[str, str]:
     return defaults
 
 
-def collect_frosted_glass_material_defaults() -> dict[str, str]:
+def collect_material_rows() -> dict[str, set[str]]:
     module = ast.parse(read_text(WEB_RUNTIME_PATH))
     target_function = next(
         node
@@ -60,6 +62,7 @@ def collect_frosted_glass_material_defaults() -> dict[str, str]:
         if isinstance(node, ast.FunctionDef) and node.name == "build_material_token_rows"
     )
 
+    rows: dict[str, set[str]] = {}
     for node in ast.walk(target_function):
         if not isinstance(node, ast.Dict):
             continue
@@ -68,26 +71,26 @@ def collect_frosted_glass_material_defaults() -> dict[str, str]:
             if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
                 items[key_node.value] = value_node
         name_node = items.get("name")
+        sample_kind_node = items.get("sample_kind")
         tokens_node = items.get("tokens")
-        if not isinstance(name_node, ast.Constant) or name_node.value != "Frosted glass":
+        if not isinstance(name_node, ast.Constant) or not isinstance(name_node.value, str):
             continue
-        if not isinstance(tokens_node, ast.Call):
+        if not isinstance(sample_kind_node, ast.Constant) or sample_kind_node.value != "glass-surface":
             continue
-        if not isinstance(tokens_node.func, ast.Name) or tokens_node.func.id != "standard_material_tokens":
+        if not isinstance(tokens_node, ast.List):
             continue
-        values = []
-        for argument in tokens_node.args:
-            if not isinstance(argument, ast.Constant) or not isinstance(argument.value, str):
-                raise AssertionError("Expected literal string defaults in the Frosted glass material row.")
-            values.append(argument.value)
-        return {
-            "--glass-surface-background": values[0],
-            "--glass-surface-border": values[1],
-            "--glass-surface-shadow": values[2],
-            "--glass-surface-blur": values[3],
+        token_names = {
+            element.args[0].value
+            for element in tokens_node.elts
+            if isinstance(element, ast.Call)
+            and isinstance(element.func, ast.Name)
+            and element.func.id == "raw_token"
+            and element.args
+            and isinstance(element.args[0], ast.Constant)
+            and isinstance(element.args[0].value, str)
         }
-
-    raise AssertionError("Could not locate the baseline Frosted glass material token row.")
+        rows[name_node.value] = token_names
+    return rows
 
 
 class WebTokenRegistryTests(unittest.TestCase):
@@ -97,9 +100,12 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertGreaterEqual(len(registry), 100)
         self.assertIn("--mode-switch-radius", registry)
         self.assertEqual(registry["--mode-switch-radius"].value, "var(--radius-pill)")
-        self.assertEqual(registry["--glass-surface-shadow"].value, "0 18px 40px var(--theme-shadow-ambient)")
+        self.assertEqual(
+            registry["--frosted-glass-shadow"].value,
+            "0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent)",
+        )
         self.assertEqual(registry["--font-size-8"].value, "36px")
-        self.assertEqual(registry["--tooltip-background"].value, "var(--frosted-glass-extracted-background)")
+        self.assertEqual(registry["--tooltip-background"].value, "var(--frosted-glass-background)")
         self.assertEqual(registry["--glass-mask-shadow"].value, "0 12px 24px var(--theme-glass-border)")
         self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())
         self.assertGreater(registry["--mode-switch-radius"].line, 1)
@@ -137,30 +143,42 @@ class WebTokenRegistryTests(unittest.TestCase):
             "Runtime token defaults drifted from tokens.css foundation baseline.",
         )
 
-    def test_frosted_glass_baseline_material_defaults_match_foundation_css(self) -> None:
+    def test_material_registry_only_exposes_canonical_frosted_glass(self) -> None:
         registry = load_foundation_css_token_registry()
-        runtime_defaults = collect_frosted_glass_material_defaults()
-
-        drift = {
-            token_name: {
-                "runtime": runtime_value,
-                "css": registry[token_name].value,
-                "line": registry[token_name].line,
-            }
-            for token_name, runtime_value in runtime_defaults.items()
-            if runtime_value != registry[token_name].value
-        }
-
-        self.assertIn("--glass-surface-background", runtime_defaults)
-        self.assertIn("--glass-surface-border", runtime_defaults)
-        self.assertIn("--glass-surface-shadow", runtime_defaults)
-        self.assertIn("--glass-surface-blur", runtime_defaults)
-
+        material_rows = collect_material_rows()
         self.assertEqual(
-            drift,
-            {},
-            "Baseline material tokens drifted from tokens.css foundation defaults.",
+            material_rows,
+            {
+                "Frosted glass": {
+                    "--frosted-glass-background",
+                    "--frosted-glass-border",
+                    "--frosted-glass-shadow",
+                    "--frosted-glass-blur",
+                },
+            },
         )
+        for token_name in material_rows["Frosted glass"]:
+            self.assertIn(token_name, registry)
+
+    def test_material_settings_page_renders_one_canonical_card(self) -> None:
+        from app import create_app
+
+        response = create_app().test_client().get("/settings/material-tokens")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(html.count("data-style-token-card="), 1)
+        self.assertEqual(html.count('data-style-token-card="frosted-glass"'), 1)
+        self.assertEqual(html.count('<p class="style-token-title">Frosted glass</p>'), 1)
+
+    def test_every_canonical_frosted_glass_reference_is_defined(self) -> None:
+        registry = load_foundation_css_token_registry()
+        source_text = read_text(WEB_RUNTIME_PATH)
+        source_text += "\n".join(read_text(path) for path in WEB_CSS_ROOT.rglob("*.css"))
+        references = set(re.findall(r"var\((--frosted-glass-[a-z-]+)\)", source_text))
+
+        self.assertGreaterEqual(len(references), 7)
+        self.assertEqual(references - set(registry), set())
 
 
 if __name__ == "__main__":

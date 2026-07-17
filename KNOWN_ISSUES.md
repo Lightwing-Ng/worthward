@@ -1,6 +1,24 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.48.3`
+Documentation version: `v1.49.1`
+
+## Realtime quote rate-limit recovery corrected on 16 Jul 2026
+
+- An explicit Yahoo `YFRateLimitError` now stops per-ticker recovery and starts
+  a 60-second realtime-quote cooldown. The 10-second Investment poll therefore
+  no longer amplifies one batched limit into repeated requests for every holding.
+- A recoverable batch transport failure no longer emits a warning before its
+  individual requests succeed. Genuine non-rate-limit recovery failures remain
+  visible as one aggregated warning without exposing network secrets.
+
+## Material registry consolidated on 16 Jul 2026
+
+- Settings now exposes only the canonical `Frosted glass` material. It retains
+  the approved visual values that were previously staged under a temporary name;
+  the Apple-specific and superseded baseline material families were removed.
+- Tooltips, validation pointers, the responsive dock, workspace headings, and
+  remaining glass surfaces now consume the canonical `--frosted-glass-*` tokens
+  directly, with no compatibility alias or duplicate registry row.
 
 ## Trusted-LAN access and Live trading PIN gate added on 15 Jul 2026
 
@@ -155,12 +173,12 @@ Documentation version: `v1.48.3`
 ## Responsive investment surface split added on 14 Jul 2026
 
 - The Style token width handle and the new Investment height handle now share one direction-aware resizer component with pointer, touch, and keyboard behavior.
-- Both orientations reuse the extracted Frosted Glass material. The Investment separator remains visually hidden until hover, keyboard focus, or active resizing.
+- Both orientations reuse the canonical Frosted Glass material. The Investment separator remains visually hidden until hover, keyboard focus, or active resizing.
 - Overview and Transaction history keep independent minimum heights, and a user-selected split is proportionally reflowed when the portrait viewport changes size.
 
 ## Investment import popover and scroll containment corrected on 14 Jul 2026
 
-- The broker dropdown directly reuses the standard Frosted glass extracted material, matching the shared popover treatment without a page-specific surface override.
+- The broker dropdown directly reuses the standard Frosted glass material, matching the shared popover treatment without a page-specific surface override.
 - The import field stack is the sole vertical scroll owner. The overlay now sizes to its content until it reaches the viewport limit, then scrolls the field stack while keeping the action package immediately adjacent to it.
 - The import overlay uses no physical shadow. The import E2E checks the popover material, bounded-scroll contract, mode-card height, and action-package alignment.
 
@@ -382,7 +400,7 @@ Documentation version: `v1.48.3`
 | `more_timing_page_renders_after_storage_refactor` | Intentional product behavior | Removed Timing redirects to Investment. |
 | `primary_workspace_pages_render_after_runtime_split` | Outdated routes | Uses canonical Workspace routes. |
 | `frosted_glass_baseline_material_defaults_match_foundation_css` | Real regression | Runtime material default was synchronized with foundation CSS. |
-| `loader_reads_foundation_root_tokens` | Intentional material change | Tooltip uses the extracted frosted-glass material. |
+| `loader_reads_foundation_root_tokens` | Intentional material change | Tooltip uses the canonical frosted-glass material. |
 | `style_and_font_runtime_defaults_match_foundation_css_baseline` | Real regression | Runtime control and pagination defaults were synchronized with CSS. |
 | `compare_portfolio_and_backtest_pages_keep_controls_inside_workspace` | Outdated routes, labels, and Mock | Uses canonical routes, current labels, and shared factories. |
 

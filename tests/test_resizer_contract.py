@@ -1,4 +1,4 @@
-"""Tests for the shared inline and block resizer contract. Code version: v1.0.0."""
+"""Tests for the shared inline and block resizer contract. Code version: v1.1.0."""
 
 from __future__ import annotations
 
@@ -22,15 +22,15 @@ def test_settings_and_investment_resizers_share_one_component() -> None:
     assert 'aria-orientation="horizontal"' in investment_html
 
 
-def test_shared_resizer_uses_extracted_frosted_glass_material() -> None:
+def test_shared_resizer_uses_canonical_frosted_glass_material() -> None:
     css = (ROOT / "app/web/static/assets/css/components/resizer.css").read_text(
         encoding="utf-8",
     )
     js = (ROOT / "app/web/static/assets/js/resizer.js").read_text(encoding="utf-8")
 
-    assert "background: var(--frosted-glass-extracted-background);" in css
-    assert "box-shadow: var(--frosted-glass-extracted-shadow);" in css
-    assert "backdrop-filter: var(--frosted-glass-extracted-blur);" in css
+    assert "background: var(--frosted-glass-background);" in css
+    assert "box-shadow: var(--frosted-glass-shadow);" in css
+    assert "backdrop-filter: var(--frosted-glass-blur);" in css
     assert ".surface-resizer--inline" in css
     assert ".surface-resizer--block" in css
     assert "ArrowUp" in js

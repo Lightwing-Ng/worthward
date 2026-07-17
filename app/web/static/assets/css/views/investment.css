@@ -1,4 +1,4 @@
-/* Code version: v1.23.3 */
+/* Code version: v1.24.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 16px;
@@ -165,11 +165,11 @@
     gap: 12px;
     padding: 12px;
     transform-origin: right center;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     filter: saturate(1) blur(0);
     transition:
         opacity 220ms var(--motion-standard),
@@ -201,7 +201,7 @@
     padding: 10px 12px;
     border-radius: 12px;
     background: var(--ticker-identity-background);
-    border: 1px solid var(--glass-surface-border);
+    border: var(--frosted-glass-border);
 }
 
 .live-trading-balance-card-header,
@@ -554,11 +554,11 @@
     min-height: 56px;
     padding: 6px;
     border-radius: 999px;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     isolation: isolate;
     user-select: none;
     touch-action: pan-y;
@@ -2072,8 +2072,8 @@
     min-height: 0;
     border-radius: 10px;
     background: var(--glass-surface-background-soft);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
 }
 
@@ -2434,10 +2434,10 @@
 .investment-holdings-table-shell {
     border-radius: inherit;
     background: var(--panel-strong);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     background-clip: padding-box;
-    border: 1px solid var(--glass-surface-border);
+    border: var(--frosted-glass-border);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
     isolation: isolate;
     --investment-holdings-scrollbar-width: 0px;
@@ -2470,11 +2470,11 @@
     pointer-events: none;
     overflow: hidden;
     border-radius: 10px 10px 0 0;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     border-bottom: 0;
 }
 
@@ -2499,11 +2499,11 @@
     z-index: calc(var(--layer-surface-content) + 1);
     pointer-events: none;
     border-radius: 10px 10px 0 0;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     border-bottom: 0;
     overflow: hidden;
     width: 100%;
@@ -2622,7 +2622,7 @@
 }
 
 .investment-holdings-table tbody td+td {
-    border-left: 1px solid var(--glass-surface-border);
+    border-left: var(--frosted-glass-border);
 }
 
 .scrollable-data-table thead th+th,
@@ -2637,7 +2637,7 @@
 
 .investment-holdings-table tbody tr+tr td,
 .investment-holdings-table tbody tr:first-child td {
-    border-top: 1px solid var(--glass-surface-border);
+    border-top: var(--frosted-glass-border);
 }
 
 .investment-holdings-table tbody td {
@@ -3020,12 +3020,12 @@
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme-override="light"]) #investment_holdings_panel {
-        --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
-        --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
-        --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
-        --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
+        --investment-holdings-summary-frosted-background: var(--frosted-glass-background);
+        --investment-holdings-summary-frosted-border: var(--frosted-glass-border);
+        --investment-holdings-summary-frosted-shadow: var(--frosted-glass-shadow);
+        --investment-holdings-summary-frosted-blur: var(--frosted-glass-blur);
         --investment-holdings-summary-frosted-highlight: inset 0 0 0 1px transparent;
-        --investment-holdings-summary-cell-separator: var(--glass-surface-border);
+        --investment-holdings-summary-cell-separator: var(--frosted-glass-border);
         --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
         --investment-holdings-row-background-alt: color-mix(in srgb, var(--theme-background) 78%, var(--color-white-adaptive) 22%);
         --investment-holdings-row-blur: none;
@@ -3033,12 +3033,12 @@
 }
 
 :root[data-theme-override="dark"] #investment_holdings_panel {
-    --investment-holdings-summary-frosted-background: var(--frosted-glass-extracted-background);
-    --investment-holdings-summary-frosted-border: var(--frosted-glass-extracted-border);
-    --investment-holdings-summary-frosted-shadow: var(--frosted-glass-extracted-shadow);
-    --investment-holdings-summary-frosted-blur: var(--frosted-glass-extracted-blur);
+    --investment-holdings-summary-frosted-background: var(--frosted-glass-background);
+    --investment-holdings-summary-frosted-border: var(--frosted-glass-border);
+    --investment-holdings-summary-frosted-shadow: var(--frosted-glass-shadow);
+    --investment-holdings-summary-frosted-blur: var(--frosted-glass-blur);
     --investment-holdings-summary-frosted-highlight: inset 0 0 0 1px transparent;
-    --investment-holdings-summary-cell-separator: var(--glass-surface-border);
+    --investment-holdings-summary-cell-separator: var(--frosted-glass-border);
     --investment-holdings-row-background: color-mix(in srgb, var(--theme-background) 84%, var(--color-white-adaptive) 16%);
     --investment-holdings-row-background-alt: color-mix(in srgb, var(--theme-background) 78%, var(--color-white-adaptive) 22%);
     --investment-holdings-row-blur: none;
@@ -3193,10 +3193,10 @@
     z-index: 10000;
     margin-top: 0;
     padding: 15px;
-    background: var(--glass-surface-background);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
-    border: var(--glass-surface-border);
+    background: var(--frosted-glass-background);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     border-radius: 10px;
     box-shadow: none;
     max-height: calc(100dvh - 32px);
@@ -3319,7 +3319,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     padding: var(--investment-import-field-pad-block) var(--investment-import-field-pad-inline);
     border-radius: var(--settings-general-option-radius);
     background: var(--glass-surface-background-soft);
-    border: 1px solid var(--glass-surface-border);
+    border: var(--frosted-glass-border);
 }
 
 .investment-import-bridge-field {

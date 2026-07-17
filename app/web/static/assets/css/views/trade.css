@@ -1,4 +1,4 @@
-/* Code version: v3.26.0 */
+/* Code version: v3.27.0 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -28,7 +28,7 @@
     padding: 8px 10px;
     border-radius: var(--radius-soft);
     background: var(--glass-surface-background-soft);
-    border: var(--glass-surface-border);
+    border: var(--frosted-glass-border);
 }
 
 .grid-trading-parameters-panel .trade-strategy-params-grid {
@@ -37,7 +37,7 @@
 }
 .trade-sidebar-card {
     padding: 12px 12px 10px;
-    background: var(--glass-surface-background);
+    background: var(--frosted-glass-background);
 }
 
 .trade-sidebar-eyebrow {
@@ -640,8 +640,8 @@
     overflow: hidden;
     border-radius: var(--radius-panel);
     background: var(--glass-surface-background-strong);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
 }
 
 .trade-chart-panel.trade-chart-panel-equity {
@@ -699,11 +699,11 @@
     border-radius: var(--radius-pill);
     min-height: 0;
     pointer-events: auto;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     isolation: isolate;
 }
 
@@ -770,11 +770,11 @@
     transform: translateX(-50%) translateY(4px);
     padding: 7px 10px;
     border-radius: var(--radius-soft);
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     color: var(--text);
     font-size: var(--font-tooltip);
     line-height: 1;

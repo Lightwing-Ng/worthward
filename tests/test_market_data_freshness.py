@@ -729,14 +729,39 @@ class MarketDataFreshnessTests(unittest.TestCase):
                 raise ConnectionError("Batch response unavailable")
             return market_frame(str(tickers), intraday=True)
 
-        with patch(
-            "app.services.market_data._download_daily_history_with_yfinance",
-            side_effect=fake_download,
-        ) as download_mock:
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=fake_download,
+            ) as download_mock,
+            patch("app.services.market_data.LOGGER.warning") as warning_mock,
+        ):
             quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
 
         self.assertEqual([quote["ticker"] for quote in quotes], ["QQQ", "AAPL"])
         self.assertEqual(download_mock.call_count, 3)
+        warning_mock.assert_not_called()
+
+    def test_realtime_quote_batch_rate_limit_skips_individual_retries_and_cools_down(self) -> None:
+        rate_limit_error = YfinanceDownloadError(
+            "8 Failed downloads: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')"
+        )
+
+        with (
+            patch("app.services.market_data._yfinance_realtime_rate_limit_until", 0.0),
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=rate_limit_error,
+            ) as download_mock,
+            patch("app.services.market_data.LOGGER.warning") as warning_mock,
+        ):
+            first_quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
+            second_quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
+
+        self.assertEqual(first_quotes, [])
+        self.assertEqual(second_quotes, [])
+        download_mock.assert_called_once()
+        warning_mock.assert_not_called()
 
     def test_realtime_quote_endpoint_does_not_cache_partial_batches(self) -> None:
         qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}

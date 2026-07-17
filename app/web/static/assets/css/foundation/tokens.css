@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.6.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -79,8 +79,8 @@
 	--settings-action-package-column-gap: 12px;
 	--settings-action-package-row-gap: 8px;
 	--settings-action-package-copy-gap: 4px;
-	--settings-action-package-background: var(--frosted-glass-extracted-background);
-	--settings-action-package-border: var(--frosted-glass-extracted-border);
+	--settings-action-package-background: var(--frosted-glass-background);
+	--settings-action-package-border: var(--frosted-glass-border);
 	--settings-action-package-max-width: 680px;
 	--settings-action-button-radius: var(--radius-pill);
 	--settings-action-button-pad-block: 0px;
@@ -94,12 +94,12 @@
 	--settings-round-icon-button-size: 36px;
 	--settings-round-icon-button-icon-size: 18px;
 	--settings-round-icon-button-radius: var(--radius-pill);
-	--settings-round-icon-button-background: var(--frosted-glass-extracted-background);
-	--settings-round-icon-button-background-hover: var(--frosted-glass-extracted-background-hover);
-	--settings-round-icon-button-border: var(--frosted-glass-extracted-border);
-	--settings-round-icon-button-shadow: var(--frosted-glass-extracted-shadow);
-	--settings-round-icon-button-shadow-hover: var(--frosted-glass-extracted-shadow-hover);
-	--settings-round-icon-button-shadow-active: var(--frosted-glass-extracted-shadow-active);
+	--settings-round-icon-button-background: var(--frosted-glass-background);
+	--settings-round-icon-button-background-hover: var(--frosted-glass-background-hover);
+	--settings-round-icon-button-border: var(--frosted-glass-border);
+	--settings-round-icon-button-shadow: var(--frosted-glass-shadow);
+	--settings-round-icon-button-shadow-hover: var(--frosted-glass-shadow-hover);
+	--settings-round-icon-button-shadow-active: var(--frosted-glass-shadow-active);
 	--settings-round-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
 	--settings-round-icon-button-color-hover: var(--accent-text);
 	--settings-form-shell-max-width: 780px;
@@ -112,7 +112,7 @@
 	--settings-text-input-color: var(--text);
 	--settings-text-input-font-size: var(--font-form-control);
 	--settings-reading-guard-single-column-width: 768px;
-	--settings-general-panel-background: color-mix(in srgb, var(--glass-surface-background) 92%, transparent);
+	--settings-general-panel-background: color-mix(in srgb, var(--frosted-glass-background) 92%, transparent);
 	--settings-general-panel-border: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
 	--scrollable-data-table-header-color: color-mix(in srgb, var(--theme-text) 92%, var(--color-white-adaptive) 8%);
 	--style-token-demo-width: 384px;
@@ -148,10 +148,10 @@
 	--local-store-pagination-indicator-radius: var(--radius-pill);
 	--local-store-pagination-indicator-background: var(--accent-fill);
 	--local-store-pagination-indicator-shadow: 0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
-	--local-store-pagination-button-background: var(--frosted-glass-extracted-background);
+	--local-store-pagination-button-background: var(--frosted-glass-background);
 	--local-store-pagination-button-border: 1px solid var(--accent-border-strong);
-	--local-store-pagination-button-shadow: var(--frosted-glass-extracted-shadow);
-	--local-store-pagination-button-blur: var(--frosted-glass-extracted-blur);
+	--local-store-pagination-button-shadow: var(--frosted-glass-shadow);
+	--local-store-pagination-button-blur: var(--frosted-glass-blur);
 	--local-store-pagination-motion-duration: 500ms;
 	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
@@ -185,12 +185,12 @@
 	--workspace-article-pad-block-end: 8px;
 	--workspace-article-background: var(--glass-surface-background-strong);
 	--workspace-article-shadow: none;
-	--workspace-article-blur: var(--glass-surface-blur);
+	--workspace-article-blur: var(--frosted-glass-blur);
 	--workspace-article-heading-min-height: 44px;
 	--workspace-article-heading-gap: 10px;
-	--workspace-article-heading-background: var(--glass-surface-background);
-	--workspace-article-heading-border: var(--glass-surface-border);
-	--workspace-article-heading-shadow: var(--glass-surface-shadow);
+	--workspace-article-heading-background: var(--frosted-glass-background);
+	--workspace-article-heading-border: var(--frosted-glass-border);
+	--workspace-article-heading-shadow: var(--frosted-glass-shadow);
 	--workspace-article-mobile-shadow: none;
 	--workspace-article-sidebar-morph-easing: var(--motion-inertial);
 	--workspace-content-article-background: transparent;
@@ -232,10 +232,10 @@
 	--scrollable-data-table-scrollbar-gutter: stable;
 	--scrollable-data-table-row-background: var(--panel-strong);
 	--scrollable-data-table-row-background-alt: color-mix(in srgb, var(--panel-strong) 82%, var(--glass-surface-background-strong));
-	--scrollable-data-table-summary-background: var(--frosted-glass-extracted-background);
-	--scrollable-data-table-summary-border: var(--frosted-glass-extracted-border);
-	--scrollable-data-table-summary-shadow: var(--frosted-glass-extracted-shadow);
-	--scrollable-data-table-summary-blur: var(--frosted-glass-extracted-blur);
+	--scrollable-data-table-summary-background: var(--frosted-glass-background);
+	--scrollable-data-table-summary-border: var(--frosted-glass-border);
+	--scrollable-data-table-summary-shadow: var(--frosted-glass-shadow);
+	--scrollable-data-table-summary-blur: var(--frosted-glass-blur);
 	--shared-select-dropdown-padding: 10px;
 	--shared-select-dropdown-radius: var(--radius-soft);
 	--shared-select-dropdown-max-height: min(360px, 55vh);
@@ -244,12 +244,8 @@
 	--investment-holdings-cell-padding: 4px 6px;
 	--color-white-adaptive: var(--theme-color-white-adaptive);
 	--glass-surface-background-soft: var(--theme-glass-surface-background-soft);
-	--glass-surface-background: var(--theme-glass-surface-background);
 	--glass-surface-background-strong: var(--theme-glass-surface-background-strong);
 	--glass-surface-background-dense: var(--theme-glass-surface-background-dense);
-	--glass-surface-border: 0px solid transparent;
-	--glass-surface-shadow: 0 18px 40px var(--theme-shadow-ambient);
-	--glass-surface-blur: saturate(180%) blur(24px);
 	--glass-chip-background: var(--theme-glass-chip-background);
 	--glass-chip-background-strong: var(--theme-glass-chip-background-strong);
 	--glass-chip-background-hover: var(--theme-glass-chip-background-hover);
@@ -258,21 +254,21 @@
 	--glass-chip-shadow-hover: 0 12px 32px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 100%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-shadow-active: 0 6px 18px var(--theme-shadow-ambient), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 94%, transparent), 0 0 0 1px var(--theme-glass-highlight);
 	--glass-chip-blur: saturate(180%) blur(28px);
-	--frosted-glass-extracted-background:
+	--frosted-glass-background:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
 		rgba(255, 255, 255, 0.08);
-	--frosted-glass-extracted-background-hover:
+	--frosted-glass-background-hover:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(248, 249, 250, 0.24) 100%),
 		rgba(255, 255, 255, 0.12);
-	--frosted-glass-extracted-border: 1px solid rgba(255, 255, 255, 0.30);
-	--frosted-glass-extracted-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
-	--frosted-glass-extracted-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
-	--frosted-glass-extracted-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
-	--frosted-glass-extracted-blur: saturate(160%) blur(18px);
-	--tooltip-background: var(--frosted-glass-extracted-background);
-	--tooltip-border: var(--frosted-glass-extracted-border);
-	--tooltip-shadow: var(--frosted-glass-extracted-shadow);
-	--tooltip-blur: var(--frosted-glass-extracted-blur);
+	--frosted-glass-border: 1px solid rgba(255, 255, 255, 0.30);
+	--frosted-glass-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent);
+	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
+	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
+	--frosted-glass-blur: saturate(160%) blur(18px);
+	--tooltip-background: var(--frosted-glass-background);
+	--tooltip-border: var(--frosted-glass-border);
+	--tooltip-shadow: var(--frosted-glass-shadow);
+	--tooltip-blur: var(--frosted-glass-blur);
 	--chart-tooltip-min-width: 164px;
 	--chart-tooltip-max-width: 260px;
 	--chart-tooltip-padding-block: 10px;
@@ -291,12 +287,6 @@
 	--glass-mask-border: 1px solid color-mix(in srgb, var(--color-white-adaptive) 36%, transparent);
 	--glass-mask-shadow: 0 12px 24px var(--theme-glass-border);
 	--glass-mask-blur: saturate(170%) blur(18px);
-	--apple-frosted-glass-background:
-		linear-gradient(90deg, rgba(232, 238, 235, 0.54) 0%, rgba(242, 234, 225, 0.48) 50%, rgba(235, 239, 243, 0.54) 100%),
-		rgba(245, 246, 246, 0.38);
-	--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.44);
-	--apple-frosted-glass-shadow: 0 18px 46px rgba(13, 18, 28, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.62);
-	--apple-frosted-glass-blur: saturate(180%) blur(30px);
 	--liquid-glass-background:
 		linear-gradient(180deg, color-mix(in srgb, var(--glass-surface-background-dense) 90%, var(--color-white-adaptive)) 0%, color-mix(in srgb, var(--glass-surface-background-soft) 90%, transparent) 100%),
 		radial-gradient(circle at top left, color-mix(in srgb, var(--theme-glass-highlight) 92%, transparent) 0%, transparent 44%);
@@ -364,39 +354,29 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {
-		--frosted-glass-extracted-background:
+		--frosted-glass-background:
 			linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
 			rgba(10, 14, 20, 0.06);
-		--frosted-glass-extracted-background-hover:
+		--frosted-glass-background-hover:
 			linear-gradient(180deg, rgba(84, 102, 130, 0.24) 0%, rgba(48, 56, 72, 0.18) 100%),
 			rgba(12, 16, 24, 0.09);
-		--frosted-glass-extracted-border: 1px solid rgba(210, 224, 244, 0.225);
-		--frosted-glass-extracted-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
-		--frosted-glass-extracted-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
-		--frosted-glass-extracted-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
-		--apple-frosted-glass-background:
-			linear-gradient(90deg, rgba(31, 38, 43, 0.58) 0%, rgba(39, 42, 37, 0.5) 50%, rgba(28, 35, 44, 0.58) 100%),
-			rgba(14, 18, 20, 0.62);
-		--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.16);
-		--apple-frosted-glass-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+		--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.225);
+		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
+		--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
+		--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
 	}
 }
 :root[data-theme-override="dark"] {
-	--frosted-glass-extracted-background:
+	--frosted-glass-background:
 		linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
 		rgba(10, 14, 20, 0.06);
-	--frosted-glass-extracted-background-hover:
+	--frosted-glass-background-hover:
 		linear-gradient(180deg, rgba(84, 102, 130, 0.24) 0%, rgba(48, 56, 72, 0.18) 100%),
 		rgba(12, 16, 24, 0.09);
-	--frosted-glass-extracted-border: 1px solid rgba(210, 224, 244, 0.225);
-	--frosted-glass-extracted-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
-	--frosted-glass-extracted-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
-	--frosted-glass-extracted-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
-	--apple-frosted-glass-background:
-		linear-gradient(90deg, rgba(31, 38, 43, 0.58) 0%, rgba(39, 42, 37, 0.5) 50%, rgba(28, 35, 44, 0.58) 100%),
-		rgba(14, 18, 20, 0.62);
-	--apple-frosted-glass-border: 1px solid rgba(255, 255, 255, 0.16);
-	--apple-frosted-glass-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+	--frosted-glass-border: 1px solid rgba(210, 224, 244, 0.225);
+	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
+	--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
+	--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
 }
 html {
 	height: 100%;

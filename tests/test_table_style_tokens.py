@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.2.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -48,9 +48,9 @@ def test_interactive_table_header_retains_standard_frosted_material() -> None:
         ".scrollable-data-table-shell > .scrollable-data-table[data-table-header],",
         1,
     )[1].split("}", 1)[0]
-    assert "background: var(--frosted-glass-extracted-background);" in header_rule
-    assert "backdrop-filter: var(--frosted-glass-extracted-blur);" in header_rule
-    assert "border: var(--frosted-glass-extracted-border);" in header_rule
+    assert "background: var(--frosted-glass-background);" in header_rule
+    assert "backdrop-filter: var(--frosted-glass-blur);" in header_rule
+    assert "border: var(--frosted-glass-border);" in header_rule
     assert "[data-table-header], table[aria-hidden=\"true\"]" in investment_js
 
 

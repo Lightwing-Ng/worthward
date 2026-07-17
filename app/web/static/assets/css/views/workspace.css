@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.5.0 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -43,12 +43,12 @@
     --workspace-article-pad-block-end: 8px;
     --workspace-article-background: var(--glass-surface-background-strong);
     --workspace-article-shadow: none;
-    --workspace-article-blur: var(--glass-surface-blur);
+    --workspace-article-blur: var(--frosted-glass-blur);
     --workspace-article-heading-min-height: 44px;
     --workspace-article-heading-gap: 10px;
-    --workspace-article-heading-background: var(--glass-surface-background);
-    --workspace-article-heading-border: var(--glass-surface-border);
-    --workspace-article-heading-shadow: var(--glass-surface-shadow);
+    --workspace-article-heading-background: var(--frosted-glass-background);
+    --workspace-article-heading-border: var(--frosted-glass-border);
+    --workspace-article-heading-shadow: var(--frosted-glass-shadow);
     --workspace-article-mobile-shadow: none;
     --workspace-article-sidebar-morph-easing: var(--motion-inertial);
 }
@@ -1361,11 +1361,11 @@
     pointer-events: auto;
     opacity: 1;
     border-radius: var(--workspace-modal-radius);
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     overflow: hidden;
 }
 
@@ -1642,11 +1642,11 @@ footer {
     min-width: 176px;
     padding: 6px;
     border-radius: var(--radius-soft);
-    background: var(--frosted-glass-extracted-background);
-    border: var(--frosted-glass-extracted-border);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    background: var(--frosted-glass-background);
+    border: var(--frosted-glass-border);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     color: var(--text);
     isolation: isolate;
 }
@@ -2070,9 +2070,9 @@ footer {
 .settings-table-wrap {
     border-radius: var(--radius-panel);
     background: var(--glass-surface-background-soft);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
-    border: var(--glass-surface-border);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
 }
 
@@ -2308,12 +2308,12 @@ body.is-price-subplot-reordering {
     transform:
         translate3d(0, var(--price-subplot-order-y, 0px), 0)
         scale(var(--price-subplot-order-z, 1));
-    background: color-mix(in srgb, var(--frosted-glass-extracted-background-hover) 78%, transparent);
+    background: color-mix(in srgb, var(--frosted-glass-background-hover) 78%, transparent);
     box-shadow:
         0 22px 52px rgba(15, 23, 42, 0.18),
         0 0 0 1px var(--accent-border-medium);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
     will-change: transform, box-shadow;
 }
 

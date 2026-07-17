@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.19.1
+Code version: v0.20.0
 """
 
 from __future__ import annotations
@@ -2595,8 +2595,8 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-package-column-gap", 12),
                     px_token("--settings-action-package-row-gap", 8),
                     px_token("--settings-action-package-copy-gap", 4),
-                    raw_token("--settings-action-package-background", "var(--frosted-glass-extracted-background)"),
-                    raw_token("--settings-action-package-border", "var(--frosted-glass-extracted-border)"),
+                    raw_token("--settings-action-package-background", "var(--frosted-glass-background)"),
+                    raw_token("--settings-action-package-border", "var(--frosted-glass-border)"),
                     px_token("--style-token-demo-width", 384),
                 ],
                 "related_styles": [
@@ -2624,11 +2624,11 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-round-icon-button-size", 36, 1),
                     px_token("--settings-round-icon-button-icon-size", 18, 1),
                     raw_token("--settings-round-icon-button-radius", "var(--radius-pill)"),
-                    raw_token("--settings-round-icon-button-background", "var(--frosted-glass-extracted-background)"),
-                    raw_token("--settings-round-icon-button-background-hover", "var(--frosted-glass-extracted-background-hover)"),
-                    raw_token("--settings-round-icon-button-shadow", "var(--frosted-glass-extracted-shadow)"),
-                    raw_token("--settings-round-icon-button-shadow-hover", "var(--frosted-glass-extracted-shadow-hover)"),
-                    raw_token("--settings-round-icon-button-shadow-active", "var(--frosted-glass-extracted-shadow-active)"),
+                    raw_token("--settings-round-icon-button-background", "var(--frosted-glass-background)"),
+                    raw_token("--settings-round-icon-button-background-hover", "var(--frosted-glass-background-hover)"),
+                    raw_token("--settings-round-icon-button-shadow", "var(--frosted-glass-shadow)"),
+                    raw_token("--settings-round-icon-button-shadow-hover", "var(--frosted-glass-shadow-hover)"),
+                    raw_token("--settings-round-icon-button-shadow-active", "var(--frosted-glass-shadow-active)"),
                     raw_token("--settings-round-icon-button-color", "color-mix(in srgb, var(--theme-text) 70%, transparent)"),
                     raw_token("--settings-round-icon-button-color-hover", "var(--accent-text)"),
                 ],
@@ -2652,12 +2652,12 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--workspace-article-pad-block-end", 8, 0),
                     raw_token("--workspace-article-background", "var(--glass-surface-background-strong)"),
                     raw_token("--workspace-article-shadow", "none"),
-                    raw_token("--workspace-article-blur", "var(--glass-surface-blur)"),
+                    raw_token("--workspace-article-blur", "var(--frosted-glass-blur)"),
                     px_token("--workspace-article-heading-min-height", 44, 1),
                     px_token("--workspace-article-heading-gap", 10, 0),
-                    raw_token("--workspace-article-heading-background", "var(--glass-surface-background)"),
-                    raw_token("--workspace-article-heading-border", "var(--glass-surface-border)"),
-                    raw_token("--workspace-article-heading-shadow", "var(--glass-surface-shadow)"),
+                    raw_token("--workspace-article-heading-background", "var(--frosted-glass-background)"),
+                    raw_token("--workspace-article-heading-border", "var(--frosted-glass-border)"),
+                    raw_token("--workspace-article-heading-shadow", "var(--frosted-glass-shadow)"),
                     raw_token("--workspace-article-mobile-shadow", "none"),
                     raw_token("--workspace-article-sidebar-morph-easing", "var(--motion-inertial)"),
                     raw_token("--workspace-content-article-background", "transparent"),
@@ -2737,7 +2737,6 @@ def build_web_runtime() -> WebRuntime:
                 ],
                 "tokens": [
                     raw_token("--radius-panel", "10px"),
-                    raw_token("--glass-surface-border", "0px solid transparent"),
                     raw_token("--glass-surface-background-soft", "var(--theme-glass-surface-background-soft)"),
                     raw_token("--panel-strong", "var(--theme-panel-strong)"),
                     raw_token("--scrollable-data-table-header-padding", "4px 1px"),
@@ -2750,10 +2749,10 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--scrollable-data-table-scrollbar-gutter", "stable"),
                     raw_token("--scrollable-data-table-row-background", "var(--panel-strong)"),
                     raw_token("--scrollable-data-table-row-background-alt", "color-mix(in srgb, var(--panel-strong) 82%, var(--glass-surface-background-strong))"),
-                    raw_token("--scrollable-data-table-summary-background", "var(--frosted-glass-extracted-background)"),
-                    raw_token("--scrollable-data-table-summary-border", "var(--frosted-glass-extracted-border)"),
-                    raw_token("--scrollable-data-table-summary-shadow", "var(--frosted-glass-extracted-shadow)"),
-                    raw_token("--scrollable-data-table-summary-blur", "var(--frosted-glass-extracted-blur)"),
+                    raw_token("--scrollable-data-table-summary-background", "var(--frosted-glass-background)"),
+                    raw_token("--scrollable-data-table-summary-border", "var(--frosted-glass-border)"),
+                    raw_token("--scrollable-data-table-summary-shadow", "var(--frosted-glass-shadow)"),
+                    raw_token("--scrollable-data-table-summary-blur", "var(--frosted-glass-blur)"),
                     raw_token("--investment-holdings-cell-padding", "4px 6px"),
                 ],
                 "related_styles": [],
@@ -2929,10 +2928,10 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--local-store-pagination-indicator-background", "var(--accent-fill)"),
                     raw_token("--local-store-pagination-indicator-shadow",
                               "0 8px 18px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent)"),
-                    raw_token("--local-store-pagination-button-background", "var(--frosted-glass-extracted-background)"),
+                    raw_token("--local-store-pagination-button-background", "var(--frosted-glass-background)"),
                     raw_token("--local-store-pagination-button-border", "1px solid var(--accent-border-strong)"),
-                    raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-extracted-shadow)"),
-                    raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-extracted-blur)"),
+                    raw_token("--local-store-pagination-button-shadow", "var(--frosted-glass-shadow)"),
+                    raw_token("--local-store-pagination-button-blur", "var(--frosted-glass-blur)"),
                     raw_token("--local-store-pagination-motion-duration", "500ms"),
                     raw_token("--local-store-pagination-motion-easing", "var(--motion-bouncy)"),
                 ],
@@ -2956,10 +2955,10 @@ def build_web_runtime() -> WebRuntime:
                     {"label": "vs all in", "value": "+492.83", "color": "var(--theme-accent-positive)"},
                 ],
                 "tokens": [
-                    material_reference_token("--tooltip-background", "Apple frosted glass"),
-                    material_reference_token("--tooltip-border", "Apple frosted glass"),
-                    material_reference_token("--tooltip-shadow", "Apple frosted glass"),
-                    material_reference_token("--tooltip-blur", "Apple frosted glass"),
+                    material_reference_token("--tooltip-background", "Frosted glass"),
+                    material_reference_token("--tooltip-border", "Frosted glass"),
+                    material_reference_token("--tooltip-shadow", "Frosted glass"),
+                    material_reference_token("--tooltip-blur", "Frosted glass"),
                     px_token("--chart-tooltip-min-width", 164, 1),
                     px_token("--chart-tooltip-max-width", 260, 1),
                     px_token("--chart-tooltip-padding-block", 10, 1),
@@ -3078,15 +3077,15 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--investment-community-share-footer-brand-size", 72, 0),
                     px_token("--investment-community-share-footer-qr-size", 108, 0),
                     px_token("--investment-community-share-ticker-identity-logo-size", 36, 1),
-                    material_reference_token("--investment-community-share-surface-background", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-border", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-shadow", "Frosted glass extracted"),
-                    material_reference_token("--investment-community-share-surface-blur", "Frosted glass extracted"),
+                    material_reference_token("--investment-community-share-surface-background", "Frosted glass"),
+                    material_reference_token("--investment-community-share-surface-border", "Frosted glass"),
+                    material_reference_token("--investment-community-share-surface-shadow", "Frosted glass"),
+                    material_reference_token("--investment-community-share-surface-blur", "Frosted glass"),
                 ],
                 "related_styles": [
                     {
-                        "name": "Frosted glass extracted",
-                        "target_id": material_token_id("Frosted glass extracted"),
+                        "name": "Frosted glass",
+                        "target_id": material_token_id("Frosted glass"),
                     },
                     {
                         "name": "Portfolio donut orbit",
@@ -3211,19 +3210,6 @@ def build_web_runtime() -> WebRuntime:
                 "editable": False,
             }
 
-        def standard_material_tokens(
-                background: str,
-                border: str,
-                shadow: str,
-                blur: str,
-        ) -> list[dict[str, object]]:
-            return [
-                raw_token("--glass-surface-background", background),
-                raw_token("--glass-surface-border", border),
-                raw_token("--glass-surface-shadow", shadow),
-                raw_token("--glass-surface-blur", blur),
-            ]
-
         sample_title = "The quick brown fox jumps over the lazy dog."
         sample_copy = "Testing backdrop-filter and transparency performance over a complex gradient background."
 
@@ -3234,50 +3220,15 @@ def build_web_runtime() -> WebRuntime:
                 "sample_kind": "glass-surface",
                 "sample_title": sample_title,
                 "sample_copy": sample_copy,
-                "sample_surface_background": "var(--glass-surface-background)",
-                "sample_surface_border": "var(--glass-surface-border)",
-                "sample_surface_blur": "var(--glass-surface-blur)",
-                "sample_surface_shadow": "var(--glass-surface-shadow)",
-                "tokens": standard_material_tokens(
-                    "var(--theme-glass-surface-background)",
-                    "0px solid transparent",
-                    "0 18px 40px var(--theme-shadow-ambient)",
-                    "saturate(180%) blur(24px)",
-                ),
-            },
-            {
-                "id": material_token_id("Frosted glass extracted"),
-                "name": "Frosted glass extracted",
-                "sample_kind": "glass-surface",
-                "sample_title": sample_title,
-                "sample_copy": sample_copy,
-                "sample_surface_background": "var(--frosted-glass-extracted-background)",
-                "sample_surface_border": "var(--frosted-glass-extracted-border)",
-                "sample_surface_blur": "var(--frosted-glass-extracted-blur)",
-                "sample_surface_shadow": "var(--frosted-glass-extracted-shadow)",
+                "sample_surface_background": "var(--frosted-glass-background)",
+                "sample_surface_border": "var(--frosted-glass-border)",
+                "sample_surface_blur": "var(--frosted-glass-blur)",
+                "sample_surface_shadow": "var(--frosted-glass-shadow)",
                 "tokens": [
-                    raw_token("--frosted-glass-extracted-background", "var(--frosted-glass-extracted-background)"),
-                    raw_token("--frosted-glass-extracted-border", "var(--frosted-glass-extracted-border)"),
-                    raw_token("--frosted-glass-extracted-shadow", "var(--frosted-glass-extracted-shadow)"),
-                    raw_token("--frosted-glass-extracted-blur", "var(--frosted-glass-extracted-blur)"),
-                ],
-            },
-            {
-                "id": material_token_id("Apple frosted glass"),
-                "name": "Apple frosted glass",
-                "sample_kind": "glass-surface",
-                "sample_title": sample_title,
-                "sample_copy": sample_copy,
-                "sample_surface_background": "var(--apple-frosted-glass-background)",
-                "sample_surface_border": "var(--apple-frosted-glass-border)",
-                "sample_surface_blur": "var(--apple-frosted-glass-blur)",
-                "sample_surface_shadow": "var(--apple-frosted-glass-shadow)",
-                "tokens": [
-                    raw_token("--apple-frosted-glass-background",
-                              "linear-gradient(90deg, rgba(232, 238, 235, 0.30) 0%, rgba(242, 234, 225, 0.26) 50%, rgba(235, 239, 243, 0.30) 100%), rgba(245, 246, 246, 0.18)"),
-                    raw_token("--apple-frosted-glass-border", "1px solid rgba(255, 255, 255, 0.34)"),
-                    raw_token("--apple-frosted-glass-shadow", "0 18px 46px rgba(13, 18, 28, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.48)"),
-                    raw_token("--apple-frosted-glass-blur", "saturate(170%) blur(24px)"),
+                    raw_token("--frosted-glass-background", "var(--frosted-glass-background)"),
+                    raw_token("--frosted-glass-border", "var(--frosted-glass-border)"),
+                    raw_token("--frosted-glass-shadow", "var(--frosted-glass-shadow)"),
+                    raw_token("--frosted-glass-blur", "var(--frosted-glass-blur)"),
                 ],
             },
         ]

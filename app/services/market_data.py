@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.15.1
+Code version: v0.15.2
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import logging
 import math
 import contextlib
 import re
-from time import sleep
+from time import monotonic, sleep
 from pathlib import Path
 from threading import Lock
 
@@ -53,6 +53,9 @@ from app.infrastructure.storage import (
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 YFINANCE_DOWNLOAD_LOCK = Lock()
+YFINANCE_REALTIME_RATE_LIMIT_LOCK = Lock()
+YFINANCE_REALTIME_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
+_yfinance_realtime_rate_limit_until = 0.0
 INTRADAY_INTERVALS = {"1m"}
 YFINANCE_INTRADAY_FALLBACK_DAYS = 30
 YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
@@ -84,6 +87,38 @@ NETWORK_SECRET_QUERY_PATTERN = re.compile(
 
 class YfinanceDownloadError(ValueError):
     """Raised when yfinance returns no usable frame or raises a transport error."""
+
+
+def _is_yfinance_rate_limit_error(error: BaseException) -> bool:
+    """Return whether an exception chain contains an explicit Yahoo rate-limit signal."""
+    visited: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        diagnostic = f"{type(current).__name__}: {current}".lower()
+        if (
+                type(current).__name__ == "YFRateLimitError"
+                or "too many requests" in diagnostic
+                or "rate limited" in diagnostic
+                or "rate limit" in diagnostic
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _activate_yfinance_realtime_rate_limit_cooldown() -> None:
+    global _yfinance_realtime_rate_limit_until
+    with YFINANCE_REALTIME_RATE_LIMIT_LOCK:
+        _yfinance_realtime_rate_limit_until = max(
+            _yfinance_realtime_rate_limit_until,
+            monotonic() + YFINANCE_REALTIME_RATE_LIMIT_COOLDOWN_SECONDS,
+        )
+
+
+def _is_yfinance_realtime_rate_limit_cooling_down() -> bool:
+    with YFINANCE_REALTIME_RATE_LIMIT_LOCK:
+        return monotonic() < _yfinance_realtime_rate_limit_until
 
 
 def _sanitize_network_diagnostic(value: object) -> str:
@@ -910,7 +945,8 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
 
     yfinance can return a partial or differently shaped batch on some platforms.
     Per-ticker recovery prevents one malformed Windows batch from appearing as
-    many unrelated quote failures.
+    many unrelated quote failures. An explicit Yahoo rate limit skips individual
+    recovery and starts a short cooldown so polling cannot amplify the limit.
     """
     if not tickers:
         return []
@@ -919,7 +955,10 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
     ))
     if not normalized_list:
         return []
+    if _is_yfinance_realtime_rate_limit_cooling_down():
+        return []
     results: list[dict[str, object]] = []
+    batch_error: Exception | None = None
     try:
         history = _download_daily_history_with_yfinance(
             normalized_list,
@@ -986,20 +1025,43 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
             except Exception:  # noqa: BLE001
                 continue
     except Exception as exc:  # noqa: BLE001
-        LOGGER.warning("Unable to download batched yfinance realtime quotes: %s", exc)
+        if _is_yfinance_rate_limit_error(exc):
+            _activate_yfinance_realtime_rate_limit_cooldown()
+            LOGGER.debug("Yahoo rate-limited batched realtime quotes; recovery is cooling down.")
+            return results
+        batch_error = exc
 
     resolved_tickers = {str(item.get("ticker") or "") for item in results}
+    recovery_failures: list[tuple[str, Exception]] = []
     for normalized_ticker in normalized_list:
         if normalized_ticker in resolved_tickers:
             continue
         try:
             results.append(fetch_yfinance_realtime_quote(normalized_ticker))
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning(
-                "Unable to download yfinance realtime quote for %s after batch recovery: %s",
-                normalized_ticker,
-                exc,
+            if _is_yfinance_rate_limit_error(exc):
+                _activate_yfinance_realtime_rate_limit_cooldown()
+                LOGGER.debug(
+                    "Yahoo rate-limited realtime quote recovery at %s; remaining requests are cooling down.",
+                    normalized_ticker,
+                )
+                break
+            recovery_failures.append((normalized_ticker, exc))
+    if recovery_failures:
+        failure_detail = "; ".join(
+            f"{ticker}: {_sanitize_network_diagnostic(error)}"
+            for ticker, error in recovery_failures
+        )
+        if batch_error is not None:
+            failure_detail = (
+                f"batch: {_sanitize_network_diagnostic(batch_error)}; {failure_detail}"
             )
+        LOGGER.warning(
+            "Unable to download yfinance realtime quotes for %d/%d tickers after batch recovery: %s",
+            len(recovery_failures),
+            len(normalized_list),
+            failure_detail,
+        )
     return results
 
 

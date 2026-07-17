@@ -1,14 +1,14 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.65.2
+ * Code version: v1.65.3
  * - Changed: The Investment split now derives its limits from the chart stage and three visible transaction rows at the current resolution.
  * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
  * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
  * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
  * - Changed: Investment Type headers now show the legacy Type label by default and reveal the current side filter only on hover, focus, or open interaction.
  * - Added: HSBC statement mode now accepts matched composite and investment PDF batches and refreshes from the committed store version before reporting success.
- * - Fixed: Fixed table headers and holdings summaries render Frosted Glass extracted directly on their interactive header table, matching the pre-refactor material hierarchy.
+ * - Fixed: Fixed table headers and holdings summaries render canonical Frosted Glass directly on their interactive header table, matching the pre-refactor material hierarchy.
  * - Fixed: Broker filter controls in extracted investment table headers now receive pointer input and portal their dropdowns outside clipped Frosted glass table layers.
  * - Fixed: Investment range segmented controls now scroll the active edge option fully into view when horizontal space is constrained.
  * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
@@ -31,7 +31,7 @@
  * - Fixed: Scrollable investment overlay tables now keep full-shell Frosted glass material while assigning the scrollbar track to the final fixed column only.
  * - Fixed: Scrollable investment overlay tables now use a shared content-width variable plus border compensation so rightmost fixed headers never occupy scrollbar tracks.
  * - Fixed: Scrollable investment table Frosted glass underlays now begin at the real scroll viewport edge, avoiding ghost rows at scroll top and restoring Transaction history header material.
- * - Fixed: Holdings table overlay now keeps a synced hidden body-table underlay behind the Frosted glass extracted header and summary material.
+ * - Fixed: Holdings table overlay now keeps a synced hidden body-table underlay behind the Frosted glass header and summary material.
  * - Fixed: Investment view Metrics segmented pill now relies on the edge-cap geometry solver without a manual optical offset, keeping both the right cap and text center aligned.
  * - Fixed: Investment view segmented edge pills now lock their outer cap centers to the shell cap centers while preserving text-centered geometry.
  * - Fixed: Investment view segmented pill schedules a post-transition remeasure so active labels stay pixel-centered after final text layout settles.

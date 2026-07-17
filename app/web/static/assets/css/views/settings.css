@@ -1,4 +1,4 @@
-/* Code version: v0.7.0 */
+/* Code version: v0.8.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -804,11 +804,11 @@ div.style-token-modal-demo {
     max-width: 420px;
     box-sizing: border-box;
     overflow: clip;
-    background: var(--frosted-glass-extracted-background);
-    box-shadow: var(--frosted-glass-extracted-shadow);
-    backdrop-filter: var(--frosted-glass-extracted-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-    border: var(--frosted-glass-extracted-border);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
 }
 
 .style-token-demo .workspace-modal-dialog,
@@ -1387,15 +1387,15 @@ div.style-token-modal-demo::-webkit-scrollbar,
     max-width: 100%;
     border-radius: var(--radius-panel);
     background: var(--glass-surface-background-soft);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
-    border: var(--glass-surface-border);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
     box-shadow: 0 8px 22px var(--theme-shadow-ambient);
     isolation: isolate;
 }
 
 .settings-strategy-card[open] {
-    background: var(--glass-surface-background);
+    background: var(--frosted-glass-background);
     max-height: none;
     overflow: visible;
 }
@@ -3013,9 +3013,9 @@ div.style-token-modal-demo::-webkit-scrollbar,
     padding: 12px;
     border-radius: var(--radius-panel);
     background: var(--glass-surface-background-soft);
-    backdrop-filter: var(--glass-surface-blur);
-    -webkit-backdrop-filter: var(--glass-surface-blur);
-    border: var(--glass-surface-border);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
 }
 
 .settings-callout-copy {

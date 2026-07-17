@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.6.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -833,11 +833,11 @@
 	right: 0;
 	padding: var(--shared-select-dropdown-padding);
 	border-radius: var(--shared-select-dropdown-radius);
-	background: var(--frosted-glass-extracted-background);
-	box-shadow: var(--frosted-glass-extracted-shadow);
-	backdrop-filter: var(--frosted-glass-extracted-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
-	border: var(--frosted-glass-extracted-border);
+	background: var(--frosted-glass-background);
+	box-shadow: var(--frosted-glass-shadow);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	border: var(--frosted-glass-border);
 	z-index: var(--layer-inline-overlay);
 	max-height: var(--shared-select-dropdown-max-height);
 	overflow-x: hidden;
@@ -858,11 +858,11 @@
 .backtest-shared-select-dropdown {
 	position: absolute;
 	color: var(--text);
-	background: var(--frosted-glass-extracted-background);
-	border: var(--frosted-glass-extracted-border);
-	box-shadow: var(--frosted-glass-extracted-shadow-hover);
-	backdrop-filter: var(--frosted-glass-extracted-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	background: var(--frosted-glass-background);
+	border: var(--frosted-glass-border);
+	box-shadow: var(--frosted-glass-shadow-hover);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
 }
@@ -1010,8 +1010,8 @@
 	background: var(--settings-round-icon-button-background);
 	border: var(--settings-round-icon-button-border);
 	box-shadow: var(--settings-round-icon-button-shadow);
-	backdrop-filter: var(--frosted-glass-extracted-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	color: var(--theme-muted);
 	display: inline-grid;
 	place-items: center;
@@ -1591,14 +1591,14 @@
 .sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span {
 	color: var(--theme-muted);
 }
-.chart-tooltip, .field-tooltip { background: var(--frosted-glass-extracted-background); box-shadow: var(--frosted-glass-extracted-shadow); backdrop-filter: var(--frosted-glass-extracted-blur); -webkit-backdrop-filter: var(--frosted-glass-extracted-blur); border: var(--frosted-glass-extracted-border); border-radius: var(--radius-soft); }
+.chart-tooltip, .field-tooltip { background: var(--frosted-glass-background); box-shadow: var(--frosted-glass-shadow); backdrop-filter: var(--frosted-glass-blur); -webkit-backdrop-filter: var(--frosted-glass-blur); border: var(--frosted-glass-border); border-radius: var(--radius-soft); }
 .field-tooltip,
 .field-tooltip-validation {
-	background: var(--frosted-glass-extracted-background);
-	border: var(--frosted-glass-extracted-border);
-	box-shadow: var(--frosted-glass-extracted-shadow);
-	backdrop-filter: var(--frosted-glass-extracted-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	background: var(--frosted-glass-background);
+	border: var(--frosted-glass-border);
+	box-shadow: var(--frosted-glass-shadow);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	isolation: isolate;
 }
 .liquid-glass-surface {
@@ -1620,11 +1620,11 @@
 }
 .field-tooltip.liquid-glass-surface,
 .field-tooltip-validation.liquid-glass-surface {
-	background: var(--frosted-glass-extracted-background);
-	border: var(--frosted-glass-extracted-border);
-	box-shadow: var(--frosted-glass-extracted-shadow);
-	backdrop-filter: var(--frosted-glass-extracted-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-extracted-blur);
+	background: var(--frosted-glass-background);
+	border: var(--frosted-glass-border);
+	box-shadow: var(--frosted-glass-shadow);
+	backdrop-filter: var(--frosted-glass-blur);
+	-webkit-backdrop-filter: var(--frosted-glass-blur);
 }
 .field-tooltip.liquid-glass-surface::after,
 .field-tooltip-validation.liquid-glass-surface::after {
@@ -1658,9 +1658,9 @@
 	left: 18px;
 	width: var(--ticker-validation-arrow-size);
 	height: var(--ticker-validation-arrow-size);
-	border-top: var(--apple-frosted-glass-border);
-	border-left: var(--apple-frosted-glass-border);
-	background: var(--apple-frosted-glass-background);
+	border-top: var(--frosted-glass-border);
+	border-left: var(--frosted-glass-border);
+	background: var(--frosted-glass-background);
 	transform: rotate(45deg);
 	box-shadow: -3px -3px 8px rgba(13, 18, 28, 0.12);
 }
@@ -1746,7 +1746,7 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-toolbar { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; gap: 8px; margin-bottom: 10px; }
 .date-picker-title { min-width: 0; min-height: 28px; padding: 0 4px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-form-control); line-height: 1.2; font-weight: var(--font-weight-bold); text-align: center; }
 .date-picker-title:hover, .date-picker-title:focus-visible { transform: none; background: var(--accent-surface-soft); color: var(--accent-text); box-shadow: none; outline: none; }
-.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--settings-round-icon-button-radius); border: var(--settings-round-icon-button-border); background: var(--settings-round-icon-button-background); color: var(--settings-round-icon-button-color); box-shadow: var(--settings-round-icon-button-shadow); backdrop-filter: var(--frosted-glass-extracted-blur); -webkit-backdrop-filter: var(--frosted-glass-extracted-blur); display: inline-grid; place-items: center; }
+.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--settings-round-icon-button-radius); border: var(--settings-round-icon-button-border); background: var(--settings-round-icon-button-background); color: var(--settings-round-icon-button-color); box-shadow: var(--settings-round-icon-button-shadow); backdrop-filter: var(--frosted-glass-blur); -webkit-backdrop-filter: var(--frosted-glass-blur); display: inline-grid; place-items: center; }
 .date-picker-nav:hover, .date-picker-nav:focus-visible { transform: none; box-shadow: var(--settings-round-icon-button-shadow-hover); background: var(--settings-round-icon-button-background-hover); color: var(--settings-round-icon-button-color-hover); }
 .date-picker-nav:active { box-shadow: var(--settings-round-icon-button-shadow-active); }
 .date-picker-nav.is-disabled { cursor: not-allowed; opacity: 0.38; }
