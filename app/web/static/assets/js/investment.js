@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.65.3
+ * Code version: v1.66.0
  * - Changed: The Investment split now derives its limits from the chart stage and three visible transaction rows at the current resolution.
  * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
  * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
@@ -474,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || typeof window.ANTIGRAVITY_RESIZER?.bind !== 'function'
         ) return;
 
-        let overviewRatio = null;
+        let overviewRatio = Number.NaN;
         let resizeFrame = 0;
         let overviewChromeHeight = 0;
         let historyChromeHeight = 0;
@@ -607,9 +607,17 @@ document.addEventListener('DOMContentLoaded', () => {
             resizeFrame = 0;
             const availableHeight = getAvailableTrackHeight();
             const range = getRange();
-            const requestedHeight = Number.isFinite(overviewRatio)
-                ? availableHeight * overviewRatio
-                : getValue();
+            const defaultOverviewShare = Math.min(
+                0.8,
+                Math.max(
+                    0.2,
+                    Number.parseFloat(getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-default-overview-share')) || 0.44,
+                ),
+            );
+            if (!Number.isFinite(overviewRatio)) {
+                overviewRatio = defaultOverviewShare;
+            }
+            const requestedHeight = availableHeight * overviewRatio;
             const nextHeight = Math.min(
                 Math.max(requestedHeight, range.minimum),
                 range.maximum,
@@ -903,6 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentChartPointIndexByLedgerNo = new Map();
     let investmentLatestChartPoint = null;
     let activeChartTooltipPointIndex = -1;
+    let activeChartTooltipPointRecord = null;
     let activeStockDetailsHoverPointRecord = null;
     let investmentDummyTickerProfiles = {};
     let selectedInvestmentStockTicker = '';
@@ -4605,6 +4614,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getActiveInvestmentInteractionPoint() {
         if (Array.isArray(investmentChartPointsCache) && investmentChartPointsCache.length) {
+            if (activeChartTooltipPointRecord && typeof activeChartTooltipPointRecord === 'object') {
+                return activeChartTooltipPointRecord;
+            }
             if (Number.isFinite(activeChartTooltipPointIndex) && activeChartTooltipPointIndex >= 0) {
                 return investmentChartPointsCache[activeChartTooltipPointIndex] || null;
             }
@@ -11876,6 +11888,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : new Map();
         investmentLatestChartPoint = chartState?.latestChartPoint || null;
         activeChartTooltipPointIndex = -1;
+        activeChartTooltipPointRecord = null;
     }
 
     function syncInvestmentEquityChartRealtime(chartPoints = []) {
@@ -12423,6 +12436,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tooltipEl.classList.remove("is-visible");
                 activeChartHoverDate = "";
                 activeChartTooltipPointIndex = -1;
+                activeChartTooltipPointRecord = null;
                 clearInvestmentHistoryHighlights();
                 clearInvestmentStockDetailHighlights();
                 scheduleInvestmentDummyDonutSync();
@@ -12440,6 +12454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? Number(visiblePointSourceIndexes[pointIndex])
                 : -1;
             activeChartTooltipPointIndex = Number.isFinite(sourcePointIndex) && sourcePointIndex >= 0 ? sourcePointIndex : -1;
+            activeChartTooltipPointRecord = pointRecord && typeof pointRecord === 'object' ? pointRecord : null;
             scheduleInvestmentDummyDonutSync();
             syncInvestmentStockDetailsDonutFromInteraction();
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || "");

@@ -1,6 +1,17 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.49.1`
+Documentation version: `v1.50.0`
+
+## Investment intraday hover and vertical allocation corrected on 18 Jul 2026
+
+- In the 1W and 1M Overview curves, the allocation donut now uses the exact
+  hovered minute's holdings valuation. Date-only ledger activity remains
+  effective after the prior trading day closes, so it never appears before a
+  recorded time supports it.
+- The default Investment Overview and Transaction history split is now 50/50
+  when both panels can accommodate their protected minimum content. The
+  resizer still clamps either panel before it would hide the chart or the first
+  three transaction rows.
 
 ## Realtime quote rate-limit recovery corrected on 16 Jul 2026
 

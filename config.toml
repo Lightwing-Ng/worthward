@@ -1,8 +1,8 @@
 [app]
 name = "antigravity"
-version = "v2.49.4"
+version = "v2.50.0"
 debug = false
-updated_on = "16 Jul 2026"
+updated_on = "18 Jul 2026"
 
 [server]
 host = "0.0.0.0"

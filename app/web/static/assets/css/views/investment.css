@@ -1,10 +1,11 @@
-/* Code version: v1.24.0 */
+/* Code version: v1.25.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 16px;
     --investment-section-min-height: 148px;
     --investment-overview-min-height: var(--investment-section-min-height);
     --investment-history-min-height: var(--investment-section-min-height);
+    --investment-default-overview-share: 0.5;
     --investment-equity-stage-min-height: clamp(180px, 24dvh, 240px);
     --investment-history-row-min-height: 40px;
     flex: 1 1 auto;
