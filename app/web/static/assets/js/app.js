@@ -1,4 +1,4 @@
-/* Code version: v0.20.9 */
+/* Code version: v0.22.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4886,6 +4886,133 @@
             const input = option.querySelector("input");
             return !option.hidden && (!(input instanceof HTMLInputElement) || !input.disabled);
         });
+    const readSegmentedPixelValue = (styles, propertyName, fallback = 0) => {
+        const parsedValue = Number.parseFloat(styles.getPropertyValue(propertyName));
+        return Number.isFinite(parsedValue) ? parsedValue : fallback;
+    };
+    const getSegmentedOverflowFrame = (shell) => {
+        if (!(shell instanceof HTMLElement) || shell.dataset.segmentedOverflowMode !== "peek") return null;
+        const frame = shell.closest("[data-segmented-overflow-frame]");
+        return frame instanceof HTMLElement ? frame : null;
+    };
+    const syncSegmentedOverflowState = (frame) => {
+        if (!(frame instanceof HTMLElement)) return;
+        const maxScrollLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+        const isOverflowing = maxScrollLeft > 1;
+        frame.dataset.segmentedOverflow = isOverflowing ? "1" : "0";
+        frame.dataset.overflowStart = isOverflowing && frame.scrollLeft > 1 ? "1" : "0";
+        frame.dataset.overflowEnd = isOverflowing && frame.scrollLeft < maxScrollLeft - 1 ? "1" : "0";
+    };
+    const bindSegmentedOverflowFrame = (frame) => {
+        if (!(frame instanceof HTMLElement) || frame.dataset.segmentedScrollBound === "1") return;
+        frame.dataset.segmentedScrollBound = "1";
+        let scrollFrame = 0;
+        frame.addEventListener("scroll", () => {
+            if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
+            scrollFrame = window.requestAnimationFrame(() => {
+                scrollFrame = 0;
+                syncSegmentedOverflowState(frame);
+            });
+        }, {passive: true});
+    };
+    const syncSegmentedOverflowLayout = (shell, options) => {
+        const frame = getSegmentedOverflowFrame(shell);
+        if (!(frame instanceof HTMLElement)) return null;
+        bindSegmentedOverflowFrame(frame);
+        const shellStyles = window.getComputedStyle(shell);
+        const frameStyles = window.getComputedStyle(frame);
+        const optionCount = Math.max(options.length, 1);
+        const frameWidth = Math.max(1, Math.floor(frame.getBoundingClientRect().width));
+        const paddingLeft = Number.parseFloat(shellStyles.paddingLeft) || 0;
+        const paddingRight = Number.parseFloat(shellStyles.paddingRight) || 0;
+        const columnGap = Number.parseFloat(shellStyles.columnGap)
+            || readSegmentedPixelValue(shellStyles, "--mode-switch-gap", 0);
+        const minimumOptionWidth = Math.max(
+            1,
+            readSegmentedPixelValue(frameStyles, "--segmented-overflow-option-min-width", 92),
+        );
+        const peekWidth = Math.max(
+            0,
+            Math.min(
+                frameWidth / 3,
+                readSegmentedPixelValue(frameStyles, "--segmented-overflow-peek-size", 36),
+            ),
+        );
+        const minimumTrackWidth = paddingLeft
+            + paddingRight
+            + (minimumOptionWidth * optionCount)
+            + (columnGap * Math.max(0, optionCount - 1));
+        const shouldOverflow = minimumTrackWidth > frameWidth + 1;
+        shell.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
+        frame.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
+        if (!shouldOverflow) {
+            shell.style.removeProperty("--segmented-option-width");
+            shell.style.removeProperty("--segmented-track-width");
+            shell.style.removeProperty("--segmented-visible-count");
+            frame.style.removeProperty("--segmented-visible-count");
+            frame.dataset.segmentedVisibleCount = String(optionCount);
+            shell.style.removeProperty("width");
+            shell.style.removeProperty("grid-template-columns");
+            frame.scrollLeft = 0;
+            syncSegmentedOverflowState(frame);
+            return {frame, overflow: false, visibleCount: optionCount};
+        }
+
+        const visibleCount = Math.max(
+            1,
+            Math.min(
+                optionCount - 1,
+                Math.floor((frameWidth - paddingLeft - peekWidth + columnGap) / (minimumOptionWidth + columnGap)),
+            ),
+        );
+        const visibleOptionsWidth = Math.max(
+            minimumOptionWidth * visibleCount,
+            frameWidth - paddingLeft - peekWidth - (columnGap * visibleCount),
+        );
+        const optionWidth = Math.max(minimumOptionWidth, visibleOptionsWidth / visibleCount);
+        const trackWidth = paddingLeft
+            + paddingRight
+            + (optionWidth * optionCount)
+            + (columnGap * Math.max(0, optionCount - 1));
+        shell.style.setProperty("--segmented-option-width", `${optionWidth}px`);
+        shell.style.setProperty("--segmented-track-width", `${trackWidth}px`);
+        shell.style.setProperty("--segmented-visible-count", String(visibleCount));
+        frame.style.setProperty("--segmented-visible-count", String(visibleCount));
+        frame.dataset.segmentedVisibleCount = String(visibleCount);
+        window.requestAnimationFrame(() => syncSegmentedOverflowState(frame));
+        return {frame, overflow: true, visibleCount};
+    };
+    const keepSegmentedOptionVisible = (shell, option) => {
+        const frame = getSegmentedOverflowFrame(shell);
+        if (!(frame instanceof HTMLElement) || !(option instanceof HTMLElement)) return;
+        const maxScrollLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+        if (maxScrollLeft <= 1) {
+            frame.scrollLeft = 0;
+            syncSegmentedOverflowState(frame);
+            return;
+        }
+        const options = getVisibleSegmentedOptions(shell);
+        const optionIndex = options.indexOf(option);
+        const frameStyles = window.getComputedStyle(frame);
+        const fadeWidth = readSegmentedPixelValue(frameStyles, "--segmented-overflow-fade-size", 0);
+        const peekWidth = readSegmentedPixelValue(frameStyles, "--segmented-overflow-peek-size", 0);
+        const optionLeft = option.offsetLeft;
+        const optionRight = optionLeft + option.offsetWidth;
+        const leftSafety = optionIndex > 0 ? fadeWidth : 0;
+        const rightSafety = optionIndex >= 0 && optionIndex < options.length - 1 ? peekWidth : 0;
+        let nextScrollLeft = frame.scrollLeft;
+        if (optionIndex === 0) {
+            nextScrollLeft = 0;
+        } else if (optionIndex === options.length - 1) {
+            nextScrollLeft = maxScrollLeft;
+        } else if (optionLeft < frame.scrollLeft + leftSafety) {
+            nextScrollLeft = optionLeft - leftSafety;
+        } else if (optionRight > frame.scrollLeft + frame.clientWidth - rightSafety) {
+            nextScrollLeft = optionRight - frame.clientWidth + rightSafety;
+        }
+        frame.scrollLeft = Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
+        window.requestAnimationFrame(() => syncSegmentedOverflowState(frame));
+    };
     const syncSegmentedControlLayout = (shell, {
         activeValue = "",
         activeIndex = -1,
@@ -4906,16 +5033,24 @@
         shell.dataset.optionCount = String(optionCount);
         shell.style.setProperty("--segmented-option-count", String(optionCount));
         shell.style.setProperty("--segmented-active-index", String(resolvedActiveIndex));
-        const shouldOverflow = optionCount > 3 || shell.scrollWidth > shell.clientWidth + 1;
-        shell.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
+        const overflowLayout = syncSegmentedOverflowLayout(shell, resolvedOptions);
+        let shouldOverflow = Boolean(overflowLayout?.overflow);
+        if (!overflowLayout) {
+            shell.dataset.segmentedOverflow = "0";
+            shouldOverflow = shell.scrollWidth > shell.clientWidth + 1;
+            shell.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
+        }
         if (shouldOverflow || shell.dataset.segmentedPill === "measured") {
             const activeOption = resolvedOptions[resolvedActiveIndex];
             if (activeOption instanceof HTMLElement) {
                 const shellStyles = window.getComputedStyle(shell);
-                const paddingLeft = Number.parseFloat(shellStyles.paddingLeft) || 0;
-                shell.style.setProperty("--segmented-pill-left", `${Math.max(0, activeOption.offsetLeft - paddingLeft)}px`);
+                const thumbInset = Number.parseFloat(shellStyles.getPropertyValue("--mode-switch-thumb-inset"))
+                    || Number.parseFloat(shellStyles.paddingLeft)
+                    || 0;
+                shell.style.setProperty("--segmented-pill-left", `${Math.max(0, activeOption.offsetLeft - thumbInset)}px`);
                 shell.style.setProperty("--segmented-pill-width", `${Math.max(1, activeOption.offsetWidth)}px`);
                 shell.classList.add("is-pill-ready");
+                keepSegmentedOptionVisible(shell, activeOption);
             }
         } else if (shell.dataset.segmentedPill !== "measured") {
             shell.classList.remove("is-pill-ready");
@@ -4929,6 +5064,11 @@
             syncSegmentedControlLayout(shell, {activeValue: shell.dataset.active || ""});
         });
     };
+    window.ANTIGRAVITY_SEGMENTED_CONTROLS = Object.freeze({
+        keepOptionVisible: keepSegmentedOptionVisible,
+        sync: syncSegmentedControlLayout,
+        syncOverflowState: syncSegmentedOverflowState,
+    });
     const syncRangeModeSegmentedControl = () => {
         const shell = $(".range-mode-shell");
         if (!(shell instanceof HTMLElement)) return;
@@ -6414,11 +6554,44 @@
     syncBacktestIntervalSegmentedControl();
     syncDcaFrequencySegmentedControl();
     syncAllSegmentedControlLayouts();
+    let segmentedLayoutFrame = 0;
+    const scheduleSegmentedControlLayoutSync = () => {
+        if (segmentedLayoutFrame) window.cancelAnimationFrame(segmentedLayoutFrame);
+        segmentedLayoutFrame = window.requestAnimationFrame(() => {
+            segmentedLayoutFrame = 0;
+            syncAllSegmentedControlLayouts();
+        });
+    };
+    let segmentedFrameResizeObserver = null;
+    const observeSegmentedOverflowFrames = () => {
+        if (!segmentedFrameResizeObserver) return;
+        $$('[data-segmented-overflow-frame]').forEach((frame) => {
+            if (!(frame instanceof HTMLElement) || frame.dataset.segmentedResizeObserved === "1") return;
+            frame.dataset.segmentedResizeObserved = "1";
+            segmentedFrameResizeObserver.observe(frame);
+        });
+    };
+    if (typeof ResizeObserver === "function") {
+        segmentedFrameResizeObserver = new ResizeObserver(scheduleSegmentedControlLayoutSync);
+        observeSegmentedOverflowFrames();
+    }
+    if (typeof MutationObserver === "function") {
+        const segmentedControlMutationObserver = new MutationObserver(() => {
+            observeSegmentedOverflowFrames();
+            scheduleSegmentedControlLayoutSync();
+        });
+        segmentedControlMutationObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["hidden", "disabled"],
+        });
+    }
     updateDcaSchedulePanels();
     syncDateConstraints();
     scheduleDockPosition();
     window.addEventListener("resize", () => {
-        window.requestAnimationFrame(syncAllSegmentedControlLayouts);
+        scheduleSegmentedControlLayoutSync();
     });
 
     $("#add_ticker")?.addEventListener("click", () => {

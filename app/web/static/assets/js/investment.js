@@ -1,7 +1,19 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.74.1
+ * Code version: v1.82.0
+ * - Added: The primary Investment view rail now uses the shared equal-width overflow contract with a directional faded preview for future items.
+ * - Changed: Overview 1W and 1M x-axis labels now show date and year only while tooltips retain minute precision.
+ * - Changed: Stock-detail metric source rows now start collapsed and disclose independently through the shared table-arrow control.
+ * - Fixed: Measured segmented controls now resolve edge-cap geometry from their rendered box, keeping the first and last thumb caps concentric with the rail.
+ * - Fixed: Investment range rails now remain above chart canvases without clipping their elevation shadows.
+ * - Fixed: The vertical split now reserves explicit in-flow chrome and pagination height, keeping page controls visible at the lower drag limit.
+ * - Changed: Stock details now follows the Neo draft's three-column composition, with independently aligned identity, chart, metrics, and donut tracks.
+ * - Changed: Responsive donut orbit sizing now uses the rendered circle diameter, maximizing the track without cropping satellite logos.
+ * - Changed: The Stock-details range control now occupies its own layout row instead of overlapping the chart canvas.
+ * - Changed: The vertical split now protects two visible transaction rows per history table, allowing Stock details charts to use more height.
+ * - Fixed: Type menu selections now keep the dropdown open for continuous editing until an outside click or Escape closes it.
+ * - Changed: The Type filter now supports checked multi-selection, mirrors All across every child check, and separates All from individual types.
  * - Fixed: Overview track reflows now resize the equity canvas after its stage settles, preserving both YTD x-axis label lines at low viewport heights.
  * - Changed: The Type filter's selected All option now toggles to no selection, and All restores the full transaction set from that state.
  * - Fixed: The hover-revealed Type filter label now inherits the table header typography instead of the browser's native button font.
@@ -9,7 +21,7 @@
  * - Fixed: Manual internal-transfer binding preserves the active history filters, page, and scroll position.
  * - Fixed: Linked history scrolling now resolves the global history scrollport explicitly, avoiding the similarly named selected-ticker scrollport.
  * - Fixed: Hover-linked transaction tables now match the selected ticker by exact ledger entry and never scroll the table the user is inspecting.
- * - Changed: The Investment split now derives its limits from the chart stage and three visible transaction rows at the current resolution.
+ * - Changed: The Investment split now derives its limits from the chart stage and two visible transaction rows at the current resolution.
  * - Fixed: The 1M overview honors its requested 23-session calendar and preserves a tokenized guard above the curve peak.
  * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
  * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
@@ -302,7 +314,7 @@ import {
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
     syncInvestmentDonutOrbitLogos,
-} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.36.2';
+} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.37.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
@@ -311,10 +323,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.2.16';
+} from './investment/stock-details.js?v=investment-stock-details-v0.3.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.70.2',
+    entry: 'v1.82.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
@@ -470,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
     const INVESTMENT_HISTORY_PAGE_SIZE = 50;
     const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
+    const INVESTMENT_HISTORY_MIN_VISIBLE_ROWS = 2;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
@@ -489,7 +502,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let resizeFrame = 0;
         let chartResizeFrame = 0;
         let overviewChromeHeight = 0;
-        let historyChromeHeight = 0;
         const investmentSummaryCard = investmentWorkspaceHeader.querySelector(':scope > .workspace-summary-card');
         const getBaselineMinimumHeight = () => {
             const value = Number.parseFloat(
@@ -527,28 +539,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 && tableShell.getClientRects().length > 0
                 && getComputedStyle(tableShell).display !== 'none'
             );
-            const tableShells = [primaryTableShell];
-            if (isVisibleTableShell(stockDetailsTableShell)) tableShells.push(stockDetailsTableShell);
-            const surfaceHeight = investmentHistorySurface.getBoundingClientRect().height;
+            const tableShells = [primaryTableShell, stockDetailsTableShell]
+                .filter(isVisibleTableShell);
             const fallbackRowHeight = readPixelProperty(
                 investmentWorkspaceHeader,
                 '--investment-history-row-min-height',
                 40,
             );
-            const renderedTableHeight = tableShells.reduce((total, tableShell) => (
-                total + (isVisibleTableShell(tableShell) ? tableShell.getBoundingClientRect().height : 0)
-            ), 0);
-            if (surfaceHeight > 0 && renderedTableHeight > 0 && surfaceHeight >= renderedTableHeight) {
-                historyChromeHeight = Math.max(historyChromeHeight, surfaceHeight - renderedTableHeight);
-            }
+            const surfaceStyles = getComputedStyle(investmentHistorySurface);
+            const visibleFlowChildren = Array.from(investmentHistorySurface.children).filter((child) => {
+                if (!(child instanceof HTMLElement) || child.getClientRects().length === 0) return false;
+                const styles = getComputedStyle(child);
+                return styles.display !== 'none'
+                    && styles.visibility !== 'hidden'
+                    && styles.position !== 'absolute';
+            });
+            const tableFlowChildren = new Set(tableShells.map((tableShell) => (
+                visibleFlowChildren.find((child) => child === tableShell || child.contains(tableShell))
+            )).filter(Boolean));
+            const chromeHeight = visibleFlowChildren.reduce((total, child) => {
+                if (tableFlowChildren.has(child)) return total;
+                const styles = getComputedStyle(child);
+                return total
+                    + child.getBoundingClientRect().height
+                    + (Number.parseFloat(styles.marginTop) || 0)
+                    + (Number.parseFloat(styles.marginBottom) || 0);
+            }, (
+                (Number.parseFloat(surfaceStyles.paddingTop) || 0)
+                + (Number.parseFloat(surfaceStyles.paddingBottom) || 0)
+                + ((Number.parseFloat(surfaceStyles.rowGap) || 0) * Math.max(0, visibleFlowChildren.length - 1))
+            ));
             const tableMinimumHeight = tableShells.reduce((total, tableShell) => {
                 const headerTable = tableShell?.querySelector('[data-table-header]');
                 const rows = tableShell?.matches('.investment-stock-details-table-shell')
-                    ? Array.from(tableShell.querySelectorAll('tbody > tr:not([data-table-empty-row])')).slice(0, 3)
-                    : Array.from(tableShell?.querySelectorAll('#investment_history > tr:not([data-table-empty-row])') || []).slice(0, 3);
+                    ? Array.from(tableShell.querySelectorAll('tbody > tr:not([data-table-empty-row])'))
+                        .slice(0, INVESTMENT_HISTORY_MIN_VISIBLE_ROWS)
+                    : Array.from(tableShell?.querySelectorAll('#investment_history > tr:not([data-table-empty-row])') || [])
+                        .slice(0, INVESTMENT_HISTORY_MIN_VISIBLE_ROWS);
                 const visibleRowsHeight = rows.reduce(
                     (rowTotal, row) => rowTotal + Math.max(row.getBoundingClientRect().height, fallbackRowHeight),
-                    fallbackRowHeight * (3 - rows.length),
+                    fallbackRowHeight * (INVESTMENT_HISTORY_MIN_VISIBLE_ROWS - rows.length),
                 );
                 const headerHeight = headerTable instanceof HTMLElement
                     ? headerTable.getBoundingClientRect().height
@@ -557,7 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 0);
             return Math.max(
                 baselineMinimum,
-                historyChromeHeight + tableMinimumHeight,
+                chromeHeight + tableMinimumHeight,
             );
         };
         const getAvailableTrackHeight = () => {
@@ -2821,31 +2851,66 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(optionLabel instanceof HTMLElement)) return currentMax;
             return Math.max(currentMax, measureOptionContentWidth(optionLabel));
         }, 0);
-        const optionWidth = Math.max(1, Math.ceil(maxContentWidth + (resolvedHorizontalInset * 2)));
+        let optionWidth = Math.max(1, Math.ceil(maxContentWidth + (resolvedHorizontalInset * 2)));
         const optionCount = options.length;
         const activeIndex = Math.max(0, options.indexOf(activeOption));
-        const totalControlWidth = controlPaddingInline
-            + (optionWidth * optionCount)
-            + (columnGap * Math.max(0, optionCount - 1));
-        const parentWidth = control.parentElement instanceof HTMLElement
-            ? Math.floor(control.parentElement.getBoundingClientRect().width)
-            : 0;
-        const computedMaxWidth = Number.parseFloat(controlStyles.maxWidth);
-        const cssMaxWidth = Number.isFinite(computedMaxWidth) && computedMaxWidth > 0
-            ? Math.floor(computedMaxWidth)
-            : 0;
-        const maxControlWidth = Math.max(
-            optionWidth + controlPaddingInline,
-            Math.min(
-                ...[parentWidth, cssMaxWidth, totalControlWidth].filter((value) => value > 0),
-            ),
-        );
-        const visibleControlWidth = Math.min(totalControlWidth, maxControlWidth);
-        control.style.setProperty('--segmented-option-width', `${optionWidth}px`);
-        control.style.setProperty('--segmented-option-count', String(optionCount));
-        control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
-        control.style.width = `${visibleControlWidth}px`;
-        control.dataset.segmentedOverflow = totalControlWidth > visibleControlWidth + 1 ? '1' : '0';
+        const overflowFrame = control.dataset.segmentedOverflowMode === 'peek'
+            ? control.closest('[data-segmented-overflow-frame]')
+            : null;
+        const usesSharedOverflowFrame = overflowFrame instanceof HTMLElement;
+        let totalControlWidth = 0;
+        let visibleControlWidth = 0;
+        let renderedControlRect = control.getBoundingClientRect();
+        let renderedControlWidth = renderedControlRect.width;
+        let shouldOverflow = false;
+        if (usesSharedOverflowFrame) {
+            window.ANTIGRAVITY_SEGMENTED_CONTROLS?.sync?.(control, {
+                activeIndex,
+                options,
+            });
+            renderedControlRect = control.getBoundingClientRect();
+            renderedControlWidth = renderedControlRect.width;
+            optionWidth = Math.max(1, activeOption.getBoundingClientRect().width);
+            totalControlWidth = Math.max(renderedControlWidth, control.scrollWidth);
+            visibleControlWidth = overflowFrame.clientWidth;
+            shouldOverflow = overflowFrame.scrollWidth > overflowFrame.clientWidth + 1;
+            control.dataset.segmentedOverflow = shouldOverflow ? '1' : '0';
+        } else {
+            const naturalControlWidth = controlPaddingInline
+                + (optionWidth * optionCount)
+                + (columnGap * Math.max(0, optionCount - 1));
+            control.dataset.segmentedOverflow = '0';
+            control.style.setProperty('--segmented-option-width', `${optionWidth}px`);
+            control.style.setProperty('--segmented-option-count', String(optionCount));
+            control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
+            control.style.width = `${naturalControlWidth}px`;
+            const constrainedControlWidth = control.getBoundingClientRect().width || naturalControlWidth;
+            visibleControlWidth = Math.min(naturalControlWidth, constrainedControlWidth);
+            const fittedOptionWidth = Math.floor(
+                (
+                    visibleControlWidth
+                    - controlPaddingInline
+                    - (columnGap * Math.max(0, optionCount - 1))
+                ) / optionCount,
+            );
+            const minimumReadableOptionWidth = Math.ceil(
+                maxContentWidth + (Math.min(resolvedHorizontalInset, 8) * 2),
+            );
+            if (fittedOptionWidth >= minimumReadableOptionWidth) {
+                optionWidth = Math.min(optionWidth, fittedOptionWidth);
+            }
+            totalControlWidth = controlPaddingInline
+                + (optionWidth * optionCount)
+                + (columnGap * Math.max(0, optionCount - 1));
+            const requestedControlWidth = Math.min(totalControlWidth, visibleControlWidth);
+            control.style.setProperty('--segmented-option-width', `${optionWidth}px`);
+            control.style.gridTemplateColumns = `repeat(${optionCount}, ${optionWidth}px)`;
+            control.style.width = `${requestedControlWidth}px`;
+            renderedControlRect = control.getBoundingClientRect();
+            renderedControlWidth = renderedControlRect.width;
+            shouldOverflow = control.scrollWidth > control.clientWidth + 1;
+            control.dataset.segmentedOverflow = shouldOverflow ? '1' : '0';
+        }
         const activeMeasureTarget = labelSelector
             ? (activeLabel.querySelector(labelSelector) || activeLabel)
             : activeLabel;
@@ -2858,42 +2923,62 @@ document.addEventListener('DOMContentLoaded', () => {
             ? Math.min(optionWidth, Math.max(1, Math.ceil(activeContentWidth + (resolvedHorizontalInset * 2))))
             : optionWidth;
         const activeOptionRect = activeOption.getBoundingClientRect();
-        const activeContentCenterOffset = (
+        const activeContentCenter = (
             centerOnActiveContent
             && activeContentRect
             && activeOptionRect.width > 0
         )
-            ? activeContentRect.centerX - activeOptionRect.left
-            : optionWidth / 2;
-        const activeContentCenter = (activeIndex * (optionWidth + columnGap)) + activeContentCenterOffset;
+            ? activeContentRect.centerX - renderedControlRect.left + control.scrollLeft
+            : activeOptionRect.left - renderedControlRect.left + control.scrollLeft + (activeOptionRect.width / 2);
+        const thumbInlineInset = Math.max(
+            0,
+            Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-thumb-inset'))
+            || Number.parseFloat(controlStyles.paddingLeft)
+            || 0,
+        );
         let constrainedPillWidth = activePillWidth;
-        let activePillLeft = activeContentCenter - (constrainedPillWidth / 2);
+        let activePillLeft = activeContentCenter - (constrainedPillWidth / 2) - thumbInlineInset;
         if (centerOnActiveContent && alignEdgeCaps) {
-            const thumbInset = Math.max(
+            const thumbBlockInset = Math.max(
                 0,
                 Number.parseFloat(controlStyles.getPropertyValue('--mode-switch-thumb-inset'))
-                || Number.parseFloat(controlStyles.paddingLeft)
+                || Number.parseFloat(controlStyles.paddingTop)
                 || 0,
             );
+            const railCapRadius = renderedControlRect.height / 2;
+            const thumbCapRadius = Math.max(0, (renderedControlRect.height - (thumbBlockInset * 2)) / 2);
             if (activeIndex === 0) {
-                constrainedPillWidth = Math.max(1, activeContentCenter * 2);
-                activePillLeft = 0;
+                const desiredPhysicalLeft = railCapRadius - thumbCapRadius;
+                constrainedPillWidth = Math.max(1, (activeContentCenter - desiredPhysicalLeft) * 2);
+                activePillLeft = desiredPhysicalLeft - thumbInlineInset;
             } else if (activeIndex === optionCount - 1) {
-                const rightCapEdge = Math.max(thumbInset, visibleControlWidth - (thumbInset * 2));
-                constrainedPillWidth = Math.max(1, (rightCapEdge - activeContentCenter) * 2);
-                activePillLeft = activeContentCenter - (constrainedPillWidth / 2);
+                const controlExtent = shouldOverflow ? control.scrollWidth : renderedControlWidth;
+                const desiredPhysicalRight = controlExtent - railCapRadius + thumbCapRadius;
+                constrainedPillWidth = Math.max(1, (desiredPhysicalRight - activeContentCenter) * 2);
+                activePillLeft = activeContentCenter - (constrainedPillWidth / 2) - thumbInlineInset;
             }
         }
         return {
             left: activePillLeft,
             width: constrainedPillWidth,
+            contentLeft: activePillLeft + thumbInlineInset,
+            contentRight: activePillLeft + thumbInlineInset + constrainedPillWidth,
             totalWidth: totalControlWidth,
-            visibleWidth: visibleControlWidth,
+            visibleWidth: renderedControlWidth,
         };
     }
 
     function keepSegmentedActiveOptionVisible(control, pillGeometry) {
         if (!(control instanceof HTMLElement) || !pillGeometry) return;
+        const activeOption = control.querySelector('input[type="radio"]:checked')?.closest('.segmented-control-option');
+        if (
+            activeOption instanceof HTMLElement
+            && control.closest('[data-segmented-overflow-frame]') instanceof HTMLElement
+            && window.ANTIGRAVITY_SEGMENTED_CONTROLS?.keepOptionVisible
+        ) {
+            window.ANTIGRAVITY_SEGMENTED_CONTROLS.keepOptionVisible(control, activeOption);
+            return;
+        }
         const maxScrollLeft = Math.max(0, control.scrollWidth - control.clientWidth);
         if (maxScrollLeft <= 0) {
             control.scrollLeft = 0;
@@ -2904,8 +2989,8 @@ document.addEventListener('DOMContentLoaded', () => {
             leftSafety,
             Math.round(Number.parseFloat(getComputedStyle(control).paddingRight) || 0),
         );
-        const activeLeft = pillGeometry.left;
-        const activeRight = pillGeometry.left + pillGeometry.width;
+        const activeLeft = pillGeometry.contentLeft ?? pillGeometry.left;
+        const activeRight = pillGeometry.contentRight ?? (pillGeometry.left + pillGeometry.width);
         let nextScrollLeft = control.scrollLeft;
         if (activeLeft < control.scrollLeft + leftSafety) {
             nextScrollLeft = activeLeft - leftSafety;
@@ -6007,7 +6092,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderInvestmentSideFilterHeaderInnerMarkup(filterId = 'investment_history_side_filter') {
         const selectedLabel = investmentSideFilter === 'all'
             ? 'All'
-            : investmentSideFilter[0].toUpperCase() + investmentSideFilter.slice(1);
+            : investmentSideFilter === 'none' || !investmentSideFilter.length
+                ? 'None'
+                : investmentSideFilter.map((value) => value[0].toUpperCase() + value.slice(1)).join(', ');
         return `
             <span class="investment-side-filter-default-label" aria-hidden="true">Type</span>
             <div class="field investment-side-filter-field backtest-shared-select-field"
@@ -6046,7 +6133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function applyInvestmentSideFilter(nextFilter) {
+    function applyInvestmentSideFilter(nextFilter, { keepOpenFilterId = '' } = {}) {
         investmentSideFilter = window.ANTIGRAVITY_INVESTMENT_FILTERS?.normalizeSideFilter(nextFilter) || 'all';
         closeInvestmentSideFilterDropdowns();
         mountInvestmentSideFilterHeaders();
@@ -6057,6 +6144,12 @@ document.addEventListener('DOMContentLoaded', () => {
             { resetPage: true, scrollToTop: true },
         );
         if (activeInvestmentView === 'stock_details') refreshInvestmentStockDetailsTableRows();
+        if (keepOpenFilterId) {
+            const nextField = document.querySelector(
+                `[data-investment-side-filter][data-filter-id="${CSS.escape(keepOpenFilterId)}"]`
+            );
+            if (nextField instanceof HTMLElement) openInvestmentSideFilterDropdown(nextField);
+        }
     }
 
     function openInvestmentSideFilterDropdown(field) {
@@ -6065,8 +6158,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return;
         dropdown.innerHTML = ['all', 'buy', 'sell'].map((value) => {
             const label = value[0].toUpperCase() + value.slice(1);
-            const selected = value === investmentSideFilter;
-            return `<button type="button" class="trade-strategy-dropdown-option${selected ? ' is-selected is-active' : ''}"
+            const selected = investmentSideFilter === 'all'
+                || (Array.isArray(investmentSideFilter) && investmentSideFilter.includes(value));
+            const active = value === 'all' && investmentSideFilter === 'all';
+            return `<button type="button" class="trade-strategy-dropdown-option${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${value === 'all' ? ' investment-side-filter-all-option' : ''}"
                             data-investment-side-filter-option="${value}" role="option" aria-selected="${selected}">
                         <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
                         <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">${label}</span></span>
@@ -6089,10 +6184,23 @@ document.addEventListener('DOMContentLoaded', () => {
             option.addEventListener('click', (event) => {
                 event.stopPropagation();
                 const selectedValue = option.dataset.investmentSideFilterOption;
-                const nextFilter = selectedValue === 'all' && investmentSideFilter === 'all'
-                    ? 'none'
-                    : selectedValue;
-                applyInvestmentSideFilter(nextFilter);
+                let nextFilter;
+                if (selectedValue === 'all') {
+                    nextFilter = investmentSideFilter === 'all' ? 'none' : 'all';
+                } else {
+                    const selectedSides = Array.isArray(investmentSideFilter)
+                        ? [...investmentSideFilter]
+                        : [];
+                    const selectedIndex = selectedSides.indexOf(selectedValue);
+                    if (selectedIndex >= 0) {
+                        if (selectedSides.length === 1) return;
+                        selectedSides.splice(selectedIndex, 1);
+                    } else {
+                        selectedSides.push(selectedValue);
+                    }
+                    nextFilter = selectedSides.length === 2 ? 'all' : selectedSides;
+                }
+                applyInvestmentSideFilter(nextFilter, { keepOpenFilterId: field.dataset.filterId || '' });
             });
         });
     }
@@ -10880,6 +10988,82 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="${className}" data-investment-live-field="${escapeHtml(metric?.liveField || '')}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(display)}">${renderWorkspaceMetricValueContent(display)}</span>`;
     }
 
+    function renderInvestmentStockDetailsMetricCard(metric, metricIndex, activeTicker) {
+        const details = Array.isArray(metric?.details) ? metric.details : [];
+        const hasBreakdown = details.length > 0;
+        const metricLabel = String(metric?.label || 'Metric');
+        const breakdownId = `investment_stock_details_metric_breakdown_${metricIndex}`;
+        const cardClassName = [
+            'trade-metric-card',
+            'trade-metric-card--value-align-end',
+            'investment-stock-details-metric-card',
+            metric?.cardClass || '',
+            hasBreakdown ? 'investment-stock-details-metric-card-with-breakdown' : '',
+        ].filter(Boolean).join(' ');
+        const valueMarkup = metric?.liveField
+            ? renderInvestmentStockDetailsLiveMetricValueSpan(metric, activeTicker)
+            : renderInvestmentStockDetailsMetricValueSpan(metric?.value, metric?.valueClass);
+        const valueRowMarkup = hasBreakdown
+            ? `
+                <div class="investment-stock-details-metric-value-row">
+                    <button type="button"
+                            class="investment-stock-details-metric-breakdown-trigger"
+                            data-investment-stock-details-metric-breakdown-trigger
+                            data-investment-stock-details-metric-label="${escapeHtml(metricLabel)}"
+                            aria-controls="${breakdownId}"
+                            aria-expanded="false"
+                            aria-label="Show ${escapeHtml(metricLabel)} details"></button>
+                    ${valueMarkup}
+                </div>
+            `
+            : valueMarkup;
+        const breakdownMarkup = hasBreakdown
+            ? `
+                <div id="${breakdownId}"
+                     class="investment-stock-details-metric-breakdown"
+                     role="region"
+                     aria-label="${escapeHtml(metricLabel)} details"
+                     hidden>
+                    ${details.map((detail) => `
+                        <div class="investment-stock-details-metric-breakdown-row">
+                            <span class="investment-stock-details-metric-breakdown-label">${escapeHtml(detail.label)}</span>
+                            <span class="investment-stock-details-metric-breakdown-value${detail.valueClass ? ` ${detail.valueClass}` : ''}">${renderWorkspaceMetricValueContent(detail.value)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `
+            : '';
+
+        return `
+            <div class="${cardClassName}">
+                <span class="trade-metric-label">${escapeHtml(metricLabel)}</span>
+                ${valueRowMarkup}
+                ${breakdownMarkup}
+            </div>
+        `;
+    }
+
+    function bindInvestmentStockDetailsMetricBreakdownControls() {
+        if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
+        if (investmentStockDetailsPanel.dataset.investmentMetricBreakdownBound === '1') return;
+        investmentStockDetailsPanel.dataset.investmentMetricBreakdownBound = '1';
+        investmentStockDetailsPanel.addEventListener('click', (event) => {
+            const trigger = event.target instanceof Element
+                ? event.target.closest('[data-investment-stock-details-metric-breakdown-trigger]')
+                : null;
+            if (!(trigger instanceof HTMLButtonElement) || !investmentStockDetailsPanel.contains(trigger)) return;
+            const breakdownId = String(trigger.getAttribute('aria-controls') || '').trim();
+            const breakdown = breakdownId ? document.getElementById(breakdownId) : null;
+            if (!(breakdown instanceof HTMLElement) || !investmentStockDetailsPanel.contains(breakdown)) return;
+            const shouldExpand = trigger.getAttribute('aria-expanded') !== 'true';
+            const metricLabel = String(trigger.dataset.investmentStockDetailsMetricLabel || 'Metric');
+            trigger.setAttribute('aria-expanded', String(shouldExpand));
+            trigger.setAttribute('aria-label', `${shouldExpand ? 'Hide' : 'Show'} ${metricLabel} details`);
+            breakdown.hidden = !shouldExpand;
+            scheduleInvestmentStockDetailsVisibleLayoutSync();
+        });
+    }
+
     function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
         if (investmentStockDetailsTableHost instanceof HTMLElement) {
@@ -10951,7 +11135,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 label: 'Realized P&L',
                 value: formatHoldingsMoney(tickerSummary.realizedPnl),
                 valueClass: realizedClass,
-                cardClass: 'investment-stock-details-metric-card-with-breakdown',
                 details: [
                     realizedBreakdown.dividendIncome !== 0 && {
                         label: 'Dividend income',
@@ -11085,24 +11268,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
-                    ${stockMetricCards.map((metric) => `
-                        <div class="trade-metric-card trade-metric-card--value-align-end investment-stock-details-metric-card${metric.cardClass ? ` ${metric.cardClass}` : ''}">
-                            <span class="trade-metric-label">${metric.label}</span>
-                            ${metric.liveField
-                                ? renderInvestmentStockDetailsLiveMetricValueSpan(metric, activeTicker)
-                                : renderInvestmentStockDetailsMetricValueSpan(metric.value, metric.valueClass)}
-                            ${Array.isArray(metric.details) && metric.details.length ? `
-                                <div class="investment-stock-details-metric-breakdown">
-                                    ${metric.details.map((detail) => `
-                                        <div class="investment-stock-details-metric-breakdown-row">
-                                            <span class="investment-stock-details-metric-breakdown-label">${detail.label}</span>
-                                            <span class="investment-stock-details-metric-breakdown-value${detail.valueClass ? ` ${detail.valueClass}` : ''}">${renderWorkspaceMetricValueContent(detail.value)}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            ` : ''}
-                        </div>
-                    `).join('')}
+                    ${stockMetricCards.map((metric, metricIndex) => (
+                        renderInvestmentStockDetailsMetricCard(metric, metricIndex, activeTicker)
+                    )).join('')}
                 </div>
                 <div class="investment-stock-details-price-chart-card">
                     ${renderInvestmentStockDetailsRangeControl()}
@@ -11149,6 +11317,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bindStockDetailsHistoryInteractions(investmentStockDetailsTableHost);
             syncInvestmentStockDetailsTableVisibility();
         }
+        bindInvestmentStockDetailsMetricBreakdownControls();
         bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
         renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
@@ -12706,7 +12875,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         };
 
-        const formatChartDateLines = (dateParts) => formatInvestmentFullDateLines(dateParts, { allowWrap: true });
+        const formatChartDateLines = (dateParts) => {
+            const axisDateParts = isInvestmentOverviewHighPrecisionEquityRange()
+                ? {...dateParts, hours: null, minutes: null}
+                : dateParts;
+            return formatInvestmentFullDateLines(axisDateParts, { allowWrap: true });
+        };
 
         const hoverGuidePlugin = {
             id: "investmentHoverGuidePlugin",

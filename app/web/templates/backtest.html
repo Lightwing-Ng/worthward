@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -10,7 +11,7 @@
     <section class="workspace-mode-shell">
         <article class="report-card workspace-article-card workspace-summary-card workspace-mode-title-card">
             <div class="report-heading-row">
-                <p class="report-heading">{{ labels.get('dock_grid_trading', 'Grid Trading') if current_view == 'grid-trading' else labels.dock_backtest }}</p>
+                <p class="report-heading">{{ labels.get('dock_grid_trading', 'Grid trading') if current_view == 'grid-trading' else labels.dock_backtest }}</p>
             </div>
         </article>
         <div class="workspace-mode-layout">

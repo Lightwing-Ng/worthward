@@ -1,11 +1,12 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.36.2
+ * Code version: v1.37.0
+ * - Changed: Orbit geometry now follows the rendered donut diameter so responsive CSS sizes keep satellites on the real track.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
 
-export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.36.2';
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.37.0';
 
 const investmentDonutOrbitLayerState = new WeakMap();
 
@@ -43,7 +44,11 @@ function easeInOutCubic(progress) {
 export function getPortfolioDonutOrbitMetrics(orbitElement) {
     if (!(orbitElement instanceof HTMLElement)) return null;
     const computed = getComputedStyle(orbitElement);
-    const donutSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
+    const donutElement = orbitElement.querySelector('.portfolio-donut');
+    const donutRect = donutElement?.getBoundingClientRect();
+    const renderedDonutSize = Math.min(Number(donutRect?.width) || 0, Number(donutRect?.height) || 0);
+    const donutSize = renderedDonutSize
+        || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-donut-size'))
         || Number.parseFloat(computed.getPropertyValue('--portfolio-donut-size'))
         || 120;
     const logoSize = Number.parseFloat(computed.getPropertyValue('--portfolio-donut-orbit-logo-size'))

@@ -1,4 +1,4 @@
-/* Code version: v0.6.6 */
+/* Code version: v0.8.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1424,6 +1424,51 @@
 .icon-remove-muted { width: 10px; height: 10px; background-color: var(--accent-contrast); mask: url("/static/images/xmark.svg") center/contain no-repeat; -webkit-mask: url("/static/images/xmark.svg") center/contain no-repeat; }
 .icon-plus { background-color: var(--accent-fill); mask: url("/static/images/plus.svg") center/contain no-repeat; -webkit-mask: url("/static/images/plus.svg") center/contain no-repeat; }
 .icon-plus-circle { background-color: currentColor; mask: url("/static/images/plus.circle.svg") center/contain no-repeat; -webkit-mask: url("/static/images/plus.circle.svg") center/contain no-repeat; }
+.segmented-control-overflow-frame {
+	--segmented-overflow-effect-bleed: 18px;
+	--segmented-overflow-fade-size: 44px;
+	--segmented-overflow-peek-size: 36px;
+	--segmented-overflow-option-min-width: 92px;
+	position: relative;
+	box-sizing: border-box;
+	max-width: 100%;
+	overflow: visible;
+	scrollbar-width: none;
+	overscroll-behavior-x: contain;
+	-webkit-overflow-scrolling: touch;
+}
+.segmented-control-overflow-frame::-webkit-scrollbar { display: none; }
+.segmented-control-overflow-frame[data-segmented-overflow="1"] {
+	padding-block: var(--segmented-overflow-effect-bleed);
+	margin-block: calc(var(--segmented-overflow-effect-bleed) * -1);
+	overflow-x: auto;
+	overflow-y: hidden;
+	scroll-padding-inline: var(--segmented-overflow-fade-size);
+}
+.segmented-control-overflow-frame[data-segmented-overflow="1"][data-overflow-start="0"][data-overflow-end="1"] {
+	mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - var(--segmented-overflow-fade-size)), transparent 100%);
+	-webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - var(--segmented-overflow-fade-size)), transparent 100%);
+}
+.segmented-control-overflow-frame[data-segmented-overflow="1"][data-overflow-start="1"][data-overflow-end="0"] {
+	mask-image: linear-gradient(90deg, transparent 0, #000 var(--segmented-overflow-fade-size), #000 100%);
+	-webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--segmented-overflow-fade-size), #000 100%);
+}
+.segmented-control-overflow-frame[data-segmented-overflow="1"][data-overflow-start="1"][data-overflow-end="1"] {
+	mask-image: linear-gradient(90deg, transparent 0, #000 var(--segmented-overflow-fade-size), #000 calc(100% - var(--segmented-overflow-fade-size)), transparent 100%);
+	-webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--segmented-overflow-fade-size), #000 calc(100% - var(--segmented-overflow-fade-size)), transparent 100%);
+}
+.segmented-control[data-segmented-overflow-mode="peek"] {
+	width: 100%;
+	max-width: none;
+	margin-inline: 0;
+}
+.segmented-control[data-segmented-overflow-mode="peek"][data-segmented-overflow="1"] {
+	width: var(--segmented-track-width, 100%);
+	grid-template-columns: repeat(var(--segmented-option-count), var(--segmented-option-width));
+	overflow: visible;
+	mask-image: none;
+	-webkit-mask-image: none;
+}
 .segmented-control,
 .range-mode-shell {
 	--segmented-option-count: 2;
@@ -1437,8 +1482,7 @@
 	display: grid;
 	grid-template-columns: repeat(var(--segmented-option-count), minmax(var(--segmented-option-min-width), 1fr));
 	gap: var(--mode-switch-gap);
-	overflow-x: auto;
-	overflow-y: hidden;
+	overflow: visible;
 	isolation: isolate;
 	transition: background 220ms var(--motion-standard), box-shadow 220ms var(--motion-standard);
 	align-items: stretch;
@@ -1452,9 +1496,11 @@
 }
 .segmented-control::-webkit-scrollbar,
 .range-mode-shell::-webkit-scrollbar { display: none; }
-.segmented-control[data-segmented-overflow="1"],
+.segmented-control[data-segmented-overflow="1"]:not([data-segmented-overflow-mode="peek"]),
 .range-mode-shell[data-segmented-overflow="1"] {
 	--segmented-option-min-width: 92px;
+	overflow-x: auto;
+	overflow-y: hidden;
 	mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 	-webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 }

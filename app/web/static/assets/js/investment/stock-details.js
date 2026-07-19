@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.16
+ * Code version: v0.3.0
+ * - Changed: Stock-details charts no longer reserve top canvas padding for the range control now that the control has its own layout track.
  * - Changed: Stock-details price chart x-axis date labels now use weight 400 while preserving the existing font and size.
  * - Changed: Stock-details 1W x-axis labels now center each trading date within its intraday session and omit intraday times.
  * - Fixed: Stock-details intraday trade markers no longer project pre-range overnight trades onto the first visible candle.
@@ -20,7 +21,7 @@
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.16';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.3.0';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -1322,7 +1323,7 @@ export function createInvestmentStockDetailsUtils({
                     padding: {
                         left: STOCK_DETAILS_MARKER_X_PADDING_PX,
                         right: shouldRenderRealtimePulse ? 32 : STOCK_DETAILS_MARKER_X_PADDING_PX,
-                        top: shouldRenderRealtimePulse ? 32 : 44,
+                        top: shouldRenderRealtimePulse ? 32 : STOCK_DETAILS_MARKER_Y_PADDING_PX,
                         bottom: 24,
                     },
                 },

@@ -1,6 +1,128 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.63.0`
+Documentation version: `v1.76.0`
+
+## Segmented rails now support equal-width progressive overflow on 19 Jul 2026
+
+- The shared segmented-control macro can now render an overflow frame for rails
+  whose option count may grow without a fixed upper bound.
+- Options that fit remain equal-width across the complete rail. Once the minimum
+  readable width would be crossed, all fully visible options remain equal-width
+  and the next option occupies a reserved partial slot beneath a directional
+  edge fade.
+- The scroll viewport owns only horizontal clipping and reserves vertical effect
+  bleed, so the inner rail and selected-pill elevation are not cut off. Selecting
+  an off-screen option scrolls it fully into view and updates the leading and
+  trailing fade independently.
+
+## Stock-detail metric disclosure arrows now reveal on demand on 19 Jul 2026
+
+- Collapsed metric disclosure arrows reserve their alignment slot but remain
+  visually hidden and ignore pointer input until the metric card is hovered.
+- Keyboard focus and the expanded state keep the arrow visible, while
+  non-hover touch devices retain an always-visible control so disclosure remains
+  operable.
+
+## Market-cap comparison headings now preserve semantic columns on 19 Jul 2026
+
+- Market cap comparison now occupies only the controls column on desktop instead
+  of extending over the market-cap chart.
+- Market cap history is an independent labelled region with a level-two heading
+  and the settings-formatted comparison range directly beneath it, left-aligned
+  to the same edge.
+
+## Price comparison headings now preserve semantic columns on 19 Jul 2026
+
+- Price performance and Price history are separate labelled regions with real
+  level-two headings rather than visually overlaid content inside a full-width
+  title hit area.
+- On desktop, the Price performance heading occupies only the controls column,
+  while Price history occupies the results column with its settings-formatted
+  date range directly beneath it and aligned to the same left edge.
+
+## Short-range Investment axes now use date-only labels on 19 Jul 2026
+
+- The Overview 1W and 1M curves retain minute-resolution source data and precise
+  tooltip timestamps, but their x-axes now omit hours and minutes.
+- The default date presentation is split across `D Mmm` and `yyyy` lines, which
+  prevents short-range tick labels from competing for horizontal space.
+
+## Sidebar motion now preserves the desktop title clearance on 19 Jul 2026
+
+- The sidebar, its circular toggle, and the shared page-title inset now follow
+  one duration, easing curve, and direction delay while the sidebar opens or
+  closes.
+- Trade, Workspaces, and Settings headings therefore keep a minimum horizontal
+  clearance from both moving surfaces for every animation frame, rather than
+  only at the two resting positions.
+
+## Stock-detail metric sources now disclose on demand on 19 Jul 2026
+
+- Every metric with a secondary source breakdown now starts collapsed, so the
+  Stock details summary gives its chart and primary values the available height.
+- The disclosure control reuses the transaction-table broker arrow geometry and
+  sits at the far left of the primary-value row, vertically centered with the
+  large value.
+- Each breakdown opens independently through pointer or keyboard input and
+  exposes its state through `aria-expanded`; metrics without authoritative
+  secondary rows do not receive a disclosure control.
+
+## Segmented-control depth and edge geometry corrected on 19 Jul 2026
+
+- Non-scrolling segmented rails now expose their thumb and rail shadows instead
+  of clipping them at the control boundary.
+- Investment view and range rails occupy an explicit layer above their chart or
+  panel content, so later-painted canvases cannot cover the elevation effect.
+- The measured first and last thumb caps now use the rendered rail dimensions;
+  their cap centers remain concentric even when a CSS maximum width constrains
+  the control.
+
+## Investment pagination protected at the resize limit on 19 Jul 2026
+
+- The Investment vertical split now measures the heading, surface padding, gaps,
+  pagination, and other in-flow chrome directly instead of inferring that space
+  from table overflow.
+- Stock details can still compress both transaction tables to their protected
+  two-row minimum, while the pagination remains fully inside the history card at
+  the lower drag limit.
+
+## Stock-details composition aligned to the Neo draft on 19 Jul 2026
+
+- Stock details now keeps the ticker identity above the metrics column while the
+  range selector occupies an independent track above the price chart.
+- The chart canvas uses the remaining height without reserving duplicate top
+  padding for the range selector, and the metrics column remains independently
+  scrollable without changing its content.
+- The donut frame follows the smaller available card dimension. Its track grows
+  to the largest safe diameter, keeps satellite logos inside the frame, and
+  aligns its center with the price-chart center line.
+
+## Desktop title rail and vertical allocation unified on 19 Jul 2026
+
+- Workspace, Trade, and Settings sidebar titles now share one desktop title rail
+  with page and result headings. Their text centers align with the unchanged
+  sidebar and theme control centers, including while the sidebar is collapsed.
+- Workspace controls and content begin immediately below that rail. At the
+  `1,024px` regression viewport, the controls move from `116px` to `64px`,
+  returning `52px` of vertical space to the working area.
+- Price history and Portfolio summary place their settings-formatted date range
+  beneath the heading and align it to the heading's left edge. Market cap history
+  now has an explicit result heading, and Grid trading follows sentence case.
+
+## Stock-details chart height allocation corrected on 19 Jul 2026
+
+- The Stock details price canvas now overrides Chart.js's stale inline height
+  while the Overview/Transaction history split is moving.
+- The curve, trade markers, and x-axis dates therefore use the chart shell's
+  full vertical track instead of leaving unused space below the dates.
+
+## Investment dual-history minimum reduced on 19 Jul 2026
+
+- The Overview/Transaction history vertical split now protects two visible data
+  rows per active history table instead of three.
+- In Stock details, both the ticker-specific and portfolio-wide Transaction
+  history tables retain two usable rows while the chart can expand farther
+  downward.
 
 ## Investment YTD axis clipping corrected on 19 Jul 2026
 
@@ -36,6 +158,11 @@ Documentation version: `v1.63.0`
   typography, including its font family, size, weight, and line height.
 - Selecting the already-active `All` option now clears every Type selection and
   displays `None`; selecting `All` again restores the complete transaction set.
+- The Type menu mirrors an active `All` check onto every child type, separates
+  `All` with a subtle divider, and supports one-or-more checked child types.
+- Type selections now update the tables without closing the menu. Completing
+  every child selection restores the `All` check; only an outside click or
+  `Escape` closes the menu.
 
 ## Broker filter default-selection styling corrected on 19 Jul 2026
 
@@ -407,7 +534,7 @@ Documentation version: `v1.63.0`
 
 ## Workspace range-option policy unified on 14 Jul 2026
 
-- Return comparison, Price performance, Portfolio, DCA, Backtest, and Grid Trading now derive relative range options from one shared policy and one canonical period metadata source.
+- Return comparison, Price performance, Portfolio, DCA, Backtest, and Grid trading now derive relative range options from one shared policy and one canonical period metadata source.
 - Multi-ticker workspaces retain a requested horizon when any selected security supplies that history, leaving newer listings blank before their first authoritative record. `Max` continues to use shared history.
 - Unsupported URL periods now resolve to an option that is actually rendered, preventing the calculation period and dropdown selection from diverging.
 - Period labels and exact-range span metadata are serialized from Python to the browser instead of being maintained in a second JavaScript table.
@@ -670,11 +797,11 @@ Documentation version: `v1.63.0`
 
 - The host Mac provides SF Symbols 7.2 and readable system symbol alias and availability metadata.
 - The deprecated `waveform.and.person.filled` asset name was migrated to the canonical `waveform.and.person` name.
-- Grid Trading now has a distinct grid symbol. A maintained reserve list lives beside the SVG assets in `app/web/static/images/SF_SYMBOLS.md`.
+- Grid trading now has a distinct grid symbol. A maintained reserve list lives beside the SVG assets in `app/web/static/images/SF_SYMBOLS.md`.
 
 ## Grid trading workspace added on 11 Jul 2026
 
-- `/workspaces/grid-trading` is a canonical, parallel Workspace route and locks execution to the `Grid Trading` strategy even if another strategy is supplied in the query string.
+- `/workspaces/grid-trading` is a canonical, parallel Workspace route and locks execution to the `Grid trading` strategy even if another strategy is supplied in the query string.
 - The grid model supports SMA or EMA centers, center-line window, percentage spacing, and asymmetric buy/sell grid levels. It reuses the long-only single-position backtest engine; multi-position inventory sizing and live order placement remain outside this module's current scope.
 
 ## Apple 27 design alignment recorded on 11 Jul 2026

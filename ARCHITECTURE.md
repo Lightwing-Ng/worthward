@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.7.0`
+Documentation version: `v1.8.0`
 
 ## Runtime flow
 
@@ -36,7 +36,7 @@ Workspace
   Portfolio          /workspaces/portfolio
   DCA                /workspaces/dca
   Backtest           /workspaces/backtest
-  Grid Trading       /workspaces/grid-trading
+  Grid trading       /workspaces/grid-trading
 
 Trade
   Investment         /trade/investment
@@ -47,7 +47,7 @@ Settings             /settings/<section>
 
 Older `/compare`, `/portfolio`, `/backtest`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects.
 
-Backtest and Grid Trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid Trading locks strategy execution to `grid-trading` and owns its parameter surface.
+Backtest and Grid trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid trading locks strategy execution to `grid-trading` and owns its parameter surface.
 
 Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts as the rate-limit fallback. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates.
 

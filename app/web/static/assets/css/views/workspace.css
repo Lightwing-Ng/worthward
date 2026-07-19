@@ -1,4 +1,4 @@
-/* Code version: v1.11.0 */
+/* Code version: v1.15.0 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -114,6 +114,14 @@
     margin-bottom: 0;
 }
 
+@media (min-width: 768px) {
+    :is(.price-compare-workspace, .market-cap-compare-workspace) > .workspace-mode-title-card {
+        width: var(--sidebar-width);
+        box-sizing: border-box;
+        align-self: flex-start;
+    }
+}
+
 .workspace-mode-controls-surface {
     display: flex;
     flex-direction: column;
@@ -167,6 +175,34 @@
 
 .workspace-mode-main > .workspace-header {
     flex: 1 1 auto;
+}
+
+@media (min-width: 768px) {
+    .workspace > .workspace-header:first-child > .workspace-summary-card:first-child,
+    .workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card,
+    .workspace-mode-results-stack > .workspace-summary-card:first-child {
+        min-height: var(--workspace-title-rail-height);
+        padding-top: var(--workspace-title-rail-pad-block-start);
+        padding-bottom: 0;
+        display: flex;
+        align-items: flex-start;
+        transition: padding-left var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay);
+    }
+
+    .workspace > .workspace-header:first-child > .workspace-summary-card:first-child > .report-heading-row,
+    .workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card > .report-heading-row,
+    .workspace-mode-results-stack > .workspace-summary-card:first-child > .report-heading-row {
+        width: 100%;
+        min-height: var(--workspace-title-rail-control-height);
+        margin-bottom: 0;
+    }
+
+    .app-shell.is-sidebar-collapsed .workspace > .workspace-header:first-child > .workspace-summary-card:first-child,
+    .app-shell.is-sidebar-collapsed .workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card,
+    html.sidebar-memory-collapsed .app-shell .workspace > .workspace-header:first-child > .workspace-summary-card:first-child,
+    html.sidebar-memory-collapsed .app-shell .workspace > .workspace-mode-shell:first-child > .workspace-mode-title-card {
+        padding-left: var(--workspace-title-rail-collapsed-pad-inline-start);
+    }
 }
 
 @media (max-width: 767px) {
@@ -476,6 +512,31 @@
 
 .report-heading-row .report-heading {
     margin-bottom: 0;
+}
+
+.workspace-result-heading-stack,
+:is(.price-compare-workspace, .market-cap-compare-workspace) .workspace-mode-main .workspace-summary-card > .report-heading-row {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 2px;
+}
+
+.workspace-result-heading-stack > .report-heading,
+:is(.price-compare-workspace, .market-cap-compare-workspace) .workspace-mode-main .workspace-summary-card > .report-heading-row > .report-heading {
+    display: flex;
+    align-items: center;
+    min-height: var(--workspace-title-rail-control-height);
+}
+
+.workspace-result-date-range,
+.workspace-mode-main .price-compare-range {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--font-ui-sm);
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
 }
 
 .report-info {
@@ -2313,10 +2374,7 @@ footer {
     color: var(--muted);
 }
 .price-compare-range {
-    margin-inline-start: auto;
-    color: var(--muted);
-    font-size: var(--font-ui-sm);
-    font-variant-numeric: tabular-nums;
+    margin-inline-start: 0;
 }
 
 .price-subplots-surface {

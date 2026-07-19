@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.30.1`
+Documentation version: `v2.31.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -99,7 +99,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   Build weighted portfolios and inspect allocation plus aggregate return.
 - `Backtest`
   Run a single-ticker strategy backtest with configurable capital, interval, dividends, and strategy parameters.
-- `Grid Trading`
+- `Grid trading`
   Run the locked grid-trading strategy from a parallel workspace with dedicated center-line, spacing, and asymmetric buy/sell level controls while reusing Backtest market, capital, metrics, transactions, and chart components.
 - `Trade`
   Inspect the `Timing`, `Investment`, and `Live trading` views.

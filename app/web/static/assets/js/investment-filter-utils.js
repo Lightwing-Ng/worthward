@@ -1,24 +1,30 @@
 /**
  * Pure investment table filter helpers.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  */
 (function bootstrapInvestmentFilterUtils(globalScope) {
     "use strict";
 
-    const VALID_SIDE_FILTERS = new Set(["all", "none", "buy", "sell"]);
+    const VALID_SIDE_FILTERS = new Set(["buy", "sell"]);
     const VALID_SUMMARY_SCOPES = new Set(["all", "filtered", "both"]);
 
     const normalizeSideFilter = (value) => {
+        if (Array.isArray(value)) {
+            return Array.from(new Set(value
+                .map((item) => String(item || "").trim().toLowerCase())
+                .filter((item) => VALID_SIDE_FILTERS.has(item))));
+        }
         const normalized = String(value || "").trim().toLowerCase();
-        return VALID_SIDE_FILTERS.has(normalized) ? normalized : "all";
+        if (["all", "none"].includes(normalized)) return normalized;
+        return VALID_SIDE_FILTERS.has(normalized) ? [normalized] : "all";
     };
 
     const matchesSideFilter = (transaction, filterValue = "all") => {
         const normalizedFilter = normalizeSideFilter(filterValue);
         if (normalizedFilter === "all") return true;
         if (normalizedFilter === "none") return false;
-        return String(transaction?.type || "").trim().toLowerCase() === normalizedFilter;
+        return normalizedFilter.includes(String(transaction?.type || "").trim().toLowerCase());
     };
 
     const normalizeSummaryScope = (value) => {

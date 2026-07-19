@@ -1,4 +1,4 @@
-/* Code version: v0.7.1 */
+/* Code version: v0.8.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -51,6 +51,10 @@
 	--sidebar-toggle-center-offset: calc(var(--sidebar-toggle-top) + (var(--settings-round-icon-button-size) / 2));
 	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--page-edge-pad));
 	--workspace-title-safe-top: 60px;
+	--workspace-title-rail-control-height: var(--settings-round-icon-button-size);
+	--workspace-title-rail-pad-block-start: var(--page-edge-pad);
+	--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
+	--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
 	--sidebar-bottom-pad: 96px;
 	--sidebar-dock-hit-size: 56px;
 	--sidebar-dock-bottom-gap: 14px;
@@ -205,7 +209,7 @@
 	--workspace-article-heading-shadow: var(--frosted-glass-shadow);
 	--workspace-article-mobile-shadow: none;
 	--workspace-article-sidebar-morph-easing: var(--motion-inertial);
-	--workspace-mode-result-heading-lift: calc(var(--workspace-title-safe-top) - 4px);
+	--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + 8px);
 	--workspace-content-article-background: transparent;
 	--workspace-content-article-shadow: none;
 	--workspace-content-article-blur: none;

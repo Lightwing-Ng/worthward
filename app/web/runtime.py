@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.24.5
+Code version: v0.24.7
 """
 
 from __future__ import annotations
@@ -2661,7 +2661,7 @@ def build_web_runtime() -> WebRuntime:
                     raw_token("--workspace-article-heading-shadow", "var(--frosted-glass-shadow)"),
                     raw_token("--workspace-article-mobile-shadow", "none"),
                     raw_token("--workspace-article-sidebar-morph-easing", "var(--motion-inertial)"),
-                    raw_token("--workspace-mode-result-heading-lift", "calc(var(--workspace-title-safe-top) - 4px)"),
+                    raw_token("--workspace-mode-result-heading-lift", "calc(var(--workspace-title-rail-height) + 8px)"),
                     raw_token("--workspace-content-article-background", "transparent"),
                     raw_token("--workspace-content-article-shadow", "none"),
                     raw_token("--workspace-content-article-blur", "none"),
@@ -3949,7 +3949,7 @@ def build_web_runtime() -> WebRuntime:
         elif current_view == "market-caps":
             page_title = labels.get("dock_market_caps", "Market cap comparison")
             report_heading = labels.get("dock_market_caps", "Market cap comparison")
-            chart_heading = ""
+            chart_heading = "Market cap history"
         elif current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
@@ -3959,7 +3959,7 @@ def build_web_runtime() -> WebRuntime:
             report_heading = labels["dca_metrics"]
             chart_heading = labels["dca_chart"]
         elif current_view in BACKTEST_VIEWS:
-            page_title = labels.get("grid_trading_title", "Grid Trading") if current_view == "grid-trading" else labels["backtest_title"]
+            page_title = labels.get("grid_trading_title", "Grid trading") if current_view == "grid-trading" else labels["backtest_title"]
         elif current_view == "settings":
             page_title = labels["settings_title"]
             if settings_section == "network":

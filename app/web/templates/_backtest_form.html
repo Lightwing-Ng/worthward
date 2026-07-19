@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 {% from "_macros.html" import render_range_controls, render_segmented_control with context %}
 {% set selected_strategy_label = namespace(value=labels.backtest_strategy) %}
 {% for group in strategy_option_groups %}
@@ -94,7 +95,7 @@
             <span class="grid-trading-parameters-title">Grid parameters</span>
             <span class="grid-trading-parameters-copy">Configure the rolling center and asymmetric buy/sell grid levels.</span>
         </div>
-        <div class="grid-trading-parameters-panel" role="group" aria-label="Grid Trading parameters">
+        <div class="grid-trading-parameters-panel" role="group" aria-label="Grid trading parameters">
             {% include "_trade_strategy_params_panel.html" %}
         </div>
     </div>

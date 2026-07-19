@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 <nav class="settings-nav workspace-mode-nav" aria-label="Workspace sections">
     <a href="{{ dock_urls.tickers }}"
        class="settings-nav-item workspace-nav-item-compare{% if current_view == 'tickers' %} is-active{% endif %}"
@@ -39,6 +40,6 @@
        class="settings-nav-item workspace-nav-item-grid-trading{% if current_view == 'grid-trading' %} is-active{% endif %}"
        {% if current_view == 'grid-trading' %}aria-current="page"{% endif %}>
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-grid-trading"></span></span>
-        <span class="settings-nav-label">{{ labels.get('dock_grid_trading', 'Grid Trading') }}</span>
+        <span class="settings-nav-label">{{ labels.get('dock_grid_trading', 'Grid trading') }}</span>
     </a>
 </nav>

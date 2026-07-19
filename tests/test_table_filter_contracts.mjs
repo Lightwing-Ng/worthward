@@ -1,4 +1,4 @@
-/** Standard table and investment filter contract tests. Code version: v1.1.0. */
+/** Standard table and investment filter contract tests. Code version: v1.2.0. */
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -40,6 +40,14 @@ test("None excludes every transaction", () => {
         transactions.filter((row) => investmentFilters.matchesSideFilter(row, "none")),
         [],
     );
+});
+
+test("multiple checked sides include every selected transaction type", () => {
+    assert.deepEqual(
+        transactions.filter((row) => investmentFilters.matchesSideFilter(row, ["buy", "sell"])).map((row) => row.id),
+        [1, 2],
+    );
+    assert.deepEqual(investmentFilters.normalizeSideFilter(["sell", "sell", "unknown"]), ["sell"]);
 });
 
 test("a side filter can deterministically produce no results", () => {

@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -23,8 +24,9 @@
             {% endif %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <article class="report-card workspace-article-card workspace-summary-card">
-                    <div class="report-heading-row">
+                    <div class="report-heading-row workspace-result-heading-stack">
                         <p class="report-heading">{{ report_heading }}</p>
+                        {% if display_range %}<span class="portfolio-summary-range workspace-result-date-range">{{ display_range }}</span>{% endif %}
                     </div>
                 </article>
                 <article class="report-card workspace-content-card portfolio-summary-content-card">

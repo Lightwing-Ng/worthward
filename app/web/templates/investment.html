@@ -1,4 +1,4 @@
-{# Code version: v1.16.2 #}
+{# Code version: v1.17.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -59,7 +59,9 @@
                                     {"id": "investment_view_stock_details", "value": "stock_details", "label": "Stock details"},
                                     {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
                                 ],
-                                'id="investment_view_segmented" data-active="chart" data-option-count="4" data-segmented-pill="measured"'
+                                'id="investment_view_segmented" data-active="chart" data-option-count="4" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
+                                true,
+                                'investment-view-segmented-frame'
                             ) }}
                     {{ render_investment_share_actions(shell_id='investment_share_actions', show_mask=true) }}
                 </div>
@@ -700,5 +702,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.74.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.82.0') }}"></script>
 {% endblock %}

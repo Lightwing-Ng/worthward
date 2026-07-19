@@ -1,4 +1,4 @@
-{# Code version: v0.2.0 #}
+{# Code version: v0.3.0 #}
 
 {% macro render_notice_banner(
     title='',
@@ -80,7 +80,13 @@
 </article>
 {%- endmacro %}
 
-{% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='') -%}
+{% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='', overflow_frame=false, frame_class='') -%}
+{% if overflow_frame %}
+<div class="segmented-control-overflow-frame{% if frame_class %} {{ frame_class }}{% endif %}"
+     data-segmented-overflow-frame
+     data-overflow-start="0"
+     data-overflow-end="0">
+{% endif %}
 <div class="segmented-control {{ shell_class }}"{% if shell_attrs %} {{ shell_attrs|safe }}{% endif %}>
     {% for option in options %}
     <label class="segmented-control-option{% if option.class_name %} {{ option.class_name }}{% endif %}" for="{{ option.id }}"{% if option.hidden %} hidden{% endif %}{% if option.label_attrs %} {{ option.label_attrs|safe }}{% endif %}>
@@ -89,6 +95,9 @@
     </label>
     {% endfor %}
 </div>
+{% if overflow_frame %}
+</div>
+{% endif %}
 {%- endmacro %}
 
 {% macro render_date_picker_field(role, input_id, input_name, value, label, aria_label, feedback_id, disabled=false, hidden=false) -%}
