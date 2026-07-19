@@ -1,4 +1,4 @@
-{# Code version: v1.3.1 #}
+{# Code version: v1.4.1 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -49,24 +49,82 @@
 
         .live-trading-pin-overlay {
             isolation: isolate;
+            background: color-mix(in srgb, var(--bg) 76%, transparent);
+            backdrop-filter: blur(18px) saturate(1.08);
+            -webkit-backdrop-filter: blur(18px) saturate(1.08);
         }
 
         .live-trading-pin-dialog {
-            grid-template-rows: auto auto auto;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 0;
+            width: min(var(--live-trading-pin-dialog-width), calc(100vw - 32px));
+            padding: var(--live-trading-pin-dialog-padding);
+            border: 1px solid color-mix(in srgb, var(--theme-glass-highlight) 58%, var(--theme-glass-border));
+            border-radius: var(--live-trading-pin-dialog-radius);
+            background: color-mix(in srgb, var(--glass-surface-background-dense) 94%, transparent);
+            box-shadow:
+                0 34px 90px -44px color-mix(in srgb, var(--theme-shadow) 68%, transparent),
+                0 14px 34px -24px var(--theme-shadow-ambient),
+                inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 82%, transparent);
+            backdrop-filter: blur(32px) saturate(1.28);
+            -webkit-backdrop-filter: blur(32px) saturate(1.28);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+        }
+
+        .live-trading-pin-dialog::after {
+            background: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--color-white-adaptive) 14%, transparent) 0%,
+                transparent 58%
+            );
+        }
+
+        .live-trading-pin-heading {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: var(--live-trading-pin-icon-size);
+            padding-right: calc(var(--workspace-modal-close-size) + 10px);
         }
 
         .live-trading-pin-icon {
+            flex: 0 0 var(--live-trading-pin-icon-size);
+            width: var(--live-trading-pin-icon-size);
+            height: var(--live-trading-pin-icon-size);
             background-color: var(--accent-fill);
             mask: url("/static/images/key.circle.fill.svg") center / contain no-repeat;
             -webkit-mask: url("/static/images/key.circle.fill.svg") center / contain no-repeat;
         }
 
+        .live-trading-pin-title {
+            margin: 0;
+            color: var(--text);
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.015em;
+            line-height: 1.2;
+        }
+
+        .live-trading-pin-copy {
+            position: relative;
+            z-index: 1;
+            max-width: 310px;
+            margin: 10px 0 0 calc(var(--live-trading-pin-icon-size) + 12px);
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.45;
+            text-align: left;
+        }
+
         .live-trading-pin-form {
-            grid-column: 1 / -1;
-            grid-row: 3;
+            position: relative;
+            z-index: 1;
             display: grid;
-            gap: 14px;
-            margin-top: 14px;
+            gap: 16px;
+            margin-top: 22px;
         }
 
         .live-trading-pin-field {
@@ -75,9 +133,9 @@
             align-items: center;
             justify-content: center;
             gap: 6px;
-            width: max-content;
+            width: fit-content;
             max-width: 100%;
-            min-height: 46px;
+            min-height: var(--live-trading-pin-slot-size);
             margin: 0 auto;
             cursor: text;
         }
@@ -95,30 +153,43 @@
         }
 
         .live-trading-pin-slot {
-            display: grid;
-            place-items: center;
-            width: 30px;
-            height: 42px;
-            border-bottom: 1px solid color-mix(in srgb, var(--theme-text) 24%, transparent);
-            color: var(--muted);
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-            font-size: 23px;
-            font-weight: 400;
-            line-height: 1;
+            position: relative;
+            display: block;
+            width: var(--live-trading-pin-slot-size);
+            height: var(--live-trading-pin-slot-size);
             user-select: none;
         }
 
         .live-trading-pin-slot:nth-of-type(4) {
-            margin-left: 12px;
+            margin-inline-start: var(--live-trading-pin-group-gap);
         }
 
-        .live-trading-pin-slot.is-filled {
-            border-bottom-color: var(--accent);
-            color: var(--text);
+        .live-trading-pin-slot::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: var(--live-trading-pin-slot-line-width);
+            height: 1px;
+            border-radius: var(--radius-pill);
+            background: color-mix(in srgb, var(--theme-text) 28%, transparent);
+            transform: translate(-50%, -50%);
+            transition:
+                width 160ms var(--motion-standard),
+                height 160ms var(--motion-standard),
+                background 160ms var(--motion-standard),
+                border-radius 160ms var(--motion-standard);
         }
 
-        .live-trading-pin-field:focus-within .live-trading-pin-slot {
-            border-bottom-color: var(--accent);
+        .live-trading-pin-slot.is-filled::before {
+            width: var(--live-trading-pin-slot-dot-size);
+            height: var(--live-trading-pin-slot-dot-size);
+            border-radius: 50%;
+            background: var(--text);
+        }
+
+        .live-trading-pin-field:focus-within .live-trading-pin-slot:not(.is-filled)::before {
+            background: color-mix(in srgb, var(--accent) 58%, transparent);
         }
 
         .live-trading-pin-error {
@@ -132,59 +203,50 @@
         .live-trading-pin-actions {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-
-        .live-trading-pin-back,
-        .live-trading-pin-button {
-            min-height: 32px;
-            border-radius: var(--radius-pill);
-            font: inherit;
-            font-size: var(--font-form-control);
-            line-height: 1;
-        }
-
-        .live-trading-pin-back {
-            padding: 0 12px;
-            color: var(--muted);
-            text-decoration: none;
-        }
-
-        .live-trading-pin-back:hover,
-        .live-trading-pin-back:focus-visible {
-            color: var(--text);
+            justify-content: flex-end;
         }
 
         .live-trading-pin-button {
-            min-width: 86px;
-            padding: 0 18px;
+            width: auto;
+            min-width: 0;
+            min-height: var(--live-trading-pin-button-height);
+            padding: 0 var(--live-trading-pin-button-padding-inline);
             border: 0;
+            border-radius: var(--radius-pill);
             background: var(--accent-fill);
             color: var(--accent-contrast);
+            box-shadow: 0 8px 18px -12px var(--accent-shadow-strong), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent);
+            font: 600 14px / 1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            line-height: 1;
             cursor: pointer;
         }
 
         .live-trading-pin-button:disabled {
             background: color-mix(in srgb, var(--muted) 28%, transparent);
             color: color-mix(in srgb, var(--accent-contrast) 72%, transparent);
+            box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 26%, transparent);
             cursor: default;
         }
 
         .live-trading-pin-button:focus-visible,
-        .live-trading-pin-back:focus-visible,
         .live-trading-pin-native-input:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 3px;
         }
 
         @media (max-width: 420px) {
-            .live-trading-pin-slot {
-                width: 27px;
+            .live-trading-pin-dialog {
+                width: calc(100vw - 24px);
+                padding: 20px;
             }
 
-            .live-trading-pin-slot:nth-of-type(4) {
-                margin-left: 8px;
+            .live-trading-pin-slot {
+                width: 26px;
+                height: 26px;
+            }
+
+            .live-trading-pin-field {
+                gap: 4px;
             }
         }
     </style>
@@ -195,9 +257,11 @@
             <a class="dismiss-button workspace-modal-close" href="/trade/investment" aria-label="Back to investment">
                 <span class="icon icon-dismiss-control" aria-hidden="true"></span>
             </a>
-            <span class="icon workspace-modal-icon live-trading-pin-icon" aria-hidden="true"></span>
-            <h1 class="workspace-modal-title" id="live_trading_pin_title">Unlock Live trading</h1>
-            <p class="workspace-modal-copy" id="live_trading_pin_copy">Enter the 6-digit PIN to open account data and live order controls.</p>
+            <header class="live-trading-pin-heading">
+                <span class="icon live-trading-pin-icon" aria-hidden="true"></span>
+                <h1 class="live-trading-pin-title" id="live_trading_pin_title">Unlock Live trading</h1>
+            </header>
+            <p class="live-trading-pin-copy" id="live_trading_pin_copy">Enter the 6-digit PIN to open account data and live order controls.</p>
             <form class="live-trading-pin-form" method="post" action="/trade/live-trading/unlock" id="live_trading_pin_form">
                 <label class="live-trading-pin-field" for="live_trading_pin" aria-label="6-digit PIN">
                     <input class="live-trading-pin-native-input"
@@ -215,7 +279,6 @@
                 </label>
                 {% if error_message %}<p class="live-trading-pin-error" role="alert">{{ error_message }}</p>{% endif %}
                 <div class="live-trading-pin-actions">
-                    <a class="live-trading-pin-back" href="/trade/investment">Back</a>
                     <button class="live-trading-pin-button" id="live_trading_pin_submit" type="submit" disabled>Unlock</button>
                 </div>
             </form>
@@ -232,7 +295,6 @@
             input.value = input.value.replace(/\D/g, "").slice(0, 6);
             slots.forEach((slot, index) => {
                 const filled = index < input.value.length;
-                slot.textContent = filled ? "•" : "";
                 slot.classList.toggle("is-filled", filled);
             });
             submit.disabled = input.value.length !== 6;

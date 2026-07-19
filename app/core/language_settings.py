@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -37,14 +37,22 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Backtest", "zh_hant_hk": "回測", "zh_hans_cn": "回测"},
     {"en": "Broker access", "zh_hant_hk": "券商存取", "zh_hans_cn": "券商访问"},
     {"en": "Cash equivalents", "zh_hant_hk": "現金等價物", "zh_hans_cn": "现金等价物"},
+    {"en": "Change", "zh_hant_hk": "變更", "zh_hans_cn": "变更"},
     {"en": "Choose the date styles used across long-form and compact displays throughout the workspace.", "zh_hant_hk": "選擇工作區長格式與緊湊顯示使用的日期樣式。", "zh_hans_cn": "选择工作区长格式与紧凑显示使用的日期样式。"},
     {"en": "Choose whether the interface follows your system appearance or stays locked to Light or Dark mode.", "zh_hant_hk": "選擇介面跟隨系統外觀，或固定為淺色或深色模式。", "zh_hans_cn": "选择界面跟随系统外观，或固定为浅色或深色模式。"},
     {"en": "Clear caches", "zh_hant_hk": "清除快取", "zh_hans_cn": "清除缓存"},
     {"en": "Compact", "zh_hant_hk": "短格式", "zh_hans_cn": "短格式"},
+    {"en": "Compact date format", "zh_hant_hk": "短格式日期格式", "zh_hans_cn": "短格式日期格式"},
     {"en": "Compute your portfolio", "zh_hant_hk": "計算你的投資組合", "zh_hans_cn": "计算你的投资组合"},
+    {"en": "Current", "zh_hant_hk": "目前", "zh_hans_cn": "当前"},
+    {"en": "Day is always zero-padded, such as 08 Dec 2026.", "zh_hant_hk": "日期固定以補零顯示，例如 08 Dec 2026。", "zh_hans_cn": "日期固定以补零显示，例如 08 Dec 2026。"},
     {"en": "Date format", "zh_hant_hk": "日期格式", "zh_hans_cn": "日期格式"},
     {"en": "Dark", "zh_hant_hk": "深色", "zh_hans_cn": "深色"},
     {"en": "Dollar-cost averaging", "zh_hant_hk": "定期定額", "zh_hans_cn": "定投"},
+    {"en": "Download i18n mapping", "zh_hant_hk": "下載 i18n 對照表", "zh_hans_cn": "下载 i18n 映射表"},
+    {"en": "East Asian full numeric format, such as 2026年06月01日.", "zh_hant_hk": "東亞完整數字格式，例如 2026年06月01日。", "zh_hans_cn": "东亚完整数字格式，例如 2026年06月01日。"},
+    {"en": "East Asian ordering with zero-padded day, such as 2026 Dec 08.", "zh_hant_hk": "東亞日期排序並以補零顯示日期，例如 2026 Dec 08。", "zh_hans_cn": "东亚日期排序并以补零显示日期，例如 2026 Dec 08。"},
+    {"en": "East Asian ordering without day padding, such as 2026 Dec 8.", "zh_hant_hk": "東亞日期排序且日期不補零，例如 2026 Dec 8。", "zh_hans_cn": "东亚日期排序且日期不补零，例如 2026 Dec 8。"},
     {"en": "Email (SMTP)", "zh_hant_hk": "電郵（SMTP）", "zh_hans_cn": "电子邮件（SMTP）"},
     {"en": "English", "zh_hant_hk": "English", "zh_hans_cn": "English"},
     {"en": "Export image", "zh_hant_hk": "匯出圖片", "zh_hans_cn": "导出图片"},
@@ -53,14 +61,24 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Force the interface to stay in the bright palette, regardless of the system setting.", "zh_hant_hk": "無論系統設定如何，都讓介面保持明亮配色。", "zh_hans_cn": "无论系统设置如何，都让界面保持明亮配色。"},
     {"en": "Force the interface to stay in the dark palette for lower glare and better nighttime use.", "zh_hant_hk": "讓介面保持深色配色，以降低眩光並改善夜間使用。", "zh_hans_cn": "让界面保持深色配色，以降低眩光并改善夜间使用。"},
     {"en": "Full", "zh_hant_hk": "完整", "zh_hans_cn": "完整"},
+    {"en": "Full date format", "zh_hant_hk": "完整日期格式", "zh_hans_cn": "完整日期格式"},
+    {"en": "History", "zh_hant_hk": "歷史", "zh_hans_cn": "历史"},
     {"en": "General", "zh_hant_hk": "一般", "zh_hans_cn": "通用"},
     {"en": "Language", "zh_hant_hk": "語言", "zh_hans_cn": "语言"},
+    {"en": "Language mapping file actions", "zh_hant_hk": "語言對照表檔案操作", "zh_hans_cn": "语言映射文件操作"},
+    {"en": "Language mapping history", "zh_hant_hk": "語言對照表歷史記錄", "zh_hans_cn": "语言映射历史记录"},
+    {"en": "Language mapping pages", "zh_hant_hk": "語言對照表頁面", "zh_hans_cn": "语言映射页面"},
     {"en": "Light", "zh_hant_hk": "淺色", "zh_hans_cn": "浅色"},
     {"en": "Local market store", "zh_hant_hk": "本機市場資料庫", "zh_hans_cn": "本地市场数据库"},
     {"en": "Material tokens", "zh_hant_hk": "材質權杖", "zh_hans_cn": "材质令牌"},
     {"en": "Trade", "zh_hant_hk": "交易", "zh_hans_cn": "交易"},
     {"en": "Network self-check", "zh_hant_hk": "網絡自檢", "zh_hans_cn": "网络自检"},
+    {"en": "No.", "zh_hant_hk": "序號", "zh_hans_cn": "序号"},
+    {"en": "No language mapping changes recorded yet.", "zh_hant_hk": "尚未記錄任何語言對照表變更。", "zh_hans_cn": "尚未记录任何语言映射变更。"},
     {"en": "Save translations", "zh_hant_hk": "儲存翻譯", "zh_hans_cn": "保存翻译"},
+    {"en": "Saving...", "zh_hant_hk": "儲存中…", "zh_hans_cn": "保存中…"},
+    {"en": "Saving translations...", "zh_hant_hk": "正在儲存翻譯…", "zh_hans_cn": "正在保存翻译…"},
+    {"en": "Single-digit day without leading zero, such as 8 Dec 2026.", "zh_hant_hk": "日期不補零，例如 8 Dec 2026。", "zh_hans_cn": "日期不补零，例如 8 Dec 2026。"},
     {"en": "Settings", "zh_hant_hk": "設定", "zh_hans_cn": "设置"},
     {"en": "Strategies", "zh_hant_hk": "策略", "zh_hans_cn": "策略"},
     {"en": "Style tokens", "zh_hant_hk": "樣式權杖", "zh_hans_cn": "样式令牌"},
@@ -68,8 +86,14 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "Switch to Dark mode", "zh_hant_hk": "切換至深色模式", "zh_hans_cn": "切换至深色模式"},
     {"en": "Switch to Light mode", "zh_hant_hk": "切換至淺色模式", "zh_hans_cn": "切换至浅色模式"},
     {"en": "System", "zh_hant_hk": "系統", "zh_hans_cn": "系统"},
+    {"en": "Timestamp", "zh_hant_hk": "時間戳記", "zh_hans_cn": "时间戳"},
     {"en": "繁體中文（香港）", "zh_hant_hk": "繁體中文（香港）", "zh_hans_cn": "繁體中文（香港）"},
     {"en": "简体中文（中国大陆）", "zh_hant_hk": "简体中文（中国大陆）", "zh_hans_cn": "简体中文（中国大陆）"},
+    {"en": "Translations saved.", "zh_hant_hk": "翻譯已儲存。", "zh_hans_cn": "翻译已保存。"},
+    {"en": "Unable to save translations right now.", "zh_hant_hk": "目前無法儲存翻譯。", "zh_hans_cn": "暂时无法保存翻译。"},
+    {"en": "Upload i18n mapping", "zh_hant_hk": "上傳 i18n 對照表", "zh_hans_cn": "上传 i18n 映射表"},
+    {"en": "Year-first numeric format, such as 2026/12/08.", "zh_hant_hk": "年份在前的數字格式，例如 2026/12/08。", "zh_hans_cn": "年份在前的数字格式，例如 2026/12/08。"},
+    {"en": "European day-first numeric format, such as 08/12/2026.", "zh_hant_hk": "歐洲日月年數字格式，例如 08/12/2026。", "zh_hans_cn": "欧洲日月年数字格式，例如 08/12/2026。"},
 )
 
 

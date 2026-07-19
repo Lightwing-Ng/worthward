@@ -1,7 +1,7 @@
 """
 Tests for the direct Yahoo Chart daily-history transport.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -45,6 +45,14 @@ class YahooChartTests(unittest.TestCase):
                                 "amount": 0.25,
                             },
                         },
+                        "splits": {
+                            "1775482200": {
+                                "date": 1775482200,
+                                "numerator": 10.0,
+                                "denominator": 1.0,
+                                "splitRatio": "10:1",
+                            },
+                        },
                     },
                 }],
             },
@@ -62,9 +70,10 @@ class YahooChartTests(unittest.TestCase):
         )
         self.assertEqual(
             frame.columns.tolist(),
-            ["Open", "High", "Low", "Close", "Adj Close", "Dividends"],
+            ["Open", "High", "Low", "Close", "Adj Close", "Dividends", "Stock Splits"],
         )
         self.assertEqual(frame["Dividends"].tolist(), [0.0, 0.25])
+        self.assertEqual(frame["Stock Splits"].tolist(), [10.0, 0.0])
         request_url = urlopen_mock.call_args.args[0].full_url
         query = parse_qs(urlparse(request_url).query)
         self.assertEqual(query["period1"], ["0"])

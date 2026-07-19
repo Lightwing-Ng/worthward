@@ -1,6 +1,6 @@
-{# Code version: v1.10.0 #}
+{# Code version: v1.16.2 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
 
 {% block sidebar_content %}
@@ -34,22 +34,17 @@
 
         <article class="report-card workspace-content-card trade-performance-card investment-report-card">
 
-            <div id="investment_import_feedback"
-                 class="notice notice-floating notice-floating-banner notice-floating-banner-global investment-import-feedback-banner"
-                 data-dismissible-notice
-                 role="status"
-                 aria-live="polite"
-                 aria-atomic="true"
-                 hidden>
-                <button type="button" class="dismiss-button notice-close" aria-label="Dismiss import feedback">
-                    <span class="icon icon-dismiss-control" aria-hidden="true"></span>
-                </button>
-                <span id="investment_import_feedback_icon"
-                      class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
-                      aria-hidden="true"></span>
-                <span class="workspace-modal-title notice-floating-banner-title"
-                      id="investment_import_feedback_message"></span>
-            </div>
+            {{ render_notice_banner(
+                icon_class="notice-floating-banner-status-icon icon-modal-dialog-banner-default",
+                banner_class="notice-floating-banner-global investment-import-feedback-banner",
+                close_label="Dismiss import feedback",
+                element_id="investment_import_feedback",
+                icon_id="investment_import_feedback_icon",
+                message_id="investment_import_feedback_message",
+                role="status",
+                is_hidden=true,
+                message_container=true
+            ) }}
             <div class="investment-surface-stack investment-view-surface" id="investment_view_surface"
                  data-active-view="chart">
 
@@ -665,7 +660,7 @@
                         <th>Time</th>
                         <th aria-label="Side">Type</th>
                         <th>Description</th>
-                        <th>Currency</th>
+                        <th aria-label="Currency">Currency</th>
                         <th>Amount</th>
                         <th>Commission</th>
                         <th>Market value</th>
@@ -705,5 +700,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.66.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.74.1') }}"></script>
 {% endblock %}

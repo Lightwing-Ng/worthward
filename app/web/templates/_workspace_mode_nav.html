@@ -5,17 +5,17 @@
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-compare"></span></span>
         <span class="settings-nav-label">{{ labels.dock_tickers }}</span>
     </a>
-    <a href="{{ dock_urls['market-caps'] }}"
-       class="settings-nav-item workspace-nav-item-market-caps{% if current_view == 'market-caps' %} is-active{% endif %}"
-       {% if current_view == 'market-caps' %}aria-current="page"{% endif %}>
-        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-compare"></span></span>
-        <span class="settings-nav-label">{{ labels.get('dock_market_caps', 'Market cap comparison') }}</span>
-    </a>
     <a href="{{ dock_urls.prices }}"
        class="settings-nav-item workspace-nav-item-prices{% if current_view == 'prices' %} is-active{% endif %}"
        {% if current_view == 'prices' %}aria-current="page"{% endif %}>
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-compare"></span></span>
         <span class="settings-nav-label">{{ labels.dock_prices }}</span>
+    </a>
+    <a href="{{ dock_urls['market-caps'] }}"
+       class="settings-nav-item workspace-nav-item-market-caps{% if current_view == 'market-caps' %} is-active{% endif %}"
+       {% if current_view == 'market-caps' %}aria-current="page"{% endif %}>
+        <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-dock-compare"></span></span>
+        <span class="settings-nav-label">{{ labels.get('dock_market_caps', 'Market cap comparison') }}</span>
     </a>
     <a href="{{ dock_urls.portfolio }}"
        class="settings-nav-item workspace-nav-item-portfolio{% if current_view == 'portfolio' %} is-active{% endif %}"

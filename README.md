@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.30.0`
+Documentation version: `v2.30.1`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -92,7 +92,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Return comparison`
   Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
 - `Market cap comparison`
-  Compare historical market capitalization using cached prices and point-in-time shares, with a Longbridge current-value cross-check and yfinance fallback.
+  Compare historical market capitalization using cached prices and point-in-time yfinance shares, with SEC company-facts and Form N-PORT fallbacks. Longbridge is optional and can cross-check or replace only the latest trading-day point.
 - `Price performance`
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`

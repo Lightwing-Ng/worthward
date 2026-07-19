@@ -1,12 +1,12 @@
 /**
  * Pure investment table filter helpers.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
  */
 (function bootstrapInvestmentFilterUtils(globalScope) {
     "use strict";
 
-    const VALID_SIDE_FILTERS = new Set(["all", "buy", "sell"]);
+    const VALID_SIDE_FILTERS = new Set(["all", "none", "buy", "sell"]);
     const VALID_SUMMARY_SCOPES = new Set(["all", "filtered", "both"]);
 
     const normalizeSideFilter = (value) => {
@@ -17,6 +17,7 @@
     const matchesSideFilter = (transaction, filterValue = "all") => {
         const normalizedFilter = normalizeSideFilter(filterValue);
         if (normalizedFilter === "all") return true;
+        if (normalizedFilter === "none") return false;
         return String(transaction?.type || "").trim().toLowerCase() === normalizedFilter;
     };
 

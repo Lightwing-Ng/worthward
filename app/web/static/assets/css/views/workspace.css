@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.11.0 */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
     overflow: visible;
@@ -47,7 +47,7 @@
     --workspace-article-heading-min-height: 44px;
     --workspace-article-heading-gap: 10px;
     --workspace-article-heading-background: var(--frosted-glass-background);
-    --workspace-article-heading-border: var(--frosted-glass-border);
+    --workspace-article-heading-border: none;
     --workspace-article-heading-shadow: var(--frosted-glass-shadow);
     --workspace-article-mobile-shadow: none;
     --workspace-article-sidebar-morph-easing: var(--motion-inertial);
@@ -384,8 +384,8 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 20px;
-    height: 20px;
+    width: var(--portfolio-donut-logo-size, 20px);
+    height: var(--portfolio-donut-logo-size, 20px);
     object-fit: contain;
     object-position: center;
     transform: translate(-50%, -50%);
@@ -803,6 +803,40 @@
 
 .suggestions.is-open {
     display: block;
+}
+
+.suggestion-loading {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px;
+    color: var(--muted);
+    font-size: var(--font-tooltip);
+    line-height: 1.2;
+}
+
+.suggestion-loading-spinner {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    border: 2px solid color-mix(in srgb, var(--theme-muted) 34%, transparent);
+    border-right-color: var(--theme-accent-primary);
+    border-radius: 50%;
+    animation: ticker-suggestion-loading 700ms linear infinite;
+}
+
+@keyframes ticker-suggestion-loading {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .suggestion-loading-spinner {
+        animation: none;
+    }
 }
 
 .suggestion-group + .suggestion-group {
@@ -1448,7 +1482,7 @@
     grid-template-columns: var(--workspace-modal-icon-size) minmax(0, 1fr);
     column-gap: var(--workspace-modal-column-gap);
     row-gap: 0;
-    align-items: center !important;
+    align-items: start !important;
     padding: var(--workspace-modal-pad-block) calc(var(--workspace-modal-pad-inline) + var(--workspace-modal-title-margin-end)) var(--workspace-modal-pad-block) var(--workspace-modal-pad-inline);
     border-radius: var(--workspace-modal-radius);
     overflow: visible;
@@ -1481,19 +1515,68 @@
 .notice-floating-banner-icon {
     grid-column: 1;
     grid-row: 1;
+    align-self: start;
+    margin-top: 2px;
     background-color: var(--accent-fill);
 }
 
-.notice-floating-banner-title {
+.notice-floating-banner-content {
     grid-column: 2;
     grid-row: 1;
+    min-width: 0;
     margin: 0;
     margin-right: 0;
+    align-self: start;
     font-weight: var(--font-weight-regular);
 }
 
-.notice-floating-banner .workspace-modal-title {
+.notice-floating-banner-heading {
+    margin: 0;
+    color: var(--text);
+    font-size: var(--font-ui-lg);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+    text-align: left;
+}
+
+.notice-floating-banner-list {
+    margin: 8px 0 0;
+    padding-inline-start: 1.35rem;
+    color: inherit;
+    font-size: var(--font-form-label);
     font-weight: var(--font-weight-regular);
+    line-height: 1.45;
+    list-style-position: outside;
+}
+
+.notice-floating-banner-copy {
+    margin: 8px 0 0;
+    color: inherit;
+    font-size: var(--font-form-label);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.45;
+}
+
+.notice-floating-banner-list li {
+    padding-inline-start: 0.18rem;
+}
+
+.notice-floating-banner-list li + li {
+    margin-top: 0.28rem;
+}
+
+.notice-floating-banner-list strong {
+    font-weight: var(--font-weight-bold);
+}
+
+.notice-floating-banner-list u {
+    text-underline-offset: 0.12em;
+    text-decoration-thickness: 0.08em;
+}
+
+.notice-floating-banner-emphasis-danger {
+    color: var(--theme-error-strong);
+    font-weight: var(--font-weight-bold);
 }
 
 .notice-floating-banner .notice-close {
@@ -1532,6 +1615,18 @@
 
 .notice-close {
     flex: 0 0 auto;
+}
+
+.notice-floating-banner-icon-success {
+    background-color: var(--theme-accent-positive);
+    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
+}
+
+.notice-floating-banner-icon-error {
+    background-color: var(--theme-error);
+    mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
+    -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
 }
 
 @keyframes noticeFloatingBannerDropIn {
@@ -2274,7 +2369,7 @@ footer {
     --surface-resizer-handle-position: 50%;
     position: absolute;
     inset-block: 0;
-    inset-inline-end: max(12px, env(safe-area-inset-right, 0px));
+    inset-inline-end: max(-20px, calc(env(safe-area-inset-right, 0px) - 20px));
     width: 48px;
     min-width: 48px;
     height: 100%;
@@ -2285,12 +2380,22 @@ footer {
 .price-subplot-order-handle::after {
     width: 12px;
     height: 48px;
+    transition:
+        opacity 160ms var(--motion-standard),
+        transform 220ms var(--motion-emphasized),
+        background 160ms var(--motion-standard),
+        border-color 160ms var(--motion-standard),
+        box-shadow 220ms var(--motion-standard);
 }
 
 .price-subplot.is-order-handle-visible .price-subplot-order-handle::after,
 .price-subplot:focus-within .price-subplot-order-handle::after,
 .price-subplot.is-order-dragging .price-subplot-order-handle::after {
     opacity: 1;
+    background: var(--frosted-glass-background-hover);
+    border-color: var(--accent-border-medium);
+    box-shadow: var(--frosted-glass-shadow-hover);
+    transform: translate(-50%, -50%) translateY(-1px) scale(1.04);
 }
 
 .price-subplot-order-handle:active,
@@ -2369,9 +2474,30 @@ body.is-price-subplot-reordering {
     z-index: var(--layer-chart-tooltip);
 }
 
+@media (min-width: 768px) {
+    .workspace-mode-shell > .workspace-mode-layout > .workspace-mode-main {
+        height: calc(100% + var(--workspace-mode-result-heading-lift));
+        transform: translateY(calc(-1 * var(--workspace-mode-result-heading-lift)));
+    }
+}
+
 @media (max-width: 767px) {
     .price-subplots-surface {
         overflow: visible;
+    }
+
+    .price-compare-workspace .workspace-mobile-summary-shell {
+        gap: 0;
+    }
+
+    .price-compare-workspace .workspace-mobile-summary-shell > .workspace-summary-card {
+        background: var(--theme-panel);
+        border: var(--workspace-article-heading-border);
+        border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    }
+
+    .price-compare-workspace .workspace-mobile-summary-shell > .price-subplots-surface {
+        border-radius: 0 0 var(--radius-panel) var(--radius-panel);
     }
 
     .price-subplot-grid {

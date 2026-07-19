@@ -1,4 +1,4 @@
-/* Code version: v0.8.0 */
+/* Code version: v0.11.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -614,6 +614,11 @@
     width: 80%;
     min-height: 168px;
     border-radius: var(--radius-panel);
+    background: var(--frosted-glass-background);
+    border: var(--frosted-glass-border);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
 }
 
 .style-token-demo > .settings-round-icon-button {
@@ -1672,47 +1677,17 @@ div.style-token-modal-demo::-webkit-scrollbar,
 }
 
 .settings-language-tabs {
-    --language-tab-index: 0;
-    position: relative;
-    isolation: isolate;
     grid-column: 2;
     justify-self: center;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(96px, 1fr));
     width: min(100%, 260px);
-    min-height: 36px;
-    padding: 3px;
-    border-radius: var(--radius-pill);
-    background: var(--glass-chip-background);
-    box-shadow: inset 0 0 0 1px var(--theme-glass-border);
-}
-
-.settings-language-tabs::before {
-    content: "";
-    position: absolute;
-    inset-block: 3px;
-    left: 3px;
-    width: calc((100% - 6px) / 2);
-    border-radius: var(--radius-pill);
-    background: var(--accent-fill);
-    box-shadow: 0 8px 18px var(--accent-shadow-strong);
-    transform: translateX(calc(var(--language-tab-index) * 100%));
-    transition: transform 260ms var(--motion-standard);
-    z-index: var(--layer-decorative-backdrop);
 }
 
 .settings-language-tab {
-    position: relative;
-    z-index: var(--layer-surface-content);
-    min-height: 30px;
-    padding: 0 14px;
+    min-height: var(--mode-switch-label-min-height);
+    padding: 0;
     border: 0;
-    border-radius: var(--radius-pill);
     background: transparent;
-    color: var(--theme-muted);
     box-shadow: none;
-    font-size: var(--font-table-body);
-    font-weight: var(--font-weight-bold);
 }
 
 .settings-language-tab:hover,
@@ -1722,8 +1697,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
     box-shadow: none;
 }
 
-.settings-language-tab.is-active {
-    color: var(--accent-contrast);
+.settings-language-tab.is-active > span {
+    color: var(--color-white-adaptive);
+}
+
+.settings-language-tab:focus-visible > span {
+    outline: 2px solid var(--accent-focus-ring);
+    outline-offset: -2px;
 }
 
 .settings-language-file-actions {
@@ -2681,6 +2661,28 @@ div.style-token-modal-demo::-webkit-scrollbar,
     opacity: 1;
 }
 
+.settings-email-smtp-form .settings-form-control {
+    border: var(--control-liquid-border);
+    border-radius: var(--radius-pill);
+    background: var(--control-liquid-background);
+    box-shadow: var(--control-liquid-shadow);
+    backdrop-filter: var(--control-liquid-blur);
+    -webkit-backdrop-filter: var(--control-liquid-blur);
+    transition:
+        background 220ms var(--motion-standard),
+        box-shadow 220ms var(--motion-standard),
+        border-color 220ms var(--motion-standard);
+}
+
+.settings-email-smtp-form .settings-form-control:hover,
+.settings-email-smtp-form .settings-form-control:focus,
+.settings-email-smtp-form .settings-form-control:focus-visible {
+    outline: none;
+    border-color: var(--accent-border-soft);
+    background: var(--control-liquid-background-hover);
+    box-shadow: var(--control-liquid-shadow-focus);
+}
+
 .settings-form-control-numeric {
     appearance: textfield;
     -moz-appearance: textfield;
@@ -3100,8 +3102,8 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .cash-equivalents-card .cash-equivalent-row .ticker-remove {
     margin-top: 0;
-    opacity: 1 !important;
-    pointer-events: auto;
+    opacity: 0;
+    pointer-events: none;
     background: var(--theme-muted-translucent);
     color: var(--accent-contrast);
     transition:
@@ -3109,6 +3111,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
         color 180ms var(--motion-standard),
         box-shadow 180ms var(--motion-standard),
         transform 180ms var(--motion-standard);
+}
+
+.cash-equivalents-card .cash-equivalent-row:hover .ticker-remove,
+.cash-equivalents-card .cash-equivalent-row:focus-within .ticker-remove,
+.cash-equivalents-card .cash-equivalent-row .ticker-remove:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .cash-equivalents-card .cash-equivalent-row .ticker-remove .icon-remove-muted {

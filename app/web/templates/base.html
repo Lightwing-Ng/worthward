@@ -1,6 +1,7 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.5.4 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
+{% from "_macros.html" import render_notice_banner with context %}
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -132,7 +133,7 @@
     try {
         const storedSidebarState = window.sessionStorage.getItem("antigravity:sidebar-open");
         const shouldStartCollapsed = storedSidebarState === "false"
-            || (storedSidebarState === null && window.matchMedia("(max-width: 820px)").matches);
+            || (storedSidebarState === null && window.matchMedia("(max-width: 600px)").matches);
         if (shouldStartCollapsed) {
             document.documentElement.classList.add("sidebar-memory-collapsed");
         }
@@ -141,22 +142,26 @@
 </script>
 <main class="page">
     {% if error %}
-    <div class="error notice-floating notice-floating-banner notice-floating-banner-global" data-dismissible-notice>
-        <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
-        <span class="workspace-modal-title notice-floating-banner-title">{{ error }}</span>
-        <button type="button" class="dismiss-button notice-close" aria-label="Close error notice">
-            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
-        </button>
-    </div>
+    {% call render_notice_banner(
+        title="Error",
+        icon_class=floating_banner_icon_class or 'icon-modal-dialog-banner-default',
+        variant="error",
+        banner_class="notice-floating-banner-global",
+        close_label="Close error notice",
+        numbered=false
+    ) %}
+        {{ error }}
+    {% endcall %}
     {% endif %}
     {% if notice %}
-    <div class="notice notice-floating notice-floating-banner notice-floating-banner-global" data-dismissible-notice>
-        <span class="icon {{ floating_banner_icon_class or 'icon-modal-dialog-banner-default' }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
-        <span class="workspace-modal-title notice-floating-banner-title">{{ notice }}</span>
-        <button type="button" class="dismiss-button notice-close" aria-label="Close notice">
-            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
-        </button>
-    </div>
+    {% call render_notice_banner(
+        title="Notice",
+        icon_class=floating_banner_icon_class or 'icon-modal-dialog-banner-default',
+        banner_class="notice-floating-banner-global",
+        numbered=false
+    ) %}
+        {{ notice }}
+    {% endcall %}
     {% endif %}
     <div class="app-shell is-sidebar-open">
         <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="Toggle sidebar" aria-expanded="true">
@@ -251,7 +256,7 @@
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.0.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.1.0') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.3.0') }}"></script>
 {% endif %}

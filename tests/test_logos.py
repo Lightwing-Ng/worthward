@@ -1,12 +1,13 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from app.infrastructure.storage import (
     history_store_path_for,
     intraday_history_store_path_for,
     logo_store_path_for,
+    resolve_logo_store_path,
 )
 from app.services.logos import (
     _load_yfinance_ticker_info,
@@ -150,6 +152,28 @@ class LogoServiceTests(unittest.TestCase):
                 info_mock.assert_not_called()
                 remote_access_mock.assert_not_called()
 
+    def test_known_amd_name_replaces_bare_symbol_profile_fallback(self) -> None:
+        cached_record = {
+            "ticker": "AMD",
+            "company_name": "AMD",
+            "website": "https://www.amd.com",
+            "updated_at": "2026-07-17T00:00:00+00:00",
+        }
+        with patch("app.services.logos.load_profile_record", return_value=cached_record), \
+                patch(
+                    "app.services.logos.resolve_logo_url_with_fallback",
+                    return_value="/market-store/logos/AMD.svg",
+                ), \
+                patch("app.services.logos._load_yfinance_ticker_info") as info_mock, \
+                patch("app.services.logos.has_remote_market_access") as remote_access_mock:
+            profile = fetch_quote_profile("AMD.US", force_refresh=False)
+
+        self.assertEqual(profile.company_name, "Advanced Micro Devices, Inc.")
+        self.assertEqual(profile.website, "https://www.amd.com")
+        self.assertEqual(profile.logo_url, "/market-store/logos/AMD.svg")
+        info_mock.assert_not_called()
+        remote_access_mock.assert_not_called()
+
     def test_cached_named_profile_skips_remote_connectivity_probe(self) -> None:
         cached_record = {
             "ticker": "SKHYV",
@@ -207,6 +231,35 @@ class LogoServiceTests(unittest.TestCase):
         self.assertEqual(history_store_path_for("BRK.B").name, "BRK-B.parquet")
         self.assertEqual(logo_store_path_for("BRK.B").name, "BRK-B.png")
 
+    def test_resolve_logo_store_path_ignores_content_with_the_wrong_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            with patch("app.infrastructure.storage.LOGOS_STORE_DIR", logo_dir):
+                (logo_dir / "SGOV.svg").write_bytes(b"\x89PNG\r\n\x1a\nnot-an-svg")
+                (logo_dir / "SGOV.png").write_bytes(b"\x89PNG\r\n\x1a\nvalid-png")
+
+                resolved = resolve_logo_store_path("SGOV")
+
+            self.assertEqual(resolved, logo_dir / "SGOV.png")
+
+    def test_remote_png_refresh_never_overwrites_an_existing_svg_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_dir = Path(temp_dir)
+            svg_path = logo_dir / "SGOV.svg"
+            svg_payload = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+            png_payload = b"\x89PNG\r\n\x1a\nremote-png"
+            svg_path.write_bytes(svg_payload)
+            with patch("app.services.logos.LOGOS_STORE_DIR", logo_dir), \
+                    patch("app.services.logos.logo_store_path_for", return_value=svg_path), \
+                    patch("app.services.logos.is_pinned_logo_ticker", return_value=False), \
+                    patch("app.services.logos.fetch_curated_logo_svg_bytes", return_value=None), \
+                    patch("app.services.logos.has_remote_market_access", return_value=True), \
+                    patch("app.services.logos.fetch_remote_logo_bytes", return_value=png_payload):
+                refresh_logo_store("SGOV", None, force_refresh=True)
+
+            self.assertEqual(svg_path.read_bytes(), svg_payload)
+            self.assertEqual((logo_dir / "SGOV.png").read_bytes(), png_payload)
+
     def test_search_tickers_returns_local_prefix_matches_with_logo_urls(self) -> None:
         ticker = "ONDS"
         history_path = history_store_path_for(ticker)
@@ -223,7 +276,7 @@ class LogoServiceTests(unittest.TestCase):
                 }
             ).to_parquet(history_path, index=False)
             logo_path.parent.mkdir(parents=True, exist_ok=True)
-            logo_path.write_bytes(b"fake-logo")
+            logo_path.write_bytes(b"\x89PNG\r\n\x1a\nfixture-logo")
 
             with create_app().test_request_context():
                 results = search_tickers("ON", limit=5)
@@ -308,6 +361,40 @@ class LogoServiceTests(unittest.TestCase):
             "Roundhill T-REX 2X Long DRAM Daily Target ETF",
         )
         self.assertEqual(payload["website"], "https://www.roundhillinvestments.com/etf/ram/")
+
+    def test_build_quote_profile_payload_uses_exact_cached_search_name_when_yfinance_is_empty(self) -> None:
+        cached_items = [
+            {
+                "symbol": "QQQI",
+                "name": "NEOS Nasdaq 100 High Income ETF",
+                "asset_type": "ETF",
+                "source": "remote",
+            },
+            {
+                "symbol": "QQQ",
+                "name": "Invesco QQQ Trust, Series 1",
+                "asset_type": "ETF",
+                "source": "remote",
+            },
+        ]
+        with patch("app.services.logos._load_yfinance_ticker_info", return_value={}), \
+                patch(
+                    "app.services.logos.load_latest_search_cache_item_for_symbol",
+                    return_value=cached_items[0],
+                ):
+            payload = build_quote_profile_payload("QQQI")
+
+        self.assertEqual(payload["company_name"], "NEOS Nasdaq 100 High Income ETF")
+
+    def test_build_quote_profile_payload_ignores_symbol_only_cached_search_name(self) -> None:
+        with patch("app.services.logos._load_yfinance_ticker_info", return_value={}), \
+                patch(
+                    "app.services.logos.load_latest_search_cache_item_for_symbol",
+                    return_value={"symbol": "QQQI", "name": "QQQI"},
+                ):
+            payload = build_quote_profile_payload("QQQI")
+
+        self.assertEqual(payload["company_name"], "QQQI")
 
     def test_build_quote_profile_payload_uses_dram_known_profile_when_yfinance_is_empty(self) -> None:
         with patch("app.services.logos._load_yfinance_ticker_info") as info_mock:

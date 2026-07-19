@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.2.14
+ * Code version: v0.2.16
  * - Changed: Stock-details price chart x-axis date labels now use weight 400 while preserving the existing font and size.
  * - Changed: Stock-details 1W x-axis labels now center each trading date within its intraday session and omit intraday times.
  * - Fixed: Stock-details intraday trade markers no longer project pre-range overnight trades onto the first visible candle.
@@ -17,9 +17,10 @@
  * - Fixed: Stock-details intraday candles and live pulse now stay off outside active realtime sessions.
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
+ * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.14';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.2.16';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -402,6 +403,7 @@ export function createInvestmentStockDetailsUtils({
         }
 
         const priceHistoryByTicker = normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {});
+        const tickerPriceIndex = buildTickerPriceIndex(priceHistoryByTicker);
         const tickerPriceMap = getInvestmentMarketStoreTickerCandidates(normalizedTicker).reduce((selectedMap, candidate) => {
             if (selectedMap && Object.keys(selectedMap).length) return selectedMap;
             const candidateMap = priceHistoryByTicker[candidate];
@@ -498,6 +500,7 @@ export function createInvestmentStockDetailsUtils({
         if (!(canvas instanceof HTMLCanvasElement)) return;
 
         const chronologicalRows = [...(Array.isArray(detailRows) ? detailRows : [])].reverse();
+        const renderedSplitFactorHints = buildRenderedSplitFactorHints(chronologicalRows, tickerPriceIndex);
         const dateIndex = new Map();
         labels.forEach((value, index) => {
             dateIndex.set(String(value), index);
@@ -658,7 +661,11 @@ export function createInvestmentStockDetailsUtils({
         const averagePriceSeries = [];
         const applyStockDetailsTransactionToStates = (txn, renderIndex = null) => {
             const normalizedType = getNormalizedTransactionType(txn);
-            const quantity = Number(getTransactionQuantity(txn));
+            const quantity = Number(getTransactionValuationQuantity(
+                txn,
+                tickerPriceIndex,
+                renderedSplitFactorHints,
+            ));
             const effectiveUnitPrice = getTransactionEffectiveUnitPrice(txn, quantity);
             const renderedEffectiveUnitPrice = Number.isInteger(renderIndex)
                 ? resolveTradeMarkerPrice(renderIndex, effectiveUnitPrice)

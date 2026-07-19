@@ -1,4 +1,4 @@
-/* Code version: v0.19.0 */
+/* Code version: v0.20.9 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -129,6 +129,7 @@
     let optimisticNavigationFrame = 0;
     let optimisticNavigationSnapshot = null;
     const datePickerState = [];
+    let datePickerDocumentListenersBound = false;
     let validTradingDateSet = null;
     let dateConstraintAvailability = {};
     let dateConstraintsRequestId = 0;
@@ -1276,7 +1277,7 @@
     const sidebarToggle = $("#sidebar_toggle");
     const appSidebar = $("#app_sidebar");
     const sidebarBackdrop = $("#sidebar_backdrop");
-    const mobileSidebarMedia = window.matchMedia("(max-width: 820px)");
+    const mobileSidebarMedia = window.matchMedia("(max-width: 600px)");
     let isSidebarOpen = true;
     let isSidebarAnimating = false;
 
@@ -3456,6 +3457,24 @@
 
         const getPanel = () => document.getElementById(`${input.id}_suggestions`);
         const getButtons = () => Array.from(getPanel()?.querySelectorAll(".suggestion-item") || []);
+        const showLoadingPanel = (ticker) => {
+            const panel = getPanel();
+            const symbol = sanitizeTicker(ticker || "");
+            if (!panel || !symbol) return;
+            const status = document.createElement("div");
+            status.className = "suggestion-loading";
+            status.setAttribute("role", "status");
+            status.setAttribute("aria-live", "polite");
+            const spinner = document.createElement("span");
+            spinner.className = "suggestion-loading-spinner";
+            spinner.setAttribute("aria-hidden", "true");
+            const copy = document.createElement("span");
+            copy.textContent = `Fetching ${symbol}\u2026`;
+            status.append(spinner, copy);
+            panel.replaceChildren(status);
+            panel.classList.add("is-open");
+            activeIndex = -1;
+        };
         const querySuggestions = async (rawValue, {limit = 5, preserveUnknown = false} = {}) => {
             const queryValue = sanitizeTicker(String(rawValue || "").trim());
             if (!queryValue) {
@@ -3464,6 +3483,7 @@
                 return;
             }
             const requestId = ++autocompleteRequestSequence;
+            showLoadingPanel(queryValue);
             try {
                 const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(queryValue)}&limit=${limit}`);
                 if (!response.ok) return closePanel();
@@ -3630,6 +3650,7 @@
                 autocompleteTimer = 0;
             }
             const requestId = ++autocompleteRequestSequence;
+            if (query && tickerPattern.test(query)) showLoadingPanel(query);
             autocompleteTimer = window.setTimeout(async () => {
                 autocompleteTimer = 0;
                 try {
@@ -3661,6 +3682,7 @@
                     input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
                     validateTickerInput(input);
                     if (exactMatch) {
+                        closePanel();
                         syncCommittedTickerSelection("ticker-change");
                         return;
                     }
@@ -3801,7 +3823,7 @@
         const sidebar = $(".sidebar");
         const dock = $(".sidebar-dock");
         if (!sidebar || !dock) return;
-        if (window.matchMedia("(max-width: 767px)").matches) {
+        if (mobileSidebarMedia.matches) {
             dock.style.left = "";
             return;
         }
@@ -4098,14 +4120,22 @@
         workspaceModalOverlay.hidden = false;
     };
 
-	const showImmediatePriceHistoryLoadingDialog = () => {
-		if (state.currentView !== "prices") return;
-		showWorkspaceModal({
-			title: "Updating price history",
-			copy: "Loading the selected New York market-time range while keeping the current chart context visible.",
-			iconClass: "icon-hourglass",
-		});
-	};
+    const showImmediateRangeLoadingDialog = () => {
+        if (state.currentView === "prices") {
+            showWorkspaceModal({
+                title: "Updating price history",
+                copy: "Loading the selected New York market-time range while keeping the current chart context visible.",
+                iconClass: "icon-hourglass",
+            });
+            return;
+        }
+        if (state.currentView !== "market-caps") return;
+        showWorkspaceModal({
+            title: "Calculating market-cap history",
+            copy: "Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment.",
+            iconClass: "icon-hourglass",
+        });
+    };
 
     const showCompareOverlay = () => {
         showWorkspaceModal({
@@ -5528,14 +5558,28 @@
         const bottomBoundary = viewportTop + viewportHeight - viewportPadding;
         const maxLeft = Math.max(leftBoundary, rightBoundary - popoverWidth);
         const maxTop = Math.max(topBoundary, bottomBoundary - popoverHeight);
+        const spaceRight = rightBoundary - triggerRect.right - popoverGap;
+        const spaceLeft = triggerRect.left - leftBoundary - popoverGap;
         const spaceBelow = bottomBoundary - triggerRect.bottom - popoverGap;
         const spaceAbove = triggerRect.top - topBoundary - popoverGap;
         let preferredTop = triggerRect.bottom + popoverGap;
         if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
             preferredTop = triggerRect.top - popoverGap - popoverHeight;
         }
-        const top = Math.min(Math.max(preferredTop, topBoundary), maxTop);
-        const left = Math.min(Math.max(triggerRect.left, leftBoundary), maxLeft);
+        const sidebarPicker = picker.wrapper.closest(".sidebar-form");
+        const canOpenRight = sidebarPicker && spaceRight >= popoverWidth;
+        const canOpenLeft = sidebarPicker && spaceLeft >= popoverWidth;
+        const top = Math.min(
+            Math.max(canOpenRight || canOpenLeft ? triggerRect.top : preferredTop, topBoundary),
+            maxTop,
+        );
+        let preferredLeft = triggerRect.left;
+        if (canOpenRight) {
+            preferredLeft = triggerRect.right + popoverGap;
+        } else if (canOpenLeft) {
+            preferredLeft = triggerRect.left - popoverGap - popoverWidth;
+        }
+        const left = Math.min(Math.max(preferredLeft, leftBoundary), maxLeft);
         picker.popover.style.top = `${Math.round(top)}px`;
         picker.popover.style.left = `${Math.round(left)}px`;
     };
@@ -5544,7 +5588,10 @@
         if (!picker?.role) return null;
         const peerRole = picker.role === "start" ? "end" : picker.role === "end" ? "start" : "";
         if (!peerRole) return null;
-        return datePickerState.find((candidate) => candidate.role === peerRole) || null;
+        return datePickerState.find((candidate) => (
+            candidate.role === peerRole
+            && candidate.group === picker.group
+        )) || null;
     };
 
     const syncDatePickerPeerHighlight = () => {
@@ -5585,7 +5632,7 @@
         if (picker.role === "end" && peerDate && candidateDate < peerDate) {
             return {selectable: false, message: `${labels.to} must be on or after ${labels.start}.`};
         }
-        if (validTradingDateSet && !validTradingDateSet.has(isoValue)) {
+        if (!picker.unconstrained && validTradingDateSet && !validTradingDateSet.has(isoValue)) {
             return {
                 selectable: false,
                 message: `${formatDisplayDate(isoValue)} is not a shared trading day for the selected tickers.`,
@@ -5640,7 +5687,7 @@
                     displayText: rawDraft,
                     previewDate: null,
                     previewIsoValue: "",
-                    validationMessage: `Enter a valid date like ${getDateEntryHint()}.`,
+                    validationMessage: String(picker.validationMessage || ""),
                 };
             }
             const previewIsoValue = formatIsoDate(parsedDate);
@@ -5648,7 +5695,7 @@
                 displayText: rawDraft,
                 previewDate: parsedDate,
                 previewIsoValue,
-                validationMessage: getDatePickerValidationMessage(picker, previewIsoValue),
+                validationMessage: String(picker.validationMessage || ""),
             };
         }
         const committedIsoValue = String(picker.input.value || "");
@@ -5701,13 +5748,14 @@
         if (picker.role === "end" && peerDate && selectedDate < peerDate) {
             return `${labels.to} must be on or after ${labels.start}.`;
         }
-        if (validTradingDateSet && !validTradingDateSet.has(isoValue)) {
+        if (!picker.unconstrained && validTradingDateSet && !validTradingDateSet.has(isoValue)) {
             return "Choose a shared trading day for the selected tickers.";
         }
         return "";
     };
 
     const updateDatePickerValue = (picker, isoValue, {emitChange = false, closePopover = false} = {}) => {
+        const previousValue = String(picker.input.value || "");
         picker.draftText = "";
         picker.validationMessage = "";
         clearDatePickerFeedback(picker);
@@ -5716,11 +5764,14 @@
         picker.forceDisplaySync = true;
         refreshDatePickers();
         if (closePopover) closeAllDatePickers();
-        if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+        if (emitChange && picker.input.value !== previousValue) {
+            picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+        }
     };
 
     const commitDatePickerTextInput = (picker, {emitChange = false, closePopover = false} = {}) => {
         clearDatePickerFeedback(picker);
+        const previousValue = String(picker.input.value || "");
         const rawValue = normalizeDatePickerDraft(picker.triggerValue.textContent);
         if (!rawValue) {
             picker.draftText = "";
@@ -5729,17 +5780,21 @@
             picker.forceSyncMonth = true;
             picker.forceDisplaySync = true;
             refreshDatePickers();
-            if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            if (emitChange && picker.input.value !== previousValue) {
+                picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            }
             return;
         }
         const parsedDate = parseManualDateInput(rawValue);
         if (!parsedDate) {
             picker.draftText = rawValue;
-            picker.validationMessage = "";
+            picker.validationMessage = `Enter a valid date like ${getDateEntryHint()}.`;
             picker.input.value = "";
             picker.forceSyncMonth = true;
             refreshDatePickers();
-            if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            if (emitChange && picker.input.value !== previousValue) {
+                picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            }
             return;
         }
         const isoValue = formatIsoDate(parsedDate);
@@ -5747,10 +5802,13 @@
         if (validationMessage) {
             picker.draftText = rawValue;
             picker.validationMessage = "";
+            showDatePickerFeedback(picker, validationMessage);
             picker.input.value = "";
             picker.forceSyncMonth = true;
             refreshDatePickers();
-            if (emitChange) picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            if (emitChange && picker.input.value !== previousValue) {
+                picker.input.dispatchEvent(new Event("change", {bubbles: true}));
+            }
             return;
         }
         updateDatePickerValue(picker, isoValue, {emitChange, closePopover});
@@ -5907,8 +5965,32 @@
         }
     };
 
-    const initializeDatePickers = () => {
-        $$("[data-date-picker]").forEach((wrapper) => {
+    const getDatePickerWrappers = (root = document) => {
+        if (root instanceof HTMLElement) {
+            return [
+                ...(root.matches("[data-date-picker]") ? [root] : []),
+                ...root.querySelectorAll("[data-date-picker]"),
+            ];
+        }
+        return Array.from(root?.querySelectorAll?.("[data-date-picker]") || []);
+    };
+
+    const disposeDatePickers = (root = document) => {
+        for (let index = datePickerState.length - 1; index >= 0; index -= 1) {
+            const picker = datePickerState[index];
+            const belongsToRoot = root instanceof Document
+                || (root instanceof HTMLElement && root.contains(picker.wrapper));
+            if (!belongsToRoot) continue;
+            picker.popover.remove();
+            delete picker.wrapper.dataset.bound;
+            delete picker.wrapper._antigravityDatePicker;
+            datePickerState.splice(index, 1);
+        }
+        syncDatePickerPeerHighlight();
+    };
+
+    const initializeDatePickers = (root = document) => {
+        getDatePickerWrappers(root).forEach((wrapper) => {
             if (wrapper.dataset.bound === "1") return;
             const input = wrapper.querySelector('input[type="hidden"]');
             const trigger = wrapper.querySelector("[data-date-trigger]");
@@ -5936,6 +6018,8 @@
                 monthGrid,
                 navButtons,
                 role: wrapper.dataset.dateRole || "",
+                group: wrapper.dataset.datePickerGroup || "workspace",
+                unconstrained: wrapper.dataset.datePickerUnconstrained === "true",
                 view: "days",
                 visibleMonth: null,
                 forceSyncMonth: true,
@@ -5945,6 +6029,7 @@
                 interactionMessage: "",
             };
             wrapper.dataset.bound = "1";
+            wrapper._antigravityDatePicker = picker;
             // Ensure popover is not clipped by sidebar or parents with overflow/transform.
             // NOTE: nav buttons are inside the popover, so bind nav listeners BEFORE moving the popover.
             navButtons.forEach((button) => {
@@ -5999,7 +6084,12 @@
             triggerValue.addEventListener("input", () => {
                 picker.draftText = normalizeDatePickerDraft(triggerValue.textContent);
                 picker.validationMessage = "";
-                clearDatePickerFeedback(picker);
+                const parsedDraft = parseManualDateInput(picker.draftText);
+                const draftMessage = parsedDraft
+                    ? getDatePickerValidationMessage(picker, formatIsoDate(parsedDraft))
+                    : "";
+                if (draftMessage) showDatePickerFeedback(picker, draftMessage);
+                else clearDatePickerFeedback(picker);
                 triggerValue.dataset.empty = picker.draftText ? "0" : "1";
                 picker.forceSyncMonth = true;
                 refreshDatePickers();
@@ -6039,20 +6129,30 @@
                 syncDatePickerPeerHighlight();
             });
         });
-        document.addEventListener("pointerdown", (event) => {
-            if (isInsideAnyDatePicker(event.target)) return;
-            closeAllDatePickers();
-        });
-        window.addEventListener("resize", () => {
-            datePickerState.forEach((picker) => {
-                if (!picker.popover.hidden) positionDatePickerPopover(picker);
+        if (!datePickerDocumentListenersBound) {
+            datePickerDocumentListenersBound = true;
+            document.addEventListener("pointerdown", (event) => {
+                if (isInsideAnyDatePicker(event.target)) return;
+                closeAllDatePickers();
+            }, {capture: true});
+            window.addEventListener("resize", () => {
+                datePickerState.forEach((picker) => {
+                    if (!picker.popover.hidden) positionDatePickerPopover(picker);
+                });
             });
-        });
+        }
     };
 
     const refreshDatePickers = () => {
         datePickerState.forEach((picker) => syncDatePickerView(picker));
         syncDatePickerPeerHighlight();
+    };
+
+    window.ANTIGRAVITY_DATE_PICKERS = {
+        closeAll: closeAllDatePickers,
+        dispose: disposeDatePickers,
+        initialize: initializeDatePickers,
+        refresh: refreshDatePickers,
     };
 
     const buildCleanWorkspaceUrl = () => {
@@ -6370,7 +6470,7 @@
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
-			showImmediatePriceHistoryLoadingDialog();
+            showImmediateRangeLoadingDialog();
             syncDateConstraints();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("range-controls");
             scheduleAutoSubmit();
@@ -6407,7 +6507,7 @@
     form?.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement && target.id === "period") {
-			showImmediatePriceHistoryLoadingDialog();
+            showImmediateRangeLoadingDialog();
             refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
             syncExactDateModeControls();
             syncOneDayExtendedHoursSwitch();
@@ -7285,11 +7385,15 @@
                     iconClass: "icon-hourglass",
                 });
             } else if (["tickers", "market-caps", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
-                showWorkspaceModal({
-                    title: "Calculating comparison",
-                    copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",
-                    iconClass: "icon-hourglass",
-                });
+                if (state.currentView === "market-caps") {
+                    showImmediateRangeLoadingDialog();
+                } else {
+                    showWorkspaceModal({
+                        title: "Calculating comparison",
+                        copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",
+                        iconClass: "icon-hourglass",
+                    });
+                }
             } else if (pendingWorkspaceChartTransition?.view === state.currentView) {
                 // Same logic: only capture line chart transition if x-axis hasn't changed
                 const didRequestChangeXAxis = state.currentView === "portfolio"

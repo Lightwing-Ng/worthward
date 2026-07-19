@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.20.0
+Code version: v0.24.5
 """
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ from app.services.date_constraints import (
     nyse_recent_trading_days,
 )
 from app.services.dca import simulate_recurring_investment
-from app.services.market_cap import build_market_cap_series_payload
+from app.services.market_cap import build_market_cap_series_payload, extract_stock_split_events
 from app.services.range_options import (
     COMPARE_INTRADAY_PERIODS,
     build_supported_compare_periods,
@@ -234,6 +234,7 @@ from app.infrastructure.storage import (
     investment_store_exists,
     investment_store_path_for,
     intraday_history_store_path_for,
+    is_ticker_fallback_company_name,
     list_local_tickers,
     list_historical_tickers,
     load_investment_store_payload,
@@ -2656,10 +2657,11 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--workspace-article-heading-min-height", 44, 1),
                     px_token("--workspace-article-heading-gap", 10, 0),
                     raw_token("--workspace-article-heading-background", "var(--frosted-glass-background)"),
-                    raw_token("--workspace-article-heading-border", "var(--frosted-glass-border)"),
+                    raw_token("--workspace-article-heading-border", "none"),
                     raw_token("--workspace-article-heading-shadow", "var(--frosted-glass-shadow)"),
                     raw_token("--workspace-article-mobile-shadow", "none"),
                     raw_token("--workspace-article-sidebar-morph-easing", "var(--motion-inertial)"),
+                    raw_token("--workspace-mode-result-heading-lift", "calc(var(--workspace-title-safe-top) - 4px)"),
                     raw_token("--workspace-content-article-background", "transparent"),
                     raw_token("--workspace-content-article-shadow", "none"),
                     raw_token("--workspace-content-article-blur", "none"),
@@ -2878,8 +2880,8 @@ def build_web_runtime() -> WebRuntime:
                 "id": style_token_id("Modal dialog banner message"),
                 "name": "Modal dialog banner message",
                 "sample_kind": "floating-banner",
-                "sample_title": "Backtest execution model updated: Signal bar close.",
-                "sample_copy": "",
+                "sample_title": "Backtest execution model updated",
+                "sample_copy": "Signal bar close",
                 "sample_button": "",
                 "sample_button_class": "",
                 "sample_icon_class": "icon-modal-dialog-banner-backtest-execution",
@@ -3220,10 +3222,6 @@ def build_web_runtime() -> WebRuntime:
                 "sample_kind": "glass-surface",
                 "sample_title": sample_title,
                 "sample_copy": sample_copy,
-                "sample_surface_background": "var(--frosted-glass-background)",
-                "sample_surface_border": "var(--frosted-glass-border)",
-                "sample_surface_blur": "var(--frosted-glass-blur)",
-                "sample_surface_shadow": "var(--frosted-glass-shadow)",
                 "tokens": [
                     raw_token("--frosted-glass-background", "var(--frosted-glass-background)"),
                     raw_token("--frosted-glass-border", "var(--frosted-glass-border)"),
@@ -3284,6 +3282,7 @@ def build_web_runtime() -> WebRuntime:
 
     def load_local_profile_snapshot(ticker: str) -> tuple[str, str] | None:
         normalized_ticker = normalize_ticker_input(ticker)
+        fallback_logo_url = ""
         for candidate in iter_investment_store_ticker_aliases(ticker):
             profile_record = load_profile_record(candidate)
             if profile_record is None:
@@ -3292,9 +3291,15 @@ def build_web_runtime() -> WebRuntime:
             if not logo_url:
                 continue
             company_name = str(profile_record.get("company_name") or "").strip()
-            candidate_upper = str(candidate or "").strip().upper()
-            if company_name and company_name.upper() != candidate_upper:
+            if not is_ticker_fallback_company_name(company_name, normalized_ticker):
                 return company_name, logo_url
+            if company_name:
+                fallback_logo_url = fallback_logo_url or logo_url
+        if normalized_ticker and fallback_logo_url:
+            return (
+                resolve_known_ticker_company_name(normalized_ticker) or normalized_ticker,
+                fallback_logo_url,
+            )
         if normalized_ticker:
             return None
         return None
@@ -3315,8 +3320,7 @@ def build_web_runtime() -> WebRuntime:
             profile_record = load_profile_record(candidate) or {}
             candidate_company_name = str(profile_record.get("company_name") or "").strip()
             candidate_logo_url = resolve_stored_logo_url(candidate)
-            candidate_upper = str(candidate or "").strip().upper()
-            if candidate_company_name and candidate_company_name.upper() != candidate_upper:
+            if not is_ticker_fallback_company_name(candidate_company_name, normalized_ticker):
                 company_name = candidate_company_name
             elif not company_name:
                 company_name = candidate_company_name or normalized_ticker
@@ -3945,7 +3949,7 @@ def build_web_runtime() -> WebRuntime:
         elif current_view == "market-caps":
             page_title = labels.get("dock_market_caps", "Market cap comparison")
             report_heading = labels.get("dock_market_caps", "Market cap comparison")
-            chart_heading = "Historical market capitalization"
+            chart_heading = ""
         elif current_view == "portfolio":
             page_title = labels["portfolio_title"]
             report_heading = labels["portfolio_summary"]
@@ -4318,6 +4322,14 @@ def build_web_runtime() -> WebRuntime:
                                     notice += f" {missing_ticker} has no local or remote market data, automatically replaced with {replacement}."
 
                         profiles = [fetch_quote_profile(ticker, False) for ticker in validated_tickers]
+                        market_cap_split_events = {
+                            ticker: extract_stock_split_events(dataset)
+                            for ticker, dataset in zip(validated_tickers, datasets)
+                        } if current_view == "market-caps" else {}
+                        market_cap_split_actions_authoritative = {
+                            ticker: bool(dataset.attrs.get("stock_split_actions_authoritative"))
+                            for ticker, dataset in zip(validated_tickers, datasets)
+                        } if current_view == "market-caps" else {}
                         include_extended_hours = (
                             current_view in {"tickers", "market-caps", "prices"}
                             and supports_compare_extended_hours(validated_tickers, period)
@@ -4405,6 +4417,7 @@ def build_web_runtime() -> WebRuntime:
                         is_exact_short_intraday_compare = (
                             current_view in {"tickers", "market-caps", "prices"}
                             and range_mode == "exact"
+                            and period in {"3d", "1w"}
                             and not is_exact_one_day_compare
                             and 2 <= len(exact_range_trading_dates) <= 5
                         )
@@ -4762,7 +4775,16 @@ def build_web_runtime() -> WebRuntime:
                         else:
                             if current_view == "market-caps":
                                 series = [
-                                    build_market_cap_series_payload(ticker, dataset, color=color)
+                                    build_market_cap_series_payload(
+                                        ticker,
+                                        dataset,
+                                        color=color,
+                                        split_events=market_cap_split_events.get(ticker),
+                                        resolve_missing_split_events=True,
+                                        split_events_are_authoritative=(
+                                            market_cap_split_actions_authoritative.get(ticker, False)
+                                        ),
+                                    )
                                     for ticker, dataset, color in zip(validated_tickers, aligned_datasets, colors)
                                 ]
                             else:
@@ -7088,8 +7110,16 @@ def build_web_runtime() -> WebRuntime:
         """Get US-equity market session state for frontend-safe gating of realtime refresh."""
         try:
             reference = request.args.get("as_of")
+            try:
+                requested_day_count = int(request.args.get("day_count", "5"))
+            except (TypeError, ValueError):
+                requested_day_count = 5
+            requested_day_count = max(1, min(365, requested_day_count))
             session_state = nyse_market_session_state(reference if reference else None)
-            trading_days = nyse_recent_trading_days(reference if reference else None)
+            trading_days = nyse_recent_trading_days(
+                reference if reference else None,
+                day_count=requested_day_count,
+            )
             response = jsonify({"success": True, "trading_days": trading_days, **session_state})
             response.status_code = 200
             return apply_no_store_headers(response)

@@ -1,4 +1,4 @@
-/* Code version: v0.9.0 */
+/* Code version: v0.9.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -272,6 +272,7 @@
 		const zeroBandPlugin = {
 			id: "zeroBandPlugin",
 			beforeDatasetsDraw(chartInstance) {
+				if (isMarketCapView) return;
 				const { ctx, chartArea, scales } = chartInstance;
 				const yScale = scales.y;
 				if (!chartArea || !yScale) return;

@@ -1,6 +1,6 @@
-{# Code version: v1.9.0 #}
+{# Code version: v1.10.0 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_segmented_control with context %}
+{% from "_macros.html" import render_broker_select_options, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
 
 {% block sidebar_content %}
@@ -73,22 +73,17 @@
                                  hidden></div>
                         </div>
                     </div>
-                    <div id="live_trading_feedback"
-                         class="notice notice-floating notice-floating-banner notice-floating-banner-global investment-import-feedback-banner"
-                         data-dismissible-notice
-                         role="status"
-                         aria-live="polite"
-                         aria-atomic="true"
-                         hidden>
-                        <button type="button" class="dismiss-button notice-close" aria-label="Dismiss trading feedback">
-                            <span class="icon icon-dismiss-control" aria-hidden="true"></span>
-                        </button>
-                        <span id="live_trading_feedback_icon"
-                              class="icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon icon-modal-dialog-banner-default"
-                              aria-hidden="true"></span>
-                        <span class="workspace-modal-title notice-floating-banner-title"
-                              id="live_trading_feedback_message"></span>
-                    </div>
+                    {{ render_notice_banner(
+                        icon_class="notice-floating-banner-status-icon icon-modal-dialog-banner-default",
+                        banner_class="notice-floating-banner-global investment-import-feedback-banner",
+                        close_label="Dismiss trading feedback",
+                        element_id="live_trading_feedback",
+                        icon_id="live_trading_feedback_icon",
+                        message_id="live_trading_feedback_message",
+                        role="status",
+                        is_hidden=true,
+                        message_container=true
+                    ) }}
                     <form id="live_trading_form" class="controls trade-controls live-trading-form">
                         <div class="live-trading-form-grid">
                             <div class="field live-trading-ticker-field">

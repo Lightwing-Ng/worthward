@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.11.0
+ * Code version: v1.13.0
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
  */
 
@@ -1914,18 +1914,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const normalizedVariant = String(variant || "success").trim().toLowerCase();
         feedback.hidden = false;
-        feedbackMessage.textContent = message;
+        const feedbackTitle = normalizedVariant === "error" ? "Order not submitted" : "Order submitted";
+        feedbackMessage.innerHTML = `
+            <p class="notice-floating-banner-heading">${feedbackTitle}</p>
+            <p class="notice-floating-banner-copy">${escapeHtml(message)}</p>
+        `.trim();
         feedback.dataset.feedbackVariant = normalizedVariant;
-        feedbackIcon.className = "icon workspace-modal-icon notice-floating-banner-icon investment-import-feedback-banner-icon";
+        feedbackIcon.className = "icon workspace-modal-icon notice-floating-banner-icon notice-floating-banner-status-icon";
         if (normalizedVariant === "error") {
-            feedbackIcon.classList.add("icon-modal-dialog-banner-default");
+            feedbackIcon.classList.add("notice-floating-banner-icon-error", "icon-modal-dialog-banner-default");
             feedback.classList.add("error");
             feedback.classList.remove("notice");
             return;
         }
         feedback.classList.add("notice");
         feedback.classList.remove("error");
-        feedbackIcon.classList.add("icon-modal-dialog-banner-default");
+        feedbackIcon.classList.add("notice-floating-banner-icon-success");
     };
 
     const clearFeedback = () => {
@@ -1935,6 +1939,8 @@ document.addEventListener("DOMContentLoaded", () => {
         feedback.hidden = true;
         feedback.classList.remove("error");
         feedback.classList.add("notice");
+        feedbackIcon?.classList.remove("notice-floating-banner-icon-error", "notice-floating-banner-icon-success");
+        feedbackIcon?.classList.add("icon-modal-dialog-banner-default");
     };
 
     const syncButtonState = (isPending) => {

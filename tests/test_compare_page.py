@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from app.models.schemas import SeriesPayload
 from tests.factories.market import ohlc_frame_for_dates, quote_profile_stub
 
 
@@ -623,6 +624,87 @@ class ComparePageTests(unittest.TestCase):
                     sum(value.startswith(trading_day) for value in raw_dates),
                     390,
                 )
+
+    def test_market_cap_exact_historical_short_range_uses_daily_history(self) -> None:
+        daily_dates = pd.to_datetime([
+            "2021-07-13",
+            "2021-07-14",
+            "2021-07-15",
+            "2021-07-16",
+            "2021-07-19",
+        ])
+        requested_intervals: list[str] = []
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "reinvest",
+        ) -> pd.DataFrame:
+            del include_dividends, dividend_mode
+            requested_intervals.append(interval)
+            base = 100.0 if ticker == "AAPL" else 200.0
+            if interval == "1m":
+                return pd.DataFrame({
+                    "Date": pd.Series(dtype="datetime64[ns]"),
+                    "Close": pd.Series(dtype=float),
+                })
+            return pd.DataFrame({
+                "Date": daily_dates,
+                "Close": [base + offset for offset in range(len(daily_dates))],
+            })
+
+        def _build_market_cap_series(
+                ticker: str,
+                dataset: pd.DataFrame,
+                *,
+                color: str | None = None,
+                **_kwargs,
+        ) -> SeriesPayload:
+            raw_dates = pd.to_datetime(dataset["Date"]).dt.strftime("%Y-%m-%d %H:%M").tolist()
+            return SeriesPayload(
+                ticker=ticker,
+                dates=pd.to_datetime(dataset["Date"]).dt.strftime("%-d %b %Y").tolist(),
+                raw_dates=raw_dates,
+                normalized_returns=[0.0] * len(raw_dates),
+                color=color,
+                prices=dataset["Close"].astype(float).tolist(),
+                market_caps=[float(value) * 1_000_000.0 for value in dataset["Close"]],
+            )
+
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+            patch("app.web.runtime.build_market_cap_series_payload", side_effect=_build_market_cap_series),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/market-caps?ticker=AAPL&ticker=NVDA&ticker=MSFT"
+                "&range=exact&period=5y&from=2021-07-13&to=2021-07-19"
+            )
+
+        html = response.get_data(as_text=True)
+        state_match = re.search(
+            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("intraday comparison data", html)
+        self.assertNotIn("1m", requested_intervals)
+        self.assertIsNotNone(state_match)
+        state = json.loads(unescape(state_match.group(1)))
+        self.assertEqual(
+            state["chart"]["series"][0]["raw_dates"],
+            [
+                "2021-07-13 00:00",
+                "2021-07-14 00:00",
+                "2021-07-15 00:00",
+                "2021-07-16 00:00",
+                "2021-07-19 00:00",
+            ],
+        )
 
 
 if __name__ == "__main__":

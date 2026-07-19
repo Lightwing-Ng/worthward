@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.11.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -411,6 +411,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         )
         repaired_dataset = broken_dataset.copy()
+        broken_dataset["Stock Splits"] = 0.0
+        repaired_dataset["Stock Splits"] = 0.0
         repaired_dataset.loc[
             repaired_dataset["Date"].isin(pd.to_datetime(["2025-08-21", "2025-11-20"])),
             "Dividends",
@@ -436,10 +438,65 @@ class MarketDataFreshnessTests(unittest.TestCase):
         refresh_mock.assert_called_once_with("MSFT", force_full=True)
         self.assertAlmostEqual(float(result["Dividends"].sum()), 1.74)
 
+    def test_fetch_history_repairs_legacy_cache_missing_split_actions(self) -> None:
+        legacy_dataset = pd.DataFrame({
+            "Date": pd.to_datetime(["2024-06-07", "2024-06-10"]),
+            "Close": [120.89, 121.79],
+            "Adj Close": [120.84, 121.74],
+            "Dividends": [0.0, 0.0],
+        })
+        repaired_dataset = legacy_dataset.copy()
+        repaired_dataset["Stock Splits"] = [0.0, 10.0]
+
+        with TemporaryDirectory() as tempdir:
+            history_path = Path(tempdir) / "NVDA.parquet"
+            legacy_dataset.to_parquet(history_path, index=False)
+
+            def repair_store(ticker: str, *, force_full: bool = False) -> Path:
+                self.assertEqual(ticker, "NVDA")
+                self.assertTrue(force_full)
+                repaired_dataset.to_parquet(history_path, index=False)
+                return history_path
+
+            with (
+                patch("app.services.market_data.market_ticker_store_aliases", return_value=["NVDA"]),
+                patch("app.services.market_data.history_store_path_for_interval", return_value=history_path),
+                patch("app.services.market_data.refresh_history_store", side_effect=repair_store) as refresh_mock,
+            ):
+                result = fetch_history("NVDA", False, dividend_mode="price")
+
+        refresh_mock.assert_called_once_with("NVDA", force_full=True)
+        self.assertEqual(result["Stock Splits"].tolist(), [0.0, 10.0])
+        self.assertTrue(result.attrs["stock_split_actions_authoritative"])
+
+    def test_fetch_history_marks_legacy_split_actions_unverified_after_refresh_failure(self) -> None:
+        legacy_dataset = pd.DataFrame({
+            "Date": pd.to_datetime(["2024-06-07", "2024-06-10"]),
+            "Close": [120.89, 121.79],
+            "Adj Close": [120.84, 121.74],
+            "Dividends": [0.0, 0.0],
+        })
+        with TemporaryDirectory() as tempdir:
+            history_path = Path(tempdir) / "NVDA.parquet"
+            legacy_dataset.to_parquet(history_path, index=False)
+            with (
+                patch("app.services.market_data.market_ticker_store_aliases", return_value=["NVDA"]),
+                patch("app.services.market_data.history_store_path_for_interval", return_value=history_path),
+                patch(
+                    "app.services.market_data.refresh_history_store",
+                    side_effect=ValueError("rate limited"),
+                ),
+            ):
+                result = fetch_history("NVDA", False, dividend_mode="price")
+
+        self.assertEqual(result["Stock Splits"].tolist(), [0.0, 0.0])
+        self.assertFalse(result.attrs["stock_split_actions_authoritative"])
+
     def test_fetch_history_keeps_zero_dividend_cache_when_adjustment_ratio_is_stable(self) -> None:
         non_dividend_dataset = market_frame("ADBE")
         non_dividend_dataset["Adj Close"] = non_dividend_dataset["Close"]
         non_dividend_dataset["Dividends"] = 0.0
+        non_dividend_dataset["Stock Splits"] = 0.0
 
         with TemporaryDirectory() as tempdir:
             history_path = Path(tempdir) / "ADBE.parquet"

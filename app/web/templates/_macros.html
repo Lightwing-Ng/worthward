@@ -1,3 +1,42 @@
+{# Code version: v0.2.0 #}
+
+{% macro render_notice_banner(
+    title='',
+    icon_class='icon-modal-dialog-banner-default',
+    variant='notice',
+    banner_class='',
+    close_label='Close notice',
+    element_id='',
+    icon_id='',
+    message_id='',
+    role='',
+    is_hidden=false,
+    message_container=false,
+    numbered=true
+) -%}
+{% set color_class = 'error' if variant == 'error' else 'notice' %}
+<div{% if element_id %} id="{{ element_id }}"{% endif %}
+     class="{{ color_class }} notice-floating notice-floating-banner{% if banner_class %} {{ banner_class }}{% endif %}"
+     data-dismissible-notice{% if role %} role="{{ role }}"{% endif %}{% if role == 'status' %} aria-live="polite" aria-atomic="true"{% endif %}{% if is_hidden %} hidden{% endif %}>
+    <button type="button" class="dismiss-button notice-close" aria-label="{{ close_label }}">
+        <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+    </button>
+    <span{% if icon_id %} id="{{ icon_id }}"{% endif %}
+          class="icon workspace-modal-icon notice-floating-banner-icon {{ icon_class }}"
+          aria-hidden="true"></span>
+    {% if message_container %}
+    <div{% if message_id %} id="{{ message_id }}"{% endif %} class="notice-floating-banner-content"></div>
+    {% else %}
+    <div class="notice-floating-banner-content">
+        {% if title %}<p class="notice-floating-banner-heading">{{ title }}</p>{% endif %}
+        {% if caller is defined %}
+            {% if numbered %}<div class="notice-floating-banner-list">{{ caller() }}</div>{% else %}<p class="notice-floating-banner-copy">{{ caller() }}</p>{% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{%- endmacro %}
+
 {% macro render_report_info(button_label) -%}
 <div class="report-info">
     <button type="button" class="report-info-button" aria-label="{{ button_label }}">i</button>
@@ -22,9 +61,11 @@
 
 {% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None) -%}
 <article class="chart-surface">
+    {% if chart_heading %}
     <div class="chart-heading-row">
         <p class="chart-heading">{{ chart_heading }}</p>
     </div>
+    {% endif %}
     <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %} class="chart-region-wrap">
     {% if has_series %}
     <div class="chart-wrap" data-workspace-mask="chart-area">

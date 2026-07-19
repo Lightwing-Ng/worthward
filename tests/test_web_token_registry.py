@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -170,6 +170,10 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(html.count("data-style-token-card="), 1)
         self.assertEqual(html.count('data-style-token-card="frosted-glass"'), 1)
         self.assertEqual(html.count('<p class="style-token-title">Frosted glass</p>'), 1)
+        self.assertEqual(html.count('class="report-card style-token-demo-card"'), 1)
+        self.assertNotIn("data-inline-backdrop-filter", html)
+        self.assertNotIn("data-inline-border", html)
+        self.assertNotIn("data-inline-box-shadow", html)
 
     def test_every_canonical_frosted_glass_reference_is_defined(self) -> None:
         registry = load_foundation_css_token_registry()

@@ -1,6 +1,97 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.50.0`
+Documentation version: `v1.63.0`
+
+## Investment YTD axis clipping corrected on 19 Jul 2026
+
+- The Investment overview chart now derives its stage minimum from the shared
+  section minimum token before applying viewport-height scaling. At low desktop
+  heights, the Overview/Transaction history resizer can therefore reach its
+  minimum without clipping either line of the custom YTD x-axis labels.
+- The browser regression covers the reported `792px` by `675px` viewport with
+  the sidebar collapsed, YTD active, and the Overview section at its minimum.
+
+## Sidebar dock intermediate-width positioning corrected on 19 Jul 2026
+
+- The shared Workspace, Trade, and Settings dock now uses the same `600px`
+  overlay breakpoint as the sidebar layout. Windows between `601px` and
+  `767px` therefore retain the dock at the expanded sidebar's horizontal center
+  instead of clearing its position and translating half of it beyond the left
+  viewport edge.
+
+## Live trading PIN dialog redesigned on 19 Jul 2026
+
+- The locked Live trading route now follows the fourth-slide draft from
+  `Neo style draft.pptx` with a compact Apple-style frosted card, a vertically
+  centered key-and-title header, and a single restrained trailing action.
+- The redundant `Back` link is removed because the existing close control owns
+  dismissal. Every empty PIN position uses a centered line; entered positions
+  use centered solid dots on the exact same horizontal axis. The six positions
+  are visually grouped as two three-digit sections with a semantic token for
+  the extra inter-group spacing.
+
+## Type filter hover and All-toggle behavior corrected on 19 Jul 2026
+
+- The hover-revealed Type filter value now inherits the Type table-header
+  typography, including its font family, size, weight, and line height.
+- Selecting the already-active `All` option now clears every Type selection and
+  displays `None`; selecting `All` again restores the complete transaction set.
+
+## Broker filter default-selection styling corrected on 19 Jul 2026
+
+- The Transaction history Broker menu still treats every broker as included
+  when `All` is selected, but only the direct `All` option receives the active
+  gray rounded background.
+- Individual broker rows retain their selected checks for multi-select semantics
+  and gain an active background only after the filter becomes a partial selection.
+
+## Segmented-control edge shadows corrected on 19 Jul 2026
+
+- When the first or last segmented option is selected, its physical shadow now
+  projects inward instead of darkening the blue pill's outer cap.
+- The shared edge-aware shadow tokens apply consistently in light and dark modes
+  without changing the pill geometry or control spacing.
+
+## Trade workspace title states aligned on 19 Jul 2026
+
+- At desktop widths, expanding the Trade sidebar aligns the Investment and Live
+  trading result titles with the sidebar's Trade title.
+- Collapsing the sidebar restores the existing title-safe top inset, preserving
+  clearance below the circular sidebar toggle instead of moving content into
+  its hit area.
+
+## Workspace result headings aligned on 19 Jul 2026
+
+- Desktop workspace modes now share one semantic result-heading lift token, so
+  secondary result headings align with their page titles instead of starting at
+  the controls surface baseline.
+- The shared strategy preserves the aligned bottoms of the controls and result
+  columns and leaves the narrow-screen stacking behavior unchanged.
+
+## Price subplot reorder affordance aligned on 19 Jul 2026
+
+- Each price-subplot reorder handle now appears immediately to the right of the
+  unchanged closing-logo position instead of overlapping the logo.
+- Revealed handles use the shared hover material with a small physical lift and
+  hover shadow before dragging begins.
+- On desktop-width layouts, the Price history and Price performance headings
+  share the same vertical position while the chart remains aligned with the
+  controls surface below them.
+
+## Ticker input logos preserve complete silhouettes on 19 Jul 2026
+
+- Ticker input image layers no longer inherit the circular placeholder clip.
+- Non-circular marks such as the Apple logo remain fully visible in light and
+  dark modes, while the neutral circular background and fallback monogram keep
+  their existing geometry.
+
+## Workspace article heading borders removed on 19 Jul 2026
+
+- Workspace article heading surfaces now use the semantic
+  `--workspace-article-heading-border` token with a `none` default.
+- The Price history heading therefore remains borderless in both light and dark
+  modes while continuing to share its background and radius with the chart
+  surface.
 
 ## Investment intraday hover and vertical allocation corrected on 18 Jul 2026
 
@@ -12,6 +103,218 @@ Documentation version: `v1.50.0`
   when both panels can accommodate their protected minimum content. The
   resizer still clamps either panel before it would hide the chart or the first
   three transaction rows.
+
+## Market-cap historical exact ranges retain daily data on 18 Jul 2026
+
+- Exact Market cap comparison ranges use 1-minute curves only when the selected
+  period is `3d` or `1w`. A historical exact range whose dates happen to span
+  two to five trading days now remains on authoritative daily history, rather
+  than attempting expired intraday data.
+- The persistent market-cap method reminder was removed from normal page
+  renders. The methodology remains documented in the application documentation,
+  while errors and task-specific feedback continue to appear when needed.
+
+## Compact-width sidebar threshold aligned with Apple layouts on 18 Jul 2026
+
+- The Workspace sidebar now switches to its narrow overlay presentation only at
+  `600px` or below, instead of `820px`. This preserves the regular sidebar at
+  the 744-point iPad mini width and other iPad-class windows.
+- Apple assigns size classes dynamically rather than publishing one fixed CSS
+  breakpoint. The 600-pixel Web mapping retains the full layout above all
+  iPhone portrait widths while allowing a compact layout when the available
+  width no longer supports it.
+
+## Market-cap shares-cache provenance added on 18 Jul 2026
+
+- The isolated reported-shares Parquet cache now persists its
+  `reported_shares_source` attribute before its atomic write. Fresh cache hits
+  therefore retain precise `yfinance_reported_shares`, `sec_reported_shares`,
+  or merged provenance in the serialized market-cap source.
+- Legacy cache files without provenance remain usable and are explicitly labeled
+  `cached_reported_shares`; they no longer fall through to the ambiguous
+  `reported_shares` label. Longbridge remains an optional latest-day override.
+
+## Sidebar date-picker mode access corrected on 18 Jul 2026
+
+- Exact-date popovers in Workspace sidebars now prefer opening beside the date
+  field when horizontal space is available. The calendar no longer covers the
+  `Relative` and `Exact` segmented control, so users can switch modes directly
+  while a date picker is open.
+- Leaving an unchanged exact-date editor no longer emits a synthetic `change`
+  event or opens the range-calculation overlay. The same pointer action can now
+  switch back to `Relative` without being interrupted before its click event.
+
+## Market-cap corporate-action fallback added on 18 Jul 2026
+
+- Market-cap calculation now resolves missing split events independently from
+  a full historical-price refresh. Legacy stores without `Stock Splits` first
+  use `yfinance.get_splits(period="max")`, then fall back to Yahoo Chart split
+  events, and cache only those authoritative corporate actions separately.
+- NVIDIA's 10-for-1 event on 10 Jun 2024 therefore remains available even when
+  a rate-limited history refresh must keep an older local price store.
+
+## Floating banners unified on 18 Jul 2026
+
+- Global notices, Investment feedback, Live trading feedback, and the Settings showcase now use one banner structure with a punctuation-free title, numbered hanging-indent copy, rich-text emphasis, and top-aligned status icons. Import-success banners retain the green checkmark token and emphasize immediate HSBC transfer review in the error color token.
+- Single-copy notices now use regular Notice-colored body text without an unnecessary numeric marker; hanging indentation remains reserved for multi-item feedback.
+
+## Market-cap split effective dates corrected on 17 Jul 2026
+
+- Daily market stores now preserve authoritative stock-split events and refresh
+  legacy stores that lack the action column. Historical shares are converted on
+  the actual split effective date rather than the next shares-disclosure date;
+  NVIDIA's 10-for-1 split therefore applies from 10 Jun 2024, including ranges
+  that begin between the split and the 28 Aug 2024 shares observation.
+
+## Market-cap split basis corrected on 17 Jul 2026
+
+- Historical reported shares are now normalized onto the same post-split basis
+  as adjusted daily prices. Multi-year charts therefore no longer show a false
+  market-cap discontinuity when a company completes a standard stock split,
+  including NVIDIA's 10-for-1 split in 2024.
+
+## Market-cap five-year feedback cache corrected on 17 Jul 2026
+
+- The application asset version now invalidates pages that cached the script
+  before immediate market-cap range feedback was added. Browser coverage uses
+  the reported AAPL and NVDA transition from one day to five years.
+
+## Market-cap share precision corrected on 17 Jul 2026
+
+- Reported shares are now normalized to floating-point values before the
+  current Longbridge snapshot is applied. Fractional precision artifacts in an
+  implied share count therefore no longer fail when historical disclosures were
+  loaded as integers.
+
+## Market-cap range-change feedback added on 17 Jul 2026
+
+- Changing the Market cap comparison period now opens an immediate, accessible
+  calculation notice before validation and hydration begin. The current chart
+  remains visible, longer ranges are identified as potentially slower, and the
+  notice closes automatically when the refreshed result is ready.
+
+## Market-cap chart and ticker lookup feedback corrected on 17 Jul 2026
+
+- Market-cap comparison now suppresses the return-comparison zero baseline, so
+  its custom date labels sit on a clean chart edge without a redundant bottom
+  rule.
+- A syntactically valid ticker query keeps its existing suggestion panel open
+  with an accessible `Fetching SYMBOL…` status until symbol search resolves.
+
+## Ticker clear-button spacing refined on 17 Jul 2026
+
+- The circular ticker clear button now keeps a consistent 4-pixel concentric
+  inset from its pill-shaped input at desktop and narrow-screen control sizes.
+
+## Manual date-entry feedback refined on 17 Jul 2026
+
+- Partial manual date drafts remain visually neutral while the user is typing.
+  A complete unavailable date reports its shared-trading-day constraint in the
+  date-picker feedback area; red invalid styling is reserved for malformed input
+  left after editing ends.
+
+## Date-picker outside-click dismissal corrected on 17 Jul 2026
+
+- Open date pickers now dismiss when the user presses any area outside the
+  trigger or popover, including chart surfaces that intercept bubbling pointer
+  events.
+
+## Stock-details history and filters corrected on 17 Jul 2026
+
+- Stock-details average-price replay now applies the same split-adjusted
+  quantities as holdings and broker metrics. A position that was fully closed
+  before a later repurchase therefore leaves a true cost-line gap rather than a
+  phantom historical holding.
+- Broker trade-count and commission cards retain every broker that traded the
+  selected ticker, including fully closed historical positions. Currency now
+  offers `All` plus the available ISO 4217 codes in alphabetical order.
+- The Stock details `Time` header reuses the workspace date picker, guides the
+  user from start date to end date, and provides a clear-range action.
+
+## Market-cap workspace hierarchy simplified on 17 Jul 2026
+
+- The point-in-time methodology note now leads the existing refresh banner.
+  The result pane no longer repeats the Market cap title or chart heading, and
+  the single remaining chart surface fills the available result height.
+
+## Date-picker feedback geometry stabilized on 17 Jul 2026
+
+- Date pickers reserve two lines for availability guidance before any message is
+  shown, so selecting a disabled month preserves the popover's vertical size.
+
+## Internal-transfer binding context preserved on 17 Jul 2026
+
+- Binding or undoing a manual internal transfer now refreshes the calculated
+  ledger in place while preserving the Transaction history broker, side, and
+  currency filters, active pagination page, and horizontal and vertical scroll
+  positions.
+
+## Logo asset format integrity corrected on 17 Jul 2026
+
+- Forced logo refreshes now store provider PNG bytes only in `.png` files and
+  never overwrite an existing `.svg` path. Logo lookup also verifies file
+  signatures before publishing an asset URL, preventing mislabeled image
+  responses from breaking both ticker identity rows and donut satellites.
+
+## Investment issuer-name fallback corrected on 17 Jul 2026
+
+- Investment profile refresh now reuses an exact-symbol name from the existing
+  remote search cache when Yahoo's profile endpoint is rate-limited or empty.
+  Holdings such as QQQI and SGOV therefore retain their standard full names
+  instead of silently degrading to symbol-only identity rows.
+
+## Investment 1M precision and compact resizer corrected on 17 Jul 2026
+
+- The US-equity market-session endpoint now honors its bounded `day_count`
+  parameter. The Investment 1M overview therefore receives all 23 requested
+  trading dates and can build the same 1-minute curve contract used by 1W.
+- The overview/chart-to-history separator now occupies a 12-pixel track with a
+  1-pixel rule and 10-pixel reveal handle. The equity chart retains its existing
+  vertical-allocation algorithm while reserving an additional 5-pixel tokenized
+  guard above the plotted maximum.
+
+## Transaction history hover authority corrected on 17 Jul 2026
+
+- The selected ticker table and global transaction table now synchronize only by
+  the exact ledger entry. Hovering either table keeps that source table at the
+  user's current scroll position; only the matching row in the other table can
+  scroll into view and receive the linked highlight. A global-history entry for
+  another ticker leaves the selected ticker table unchanged.
+
+## Interactive token showcases and Investment balance corrected on 17 Jul 2026
+
+- The Style tokens `Relative` and `Exact` pill is now an interactive radio
+  control with explicit active-index synchronization. Its donut satellites use
+  independent horizontal and vertical centers and inherit the configured logo
+  size, so the showcase stays geometrically correct after resizing.
+- Investment now defaults to a taller Overview allocation while calculating the
+  Transaction history minimum from every visible table. In Stock details, both
+  transaction tables retain a header and three effective rows when the overview
+  is enlarged.
+
+## Narrow-screen sidebar controls separated on 17 Jul 2026
+
+- At viewports below 500 logical pixels, the open-sidebar toggle now uses a
+  24-pixel internal inset target and preserves a 12-pixel clearance from the
+  global theme action. The collapsed-state toggle position is unchanged.
+
+## Language controls standardized on 17 Jul 2026
+
+- The Current and History language tabs now reuse the shared frosted segmented
+  control, including its shared blur, thumb motion, focus treatment, and token
+  surface rather than a page-specific imitation.
+- The default mapping now covers every translatable label, description, status,
+  and accessibility label exposed by Settings > General. Missing defaults are
+  merged in memory without replacing user-maintained language mappings.
+
+## Material showcase rendering made self-contained on 17 Jul 2026
+
+- The Material tokens page keeps its rounded rectangular `Frosted glass`
+  specimen as a direct consumer of the canonical `--frosted-glass-*` tokens.
+  Its glass background, border, shadow, and blur no longer depend on runtime
+  inline-style data or a JavaScript hydration pass.
+- Browser coverage now verifies that the one canonical material specimen retains
+  its dimensions and resolves to a visible gradient, border, shadow, and blur.
 
 ## Realtime quote rate-limit recovery corrected on 16 Jul 2026
 
@@ -98,6 +401,8 @@ Documentation version: `v1.50.0`
 - `/workspaces/market-caps` appears between Return comparison and Price performance and reuses the shared ticker, range-option, exact-date-picker, and hydration infrastructure.
 - Historical market capitalization multiplies each authoritative market price by the latest point-in-time shares-outstanding observation known at that timestamp. It does not backfill periods before the first available disclosure.
 - Reported shares use an isolated derived cache under `market_store/fundamentals/shares/`; existing historical price stores are not rewritten.
+- Yahoo rate limits no longer collapse the chart to current-point markers: SEC company facts supply filed shares for operating companies, while SEC Form N-PORT supplies disclosed net assets for funds such as QQQ. Longbridge still owns only the latest point and is never backfilled.
+- Market-cap joins normalize local prices and SEC disclosure dates to the same nanosecond precision before `merge_asof`; Python and Pandas builds that default parsed SEC dates to microseconds no longer discard the whole chart.
 - Return comparison, Market cap comparison, and Price performance retain independent ticker and range selections in session memory. A destination with no prior state inherits the current comparison selection on first entry.
 
 ## Workspace range-option policy unified on 14 Jul 2026
@@ -416,6 +721,13 @@ Documentation version: `v1.50.0`
 | `compare_portfolio_and_backtest_pages_keep_controls_inside_workspace` | Outdated routes, labels, and Mock | Uses canonical routes, current labels, and shared factories. |
 
 ## Open issues
+
+- Longbridge OAuth and broker connection testing now share the standard Settings action-card structure, including the same content material, icon column, copy spacing, and button row.
+- Cash-equivalent remove controls stay visually hidden until their row is hovered or receives keyboard focus; the control remains available to keyboard users through `focus-within` disclosure.
+- Email SMTP text fields now use the same Liquid Glass input treatment as Workspace ticker entry, while retaining their existing input types, autocomplete semantics, and read-only states.
+- Export-image share previews now redraw chart-axis labels immediately when masking is toggled, so the visible numeric labels become `***` without changing chart geometry.
+- Local market identity resolution now treats bare US symbols and `.US` aliases as the same ticker fallback; AMD therefore displays its canonical issuer name instead of repeating `AMD` as the company name.
+- Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
 - Overall Python coverage is `46.2%`; the weakest modules are listed in `TESTING.md`.

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.15.2
+Code version: v0.17.0
 """
 
 from __future__ import annotations
@@ -1262,13 +1262,15 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
         history = history.rename(columns={"Datetime": "Date"})
 
     required_columns = ["Date", "Close"]
-    ohlc_columns = ["Open", "High", "Low", "Adj Close", "Dividends"]
+    ohlc_columns = ["Open", "High", "Low", "Adj Close", "Dividends", "Stock Splits"]
     missing_required = [column for column in required_columns if column not in history.columns]
     if missing_required:
         raise ValueError(f"Missing required columns for {ticker}: {', '.join(missing_required)}.")
 
     all_to_keep = required_columns + [col for col in ohlc_columns if col in history.columns]
     dataset = drop_duplicate_columns(history[all_to_keep].copy())
+    if not is_intraday_market_interval(interval) and "Stock Splits" not in dataset.columns:
+        dataset["Stock Splits"] = 0.0
     if is_intraday_market_interval(interval):
         dates = pd.to_datetime(dataset["Date"], utc=True)
         dataset["Date"] = dates.dt.tz_convert(NEW_YORK_TIMEZONE).dt.tz_localize(None)
@@ -1283,6 +1285,8 @@ def normalize_history_frame(history: pd.DataFrame, ticker: str, interval: str = 
         subset_for_drop.append("Adj Close")
     if "Dividends" in dataset.columns:
         dataset["Dividends"] = dataset["Dividends"].fillna(0.0)
+    if "Stock Splits" in dataset.columns:
+        dataset["Stock Splits"] = dataset["Stock Splits"].fillna(0.0)
     dataset = dataset.dropna(subset=subset_for_drop).sort_values("Date").reset_index(drop=True)
     return _apply_inferred_split_adjustments(dataset)
 
@@ -1313,6 +1317,10 @@ def _daily_history_has_incomplete_dividend_actions(dataset: pd.DataFrame) -> boo
     material_adjustment = adjustment_ratio.pct_change().abs() > DIVIDEND_ADJUSTMENT_SHIFT_TOLERANCE
     missing_cash_action = trailing["Dividends"] <= 0
     return bool((material_adjustment & missing_cash_action).any())
+
+
+def _daily_history_has_incomplete_split_actions(dataset: pd.DataFrame) -> bool:
+    return "Stock Splits" not in dataset.columns
 
 
 def _build_cash_dividend_close_series(dataset: pd.DataFrame) -> pd.Series:
@@ -1350,7 +1358,7 @@ def select_price_series(
 ) -> pd.DataFrame:
     normalized_dividend_mode = str(dividend_mode or ("reinvest" if include_dividends else "cash")).strip().lower()
     price_column = "Close"
-    cols = ["Date", "Open", "High", "Low", price_column, "Dividends"]
+    cols = ["Date", "Open", "High", "Low", price_column, "Dividends", "Stock Splits"]
     available_cols = [c for c in cols if c in dataset.columns]
     result = dataset[available_cols].copy()
     if normalized_dividend_mode == "reinvest":
@@ -1390,7 +1398,8 @@ def fetch_history(
         history_store_path_for_interval(normalized_ticker, normalized_interval),
     )
     if path.exists():
-        should_refresh_for_dividends = False
+        should_refresh_for_actions = False
+        split_actions_are_authoritative = False
         with market_store_file_lock(path):
             dataset = pd.read_parquet(path)
             if is_intraday_market_interval(normalized_interval):
@@ -1399,22 +1408,44 @@ def fetch_history(
                     write_parquet_atomic(path, normalized_intraday, index=False)
                 dataset = normalized_intraday
             else:
-                should_refresh_for_dividends = _daily_history_has_incomplete_dividend_actions(dataset)
+                split_actions_are_authoritative = not _daily_history_has_incomplete_split_actions(
+                    dataset
+                )
+                should_refresh_for_actions = (
+                    _daily_history_has_incomplete_dividend_actions(dataset)
+                    or _daily_history_has_incomplete_split_actions(dataset)
+                )
                 dataset = normalize_history_frame(dataset, normalized_ticker, interval=normalized_interval)
-        if should_refresh_for_dividends:
+        if should_refresh_for_actions:
             try:
                 refresh_history_store(normalized_ticker, force_full=True)
                 with market_store_file_lock(path):
-                    dataset = normalize_history_frame(pd.read_parquet(path), normalized_ticker, interval=normalized_interval)
+                    refreshed_dataset = pd.read_parquet(path)
+                    split_actions_are_authoritative = not _daily_history_has_incomplete_split_actions(
+                        refreshed_dataset
+                    )
+                    dataset = normalize_history_frame(
+                        refreshed_dataset,
+                        normalized_ticker,
+                        interval=normalized_interval,
+                    )
             except Exception as exc:
-                LOGGER.warning("Unable to refresh dividend actions for %s at %s: %s", normalized_ticker, path, exc)
-        return select_price_series(dataset, include_dividends, dividend_mode=dividend_mode)
+                LOGGER.warning("Unable to refresh corporate actions for %s at %s: %s", normalized_ticker, path, exc)
+        result = select_price_series(dataset, include_dividends, dividend_mode=dividend_mode)
+        result.attrs["stock_split_actions_authoritative"] = split_actions_are_authoritative
+        return result
 
     history = download_full_history(normalized_ticker, interval=normalized_interval)
+    split_actions_are_authoritative = (
+        is_intraday_market_interval(normalized_interval)
+        or not _daily_history_has_incomplete_split_actions(history)
+    )
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     with market_store_file_lock(path):
         write_parquet_atomic(path, normalized_dataset, index=False)
-    return select_price_series(normalized_dataset, include_dividends, dividend_mode=dividend_mode)
+    result = select_price_series(normalized_dataset, include_dividends, dividend_mode=dividend_mode)
+    result.attrs["stock_split_actions_authoritative"] = split_actions_are_authoritative
+    return result
 
 
 def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:

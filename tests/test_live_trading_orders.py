@@ -1,7 +1,7 @@
 """
 Tests for Longbridge live trading order flows.
 
-Code version: v0.2.2
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -155,7 +155,9 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertIn("assets/css/app.css", locked_body)
         self.assertIn('id="live_trading_pin"', locked_body)
         self.assertEqual(locked_body.count('class="live-trading-pin-slot"'), 6)
-        self.assertIn('slot.textContent = filled ? "•" : ""', locked_body)
+        self.assertIn('class="live-trading-pin-heading"', locked_body)
+        self.assertIn('slot.classList.toggle("is-filled", filled)', locked_body)
+        self.assertNotIn('class="live-trading-pin-back"', locked_body)
         self.assertNotIn('id="live_trading_broker"', locked_body)
 
         response = client.post(

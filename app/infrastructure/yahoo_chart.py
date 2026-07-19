@@ -1,7 +1,7 @@
 """
 Direct Yahoo Chart API transport for daily and intraday market history fallback.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -47,6 +47,23 @@ def _event_date(timestamp: object, timezone_name: str) -> pd.Timestamp | None:
     except (KeyError, TypeError, ValueError):
         pass
     return parsed.tz_localize(None).normalize()
+
+
+def _split_factor(event: dict[str, object]) -> float | None:
+    numerator = pd.to_numeric(event.get("numerator"), errors="coerce")
+    denominator = pd.to_numeric(event.get("denominator"), errors="coerce")
+    if pd.notna(numerator) and pd.notna(denominator) and float(denominator) > 0:
+        factor = float(numerator) / float(denominator)
+        return factor if factor > 0 else None
+    ratio_parts = str(event.get("splitRatio") or "").split(":", maxsplit=1)
+    if len(ratio_parts) != 2:
+        return None
+    numerator = pd.to_numeric(ratio_parts[0], errors="coerce")
+    denominator = pd.to_numeric(ratio_parts[1], errors="coerce")
+    if pd.isna(numerator) or pd.isna(denominator) or float(denominator) <= 0:
+        return None
+    factor = float(numerator) / float(denominator)
+    return factor if factor > 0 else None
 
 
 def _build_chart_url(
@@ -164,6 +181,21 @@ def _parse_chart_payload(payload: object, ticker: str, *, interval: str = "1d") 
             matching_rows = frame.index == dividend_date
             if matching_rows.any():
                 frame.loc[matching_rows, "Dividends"] += float(amount)
+
+    if not is_intraday:
+        frame["Stock Splits"] = 0.0
+        splits = events.get("splits") if isinstance(events, dict) else None
+        if isinstance(splits, dict):
+            for split in splits.values():
+                if not isinstance(split, dict):
+                    continue
+                split_date = _event_date(split.get("date"), timezone_name)
+                factor = _split_factor(split)
+                if split_date is None or factor is None:
+                    continue
+                matching_rows = frame.index == split_date
+                if matching_rows.any():
+                    frame.loc[matching_rows, "Stock Splits"] = factor
 
     frame.index.name = "Date"
     frame = frame.loc[~frame.index.isna()].copy()

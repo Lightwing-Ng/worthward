@@ -1,12 +1,12 @@
-/* Code version: v1.25.0 */
+/* Code version: v1.30.2 */
 
 .investment-workspace-header {
-    --investment-section-resizer-size: 16px;
+    --investment-section-resizer-size: 12px;
     --investment-section-min-height: 148px;
     --investment-overview-min-height: var(--investment-section-min-height);
     --investment-history-min-height: var(--investment-section-min-height);
     --investment-default-overview-share: 0.5;
-    --investment-equity-stage-min-height: clamp(180px, 24dvh, 240px);
+    --investment-equity-stage-min-height: clamp(var(--investment-section-min-height), 24dvh, 240px);
     --investment-history-row-min-height: 40px;
     flex: 1 1 auto;
     min-height: 0;
@@ -20,10 +20,23 @@
     margin-bottom: 0;
 }
 
+@media (min-width: 768px) {
+    .investment-workspace-header > .workspace-summary-card {
+        transition: padding-top 560ms var(--motion-emphasized);
+    }
+
+    .app-shell.is-sidebar-open .investment-workspace-header > .workspace-summary-card {
+        padding-top: var(--workspace-article-pad-block-start);
+    }
+}
+
 .investment-section-resizer {
+    --surface-resizer-line-size: 1px;
+    --surface-resizer-handle-short: 10px;
     width: 100%;
     height: var(--investment-section-resizer-size);
-    margin-block: -4px;
+    min-height: 0;
+    margin-block: -2px;
     align-self: center;
 }
 
@@ -385,7 +398,8 @@
     border: 0 !important;
     background: transparent;
     box-shadow: none;
-    font-size: var(--font-tooltip);
+    font: inherit;
+    letter-spacing: inherit;
     color: inherit;
 }
 
@@ -403,6 +417,175 @@
 
 .investment-side-filter-dropdown {
     min-width: 120px;
+}
+
+.investment-history-currency-filter-header,
+.investment-history-time-filter-header {
+    position: relative;
+    padding: var(--scrollable-data-table-header-padding);
+    vertical-align: top;
+    color: var(--scrollable-data-table-header-color);
+    pointer-events: auto;
+}
+
+.investment-currency-filter-default-label,
+.investment-time-filter-default-label {
+    position: static;
+    display: block;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 160ms var(--motion-standard);
+}
+
+.investment-currency-filter-field,
+.investment-currency-filter-row,
+.investment-stock-details-time-filter-field {
+    width: 100%;
+    margin: 0;
+}
+
+.investment-currency-filter-field,
+.investment-stock-details-time-filter-field {
+    position: absolute;
+    inset: 2px 1px;
+    opacity: 0;
+    transition: opacity 160ms var(--motion-standard);
+}
+
+.investment-history-currency-filter-header:hover .investment-currency-filter-field,
+.investment-history-currency-filter-header:focus-within .investment-currency-filter-field,
+.investment-history-currency-filter-header:has(.investment-currency-filter-field.is-open) .investment-currency-filter-field,
+.investment-history-time-filter-header:hover .investment-stock-details-time-filter-field,
+.investment-history-time-filter-header:focus-within .investment-stock-details-time-filter-field,
+.investment-history-time-filter-header:has(.investment-stock-details-time-filter-field.is-open) .investment-stock-details-time-filter-field {
+    opacity: 1;
+}
+
+.investment-history-currency-filter-header:hover .investment-currency-filter-default-label,
+.investment-history-currency-filter-header:focus-within .investment-currency-filter-default-label,
+.investment-history-currency-filter-header:has(.investment-currency-filter-field.is-open) .investment-currency-filter-default-label,
+.investment-history-time-filter-header:hover .investment-time-filter-default-label,
+.investment-history-time-filter-header:focus-within .investment-time-filter-default-label,
+.investment-history-time-filter-header:has(.investment-stock-details-time-filter-field.is-open) .investment-time-filter-default-label {
+    opacity: 0;
+}
+
+.investment-currency-filter-trigger.form-select {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    height: 22px;
+    padding: 0 14px 0 4px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--font-tooltip);
+    color: inherit;
+}
+
+.investment-currency-filter-trigger .trade-strategy-trigger-label {
+    justify-content: center;
+    width: 100%;
+}
+
+.investment-currency-filter-trigger .trade-strategy-trigger-chevron {
+    position: absolute;
+    inset-inline-end: 3px;
+    width: 7px;
+    height: 5px;
+}
+
+.investment-currency-filter-dropdown {
+    min-width: 120px;
+}
+
+.investment-stock-details-time-filter-trigger {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    height: 22px;
+    padding: 0 4px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.investment-stock-details-time-filter-trigger:hover,
+.investment-stock-details-time-filter-trigger:focus-visible {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    outline: none;
+}
+
+.investment-stock-details-time-filter-panel {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: var(--control-liquid-border);
+    border-radius: var(--radius-panel);
+    background: var(--control-liquid-background);
+    box-shadow: var(--control-liquid-shadow-focus);
+    backdrop-filter: var(--control-liquid-blur);
+    -webkit-backdrop-filter: var(--control-liquid-blur);
+}
+
+.investment-stock-details-time-filter-panel[hidden] {
+    display: none;
+}
+
+.investment-stock-details-time-filter-guidance {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--font-tooltip);
+    line-height: 1.35;
+}
+
+.investment-stock-details-date-picker-field {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+.investment-stock-details-date-picker-field > label {
+    color: var(--muted);
+    font-size: var(--font-tooltip);
+    font-weight: var(--font-weight-bold);
+}
+
+.investment-stock-details-date-picker-field .date-picker-trigger {
+    min-height: 34px;
+    padding: 8px 10px;
+}
+
+.investment-stock-details-time-filter-clear {
+    min-height: 32px;
+    padding: 7px 10px;
+    border: var(--control-liquid-border);
+    border-radius: var(--radius-control);
+    background: var(--glass-chip-background);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--font-tooltip);
+    cursor: pointer;
+}
+
+.investment-stock-details-time-filter-clear:hover,
+.investment-stock-details-time-filter-clear:focus-visible {
+    background: var(--glass-chip-background-hover);
+    outline: none;
 }
 
 .investment-broker-filter-field {
@@ -1900,6 +2083,7 @@
 
 .investment-chart-stack {
     --trade-chart-y-padding-px: 8;
+    --investment-equity-peak-guard: 5px;
     display: flex;
     flex-wrap: nowrap;
     align-items: stretch;
@@ -3660,46 +3844,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-feedback-banner[hidden] {
     display: none !important;
-}
-
-.investment-import-feedback-banner .notice-floating-banner-title {
-    max-width: none;
-}
-
-.investment-import-feedback-copy {
-    display: grid;
-    gap: 0.4rem;
-}
-
-.investment-import-feedback-heading {
-    margin: 0;
-    font-weight: 600;
-}
-
-.investment-import-feedback-list {
-    margin: 0;
-    padding-left: 1.55rem;
-}
-
-.investment-import-feedback-list li {
-    margin: 0;
-    padding-left: 0.2rem;
-}
-
-.investment-import-feedback-list li + li {
-    margin-top: 0.22rem;
-}
-
-.investment-import-feedback-banner-icon-success {
-    background-color: var(--theme-accent-positive);
-    mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/checkmark.circle.fill.green.svg") center/contain no-repeat;
-}
-
-.investment-import-feedback-banner-icon-error {
-    background-color: var(--theme-error);
-    mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/info.circle.fill.svg") center/contain no-repeat;
 }
 
 .investment-import-action-package {

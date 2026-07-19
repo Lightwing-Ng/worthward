@@ -1,4 +1,4 @@
-/* Code version: v0.9.0 */
+/* Code version: v0.11.1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -150,29 +150,6 @@
             if (value) element.style.background = value;
         });
 
-        document.querySelectorAll("[data-inline-backdrop-filter]").forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            const value = (element.dataset.inlineBackdropFilter || "").trim();
-            if (value) element.style.backdropFilter = value;
-        });
-
-        document.querySelectorAll("[data-inline-webkit-backdrop-filter]").forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            const value = (element.dataset.inlineWebkitBackdropFilter || "").trim();
-            if (value) element.style.setProperty("-webkit-backdrop-filter", value);
-        });
-
-        document.querySelectorAll("[data-inline-border]").forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            const value = (element.dataset.inlineBorder || "").trim();
-            if (value) element.style.border = value;
-        });
-
-        document.querySelectorAll("[data-inline-box-shadow]").forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            const value = (element.dataset.inlineBoxShadow || "").trim();
-            if (value) element.style.boxShadow = value;
-        });
     };
 
     const attachSettingsSummaryMorph = () => {
@@ -376,6 +353,7 @@
             demos.forEach((demo) => {
                 demo.dataset.styleTokenDensity = density;
             });
+            refreshStyleTokenPortfolioDonutDemo();
         };
         refreshStyleTokenDemoDensity = applyDensity;
 
@@ -386,6 +364,9 @@
             });
             applyDensity();
             resizeObserver.observe(shell);
+            shell.querySelectorAll(".style-token-portfolio-donut-orbit").forEach((orbitElement) => {
+                if (orbitElement instanceof HTMLElement) resizeObserver.observe(orbitElement);
+            });
         } else {
             const syncAllDensities = () => {
                 applyDensity();
@@ -419,14 +400,15 @@
                 || 20;
             const satelliteRadius = (logoSize * Math.SQRT2) / 2;
             const orbitRadius = (donutSize / 2) + satelliteRadius;
-            const center = orbitElement.clientWidth / 2;
+            const centerX = orbitElement.clientWidth / 2;
+            const centerY = orbitElement.clientHeight / 2;
             orbitElement.querySelectorAll(".portfolio-donut-logo[data-style-token-donut-angle]").forEach((logoElement) => {
                 if (!(logoElement instanceof HTMLImageElement)) return;
                 const angle = Number.parseFloat(logoElement.dataset.styleTokenDonutAngle || "");
                 if (!Number.isFinite(angle)) return;
                 const radians = ((angle - 90) * Math.PI) / 180;
-                const x = center + (Math.cos(radians) * orbitRadius);
-                const y = center + (Math.sin(radians) * orbitRadius);
+                const x = centerX + (Math.cos(radians) * orbitRadius);
+                const y = centerY + (Math.sin(radians) * orbitRadius);
                 logoElement.style.left = `${x.toFixed(2)}px`;
                 logoElement.style.top = `${y.toFixed(2)}px`;
             });
@@ -598,10 +580,23 @@
             const syncActiveValue = () => {
                 const checkedInput = switchShell.querySelector('input[type="radio"]:checked');
                 const nextValue = checkedInput instanceof HTMLInputElement ? checkedInput.value : "period";
-                switchShell.setAttribute("data-active", nextValue === "exact" ? "exact" : "period");
+                const isExact = nextValue === "exact";
+                switchShell.setAttribute("data-active", isExact ? "exact" : "period");
+                switchShell.dataset.segmentedActiveIndex = isExact ? "1" : "0";
+                switchShell.style.setProperty("--segmented-active-index", isExact ? "1" : "0");
             };
             switchShell.querySelectorAll('input[type="radio"]').forEach((input) => {
                 input.addEventListener("change", syncActiveValue);
+            });
+            switchShell.addEventListener("click", (event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                const option = target?.closest(".range-mode-option");
+                if (!(option instanceof HTMLLabelElement) || !switchShell.contains(option)) return;
+                const input = option.querySelector('input[type="radio"]');
+                if (!(input instanceof HTMLInputElement) || input.disabled || input.checked) return;
+                event.preventDefault();
+                input.checked = true;
+                input.dispatchEvent(new Event("change", {bubbles: true}));
             });
             syncActiveValue();
         });
@@ -1203,6 +1198,7 @@
             || rootStyles.getPropertyValue("--text").trim()
             || "#111827";
         const chartKind = (canvas.dataset.styleTokenShareChart || "overview").trim();
+        const maskSensitive = card.classList.contains("is-share-sensitive-masked");
         const isOverviewStyleChart = chartKind === "overview";
         const labelFontSize = isOverviewStyleChart
             ? 23
@@ -1282,7 +1278,7 @@
             const ratio = (value - minValue) / (maxValue - minValue);
             const y = padding.top + plotHeight - (ratio * plotHeight);
             context.textAlign = "right";
-            context.fillText(formatShareChartAxisValue(value), padding.left - safePadding, y);
+            context.fillText(maskSensitive ? "***" : formatShareChartAxisValue(value), padding.left - safePadding, y);
         });
 
         context.textBaseline = "top";
@@ -2015,6 +2011,12 @@
         const uploadInput = form.querySelector("[data-language-upload-input]");
         const saveButton = form.querySelector("[data-language-save-button]");
         const saveFeedback = form.querySelector("[data-language-save-feedback]");
+        const languageUi = {
+            saving: form.dataset.languageSavingLabel || "Saving...",
+            savingTranslations: form.dataset.languageSavingTranslationsLabel || "Saving translations...",
+            saved: form.dataset.languageSavedLabel || "Translations saved.",
+            saveError: form.dataset.languageSaveErrorLabel || "Unable to save translations right now.",
+        };
         const languageInputs = Array.from(form.querySelectorAll('tbody input[type="text"][name^="translation_"]'))
             .filter((input) => input instanceof HTMLInputElement);
 
@@ -2060,7 +2062,7 @@
                 saveButton.setAttribute("aria-busy", String(isPending));
                 if (isPending) {
                     saveButton.dataset.languageSaveLabel = saveButton.dataset.languageSaveLabel || saveButton.textContent || "Save translations";
-                    saveButton.textContent = "Saving...";
+                    saveButton.textContent = languageUi.saving;
                 } else {
                     saveButton.textContent = saveButton.dataset.languageSaveLabel || "Save translations";
                     saveButton.removeAttribute("aria-busy");
@@ -2097,7 +2099,7 @@
                 actionInput.value = "save";
                 event.preventDefault();
                 const hadDirtyFields = syncAllLanguageDirtyStates();
-                setSaveFeedback(hadDirtyFields ? "Saving translations..." : "Saving translations...", "");
+                setSaveFeedback(languageUi.savingTranslations, "");
                 setSavePending(true);
                 try {
                     const response = await fetch(form.action, {
@@ -2113,9 +2115,9 @@
                         throw new Error(payload?.notice || `Language save failed: ${response.status}`);
                     }
                     clearLanguageDirtyState();
-                    setSaveFeedback(payload.notice || "Translations saved.", "success");
+                    setSaveFeedback(languageUi.saved, "success");
                 } catch (_error) {
-                    setSaveFeedback("Unable to save translations right now.", "error");
+                    setSaveFeedback(languageUi.saveError, "error");
                 } finally {
                     setSavePending(false);
                 }
@@ -2132,8 +2134,10 @@
                 const isActive = tab.dataset.languageTab === targetName;
                 tab.classList.toggle("is-active", isActive);
                 tab.setAttribute("aria-selected", String(isActive));
+                tab.tabIndex = isActive ? 0 : -1;
                 if (isActive && tabShell instanceof HTMLElement) {
-                    tabShell.style.setProperty("--language-tab-index", String(index));
+                    tabShell.dataset.segmentedActiveIndex = String(index);
+                    tabShell.style.setProperty("--segmented-active-index", String(index));
                 }
             });
             panels.forEach((panel) => {

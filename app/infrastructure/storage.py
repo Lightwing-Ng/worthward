@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.5.1
+Code version: v0.6.0
 """
 
 from __future__ import annotations
@@ -202,6 +202,7 @@ def market_ticker_store_aliases(ticker: str) -> list[str]:
 # other remote profile providers. Keep ledger symbols unchanged; this only
 # affects display labels and profile refresh fallbacks.
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
+    "AMD": "Advanced Micro Devices, Inc.",
     "DRAM": "Roundhill Memory ETF",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
     "SKHY": "SK hynix Inc.",
@@ -466,9 +467,21 @@ def logo_store_filenames_for(ticker: str) -> list[str]:
 def resolve_logo_store_path(ticker: str) -> Path | None:
     for filename in logo_store_filenames_for(ticker):
         candidate = LOGOS_STORE_DIR / filename
-        if candidate.exists() and candidate.stat().st_size > 0:
+        if candidate.exists() and candidate.stat().st_size > 0 and _logo_content_matches_extension(candidate):
             return candidate
     return None
+
+
+def _logo_content_matches_extension(path: Path) -> bool:
+    try:
+        prefix = path.read_bytes()[:512]
+    except OSError:
+        return False
+    if path.suffix.lower() == ".png":
+        return prefix.startswith(b"\x89PNG\r\n\x1a\n")
+    if path.suffix.lower() == ".svg":
+        return b"<svg" in prefix.lower()
+    return False
 
 
 def logo_store_path_for(ticker: str) -> Path:
@@ -949,6 +962,24 @@ def load_search_cache_items(query: str) -> list[dict[str, str]]:
         for _, row in matches.iterrows()
         if str(row.get("symbol") or "").strip()
     ]
+
+
+def load_latest_search_cache_item_for_symbol(symbol: str) -> dict[str, str] | None:
+    normalized_symbol = normalize_ticker(symbol)
+    table = _load_search_cache_table()
+    if table.empty:
+        return None
+    matches = table.loc[table["symbol"] == normalized_symbol].copy()
+    if matches.empty:
+        return None
+    row = matches.sort_values("updated_at", ascending=False).iloc[0]
+    return {
+        "symbol": str(row.get("symbol") or "").upper(),
+        "name": str(row.get("name") or "").strip(),
+        "asset_type": str(row.get("asset_type") or "").strip(),
+        "logo_url": str(row.get("logo_url") or "").strip(),
+        "source": str(row.get("source") or "remote").strip() or "remote",
+    }
 
 
 def store_search_cache_items(query: str, items: list[dict[str, str]]) -> None:

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options with context %}
+{% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
 {% block sidebar_content %}
 {% set nav_sections = [
@@ -164,7 +164,7 @@
         <div class="settings-general-header">
             <p class="settings-general-kicker">{{ translate_ui('Language') }}</p>
         </div>
-        <form class="settings-general-form settings-language-form" method="post" action="{{ settings_urls.general }}/action" enctype="multipart/form-data" data-settings-language-form>
+        <form class="settings-general-form settings-language-form" method="post" action="{{ settings_urls.general }}/action" enctype="multipart/form-data" data-settings-language-form data-language-saving-label="{{ translate_ui('Saving...') }}" data-language-saving-translations-label="{{ translate_ui('Saving translations...') }}" data-language-saved-label="{{ translate_ui('Translations saved.') }}" data-language-save-error-label="{{ translate_ui('Unable to save translations right now.') }}">
             <input type="hidden" name="language_action" value="save" data-language-action-input>
             <div class="settings-language-options" role="radiogroup" aria-label="{{ translate_ui('Language') }}">
                 {% for option in language_options %}
@@ -177,15 +177,15 @@
                 {% endfor %}
             </div>
             <div class="settings-language-toolbar">
-                <div class="settings-language-tabs" role="tablist" aria-label="{{ translate_ui('Language') }}">
-                    <button type="button" class="settings-language-tab is-active" data-language-tab="current" aria-selected="true">Current</button>
-                    <button type="button" class="settings-language-tab" data-language-tab="history" aria-selected="false">History</button>
+                <div class="settings-language-tabs segmented-control" role="tablist" aria-label="{{ translate_ui('Language') }}" data-option-count="2" data-segmented-active-index="0">
+                    <button type="button" class="settings-language-tab segmented-control-option is-active" data-language-tab="current" role="tab" aria-selected="true" tabindex="0"><span>{{ translate_ui('Current') }}</span></button>
+                    <button type="button" class="settings-language-tab segmented-control-option" data-language-tab="history" role="tab" aria-selected="false" tabindex="-1"><span>{{ translate_ui('History') }}</span></button>
                 </div>
                 <div class="settings-language-file-actions" aria-label="{{ translate_ui('Language mapping file actions') }}">
-                    <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="Upload i18n mapping" title="Upload i18n mapping">
+                    <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="{{ translate_ui('Upload i18n mapping') }}" title="{{ translate_ui('Upload i18n mapping') }}">
                         <span class="icon icon-language-upload" aria-hidden="true"></span>
                     </button>
-                    <a class="settings-round-icon-button settings-language-file-button settings-language-file-button-download" href="/api/settings/language/mapping.xlsx" download aria-label="Download i18n mapping" title="Download i18n mapping">
+                    <a class="settings-round-icon-button settings-language-file-button settings-language-file-button-download" href="/api/settings/language/mapping.xlsx" download aria-label="{{ translate_ui('Download i18n mapping') }}" title="{{ translate_ui('Download i18n mapping') }}">
                         <span class="icon icon-language-download" aria-hidden="true"></span>
                     </a>
                     <input type="file" name="language_mapping_xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-language-upload-input hidden>
@@ -202,7 +202,7 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th>No.</th>
+                                <th>{{ translate_ui('No.') }}</th>
                                 <th class="{% if language_code == 'en' %}is-current-language{% endif %}">
                                     <span class="settings-language-header-label">English</span>
                                     {% if language_code == 'en' %}
@@ -245,7 +245,7 @@
                         </table>
                     </div>
                 </div>
-                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="current" aria-label="Language mapping pages"></nav>
+                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="current" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
             </div>
             <div class="settings-language-panel" data-language-panel="history" hidden>
                 <div class="settings-language-table-shell scrollable-data-table-shell">
@@ -257,14 +257,14 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th>No.</th>
-                                <th>Timestamp</th>
-                                <th>Change</th>
+                                <th>{{ translate_ui('No.') }}</th>
+                                <th>{{ translate_ui('Timestamp') }}</th>
+                                <th>{{ translate_ui('Change') }}</th>
                             </tr>
                         </thead>
                     </table>
                     <div class="settings-table-wrap settings-language-table-wrap scrollable-data-table-scroll">
-                        <table class="settings-table settings-language-history-table scrollable-data-table" aria-label="Language mapping history">
+                        <table class="settings-table settings-language-history-table scrollable-data-table" aria-label="{{ translate_ui('Language mapping history') }}">
                             <colgroup>
                                 <col class="settings-language-col-no">
                                 <col class="settings-language-col-timestamp">
@@ -281,14 +281,14 @@
                                 <tr data-language-row>
                                     <td>1</td>
                                     <td></td>
-                                    <td>No language mapping changes recorded yet.</td>
+                                    <td>{{ translate_ui('No language mapping changes recorded yet.') }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
-                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="history" aria-label="Language history pages"></nav>
+                <nav class="local-store-pagination settings-language-pagination" data-language-pagination="history" aria-label="{{ translate_ui('Language mapping pages') }}"></nav>
             </div>
             <div class="settings-language-submit-row">
                 <button type="submit" class="settings-inline-button settings-inline-button-primary settings-language-save-button" data-language-save-button data-language-save-label="{{ translate_ui('Save translations') }}">{{ translate_ui('Save translations') }}</button>
@@ -306,11 +306,11 @@
                 <label for="settings_full_date_format">{{ translate_ui('Full') }}</label>
                 <div class="trade-strategy-row backtest-shared-select-row">
                     <select id="settings_full_date_format" name="full_date_format" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
-                        <option value="d_mmm_yyyy" data-description="Single-digit day without leading zero, such as 8 Dec 2026." {% if date_display_full_format == 'd_mmm_yyyy' %}selected{% endif %}>D Mmm yyyy</option>
-                        <option value="dd_mmm_yyyy" data-description="Day is always zero-padded, such as 08 Dec 2026." {% if date_display_full_format == 'dd_mmm_yyyy' %}selected{% endif %}>DD Mmm yyyy</option>
-                        <option value="yyyy_mmm_d" data-description="East Asian ordering without day padding, such as 2026 Dec 8." {% if date_display_full_format == 'yyyy_mmm_d' %}selected{% endif %}>yyyy Mmm D</option>
-                        <option value="yyyy_mmm_dd" data-description="East Asian ordering with zero-padded day, such as 2026 Dec 08." {% if date_display_full_format == 'yyyy_mmm_dd' %}selected{% endif %}>yyyy Mmm DD</option>
-                        <option value="yyyy_mm_dd_cjk" data-description="East Asian full numeric format, such as 2026年06月01日." {% if date_display_full_format == 'yyyy_mm_dd_cjk' %}selected{% endif %}>yyyy年mm月dd日</option>
+                        <option value="d_mmm_yyyy" data-description="{{ translate_ui('Single-digit day without leading zero, such as 8 Dec 2026.') }}" {% if date_display_full_format == 'd_mmm_yyyy' %}selected{% endif %}>D Mmm yyyy</option>
+                        <option value="dd_mmm_yyyy" data-description="{{ translate_ui('Day is always zero-padded, such as 08 Dec 2026.') }}" {% if date_display_full_format == 'dd_mmm_yyyy' %}selected{% endif %}>DD Mmm yyyy</option>
+                        <option value="yyyy_mmm_d" data-description="{{ translate_ui('East Asian ordering without day padding, such as 2026 Dec 8.') }}" {% if date_display_full_format == 'yyyy_mmm_d' %}selected{% endif %}>yyyy Mmm D</option>
+                        <option value="yyyy_mmm_dd" data-description="{{ translate_ui('East Asian ordering with zero-padded day, such as 2026 Dec 08.') }}" {% if date_display_full_format == 'yyyy_mmm_dd' %}selected{% endif %}>yyyy Mmm DD</option>
+                        <option value="yyyy_mm_dd_cjk" data-description="{{ translate_ui('East Asian full numeric format, such as 2026年06月01日.') }}" {% if date_display_full_format == 'yyyy_mm_dd_cjk' %}selected{% endif %}>yyyy年mm月dd日</option>
                     </select>
                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                         <button
@@ -329,7 +329,7 @@
                         class="trade-strategy-dropdown backtest-shared-select-dropdown"
                         data-shared-select-dropdown
                         role="listbox"
-                        aria-label="Full date format"
+                        aria-label="{{ translate_ui('Full date format') }}"
                         hidden
                     ></div>
                 </div>
@@ -338,8 +338,8 @@
                 <label for="settings_short_date_format">{{ translate_ui('Compact') }}</label>
                 <div class="trade-strategy-row backtest-shared-select-row">
                     <select id="settings_short_date_format" name="short_date_format" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1" onchange="this.form.submit()">
-                        <option value="yyyy_mm_dd" data-description="Year-first numeric format, such as 2026/12/08." {% if date_display_short_format == 'yyyy_mm_dd' %}selected{% endif %}>yyyy/mm/dd</option>
-                        <option value="dd_mm_yyyy" data-description="European day-first numeric format, such as 08/12/2026." {% if date_display_short_format == 'dd_mm_yyyy' %}selected{% endif %}>dd/mm/yyyy</option>
+                        <option value="yyyy_mm_dd" data-description="{{ translate_ui('Year-first numeric format, such as 2026/12/08.') }}" {% if date_display_short_format == 'yyyy_mm_dd' %}selected{% endif %}>yyyy/mm/dd</option>
+                        <option value="dd_mm_yyyy" data-description="{{ translate_ui('European day-first numeric format, such as 08/12/2026.') }}" {% if date_display_short_format == 'dd_mm_yyyy' %}selected{% endif %}>dd/mm/yyyy</option>
                     </select>
                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                         <button
@@ -358,7 +358,7 @@
                         class="trade-strategy-dropdown backtest-shared-select-dropdown"
                         data-shared-select-dropdown
                         role="listbox"
-                        aria-label="Compact date format"
+                        aria-label="{{ translate_ui('Compact date format') }}"
                         hidden
                     ></div>
                 </div>
@@ -543,7 +543,7 @@
                 <p class="settings-service-note">Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full <code>@yahoo.com</code> address with the generated app password.</p>
             </div>
     </section>
-    <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell">
+    <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell settings-email-smtp-form">
             <input type="hidden" name="host" value="smtp.mail.yahoo.com">
             <input type="hidden" name="port" value="587">
             <div class="settings-form-grid">
@@ -799,14 +799,17 @@
                     </div>
                 </div>
 
-                <div data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
-                    <div class="settings-form-row">
-                        <div>
-                            <label class="settings-form-label">Longbridge OAuth</label>
+                <div class="settings-action-package-grid" data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name">Longbridge OAuth</p>
                             <p class="settings-service-note">Authorize through the installed Longbridge CLI in a separate browser window. Antigravity does not receive, display, or store the authorization code or OAuth token. Your existing terminal CLI profile is used automatically.</p>
                         </div>
-                        <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>Authorize in browser</button>
-                    </div>
+                        <div class="settings-action-package-form">
+                            <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>Authorize in browser</button>
+                        </div>
+                    </section>
                 </div>
 
                 <div data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
@@ -880,15 +883,7 @@
                             <p class="style-token-demo-title">{{ row.sample_title }}</p>
                             <p class="style-token-demo-copy">{{ row.sample_copy }}</p>
                         </div>
-                        <div
-                            class="report-card style-token-demo-card"
-                            data-inline-background="{{ row.sample_surface_background }}"
-                            data-inline-backdrop-filter="{{ row.sample_surface_blur }}"
-                            data-inline-webkit-backdrop-filter="{{ row.sample_surface_blur }}"
-                            data-inline-border="{{ row.sample_surface_border }}"
-                            data-inline-box-shadow="{{ row.sample_surface_shadow }}"
-                        >
-                        </div>
+                        <div class="report-card style-token-demo-card" aria-hidden="true"></div>
                     </div>
                     {% endif %}
                 </div>
@@ -965,7 +960,7 @@
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
                     {% if row.sample_kind == "range-mode" %}
-                    <div class="range-mode-shell" data-active="period">
+                    <div class="range-mode-shell" data-active="period" data-option-count="2" data-segmented-active-index="0" role="radiogroup" aria-label="Style token range mode">
                         <label class="range-mode-option" for="style_token_range_relative">
                             <input id="style_token_range_relative" name="style_token_range_mode" type="radio" value="period" checked>
                             <span>Relative</span>
@@ -1062,13 +1057,14 @@
                     </div>
                     {% elif row.sample_kind == "floating-banner" %}
                     <div class="style-token-modal-shell">
-                        <div class="notice notice-floating notice-floating-banner style-token-modal-demo">
-                            <button type="button" class="dismiss-button notice-close" aria-label="Dismiss">
-                                <span class="icon icon-dismiss-control"></span>
-                            </button>
-                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon notice-floating-banner-icon" aria-hidden="true"></span>
-                            <span class="workspace-modal-title notice-floating-banner-title">{{ row.sample_title }}</span>
-                        </div>
+                        {% call render_notice_banner(
+                            title=row.sample_title,
+                            icon_class=row.sample_icon_class,
+                            banner_class="style-token-modal-demo",
+                            numbered=false
+                        ) %}
+                            <ol class="notice-floating-banner-list"><li><strong>{{ row.sample_copy }}</strong></li></ol>
+                        {% endcall %}
                     </div>
                     {% elif row.sample_kind == "chart-tooltip" %}
                     <div class="style-token-chart-tooltip-shell">

@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.7.0
+Code version: v0.7.4
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from urllib.request import Request
 from curl_cffi.curl import CurlError
 from curl_cffi.requests.exceptions import RequestException
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 from flask import url_for
 
 from app.infrastructure.connectivity import has_remote_logo_access, has_remote_market_access
@@ -41,6 +42,7 @@ from app.infrastructure.storage import (
     list_local_tickers,
     resolve_known_ticker_company_name,
     load_profile_record,
+    load_latest_search_cache_item_for_symbol,
     load_search_cache_items,
     LOGOS_STORE_DIR,
     logo_store_path_for,
@@ -418,6 +420,15 @@ def quote_lookup_symbol(ticker: str) -> str:
     return normalized_ticker
 
 
+def resolve_cached_search_company_name(ticker: str) -> str | None:
+    normalized_ticker = normalize_ticker_input(ticker)
+    item = load_latest_search_cache_item_for_symbol(normalized_ticker) or {}
+    company_name = str(item.get("name") or "").strip()
+    if is_ticker_fallback_company_name(company_name, normalized_ticker):
+        return None
+    return company_name
+
+
 def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
     normalized_ticker = normalize_ticker_input(ticker)
     lookup_symbol = quote_lookup_symbol(normalized_ticker)
@@ -433,6 +444,7 @@ def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
     company_name = (
             info.get("longName")
             or info.get("shortName")
+            or resolve_cached_search_company_name(normalized_ticker)
             or resolve_known_ticker_company_name(normalized_ticker)
             or normalized_ticker
     )
@@ -539,7 +551,8 @@ def refresh_logo_store(
     domain = extract_domain(website)
     logo_bytes = fetch_remote_logo_bytes(ticker, domain)
     if logo_bytes is not None:
-        path.write_bytes(logo_bytes)
+        png_path = LOGOS_STORE_DIR / f"{normalize_ticker_input(ticker)}.png"
+        png_path.write_bytes(logo_bytes)
 
 
 def fetch_and_store_logo(
@@ -575,7 +588,10 @@ def _fetch_quote_profile_for_scope(
     known_company_name = resolve_known_ticker_company_name(normalized_ticker)
 
     record_company_name = str((record or {}).get("company_name") or "").strip()
-    ticker_name_fallback = record_company_name.upper() == normalized_ticker if record_company_name else False
+    ticker_name_fallback = is_ticker_fallback_company_name(
+        record_company_name,
+        normalized_ticker,
+    )
 
     if not force_refresh and known_company_name and (not record or ticker_name_fallback):
         website = resolve_website(
@@ -801,7 +817,7 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     else:
         try:
             results = _search_yfinance_quotes(remote_search_query(query, normalized_query))
-        except (RequestException, CurlError, TimeoutError, ConnectionError) as exc:
+        except (RequestException, CurlError, YFRateLimitError, TimeoutError, ConnectionError) as exc:
             LOGGER.warning(
                 "Ticker search remote lookup failed for %s: %s",
                 normalized_query,

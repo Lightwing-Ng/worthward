@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -104,6 +104,13 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
         self.assertIn('value="ibkr"', html)
         self.assertIn('value="longbridge"', html)
         self.assertIn("Authorize in browser", html)
+        oauth_start = html.index('data-broker-fields="longbridge"')
+        oauth_end = html.index('data-broker-fields="ibkr"')
+        oauth_markup = html[oauth_start:oauth_end]
+        self.assertIn("settings-action-package settings-callout-card-primary", oauth_markup)
+        self.assertIn("settings-action-package-icon-shell", oauth_markup)
+        self.assertIn("settings-action-package-copy settings-callout-text", oauth_markup)
+        self.assertIn("settings-action-package-form", oauth_markup)
         self.assertNotIn("longbridge_auth_code", html)
         self.assertNotIn('name="longbridge_access_token"', html)
 

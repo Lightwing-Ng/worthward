@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.3.0
+Code version: v1.3.5
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ APP_JS = ROOT / "app/web/static/assets/js/app.js"
 SETTINGS_JS = ROOT / "app/web/static/assets/js/settings.js"
 SHELL_CSS = ROOT / "app/web/static/assets/css/layout/shell.css"
 RESPONSIVE_CSS = ROOT / "app/web/static/assets/css/utilities/responsive.css"
+WORKSPACE_CSS = ROOT / "app/web/static/assets/css/views/workspace.css"
 
 
 def _slice_between(html: str, start_marker: str, end_marker: str) -> str:
@@ -219,13 +220,18 @@ class WorkspaceMigrationTests(unittest.TestCase):
             '<aside class="panel sidebar" id="app_sidebar">',
             "</aside>",
         )
-        self.assertLess(market_cap_sidebar.index("Return comparison"), market_cap_sidebar.index("Market cap comparison"))
-        self.assertLess(market_cap_sidebar.index("Market cap comparison"), market_cap_sidebar.index("Price performance"))
+        self.assertLess(market_cap_sidebar.index("Price performance"), market_cap_sidebar.index("Market cap comparison"))
+        self.assertLess(market_cap_sidebar.index("Market cap comparison"), market_cap_sidebar.index("Compute your portfolio"))
         self.assertIn('"market_caps": [1000000000.0, 1100000000.0]', market_cap_html)
         self.assertIn('data-exact-range-date-grid', market_cap_html)
         self.assertIn('data-exact-single-date-grid', market_cap_html)
         self.assertIn('id="exact_start"', market_cap_html)
         self.assertIn('id="exact_end"', market_cap_html)
+        self.assertNotIn('Market capitalization uses point-in-time shares without look-ahead.', market_cap_html)
+        self.assertNotIn('notice-market-cap-method', market_cap_html)
+        self.assertNotIn('notice-market-cap-method', WORKSPACE_CSS.read_text(encoding="utf-8"))
+        self.assertNotIn('Historical market capitalization', market_cap_html)
+        self.assertNotIn('class="workspace-method-note"', market_cap_html)
         self._assert_workspace_contract(
             responses["portfolio"].get_data(as_text=True),
             control_class='ticker-form-controls portfolio-controls',
