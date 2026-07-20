@@ -1,4 +1,4 @@
-/* Code version: v0.11.1 */
+/* Code version: v0.11.2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -870,8 +870,8 @@
             return [{className: "workspace-metric-value-major", text: `${prefix}${integerPart}${suffix}`}];
         }
         return [
-            {className: "workspace-metric-value-major", text: `${prefix}${integerPart}.`},
-            {className: "workspace-metric-value-minor", text: decimalPart},
+            {className: "workspace-metric-value-major", text: `${prefix}${integerPart}`},
+            {className: "workspace-metric-value-minor", text: `.${decimalPart}`},
             ...(suffix ? [{className: "workspace-metric-value-suffix", text: suffix}] : []),
         ];
     };

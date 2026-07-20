@@ -1,4 +1,4 @@
-/* Code version: v3.27.0 */
+/* Code version: v3.27.1 */
 
 .grid-trading-parameters-field {
     display: grid;
@@ -391,7 +391,7 @@
 .workspace-metric-value-minor {
     font-size: calc(1em * var(--workspace-metric-decimal-scale-local));
     line-height: 1;
-    transform: translateY(-0.02em);
+    transform: translateY(0.055em);
     transform-origin: left bottom;
 }
 

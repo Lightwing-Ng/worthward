@@ -1,4 +1,4 @@
-/* Code version: v0.22.0 */
+/* Code version: v0.22.2 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5691,7 +5691,10 @@
         const popoverGap = 8;
         const popoverRect = picker.popover.getBoundingClientRect();
         const popoverWidth = Math.min(320, viewportWidth - (viewportPadding * 2));
-        const popoverHeight = Math.min(popoverRect.height, viewportHeight - (viewportPadding * 2));
+        const popoverHeight = Math.min(
+            picker.popover.offsetHeight || popoverRect.height,
+            viewportHeight - (viewportPadding * 2),
+        );
         const leftBoundary = viewportLeft + viewportPadding;
         const topBoundary = viewportTop + viewportPadding;
         const rightBoundary = viewportLeft + viewportWidth - viewportPadding;
@@ -5722,6 +5725,14 @@
         const left = Math.min(Math.max(preferredLeft, leftBoundary), maxLeft);
         picker.popover.style.top = `${Math.round(top)}px`;
         picker.popover.style.left = `${Math.round(left)}px`;
+    };
+
+    const lockDatePickerPopoverFrame = (picker) => {
+        if (!picker.stableFrame) return;
+        picker.popover.style.height = "";
+        const naturalHeight = picker.popover.offsetHeight;
+        if (!Number.isFinite(naturalHeight) || naturalHeight <= 0) return;
+        picker.popover.style.height = `${naturalHeight}px`;
     };
 
     const getDatePickerPeer = (picker) => {
@@ -5838,6 +5849,20 @@
                 validationMessage: String(picker.validationMessage || ""),
             };
         }
+        const selectedMonthMatch = String(picker.selectedMonthValue || "").match(/^(\d{4})-(\d{2})$/);
+        if (selectedMonthMatch) {
+            const selectedMonthDate = new Date(Date.UTC(
+                Number.parseInt(selectedMonthMatch[1], 10),
+                Number.parseInt(selectedMonthMatch[2], 10) - 1,
+                1,
+            ));
+            return {
+                displayText: formatPickerMonthLabel(selectedMonthDate),
+                previewDate: null,
+                previewIsoValue: "",
+                validationMessage: String(picker.validationMessage || ""),
+            };
+        }
         const committedIsoValue = String(picker.input.value || "");
         return {
             displayText: committedIsoValue ? formatDisplayDate(committedIsoValue) : "",
@@ -5857,9 +5882,29 @@
         }
     };
 
+    const getDatePickerDefaultFeedback = (picker, workingState) => {
+        if (picker.guidance !== "single-day-or-month" || !picker.visibleMonth) {
+            return String(picker.defaultFeedback || "");
+        }
+        const monthLabel = formatPickerMonthLabel(picker.visibleMonth);
+        const selectedLabel = String(workingState?.displayText || "").trim();
+        if (picker.view === "months") {
+            if (picker.selectedMonthValue && selectedLabel) {
+                return `${selectedLabel} selected. Choose another calendar month.`;
+            }
+            return `Choose a calendar month in ${picker.visibleMonth.getUTCFullYear()}.`;
+        }
+        if (picker.input.value && selectedLabel) {
+            return `${selectedLabel} selected. Choose another day, or select ${monthLabel} for a whole month.`;
+        }
+        return `Choose a day, or select ${monthLabel} for a whole month.`;
+    };
+
     const applyDatePickerValidationState = (picker, workingState = getDatePickerWorkingState(picker)) => {
         const validationMessage = String(workingState.validationMessage || "");
-        const message = validationMessage || String(picker.interactionMessage || "");
+        const message = validationMessage
+            || String(picker.interactionMessage || "")
+            || getDatePickerDefaultFeedback(picker, workingState);
         syncDatePickerEditorText(picker, workingState.displayText, {force: Boolean(picker.forceDisplaySync)});
         picker.forceDisplaySync = false;
         picker.trigger.classList.toggle("is-invalid", Boolean(validationMessage));
@@ -5896,6 +5941,7 @@
 
     const updateDatePickerValue = (picker, isoValue, {emitChange = false, closePopover = false} = {}) => {
         const previousValue = String(picker.input.value || "");
+        picker.selectedMonthValue = "";
         picker.draftText = "";
         picker.validationMessage = "";
         clearDatePickerFeedback(picker);
@@ -5914,6 +5960,7 @@
         const previousValue = String(picker.input.value || "");
         const rawValue = normalizeDatePickerDraft(picker.triggerValue.textContent);
         if (!rawValue) {
+            picker.selectedMonthValue = "";
             picker.draftText = "";
             picker.validationMessage = "Enter a date.";
             picker.input.value = "";
@@ -6010,22 +6057,41 @@
             button.type = "button";
             button.className = "date-picker-month";
             const monthDate = new Date(Date.UTC(year, monthIndex, 1));
-            if (selectedDate && selectedDate.getUTCFullYear() === year && selectedDate.getUTCMonth() === monthIndex) {
+            const monthValue = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+            if (
+                picker.selectedMonthValue === monthValue
+                || (selectedDate && selectedDate.getUTCFullYear() === year && selectedDate.getUTCMonth() === monthIndex)
+            ) {
                 button.classList.add("is-selected");
             }
             if (isSameUtcDay(startOfMonthUtc(new Date()), monthDate)) button.classList.add("is-current");
             if (!availability.selectable) button.classList.add("is-disabled");
             button.textContent = MONTH_ABBREVIATIONS[monthIndex];
-            button.dataset.monthValue = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+            button.dataset.monthValue = monthValue;
             button.dataset.selectable = availability.selectable ? "true" : "false";
             button.removeAttribute("aria-disabled");
             button.setAttribute("aria-label", `${MONTH_LABELS[monthIndex]} ${year}${availability.selectable ? "" : ", unavailable; select to learn why"}`);
-            button.addEventListener("click", () => {
+            button.addEventListener("click", (event) => {
                 if (!availability.selectable) {
                     showDatePickerFeedback(picker, availability.message);
                     return;
                 }
                 clearDatePickerFeedback(picker);
+                if (picker.selectMonth) {
+                    event.stopPropagation();
+                    picker.selectedMonthValue = monthValue;
+                    picker.input.value = "";
+                    picker.draftText = "";
+                    picker.validationMessage = "";
+                    picker.forceDisplaySync = true;
+                    syncDatePickerView(picker);
+                    picker.input.dispatchEvent(new CustomEvent("antigravity:date-picker-month-select", {
+                        bubbles: true,
+                        detail: {value: monthValue},
+                    }));
+                    positionDatePickerPopover(picker);
+                    return;
+                }
                 picker.visibleMonth = monthDate;
                 picker.view = "days";
                 picker.forceSyncMonth = false;
@@ -6038,19 +6104,22 @@
 
     const syncDatePickerView = (picker) => {
         const workingState = getDatePickerWorkingState(picker);
-        applyDatePickerValidationState(picker, workingState);
         const selectedDate = workingState.previewDate;
         const {minDate, maxDate} = getDatePickerBounds(picker);
         const peerPicker = getDatePickerPeer(picker);
         const peerDate = parseIsoDate(getDatePickerComparableIsoValue(peerPicker));
+        const selectedMonthDate = parseIsoDate(`${picker.selectedMonthValue || ""}-01`);
         const today = startOfMonthUtc(new Date());
-        const anchorDate = selectedDate || clampDateToBounds(parseIsoDate(picker.input.value) || minDate || maxDate || today, minDate, maxDate);
+        const anchorDate = selectedDate
+            || selectedMonthDate
+            || clampDateToBounds(parseIsoDate(picker.input.value) || minDate || maxDate || today, minDate, maxDate);
         const hasPreviewValidationMessage = Boolean(workingState.validationMessage && selectedDate);
         if (!picker.visibleMonth || picker.forceSyncMonth) {
             picker.visibleMonth = startOfMonthUtc(anchorDate);
             picker.forceSyncMonth = false;
         }
         const monthView = picker.view === "months";
+        applyDatePickerValidationState(picker, workingState);
         picker.monthLabel.textContent = monthView
             ? String(picker.visibleMonth.getUTCFullYear())
             : formatPickerMonthLabel(picker.visibleMonth);
@@ -6094,12 +6163,16 @@
             button.dataset.selectable = availability.selectable ? "true" : "false";
             button.removeAttribute("aria-disabled");
             button.setAttribute("aria-label", `${formatDisplayDate(isoValue)}${availability.selectable ? "" : ", unavailable; select to learn why"}`);
-            button.addEventListener("click", () => {
+            button.addEventListener("click", (event) => {
                 if (!availability.selectable) {
                     showDatePickerFeedback(picker, availability.message);
                     return;
                 }
-                updateDatePickerValue(picker, isoValue, {emitChange: true, closePopover: true});
+                if (picker.keepOpenOnSelect) event.stopPropagation();
+                updateDatePickerValue(picker, isoValue, {
+                    emitChange: true,
+                    closePopover: !picker.keepOpenOnSelect,
+                });
             });
             picker.grid.appendChild(button);
         }
@@ -6167,6 +6240,12 @@
                 draftText: "",
                 validationMessage: "",
                 interactionMessage: "",
+                defaultFeedback: wrapper.dataset.datePickerDefaultFeedback || "",
+                guidance: wrapper.dataset.datePickerGuidance || "",
+                keepOpenOnSelect: wrapper.dataset.datePickerKeepOpenOnSelect === "true",
+                selectMonth: wrapper.dataset.datePickerSelectMonth === "true",
+                stableFrame: wrapper.dataset.datePickerStableFrame === "true",
+                selectedMonthValue: "",
             };
             wrapper.dataset.bound = "1";
             wrapper._antigravityDatePicker = picker;
@@ -6212,6 +6291,7 @@
                 popover.hidden = false;
                 trigger.setAttribute("aria-expanded", "true");
                 syncDatePickerPeerHighlight();
+                lockDatePickerPopoverFrame(picker);
                 positionDatePickerPopover(picker);
                 if (focusEditor) picker.triggerValue.focus();
             };
@@ -6241,7 +6321,10 @@
             triggerValue.addEventListener("keydown", (event) => {
                 if (event.key === "Enter") {
                     event.preventDefault();
-                    commitDatePickerTextInput(picker, {emitChange: true, closePopover: true});
+                    commitDatePickerTextInput(picker, {
+                        emitChange: true,
+                        closePopover: !picker.keepOpenOnSelect,
+                    });
                 }
                 if (event.key === "Escape") {
                     event.preventDefault();
@@ -6260,6 +6343,7 @@
                 }
             });
             input.addEventListener("change", () => {
+                picker.selectedMonthValue = "";
                 picker.forceSyncMonth = true;
                 picker.forceDisplaySync = true;
                 picker.draftText = "";

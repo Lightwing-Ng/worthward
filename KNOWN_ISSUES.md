@@ -1,6 +1,83 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.82.1`
+Documentation version: `v1.84.4`
+
+## Investment pagination aligned with the expanded sidebar dock on 20 Jul 2026
+
+- The Transaction history pagination shell now shares the expanded sidebar
+  dock's vertical center line on desktop layouts.
+- Browser coverage now measures the two rendered center lines directly.
+
+## Stock-details date guidance consolidated on 20 Jul 2026
+
+- Removed the redundant visible Transaction date field label beneath the date
+  picker so all operation guidance remains in the fixed feedback region.
+- The date editor retains its accessible Transaction date name.
+
+## Stock-details date-picker guidance and frame stabilized on 20 Jul 2026
+
+- The date-picker guidance now uses the standard small UI token and the same
+  text color as its month or year heading, including in dark mode.
+- Guidance now responds to the visible day or month view and the current
+  selection instead of repeating a static instruction.
+- The Stock-details date picker now uses an opaque surface and preserves its
+  outer frame, guidance, navigation, and heading geometry while switching
+  between day and month views.
+
+## Stock-details Time filtering now uses one day or month on 20 Jul 2026
+
+- The Stock details Time filter now uses one date picker instead of separate
+  start and end date controls.
+- Selecting a day filters to that exact day; selecting a month from the year
+  view filters to that natural calendar month.
+- The picker stays open after either selection, and its existing feedback area
+  concisely explains that both day and calendar-month selection are available.
+
+## Type filter menus now fit their widest option on 20 Jul 2026
+
+- Transaction-history Type filter menus now expand from the trigger width to
+  fit their widest available option, matching the broker filter behavior.
+- The computed width remains constrained by the available viewport space.
+
+## Dark investment transaction headers now match body contrast on 20 Jul 2026
+
+- Both Investment transaction tables now use the body text color for every
+  header and filter control in dark mode, from the broker arrow through Cash,
+  Equity, or Realized P&L.
+- Light mode retains its existing header colors.
+
+## Transaction-history arrows now switch page chunks on 20 Jul 2026
+
+- The right arrow now selects the first page of the next five-page chunk.
+- The left arrow now selects the last page of the previous five-page chunk.
+- Numbered page buttons continue to select their exact page without changing
+  the fixed chunk boundaries.
+
+## Exact-price badge columns aligned to y-axis ticks on 20 Jul 2026
+
+- Integer-only y-axes now place the hover price's integer column on the same
+  rendered right anchor as the covered tick label.
+- Fractional y-axes now place the hover price's decimal point on the covered
+  tick label's measured decimal anchor, using the same resolved canvas font.
+- Mixed y-axes with both integer and fractional labels now prefer a visible
+  fractional tick when resolving that decimal anchor.
+
+## Fractional metric alignment corrected on 20 Jul 2026
+
+- Fractional metric glyphs now align their visible bottom edge with the integer
+  glyphs while retaining the established integer-to-fraction size ratio.
+- Decimal points now belong to the fractional span, so their size follows the
+  fractional digits in both Investment metrics and the style-token reference.
+
+## Stock-details hover now exposes exact crosshair prices on 20 Jul 2026
+
+- Every Stock-details range from 1W through Auto now draws a muted horizontal
+  hover guide with the same stroke treatment as the existing vertical guide.
+- The horizontal guide shares the average-price cost curve's first and last
+  rendered x positions and is painted beneath price data and trade markers.
+- A primary-blue y-axis badge covers the underlying tick label and shows the
+  exact hover price in white, with integer and decimal columns aligned to the
+  existing y-axis number format.
 
 ## Investment pagination ellipses corrected on 20 Jul 2026
 

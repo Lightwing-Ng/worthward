@@ -1,7 +1,10 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.3.0
+ * Code version: v0.4.2
+ * - Fixed: Mixed integer and fractional y-axis ticks now select a fractional tick when resolving the shared decimal anchor.
+ * - Fixed: Exact-price badges now reuse the rendered y-axis label anchor and font so integer and decimal columns align with the covered tick labels.
+ * - Added: Stock-details hover now draws a cost-curve-bounded horizontal guide beneath chart data and a blue exact-price badge over the y-axis labels.
  * - Changed: Stock-details charts no longer reserve top canvas padding for the range control now that the control has its own layout track.
  * - Changed: Stock-details price chart x-axis date labels now use weight 400 while preserving the existing font and size.
  * - Changed: Stock-details 1W x-axis labels now center each trading date within its intraday session and omit intraday times.
@@ -21,7 +24,7 @@
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.3.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.2';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -367,6 +370,7 @@ export function createInvestmentStockDetailsUtils({
                 chartCanvas._layoutSyncTimer = 0;
             }
             chartCanvas._scheduleLayoutSync = null;
+            chartCanvas._investmentStockDetailsChart = null;
             chartInstance.destroy();
             setInvestmentStockDetailsPriceChartInstance(null);
         }
@@ -994,8 +998,35 @@ export function createInvestmentStockDetailsUtils({
         };
         const hoverGuidePlugin = {
             id: 'investmentStockDetailsHoverGuidePlugin',
+            beforeDatasetsDraw(chartInstance) {
+                const { ctx, chartArea } = chartInstance;
+                const y = Number(chartInstance?._activeInvestmentStockDetailsGuideY);
+                if (!chartArea || !Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
+                const averagePricePoints = chartInstance.getDatasetMeta(1)?.data || [];
+                const finiteAveragePriceIndexes = averagePriceSeries
+                    .map((value, index) => (
+                        value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+                            ? index
+                            : -1
+                    ))
+                    .filter((index) => index >= 0);
+                const firstAveragePriceIndex = finiteAveragePriceIndexes[0];
+                const lastAveragePriceIndex = finiteAveragePriceIndexes[finiteAveragePriceIndexes.length - 1];
+                const left = Number(averagePricePoints[firstAveragePriceIndex]?.x);
+                const right = Number(averagePricePoints[lastAveragePriceIndex]?.x);
+                if (!Number.isFinite(left) || !Number.isFinite(right) || right < left) return;
+                chartInstance._activeInvestmentStockDetailsGuideBounds = { left, right, y };
+                ctx.save();
+                ctx.strokeStyle = resolvedTheme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(left, y);
+                ctx.lineTo(right, y);
+                ctx.stroke();
+                ctx.restore();
+            },
             afterDatasetsDraw(chartInstance) {
-                const { ctx, chartArea, tooltip } = chartInstance;
+                const { ctx, chartArea, scales, tooltip } = chartInstance;
                 if (!chartArea || !tooltip || tooltip.opacity === 0) return;
                 const x = tooltip.caretX;
                 if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
@@ -1006,6 +1037,84 @@ export function createInvestmentStockDetailsUtils({
                 ctx.moveTo(x, chartArea.top);
                 ctx.lineTo(x, chartArea.bottom);
                 ctx.stroke();
+                ctx.restore();
+
+                const y = Number(chartInstance?._activeInvestmentStockDetailsGuideY);
+                const yScale = scales?.y;
+                if (!yScale || !Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
+                const price = Number(yScale.getValueForPixel(y));
+                if (!Number.isFinite(price)) return;
+                const axisFractionDigits = resolveStockDetailsYAxisFractionDigits(yScale.ticks);
+                const priceFractionDigits = Math.max(2, axisFractionDigits);
+                const formattedPrice = new Intl.NumberFormat('en-US', {
+                    minimumFractionDigits: priceFractionDigits,
+                    maximumFractionDigits: priceFractionDigits,
+                }).format(price);
+                const decimalIndex = formattedPrice.lastIndexOf('.');
+                const integerCopy = decimalIndex >= 0 ? formattedPrice.slice(0, decimalIndex) : formattedPrice;
+                const fractionCopy = decimalIndex >= 0 ? formattedPrice.slice(decimalIndex) : '';
+
+                ctx.save();
+                const visibleAxisLabelItems = (Array.isArray(yScale._labelItems) ? yScale._labelItems : [])
+                    .filter((item) => String(item?.label ?? '').trim());
+                const visibleAxisLabelItem = visibleAxisLabelItems
+                    .find((item) => String(item?.label ?? '').includes('.'))
+                    || visibleAxisLabelItems[0];
+                const axisLabelOptions = visibleAxisLabelItem?.options || {};
+                const axisTickCopy = String(visibleAxisLabelItem?.label ?? '');
+                ctx.font = String(visibleAxisLabelItem?.font?.string || '400 12px "GDS Transport", "Helvetica Neue", Arial, sans-serif');
+                ctx.textBaseline = 'middle';
+                const axisLabelTranslationX = Number(axisLabelOptions?.translation?.[0]);
+                const axisTickWidth = ctx.measureText(axisTickCopy).width;
+                const axisTextAlign = String(axisLabelOptions?.textAlign || 'right');
+                const axisLabelRight = Number.isFinite(axisLabelTranslationX)
+                    ? axisLabelTranslationX + (
+                        axisTextAlign === 'center'
+                            ? axisTickWidth / 2
+                            : (axisTextAlign === 'left' || axisTextAlign === 'start' ? axisTickWidth : 0)
+                    )
+                    : Number(yScale.right ?? chartArea.left);
+                const axisTickDecimalIndex = axisTickCopy.lastIndexOf('.');
+                const axisFractionCopy = axisTickDecimalIndex >= 0
+                    ? axisTickCopy.slice(axisTickDecimalIndex)
+                    : '';
+                const axisFractionWidth = axisFractionCopy
+                    ? ctx.measureText(axisFractionCopy).width
+                    : 0;
+                const decimalAnchor = axisLabelRight - axisFractionWidth;
+                const integerWidth = ctx.measureText(integerCopy).width;
+                const fractionWidth = ctx.measureText(fractionCopy).width;
+                const widestAxisTickWidth = (Array.isArray(yScale.ticks) ? yScale.ticks : []).reduce((width, tick) => (
+                    Math.max(width, ctx.measureText(formatStockDetailsYAxisTickLabel(tick?.value, yScale.ticks)).width)
+                ), 0);
+                const horizontalPadding = 5;
+                const badgeLeft = Math.min(
+                    decimalAnchor - integerWidth - horizontalPadding,
+                    axisLabelRight - widestAxisTickWidth - horizontalPadding,
+                );
+                const badgeRight = decimalAnchor + fractionWidth + horizontalPadding;
+                const badgeHeight = 20;
+                chartInstance._activeInvestmentStockDetailsGuideBounds = {
+                    ...(chartInstance._activeInvestmentStockDetailsGuideBounds || {}),
+                    badgeBottom: y + (badgeHeight / 2),
+                    badgeLeft,
+                    badgeRight,
+                    badgeTop: y - (badgeHeight / 2),
+                    axisLabelRight,
+                    axisTickCopy,
+                    decimalAnchor,
+                    formattedPrice,
+                    price,
+                };
+                ctx.fillStyle = resolvedTheme.accentPrimary;
+                ctx.fillRect(badgeLeft, y - (badgeHeight / 2), badgeRight - badgeLeft, badgeHeight);
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'right';
+                ctx.fillText(integerCopy, decimalAnchor, y);
+                if (fractionCopy) {
+                    ctx.textAlign = 'left';
+                    ctx.fillText(fractionCopy, decimalAnchor, y);
+                }
                 ctx.restore();
             },
         };
@@ -1390,6 +1499,7 @@ export function createInvestmentStockDetailsUtils({
             if (!Number.isInteger(nearestIndex)) return null;
             if (!Number.isFinite(relativeY)) return { index: nearestIndex, markerType: '' };
             if (relativeY < chartArea.top || relativeY >= chartArea.bottom) return { index: nearestIndex, markerType: '' };
+            const guideY = relativeY;
             const markerCandidates = [...tradeMarkerPoints.buy, ...tradeMarkerPoints.sell];
             let snappedMarker = null;
             let snappedMarkerDistance = Number.POSITIVE_INFINITY;
@@ -1416,16 +1526,20 @@ export function createInvestmentStockDetailsUtils({
                 return {
                     index: snappedMarker.index,
                     markerType: String(snappedMarker.type || ''),
+                    guideY,
                     markerPosition: {
                         x: snappedMarker.pixelX,
                         y: snappedMarker.pixelY,
                     },
                 };
             }
-            return { index: nearestIndex, markerType: '' };
+            return { index: nearestIndex, markerType: '', guideY };
         };
         const syncStockDetailsHoverState = (chart, hoverState) => {
             const index = hoverState && Number.isInteger(hoverState.index) ? hoverState.index : null;
+            const guideY = Number(hoverState?.guideY);
+            chart._activeInvestmentStockDetailsGuideY = Number.isFinite(guideY) ? guideY : null;
+            if (!Number.isFinite(guideY)) chart._activeInvestmentStockDetailsGuideBounds = null;
             chart._activeInvestmentStockDetailsMarkerType = index === null
                 ? ''
                 : String(hoverState?.markerType || '');
@@ -1454,6 +1568,7 @@ export function createInvestmentStockDetailsUtils({
         const attachStockDetailsHover = (chart) => {
             const chartCanvas = chart?.canvas;
             if (!chartCanvas) return;
+            chartCanvas._investmentStockDetailsChart = chart;
             if (chartCanvas._abortController) chartCanvas._abortController.abort();
             const controller = new AbortController();
             chartCanvas._abortController = controller;

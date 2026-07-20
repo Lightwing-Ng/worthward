@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.2`
+Documentation version: `v1.3.3`
 
 ## Supported commands
 
@@ -40,16 +40,16 @@ The complete gate runs, in order:
 
 ## Coverage baseline
 
-Baseline captured on 11 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
+Baseline captured on 20 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total statement and branch coverage: `46.2%`.
+- Total statement and branch coverage: `52.6%`.
+- `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The initial gate records coverage with `--cov-fail-under=0` so adoption does not hide existing gaps.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- Recommended increments: `35%`, `40%`, `45%`, then the measured baseline rounded down.
+- Recommended increments: `45%`, `50%`, then the measured baseline rounded down.
 
 Priority coverage gaps:
 
-- `app/services/dca.py`: approximately `8.6%`.
 - Alternative strategy implementations: approximately `9%` to `14%`.
 - `app/infrastructure/ibkr_flex.py`: approximately `21.4%`.
 - `app/infrastructure/broker_market_data.py`: approximately `30.3%`.

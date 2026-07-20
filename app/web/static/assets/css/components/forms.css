@@ -1,4 +1,4 @@
-/* Code version: v0.8.0 */
+/* Code version: v0.8.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1792,6 +1792,15 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 	line-height: 1.3;
 }
 .date-picker-feedback-popover { margin: 0 2px 10px; }
+.investment-stock-details-date-picker-popover {
+	background: var(--theme-background);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+.investment-stock-details-date-picker-popover .date-picker-feedback {
+	color: var(--text);
+	font-size: var(--font-ui-sm);
+}
 .date-picker-manual-input.is-invalid + .date-picker-feedback { color: var(--theme-error-strong); }
 .date-picker-toolbar { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; gap: 8px; margin-bottom: 10px; }
 .date-picker-title { min-width: 0; min-height: 28px; padding: 0 4px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-form-control); line-height: 1.2; font-weight: var(--font-weight-bold); text-align: center; }

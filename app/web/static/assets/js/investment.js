@@ -1,7 +1,16 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.87.1
+ * Code version: v1.89.2
+ * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
+ * - Changed: The Stock-details date picker now uses dynamic guidance, an opaque surface, and a stable frame across day and month views.
+ * - Changed: Stock-details Time filtering now selects one day or one natural month and keeps the date picker open after selection.
+ * - Fixed: Type filter dropdowns now size to their widest option while respecting the available viewport width.
+ * - Changed: Transaction-history arrows now switch five-page chunks, selecting the next chunk's first page or the previous chunk's last page.
+ * - Fixed: Mixed y-axis tick formats now align exact-price badges to the visible fractional tick column.
+ * - Fixed: Stock-details exact-price badges now align their integer or decimal column to the rendered y-axis tick anchor.
+ * - Fixed: Fractional metric glyphs now share a precise visual bottom edge, with the decimal point sized as part of the fraction.
+ * - Added: Stock-details hover guides now include an exact-price horizontal crosshair and y-axis badge across every supported range.
  * - Fixed: Pagination ellipses now use three geometry-centered solid dots instead of a font-baseline glyph.
  * - Changed: The Type filter now discovers every visible ledger event type instead of limiting selection to Buy and Sell.
  * - Changed: Transaction history pagination now uses fixed five-page chunks with one-page navigation arrows, boundary ellipses, and accessible page labels.
@@ -329,14 +338,14 @@ import {
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
-} from './investment/pagination.js?v=investment-pagination-v1.1.0';
+} from './investment/pagination.js?v=investment-pagination-v1.2.0';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.3.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.4.2';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.86.0',
+    entry: 'v1.89.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
@@ -1029,7 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentSideFilterDocumentListenersBound = false;
     let investmentCurrencyFilter = 'all';
     let investmentCurrencyFilterDocumentListenersBound = false;
-    let investmentStockDetailsDateRange = { start: '', end: '' };
+    let investmentStockDetailsDateFilter = { mode: 'all', value: '' };
     let investmentStockDetailsTimeFilterDocumentListenersBound = false;
     let investmentBrokerFilterTransactionIndex = {
         source: null,
@@ -5775,12 +5784,18 @@ document.addEventListener('DOMContentLoaded', () => {
         trigger.setAttribute('aria-label', `Broker filter: ${triggerTitle}`);
     }
 
-    function estimateInvestmentBrokerFilterDropdownWidth(availableBrokerCodes = getAvailableInvestmentBrokerCodes()) {
-        const labels = ['All', ...availableBrokerCodes.map((brokerCode) => getInvestmentBrokerMeta(brokerCode).label)];
+    function estimateInvestmentFilterDropdownWidth(labels = []) {
         const longestLabelLength = labels.reduce((maxLength, label) => (
             Math.max(maxLength, Array.from(String(label || '')).length)
         ), 0);
         return Math.max(180, Math.min(360, 74 + (longestLabelLength * 8)));
+    }
+
+    function estimateInvestmentBrokerFilterDropdownWidth(availableBrokerCodes = getAvailableInvestmentBrokerCodes()) {
+        return estimateInvestmentFilterDropdownWidth([
+            'All',
+            ...availableBrokerCodes.map((brokerCode) => getInvestmentBrokerMeta(brokerCode).label),
+        ]);
     }
 
     function getInvestmentBrokerFilterDropdown(field) {
@@ -6183,7 +6198,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return formatEventType(left).localeCompare(formatEventType(right), 'en', { sensitivity: 'base' });
         });
-        dropdown.innerHTML = ['all', ...availableTypes].map((value) => {
+        const optionValues = ['all', ...availableTypes];
+        const optionLabels = optionValues.map((value) => (
+            value === 'all' ? 'All' : formatEventType(value)
+        ));
+        dropdown.innerHTML = optionValues.map((value) => {
             const label = value === 'all' ? 'All' : formatEventType(value);
             const selected = investmentSideFilter === 'all'
                 || (Array.isArray(investmentSideFilter) && investmentSideFilter.includes(value));
@@ -6195,13 +6214,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     </button>`;
         }).join('');
         const rect = trigger.getBoundingClientRect();
+        const viewportPadding = 16;
+        const contentWidth = Math.max(
+            Math.ceil(rect.width),
+            estimateInvestmentFilterDropdownWidth(optionLabels),
+        );
+        const viewportMaxWidth = Math.max(140, window.innerWidth - rect.left - viewportPadding);
+        const finalWidth = Math.min(contentWidth, viewportMaxWidth);
         dropdown.dataset.filterOwner = field.dataset.filterId || '';
         document.body.appendChild(dropdown);
         Object.assign(dropdown.style, {
             position: 'fixed',
             left: `${Math.round(rect.left)}px`,
             top: `${Math.round(rect.bottom + 4)}px`,
-            width: `${Math.max(120, Math.round(rect.width))}px`,
+            width: `${finalWidth}px`,
+            maxWidth: `${viewportMaxWidth}px`,
             zIndex: '10002',
         });
         dropdown.hidden = false;
@@ -6404,23 +6431,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function getInvestmentStockDetailsDateRangeLabel() {
-        const start = String(investmentStockDetailsDateRange.start || '').trim();
-        const end = String(investmentStockDetailsDateRange.end || '').trim();
-        if (start && end) return `${start} – ${end}`;
-        if (start) return `From ${start}`;
+    function getInvestmentStockDetailsDateFilterLabel() {
+        const mode = String(investmentStockDetailsDateFilter.mode || 'all');
+        const value = String(investmentStockDetailsDateFilter.value || '').trim();
+        if (mode === 'day' && value) {
+            return formatInvestmentFullDateParts(parseInvestmentDateParts(value));
+        }
+        if (mode === 'month' && /^\d{4}-\d{2}$/.test(value)) {
+            const [year, month] = value.split('-').map((part) => Number.parseInt(part, 10));
+            return new Intl.DateTimeFormat('en-GB', {
+                month: 'short',
+                year: 'numeric',
+                timeZone: 'UTC',
+            }).format(new Date(Date.UTC(year, month - 1, 1)));
+        }
         return 'All dates';
     }
 
-    function matchesInvestmentStockDetailsDateRange(txn) {
-        const start = String(investmentStockDetailsDateRange.start || '').trim();
-        const end = String(investmentStockDetailsDateRange.end || '').trim();
-        if (!start && !end) return true;
+    function matchesInvestmentStockDetailsDateFilter(txn) {
+        const mode = String(investmentStockDetailsDateFilter.mode || 'all');
+        const value = String(investmentStockDetailsDateFilter.value || '').trim();
+        if (mode === 'all' || !value) return true;
         const transactionDate = normalizeLedgerDate(txn?.date);
         if (!transactionDate) return false;
-        if (start && transactionDate < start) return false;
-        if (end && transactionDate > end) return false;
-        return true;
+        if (mode === 'day') return transactionDate === value;
+        if (mode === 'month') return transactionDate.startsWith(`${value}-`);
+        return false;
     }
 
     function renderInvestmentStockDetailsDatePickerField({ role, inputId, label, value }) {
@@ -6429,9 +6465,13 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="date-picker-field investment-stock-details-date-picker-field"
                  data-date-picker
                  data-date-role="${escapeHtml(role)}"
-                 data-date-picker-group="investment-stock-details-date-range"
-                 data-date-picker-unconstrained="true">
-                <label for="${escapeHtml(inputId)}">${escapeHtml(label)}</label>
+                 data-date-picker-group="investment-stock-details-date-filter"
+                 data-date-picker-unconstrained="true"
+                 data-date-picker-keep-open-on-select="true"
+                 data-date-picker-select-month="true"
+                 data-date-picker-stable-frame="true"
+                 data-date-picker-guidance="single-day-or-month"
+                 data-date-picker-default-feedback="Choose a day or a calendar month.">
                 <input id="${escapeHtml(inputId)}" name="${escapeHtml(inputId)}" type="hidden" value="${escapeHtml(value)}">
                 <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
                     <span class="date-picker-trigger-value"
@@ -6446,8 +6486,8 @@ document.addEventListener('DOMContentLoaded', () => {
                           data-empty="1"
                           spellcheck="false"></span>
                 </div>
-                <div class="date-picker-popover" data-date-popover hidden>
-                    <p id="${escapeHtml(feedbackId)}" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
+                <div class="date-picker-popover investment-stock-details-date-picker-popover" data-date-popover hidden>
+                    <p id="${escapeHtml(feedbackId)}" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite">Choose a day or a calendar month.</p>
                     <div class="date-picker-toolbar">
                         <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
                             <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -6472,7 +6512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderInvestmentStockDetailsTimeFilterHeaderInnerMarkup() {
-        const rangeLabel = getInvestmentStockDetailsDateRangeLabel();
+        const filterLabel = getInvestmentStockDetailsDateFilterLabel();
         return `
             <span class="investment-time-filter-default-label" aria-hidden="true">Time</span>
             <div class="field investment-stock-details-time-filter-field" data-investment-stock-details-time-filter>
@@ -6481,32 +6521,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         data-investment-stock-details-time-filter-trigger
                         aria-haspopup="dialog"
                         aria-expanded="false"
-                        aria-label="Time filter: ${escapeHtml(rangeLabel)}">
-                    <span data-investment-stock-details-time-filter-label>${escapeHtml(rangeLabel)}</span>
+                        aria-label="Time filter: ${escapeHtml(filterLabel)}">
+                    <span data-investment-stock-details-time-filter-label>${escapeHtml(filterLabel)}</span>
                 </button>
                 <div class="investment-stock-details-time-filter-panel"
                      data-investment-stock-details-time-filter-panel
                      role="dialog"
-                     aria-label="Transaction date range"
+                     aria-label="Transaction date filter"
                      hidden>
-                    <p class="investment-stock-details-time-filter-guidance"
-                       data-investment-stock-details-time-filter-guidance
-                       aria-live="polite">Select a start date, then an end date.</p>
                     ${renderInvestmentStockDetailsDatePickerField({
-                        role: 'start',
+                        role: 'single',
                         inputId: 'investment_stock_details_date_start',
-                        label: 'Start date',
-                        value: investmentStockDetailsDateRange.start,
-                    })}
-                    ${renderInvestmentStockDetailsDatePickerField({
-                        role: 'end',
-                        inputId: 'investment_stock_details_date_end',
-                        label: 'End date',
-                        value: investmentStockDetailsDateRange.end,
+                        label: 'Transaction date',
+                        value: investmentStockDetailsDateFilter.mode === 'day'
+                            ? investmentStockDetailsDateFilter.value
+                            : '',
                     })}
                     <button type="button"
                             class="investment-stock-details-time-filter-clear"
-                            data-investment-stock-details-time-filter-clear>Clear selected date range</button>
+                            data-investment-stock-details-time-filter-clear>Clear date filter</button>
                 </div>
             </div>
         `;
@@ -6565,7 +6598,6 @@ document.addEventListener('DOMContentLoaded', () => {
         field.classList.add('is-open');
         trigger.setAttribute('aria-expanded', 'true');
         positionInvestmentStockDetailsTimeFilterPanel(field);
-        if (investmentStockDetailsDateRange.start || investmentStockDetailsDateRange.end) return;
         window.requestAnimationFrame(() => {
             panel.querySelector('#investment_stock_details_date_start')
                 ?.closest('[data-date-picker]')
@@ -6576,18 +6608,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncInvestmentStockDetailsTimeFilterUi(field) {
         if (!(field instanceof HTMLElement)) return;
-        const rangeLabel = getInvestmentStockDetailsDateRangeLabel();
+        const filterLabel = getInvestmentStockDetailsDateFilterLabel();
         const trigger = field.querySelector('[data-investment-stock-details-time-filter-trigger]');
         const label = field.querySelector('[data-investment-stock-details-time-filter-label]');
-        if (label instanceof HTMLElement) label.textContent = rangeLabel;
-        trigger?.setAttribute('aria-label', `Time filter: ${rangeLabel}`);
+        if (label instanceof HTMLElement) label.textContent = filterLabel;
+        trigger?.setAttribute('aria-label', `Time filter: ${filterLabel}`);
     }
 
-    function applyInvestmentStockDetailsDateRangeFilter({ closePanel = true } = {}) {
+    function applyInvestmentStockDetailsDateFilter() {
         refreshInvestmentStockDetailsTableRows({ refreshHeaders: false });
         const field = investmentStockDetailsTableHost?.querySelector('[data-investment-stock-details-time-filter]');
         syncInvestmentStockDetailsTimeFilterUi(field);
-        if (closePanel) closeInvestmentStockDetailsTimeFilters();
     }
 
     function bindInvestmentStockDetailsTimeFilterField(field) {
@@ -6595,10 +6626,9 @@ document.addEventListener('DOMContentLoaded', () => {
         field.dataset.investmentStockDetailsTimeFilterBound = '1';
         const panel = getInvestmentStockDetailsTimeFilterPanel(field);
         const trigger = field.querySelector('[data-investment-stock-details-time-filter-trigger]');
-        const startInput = field.querySelector('#investment_stock_details_date_start');
-        const endInput = field.querySelector('#investment_stock_details_date_end');
+        const dateInput = field.querySelector('#investment_stock_details_date_start');
         const clearButton = field.querySelector('[data-investment-stock-details-time-filter-clear]');
-        if (!(panel instanceof HTMLElement) || !(startInput instanceof HTMLInputElement) || !(endInput instanceof HTMLInputElement)) return;
+        if (!(panel instanceof HTMLElement) || !(dateInput instanceof HTMLInputElement)) return;
         window.ANTIGRAVITY_DATE_PICKERS?.initialize(panel);
         trigger?.addEventListener('click', (event) => {
             event.stopPropagation();
@@ -6606,45 +6636,22 @@ document.addEventListener('DOMContentLoaded', () => {
             closeInvestmentStockDetailsTimeFilters();
             if (!wasOpen) openInvestmentStockDetailsTimeFilter(field);
         });
-        startInput.addEventListener('change', () => {
-            const start = String(startInput.value || '').trim();
-            if (!start) {
-                investmentStockDetailsDateRange = { start: '', end: '' };
-                endInput.value = '';
-                window.ANTIGRAVITY_DATE_PICKERS?.refresh();
-                applyInvestmentStockDetailsDateRangeFilter({ closePanel: false });
-                return;
-            }
-            investmentStockDetailsDateRange = { start, end: '' };
-            endInput.value = '';
-            panel.querySelector('[data-investment-stock-details-time-filter-guidance]').textContent = 'Now select an end date.';
-            window.ANTIGRAVITY_DATE_PICKERS?.refresh();
-            window.requestAnimationFrame(() => {
-                panel.querySelector('#investment_stock_details_date_end')
-                    ?.closest('[data-date-picker]')
-                    ?.querySelector('[data-date-trigger]')
-                    ?.click();
-            });
+        dateInput.addEventListener('change', () => {
+            const value = String(dateInput.value || '').trim();
+            investmentStockDetailsDateFilter = value
+                ? { mode: 'day', value }
+                : { mode: 'all', value: '' };
+            applyInvestmentStockDetailsDateFilter();
         });
-        endInput.addEventListener('change', () => {
-            const end = String(endInput.value || '').trim();
-            if (!investmentStockDetailsDateRange.start || !end) {
-                investmentStockDetailsDateRange = { start: '', end: '' };
-                applyInvestmentStockDetailsDateRangeFilter();
-                return;
-            }
-            investmentStockDetailsDateRange = {
-                start: investmentStockDetailsDateRange.start,
-                end,
-            };
-            applyInvestmentStockDetailsDateRangeFilter();
+        dateInput.addEventListener('antigravity:date-picker-month-select', (event) => {
+            const value = String(event.detail?.value || '').trim();
+            if (!/^\d{4}-\d{2}$/.test(value)) return;
+            investmentStockDetailsDateFilter = { mode: 'month', value };
+            applyInvestmentStockDetailsDateFilter();
         });
         clearButton?.addEventListener('click', () => {
-            investmentStockDetailsDateRange = { start: '', end: '' };
-            startInput.value = '';
-            endInput.value = '';
-            window.ANTIGRAVITY_DATE_PICKERS?.refresh();
-            applyInvestmentStockDetailsDateRangeFilter();
+            dateInput.value = '';
+            dateInput.dispatchEvent(new Event('change', { bubbles: true }));
         });
     }
 
@@ -6706,7 +6713,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const filteredDetailRows = brokerFilteredDetailRows.filter((txn) => (
             (window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(txn, investmentSideFilter) ?? true)
             && matchesInvestmentCurrencyFilter(txn)
-            && matchesInvestmentStockDetailsDateRange(txn)
+            && matchesInvestmentStockDetailsDateFilter(txn)
         ));
         if (!filteredDetailRows.length) {
             return `
@@ -10160,8 +10167,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return [{ className: 'workspace-metric-value-major', text: `${prefix}${integerPart}${suffix}` }];
         }
         return [
-            { className: 'workspace-metric-value-major', text: `${prefix}${integerPart}.` },
-            { className: 'workspace-metric-value-minor', text: decimalPart },
+            { className: 'workspace-metric-value-major', text: `${prefix}${integerPart}` },
+            { className: 'workspace-metric-value-minor', text: `.${decimalPart}` },
             ...(suffix ? [{ className: 'workspace-metric-value-suffix', text: suffix }] : []),
         ];
     }
@@ -10472,7 +10479,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const segmentPartClass = {
             prefix: 'workspace-metric-value-major',
             integer: 'workspace-metric-value-major',
-            dot: 'workspace-metric-value-major',
+            dot: 'workspace-metric-value-minor',
             fraction: 'workspace-metric-value-minor',
             suffix: 'workspace-metric-value-suffix',
         };

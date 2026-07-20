@@ -409,7 +409,7 @@
                                     class="font-token-sample-text font-token-sample-numeric-fraction"
                                     aria-label="{{ sample.sample_text }}"
                                 >
-                                    <span class="workspace-metric-value-major">{{ sample.sample_text.split('.')[0] }}.</span><span class="workspace-metric-value-minor">{{ sample.sample_text.split('.')[1] }}</span>
+                                    <span class="workspace-metric-value-major">{{ sample.sample_text.split('.')[0] }}</span><span class="workspace-metric-value-minor">.{{ sample.sample_text.split('.')[1] }}</span>
                                 </p>
                                 {% else %}
                                 <p

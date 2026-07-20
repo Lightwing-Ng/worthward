@@ -1,4 +1,4 @@
-/* Tests for fixed-chunk Investment pagination. Code version: v1.1.0 */
+/* Tests for fixed-chunk Investment pagination. Code version: v1.2.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,7 +50,7 @@ test('renders the first fixed chunk with only the trailing boundary controls', (
     );
     assert.equal(state.startPage, 1);
     assert.equal(state.endPage, 5);
-    assert.equal(state.items.at(-1).page, 4);
+    assert.equal(state.items.at(-1).page, 6);
 });
 
 test('renders fixed middle chunks instead of a rolling centered window', () => {
@@ -61,8 +61,8 @@ test('renders fixed middle chunks instead of a rolling centered window', () => {
         summarizeItems(pageSixtyTwo.items),
         ['<', '1', '...', '61', '62', '63', '64', '65', '...', '109', '>'],
     );
-    assert.equal(pageSixtyTwo.items[0].page, 61);
-    assert.equal(pageSixtyTwo.items.at(-1).page, 63);
+    assert.equal(pageSixtyTwo.items[0].page, 60);
+    assert.equal(pageSixtyTwo.items.at(-1).page, 66);
     assert.deepEqual(
         summarizeItems(pageSeventyEight.items),
         ['<', '1', '...', '76', '77', '78', '79', '80', '...', '109', '>'],
@@ -78,15 +78,20 @@ test('renders the final boundary-aligned chunk without trailing duplicates', () 
     );
     assert.equal(state.startPage, 106);
     assert.equal(state.endPage, 109);
-    assert.equal(state.items[0].page, 106);
+    assert.equal(state.items[0].page, 105);
 });
 
-test('steps across chunk boundaries by one page in either direction', () => {
-    const endOfFirstChunk = buildInvestmentHistoryPagination(109, 5);
-    const startOfSecondChunk = buildInvestmentHistoryPagination(109, 6);
+test('moves between adjacent chunks and selects the destination boundary page', () => {
+    const pageFour = buildInvestmentHistoryPagination(51, 4);
+    const pageSix = buildInvestmentHistoryPagination(51, 6);
+    const pageEleven = buildInvestmentHistoryPagination(51, 11);
 
-    assert.equal(endOfFirstChunk.items.at(-1).kind, 'next');
-    assert.equal(endOfFirstChunk.items.at(-1).page, 6);
-    assert.equal(startOfSecondChunk.items[0].kind, 'previous');
-    assert.equal(startOfSecondChunk.items[0].page, 5);
+    assert.equal(pageFour.items.at(-1).kind, 'next');
+    assert.equal(pageFour.items.at(-1).page, 6);
+    assert.equal(pageSix.items[0].kind, 'previous');
+    assert.equal(pageSix.items[0].page, 5);
+    assert.equal(pageSix.items.at(-1).kind, 'next');
+    assert.equal(pageSix.items.at(-1).page, 11);
+    assert.equal(pageEleven.items[0].kind, 'previous');
+    assert.equal(pageEleven.items[0].page, 10);
 });

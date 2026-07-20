@@ -1,10 +1,11 @@
 /**
  * Fixed-chunk pagination helpers for Investment transaction history.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Changed: Navigation arrows now move between adjacent five-page chunks instead of stepping one page.
  */
 
-export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.1.0';
+export const INVESTMENT_PAGINATION_MODULE_VERSION = 'v1.2.0';
 export const INVESTMENT_HISTORY_PAGINATION_CHUNK_SIZE = 5;
 
 function normalizePositiveInteger(value, fallback = 1) {
@@ -22,7 +23,7 @@ function createPageItem(page, currentPage) {
 }
 
 /**
- * Build a stable five-page bucket while keeping navigation arrows one page apart.
+ * Build a stable five-page bucket with navigation arrows targeting adjacent chunks.
  */
 export function buildInvestmentHistoryPagination(totalPages = 1, currentPage = 1) {
     const normalizedTotalPages = normalizePositiveInteger(totalPages);
@@ -62,7 +63,7 @@ export function buildInvestmentHistoryPagination(totalPages = 1, currentPage = 1
         }
     } else {
         if (!isFirstChunk) {
-            items.push({ kind: 'previous', page: normalizedCurrentPage - 1 });
+            items.push({ kind: 'previous', page: startPage - 1 });
             items.push(createPageItem(1, normalizedCurrentPage));
             items.push({ kind: 'ellipsis', position: 'leading' });
         }
@@ -74,7 +75,7 @@ export function buildInvestmentHistoryPagination(totalPages = 1, currentPage = 1
         if (!isLastChunk) {
             items.push({ kind: 'ellipsis', position: 'trailing' });
             items.push(createPageItem(normalizedTotalPages, normalizedCurrentPage));
-            items.push({ kind: 'next', page: normalizedCurrentPage + 1 });
+            items.push({ kind: 'next', page: endPage + 1 });
         }
     }
 
