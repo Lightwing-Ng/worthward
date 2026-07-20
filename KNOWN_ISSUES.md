@@ -1,6 +1,24 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.76.0`
+Documentation version: `v1.78.0`
+
+## Transaction history pages now contain 100 rows on 20 Jul 2026
+
+- The Investment Transaction history paginator now renders 100 ledger rows per
+  page. The floating Frosted glass dock appears only when the filtered history
+  exceeds that threshold, while navigation and linked-row page resolution use
+  the same page-size constant.
+
+## Transaction history pagination now floats over scrolling rows on 19 Jul 2026
+
+- The Transaction history paginator is now assembled inside the lower history
+  table shell as a floating, canonical Frosted glass dock. Its transparent
+  control layer leaves the live table rows visible through the material while
+  they scroll behind the navigation surface.
+- The scroll viewport reserves an end clearance equal to the floating dock, so
+  the final transaction can still move completely above the controls. The same
+  mounted interface is used when Stock details adds the ticker-specific table
+  above the global Transaction history table.
 
 ## Segmented rails now support equal-width progressive overflow on 19 Jul 2026
 

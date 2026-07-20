@@ -1,4 +1,4 @@
-{# Code version: v1.17.0 #}
+{# Code version: v1.18.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -671,7 +671,9 @@
                     </tr>
                     </thead>
                 </table>
-                <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll" data-table-scroll>
+                <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll"
+                     id="investment_history_table_scroll"
+                     data-table-scroll>
                     <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table investment-ledger-table"
                            id="transactionTable" data-table-body>
                         <colgroup>
@@ -691,16 +693,18 @@
                         </tbody>
                     </table>
                 </div>
+                <nav class="settings-pagination local-store-pagination investment-history-pagination"
+                     id="investment_history_pagination"
+                     aria-label="Transaction history pages"
+                     aria-controls="investment_history"
+                     data-pagination-scroll-target="investment_history_table_scroll"
+                     hidden></nav>
             </div>
-            <nav class="settings-pagination local-store-pagination investment-history-pagination"
-                 id="investment_history_pagination"
-                 aria-label="Transaction history pages"
-                 hidden></nav>
         </article>
     </section>
 {% endblock %}
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.82.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v1.84.0') }}"></script>
 {% endblock %}

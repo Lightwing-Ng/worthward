@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.82.0
+ * Code version: v1.84.0
+ * - Changed: Transaction history pagination now displays 100 ledger rows per page.
+ * - Changed: Transaction history pagination now mounts as a canonical Frosted glass overlay inside the lower table, revealing scrolling rows beneath it while preserving end-of-table clearance.
  * - Added: The primary Investment view rail now uses the shared equal-width overflow contract with a directional faded preview for future items.
  * - Changed: Overview 1W and 1M x-axis labels now show date and year only while tooltips retain minute precision.
  * - Changed: Stock-detail metric source rows now start collapsed and disclose independently through the shared table-arrow control.
@@ -480,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_PANEL_ID = 'stock_panel';
     const INVESTMENT_STOCK_DETAILS_HASH = '#stock_panel';
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
-    const INVESTMENT_HISTORY_PAGE_SIZE = 50;
+    const INVESTMENT_HISTORY_PAGE_SIZE = 100;
     const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
     const INVESTMENT_HISTORY_MIN_VISIBLE_ROWS = 2;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
@@ -11430,6 +11432,32 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.max(1, Math.ceil(normalizedTotalRows / INVESTMENT_HISTORY_PAGE_SIZE));
     }
 
+    function mountInvestmentHistoryPagination() {
+        if (!(historyTable instanceof HTMLElement) || !(investmentHistoryPagination instanceof HTMLElement)) return false;
+        if (investmentHistoryPagination.parentElement !== historyTable) {
+            historyTable.append(investmentHistoryPagination);
+        }
+        const scrollTargetId = investmentHistoryPagination.dataset.paginationScrollTarget || '';
+        const scrollContainer = scrollTargetId
+            ? document.getElementById(scrollTargetId)
+            : getInvestmentHistoryScrollContainer();
+        if (scrollContainer instanceof HTMLElement && scrollContainer.id) {
+            investmentHistoryPagination.dataset.paginationScrollTarget = scrollContainer.id;
+        }
+        investmentHistoryPagination.dataset.paginationMounted = '1';
+        return true;
+    }
+
+    function setInvestmentHistoryPaginationVisibility(isVisible) {
+        const shouldShow = Boolean(isVisible && mountInvestmentHistoryPagination());
+        if (investmentHistoryPagination instanceof HTMLElement) {
+            investmentHistoryPagination.hidden = !shouldShow;
+        }
+        if (historyTable instanceof HTMLElement) {
+            historyTable.classList.toggle('has-floating-pagination', shouldShow);
+        }
+    }
+
     function buildInvestmentHistoryPaginationSlots(totalPages = 1, currentPage = 1) {
         const normalizedTotalPages = Math.max(1, Number(totalPages) || 1);
         const normalizedCurrentPage = Math.min(normalizedTotalPages, Math.max(1, Number(currentPage) || 1));
@@ -11565,14 +11593,14 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentHistoryPendingPaginationAnimation = null;
         const totalPages = getInvestmentHistoryTotalPages(totalRows);
         if (totalRows <= INVESTMENT_HISTORY_PAGE_SIZE) {
-            investmentHistoryPagination.hidden = true;
+            setInvestmentHistoryPaginationVisibility(false);
             investmentHistoryPagination.innerHTML = '';
             investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
             return;
         }
         investmentHistoryCurrentPage = Math.min(totalPages, Math.max(1, investmentHistoryCurrentPage || 1));
         const { previousPage, pageSlots, nextPage } = buildInvestmentHistoryPaginationSlots(totalPages, investmentHistoryCurrentPage);
-        investmentHistoryPagination.hidden = false;
+        setInvestmentHistoryPaginationVisibility(true);
         investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
         investmentHistoryPagination.innerHTML = `
             <span class="local-store-pagination-indicator" aria-hidden="true"></span>
@@ -11615,7 +11643,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function bindInvestmentHistoryPagination() {
-        if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.dataset.bound === '1') return;
+        if (!mountInvestmentHistoryPagination() || investmentHistoryPagination.dataset.bound === '1') return;
         investmentHistoryPagination.dataset.bound = '1';
         const handleInvestmentHistoryPaginationActivation = (event) => {
             const button = event.target instanceof Element
