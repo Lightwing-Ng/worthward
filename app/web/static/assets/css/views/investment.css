@@ -1,4 +1,4 @@
-/* Code version: v1.40.0 */
+/* Code version: v1.40.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -4102,10 +4102,18 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-width: 1ch;
     height: var(--local-store-pagination-slot-size);
     color: var(--theme-text);
-    font-size: var(--font-table-body);
-    line-height: 1;
-    font-weight: var(--font-weight-bold);
     pointer-events: none;
+}
+
+.investment-history-pagination .local-store-page-ellipsis-dots {
+    display: block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow:
+        -5px 0 0 currentColor,
+        5px 0 0 currentColor;
 }
 
 .investment-history-pagination .local-store-page-button:not(.is-active):not(.local-store-page-placeholder):hover,

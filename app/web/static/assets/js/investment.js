@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.86.0
+ * Code version: v1.87.1
+ * - Fixed: Pagination ellipses now use three geometry-centered solid dots instead of a font-baseline glyph.
+ * - Changed: The Type filter now discovers every visible ledger event type instead of limiting selection to Buy and Sell.
  * - Changed: Transaction history pagination now uses fixed five-page chunks with one-page navigation arrows, boundary ellipses, and accessible page labels.
  * - Fixed: Variable-width pagination renders now synchronously recalculate the active indicator and preserve its cross-chunk animation in viewport coordinates.
  * - Changed: Transaction history pagination now displays 100 ledger rows per page.
@@ -6103,7 +6105,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'All'
             : investmentSideFilter === 'none' || !investmentSideFilter.length
                 ? 'None'
-                : investmentSideFilter.map((value) => value[0].toUpperCase() + value.slice(1)).join(', ');
+                : investmentSideFilter.map(formatEventType).join(', ');
         return `
             <span class="investment-side-filter-default-label" aria-hidden="true">Type</span>
             <div class="field investment-side-filter-field backtest-shared-select-field"
@@ -6165,15 +6167,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const trigger = field.querySelector('[data-investment-side-filter-trigger]');
         const dropdown = field.querySelector('[data-investment-side-filter-dropdown]');
         if (!(trigger instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) return;
-        dropdown.innerHTML = ['all', 'buy', 'sell'].map((value) => {
-            const label = value[0].toUpperCase() + value.slice(1);
+        const availableTypes = Array.from(new Set(
+            investmentProcessedTransactionsCache
+                .filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
+                .map((txn) => getNormalizedTransactionType(txn))
+                .filter((value) => value && !['all', 'none'].includes(value)),
+        )).sort((left, right) => {
+            const preferredOrder = ['buy', 'sell'];
+            const leftIndex = preferredOrder.indexOf(left);
+            const rightIndex = preferredOrder.indexOf(right);
+            if (leftIndex >= 0 || rightIndex >= 0) {
+                if (leftIndex < 0) return 1;
+                if (rightIndex < 0) return -1;
+                return leftIndex - rightIndex;
+            }
+            return formatEventType(left).localeCompare(formatEventType(right), 'en', { sensitivity: 'base' });
+        });
+        dropdown.innerHTML = ['all', ...availableTypes].map((value) => {
+            const label = value === 'all' ? 'All' : formatEventType(value);
             const selected = investmentSideFilter === 'all'
                 || (Array.isArray(investmentSideFilter) && investmentSideFilter.includes(value));
             const active = value === 'all' && investmentSideFilter === 'all';
             return `<button type="button" class="trade-strategy-dropdown-option${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${value === 'all' ? ' investment-side-filter-all-option' : ''}"
-                            data-investment-side-filter-option="${value}" role="option" aria-selected="${selected}">
+                            data-investment-side-filter-option="${escapeHtml(value)}" role="option" aria-selected="${selected}">
                         <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
-                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">${label}</span></span>
+                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">${escapeHtml(label)}</span></span>
                     </button>`;
         }).join('');
         const rect = trigger.getBoundingClientRect();
@@ -6207,7 +6225,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         selectedSides.push(selectedValue);
                     }
-                    nextFilter = selectedSides.length === 2 ? 'all' : selectedSides;
+                    nextFilter = availableTypes.length > 0 && selectedSides.length === availableTypes.length
+                        ? 'all'
+                        : selectedSides;
                 }
                 applyInvestmentSideFilter(nextFilter, { keepOpenFilterId: field.dataset.filterId || '' });
             });
@@ -11587,7 +11607,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInvestmentHistoryPaginationItem(item) {
         if (item?.kind === 'ellipsis') {
-            return `<span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="${item.position}">…</span>`;
+            return `<span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="${item.position}"><span class="local-store-page-ellipsis-dots"></span></span>`;
         }
 
         const targetPage = Number(item?.page);

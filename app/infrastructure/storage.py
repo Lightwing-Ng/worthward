@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.6.1
+Code version: v0.6.2
 """
 
 from __future__ import annotations
@@ -207,6 +207,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "GOOG": "Alphabet Inc.",
     "GOOGL": "Alphabet Inc.",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
+    "SGOV": "iShares 0-3 Month Treasury Bond ETF",
     "SKHY": "SK hynix Inc.",
     "SKHYV": "SK hynix Inc.",
 }

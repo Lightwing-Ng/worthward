@@ -1,6 +1,22 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.81.0`
+Documentation version: `v1.82.1`
+
+## Investment pagination ellipses corrected on 20 Jul 2026
+
+- Transaction-history pagination now draws its ellipsis as three evenly spaced,
+  geometry-centered solid dots. It no longer relies on a font ellipsis glyph
+  whose baseline can make the mark appear vertically misaligned.
+
+## Investment names and complete Type filtering corrected on 20 Jul 2026
+
+- Holdings now uses the canonical `iShares 0-3 Month Treasury Bond ETF` fallback
+  for SGOV, alongside the existing `Alphabet Inc.` fallback for GOOGL, when a
+  cached market profile contains only its ticker placeholder.
+- Transaction history now discovers every visible ledger event type for its Type
+  menu. Buy and Sell remain first, while dividends, interest, deposits,
+  withdrawals, fees, taxes, FX activity, and future imported types can be
+  selected individually or in any combination.
 
 ## GOOGL Holdings now shows its issuer name on 20 Jul 2026
 

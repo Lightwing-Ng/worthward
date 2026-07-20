@@ -1,30 +1,34 @@
 /**
  * Pure investment table filter helpers.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
  */
 (function bootstrapInvestmentFilterUtils(globalScope) {
     "use strict";
 
-    const VALID_SIDE_FILTERS = new Set(["buy", "sell"]);
     const VALID_SUMMARY_SCOPES = new Set(["all", "filtered", "both"]);
+
+    const normalizeTransactionType = (value) => String(value || "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .toLowerCase();
 
     const normalizeSideFilter = (value) => {
         if (Array.isArray(value)) {
             return Array.from(new Set(value
-                .map((item) => String(item || "").trim().toLowerCase())
-                .filter((item) => VALID_SIDE_FILTERS.has(item))));
+                .map(normalizeTransactionType)
+                .filter((item) => item && !["all", "none"].includes(item))));
         }
-        const normalized = String(value || "").trim().toLowerCase();
+        const normalized = normalizeTransactionType(value);
         if (["all", "none"].includes(normalized)) return normalized;
-        return VALID_SIDE_FILTERS.has(normalized) ? [normalized] : "all";
+        return normalized ? [normalized] : "all";
     };
 
     const matchesSideFilter = (transaction, filterValue = "all") => {
         const normalizedFilter = normalizeSideFilter(filterValue);
         if (normalizedFilter === "all") return true;
         if (normalizedFilter === "none") return false;
-        return normalizedFilter.includes(String(transaction?.type || "").trim().toLowerCase());
+        return normalizedFilter.includes(normalizeTransactionType(transaction?.type));
     };
 
     const normalizeSummaryScope = (value) => {
@@ -46,6 +50,7 @@
         matchesSideFilter,
         normalizeSideFilter,
         normalizeSummaryScope,
+        normalizeTransactionType,
     });
     globalScope.ANTIGRAVITY_INVESTMENT_FILTERS = api;
     if (typeof module !== "undefined" && module.exports) module.exports = api;
