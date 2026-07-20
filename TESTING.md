@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.1`
+Documentation version: `v1.3.2`
 
 ## Supported commands
 
@@ -61,6 +61,7 @@ Priority coverage gaps:
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
 - `tests/test_*.py`: Python unit and Flask integration tests.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
+- `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/e2e/`: Playwright browser tests and inert fixtures.
 

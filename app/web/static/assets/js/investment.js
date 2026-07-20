@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.84.0
+ * Code version: v1.86.0
+ * - Changed: Transaction history pagination now uses fixed five-page chunks with one-page navigation arrows, boundary ellipses, and accessible page labels.
+ * - Fixed: Variable-width pagination renders now synchronously recalculate the active indicator and preserve its cross-chunk animation in viewport coordinates.
  * - Changed: Transaction history pagination now displays 100 ledger rows per page.
  * - Changed: Transaction history pagination now mounts as a canonical Frosted glass overlay inside the lower table, revealing scrolling rows beneath it while preserving end-of-table clearance.
  * - Added: The primary Investment view rail now uses the shared equal-width overflow contract with a directional faded preview for future items.
@@ -323,14 +325,19 @@ import {
     isCompleteHsbcStatementPdfBundle,
 } from './investment/data-utils.js?v=investment-data-utils-v1.48.0';
 import {
+    INVESTMENT_PAGINATION_MODULE_VERSION,
+    buildInvestmentHistoryPagination,
+} from './investment/pagination.js?v=investment-pagination-v1.1.0';
+import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
 } from './investment/stock-details.js?v=investment-stock-details-v0.3.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.82.0',
+    entry: 'v1.86.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
 });
 
@@ -483,7 +490,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_HASH = '#stock_panel';
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
     const INVESTMENT_HISTORY_PAGE_SIZE = 100;
-    const INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT = 5;
     const INVESTMENT_HISTORY_MIN_VISIBLE_ROWS = 2;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
@@ -1012,6 +1018,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentStockDetailsTableAlignmentCleanup = null;
     let investmentHistoryCurrentPage = 1;
     let investmentHistoryPendingPaginationAnimation = null;
+    let investmentHistoryPaginationAnimationTimer = 0;
     let investmentBrokerFilterSelectedCodes = new Set();
     let investmentBrokerFilterDocumentListenersBound = false;
     let investmentBrokerFilterApplyRaf = 0;
@@ -11458,27 +11465,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function buildInvestmentHistoryPaginationSlots(totalPages = 1, currentPage = 1) {
-        const normalizedTotalPages = Math.max(1, Number(totalPages) || 1);
-        const normalizedCurrentPage = Math.min(normalizedTotalPages, Math.max(1, Number(currentPage) || 1));
-        const currentGroupIndex = Math.floor((normalizedCurrentPage - 1) / INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT);
-        const startPage = (currentGroupIndex * INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT) + 1;
-        const pageSlots = Array.from({ length: INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT }, (_, index) => {
-            const page = startPage + index;
-            if (page > normalizedTotalPages) {
-                return { page: 0, isActive: false };
-            }
-            return { page, isActive: page === normalizedCurrentPage };
-        });
-        return {
-            previousPage: startPage > 1 ? startPage - 1 : 0,
-            pageSlots,
-            nextPage: startPage + INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT <= normalizedTotalPages
-                ? startPage + INVESTMENT_HISTORY_PAGINATION_SLOT_COUNT
-                : 0,
-        };
-    }
-
     function ensureInvestmentHistoryPaginationIndicator(pagination) {
         if (!(pagination instanceof HTMLElement)) return null;
         let indicator = pagination.querySelector('.local-store-pagination-indicator');
@@ -11499,8 +11485,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(indicator instanceof HTMLElement)) return;
         const navRect = investmentHistoryPagination.getBoundingClientRect();
         const targetRect = target.getBoundingClientRect();
-        const x = targetRect.left - navRect.left;
-        const y = targetRect.top - navRect.top;
+        const x = targetRect.left - navRect.left - investmentHistoryPagination.clientLeft;
+        const y = targetRect.top - navRect.top - investmentHistoryPagination.clientTop;
         if (immediate) indicator.style.transition = 'none';
         indicator.style.width = `${targetRect.width}px`;
         indicator.style.height = `${targetRect.height}px`;
@@ -11517,8 +11503,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const navRect = investmentHistoryPagination.getBoundingClientRect();
         const buttonRect = button.getBoundingClientRect();
         return {
-            x: buttonRect.left - navRect.left,
-            y: buttonRect.top - navRect.top,
+            x: buttonRect.left - navRect.left - investmentHistoryPagination.clientLeft,
+            y: buttonRect.top - navRect.top - investmentHistoryPagination.clientTop,
             width: buttonRect.width,
             height: buttonRect.height,
         };
@@ -11528,10 +11514,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(investmentHistoryPagination instanceof HTMLElement) || investmentHistoryPagination.hidden) return null;
         const current = investmentHistoryPagination.querySelector('.local-store-page-button.is-active')
             || investmentHistoryPagination.querySelector('.local-store-page-button[data-pagination-current="1"]');
-        const fromRect = getInvestmentHistoryPaginationButtonRect(current);
-        if (!fromRect) return null;
+        if (!(current instanceof HTMLElement)) return null;
+        const currentRect = current.getBoundingClientRect();
         return {
-            fromRect,
+            fromRect: {
+                left: currentRect.left,
+                top: currentRect.top,
+                width: currentRect.width,
+                height: currentRect.height,
+            },
             targetPage: Number(targetPage),
         };
     }
@@ -11563,28 +11554,53 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const indicator = ensureInvestmentHistoryPaginationIndicator(investmentHistoryPagination);
         if (!(indicator instanceof HTMLElement)) return;
+        const navRect = investmentHistoryPagination.getBoundingClientRect();
+        const targetRect = getInvestmentHistoryPaginationButtonRect(target);
+        if (!targetRect) {
+            positionInvestmentHistoryPaginationIndicator({ immediate: true });
+            return;
+        }
+        const fromX = fromRect.left - navRect.left - investmentHistoryPagination.clientLeft;
+        const fromY = fromRect.top - navRect.top - investmentHistoryPagination.clientTop;
         investmentHistoryPagination.classList.add('is-animated', 'is-animating');
         indicator.style.transition = 'none';
         indicator.style.width = `${fromRect.width}px`;
         indicator.style.height = `${fromRect.height}px`;
-        indicator.style.transform = `translate3d(${fromRect.x}px, ${fromRect.y}px, 0)`;
+        indicator.style.transform = `translate3d(${fromX}px, ${fromY}px, 0)`;
         void indicator.offsetWidth;
         indicator.style.removeProperty('transition');
         window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => {
-                const targetRect = getInvestmentHistoryPaginationButtonRect(target);
-                if (!targetRect) {
-                    positionInvestmentHistoryPaginationIndicator({ immediate: true });
-                    return;
-                }
-                indicator.style.width = `${targetRect.width}px`;
-                indicator.style.height = `${targetRect.height}px`;
-                indicator.style.transform = `translate3d(${targetRect.x}px, ${targetRect.y}px, 0)`;
-            });
+            const currentTargetRect = getInvestmentHistoryPaginationButtonRect(target) || targetRect;
+            indicator.style.width = `${currentTargetRect.width}px`;
+            indicator.style.height = `${currentTargetRect.height}px`;
+            indicator.style.transform = `translate3d(${currentTargetRect.x}px, ${currentTargetRect.y}px, 0)`;
         });
-        window.setTimeout(() => {
+        if (investmentHistoryPaginationAnimationTimer) {
+            window.clearTimeout(investmentHistoryPaginationAnimationTimer);
+        }
+        investmentHistoryPaginationAnimationTimer = window.setTimeout(() => {
+            investmentHistoryPaginationAnimationTimer = 0;
             investmentHistoryPagination?.classList.remove('is-animating');
+            positionInvestmentHistoryPaginationIndicator({ immediate: true });
         }, getInvestmentHistoryPaginationMotionDurationMs());
+    }
+
+    function renderInvestmentHistoryPaginationItem(item) {
+        if (item?.kind === 'ellipsis') {
+            return `<span class="local-store-page-ellipsis" aria-hidden="true" data-pagination-ellipsis="${item.position}">…</span>`;
+        }
+
+        const targetPage = Number(item?.page);
+        if (!Number.isFinite(targetPage) || targetPage <= 0) return '';
+        if (item.kind === 'previous' || item.kind === 'next') {
+            const isPrevious = item.kind === 'previous';
+            const direction = isPrevious ? 'Previous' : 'Next';
+            const iconClass = isPrevious ? 'icon-page-prev' : 'icon-page-next';
+            return `<button type="button" class="local-store-page-button local-store-page-nav" data-investment-history-page-target="${targetPage}" data-pagination-current="0" aria-label="${direction} page"><span class="icon ${iconClass}" aria-hidden="true"></span></button>`;
+        }
+
+        const isActive = Boolean(item.isActive);
+        return `<button type="button" class="local-store-page-button${isActive ? ' is-active' : ''}" data-investment-history-page-target="${targetPage}" data-pagination-current="${isActive ? '1' : '0'}" aria-label="Page ${targetPage}"${isActive ? ' aria-current="page"' : ''}>${targetPage}</button>`;
     }
 
     function renderInvestmentHistoryPagination(totalRows = 0) {
@@ -11592,37 +11608,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const pendingAnimation = investmentHistoryPendingPaginationAnimation;
         investmentHistoryPendingPaginationAnimation = null;
         const totalPages = getInvestmentHistoryTotalPages(totalRows);
-        if (totalRows <= INVESTMENT_HISTORY_PAGE_SIZE) {
+        investmentHistoryCurrentPage = Math.min(totalPages, Math.max(1, investmentHistoryCurrentPage || 1));
+        const paginationState = buildInvestmentHistoryPagination(totalPages, investmentHistoryCurrentPage);
+        investmentHistoryCurrentPage = paginationState.currentPage;
+        if (!paginationState.shouldRender) {
             setInvestmentHistoryPaginationVisibility(false);
             investmentHistoryPagination.innerHTML = '';
+            delete investmentHistoryPagination.dataset.paginationPageCount;
+            delete investmentHistoryPagination.dataset.paginationCompact;
             investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
+            if (investmentHistoryPaginationAnimationTimer) {
+                window.clearTimeout(investmentHistoryPaginationAnimationTimer);
+                investmentHistoryPaginationAnimationTimer = 0;
+            }
             return;
         }
-        investmentHistoryCurrentPage = Math.min(totalPages, Math.max(1, investmentHistoryCurrentPage || 1));
-        const { previousPage, pageSlots, nextPage } = buildInvestmentHistoryPaginationSlots(totalPages, investmentHistoryCurrentPage);
         setInvestmentHistoryPaginationVisibility(true);
+        investmentHistoryPagination.dataset.paginationPageCount = String(paginationState.totalPages);
+        investmentHistoryPagination.dataset.paginationCompact = paginationState.isCompact ? '1' : '0';
         investmentHistoryPagination.classList.remove('is-animated', 'is-animating');
         investmentHistoryPagination.innerHTML = `
             <span class="local-store-pagination-indicator" aria-hidden="true"></span>
-            ${previousPage
-                ? `<button type="button" class="local-store-page-button local-store-page-nav" data-investment-history-page-target="${previousPage}" aria-label="Previous pages"><span class="icon icon-page-prev" aria-hidden="true"></span></button>`
-                : '<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>'}
-            ${pageSlots.map((slot) => (
-                slot.page
-                    ? `<button type="button" class="local-store-page-button${slot.isActive ? ' is-active' : ''}" data-investment-history-page-target="${slot.page}" data-pagination-current="${slot.isActive ? '1' : '0'}"${slot.isActive ? ' aria-current="page"' : ''}>${slot.page}</button>`
-                    : '<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>'
-            )).join('')}
-            ${nextPage
-                ? `<button type="button" class="local-store-page-button local-store-page-nav" data-investment-history-page-target="${nextPage}" aria-label="Next pages"><span class="icon icon-page-next" aria-hidden="true"></span></button>`
-                : '<span class="local-store-page-button local-store-page-placeholder" aria-hidden="true"></span>'}
+            ${paginationState.items.map((item) => renderInvestmentHistoryPaginationItem(item)).join('')}
         `;
-        window.requestAnimationFrame(() => {
-            if (pendingAnimation) {
-                animateInvestmentHistoryPaginationIndicator(pendingAnimation);
-                return;
-            }
-            positionInvestmentHistoryPaginationIndicator({ immediate: true });
-        });
+        positionInvestmentHistoryPaginationIndicator({ immediate: true });
+        if (pendingAnimation) {
+            animateInvestmentHistoryPaginationIndicator(pendingAnimation);
+        }
     }
 
     function getInvestmentHistoryPageForLedgerNos(ledgerNos = []) {

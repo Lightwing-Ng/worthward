@@ -1,6 +1,41 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.78.0`
+Documentation version: `v1.81.0`
+
+## GOOGL Holdings now shows its issuer name on 20 Jul 2026
+
+- The canonical company-name fallback now maps both Alphabet share classes,
+  GOOG and GOOGL, to Alphabet Inc. Holdings therefore shows the issuer beneath
+  GOOGL even when the local market profile contains only the ticker placeholder.
+- Cached Investment responses inject the current known-name payload on every
+  read, so the correction takes effect without rewriting the user's market
+  profile or Investment transaction stores.
+
+## Transaction history pagination now uses fixed five-page chunks on 20 Jul 2026
+
+- Investment Transaction history groups page numbers into boundary-aligned
+  five-page chunks instead of a rolling window. Previous and next controls move
+  exactly one page, while first, middle, and final chunks add only the applicable
+  boundary page and ellipsis controls.
+- The floating dock derives its width from rendered controls and remains centered
+  on the history table. Dark mode uses the high-contrast theme text color for
+  inactive page and arrow controls, preventing trailing controls from blending
+  into or overflowing the material.
+- Every pagination render synchronously measures the active button. Cross-chunk
+  transitions convert the previous viewport position into the new dock's local
+  coordinates before running the existing indicator animation.
+- A single history page omits the paginator entirely. For totals from two through
+  five pages, the dock omits both arrows and uses equal block and inline insets,
+  keeping the first and final page circles exactly concentric with the dock's end
+  caps even in its narrow-container layout. Tabular lining numerals and explicit
+  flex centering keep every page label centered within its circular control.
+
+## Holdings rows now use horizontal separators on 20 Jul 2026
+
+- The Investment Holdings table no longer draws a Frosted glass border between
+  every pair of data columns. Its dark-mode body now follows Transaction
+  history with borderless columns while preserving row separators, alternating
+  fills, the table outline, and header material.
 
 ## Transaction history pages now contain 100 rows on 20 Jul 2026
 
