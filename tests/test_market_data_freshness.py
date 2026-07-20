@@ -44,23 +44,7 @@ from app.services.market_data import (
     refresh_one_minute_store,
     resolve_compare_overnight_tickers,
 )
-from app.models.schemas import QuoteProfile
-from tests.factories.market import market_frame, ohlc_frame_for_dates
-
-
-def _fake_dataset_for(ticker: str) -> pd.DataFrame:
-    base = 100.0 if ticker == "QQQ" else 200.0 if ticker == "AAPL" else 300.0
-    return pd.DataFrame(
-        {
-            "Date": pd.to_datetime(["2026-03-26", "2026-03-27"]),
-            "Close": [base, base + 1.0],
-        }
-    )
-
-
-def _fake_quote_profile(ticker: str, force_refresh: bool, namespace: str = "primary") -> QuoteProfile:
-    del force_refresh, namespace
-    return QuoteProfile(ticker=ticker, company_name=ticker, logo_url="")
+from tests.factories.market import close_frame_for_ticker, market_frame, ohlc_frame_for_dates, quote_profile_stub
 
 
 class MarketSessionClassificationTests(unittest.TestCase):
@@ -868,8 +852,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         with (
             patch("app.web.runtime.ensure_latest_daily_caches", side_effect=fake_ensure_latest_daily_caches),
-            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d', **kwargs: _fake_dataset_for(ticker)),
-            patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
+            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d', **kwargs: close_frame_for_ticker(ticker)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
         ):
             client = create_app().test_client()
@@ -881,8 +865,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
     def test_intraday_price_page_does_not_block_on_daily_cache_refresh(self) -> None:
         with (
             patch("app.web.runtime.ensure_latest_daily_caches") as refresh_mock,
-            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval="1d", **kwargs: _fake_dataset_for(ticker)),
-            patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
+            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval="1d", **kwargs: close_frame_for_ticker(ticker)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
         ):
             response = create_app().test_client().get(
@@ -901,8 +885,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         with (
             patch("app.web.runtime.ensure_latest_daily_caches", side_effect=fake_ensure_latest_daily_caches),
-            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d', **kwargs: _fake_dataset_for(ticker)),
-            patch("app.web.runtime.fetch_quote_profile", side_effect=_fake_quote_profile),
+            patch("app.web.runtime.fetch_history", side_effect=lambda ticker, include_dividends, interval='1d', **kwargs: close_frame_for_ticker(ticker)),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
         ):
             client = create_app().test_client()

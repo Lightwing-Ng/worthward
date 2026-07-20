@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.24.8
+Code version: v0.25.0
 """
 
 from __future__ import annotations
@@ -255,9 +255,40 @@ from app.infrastructure.storage import (
     update_investment_store_payload,
     write_json_atomic,
 )
+from app.web.form_parsing import (
+    build_default_weights,
+    ensure_positive_portfolio_weights,
+    normalize_portfolio_weights,
+    parse_bool_flag_from_args,
+    parse_float_value,
+    parse_int_value,
+    parse_portfolio_allocation_mode_from_args,
+    parse_range_request_args_from_args,
+    parse_requested_shares_from_args,
+    parse_requested_tickers_from_args,
+    parse_requested_weights_from_args,
+    resolve_workspace_dividend_mode,
+)
+from app.web.navigation import (
+    BACKTEST_VIEWS,
+    LEGACY_VIEW_ALIASES,
+    MAX_TICKERS,
+    MIN_TICKERS,
+    SUPPORTED_SETTINGS_SECTIONS,
+    SUPPORTED_TRADE_SECTIONS,
+    SUPPORTED_VIEWS,
+    VIEW_PATHS,
+    build_settings_path,
+    build_settings_url,
+    build_trade_path,
+    build_trade_url,
+    build_view_path,
+    build_view_url,
+    normalize_settings_section,
+    normalize_trade_section,
+    normalize_view_name,
+)
 
-MAX_TICKERS = 5
-MIN_TICKERS = 2
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
 INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v2"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
@@ -268,37 +299,12 @@ PORTFOLIO_BENCHMARK_COLORS = {
     "SPY": "#8e8e93",
     "QQQ": "#c7c7cc",
 }
-LEGACY_VIEW_ALIASES = {
-    "trade-messages": "backtest",
-}
-SUPPORTED_VIEWS = {"tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade", "settings"}
-BACKTEST_VIEWS = {"backtest", "grid-trading"}
-SUPPORTED_SETTINGS_SECTIONS = {"about", "general", "backtest", "font-tokens", "material-tokens", "network", "strategies", "email-smtp", "broker-access", "local-market-store",
-                               "clear-caches", "style-tokens", "export-image", "cash-equivalents"}
-SUPPORTED_TRADE_SECTIONS = {"investment", "live-trading"}
-LEGACY_TRADE_SECTION_ALIASES = {
-    "timing": "investment",
-    "invest": "investment",
-    "live": "live-trading",
-    "live_trading": "live-trading",
-}
 LOCAL_STORE_PAGE_SIZE = 10
 SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
 STRATEGY_CATEGORY_LABELS = {
     "baseline": "Baseline",
     "recent": "Recent",
     "all": "All",
-}
-VIEW_PATHS = {
-    "tickers": "/workspaces/compare",
-    "market-caps": "/workspaces/market-caps",
-    "prices": "/workspaces/prices",
-    "portfolio": "/workspaces/portfolio",
-    "dca": "/workspaces/dca",
-    "backtest": "/workspaces/backtest",
-    "grid-trading": "/workspaces/grid-trading",
-    "trade": "/trade/investment",
-    "settings": "/settings/about",
 }
 @dataclass(frozen=True)
 class WebRuntime:
@@ -1214,107 +1220,45 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"Invalid ticker format: {raw_ticker}.")
         return normalized_ticker
 
-    def parse_int_value(raw_value: object, fallback: int) -> int:
-        if raw_value is None:
-            return fallback
-        try:
-            return int(str(raw_value).strip())
-        except (TypeError, ValueError):
-            return fallback
-
-    def parse_float_value(raw_value: object, fallback: float) -> float:
-        if raw_value is None:
-            return fallback
-        normalized = str(raw_value).strip().replace(",", "")
-        if not normalized:
-            return fallback
-        try:
-            return float(normalized)
-        except (TypeError, ValueError):
-            return fallback
-
     def parse_requested_tickers() -> list[str]:
-        def compact_tickers(raw_values: list[str]) -> list[str]:
-            compacted: list[str] = []
-            for raw_value in raw_values:
-                normalized = normalize_ticker_input(str(raw_value or ""))
-                if normalized:
-                    compacted.append(normalized)
-            return compacted[:MAX_TICKERS]
-
-        repeated = request.args.getlist("ticker")
-        if repeated:
-            return compact_tickers(repeated)
-
-        csv_tickers = request.args.get("tickers", "").strip()
-        if csv_tickers:
-            return compact_tickers(csv_tickers.split(","))
-
-        numbered = [request.args.get(f"ticker_{index}", "") for index in range(1, MAX_TICKERS + 1)]
-        has_numbered = any(value.strip() for value in numbered) or any(
-            f"ticker_{index}" in request.args for index in range(1, MAX_TICKERS + 1)
+        return parse_requested_tickers_from_args(
+            request.args,
+            max_tickers=MAX_TICKERS,
+            normalize=normalize_ticker_input,
+            getlist=request.args.getlist,
         )
-        if has_numbered:
-            raw_tickers = numbered
-        elif "ticker_a" in request.args or "ticker_b" in request.args:
-            raw_tickers = [request.args.get("ticker_a", ""), request.args.get("ticker_b", "")]
-        else:
-            return []
-        return compact_tickers(raw_tickers)
 
     def parse_requested_weights(slot_count: int) -> list[int]:
-        repeated = request.args.getlist("weight")
-        raw_values = repeated[:slot_count] if repeated else [
-            request.args.get(f"weight_{index}", "")
-            for index in range(1, slot_count + 1)
-        ]
-        weights: list[int] = []
-        for raw_value in raw_values:
-            if raw_value is None or str(raw_value).strip() == "":
-                weights.append(0)
-            else:
-                weights.append(min(max(parse_int_value(raw_value, 0), 0), 100))
-        return weights
+        return parse_requested_weights_from_args(
+            request.args,
+            slot_count,
+            getlist=request.args.getlist,
+        )
 
     def parse_portfolio_allocation_mode() -> str:
-        return "shares" if request.args.get("allocation", "").strip().lower() == "shares" else "weight"
+        return parse_portfolio_allocation_mode_from_args(request.args)
 
     def parse_requested_shares(slot_count: int) -> list[int]:
-        repeated = request.args.getlist("shares")
-        raw_values = repeated[:slot_count] if repeated else [
-            request.args.get(f"shares_{index}", "")
-            for index in range(1, slot_count + 1)
-        ]
-        shares: list[int] = []
-        for raw_value in raw_values:
-            shares.append(max(parse_int_value(raw_value, 0), 0))
-        return shares
+        return parse_requested_shares_from_args(
+            request.args,
+            slot_count,
+            getlist=request.args.getlist,
+        )
 
     def parse_bool_flag(*names: str, default: bool = False) -> bool:
-        for name in names:
-            values = request.args.getlist(name)
-            if values:
-                return values[-1] == "1"
-        return default
-
-    def resolve_workspace_dividend_mode(price_only: bool, reinvest_cash_dividends: bool) -> str:
-        if price_only:
-            return "price"
-        return "reinvest" if reinvest_cash_dividends else "cash"
+        return parse_bool_flag_from_args(
+            request.args,
+            *names,
+            default=default,
+            getlist=request.args.getlist,
+        )
 
     def parse_range_request_args() -> tuple[str, str, str, str]:
-        range_mode = request.args.get(
-            "range",
-            request.args.get("range_mode", defaults.get("range_mode", "period")),
-        ).strip().lower()
-        period = request.args.get("period", defaults.get("period", DEFAULT_PERIOD)).strip().lower()
-        exact_trading_date = request.args.get("trading_date", request.args.get("exact_trading_date", "")).strip()
-        exact_start = request.args.get("from", request.args.get("exact_start", "")).strip()
-        exact_end = request.args.get("to", request.args.get("exact_end", "")).strip()
-        if range_mode == "exact" and period == "1d" and exact_trading_date:
-            exact_start = exact_trading_date
-            exact_end = exact_trading_date
-        return range_mode, period, exact_start, exact_end
+        return parse_range_request_args_from_args(
+            request.args,
+            default_range_mode=str(defaults.get("range_mode", "period")),
+            default_period=str(defaults.get("period", DEFAULT_PERIOD)),
+        )
 
     def build_exact_range_bounds(start_value: str, end_value: str) -> tuple[pd.Timestamp, pd.Timestamp]:
         start_bound = pd.to_datetime(start_value).normalize()
@@ -1999,41 +1943,6 @@ def build_web_runtime() -> WebRuntime:
     def format_store_range_date(raw_value: object) -> str:
         return format_store_range_date_value(raw_value)
 
-    def build_default_weights(count: int) -> list[int]:
-        if count <= 0:
-            return []
-        base_weight = 100 // count
-        remainder = 100 % count
-        return [base_weight + (1 if index < remainder else 0) for index in range(count)]
-
-    def normalize_portfolio_weights(raw_weights: list[int], active_count: int) -> list[int]:
-        if active_count <= 0:
-            return []
-        trimmed = raw_weights[:active_count]
-        if len(trimmed) < active_count:
-            trimmed.extend([0] * (active_count - len(trimmed)))
-        total = sum(trimmed)
-        if total == 100:
-            return trimmed
-        if total <= 0:
-            return build_default_weights(active_count)
-        scaled = [int((value * 100) / total) for value in trimmed]
-        remainder = 100 - sum(scaled)
-        for index in range(active_count):
-            if remainder == 0:
-                break
-            scaled[index] += 1
-            remainder -= 1
-        return scaled
-
-    def ensure_positive_portfolio_weights(raw_weights: list[int], active_count: int) -> list[int]:
-        trimmed = raw_weights[:active_count]
-        if len(trimmed) < active_count:
-            trimmed.extend([0] * (active_count - len(trimmed)))
-        if any(weight <= 0 for weight in trimmed):
-            raise ValueError("Each selected ticker must have a weight above 0%.")
-        return trimmed
-
     def build_portfolio_series_payload(datasets: list[pd.DataFrame], weights: list[int], color: str):
         first_dataset = datasets[0]
         cumulative_growth = pd.Series(0.0, index=first_dataset.index)
@@ -2127,15 +2036,7 @@ def build_web_runtime() -> WebRuntime:
         return benchmark_series, benchmark_profiles
 
     def resolve_view() -> str:
-        requested_view = request.args.get("view", "tickers").strip().lower()
-        requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
-        return requested_view if requested_view in SUPPORTED_VIEWS else "tickers"
-
-    def build_view_path(view_name: str) -> str:
-        return VIEW_PATHS.get(view_name, VIEW_PATHS["tickers"])
-
-    def build_view_url(view_name: str) -> str:
-        return build_view_path(view_name)
+        return normalize_view_name(request.args.get("view", "tickers"))
 
     def build_legacy_workspace_redirect(view_name: str):
         query_string = request.query_string.decode().strip()
@@ -2143,29 +2044,7 @@ def build_web_runtime() -> WebRuntime:
         return redirect(f"{target_path}?{query_string}" if query_string else target_path)
 
     def resolve_settings_section() -> str:
-        requested_section = request.args.get("section", "about").strip().lower()
-        return requested_section if requested_section in SUPPORTED_SETTINGS_SECTIONS else "about"
-
-    def normalize_settings_section(section_name: str | None) -> str:
-        candidate = (section_name or "about").strip().lower()
-        return candidate if candidate in SUPPORTED_SETTINGS_SECTIONS else "about"
-
-    def build_settings_path(section_name: str) -> str:
-        return f"/settings/{normalize_settings_section(section_name)}"
-
-    def build_settings_url(section_name: str) -> str:
-        return build_settings_path(section_name)
-
-    def normalize_trade_section(section_name: str | None) -> str:
-        candidate = (section_name or "investment").strip().lower()
-        candidate = LEGACY_TRADE_SECTION_ALIASES.get(candidate, candidate)
-        return candidate if candidate in SUPPORTED_TRADE_SECTIONS else "investment"
-
-    def build_trade_path(section_name: str) -> str:
-        return f"/trade/{normalize_trade_section(section_name)}"
-
-    def build_trade_url(section_name: str) -> str:
-        return build_trade_path(section_name)
+        return normalize_settings_section(request.args.get("section", "about"))
 
     def should_use_modal_banner_message(message: str | None) -> bool:
         normalized = (message or "").strip()

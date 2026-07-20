@@ -1,19 +1,30 @@
-/* Code version: v0.1.10 */
+/* Code version: v0.1.11 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
+    const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 
-    const readThemeTokens = () => {
-        const theme = window.ANTIGRAVITY_APP?.theme || {};
-        const computed = getComputedStyle(document.body);
-        return {
-            text: computed.getPropertyValue("--theme-text").trim() || theme.text || "#111111",
-            muted: computed.getPropertyValue("--theme-muted").trim() || theme.muted || "#8e8e93",
-            accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim() || theme.accent_primary || "#0055cc",
-            accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim() || theme.accent_secondary || "#ff2f92",
-            accentPositive: computed.getPropertyValue("--theme-accent-positive").trim() || theme.accent_positive || "#22c55e",
-        };
-    };
+    const readThemeTokens = () => (
+        typeof chartAxis.readThemeTokens === "function"
+            ? chartAxis.readThemeTokens({
+                text: "#111111",
+                muted: "#8e8e93",
+                accentPrimary: "#0055cc",
+                accentSecondary: "#ff2f92",
+                accentPositive: "#22c55e",
+            })
+            : (() => {
+                const theme = window.ANTIGRAVITY_APP?.theme || {};
+                const computed = getComputedStyle(document.body);
+                return {
+                    text: computed.getPropertyValue("--theme-text").trim() || theme.text || "#111111",
+                    muted: computed.getPropertyValue("--theme-muted").trim() || theme.muted || "#8e8e93",
+                    accentPrimary: computed.getPropertyValue("--theme-accent-primary").trim() || theme.accent_primary || "#0055cc",
+                    accentSecondary: computed.getPropertyValue("--theme-accent-secondary").trim() || theme.accent_secondary || "#ff2f92",
+                    accentPositive: computed.getPropertyValue("--theme-accent-positive").trim() || theme.accent_positive || "#22c55e",
+                };
+            })()
+    );
 
     const bindColorSchemeRefresh = (callback) => {
         if (dcaThemeState.mediaCleanup) {
@@ -171,20 +182,24 @@
             return `${Number(match[3])} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(match[2]) - 1]} ${match[1]}`;
         };
 
-        const buildTickIndexSet = (count, plotWidth) => {
-            if (count <= 0) return new Set();
-            if (count === 1) return new Set([0]);
-            const maxTickCount = plotWidth >= 768 ? 4 : 3;
-            if (maxTickCount === 3 || count < 4) {
-                return new Set([0, Math.round((count - 1) / 2), count - 1]);
-            }
-            return new Set([
-                0,
-                Math.round((count - 1) / 3),
-                Math.round(((count - 1) * 2) / 3),
-                count - 1,
-            ]);
-        };
+        const buildTickIndexSet = (count, plotWidth) => (
+            typeof chartAxis.buildTickIndexSet === "function"
+                ? chartAxis.buildTickIndexSet(count, plotWidth)
+                : (() => {
+                    if (count <= 0) return new Set();
+                    if (count === 1) return new Set([0]);
+                    const maxTickCount = plotWidth >= 768 ? 4 : 3;
+                    if (maxTickCount === 3 || count < 4) {
+                        return new Set([0, Math.round((count - 1) / 2), count - 1]);
+                    }
+                    return new Set([
+                        0,
+                        Math.round((count - 1) / 3),
+                        Math.round(((count - 1) * 2) / 3),
+                        count - 1,
+                    ]);
+                })()
+        );
 
         const xAxisLabelPlugin = {
             id: "dcaXAxisLabelPlugin",

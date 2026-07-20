@@ -1,6 +1,6 @@
 """Behavior tests for recurring investment schedules and simulations.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -17,21 +17,7 @@ from app.services.dca import (
     build_recurring_schedule_dates,
     simulate_recurring_investment,
 )
-
-
-def _market_frame(
-    dates: list[str],
-    closes: list[float],
-    dividends: list[float] | None = None,
-) -> pd.DataFrame:
-    """Build the minimal deterministic market frame accepted by the DCA service."""
-    payload: dict[str, object] = {
-        "Date": pd.to_datetime(dates),
-        "Close": closes,
-    }
-    if dividends is not None:
-        payload["Dividends"] = dividends
-    return pd.DataFrame(payload)
+from tests.factories.market import close_frame_for_dates
 
 
 class RecurringScheduleTests(unittest.TestCase):
@@ -135,7 +121,7 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
             )
 
     def test_range_without_a_contribution_date_is_rejected(self) -> None:
-        frame = _market_frame(["2026-01-02", "2026-01-05"], [100.0, 101.0])
+        frame = close_frame_for_dates(["2026-01-02", "2026-01-05"], [100.0, 101.0])
 
         with self.assertRaisesRegex(ValueError, "No recurring contribution dates"):
             simulate_recurring_investment(
@@ -148,7 +134,7 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
             )
 
     def test_monthly_contributions_preserve_capital_and_share_invariants(self) -> None:
-        frame = _market_frame(
+        frame = close_frame_for_dates(
             ["2026-01-15", "2026-02-16", "2026-03-16"],
             [100.0, 120.0, 125.0],
         )
@@ -182,7 +168,7 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
         self.assertEqual(result["chart"]["raw_dates"][0], "2026-01-15")
 
     def test_sparse_market_dates_combine_multiple_scheduled_events(self) -> None:
-        frame = _market_frame(["2026-01-01", "2026-01-20"], [100.0, 200.0])
+        frame = close_frame_for_dates(["2026-01-01", "2026-01-20"], [100.0, 200.0])
 
         result = simulate_recurring_investment(
             "QQQ",
@@ -200,10 +186,10 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total_invested"], 300.0)
 
     def test_cash_dividend_and_reinvestment_follow_distinct_accounting_paths(self) -> None:
-        frame = _market_frame(
+        frame = close_frame_for_dates(
             ["2026-01-15", "2026-01-16", "2026-02-16"],
             [100.0, 100.0, 100.0],
-            [0.0, 10.0, 0.0],
+            dividends=[0.0, 10.0, 0.0],
         )
 
         cash_result = simulate_recurring_investment(
@@ -241,7 +227,7 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
         self.assertEqual(excluded_result["summary"]["final_equity"], 2_000.0)
 
     def test_invalid_options_normalize_and_minimum_amount_is_one_dollar(self) -> None:
-        frame = _market_frame(["2026-01-15", "2026-01-28"], [10.0, 11.0])
+        frame = close_frame_for_dates(["2026-01-15", "2026-01-28"], [10.0, 11.0])
 
         result = simulate_recurring_investment(
             "QQQ",
@@ -259,7 +245,7 @@ class RecurringInvestmentSimulationTests(unittest.TestCase):
         self.assertEqual(result["summary"]["schedule_label"], "Calendar day 28 of each month")
 
     def test_zero_price_contribution_retains_uninvested_cash(self) -> None:
-        frame = _market_frame(["2026-01-15", "2026-01-16"], [0.0, 10.0])
+        frame = close_frame_for_dates(["2026-01-15", "2026-01-16"], [0.0, 10.0])
 
         result = simulate_recurring_investment(
             "QQQ",

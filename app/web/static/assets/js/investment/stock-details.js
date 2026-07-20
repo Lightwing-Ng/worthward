@@ -1,7 +1,7 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.4.2
+ * Code version: v0.4.3
  * - Fixed: Mixed integer and fractional y-axis ticks now select a fractional tick when resolving the shared decimal anchor.
  * - Fixed: Exact-price badges now reuse the rendered y-axis label anchor and font so integer and decimal columns align with the covered tick labels.
  * - Added: Stock-details hover now draws a cost-curve-bounded horizontal guide beneath chart data and a blue exact-price badge over the y-axis labels.
@@ -24,7 +24,7 @@
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.3';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -825,20 +825,25 @@ export function createInvestmentStockDetailsUtils({
                 })
                 .filter(Boolean);
         };
-        const buildTickIndexSet = (count, plotWidth) => {
-            if (count <= 0) return new Set();
-            if (count === 1) return new Set([0]);
-            const maxTickCount = plotWidth >= 768 ? 4 : 3;
-            if (maxTickCount === 3 || count < 4) {
-                return new Set([0, Math.round((count - 1) / 2), count - 1]);
-            }
-            return new Set([
-                0,
-                Math.round((count - 1) / 3),
-                Math.round(((count - 1) * 2) / 3),
-                count - 1,
-            ]);
-        };
+        const chartAxis = (typeof window !== "undefined" && window.ANTIGRAVITY_CHART_AXIS) || {};
+        const buildTickIndexSet = (count, plotWidth) => (
+            typeof chartAxis.buildTickIndexSet === "function"
+                ? chartAxis.buildTickIndexSet(count, plotWidth)
+                : (() => {
+                    if (count <= 0) return new Set();
+                    if (count === 1) return new Set([0]);
+                    const maxTickCount = plotWidth >= 768 ? 4 : 3;
+                    if (maxTickCount === 3 || count < 4) {
+                        return new Set([0, Math.round((count - 1) / 2), count - 1]);
+                    }
+                    return new Set([
+                        0,
+                        Math.round((count - 1) / 3),
+                        Math.round(((count - 1) * 2) / 3),
+                        count - 1,
+                    ]);
+                })()
+        );
         const STOCK_DETAILS_MARKER_HALF_WIDTH_PX = 6;
         const STOCK_DETAILS_MARKER_HEIGHT_PX = 11;
         const STOCK_DETAILS_MARKER_X_PADDING_PX = STOCK_DETAILS_MARKER_HALF_WIDTH_PX + 2;

@@ -1,7 +1,8 @@
-/* Code version: v0.9.1 */
+/* Code version: v0.9.2 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
+	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 	const ONE_DAY_COMPARE_SESSION_MARKERS = Object.freeze([
 		{ minutes: (4 * 60), timeLabel: "04:00", align: "left" },
 		{ minutes: (9 * 60) + 30, timeLabel: "09:30", align: "center" },
@@ -20,18 +21,26 @@
 	]);
 	const MAX_INTRADAY_CONNECTED_GAP_MINUTES = 5;
 
-	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
+	const readThemeToken = (computed, tokenName) => (
+		typeof chartAxis.readThemeToken === "function"
+			? chartAxis.readThemeToken(computed, tokenName)
+			: computed.getPropertyValue(tokenName).trim()
+	);
 
-	const readThemeTokens = () => {
-		const computed = getComputedStyle(document.body);
-		return {
-			text: readThemeToken(computed, "--theme-text"),
-			muted: readThemeToken(computed, "--theme-muted"),
-			accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
-			accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
-			accentPositive: readThemeToken(computed, "--theme-accent-positive"),
-		};
-	};
+	const readThemeTokens = () => (
+		typeof chartAxis.readThemeTokens === "function"
+			? chartAxis.readThemeTokens()
+			: (() => {
+				const computed = getComputedStyle(document.body);
+				return {
+					text: readThemeToken(computed, "--theme-text"),
+					muted: readThemeToken(computed, "--theme-muted"),
+					accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
+					accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
+					accentPositive: readThemeToken(computed, "--theme-accent-positive"),
+				};
+			})()
+	);
 
 	const bindColorSchemeRefresh = (callback) => {
 		if (chartThemeState.mediaCleanup) {
@@ -1075,20 +1084,24 @@
 				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
 		);
 
-		const buildTickIndexSet = (count, plotWidth) => {
-			if (count <= 0) return new Set();
-			if (count === 1) return new Set([0]);
-			const maxTickCount = plotWidth >= 768 ? 4 : 3;
-			if (maxTickCount === 3 || count < 4) {
-				return new Set([0, Math.round((count - 1) / 2), count - 1]);
-			}
-			return new Set([
-				0,
-				Math.round((count - 1) / 3),
-				Math.round(((count - 1) * 2) / 3),
-				count - 1,
-			]);
-		};
+		const buildTickIndexSet = (count, plotWidth) => (
+			typeof chartAxis.buildTickIndexSet === "function"
+				? chartAxis.buildTickIndexSet(count, plotWidth)
+				: (() => {
+					if (count <= 0) return new Set();
+					if (count === 1) return new Set([0]);
+					const maxTickCount = plotWidth >= 768 ? 4 : 3;
+					if (maxTickCount === 3 || count < 4) {
+						return new Set([0, Math.round((count - 1) / 2), count - 1]);
+					}
+					return new Set([
+						0,
+						Math.round((count - 1) / 3),
+						Math.round(((count - 1) * 2) / 3),
+						count - 1,
+					]);
+				})()
+		);
 
 		const buildChartTickIndexes = (chartLabels, chartRawDates, plotWidth, useIntradayDedup = false) => {
 			const tickIndexes = Array.from(buildTickIndexSet(chartLabels.length, plotWidth)).sort((left, right) => left - right);

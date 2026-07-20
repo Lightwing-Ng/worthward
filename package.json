@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Browser quality checks for the antigravity Flask application.",
   "scripts": {
-    "test:js": "node --test tests/test_investment_data_utils.mjs tests/test_investment_pagination.mjs tests/test_table_filter_contracts.mjs",
+    "test:js": "node --test tests/test_investment_data_utils.mjs tests/test_investment_pagination.mjs tests/test_table_filter_contracts.mjs tests/test_chart_axis_utils.mjs",
     "test:e2e": "playwright test",
     "test": "npm run test:js && npm run test:e2e"
   },

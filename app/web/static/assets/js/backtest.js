@@ -1,20 +1,29 @@
-/* Code version: v0.3.10 */
+/* Code version: v0.3.11 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const backtestThemeState = bootstrap.backtestThemeState = bootstrap.backtestThemeState || {};
+	const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
 
-	const readThemeToken = (computed, tokenName) => computed.getPropertyValue(tokenName).trim();
+	const readThemeToken = (computed, tokenName) => (
+		typeof chartAxis.readThemeToken === "function"
+			? chartAxis.readThemeToken(computed, tokenName)
+			: computed.getPropertyValue(tokenName).trim()
+	);
 
-	const readThemeTokens = () => {
-		const computed = getComputedStyle(document.body);
-		return {
-			text: readThemeToken(computed, "--theme-text"),
-			muted: readThemeToken(computed, "--theme-muted"),
-			accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
-			accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
-			accentPositive: readThemeToken(computed, "--theme-accent-positive"),
-		};
-	};
+	const readThemeTokens = () => (
+		typeof chartAxis.readThemeTokens === "function"
+			? chartAxis.readThemeTokens()
+			: (() => {
+				const computed = getComputedStyle(document.body);
+				return {
+					text: readThemeToken(computed, "--theme-text"),
+					muted: readThemeToken(computed, "--theme-muted"),
+					accentPrimary: readThemeToken(computed, "--theme-accent-primary"),
+					accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
+					accentPositive: readThemeToken(computed, "--theme-accent-positive"),
+				};
+			})()
+	);
 
 	const bindColorSchemeRefresh = (callback) => {
 		if (backtestThemeState.mediaCleanup) {
@@ -359,20 +368,24 @@
 				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
 		);
 
-		const buildTickIndexSet = (count, plotWidth) => {
-			if (count <= 0) return new Set();
-			if (count === 1) return new Set([0]);
-			const maxTickCount = plotWidth >= 768 ? 4 : 3;
-			if (maxTickCount === 3 || count < 4) {
-				return new Set([0, Math.round((count - 1) / 2), count - 1]);
-			}
-			return new Set([
-				0,
-				Math.round((count - 1) / 3),
-				Math.round(((count - 1) * 2) / 3),
-				count - 1,
-			]);
-		};
+		const buildTickIndexSet = (count, plotWidth) => (
+			typeof chartAxis.buildTickIndexSet === "function"
+				? chartAxis.buildTickIndexSet(count, plotWidth)
+				: (() => {
+					if (count <= 0) return new Set();
+					if (count === 1) return new Set([0]);
+					const maxTickCount = plotWidth >= 768 ? 4 : 3;
+					if (maxTickCount === 3 || count < 4) {
+						return new Set([0, Math.round((count - 1) / 2), count - 1]);
+					}
+					return new Set([
+						0,
+						Math.round((count - 1) / 3),
+						Math.round(((count - 1) * 2) / 3),
+						count - 1,
+					]);
+				})()
+		);
 
 		const referenceLinePlugin = {
 			id: "tradeReferenceLine",

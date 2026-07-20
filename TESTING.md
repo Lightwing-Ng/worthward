@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.3`
+Documentation version: `v1.3.7`
 
 ## Supported commands
 
@@ -40,9 +40,9 @@ The complete gate runs, in order:
 
 ## Coverage baseline
 
-Baseline captured on 20 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
+Baseline remeasured on 20 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total statement and branch coverage: `52.6%`.
+- Total combined statement and branch coverage: `52.8%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,165` covered of `18,070` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
@@ -60,13 +60,15 @@ Priority coverage gaps:
 
 ## Test organization
 
-Current suite inventory captured on 20 Jul 2026:
+Current suite inventory remeasured on 20 Jul 2026:
 
-- 329 Python tests collected; the latest Python run reports 323 passed, 6
-  skipped, and 7 subtests passed.
-- 32 Node unit tests.
-- 58 Playwright test declarations, which expand to more browser cases through
-  parameterized viewport coverage.
+- 346 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
+  full Python run reports 340 passed, 6 skipped, and 7 subtests passed.
+- 40 Node unit tests (`npm run test:js`), including shared chart-axis theme
+  fallback priority coverage.
+- 65 Playwright test cases listed by `npx playwright test --list`, generated
+  from 57 explicit top-level `test(...)` declarations with parameterized
+  viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
@@ -74,6 +76,9 @@ Current suite inventory captured on 20 Jul 2026:
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
 - `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
+- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers and `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string).
+- `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
+- `tests/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
 - `tests/e2e/`: Playwright browser tests and inert fixtures.
 
 All tests are committed to Git. Do not add `tests/` back to `.gitignore`.

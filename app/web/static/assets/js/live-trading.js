@@ -1,7 +1,7 @@
 /**
  * Live trading frontend.
  *
- * Code version: v1.13.0
+ * Code version: v1.13.1
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
  */
 
@@ -1586,20 +1586,25 @@ document.addEventListener("DOMContentLoaded", () => {
             `${ticker} · ${formatRangeLabel(payload?.range || getSelectedRange())}${sessionSuffix} · ${rows.length} bars · ${payload?.interval || "1m"} · ${barsTimeZone} · ${sourceLabel}`,
         );
 
-        const buildTickIndexSet = (count, plotWidth) => {
-            if (count <= 0) return new Set();
-            if (count === 1) return new Set([0]);
-            const maxTickCount = plotWidth >= 768 ? 4 : 3;
-            if (maxTickCount === 3 || count < 4) {
-                return new Set([0, Math.round((count - 1) / 2), count - 1]);
-            }
-            return new Set([
-                0,
-                Math.round((count - 1) / 3),
-                Math.round(((count - 1) * 2) / 3),
-                count - 1,
-            ]);
-        };
+        const chartAxis = window.ANTIGRAVITY_CHART_AXIS || {};
+        const buildTickIndexSet = (count, plotWidth) => (
+            typeof chartAxis.buildTickIndexSet === "function"
+                ? chartAxis.buildTickIndexSet(count, plotWidth)
+                : (() => {
+                    if (count <= 0) return new Set();
+                    if (count === 1) return new Set([0]);
+                    const maxTickCount = plotWidth >= 768 ? 4 : 3;
+                    if (maxTickCount === 3 || count < 4) {
+                        return new Set([0, Math.round((count - 1) / 2), count - 1]);
+                    }
+                    return new Set([
+                        0,
+                        Math.round((count - 1) / 3),
+                        Math.round(((count - 1) * 2) / 3),
+                        count - 1,
+                    ]);
+                })()
+        );
         const candlestickPlugin = {
             id: "liveTradingCandlestickPlugin",
             afterDatasetsDraw(chartInstance) {

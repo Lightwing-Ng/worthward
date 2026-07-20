@@ -1,4 +1,4 @@
-/* Code version: v0.22.2 */
+/* Code version: v0.22.3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5712,10 +5712,34 @@
         const sidebarPicker = picker.wrapper.closest(".sidebar-form");
         const canOpenRight = sidebarPicker && spaceRight >= popoverWidth;
         const canOpenLeft = sidebarPicker && spaceLeft >= popoverWidth;
-        const top = Math.min(
+        let top = Math.min(
             Math.max(canOpenRight || canOpenLeft ? triggerRect.top : preferredTop, topBoundary),
             maxTop,
         );
+        const avoidElement = picker.avoidSelector
+            ? document.querySelector(picker.avoidSelector)
+            : null;
+        if (avoidElement instanceof HTMLElement) {
+            const avoidRect = avoidElement.getBoundingClientRect();
+            const overlapsHorizontally = leftBoundary < avoidRect.right
+                && rightBoundary > avoidRect.left;
+            const overlapsVertically = top < avoidRect.bottom
+                && (top + popoverHeight) > avoidRect.top;
+            if (overlapsHorizontally && overlapsVertically) {
+                const avoidAboveTop = Math.max(
+                    topBoundary,
+                    avoidRect.top - popoverGap - popoverHeight,
+                );
+                const avoidBelowTop = Math.min(maxTop, avoidRect.bottom + popoverGap);
+                const canAvoidAbove = (avoidAboveTop + popoverHeight) <= avoidRect.top;
+                const canAvoidBelow = avoidBelowTop >= avoidRect.bottom;
+                if (canAvoidAbove || canAvoidBelow) {
+                    top = canAvoidAbove && (!canAvoidBelow || Math.abs(top - avoidAboveTop) <= Math.abs(top - avoidBelowTop))
+                        ? avoidAboveTop
+                        : avoidBelowTop;
+                }
+            }
+        }
         let preferredLeft = triggerRect.left;
         if (canOpenRight) {
             preferredLeft = triggerRect.right + popoverGap;
@@ -6245,6 +6269,7 @@
                 keepOpenOnSelect: wrapper.dataset.datePickerKeepOpenOnSelect === "true",
                 selectMonth: wrapper.dataset.datePickerSelectMonth === "true",
                 stableFrame: wrapper.dataset.datePickerStableFrame === "true",
+                avoidSelector: wrapper.dataset.datePickerAvoidSelector || "",
                 selectedMonthValue: "",
             };
             wrapper.dataset.bound = "1";

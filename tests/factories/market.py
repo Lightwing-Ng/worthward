@@ -1,10 +1,18 @@
-"""Factories for test market data and results. Code version: v1.1.0."""
+"""Factories for test market data and results. Code version: v1.2.0."""
 
 from __future__ import annotations
 
 import pandas as pd
 
 from app.models.schemas import QuoteProfile
+
+# Stable per-ticker bases shared by OHLC and close-only helpers.
+_TICKER_BASE_PRICES: dict[str, float] = {
+    "QQQ": 100.0,
+    "AAPL": 200.0,
+    "NVDA": 300.0,
+    "DRAM": 25.0,
+}
 
 
 class FakeStrategy:
@@ -21,9 +29,14 @@ class FakeStrategy:
         return values
 
 
+def ticker_base_price(ticker: str) -> float:
+    """Return the deterministic base close used by market-frame factories."""
+    return _TICKER_BASE_PRICES.get(str(ticker or "").strip().upper(), 150.0)
+
+
 def ohlc_frame_for_dates(ticker: str, dates: list[str]) -> pd.DataFrame:
     """Return an OHLC frame for explicit timestamps with stable ticker-specific prices."""
-    base = {"QQQ": 100.0, "AAPL": 200.0, "NVDA": 300.0, "DRAM": 25.0}.get(ticker, 150.0)
+    base = ticker_base_price(ticker)
     offsets = [float(index) for index, _value in enumerate(dates)]
     return pd.DataFrame({
         "Date": pd.to_datetime(dates),
@@ -42,6 +55,34 @@ def market_frame(ticker: str = "QQQ", *, intraday: bool = False) -> pd.DataFrame
         else ["2026-03-26", "2026-03-27"]
     )
     return ohlc_frame_for_dates(ticker, dates)
+
+
+def close_frame_for_dates(
+    dates: list[str],
+    closes: list[float],
+    *,
+    dividends: list[float] | None = None,
+) -> pd.DataFrame:
+    """Return a Date/Close frame, optionally with cash dividends, for service tests."""
+    if len(dates) != len(closes):
+        raise ValueError("dates and closes must have the same length.")
+    payload: dict[str, object] = {
+        "Date": pd.to_datetime(dates),
+        "Close": closes,
+    }
+    if dividends is not None:
+        if len(dividends) != len(dates):
+            raise ValueError("dividends must match the length of dates.")
+        payload["Dividends"] = dividends
+    return pd.DataFrame(payload)
+
+
+def close_frame_for_ticker(ticker: str, *, dates: list[str] | None = None) -> pd.DataFrame:
+    """Return a two-row Date/Close frame using the same base prices as market_frame."""
+    resolved_dates = dates or ["2026-03-26", "2026-03-27"]
+    base = ticker_base_price(ticker)
+    closes = [base + float(index) for index, _value in enumerate(resolved_dates)]
+    return close_frame_for_dates(resolved_dates, closes)
 
 
 def longbridge_candlestick_rows() -> list[dict[str, str]]:
@@ -85,13 +126,16 @@ def quote_profile_stub(
     ticker: str,
     force_refresh: bool = False,
     namespace: str = "primary",
+    *,
+    company_name: str | None = None,
+    logo_url: str | None = None,
 ) -> QuoteProfile:
     """Return a deterministic identity profile without touching the network."""
     del force_refresh, namespace
     return QuoteProfile(
         ticker=ticker,
-        company_name=f"{ticker} Holdings",
-        logo_url=f"/api/market-store/logos/{ticker}.png",
+        company_name=company_name if company_name is not None else f"{ticker} Holdings",
+        logo_url=logo_url if logo_url is not None else f"/api/market-store/logos/{ticker}.png",
     )
 
 

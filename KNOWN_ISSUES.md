@@ -1,6 +1,40 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.85.0`
+Documentation version: `v1.86.6`
+
+## Stock-details Time filter remains clickable above its date picker on 20 Jul 2026
+
+- When a short viewport makes the date picker open above its editor, the picker
+  now preserves a clear gap around the owning Time filter trigger.
+- The Time filter can therefore be closed and reopened with ordinary pointer
+  clicks instead of allowing an overlaid calendar day to intercept them.
+- Browser coverage exercises the collision-prone viewport without forced clicks.
+
+## Investment live markers now follow the positive accent token on 20 Jul 2026
+
+- The Stock-details and Overview chart live markers now use
+  `--theme-accent-positive` for their core, rings, and glow.
+- In Dark appearance, the breathing marker therefore matches the standard
+  positive green used by profitable values and Buy trade indicators.
+
+## Behavior-preserving reuse extraction on 20 Jul 2026
+
+- Shared pure helpers now live in `app/web/form_parsing.py`,
+  `app/web/navigation.py`, and `app/services/investment_record_basics.py`.
+- Chart tick-index and theme-token helpers are shared through
+  `chart-axis-utils.js` (`window.ANTIGRAVITY_CHART_AXIS`) without a new build step.
+- `readThemeTokens` priority is CSS custom property, then explicit fallbacks,
+  then `ANTIGRAVITY_APP.theme`, then an empty string, and is covered by Node unit
+  tests that restore global document theme state after each case.
+- Test market/profile/backtest doubles continue to come from
+  `tests/factories/market.py`; module-local OHLC and FakeStrategy doubles were
+  removed where they duplicated that factory.
+- No intentional product, accounting, broker-import, or live-order behavior
+  changes were introduced in this extraction batch.
+- Suite inventory and coverage baseline for this extraction are recorded in
+  `TESTING.md` (coverage `52.8%` with `10,165` covered of `18,070` statements,
+  346 Python tests collected, 40 Node tests, 65 expanded Playwright test cases
+  from 57 explicit `test(...)` declarations).
 
 ## Live trading PIN gate now follows the selected appearance on 20 Jul 2026
 
@@ -1012,6 +1046,6 @@ Documentation version: `v1.85.0`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python statement and branch coverage is `52.6%`; the weakest modules are listed in `TESTING.md`.
+- Overall Python statement and branch coverage is `52.8%`; the weakest modules are listed in `TESTING.md`.
 - Core runtime and investment-import modules remain oversized and expensive to reason about.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.

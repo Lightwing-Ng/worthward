@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.89.2
+ * Code version: v1.89.3
  * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
  * - Changed: The Stock-details date picker now uses dynamic guidance, an opaque surface, and a stable frame across day and month views.
  * - Changed: Stock-details Time filtering now selects one day or one natural month and keeps the date picker open after selection.
@@ -6470,6 +6470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  data-date-picker-keep-open-on-select="true"
                  data-date-picker-select-month="true"
                  data-date-picker-stable-frame="true"
+                 data-date-picker-avoid-selector="[data-investment-stock-details-time-filter-trigger][aria-expanded='true']"
                  data-date-picker-guidance="single-day-or-month"
                  data-date-picker-default-feedback="Choose a day or a calendar month.">
                 <input id="${escapeHtml(inputId)}" name="${escapeHtml(inputId)}" type="hidden" value="${escapeHtml(value)}">

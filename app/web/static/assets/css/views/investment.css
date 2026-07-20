@@ -1,4 +1,4 @@
-/* Code version: v1.40.5 */
+/* Code version: v1.40.6 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2051,11 +2051,11 @@
     top: 50%;
     border-radius: 999px;
     transform: translate(-50%, -50%);
-    background: var(--theme-positive, #16a34a);
+    background: var(--theme-accent-positive, #16a34a);
 }
 
 .investment-equity-live-marker-ring {
-    border: 1.6px solid color-mix(in srgb, var(--theme-positive, #16a34a) 72%, transparent);
+    border: 1.6px solid color-mix(in srgb, var(--theme-accent-positive, #16a34a) 72%, transparent);
     background: transparent;
     opacity: 0.46;
 }
@@ -2077,8 +2077,8 @@
     width: 6px;
     height: 6px;
     box-shadow:
-        0 0 0 4px color-mix(in srgb, var(--theme-positive, #16a34a) 18%, transparent),
-        0 0 10px color-mix(in srgb, var(--theme-positive, #16a34a) 42%, transparent);
+        0 0 0 4px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 18%, transparent),
+        0 0 10px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 42%, transparent);
 }
 
 @keyframes investment-live-marker-breath-outer {
@@ -2418,11 +2418,11 @@
     top: 50%;
     border-radius: 999px;
     transform: translate(-50%, -50%);
-    background: var(--theme-positive, #16a34a);
+    background: var(--theme-accent-positive, #16a34a);
 }
 
 .investment-stock-details-live-marker-ring {
-    border: 1.6px solid color-mix(in srgb, var(--theme-positive, #16a34a) 72%, transparent);
+    border: 1.6px solid color-mix(in srgb, var(--theme-accent-positive, #16a34a) 72%, transparent);
     background: transparent;
     opacity: 0.46;
 }
@@ -2444,8 +2444,8 @@
     width: 6px;
     height: 6px;
     box-shadow:
-        0 0 0 4px color-mix(in srgb, var(--theme-positive, #16a34a) 18%, transparent),
-        0 0 10px color-mix(in srgb, var(--theme-positive, #16a34a) 42%, transparent);
+        0 0 0 4px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 18%, transparent),
+        0 0 10px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 42%, transparent);
 }
 
 .investment-chart-tooltip-triangle {

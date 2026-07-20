@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.1
+Code version: v0.10.2
 """
 
 from __future__ import annotations
@@ -18,17 +18,7 @@ import pandas as pd
 
 from app import create_app
 from app.models.schemas import SeriesPayload
-from tests.factories.market import ohlc_frame_for_dates, quote_profile_stub
-
-
-def _fake_compare_dataset(ticker: str) -> pd.DataFrame:
-    base = 100.0 if ticker == "QQQ" else 200.0
-    return pd.DataFrame(
-        {
-            "Date": pd.to_datetime(["2026-03-26", "2026-03-27"]),
-            "Close": [base, base + 1.0],
-        }
-    )
+from tests.factories.market import close_frame_for_ticker, ohlc_frame_for_dates, quote_profile_stub
 
 
 def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfile.TemporaryDirectory[str]:
@@ -58,7 +48,7 @@ class ComparePageTests(unittest.TestCase):
         def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
             if interval == "1m":
                 return intraday_frames[ticker]
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         with _write_intraday_stores(intraday_frames) as tempdir:
             with (
@@ -125,7 +115,7 @@ class ComparePageTests(unittest.TestCase):
         def fetch_history_for_test(ticker: str, *_args, interval: str = "1d", **_kwargs) -> pd.DataFrame:
             if interval == "1m":
                 return intraday_frames[ticker]
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         with _write_intraday_stores(intraday_frames) as tempdir:
             with (
@@ -164,7 +154,7 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, dividend_mode
             if interval == "1m":
                 raise AssertionError("Relative 1d should use the local 1m store.")
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         current_us_day = pd.Timestamp.now(tz="America/New_York").strftime("%Y-%m-%d")
         established = pd.DataFrame(
@@ -239,7 +229,7 @@ class ComparePageTests(unittest.TestCase):
         with (
             patch(
                 "app.web.runtime.fetch_history",
-                side_effect=lambda ticker, include_dividends, interval="1d", dividend_mode="reinvest": _fake_compare_dataset(ticker),
+                side_effect=lambda ticker, include_dividends, interval="1d", dividend_mode="reinvest": close_frame_for_ticker(ticker),
             ),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
@@ -369,7 +359,7 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, dividend_mode
             if interval == "1m":
                 raise AssertionError("Relative 1d should use local 1m store.")
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         def _intraday_frame(ticker: str) -> pd.DataFrame:
             base = 100.0 if ticker == "QQQ" else 200.0
@@ -410,7 +400,7 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, dividend_mode
             if interval == "1m":
                 raise AssertionError("Relative 1d should use local 1m store.")
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         def _intraday_frame(ticker: str) -> pd.DataFrame:
             base = 100.0 if ticker == "QQQ" else 200.0
@@ -447,7 +437,7 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, dividend_mode
             if interval == "1m":
                 raise AssertionError("Relative 1d should use local 1m store.")
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         def _intraday_frame(ticker: str) -> pd.DataFrame:
             base = 100.0 if ticker == "QQQ" else 200.0
@@ -486,7 +476,7 @@ class ComparePageTests(unittest.TestCase):
             del include_dividends, dividend_mode
             if interval == "1m":
                 raise AssertionError("Relative 1d should read the refreshed local 1m store.")
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         def _intraday_frame(ticker: str) -> pd.DataFrame:
             base = 100.0 if ticker == "QQQ" else 200.0
@@ -543,7 +533,7 @@ class ComparePageTests(unittest.TestCase):
                         "Close": [base, base + 1.0, base + 2.0, base + 3.0],
                     }
                 )
-            return _fake_compare_dataset(ticker)
+            return close_frame_for_ticker(ticker)
 
         with (
             patch(

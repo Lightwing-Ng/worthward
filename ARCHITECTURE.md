@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.8.1`
+Documentation version: `v1.8.3`
 
 ## Runtime flow
 
@@ -73,6 +73,13 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - Live-order APIs remain locked unless the server has a strong access token and the request presents it.
 - Browser Live trading additionally requires a six-digit PIN, with the unlock
   held only in the signed browser session.
+
+## Shared web helpers
+
+- `app/web/form_parsing.py`: pure query/form parsing and portfolio weight normalization used by WebRuntime.
+- `app/web/navigation.py`: canonical workspace, settings, and trade path constants and builders.
+- `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index and theme-token helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. Consumers keep local fallbacks if the shared script is unavailable.
 
 ## Known structural debt
 
