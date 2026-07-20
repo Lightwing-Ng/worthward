@@ -44,18 +44,29 @@ Baseline captured on 20 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov 
 
 - Total statement and branch coverage: `52.6%`.
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
-- The initial gate records coverage with `--cov-fail-under=0` so adoption does not hide existing gaps.
+- The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
+  regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
+  an explicit integer from `0` to `100` only when performing a deliberate local
+  diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- Recommended increments: `45%`, `50%`, then the measured baseline rounded down.
+- The next project target is `55%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
 - Alternative strategy implementations: approximately `9%` to `14%`.
 - `app/infrastructure/ibkr_flex.py`: approximately `21.4%`.
-- `app/infrastructure/broker_market_data.py`: approximately `30.3%`.
-- `app/services/live_trading.py`: approximately `37.7%`.
+- `app/infrastructure/broker_market_data.py`: approximately `33.9%`.
+- `app/services/live_trading.py`: approximately `45.2%`.
 
 ## Test organization
+
+Current suite inventory captured on 20 Jul 2026:
+
+- 329 Python tests collected; the latest Python run reports 323 passed, 6
+  skipped, and 7 subtests passed.
+- 32 Node unit tests.
+- 58 Playwright test declarations, which expand to more browser cases through
+  parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.

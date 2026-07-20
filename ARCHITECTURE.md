@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.8.0`
+Documentation version: `v1.8.1`
 
 ## Runtime flow
 
@@ -13,7 +13,7 @@ main.py
   -> app/services/* and app/infrastructure/*
 ```
 
-`app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs.
+`app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; account and order APIs apply the separate strong access-token check at the request boundary.
 
 ## Layers
 
@@ -47,6 +47,10 @@ Settings             /settings/<section>
 
 Older `/compare`, `/portfolio`, `/backtest`, `/more/*`, `/invest`, and `/investment` paths are compatibility redirects.
 
+The former `/trade/timing` and `/trade/invest` aliases resolve to the current
+Investment workspace. There is no separate Timing renderer in the current
+runtime.
+
 Backtest and Grid trading share result presentation and market-range components, but they are separate workspace modes. Backtest exposes the general strategy catalog; Grid trading locks strategy execution to `grid-trading` and owns its parameter surface.
 
 Return comparison, Market cap comparison, and Price performance share ticker, relative-range, exact-date, and per-view session-memory infrastructure. Market cap history is derived from authoritative cached prices and point-in-time Yahoo-reported shares outstanding, with SEC company facts as the rate-limit fallback. Funds without company-facts shares use SEC Form N-PORT net assets. For the latest trading day, Longbridge `mktcap` and `last_done` provide an independent implied-share cross-check and the preferred current point. The service records matched, review, or diverged status after normalizing comparable providers to the same price; missing pre-disclosure periods remain unknown, and current Longbridge shares are never backfilled into older dates.
@@ -67,6 +71,8 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - HSBC monthly PDF imports accept one unordered file bundle, classify composite and investment statements from extracted content, and require a matched pair for every end date. Investment rows own security identity; composite rows own cash reconciliation, and historical statement snapshots cannot supersede a newer live paste snapshot.
 - `.US` broker aliases normalize to the bare US ticker while preserving lineage aliases where required.
 - Live-order APIs remain locked unless the server has a strong access token and the request presents it.
+- Browser Live trading additionally requires a six-digit PIN, with the unlock
+  held only in the signed browser session.
 
 ## Known structural debt
 

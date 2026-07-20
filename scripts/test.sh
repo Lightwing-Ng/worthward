@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.3.0
+# Code version: v0.4.0
 
 set -euo pipefail
 
@@ -13,5 +13,7 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 	echo "Run $ROOT_DIR/scripts/setup_python.sh first or set ANTIGRAVITY_PYTHON." >&2
 	exit 1
 fi
+
+cd "$ROOT_DIR"
 
 exec "$PYTHON_BIN" -m pytest -q "$@"

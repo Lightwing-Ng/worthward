@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.24.7
+Code version: v0.24.8
 """
 
 from __future__ import annotations
@@ -5356,6 +5356,7 @@ def build_web_runtime() -> WebRuntime:
             response = make_response(render_template(
                 "live_trading_unlock.html",
                 error_message="",
+                theme_dark=theme_dark,
                 theme_light=theme_light,
                 version=app_meta.get("version", CODE_VERSION),
             ))
@@ -5371,6 +5372,7 @@ def build_web_runtime() -> WebRuntime:
             response = make_response(render_template(
                 "live_trading_unlock.html",
                 error_message=error_message,
+                theme_dark=theme_dark,
                 theme_light=theme_light,
                 version=app_meta.get("version", CODE_VERSION),
             ), error_status)

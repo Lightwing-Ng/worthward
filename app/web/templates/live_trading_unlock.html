@@ -1,4 +1,4 @@
-{# Code version: v1.4.1 #}
+{# Code version: v1.5.0 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -6,9 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>Unlock Live trading</title>
+    <script>
+        (() => {
+            const storageKey = "antigravity:theme-mode";
+            try {
+                const storedMode = window.localStorage.getItem(storageKey);
+                const mode = storedMode === "light" || storedMode === "dark" ? storedMode : "system";
+                document.documentElement.dataset.themeMode = mode;
+                if (mode === "system") document.documentElement.removeAttribute("data-theme-override");
+                else document.documentElement.setAttribute("data-theme-override", mode);
+            } catch (_error) {
+                document.documentElement.dataset.themeMode = "system";
+            }
+        })();
+    </script>
     <style>
         :root {
-            color-scheme: light;
+            color-scheme: light dark;
             --color-scheme: {{ theme_light.color_scheme }};
             --theme-background: {{ theme_light.background }};
             --theme-panel: {{ theme_light.panel }};
@@ -33,6 +47,60 @@
             --theme-error: {{ theme_light.error }};
             --theme-error-strong: {{ theme_light.error_strong }};
             --theme-error-translucent: {{ theme_light.error_translucent }};
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme-override="light"]) {
+                color-scheme: dark;
+                --color-scheme: {{ theme_dark.color_scheme }};
+                --theme-background: {{ theme_dark.background }};
+                --theme-panel: {{ theme_dark.panel }};
+                --theme-panel-strong: {{ theme_dark.panel_strong }};
+                --theme-text: {{ theme_dark.text }};
+                --theme-muted: {{ theme_dark.muted }};
+                --theme-accent-primary: {{ theme_dark.accent_primary }};
+                --theme-accent-secondary: {{ theme_dark.accent_secondary }};
+                --theme-shadow: {{ theme_dark.shadow }};
+                --theme-glass-highlight: {{ theme_dark.glass_highlight }};
+                --theme-color-white-adaptive: {{ theme_dark.color_white_adaptive }};
+                --theme-glass-surface-background-soft: rgba(255, 255, 255, 0.04);
+                --theme-glass-surface-background: rgba(255, 255, 255, 0.06);
+                --theme-glass-surface-background-strong: rgba(255, 255, 255, 0.08);
+                --theme-glass-surface-background-dense: rgba(255, 255, 255, 0.12);
+                --theme-glass-chip-background: rgba(255, 255, 255, 0.06);
+                --theme-glass-chip-background-strong: rgba(255, 255, 255, 0.08);
+                --theme-glass-chip-background-hover: rgba(255, 255, 255, 0.12);
+                --theme-tooltip-background: rgba(255, 255, 255, 0.12);
+                --theme-error: {{ theme_dark.error }};
+                --theme-error-strong: {{ theme_dark.error_strong }};
+                --theme-error-translucent: {{ theme_dark.error_translucent }};
+            }
+        }
+
+        :root[data-theme-override="dark"] {
+            color-scheme: dark;
+            --color-scheme: {{ theme_dark.color_scheme }};
+            --theme-background: {{ theme_dark.background }};
+            --theme-panel: {{ theme_dark.panel }};
+            --theme-panel-strong: {{ theme_dark.panel_strong }};
+            --theme-text: {{ theme_dark.text }};
+            --theme-muted: {{ theme_dark.muted }};
+            --theme-accent-primary: {{ theme_dark.accent_primary }};
+            --theme-accent-secondary: {{ theme_dark.accent_secondary }};
+            --theme-shadow: {{ theme_dark.shadow }};
+            --theme-glass-highlight: {{ theme_dark.glass_highlight }};
+            --theme-color-white-adaptive: {{ theme_dark.color_white_adaptive }};
+            --theme-glass-surface-background-soft: rgba(255, 255, 255, 0.04);
+            --theme-glass-surface-background: rgba(255, 255, 255, 0.06);
+            --theme-glass-surface-background-strong: rgba(255, 255, 255, 0.08);
+            --theme-glass-surface-background-dense: rgba(255, 255, 255, 0.12);
+            --theme-glass-chip-background: rgba(255, 255, 255, 0.06);
+            --theme-glass-chip-background-strong: rgba(255, 255, 255, 0.08);
+            --theme-glass-chip-background-hover: rgba(255, 255, 255, 0.12);
+            --theme-tooltip-background: rgba(255, 255, 255, 0.12);
+            --theme-error: {{ theme_dark.error }};
+            --theme-error-strong: {{ theme_dark.error_strong }};
+            --theme-error-translucent: {{ theme_dark.error_translucent }};
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version) }}">

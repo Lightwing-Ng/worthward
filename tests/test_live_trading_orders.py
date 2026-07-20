@@ -1,7 +1,7 @@
 """
 Tests for Longbridge live trading order flows.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -153,6 +153,9 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertIn('class="workspace-modal-overlay live-trading-pin-overlay"', locked_body)
         self.assertIn('class="workspace-modal-dialog live-trading-pin-dialog"', locked_body)
         self.assertIn("assets/css/app.css", locked_body)
+        self.assertIn('window.localStorage.getItem(storageKey)', locked_body)
+        self.assertIn('@media (prefers-color-scheme: dark)', locked_body)
+        self.assertIn(':root[data-theme-override="dark"]', locked_body)
         self.assertIn('id="live_trading_pin"', locked_body)
         self.assertEqual(locked_body.count('class="live-trading-pin-slot"'), 6)
         self.assertIn('class="live-trading-pin-heading"', locked_body)

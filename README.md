@@ -1,8 +1,8 @@
 # antigravity
 
-Documentation version: `v2.31.0`
+Documentation version: `v2.52.2`
 
-`antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, reviewing TradingView timing signals, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
+`antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
 ## Screenshot
 
@@ -17,8 +17,9 @@ Documentation version: `v2.31.0`
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
 - Choose the backtest execution mode between `signal_close` and `next_open`
-- Review TradingView-based timing signals from `Trade`
 - Import IBKR CSV exports into a local investment ledger used by `Trade -> Investment`
+- Review imported holdings, equity history, and transaction history from `Trade -> Investment`
+- Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
 
 ## Runtime requirements
@@ -52,11 +53,13 @@ If your Python `3.13` executable lives elsewhere, override it explicitly:
 ANTIGRAVITY_PYTHON=/absolute/path/to/python3.13 ./scripts/setup_python.sh
 ```
 
-Run the app:
+Run the app manually from the project root:
 
 ```bash
-./scripts/run_app.sh
+python3 main.py
 ```
+
+`./scripts/run_app.sh` remains available when the pinned host-Python launcher is preferred.
 
 The default server bind is:
 
@@ -82,7 +85,7 @@ The runtime entry chain is:
 main.py
   -> app.create_app()
   -> app/web/routes_entry.py
-  -> app/web/routes/{compare,portfolio,backtest,trade,settings}.py
+  -> app/web/routes/{compare,portfolio,dca,backtest,trade,settings}.py
 ```
 
 There is no Node.js build step, Docker setup, or alternate app runner in this repository. The supported local workflow is the pinned Python shell-script flow under `scripts/`.
@@ -102,7 +105,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Grid trading`
   Run the locked grid-trading strategy from a parallel workspace with dedicated center-line, spacing, and asymmetric buy/sell level controls while reusing Backtest market, capital, metrics, transactions, and chart components.
 - `Trade`
-  Inspect the `Timing`, `Investment`, and `Live trading` views.
+  Inspect the `Investment` and `Live trading` views. The former Timing and
+  investment aliases redirect to `/trade/investment` for compatibility.
 - `Settings`
   Review app metadata, appearance and date preferences, backtest execution mode, design tokens, service health, broker access, Yahoo Mail SMTP, Local Market Store maintenance, strategy metadata, and cache controls.
 
@@ -286,12 +290,16 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 - Optional fallback source for `1m` and `1d` history when `yfinance` fails
 - Broker Access launches the installed Longbridge CLI's browser OAuth flow; the CLI keeps its OAuth session in the signed-in user's CLI profile, and the app never receives or stores an authorization code or OAuth token
 - An existing terminal `longbridge auth login` session is detected automatically
-- Live account balances, positions, and order submission are locked unless the server starts with a random access token of at least 32 characters:
+- The browser Live trading page requires the configured 6-digit PIN. Live account
+  balances, positions, and order submission APIs additionally require a random
+  server access token of at least 32 characters:
   ```bash
   export ANTIGRAVITY_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-  ./scripts/run_app.sh
+  python3 main.py
   ```
-- Enter that token in the `Live trading access token` field for the current page. The browser does not persist it.
+- Non-browser API clients present the token through the
+  `X-Antigravity-Live-Trading-Token` header. The browser unlock uses the PIN
+  session and does not expose or persist the server token.
 
 ### IBKR
 
@@ -307,6 +315,13 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   - Optional `IBKR_FLEX_TRADE_CONFIRM_QUERY_ID` (deferred)
 - The Flex client validates response URLs, redacts tokens, bounds responses, and uses safe XML parsing. Secrets are never persisted.
 - Gateway (Client Portal local Java) has been fully removed. Historical Gateway-origin records in your ledger remain mergeable.
+
+### Investment import adapters
+
+The Investment workspace currently exposes import adapters for HSBC, IBKR,
+Futu (HK), Longbridge (HK), Longbridge (SG), Charles Schwab, Tiger Trade,
+uSMART (HK), and CMB Wing Lung Bank. Each adapter preserves its source-specific
+reconciliation rules; imports are local and incremental.
 
 ### Yahoo Mail SMTP
 

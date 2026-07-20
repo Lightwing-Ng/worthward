@@ -1,6 +1,15 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.84.4`
+Documentation version: `v1.85.0`
+
+## Live trading PIN gate now follows the selected appearance on 20 Jul 2026
+
+- The standalone PIN gate now applies the stored Light, Dark, or System
+  appearance before its first paint.
+- Dark mode uses the same application theme and glass tokens as the unlocked
+  workspace, while an explicit Light preference overrides a dark system theme.
+- Browser coverage verifies both stored Light and Dark appearances without
+  submitting the PIN form.
 
 ## Investment pagination aligned with the expanded sidebar dock on 20 Jul 2026
 
@@ -1003,6 +1012,6 @@ Documentation version: `v1.84.4`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python coverage is `46.2%`; the weakest modules are listed in `TESTING.md`.
+- Overall Python statement and branch coverage is `52.6%`; the weakest modules are listed in `TESTING.md`.
 - Core runtime and investment-import modules remain oversized and expensive to reason about.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.
