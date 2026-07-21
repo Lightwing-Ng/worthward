@@ -1,6 +1,40 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.6`
+Documentation version: `v1.86.10`
+
+## Realtime quote truthfulness and E2E isolation hardened on 20 Jul 2026
+
+- Longbridge regular-session quotes remain usable when the current CLI payload
+  omits a timestamp. The API retains the known New York session date and leaves
+  the provider timestamp empty instead of inventing one.
+- Valid provider timestamps are rendered in New York market time, and realtime
+  chart points now preserve `longbridge`, `yfinance`, or `mixed` provenance.
+- The Investment entry and stock-details helper cache keys now match their
+  loaded module versions, with browser assertions against the actual resource
+  URL.
+- Playwright now runs against copied market data, an empty isolated settings
+  store, and disabled remote market access. E2E cannot mutate production stores
+  or fail because Yahoo or Longbridge is unavailable or rate-limited.
+
+## Standard ticker cards now name QQQI on 20 Jul 2026
+
+- The shared ticker-identity fallback table now recognizes QQQI as
+  `NEOS Nasdaq-100(R) High Income ETF`, based on Longbridge static reference
+  data.
+- Investment Holdings, Stock details, cached transaction payloads, and other
+  standard ticker cards can therefore replace a symbol-only cached profile
+  without mutating the local profile or investment stores.
+
+## Investment realtime quotes now prefer Longbridge on 20 Jul 2026
+
+- During US pre-market, regular, and post-market sessions, configured Longbridge
+  CLI OAuth or legacy credentials provide the first Investment quote attempt.
+- The response selects Longbridge's matching extended-hours field, preserves a
+  `longbridge`, `yfinance`, or `mixed` source, and keeps the provider on every
+  returned quote for diagnostics.
+- Tickers absent from a Longbridge response, unavailable credentials, and broker
+  command failures fall back to the existing batched yfinance path without writing
+  any market or investment records.
 
 ## Stock-details Time filter remains clickable above its date picker on 20 Jul 2026
 
@@ -31,9 +65,9 @@ Documentation version: `v1.86.6`
   removed where they duplicated that factory.
 - No intentional product, accounting, broker-import, or live-order behavior
   changes were introduced in this extraction batch.
-- Suite inventory and coverage baseline for this extraction are recorded in
-  `TESTING.md` (coverage `52.8%` with `10,165` covered of `18,070` statements,
-  346 Python tests collected, 40 Node tests, 65 expanded Playwright test cases
+- Suite inventory and coverage baseline are recorded in `TESTING.md` (coverage
+  `53.6%` with `10,380` covered of `18,168` statements, 358 Python tests
+  collected, 41 Node tests, 65 expanded Playwright test cases
   from 57 explicit `test(...)` declarations).
 
 ## Live trading PIN gate now follows the selected appearance on 20 Jul 2026
@@ -820,9 +854,11 @@ Documentation version: `v1.86.6`
 - A pasted HSBC dividend that is correctly absorbed by a stronger matching monthly-statement record no longer produces a false missing-record banner.
 - Genuine persistence divergence still fails closed, while tests continue to use an isolated temporary investment store.
 
-## yfinance-first market-data policy completed on 14 Jul 2026
+## yfinance-first market-history policy completed on 14 Jul 2026
 
-- Free `yfinance` data is now the default for daily history, 1-minute history, extended-hours comparisons, and investment realtime quotes.
+- Free `yfinance` data is the default for daily history, 1-minute history, and
+  extended-hours comparisons. The Investment realtime exception now prefers a
+  configured Longbridge provider during supported US sessions.
 - Longbridge is contacted for market history only after the supported `yfinance` windows fail and only when broker credentials are configured.
 - Batched realtime quotes retry every missing ticker individually, and partial responses are not cached as complete results.
 
@@ -830,7 +866,10 @@ Documentation version: `v1.86.6`
 
 - Every public 1-minute history download path now falls back to bounded `yfinance` windows when Longbridge is unconfigured or unavailable.
 - Daily history, current and extended-hours quotes, comparison charts, portfolio views, backtests, and investment valuation can operate without Longbridge credentials.
-- This interim Longbridge-first policy was superseded by the `yfinance`-first policy recorded above. Both revisions preserve authoritative unknowns when no provider returns data and never fabricate market records.
+- This interim Longbridge-first history policy was superseded by the
+  `yfinance`-first history policy recorded above. The current Investment
+  realtime exception preserves authoritative unknowns when no provider returns
+  data and never fabricates market records.
 
 ## Comparison workspace memory added on 13 Jul 2026
 
@@ -1046,6 +1085,6 @@ Documentation version: `v1.86.6`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python statement and branch coverage is `52.8%`; the weakest modules are listed in `TESTING.md`.
+- Overall Python statement and branch coverage is `53.6%`; the weakest modules are listed in `TESTING.md`.
 - Core runtime and investment-import modules remain oversized and expensive to reason about.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.

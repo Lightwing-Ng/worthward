@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.13.0
+Code version: v0.14.2
 """
 
 from __future__ import annotations
@@ -13,18 +13,22 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
 
 from app import create_app
 from app.core.broker_settings import BrokerSettings
+from app.core.config import BASE_DIR, resolve_store_directory
 from app.infrastructure.broker_market_data import (
     _is_market_data_fresh,
     classify_daily_store_status,
     classify_one_minute_store_status,
 )
+from app.infrastructure.connectivity import has_remote_market_access
 from app.infrastructure.storage import history_store_path_for, intraday_history_store_path_for
+from app.services.date_constraints import nyse_market_session_state
 from app.services.market_data import (
     YfinanceDownloadError,
     _download_daily_history_with_yfinance,
@@ -37,6 +41,7 @@ from app.services.market_data import (
     ensure_fresh_history_store,
     fetch_compare_one_day_overnight_history,
     fetch_history,
+    fetch_longbridge_realtime_quotes,
     fetch_yfinance_realtime_quotes,
     has_compare_overnight_market_data_source,
     infer_ticker_market,
@@ -52,6 +57,12 @@ class MarketSessionClassificationTests(unittest.TestCase):
         self.assertEqual(infer_ticker_market("2800.HK"), "HK")
         self.assertEqual(infer_ticker_market("000660.KS"), "KR")
         self.assertEqual(infer_ticker_market("DRAM"), "US")
+
+    def test_nyse_post_market_session_allows_realtime_quotes(self) -> None:
+        session_state = nyse_market_session_state("2026-07-20T21:30:00Z")
+
+        self.assertEqual(session_state["session"], "post")
+        self.assertTrue(session_state["is_realtime_allowed"])
 
     def test_classify_hk_equity_session_maps_regular_hours(self) -> None:
         self.assertEqual(classify_hk_equity_session("2026-06-25 10:15"), "intraday")
@@ -221,6 +232,44 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def test_store_directory_override_is_explicit_and_process_local(self) -> None:
+        fallback = BASE_DIR / "market_store"
+        with TemporaryDirectory() as temp_dir:
+            with patch.dict("os.environ", {"ANTIGRAVITY_TEST_STORE": temp_dir}):
+                resolved = resolve_store_directory("ANTIGRAVITY_TEST_STORE", fallback)
+
+        self.assertEqual(resolved, Path(temp_dir).resolve())
+
+    def test_remote_market_access_environment_override_skips_probes(self) -> None:
+        with (
+            patch.dict("os.environ", {"ANTIGRAVITY_REMOTE_MARKET_ACCESS": "disabled"}),
+            patch("app.infrastructure.connectivity._probe_yahoo_chart_endpoint") as chart_probe,
+            patch("app.infrastructure.connectivity._probe_yfinance_history") as yfinance_probe,
+        ):
+            available = has_remote_market_access()
+
+        self.assertFalse(available)
+        chart_probe.assert_not_called()
+        yfinance_probe.assert_not_called()
+
+    def test_remote_market_access_environment_override_blocks_minute_refresh(self) -> None:
+        with (
+            patch.dict("os.environ", {"ANTIGRAVITY_REMOTE_MARKET_ACCESS": "disabled"}),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance"
+            ) as yfinance_download,
+            patch("app.services.market_data._load_longbridge_market_settings") as longbridge_settings,
+            patch("app.services.market_data.yf.download") as yfinance_transport,
+        ):
+            with self.assertRaisesRegex(YfinanceDownloadError, "Remote market access is disabled"):
+                refresh_one_minute_store("DRAM")
+            with self.assertRaisesRegex(YfinanceDownloadError, "Remote market access is disabled"):
+                _download_daily_history_with_yfinance("DRAM", period="5d", interval="1m")
+
+        yfinance_download.assert_not_called()
+        longbridge_settings.assert_not_called()
+        yfinance_transport.assert_not_called()
+
     def _with_replaced_store(self, path: Path, dataset: pd.DataFrame, callback) -> None:
         original_exists = path.exists()
         original_bytes = path.read_bytes() if original_exists else None
@@ -804,14 +853,197 @@ class MarketDataFreshnessTests(unittest.TestCase):
         download_mock.assert_called_once()
         warning_mock.assert_not_called()
 
+    def test_longbridge_realtime_quotes_select_pre_market_price(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "pre", "session_date": "2026-07-20"},
+            ),
+            patch(
+                "app.services.market_data.run_longbridge_cli_json",
+                return_value=[{
+                    "symbol": "DRAM.US",
+                    "last": "52.72",
+                    "pre_market": {"last": "54.39", "timestamp": "2026-07-20T12:29:47Z"},
+                }],
+            ) as cli_json,
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(
+            quotes,
+            [{
+                "ticker": "DRAM",
+                "price": 54.39,
+                "timestamp": "2026-07-20 08:29",
+                "session": "pre",
+                "session_date": "2026-07-20",
+                "market": "US",
+                "source": "longbridge",
+            }],
+        )
+        self.assertEqual(
+            cli_json.call_args.args[1],
+            ["quote", "DRAM.US", "--format", "json"],
+        )
+
+    def test_longbridge_realtime_quotes_keep_regular_price_without_provider_timestamp(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "intraday", "session_date": "2026-07-20"},
+            ),
+            patch(
+                "app.services.market_data.run_longbridge_cli_json",
+                return_value=[{"symbol": "DRAM.US", "last": "55.12"}],
+            ),
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(
+            quotes,
+            [{
+                "ticker": "DRAM",
+                "price": 55.12,
+                "timestamp": "",
+                "session": "intraday",
+                "session_date": "2026-07-20",
+                "market": "US",
+                "source": "longbridge",
+            }],
+        )
+
+    def test_longbridge_realtime_quotes_select_post_market_price(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "post", "session_date": "2026-07-20"},
+            ),
+            patch(
+                "app.services.market_data.run_longbridge_cli_json",
+                return_value=[{
+                    "symbol": "DRAM.US",
+                    "last": "55.12",
+                    "post_market": {"last": "54.88", "timestamp": "2026-07-20T21:30:47Z"},
+                }],
+            ),
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(quotes[0]["price"], 54.88)
+        self.assertEqual(quotes[0]["timestamp"], "2026-07-20 17:30")
+        self.assertEqual(quotes[0]["session"], "post")
+
+    def test_longbridge_realtime_quotes_fail_closed_for_transport_errors(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "intraday", "session_date": "2026-07-20"},
+            ),
+            patch(
+                "app.services.market_data.run_longbridge_cli_json",
+                side_effect=RuntimeError("offline"),
+            ),
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(quotes, [])
+
+    def test_longbridge_realtime_quotes_skip_transport_outside_supported_scope(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "off", "session_date": "2026-07-20"},
+            ),
+            patch("app.services.market_data.run_longbridge_cli_json") as cli_json,
+        ):
+            off_session_quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "intraday", "session_date": "2026-07-20"},
+            ),
+            patch("app.services.market_data.run_longbridge_cli_json") as non_us_cli_json,
+        ):
+            non_us_quotes = fetch_longbridge_realtime_quotes(["2800.HK"])
+
+        self.assertEqual(off_session_quotes, [])
+        self.assertEqual(non_us_quotes, [])
+        cli_json.assert_not_called()
+        non_us_cli_json.assert_not_called()
+
+    def test_longbridge_realtime_quotes_support_legacy_api_key_configuration(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="legacy_apikey",
+            longbridge_app_key="key",
+            longbridge_app_secret="secret",
+            longbridge_access_token="token",
+        )
+        quote_context = SimpleNamespace(
+            quote=lambda symbols: [SimpleNamespace(
+                symbol="DRAM.US",
+                pre_market_quote=SimpleNamespace(
+                    last_done="54.39",
+                    timestamp="2026-07-20T12:29:47Z",
+                ),
+            )]
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "pre", "session_date": "2026-07-20"},
+            ),
+            patch(
+                "app.services.market_data.get_longbridge_quote_context",
+                return_value=quote_context,
+            ) as context_mock,
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(quotes[0]["price"], 54.39)
+        self.assertEqual(quotes[0]["source"], "longbridge")
+        context_mock.assert_called_once_with(settings)
+
     def test_realtime_quote_endpoint_does_not_cache_partial_batches(self) -> None:
         qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}
         aapl_quote = {"ticker": "AAPL", "price": 200.0, "source": "yfinance"}
 
-        with patch(
-            "app.web.runtime.fetch_yfinance_realtime_quotes",
-            side_effect=[[qqq_quote], [qqq_quote, aapl_quote]],
-        ) as quote_mock:
+        with (
+            patch("app.web.runtime.fetch_longbridge_realtime_quotes", return_value=[]),
+            patch(
+                "app.web.runtime.fetch_yfinance_realtime_quotes",
+                side_effect=[[qqq_quote], [qqq_quote, aapl_quote]],
+            ) as quote_mock,
+        ):
             client = create_app().test_client()
             first = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
             second = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
@@ -820,6 +1052,31 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(quote_mock.call_count, 2)
         self.assertEqual(second.get_json()["count"], 2)
+
+    def test_realtime_quote_endpoint_prefers_longbridge_then_falls_back_per_ticker(self) -> None:
+        longbridge_quote = {"ticker": "QQQ", "price": 100.0, "source": "longbridge"}
+        yfinance_quote = {"ticker": "AAPL", "price": 200.0, "source": "yfinance"}
+
+        with (
+            patch(
+                "app.web.runtime.fetch_longbridge_realtime_quotes",
+                return_value=[longbridge_quote],
+            ) as longbridge_mock,
+            patch(
+                "app.web.runtime.fetch_yfinance_realtime_quotes",
+                return_value=[yfinance_quote],
+            ) as yfinance_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(longbridge_mock.call_args.args[0], ["QQQ", "AAPL"])
+        self.assertEqual(yfinance_mock.call_args.args[0], ["AAPL"])
+        payload = response.get_json()
+        self.assertEqual(payload["source"], "mixed")
+        self.assertEqual(payload["quotes"], [longbridge_quote, yfinance_quote])
 
     def test_ensure_fresh_history_store_refreshes_stale_daily_cache(self) -> None:
         with (

@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.48.0
+ * Code version: v1.48.1
+ * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
  * - Added: HSBC statement-bundle readiness validates complete even PDF pairs for the smart multi-file selector.
  * - Changed: Ledger-price valuation fallbacks remain diagnostic metadata but no longer surface a user warning banner.
  * - Fixed: Daily equity chart points now preserve pending-settlement display cash so same-day HSBC pasted imports keep cash and equity aligned.
@@ -45,6 +46,16 @@ export function isCompleteHsbcStatementPdfBundle(files, isPdfFile = null) {
         && normalizedFiles.length % 2 === 0
         && normalizedFiles.every((file) => pdfPredicate(file))
     );
+}
+
+export function resolveRealtimeQuoteSource(quotes = []) {
+    const sources = new Set(
+        (Array.isArray(quotes) ? quotes : [])
+            .map((quote) => String(quote?.source || '').trim().toLowerCase())
+            .filter(Boolean),
+    );
+    if (sources.size > 1) return 'mixed';
+    return sources.values().next().value || 'realtime';
 }
 
 export function createInvestmentDataUtils({
@@ -2172,4 +2183,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.1';

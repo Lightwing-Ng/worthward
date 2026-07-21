@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.89.3
+ * Code version: v1.89.4
+ * - Fixed: Realtime chart points now preserve Longbridge, yfinance, or mixed provider provenance.
+ * - Fixed: Investment stock-details loads the current helper revision through an updated cache key.
  * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
  * - Changed: The Stock-details date picker now uses dynamic guidance, an opaque surface, and a stable frame across day and month views.
  * - Changed: Stock-details Time filtering now selects one day or one natural month and keeps the date picker open after selection.
@@ -334,7 +336,8 @@ import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
     isCompleteHsbcStatementPdfBundle,
-} from './investment/data-utils.js?v=investment-data-utils-v1.48.0';
+    resolveRealtimeQuoteSource,
+} from './investment/data-utils.js?v=investment-data-utils-v1.48.1';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
@@ -342,10 +345,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.4.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.4.3';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.89.0',
+    entry: 'v1.89.4',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
@@ -1949,6 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || getInvestmentDailyEquityLiveSessionDateKey()
             || normalizeLedgerDate(latestBasePoint?.date);
         const session = Array.from(quoteByTicker.values()).find((quote) => quote?.session)?.session || 'realtime';
+        const realtimeSource = resolveRealtimeQuoteSource(Array.from(quoteByTicker.values()));
         const targetIndex = findInvestmentChartPointIndexForLedgerDate(baseChartPoints, realtimeDateKey);
         const anchorPoint = targetIndex >= 0 ? baseChartPoints[targetIndex] : (latestBasePoint || {});
         const realtimePoint = {
@@ -1974,7 +1978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             is_realtime: true,
             is_live_session_slot: false,
             realtime_session: session,
-            realtime_source: 'yfinance',
+            realtime_source: realtimeSource,
             previous_trading_point_index: Number.isFinite(Number(anchorPoint?.previous_trading_point_index))
                 ? Number(anchorPoint.previous_trading_point_index)
                 : (targetIndex > 0 ? targetIndex - 1 : -1),

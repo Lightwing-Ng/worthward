@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.2.2
+Code version: v0.2.3
 """
 
 from __future__ import annotations
@@ -117,6 +117,12 @@ class InvestmentTickerLineageTests(unittest.TestCase):
 
         self.assertEqual(resolve_known_ticker_company_name("SGOV"), expected_name)
         self.assertEqual(known_ticker_company_names_payload()["SGOV.US"], expected_name)
+
+    def test_known_ticker_company_names_cover_qqqi(self) -> None:
+        expected_name = "NEOS Nasdaq-100(R) High Income ETF"
+
+        self.assertEqual(resolve_known_ticker_company_name("QQQI"), expected_name)
+        self.assertEqual(known_ticker_company_names_payload()["QQQI.US"], expected_name)
 
 
 if __name__ == "__main__":

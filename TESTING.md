@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.7`
+Documentation version: `v1.3.9`
 
 ## Supported commands
 
@@ -40,9 +40,9 @@ The complete gate runs, in order:
 
 ## Coverage baseline
 
-Baseline remeasured on 20 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
+Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `52.8%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,165` covered of `18,070` statements).
+- Total combined statement and branch coverage: `53.6%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,380` covered of `18,168` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
@@ -62,9 +62,9 @@ Priority coverage gaps:
 
 Current suite inventory remeasured on 20 Jul 2026:
 
-- 346 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
-  full Python run reports 340 passed, 6 skipped, and 7 subtests passed.
-- 40 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 358 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
+  full Python run reports 352 passed, 6 skipped, and 7 subtests passed.
+- 41 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority coverage.
 - 65 Playwright test cases listed by `npx playwright test --list`, generated
   from 57 explicit top-level `test(...)` declarations with parameterized
@@ -85,7 +85,14 @@ All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
 
 ## Browser test isolation
 
-Playwright starts a dedicated app server on `127.0.0.1:8699` through the `ANTIGRAVITY_PORT` override. This avoids reusing a developer server on port `8688`.
+Playwright starts a dedicated app server on `127.0.0.1:8699` through
+`scripts/run_e2e_app.sh`. The launcher copies `market_store` into
+`test-results/runtime-store`, points `settings_store` to an empty isolated
+directory, and disables remote market access for that process. Browser tests
+therefore cannot alter the user's production stores or depend on Yahoo,
+Longbridge, a corporate proxy, or transient rate limits. Normal manual launches
+remain unchanged. The `npm run test:e2e` wrapper removes the isolated runtime
+copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
 
@@ -110,6 +117,22 @@ remote endpoint. Temporary PEM files and mocked yfinance downloads cover:
 
 These tests must remain offline and must never replace certificate verification
 with `verify=False`, an unverified SSL context, or a process-wide TLS patch.
+
+## Longbridge realtime quote contract
+
+- Current CLI OAuth and legacy SDK payload shapes are covered without making a
+  real broker request.
+- A regular-session CLI quote remains usable when the provider omits a quote
+  timestamp. The timestamp stays explicitly unknown while the independently
+  known New York session date is retained.
+- Provider timestamps are converted to New York display time before reaching
+  the Investment frontend.
+- Pre-market, regular, and post-market selection, transport failure, non-US and
+  off-session short circuits, per-ticker yfinance fallback, and mixed provider
+  provenance are deterministic regressions.
+- Browser coverage verifies the actual loaded `stock-details.js` resource URL
+  and module version, preventing a stale cache key from passing source-only
+  assertions.
 
 ## Writing new tests
 

@@ -1,7 +1,7 @@
 """
 Exact-range date constraint logic.
 
-Code version: v0.7.0
+Code version: v0.7.1
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def nyse_market_session_state(reference: pd.Timestamp | str | None = None) -> di
         "session_date": trading_date.isoformat(),
         "as_of": anchor.isoformat(),
         "timezone": _NYSE_SESSION_TIMEZONE,
-        "is_realtime_allowed": is_trading_day and session in {"pre", "intraday"},
+        "is_realtime_allowed": is_trading_day and session in {"pre", "intraday", "post"},
         "premarket_open": _format_minute_clock(_NYSE_PREMARKET_OPEN_MINUTE),
         "regular_open": _format_minute_clock(_NYSE_REGULAR_OPEN_MINUTE),
         "regular_close": _format_minute_clock(regular_close_minute),

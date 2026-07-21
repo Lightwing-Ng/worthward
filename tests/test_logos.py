@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.6.0
+Code version: v0.6.1
 """
 
 from __future__ import annotations
@@ -386,7 +386,7 @@ class LogoServiceTests(unittest.TestCase):
 
         self.assertEqual(payload["company_name"], "NEOS Nasdaq 100 High Income ETF")
 
-    def test_build_quote_profile_payload_ignores_symbol_only_cached_search_name(self) -> None:
+    def test_build_quote_profile_payload_replaces_symbol_only_cached_search_name_with_known_name(self) -> None:
         with patch("app.services.logos._load_yfinance_ticker_info", return_value={}), \
                 patch(
                     "app.services.logos.load_latest_search_cache_item_for_symbol",
@@ -394,7 +394,7 @@ class LogoServiceTests(unittest.TestCase):
                 ):
             payload = build_quote_profile_payload("QQQI")
 
-        self.assertEqual(payload["company_name"], "QQQI")
+        self.assertEqual(payload["company_name"], "NEOS Nasdaq-100(R) High Income ETF")
 
     def test_build_quote_profile_payload_uses_dram_known_profile_when_yfinance_is_empty(self) -> None:
         with patch("app.services.logos._load_yfinance_ticker_info") as info_mock:

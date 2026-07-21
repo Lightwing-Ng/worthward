@@ -1,16 +1,31 @@
 """
 Shared application configuration.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
+import os
 from pathlib import Path
 
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-MARKET_STORE_DIR = BASE_DIR / "market_store"
-SETTINGS_STORE_DIR = BASE_DIR / "settings_store"
+
+
+def resolve_store_directory(environment_name: str, fallback: Path) -> Path:
+    """Resolve an explicit process-local store override without changing normal launches."""
+    configured = str(os.environ.get(environment_name, "") or "").strip()
+    return Path(configured).expanduser().resolve() if configured else fallback
+
+
+MARKET_STORE_DIR = resolve_store_directory(
+    "ANTIGRAVITY_MARKET_STORE_DIR",
+    BASE_DIR / "market_store",
+)
+SETTINGS_STORE_DIR = resolve_store_directory(
+    "ANTIGRAVITY_SETTINGS_STORE_DIR",
+    BASE_DIR / "settings_store",
+)
 DEFAULT_TICKERS = ("QQQ", "JEPQ")
 DEFAULT_PERIOD = "1y"
 DEFAULT_INTERVAL = "1d"

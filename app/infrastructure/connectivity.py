@@ -1,7 +1,7 @@
 """
 Remote connectivity helpers.
 
-Code version: v0.5.0
+Code version: v0.5.1
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from http.client import RemoteDisconnected
 import io
 import json
+import os
 from time import monotonic, time
+from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -39,6 +41,7 @@ CHATGPT_PING_URLS = (
 REMOTE_MARKET_SUCCESS_TTL_SECONDS = 900
 REMOTE_MARKET_FAILURE_TTL_SECONDS = 45
 REMOTE_MARKET_STALE_GRACE_SECONDS = 3600
+REMOTE_MARKET_ACCESS_ENV = "ANTIGRAVITY_REMOTE_MARKET_ACCESS"
 REMOTE_LOGO_SUCCESS_TTL_SECONDS = 900
 REMOTE_LOGO_FAILURE_TTL_SECONDS = 120
 GENERIC_CONNECTIVITY_SUCCESS_TTL_SECONDS = 300
@@ -47,6 +50,13 @@ _remote_market_access_cache: tuple[float, float, bool] | None = None
 _remote_logo_access_cache: tuple[float, float, bool] | None = None
 _google_hk_access_cache: tuple[float, float, bool] | None = None
 _chatgpt_access_cache: tuple[float, float, bool] | None = None
+
+
+def is_remote_market_access_disabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Return whether this process explicitly disables remote market access."""
+    environment = os.environ if environ is None else environ
+    value = str(environment.get(REMOTE_MARKET_ACCESS_ENV, "") or "").strip().lower()
+    return value in {"0", "disabled", "false", "off"}
 
 
 def _cached_connectivity_value(
@@ -111,6 +121,9 @@ def _probe_yfinance_history() -> bool:
 
 def has_remote_market_access() -> bool:
     global _remote_market_access_cache
+
+    if is_remote_market_access_disabled():
+        return False
 
     cached_value = _cached_connectivity_value(
         _remote_market_access_cache,

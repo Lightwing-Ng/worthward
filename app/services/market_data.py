@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.17.0
+Code version: v0.17.4
 """
 
 from __future__ import annotations
@@ -20,13 +20,17 @@ from threading import Lock
 import pandas as pd
 import yfinance as yf
 
-from app.core.broker_settings import has_longbridge_market_data_source, load_broker_settings
-from app.infrastructure.connectivity import has_remote_market_access
+from app.core.broker_settings import (
+    has_longbridge_market_data_source,
+    load_broker_settings,
+    uses_longbridge_cli_oauth,
+)
+from app.infrastructure.connectivity import has_remote_market_access, is_remote_market_access_disabled
 from app.infrastructure.runtime_network import (
     add_yahoo_tls_configuration_hint,
     get_yfinance_session,
 )
-from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status
+from app.infrastructure.longbridge_cli import get_longbridge_cli_auth_status, run_longbridge_cli_json
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history, download_yahoo_chart_history
 from app.infrastructure.broker_market_data import (
     HONG_KONG_TIMEZONE,
@@ -34,9 +38,11 @@ from app.infrastructure.broker_market_data import (
     fetch_longbridge_compare_one_day_history,
     fetch_longbridge_daily_history,
     fetch_longbridge_one_minute_history,
+    get_longbridge_quote_context,
     has_recent_one_minute_store,
     is_daily_store_fresh,
     normalize_one_minute_store_frame,
+    normalize_longbridge_symbol,
     one_minute_lookback_start,
     refresh_longbridge_one_minute_store,
 )
@@ -49,6 +55,7 @@ from app.infrastructure.storage import (
     normalize_ticker,
     write_parquet_atomic,
 )
+from app.services.date_constraints import nyse_market_session_state
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
@@ -210,6 +217,8 @@ def _download_daily_history_with_yfinance(
     resolve symbols like `MSFT.US`. We silence that low-level output here and
     preserve a sanitized explanation for the caller's fallback decision.
     """
+    if is_remote_market_access_disabled():
+        raise YfinanceDownloadError("Remote market access is disabled for this process.")
     lookup_ticker: str | list[str]
     if isinstance(ticker, list):
         lookup_ticker = [yfinance_lookup_symbol(value) for value in ticker]
@@ -267,6 +276,8 @@ def _download_daily_history_with_yfinance(
 
 
 def _load_longbridge_market_settings():
+    if is_remote_market_access_disabled():
+        return None
     settings = load_broker_settings()
     if not has_longbridge_market_data_source(settings):
         return None
@@ -274,6 +285,8 @@ def _load_longbridge_market_settings():
 
 
 def _load_compare_overnight_market_settings():
+    if is_remote_market_access_disabled():
+        return None
     settings = load_broker_settings()
     if has_longbridge_market_data_source(settings):
         return settings
@@ -354,6 +367,8 @@ def _download_recent_one_minute_history_with_yfinance(
         *,
         days: int = YFINANCE_INTRADAY_FALLBACK_DAYS,
 ) -> pd.DataFrame:
+    if is_remote_market_access_disabled():
+        raise YfinanceDownloadError("Remote market access is disabled for this process.")
     window_days = max(1, YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS)
     now_utc = pd.Timestamp.now(tz="UTC").floor("min")
     start_utc = now_utc - pd.Timedelta(days=max(1, days)) + pd.Timedelta(minutes=1)
@@ -939,6 +954,105 @@ def fetch_compare_one_day_overnight_history(
     )
 
 
+def _longbridge_realtime_quote_field(row: object, *names: str) -> object | None:
+    for name in names:
+        if isinstance(row, dict):
+            value = row.get(name)
+        else:
+            value = getattr(row, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _longbridge_realtime_quote_value(row: object, session: str) -> tuple[object, object] | None:
+    if session == "pre":
+        candidate = _longbridge_realtime_quote_field(row, "pre_market", "pre_market_quote")
+    elif session == "post":
+        candidate = _longbridge_realtime_quote_field(row, "post_market", "post_market_quote")
+    else:
+        candidate = row
+    if candidate is None:
+        return None
+    return (
+        _longbridge_realtime_quote_field(candidate, "last", "last_done"),
+        _longbridge_realtime_quote_field(candidate, "timestamp", "time"),
+    )
+
+
+def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
+    """Fetch configured Longbridge realtime US quotes for the active market session."""
+    normalized_tickers = list(dict.fromkeys(
+        normalize_ticker(ticker) for ticker in tickers if str(ticker or "").strip()
+    ))
+    if not normalized_tickers:
+        return []
+
+    settings = load_broker_settings()
+    if not has_longbridge_market_data_source(settings):
+        return []
+
+    session_state = nyse_market_session_state()
+    session = str(session_state.get("session") or "off")
+    session_date = str(session_state.get("session_date") or "").strip()
+    if session not in {"pre", "intraday", "post"}:
+        return []
+    us_tickers = [ticker for ticker in normalized_tickers if infer_ticker_market(ticker) == "US"]
+    if not us_tickers:
+        return []
+
+    symbols_by_ticker = {ticker: normalize_longbridge_symbol(ticker) for ticker in us_tickers}
+    try:
+        if uses_longbridge_cli_oauth(settings):
+            payload = run_longbridge_cli_json(
+                settings,
+                ["quote", *symbols_by_ticker.values(), "--format", "json"],
+                timeout_seconds=12,
+            )
+        else:
+            payload = get_longbridge_quote_context(settings).quote(list(symbols_by_ticker.values()))
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.info("Longbridge realtime quote request failed; using yfinance fallback: %s", exc)
+        return []
+    if not isinstance(payload, (list, tuple)):
+        return []
+
+    ticker_by_symbol = {symbol.upper(): ticker for ticker, symbol in symbols_by_ticker.items()}
+    results: list[dict[str, object]] = []
+    for row in payload:
+        ticker = ticker_by_symbol.get(
+            str(_longbridge_realtime_quote_field(row, "symbol") or "").strip().upper()
+        )
+        value = _longbridge_realtime_quote_value(row, session)
+        if not ticker or value is None:
+            continue
+        raw_price, raw_timestamp = value
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(price) or price <= 0:
+            continue
+        display_timestamp = ""
+        quote_session_date = session_date
+        if raw_timestamp is not None and str(raw_timestamp).strip():
+            timestamp = pd.to_datetime(raw_timestamp, errors="coerce", utc=True)
+            if not pd.isna(timestamp):
+                new_york_timestamp = timestamp.tz_convert(NEW_YORK_TIMEZONE)
+                display_timestamp = new_york_timestamp.strftime("%Y-%m-%d %H:%M")
+                quote_session_date = new_york_timestamp.strftime("%Y-%m-%d")
+        results.append({
+            "ticker": ticker,
+            "price": price,
+            "timestamp": display_timestamp,
+            "session": session,
+            "session_date": quote_session_date,
+            "market": "US",
+            "source": "longbridge",
+        })
+    return results
+
+
 def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
     """
     Fetch realtime quotes in one batch, then retry missing tickers individually.
@@ -1511,6 +1625,10 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
 
 def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
     normalized_ticker = normalize_ticker(ticker)
+    if is_remote_market_access_disabled():
+        raise YfinanceDownloadError(
+            "Remote market access is disabled for this process; using the existing local 1-minute store."
+        )
     yfinance_errors: list[tuple[int, Exception]] = []
     # An existing store only needs an incremental recent window. Requesting
     # the full 30-day range on every stale-cache check creates five separate

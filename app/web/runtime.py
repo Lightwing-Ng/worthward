@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.25.0
+Code version: v0.25.1
 """
 
 from __future__ import annotations
@@ -191,6 +191,7 @@ from app.services.market_data import (
     fetch_compare_one_day_extended_history,
     fetch_compare_one_day_overnight_history,
     fetch_history,
+    fetch_longbridge_realtime_quotes,
     fetch_one_minute_history_for_trading_date,
     fetch_yfinance_realtime_quote,
     fetch_yfinance_realtime_quotes,
@@ -995,10 +996,18 @@ def build_web_runtime() -> WebRuntime:
             cached_entry = investment_realtime_quote_cache.get(cache_key)
             if cached_entry is not None and now_monotonic - cached_entry[0] <= INVESTMENT_REALTIME_QUOTE_TTL_SECONDS:
                 return [dict(item) for item in cached_entry[1]]
-        # Use the efficient batch implementation: single yfinance.download call for
-        # the (possibly large) list of tickers. This is much faster than many individual
-        # calls, especially after an import that brings in a large number of holdings.
-        quotes = fetch_yfinance_realtime_quotes(requested_tickers)
+        # Prefer configured Longbridge live quotes during supported US sessions.
+        # Batch yfinance requests recover only the unresolved tickers, preserving
+        # Longbridge as the authoritative source whenever it returned a quote.
+        quotes = fetch_longbridge_realtime_quotes(requested_tickers)
+        resolved_tickers = {str(item.get("ticker") or "").strip().upper() for item in quotes}
+        unresolved_tickers = [ticker for ticker in requested_tickers if ticker not in resolved_tickers]
+        if unresolved_tickers:
+            for quote in fetch_yfinance_realtime_quotes(unresolved_tickers):
+                quote_ticker = str(quote.get("ticker") or "").strip().upper()
+                if quote_ticker and quote_ticker not in resolved_tickers:
+                    quotes.append(quote)
+                    resolved_tickers.add(quote_ticker)
         resolved_tickers = {str(item.get("ticker") or "").strip().upper() for item in quotes}
         if resolved_tickers.issuperset(requested_tickers):
             with investment_realtime_quote_cache_lock:
@@ -6925,7 +6934,7 @@ def build_web_runtime() -> WebRuntime:
             return apply_no_store_headers(response)
 
     def investment_get_realtime_quotes():
-        """Get latest yfinance pre-market, regular-session, and post-market quotes."""
+        """Get Longbridge-first realtime quotes with yfinance fallback."""
         failures: list[dict[str, str]] = []
 
         def collect_valid_tickers(raw_values: list[str]) -> list[str]:
@@ -6981,7 +6990,11 @@ def build_web_runtime() -> WebRuntime:
             "quotes": quotes,
             "failures": failures,
             "count": len(quotes),
-            "source": "yfinance",
+            "source": (
+                "mixed" if len({str(item.get("source") or "") for item in quotes}) > 1
+                else str(quotes[0].get("source") or "yfinance") if quotes
+                else "yfinance"
+            ),
             "fetched_at": fetched_at.strftime("%Y-%m-%d %H:%M:%S%z"),
         })
         response.status_code = 200

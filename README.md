@@ -154,8 +154,11 @@ The current `Settings` navigation includes:
 - Used when local `1m` data exists for the selected ticker
 
 Longbridge is optional for every market-data view. Daily history, intraday charts,
-extended-hours comparisons, and investment realtime quotes use `yfinance` by
-default. Batched realtime requests retry missing tickers individually.
+and extended-hours comparisons use `yfinance` by default. When configured,
+Investment realtime quotes use Longbridge first for US pre-market, regular, and
+post-market sessions; unresolved quotes fall back to batched `yfinance` requests,
+which then retry missing tickers individually. Each returned quote identifies its
+provider, and a mixed response preserves that per-quote provenance.
 
 ### Yahoo Finance proxy and TLS configuration
 
