@@ -1,6 +1,6 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.16`
+Documentation version: `v1.86.17`
 
 ## Investment extended-hours live pulse now follows Longbridge provenance on 21 Jul 2026
 
@@ -114,9 +114,9 @@ Documentation version: `v1.86.16`
 - No intentional product, accounting, broker-import, or live-order behavior
   changes were introduced in this extraction batch.
 - Suite inventory and coverage baseline are recorded in `TESTING.md` (coverage
-  `53.2%` with `10,284` covered of `18,168` statements, 358 Python tests
-  collected, 41 Node tests, 65 expanded Playwright test cases
-  from 57 explicit `test(...)` declarations).
+  `53.3%` with `10,341` covered of `18,223` statements, 361 Python tests
+  collected, 42 Node tests, 66 expanded Playwright test cases
+  from 58 explicit `test(...)` declarations).
 
 ## Live trading PIN gate now follows the selected appearance on 20 Jul 2026
 
@@ -1133,6 +1133,6 @@ Documentation version: `v1.86.16`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python statement and branch coverage is `53.2%`; the weakest modules are listed in `TESTING.md`.
+- Overall Python statement and branch coverage is `53.3%`; the weakest modules are listed in `TESTING.md`.
 - Core runtime and investment-import modules remain oversized and expensive to reason about.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.

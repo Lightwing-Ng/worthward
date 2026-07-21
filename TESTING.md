@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.11`
+Documentation version: `v1.3.12`
 
 ## Supported commands
 
@@ -42,7 +42,7 @@ The complete gate runs, in order:
 
 Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `53.2%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,284` covered of `18,168` statements).
+- Total combined statement and branch coverage: `53.3%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,341` covered of `18,223` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
@@ -60,14 +60,14 @@ Priority coverage gaps:
 
 ## Test organization
 
-Current suite inventory remeasured on 20 Jul 2026:
+Current suite inventory remeasured on 21 Jul 2026:
 
-- 358 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
-  full Python run reports 352 passed, 6 skipped, and 7 subtests passed.
-- 41 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 361 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
+  full Python run reports 355 passed, 6 skipped, and 7 subtests passed.
+- 42 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority coverage.
-- 65 Playwright test cases listed by `npx playwright test --list`, generated
-  from 57 explicit top-level `test(...)` declarations with parameterized
+- 66 Playwright test cases listed by `npx playwright test --list`, generated
+  from 58 explicit top-level `test(...)` declarations with parameterized
   viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.

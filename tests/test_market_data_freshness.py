@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.15.0
+Code version: v0.16.0
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 import unittest
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -272,12 +273,17 @@ class MarketDataFreshnessTests(unittest.TestCase):
     def _with_isolated_store(
         self,
         dataset: pd.DataFrame,
-        callback,
+        callback: Callable[[Path], None],
         *,
         interval: str,
     ) -> None:
+        if interval not in {"1d", "1m"}:
+            raise ValueError(f"Unsupported isolated market interval: {interval}")
+
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "historical" / f"DRAM_{interval}.parquet"
+            for production_root in (BASE_DIR / "market_store", BASE_DIR / "settings_store"):
+                self.assertFalse(path.resolve().is_relative_to(production_root.resolve()))
             path.parent.mkdir(parents=True, exist_ok=True)
             path_function = (
                 "app.infrastructure.broker_market_data.intraday_history_store_path_for"
@@ -286,7 +292,32 @@ class MarketDataFreshnessTests(unittest.TestCase):
             )
             with patch(path_function, return_value=path):
                 dataset.to_parquet(path, index=False)
-                callback()
+                callback(path)
+
+    def test_isolated_store_cleanup_survives_callback_failure(self) -> None:
+        dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-06-30"]),
+                "Close": [26.0],
+            }
+        )
+        observed_path: Path | None = None
+
+        def fail_after_observing_store(path: Path) -> None:
+            nonlocal observed_path
+            observed_path = path
+            self.assertTrue(path.exists())
+            raise RuntimeError("Deliberate isolated-store callback failure.")
+
+        with self.assertRaisesRegex(RuntimeError, "Deliberate isolated-store callback failure"):
+            self._with_isolated_store(
+                dataset,
+                fail_after_observing_store,
+                interval="1d",
+            )
+
+        self.assertIsNotNone(observed_path)
+        self.assertFalse(observed_path.exists())
 
     def test_market_data_freshness_accepts_last_preholiday_trading_day(self) -> None:
         is_fresh = _is_market_data_fresh(
@@ -304,7 +335,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         )
 
-        def assert_status() -> None:
+        def assert_status(_path: Path) -> None:
             with patch(
                 "app.infrastructure.broker_market_data.latest_completed_nyse_trading_day",
                 return_value=pd.Timestamp("2026-06-30"),
@@ -323,7 +354,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         )
 
-        def assert_status() -> None:
+        def assert_status(_path: Path) -> None:
             with patch(
                 "app.infrastructure.broker_market_data.latest_completed_nyse_trading_day",
                 return_value=pd.Timestamp("2026-06-30"),
@@ -342,7 +373,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         )
 
-        def assert_status() -> None:
+        def assert_status(_path: Path) -> None:
             with patch(
                 "app.infrastructure.broker_market_data.latest_completed_nyse_trading_day",
                 return_value=pd.Timestamp("2026-06-30"),
@@ -361,7 +392,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         )
 
-        def assert_status() -> None:
+        def assert_status(_path: Path) -> None:
             with patch(
                 "app.infrastructure.broker_market_data.latest_completed_nyse_trading_day",
                 return_value=pd.Timestamp("2026-06-30"),
