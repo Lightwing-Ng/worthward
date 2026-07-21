@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.4.3
+ * Code version: v0.4.4
+ * - Fixed: Eligible live markers keep the final chart x-position while resolving their y-position and y-scale from the current realtime quote price.
  * - Fixed: Mixed integer and fractional y-axis ticks now select a fractional tick when resolving the shared decimal anchor.
  * - Fixed: Exact-price badges now reuse the rendered y-axis label anchor and font so integer and decimal columns align with the covered tick labels.
  * - Added: Stock-details hover now draws a cost-curve-bounded horizontal guide beneath chart data and a blue exact-price badge over the y-axis labels.
@@ -24,7 +25,7 @@
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.4';
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,
@@ -69,6 +70,7 @@ export function createInvestmentStockDetailsUtils({
     getInvestmentStockDetailsPriceChartRequestSerial,
     getInvestmentStockDetailsRangeLabels,
     getInvestmentLiveSessionDateKey,
+    getInvestmentStockDetailsRealtimePulseTarget = () => null,
     getInvestmentTradeSessionType,
     getMoneyMarketTickerSet,
     getNormalizedTransactionType,
@@ -370,6 +372,7 @@ export function createInvestmentStockDetailsUtils({
                 chartCanvas._layoutSyncTimer = 0;
             }
             chartCanvas._scheduleLayoutSync = null;
+            chartCanvas._syncInvestmentStockDetailsRealtimePulse = null;
             chartCanvas._investmentStockDetailsChart = null;
             chartInstance.destroy();
             setInvestmentStockDetailsPriceChartInstance(null);
@@ -483,6 +486,14 @@ export function createInvestmentStockDetailsUtils({
             && latestVisibleLabel === latestAvailableLabel
             && !(normalizedRange === 'auto' && stockDetailsAutoRangeContext?.isOpenPosition === false)
         );
+        const getRealtimePulseTarget = () => {
+            if (!shouldRenderRealtimePulse || typeof getInvestmentStockDetailsRealtimePulseTarget !== 'function') {
+                return null;
+            }
+            const target = getInvestmentStockDetailsRealtimePulseTarget(normalizedTicker);
+            const price = Number(target?.price);
+            return Number.isFinite(price) && price > 0 ? { ...target, price } : null;
+        };
 
         await waitForInvestmentStableElementBox(chartHost, {
             minimumWidth: 160,
@@ -856,6 +867,7 @@ export function createInvestmentStockDetailsUtils({
             ...averagePriceSeries,
             ...tradeMarkerPoints.buy.map((marker) => marker.y),
             ...tradeMarkerPoints.sell.map((marker) => marker.y),
+            getRealtimePulseTarget()?.price,
         ]);
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
@@ -1215,18 +1227,21 @@ export function createInvestmentStockDetailsUtils({
             id: 'investmentStockDetailsRealtimeEndMarkerPlugin',
             afterDatasetsDraw(chartInstance) {
                 if (!shouldRenderRealtimePulse || !(realtimeMarkerElement instanceof HTMLElement)) return;
-                const dataset = chartInstance.data?.datasets?.[0];
+                const realtimePulseTarget = getRealtimePulseTarget();
+                if (!realtimePulseTarget) {
+                    realtimeMarkerElement.hidden = true;
+                    return;
+                }
                 const lastIndex = Math.max(0, labels.length - 1);
-                const pointValue = Number(dataset?.data?.[lastIndex]);
                 const xScale = chartInstance.scales?.x;
                 const yScale = chartInstance.scales?.y;
                 const chartArea = chartInstance.chartArea;
-                if (!Number.isFinite(pointValue) || !xScale || !yScale || !chartArea) {
+                if (!xScale || !yScale || !chartArea) {
                     realtimeMarkerElement.hidden = true;
                     return;
                 }
                 const x = Number(xScale.getPixelForValue(lastIndex));
-                const y = Number(yScale.getPixelForValue(pointValue));
+                const y = Number(yScale.getPixelForValue(realtimePulseTarget.price));
                 if (!Number.isFinite(x) || !Number.isFinite(y)) {
                     realtimeMarkerElement.hidden = true;
                     return;
@@ -1479,6 +1494,18 @@ export function createInvestmentStockDetailsUtils({
             plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin, realtimeEndMarkerPlugin],
         });
         setInvestmentStockDetailsPriceChartInstance(chartInstance);
+        canvas._syncInvestmentStockDetailsRealtimePulse = () => {
+            const yScale = chartInstance.options?.scales?.y;
+            if (!yScale) return;
+            const nextYScale = buildPixelPaddedYScale(
+                canvas,
+                getStockDetailsChartYScaleValues(),
+                STOCK_DETAILS_MARKER_Y_PADDING_PX,
+            );
+            yScale.min = nextYScale.min;
+            yScale.max = nextYScale.max;
+            chartInstance.update('none');
+        };
         window.requestAnimationFrame(() => window.requestAnimationFrame(notifyChartReady));
         const TRADE_MARKER_SNAP_HORIZONTAL_BARS = 3;
         const TRADE_MARKER_SNAP_HORIZONTAL_PX = 20;

@@ -1,6 +1,26 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.14`
+Documentation version: `v1.86.16`
+
+## Investment extended-hours live pulse now follows Longbridge provenance on 21 Jul 2026
+
+- Stock details keeps the live marker at the final chart x-coordinate while its y-coordinate and visible scale use the selected ticker's current eligible quote price.
+- The Stock details metric grid and price marker now share one pulse decision. US pre-market and post-market pulses require that ticker's `longbridge` quote; a yfinance fallback can still refresh the value but does not show a pulse.
+- Regular-session fallback behavior remains available. Reduced-motion preferences suppress the metric-card glow while retaining the value update.
+
+## Manual transfer bindings and paginator tail clearance hardened on 21 Jul 2026
+
+- The `15` currently confirmed internal-transfer pairs are migrated from
+  presentation-dependent keys to cross-import `v2` identities in the local
+  Investment parquet store.
+- The identities ignore description, source file kind, and source row number;
+  they also normalize IBKR account masking and missing-versus-USD cash currency.
+  Incremental imports retain the bindings instead of asking for the same manual
+  reconciliation again.
+- The floating Transaction history paginator now owns a transparent scroll-tail
+  spacer. At the maximum scroll position, the final row sits fully above the
+  glass dock with the same gap that already exists beneath the dock.
+- KOL is rendered as an acronym in transaction event labels.
 
 ## Investment history surface padding is symmetric again on 21 Jul 2026
 

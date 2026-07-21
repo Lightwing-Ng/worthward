@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.48.1
+ * Code version: v1.48.2
+ * - Added: Extended-hours Investment pulse eligibility now requires the per-ticker Longbridge quote source while preserving regular-session fallback behavior.
  * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
  * - Added: HSBC statement-bundle readiness validates complete even PDF pairs for the smart multi-file selector.
  * - Changed: Ledger-price valuation fallbacks remain diagnostic metadata but no longer surface a user warning banner.
@@ -56,6 +57,13 @@ export function resolveRealtimeQuoteSource(quotes = []) {
     );
     if (sources.size > 1) return 'mixed';
     return sources.values().next().value || 'realtime';
+}
+
+export function isRealtimeQuotePulseProviderEligible(quote) {
+    const market = String(quote?.market || 'US').trim().toUpperCase();
+    const session = String(quote?.session || '').trim().toLowerCase();
+    if (market !== 'US' || !['pre', 'post'].includes(session)) return true;
+    return String(quote?.source || '').trim().toLowerCase() === 'longbridge';
 }
 
 export function createInvestmentDataUtils({
@@ -2183,4 +2191,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.2';

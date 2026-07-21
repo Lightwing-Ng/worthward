@@ -1,4 +1,4 @@
-/* Code version: v1.40.9 */
+/* Code version: v1.42.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2526,6 +2526,24 @@
     align-content: start;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+    .investment-stock-details-metrics.is-investment-realtime-pulse > .investment-stock-details-metric-card {
+        animation: investment-stock-details-live-metrics-breath 1.8s var(--motion-emphasized) infinite;
+    }
+}
+
+@keyframes investment-stock-details-live-metrics-breath {
+    0%, 100% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-accent-positive) 0%, transparent);
+    }
+
+    50% {
+        box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--theme-accent-positive) 18%, transparent),
+            0 0 12px color-mix(in srgb, var(--theme-accent-positive) 16%, transparent);
+    }
+}
+
 .investment-stock-details-metric-card-with-breakdown {
     row-gap: 2px;
 }
@@ -4006,8 +4024,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     --investment-history-pagination-clearance: calc(
         var(--local-store-pagination-slot-size)
         + (var(--investment-history-pagination-shell-padding) * 2)
-        + var(--investment-history-pagination-edge-inset)
-        + 4px
+        + (var(--investment-history-pagination-edge-inset) * 2)
     );
     --scrollable-data-table-underlay-offset-y: 0px;
     container-name: investment-history-table-shell;
@@ -4034,6 +4051,14 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-history-table-shell.has-floating-pagination > .investment-history-table-scroll {
     scroll-padding-block-end: var(--investment-history-pagination-clearance);
+}
+
+.investment-history-table-shell.has-floating-pagination > .investment-history-table-scroll::after {
+    content: "";
+    display: block;
+    width: 1px;
+    height: var(--investment-history-pagination-clearance);
+    pointer-events: none;
 }
 
 .investment-history-pagination {

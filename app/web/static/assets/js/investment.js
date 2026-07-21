@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.89.5
+ * Code version: v1.91.0
+ * - Fixed: Stock-details live markers now retain their horizontal endpoint while using the eligible realtime quote price for the vertical coordinate.
+ * - Added: Stock-details metrics share the live-marker pulse state; US extended-hours pulses require a Longbridge quote and remain off for yfinance fallback quotes.
  * - Fixed: Realtime chart points now preserve Longbridge, yfinance, or mixed provider provenance.
  * - Fixed: Investment stock-details loads the current helper revision through an updated cache key.
  * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
@@ -336,8 +338,9 @@ import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     createInvestmentDataUtils,
     isCompleteHsbcStatementPdfBundle,
+    isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.48.1';
+} from './investment/data-utils.js?v=investment-data-utils-v1.48.2';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
@@ -345,10 +348,10 @@ import {
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.4.3';
+} from './investment/stock-details.js?v=investment-stock-details-v0.4.4';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.89.4',
+    entry: 'v1.91.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
@@ -1069,6 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentRealtimeQuoteTimer = 0;
     let investmentRealtimeQuoteAbortController = null;
     let investmentRealtimeQuoteInflight = false;
+    const investmentRealtimeQuotesByTicker = new Map();
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
     const STOCK_DETAILS_MARKER_VIEW_BOX = { width: 20.3027, height: 20.5176 };
@@ -1861,6 +1865,46 @@ document.addEventListener('DOMContentLoaded', () => {
         return Boolean(ticker) && Number.isFinite(price) && price > 0;
     }
 
+    function rememberInvestmentRealtimeQuotes(quotes = []) {
+        (Array.isArray(quotes) ? quotes : []).forEach((quote) => {
+            if (!isInvestmentHoldingsRealtimeQuote(quote)) return;
+            const ticker = normalizeInvestmentTicker(quote?.ticker);
+            investmentRealtimeQuotesByTicker.set(ticker, { ...quote, ticker });
+        });
+    }
+
+    function getInvestmentRealtimeQuoteForTicker(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return null;
+        const candidates = Array.from(new Set([
+            normalizedTicker,
+            ...(typeof getInvestmentMarketStoreTickerCandidates === 'function'
+                ? getInvestmentMarketStoreTickerCandidates(normalizedTicker)
+                : []),
+        ].map((candidate) => normalizeInvestmentTicker(candidate)).filter(Boolean)));
+        return candidates
+            .map((candidate) => investmentRealtimeQuotesByTicker.get(candidate))
+            .find((quote) => isInvestmentHoldingsRealtimeQuote(quote)) || null;
+    }
+
+    function getInvestmentStockDetailsRealtimePulseTarget(ticker) {
+        const quote = getInvestmentRealtimeQuoteForTicker(ticker);
+        if (
+            !quote
+            || !shouldUseInvestmentRealtimeQuote(quote)
+            || !isRealtimeQuotePulseProviderEligible(quote)
+        ) {
+            return null;
+        }
+        const price = Number(quote.price);
+        if (!Number.isFinite(price) || price <= 0) return null;
+        return {
+            price,
+            session: String(quote.session || '').trim().toLowerCase(),
+            source: String(quote.source || '').trim().toLowerCase(),
+        };
+    }
+
     function buildInvestmentRealtimeTimestamp(quotes = []) {
         const timestamps = (Array.isArray(quotes) ? quotes : [])
             .map((quote) => String(quote?.timestamp || '').trim())
@@ -1995,6 +2039,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyInvestmentRealtimeQuotes(quotes = []) {
         const holdingsQuotes = (Array.isArray(quotes) ? quotes : [])
             .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote));
+        rememberInvestmentRealtimeQuotes(holdingsQuotes);
+        syncInvestmentStockDetailsLivePulse();
         const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (liveSessionQuotes.length) {
             liveSessionQuotes.forEach((quote) => {
@@ -2231,36 +2277,40 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildInvestmentTransactionBindingKey(txn) {
         if (!txn || typeof txn !== 'object') return '';
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-        const amountText = String(
+        const amountValue = (
             txn?.net_amount_raw
             ?? txn?.gross_amount_raw
             ?? txn?.normalized?.net_amount
             ?? txn?.normalized?.gross_amount
             ?? txn?.amount
             ?? ''
-        ).trim();
-        const descriptionText = String(txn?.description || '').replace(/\s+/g, ' ').trim();
-        const brokerCode = getTransactionBrokerCode(txn);
+        );
+        const numericAmount = Number(String(amountValue).replace(/,/g, ''));
+        const amountText = Number.isFinite(numericAmount)
+            ? numericAmount.toFixed(8).replace(/\.?0+$/, '')
+            : String(amountValue || '').trim();
+        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
         const accountText = String(txn?.account || source?.account || source?.account_number || '').trim();
-        const referenceText = String(
-            source?.reference_id
-            ?? source?.row_number
-            ?? source?.order_reference
-            ?? source?.transaction_type_raw
-            ?? ''
-        ).trim();
-        const currencyText = String(txn?.currency || '').trim().toUpperCase();
-        return [
+        const accountMatch = brokerCode === 'ibkr'
+            ? accountText.toUpperCase().match(/^U(?:\*+|\d+)(\d{5})$/)
+            : null;
+        const accountIdentity = accountMatch ? `ibkr:u-suffix:${accountMatch[1]}` : accountText;
+        const normalizedType = getNormalizedTransactionType(txn);
+        const explicitCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
+        const currencyIdentity = (
+            brokerCode === 'ibkr'
+            && ['deposit', 'withdrawal'].includes(normalizedType)
+            && ['', 'USD'].includes(explicitCurrency)
+        ) ? 'USD_OR_MISSING' : explicitCurrency;
+        if (!brokerCode || !txn?.date || !normalizedType || !amountText) return '';
+        return `v2:${JSON.stringify([
             brokerCode,
-            accountText,
+            accountIdentity,
             String(txn?.date || '').trim(),
-            getNormalizedTransactionType(txn),
-            currencyText,
+            normalizedType,
+            currencyIdentity,
             amountText,
-            descriptionText,
-            String(source?.file_kind || '').trim(),
-            referenceText,
-        ].join('|');
+        ])}`;
     }
 
     function parseInvestmentLedgerDateUtc(value) {
@@ -4169,6 +4219,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         buildInvestmentAxisTickIndexes,
         getInvestmentLiveSessionDateKey,
+        getInvestmentStockDetailsRealtimePulseTarget,
         shouldRunInvestmentRealtimeQuotes,
         shouldTrackHoldingTicker,
         syncInvestmentHoverLinkedViews,
@@ -10945,10 +10996,29 @@ document.addEventListener('DOMContentLoaded', () => {
         syncInvestmentStockDetailsRealtimeMetrics();
     }
 
+    function syncInvestmentStockDetailsLivePulse() {
+        if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
+        const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
+        const metrics = investmentStockDetailsPanel.querySelector('.investment-stock-details-metrics');
+        const pulseTarget = activeTicker && activeInvestmentView === 'stock_details'
+            ? getInvestmentStockDetailsRealtimePulseTarget(activeTicker)
+            : null;
+        if (metrics instanceof HTMLElement) {
+            metrics.classList.toggle('is-investment-realtime-pulse', Boolean(pulseTarget));
+        }
+        const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
+        if (typeof chartCanvas?._syncInvestmentStockDetailsRealtimePulse === 'function') {
+            chartCanvas._syncInvestmentStockDetailsRealtimePulse();
+        }
+    }
+
     function syncInvestmentStockDetailsRealtimeMetrics() {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
         const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
-        if (!activeTicker || activeInvestmentView !== 'stock_details') return;
+        if (!activeTicker || activeInvestmentView !== 'stock_details') {
+            syncInvestmentStockDetailsLivePulse();
+            return;
+        }
         const tickerSummary = investmentTickerSummariesCache.find((summary) => (
             normalizeInvestmentTicker(summary?.ticker) === activeTicker
         ));
@@ -11002,6 +11072,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncInvestmentLiveDirectionTone(node, previousValue, update.value);
             }
         });
+        syncInvestmentStockDetailsLivePulse();
     }
 
     function renderInvestmentStockDetailsMetricValueSpan(value, valueClass = '') {
@@ -11361,6 +11432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindInvestmentStockDetailsMetricBreakdownControls();
         bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
         renderInvestmentStockDetailsPriceChart(activeTicker, detailRows);
+        syncInvestmentStockDetailsLivePulse();
         bindHoldingsLogoFallbacks(investmentStockDetailsPanel);
         syncSelectedStockLinkState();
         syncInvestmentStockDetailsDonutFromInteraction();
@@ -12352,6 +12424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshInvestmentAvailableBrokerCodes();
         investmentBaseLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
         investmentLatestPricesCache = latestPrices && typeof latestPrices === 'object' ? { ...latestPrices } : {};
+        investmentRealtimeQuotesByTicker.clear();
 
         // Use server-preloaded realtime quotes (now using efficient batched yfinance download)
         // for immediate render. The additional client-side bootstrap (for freshest possible)
@@ -12359,6 +12432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // block the UI / import completion feedback.
         const embeddedQuotes = getInvestmentEmbeddedRealtimeQuotes();
         const bootstrapRealtimeQuotes = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes);
+        rememberInvestmentRealtimeQuotes(bootstrapRealtimeQuotes);
         const bootstrapSessionQuotes = bootstrapRealtimeQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
         if (bootstrapSessionQuotes.length) {
             applyInvestmentSessionRealtimePrices(latestPrices, bootstrapSessionQuotes);
@@ -12376,9 +12450,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Subsequent poll / interactions will pick up fresher data via caches.
         bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot).then((fresh) => {
             const merged = mergeInvestmentRealtimeQuotePayloads(embeddedQuotes, fresh);
+            rememberInvestmentRealtimeQuotes(merged);
+            syncInvestmentStockDetailsLivePulse();
             const sessionQuotes = merged.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
             if (sessionQuotes.length) {
                 applyInvestmentSessionRealtimePrices(latestPrices, sessionQuotes);
+                syncInvestmentHoldingsRealtimeValues();
                 if (isInvestmentDailyEquityLiveRange()) {
                     const livePoints = buildInvestmentRealtimeChartPoints(sessionQuotes);
                     if (livePoints.length) {
@@ -13439,6 +13516,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Special case capitalization for IBKR transaction types
             const lower = word.toLowerCase();
             if (lower === 'fx') return 'FX';
+            if (lower === 'kol') return 'KOL';
             if (lower === 'pnl') return 'P&L';
             return word.charAt(0).toUpperCase() + word.slice(1);
         }).join(' ');

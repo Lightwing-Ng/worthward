@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.52.2`
+Documentation version: `v2.52.3`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -233,6 +233,10 @@ py -3.13 -m pip install --upgrade -r requirements.txt
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
 - IBKR internal FX conversion symbols such as `USD.HKD` are treated as ledger-only cash-conversion artifacts rather than queryable securities
+- Confirmed internal-transfer bindings are persisted in `investment.parquet` with
+  cross-import `v2` leg identities. Broker re-imports preserve those identities
+  across source-file, row-number, description, IBKR account-mask, and USD
+  blank-field presentation changes.
 
 `config.toml` contains an `investment.money_market_funds` rule family for cash-like instruments whose valuation should not depend on normal daily mark-to-market history.
 

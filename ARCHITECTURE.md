@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.8.3`
+Documentation version: `v1.8.4`
 
 ## Runtime flow
 
@@ -66,6 +66,9 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 ## High-risk invariants
 
 - Broker imports are incremental and must remain idempotent.
+- Manually confirmed internal-transfer bindings are durable ledger facts. Import
+  adapters must preserve their cross-import leg identities and must fail back to
+  explicit review when an identity becomes ambiguous.
 - Authoritative broker position snapshots reconcile synthesized grant quantities.
 - HSBC available cash calibrates cash-account rows, not individual unsettled order rows.
 - HSBC monthly PDF imports accept one unordered file bundle, classify composite and investment statements from extracted content, and require a matched pair for every end date. Investment rows own security identity; composite rows own cash reconciliation, and historical statement snapshots cannot supersede a newer live paste snapshot.
