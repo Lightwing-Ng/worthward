@@ -1,6 +1,24 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.10`
+Documentation version: `v1.86.13`
+
+## Investment pagination no longer inserts blank table-tail clearance on 21 Jul 2026
+
+- The Transaction history paginator retains its existing vertical position and
+  expanded-sidebar center alignment.
+- Removing the table's paginator-sized bottom margin restores the full visible
+  row area instead of appending a blank tail beneath the final valid record.
+- Scroll padding remains available for navigation semantics without changing
+  the table's rendered content height.
+
+## Market freshness tests no longer replace production caches on 21 Jul 2026
+
+- Daily and one-minute freshness tests now use per-test temporary parquet
+  stores through patched path resolvers.
+- The suite no longer overwrites and restores real QQQ or DRAM history while a
+  manually launched application may be reading or refreshing the same files.
+- Two consecutive full Python coverage runs produced the same statement and
+  branch totals after this isolation change.
 
 ## Realtime quote truthfulness and E2E isolation hardened on 20 Jul 2026
 
@@ -66,7 +84,7 @@ Documentation version: `v1.86.10`
 - No intentional product, accounting, broker-import, or live-order behavior
   changes were introduced in this extraction batch.
 - Suite inventory and coverage baseline are recorded in `TESTING.md` (coverage
-  `53.6%` with `10,380` covered of `18,168` statements, 358 Python tests
+  `53.2%` with `10,284` covered of `18,168` statements, 358 Python tests
   collected, 41 Node tests, 65 expanded Playwright test cases
   from 57 explicit `test(...)` declarations).
 
@@ -1085,6 +1103,6 @@ Documentation version: `v1.86.10`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python statement and branch coverage is `53.6%`; the weakest modules are listed in `TESTING.md`.
+- Overall Python statement and branch coverage is `53.2%`; the weakest modules are listed in `TESTING.md`.
 - Core runtime and investment-import modules remain oversized and expensive to reason about.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.

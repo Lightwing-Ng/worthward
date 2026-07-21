@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.9`
+Documentation version: `v1.3.11`
 
 ## Supported commands
 
@@ -42,7 +42,7 @@ The complete gate runs, in order:
 
 Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `53.6%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,380` covered of `18,168` statements).
+- Total combined statement and branch coverage: `53.2%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,284` covered of `18,168` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
@@ -95,6 +95,14 @@ remain unchanged. The `npm run test:e2e` wrapper removes the isolated runtime
 copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
+
+## Market persistence test isolation
+
+Market-data freshness regressions patch both daily and intraday store path
+resolvers into per-test temporary directories. They never replace a real QQQ or
+DRAM parquet file and then attempt to restore it. This keeps the user's running
+application from racing with pytest and makes repeated full-suite coverage
+measurements deterministic.
 
 Flask integration tests that exercise investment import or transaction loading patch both `INVESTMENT_STORE_PATH` and `INVESTMENT_TRANSACTIONS_CACHE_PATH` to a per-test temporary directory. A regression assertion compares the real parquet bytes before and after a synthetic IBKR import.
 

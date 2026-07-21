@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.14.2
+Code version: v0.15.0
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from app.infrastructure.broker_market_data import (
     classify_one_minute_store_status,
 )
 from app.infrastructure.connectivity import has_remote_market_access
-from app.infrastructure.storage import history_store_path_for, intraday_history_store_path_for
 from app.services.date_constraints import nyse_market_session_state
 from app.services.market_data import (
     YfinanceDownloadError,
@@ -270,18 +269,24 @@ class MarketDataFreshnessTests(unittest.TestCase):
         longbridge_settings.assert_not_called()
         yfinance_transport.assert_not_called()
 
-    def _with_replaced_store(self, path: Path, dataset: pd.DataFrame, callback) -> None:
-        original_exists = path.exists()
-        original_bytes = path.read_bytes() if original_exists else None
-        try:
+    def _with_isolated_store(
+        self,
+        dataset: pd.DataFrame,
+        callback,
+        *,
+        interval: str,
+    ) -> None:
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "historical" / f"DRAM_{interval}.parquet"
             path.parent.mkdir(parents=True, exist_ok=True)
-            dataset.to_parquet(path, index=False)
-            callback()
-        finally:
-            if original_exists and original_bytes is not None:
-                path.write_bytes(original_bytes)
-            elif path.exists():
-                path.unlink()
+            path_function = (
+                "app.infrastructure.broker_market_data.intraday_history_store_path_for"
+                if interval == "1m"
+                else "app.infrastructure.broker_market_data.history_store_path_for"
+            )
+            with patch(path_function, return_value=path):
+                dataset.to_parquet(path, index=False)
+                callback()
 
     def test_market_data_freshness_accepts_last_preholiday_trading_day(self) -> None:
         is_fresh = _is_market_data_fresh(
@@ -292,7 +297,6 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertTrue(is_fresh)
 
     def test_classify_daily_store_status_marks_new_listing_short_history_as_short_history(self) -> None:
-        path = history_store_path_for("DRAM")
         dataset = pd.DataFrame(
             {
                 "Date": pd.to_datetime(["2026-06-15", "2026-06-30"]),
@@ -309,10 +313,9 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
             self.assertEqual(status, "short_history")
 
-        self._with_replaced_store(path, dataset, assert_status)
+        self._with_isolated_store(dataset, assert_status, interval="1d")
 
     def test_classify_daily_store_status_does_not_mark_older_incomplete_history_as_new(self) -> None:
-        path = history_store_path_for("DRAM")
         dataset = pd.DataFrame(
             {
                 "Date": pd.to_datetime(["2026-04-02", "2026-06-30"]),
@@ -329,10 +332,9 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
             self.assertEqual(status, "missing")
 
-        self._with_replaced_store(path, dataset, assert_status)
+        self._with_isolated_store(dataset, assert_status, interval="1d")
 
     def test_classify_one_minute_store_status_marks_new_listing_short_history_as_short_history(self) -> None:
-        path = intraday_history_store_path_for("DRAM", "1m")
         dataset = pd.DataFrame(
             {
                 "Date": pd.to_datetime(["2026-06-15 09:30", "2026-06-30 16:00"]),
@@ -349,10 +351,9 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
             self.assertEqual(status, "short_history")
 
-        self._with_replaced_store(path, dataset, assert_status)
+        self._with_isolated_store(dataset, assert_status, interval="1m")
 
     def test_classify_one_minute_store_status_does_not_mark_older_incomplete_history_as_new(self) -> None:
-        path = intraday_history_store_path_for("DRAM", "1m")
         dataset = pd.DataFrame(
             {
                 "Date": pd.to_datetime(["2026-04-02 09:30", "2026-06-30 16:00"]),
@@ -369,7 +370,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
             self.assertEqual(status, "missing")
 
-        self._with_replaced_store(path, dataset, assert_status)
+        self._with_isolated_store(dataset, assert_status, interval="1m")
 
     def test_classify_daily_store_status_marks_complete_history_as_fresh(self) -> None:
         with patch("app.infrastructure.broker_market_data.is_daily_store_complete", return_value=True):
@@ -384,10 +385,6 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(status, "fresh")
 
     def test_refresh_history_store_skips_write_when_remote_has_no_newer_trading_day(self) -> None:
-        path = history_store_path_for("QQQ")
-        original_exists = path.exists()
-        original_bytes = path.read_bytes() if original_exists else None
-
         existing_dataset = pd.DataFrame(
             {
                 "Date": pd.to_datetime(["2026-04-01", "2026-04-02"]),
@@ -409,24 +406,32 @@ class MarketDataFreshnessTests(unittest.TestCase):
             }
         ).set_index("Date")
 
-        try:
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "historical" / "QQQ.parquet"
             path.parent.mkdir(parents=True, exist_ok=True)
             existing_dataset.to_parquet(path, index=False)
             before_bytes = path.read_bytes()
 
-            with patch("app.services.market_data.has_remote_market_access", return_value=True), \
-                    patch("app.services.market_data._download_daily_history_with_yfinance", return_value=overlapping_remote):
+            with (
+                patch(
+                    "app.services.market_data.history_store_path_for",
+                    return_value=path,
+                ),
+                patch(
+                    "app.services.market_data.has_remote_market_access",
+                    return_value=True,
+                ),
+                patch(
+                    "app.services.market_data._download_daily_history_with_yfinance",
+                    return_value=overlapping_remote,
+                ),
+            ):
                 refreshed_path = refresh_history_store("QQQ")
 
             self.assertEqual(refreshed_path, path)
             self.assertEqual(path.read_bytes(), before_bytes)
             stored = pd.read_parquet(path).sort_values("Date").reset_index(drop=True)
             pd.testing.assert_frame_equal(stored, existing_dataset)
-        finally:
-            if original_exists and original_bytes is not None:
-                path.write_bytes(original_bytes)
-            elif path.exists():
-                path.unlink()
 
     def test_fetch_history_repairs_missing_dividend_actions_from_adjustment_steps(self) -> None:
         broken_dataset = pd.DataFrame(

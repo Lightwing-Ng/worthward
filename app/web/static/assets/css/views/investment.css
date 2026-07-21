@@ -1,4 +1,4 @@
-/* Code version: v1.40.6 */
+/* Code version: v1.40.7 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -4034,10 +4034,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-history-table-shell.has-floating-pagination > .investment-history-table-scroll {
     scroll-padding-block-end: var(--investment-history-pagination-clearance);
-}
-
-.investment-history-table-shell.has-floating-pagination > .investment-history-table-scroll > .investment-history-table {
-    margin-bottom: var(--investment-history-pagination-clearance);
 }
 
 .investment-history-pagination {
