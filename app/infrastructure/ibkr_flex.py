@@ -1,7 +1,7 @@
 """
 IBKR Flex Web Service v3 client (reporting-only).
 
-Code version: v1.1.0
+Code version: v1.1.1
 
 This module implements read-only import via IBKR Flex Web Service version 3.
 It provides no trading, order placement, market data, realtime positions,
@@ -41,7 +41,6 @@ from __future__ import annotations
 import random
 import re
 import time
-from typing import Any
 import os
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -276,7 +275,6 @@ def send_flex_request(
         # Some responses may embed differently; allow minimal fallback but validate later
         resp_url = ""
 
-    redacted_resp = redact_flex_token_from_url(resp_url)
     if resp_url:
         _validate_https_ibkr_host(resp_url)
     return ref_code, resp_url

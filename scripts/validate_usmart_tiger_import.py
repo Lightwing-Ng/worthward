@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate uSMART (HK) and Tiger Trade PDF imports without writing the store.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from app.services.investment_import import (
+from app.services.investment_import import (  # noqa: E402  # The project root is added to sys.path immediately above.
     build_investment_payload_from_tigertrade_statement_pdfs,
     build_investment_payload_from_usmart_hk_statement_pdfs,
     merge_investment_payloads,

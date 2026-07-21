@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.9.0
+Code version: v0.9.1
 """
 
 from __future__ import annotations
@@ -27,13 +27,10 @@ import pandas as pd
 
 from app.core.broker_settings import (
     BrokerSettings,
-    has_ibkr_flex_activity_query_id,
-    has_ibkr_flex_token,
     has_longbridge_market_data_source,
     has_longbridge_credentials,
     load_broker_settings,
     normalize_longbridge_access_token,
-    resolve_ibkr_flex_lookback_days,
     uses_longbridge_cli_oauth,
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
@@ -76,6 +73,10 @@ _LONGBRIDGE_KEEPALIVE_STOP_EVENT: Event | None = None
 IBKR_CONNECTION_TIMEOUT_SECONDS = 8
 IBKR_AUTH_STATUS_RETRY_ATTEMPTS = 6
 IBKR_AUTH_STATUS_RETRY_DELAY_SECONDS = 4.0
+
+
+class OneMinuteStoreReadError(ValueError):
+    """Raised when an existing one-minute cache cannot be read safely."""
 
 
 # #region debug-point shared:reporter
@@ -1608,6 +1609,17 @@ def fetch_longbridge_daily_history(
     return dataset.reset_index(drop=True)
 
 
+def _read_existing_one_minute_store_for_refresh(path, ticker: str) -> pd.DataFrame:
+    """Read an existing cache or fail closed before any replacement can occur."""
+    try:
+        return normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
+    except Exception as exc:
+        raise OneMinuteStoreReadError(
+            f"Unable to read the existing 1-minute market store for {ticker}; "
+            "refusing to overwrite the cache."
+        ) from exc
+
+
 def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -> pd.DataFrame:
     ensure_market_store_dir()
     path = intraday_history_store_path_for(ticker, "1m")
@@ -1615,22 +1627,16 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
     since: datetime | None = None
     existing_df: pd.DataFrame | None = None
     if path.exists():
-        try:
-            existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
-            if not existing_df.empty:
-                since = pd.to_datetime(existing_df["Date"].max()).to_pydatetime()
-        except:
-            pass
+        existing_df = _read_existing_one_minute_store_for_refresh(path, ticker)
+        if not existing_df.empty:
+            since = pd.to_datetime(existing_df["Date"].max()).to_pydatetime()
 
     new_dataset = fetch_longbridge_one_minute_history(ticker, settings, since=since)
 
     with market_store_file_lock(path):
         latest_existing_df: pd.DataFrame | None = existing_df
         if path.exists():
-            try:
-                latest_existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
-            except Exception:
-                latest_existing_df = existing_df
+            latest_existing_df = _read_existing_one_minute_store_for_refresh(path, ticker)
 
         if latest_existing_df is not None and not latest_existing_df.empty:
             # Merge new and old

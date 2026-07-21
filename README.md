@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.52.3`
+Documentation version: `v2.52.6`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -136,6 +136,25 @@ The current `Settings` navigation includes:
 
 ## Data sources and local storage
 
+### Canonical ticker notation
+
+The project has one canonical ticker format for visible labels, URLs, cache
+keys, profiles, and market-history filenames. Normalize symbols at every input
+boundary before they reach those surfaces.
+
+| Market | Canonical format | Example | Boundary rule |
+| --- | --- | --- | --- |
+| United States | Bare symbol | `META` | Accept `META.US` only as an input compatibility alias. Normalize it to `META` before display or persistence. Longbridge receives `META.US` only in its outbound adapter call. |
+| Hong Kong | `.HK` suffix | `700.HK` | Retain the suffix to distinguish the market. Normalize leading-zero code variants to one canonical code. |
+| Shanghai | `.SH` suffix | `600519.SH` | Retain the suffix. The Yahoo adapter converts it to Yahoo's `.SS` request form only while making that remote call. |
+| Shenzhen | `.SZ` suffix | `000001.SZ` | Retain the suffix to distinguish the market. |
+
+Longbridge's `.US` notation and Yahoo's `.SS` notation are provider transport
+formats, not project ticker formats. Legacy aliases and raw import provenance
+may retain their original spelling for compatibility or auditability, but they
+must never become the canonical ticker shown to users or written as a new
+market-store key.
+
 ### Daily history
 
 - Stored in `market_store/historical/` as parquet
@@ -148,7 +167,8 @@ The current `Settings` navigation includes:
 
 - Stored in `market_store/historical/` as parquet
 - Preferred source is `yfinance`, using bounded recent-data windows supported by the free service
-- When `yfinance` is rate-limited or returns no usable bars, the same bounded request falls back to Yahoo Chart directly before the optional Longbridge provider
+- When `yfinance` returns no usable bars without an explicit rate-limit signal, the same bounded request falls back to Yahoo Chart directly before the optional Longbridge provider
+- An explicit Yahoo rate-limit signal stops further Yahoo transport retries; an optional Longbridge provider may still supply the requested bars
 - Falls back to Longbridge only after both `yfinance` windows fail and valid Longbridge credentials are configured
 - Persisted data is trimmed to the latest 6 months of trading days
 - Used when local `1m` data exists for the selected ticker
@@ -157,8 +177,12 @@ Longbridge is optional for every market-data view. Daily history, intraday chart
 and extended-hours comparisons use `yfinance` by default. When configured,
 Investment realtime quotes use Longbridge first for US pre-market, regular, and
 post-market sessions; unresolved quotes fall back to batched `yfinance` requests,
-which then retry missing tickers individually. Each returned quote identifies its
-provider, and a mixed response preserves that per-quote provenance.
+which make at most one rotating individual recovery request per poll. Investment
+polling and its server-side complete-batch cache use a 60-second interval. An
+explicit Yahoo rate limit pauses all yfinance requests for 5 minutes, then uses
+bounded exponential backoff up to 30 minutes for repeated limits. Each returned
+quote identifies its provider, and a mixed response preserves that per-quote
+provenance.
 
 ### Yahoo Finance proxy and TLS configuration
 
@@ -214,6 +238,12 @@ py -3.13 -m pip install --upgrade -r requirements.txt
 - `settings_store/search/search_cache.parquet` stores search-result caches
 - `settings_store/search/ticker_usage.json` stores ticker usage frequency
 - `settings_store/search/strategy_usage.json` stores strategy usage frequency
+
+Investment ticker identities prefer a valid provider name, then an exact local
+search-cache name, then a vetted standard-name fallback. A symbol-only provider
+response, including a bare-US alias mismatch such as `META.US` for `META`, is
+never treated as a company name or allowed to replace an existing non-placeholder
+profile name.
 
 ### Runtime-only local settings
 

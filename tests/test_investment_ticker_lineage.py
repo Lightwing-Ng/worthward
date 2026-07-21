@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.2.3
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -14,14 +14,22 @@ from app.infrastructure.storage import (
     investment_ticker_lineage_legacy_tickers,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
+    is_ticker_fallback_company_name,
     known_ticker_company_names_payload,
     market_ticker_store_aliases,
+    normalize_ticker,
     propagate_investment_lineage_identity_profiles,
     resolve_known_ticker_company_name,
 )
 
 
 class InvestmentTickerLineageTests(unittest.TestCase):
+    def test_canonical_ticker_format_strips_us_and_preserves_market_suffixes(self) -> None:
+        self.assertEqual(normalize_ticker("META.US"), "META")
+        self.assertEqual(normalize_ticker("0700.HK"), "700.HK")
+        self.assertEqual(normalize_ticker("600519.SH"), "600519.SH")
+        self.assertEqual(normalize_ticker("000001.SZ"), "000001.SZ")
+
     def test_sk_hynix_transition_prefers_requested_symbol_then_compatible_alias(self) -> None:
         self.assertEqual(market_ticker_store_aliases("SKHYV"), ["SKHYV", "SKHY"])
         self.assertEqual(market_ticker_store_aliases("SKHY"), ["SKHY", "SKHYV"])
@@ -70,6 +78,11 @@ class InvestmentTickerLineageTests(unittest.TestCase):
 
         self.assertEqual(aliases, ["BRK-B"])
 
+    def test_us_alias_symbol_names_remain_fallbacks_for_the_same_security(self) -> None:
+        self.assertTrue(is_ticker_fallback_company_name("META.US", "META"))
+        self.assertTrue(is_ticker_fallback_company_name("META", "META.US"))
+        self.assertFalse(is_ticker_fallback_company_name("Meta Platforms, Inc.", "META"))
+
     def test_spym_inherits_splg_identity_profile(self) -> None:
         ticker_profiles = {
             "SPLG.US": {
@@ -111,6 +124,20 @@ class InvestmentTickerLineageTests(unittest.TestCase):
             known_ticker_company_names_payload()["GOOGL.US"],
             "Alphabet Inc.",
         )
+
+    def test_known_ticker_company_names_cover_yfinance_placeholder_profiles(self) -> None:
+        expected_names = {
+            "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
+            "IBKR": "Interactive Brokers Group, Inc.",
+            "JEPQ": "JPMorgan Nasdaq Equity Premium Income ETF",
+            "META": "Meta Platforms, Inc.",
+        }
+        payload = known_ticker_company_names_payload()
+
+        for ticker, expected_name in expected_names.items():
+            with self.subTest(ticker=ticker):
+                self.assertEqual(resolve_known_ticker_company_name(ticker), expected_name)
+                self.assertEqual(payload[f"{ticker}.US"], expected_name)
 
     def test_known_ticker_company_names_cover_sgov(self) -> None:
         expected_name = "iShares 0-3 Month Treasury Bond ETF"

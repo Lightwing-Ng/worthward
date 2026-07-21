@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.7.4
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -441,9 +441,13 @@ def build_quote_profile_payload(ticker: str) -> dict[str, str | None]:
             _yfinance_failure_diagnostic(exc),
         )
         info = {}
+    provider_company_name = str(
+        info.get("longName") or info.get("shortName") or ""
+    ).strip()
+    if is_ticker_fallback_company_name(provider_company_name, normalized_ticker):
+        provider_company_name = ""
     company_name = (
-            info.get("longName")
-            or info.get("shortName")
+            provider_company_name
             or resolve_cached_search_company_name(normalized_ticker)
             or resolve_known_ticker_company_name(normalized_ticker)
             or normalized_ticker
@@ -615,9 +619,12 @@ def _fetch_quote_profile_for_scope(
             or (not force_refresh and not ticker_name_fallback)
             or not has_remote_market_access()
     ):
+        company_name = record.get("company_name") or normalized_ticker
+        if ticker_name_fallback and known_company_name:
+            company_name = known_company_name
         return QuoteProfile(
             ticker=record["ticker"],
-            company_name=record.get("company_name") or normalized_ticker,
+            company_name=company_name,
             website=record.get("website"),
             logo_url=resolve_logo_url_with_fallback(
                 record["ticker"],
@@ -636,6 +643,13 @@ def _fetch_quote_profile_for_scope(
         )
 
     payload = build_quote_profile_payload(normalized_ticker)
+    payload_company_name = str(payload.get("company_name") or "").strip()
+    if record and not ticker_name_fallback and is_ticker_fallback_company_name(
+            payload_company_name,
+            normalized_ticker,
+    ):
+        payload["company_name"] = record_company_name
+        payload["website"] = payload.get("website") or record.get("website")
     stored = upsert_profile_record(
         payload["ticker"],
         str(payload.get("company_name") or payload["ticker"]),

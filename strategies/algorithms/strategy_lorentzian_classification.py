@@ -6,12 +6,11 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
-import math
 
 import numpy as np
 import pandas as pd
@@ -93,8 +92,6 @@ def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
 def _adx(frame: pd.DataFrame, length: int) -> pd.Series:
     high = frame["High"]
     low = frame["Low"]
-    close = frame["Close"]
-
     up_move = high.diff()
     down_move = -low.diff()
     plus_dm = pd.Series(
@@ -595,15 +592,11 @@ class LorentzianClassificationStrategy(BaseStrategy):
 
         is_bearish_rate = yhat1.shift(1) > yhat1
         is_bullish_rate = yhat1.shift(1) < yhat1
-        was_bearish_rate = yhat1.shift(2) > yhat1.shift(1)
         was_bullish_rate = yhat1.shift(2) < yhat1.shift(1)
         is_bearish_change = (is_bearish_rate & was_bullish_rate).fillna(False)
-        is_bullish_change = (is_bullish_rate & was_bearish_rate).fillna(False)
-        is_bullish_cross_alert = ((yhat2 > yhat1) & (yhat2.shift(1) <= yhat1.shift(1))).fillna(False)
         is_bearish_cross_alert = ((yhat2 < yhat1) & (yhat2.shift(1) >= yhat1.shift(1))).fillna(False)
         is_bullish_smooth = (yhat2 >= yhat1).fillna(False)
         is_bearish_smooth = (yhat2 <= yhat1).fillna(False)
-        alert_bullish = is_bullish_cross_alert if use_kernel_smoothing else is_bullish_change
         alert_bearish = is_bearish_cross_alert if use_kernel_smoothing else is_bearish_change
         is_bullish = (
             is_bullish_smooth if use_kernel_smoothing else is_bullish_rate.fillna(False)

@@ -1,6 +1,52 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.17`
+Documentation version: `v1.86.20`
+
+## Investment standard names survive yfinance placeholder profiles on 21 Jul 2026
+
+- `EUV`, `IBKR`, `GOOGL`, `JEPQ`, and `META` now retain vetted standard names
+  when a local profile or yfinance fallback supplies only the ticker symbol.
+- Bare US symbols and `.US` aliases are one placeholder family. For example,
+  `META.US` is no longer accepted as a valid company name for `META`.
+- A degraded profile refresh cannot replace an existing non-placeholder name
+  with a symbol-only provider response. The correction is presentation-only;
+  it does not rewrite the user's profile, market, or investment data stores.
+- Python service/API tests and a browser test assert the final Holdings DOM
+  labels and their accessible `title` attributes.
+
+## Yahoo polling is rate-limit aware on 21 Jul 2026
+
+- Investment's yfinance-backed realtime path now polls once per minute, matching
+  the provider's one-minute bars, and batches up to `20` holdings per browser
+  request.
+- A complete realtime response is shared by the server for `60` seconds. If a
+  multi-ticker batch is malformed, only one missing ticker is retried per poll
+  and the retry rotates fairly across the unresolved set.
+- A Yahoo `Too Many Requests` response pauses every yfinance request routed
+  through the shared market-data service for 5 minutes. Repeated rate limits use
+  bounded 10-, 20-, then 30-minute backoff, preventing a Windows installation
+  without Longbridge from turning a temporary provider limit into a sustained
+  request storm.
+- The cache is not modified by rate-limit handling. Existing local daily and
+  intraday data remains available while the cooldown is active.
+
+## One-minute cache persistence and static quality gates hardened on 21 Jul 2026
+
+- Longbridge one-minute refreshes now fail closed when an existing local parquet
+  cache cannot be read. They do not discard the cache or call the atomic writer;
+  the caller receives a clear error and can preserve the original bytes for
+  investigation.
+- The same protection applies after the remote fetch if the local cache changed
+  and became unreadable before its locked merge. This avoids a race replacing a
+  user cache with an incomplete remote response.
+- The quality gate now runs the complete configured Ruff rule set, rather than
+  only interpreter-critical diagnostics. Existing unused imports and variables,
+  ambiguous identifiers, delayed imports, bare exception handling, and inline
+  statements were resolved before making the stricter gate mandatory.
+- Read-only local-history helpers were extracted from `app/web/runtime.py` into
+  `app/web/market_history.py`, with tests for common dates, union dates, alias
+  caches, and corrupt-cache fallbacks. No route, broker, ledger, or live-order
+  behavior changed.
 
 ## Investment extended-hours live pulse now follows Longbridge provenance on 21 Jul 2026
 

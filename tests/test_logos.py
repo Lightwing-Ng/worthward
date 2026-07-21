@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.6.1
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -403,6 +403,48 @@ class LogoServiceTests(unittest.TestCase):
 
         self.assertEqual(payload["company_name"], "Roundhill Memory ETF")
         self.assertEqual(payload["website"], "https://www.roundhillinvestments.com/etf/dram/")
+
+    def test_build_quote_profile_payload_replaces_yfinance_symbol_placeholders(self) -> None:
+        expected_names = {
+            "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
+            "IBKR": "Interactive Brokers Group, Inc.",
+            "JEPQ": "JPMorgan Nasdaq Equity Premium Income ETF",
+            "META": "Meta Platforms, Inc.",
+        }
+
+        for ticker, expected_name in expected_names.items():
+            with self.subTest(ticker=ticker), \
+                    patch(
+                        "app.services.logos._load_yfinance_ticker_info",
+                        return_value={"longName": ticker},
+                    ), \
+                    patch(
+                        "app.services.logos.load_latest_search_cache_item_for_symbol",
+                        return_value={"symbol": ticker, "name": ticker},
+                    ):
+                payload = build_quote_profile_payload(ticker)
+
+            self.assertEqual(payload["company_name"], expected_name)
+
+    def test_forced_profile_refresh_preserves_a_cached_name_when_yfinance_returns_a_symbol(self) -> None:
+        record = {
+            "ticker": "SNDK",
+            "company_name": "SanDisk Corporation",
+            "website": "https://www.sandisk.com",
+            "updated_at": "2026-07-21T00:00:00+00:00",
+        }
+        with (
+            patch("app.services.logos.load_profile_record", return_value=record),
+            patch("app.services.logos.has_remote_market_access", return_value=True),
+            patch("app.services.logos._load_yfinance_ticker_info", return_value={"longName": "SNDK"}),
+            patch("app.services.logos.load_latest_search_cache_item_for_symbol", return_value=None),
+            patch("app.services.logos.upsert_profile_record", return_value=record) as upsert_mock,
+            patch("app.services.logos.resolve_logo_url_with_fallback", return_value="/market-store/logos/SNDK.svg"),
+        ):
+            profile = fetch_quote_profile("SNDK", force_refresh=True)
+
+        self.assertEqual(profile.company_name, "SanDisk Corporation")
+        self.assertEqual(upsert_mock.call_args.args[1], "SanDisk Corporation")
 
     def test_build_quote_profile_payload_uses_bare_symbol_for_us_broker_tickers(self) -> None:
         with patch("app.services.logos._load_yfinance_ticker_info") as info_mock:

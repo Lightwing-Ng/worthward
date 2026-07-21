@@ -1,12 +1,11 @@
 """
 Optimized SuperTrend AI strategy with vectorized factor clustering.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
 
-import math
 
 import numpy as np
 import pandas as pd

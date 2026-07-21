@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.17.4
+Code version: v0.18.0
 """
 
 from __future__ import annotations
@@ -60,9 +60,13 @@ from app.services.date_constraints import nyse_market_session_state
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
 YFINANCE_DOWNLOAD_LOCK = Lock()
-YFINANCE_REALTIME_RATE_LIMIT_LOCK = Lock()
-YFINANCE_REALTIME_RATE_LIMIT_COOLDOWN_SECONDS = 60.0
-_yfinance_realtime_rate_limit_until = 0.0
+YFINANCE_RATE_LIMIT_LOCK = Lock()
+YFINANCE_RATE_LIMIT_BASE_COOLDOWN_SECONDS = 300.0
+YFINANCE_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 1_800.0
+YFINANCE_REALTIME_MAX_INDIVIDUAL_RECOVERY_TICKERS = 1
+_yfinance_rate_limit_until = 0.0
+_yfinance_rate_limit_failures = 0
+_yfinance_realtime_recovery_cursor = 0
 INTRADAY_INTERVALS = {"1m"}
 YFINANCE_INTRADAY_FALLBACK_DAYS = 30
 YFINANCE_INTRADAY_FALLBACK_WINDOW_DAYS = 7
@@ -114,18 +118,56 @@ def _is_yfinance_rate_limit_error(error: BaseException) -> bool:
     return False
 
 
-def _activate_yfinance_realtime_rate_limit_cooldown() -> None:
-    global _yfinance_realtime_rate_limit_until
-    with YFINANCE_REALTIME_RATE_LIMIT_LOCK:
-        _yfinance_realtime_rate_limit_until = max(
-            _yfinance_realtime_rate_limit_until,
-            monotonic() + YFINANCE_REALTIME_RATE_LIMIT_COOLDOWN_SECONDS,
+def _activate_yfinance_rate_limit_cooldown() -> float:
+    """Pause Yahoo requests with bounded exponential backoff after a rate limit."""
+    global _yfinance_rate_limit_failures, _yfinance_rate_limit_until
+    with YFINANCE_RATE_LIMIT_LOCK:
+        now = monotonic()
+        if now < _yfinance_rate_limit_until:
+            return _yfinance_rate_limit_until - now
+        _yfinance_rate_limit_failures += 1
+        exponent = min(_yfinance_rate_limit_failures - 1, 16)
+        cooldown_seconds = min(
+            YFINANCE_RATE_LIMIT_BASE_COOLDOWN_SECONDS * (2 ** exponent),
+            YFINANCE_RATE_LIMIT_MAX_COOLDOWN_SECONDS,
         )
+        _yfinance_rate_limit_until = now + cooldown_seconds
+        return cooldown_seconds
 
 
-def _is_yfinance_realtime_rate_limit_cooling_down() -> bool:
-    with YFINANCE_REALTIME_RATE_LIMIT_LOCK:
-        return monotonic() < _yfinance_realtime_rate_limit_until
+def _reset_yfinance_rate_limit_backoff() -> None:
+    """Clear accumulated rate-limit backoff after a successful Yahoo response."""
+    global _yfinance_rate_limit_failures, _yfinance_rate_limit_until
+    with YFINANCE_RATE_LIMIT_LOCK:
+        _yfinance_rate_limit_failures = 0
+        _yfinance_rate_limit_until = 0.0
+
+
+def _yfinance_rate_limit_cooldown_remaining_seconds() -> int:
+    """Return the remaining global Yahoo cooldown rounded up to a whole second."""
+    with YFINANCE_RATE_LIMIT_LOCK:
+        return max(0, math.ceil(_yfinance_rate_limit_until - monotonic()))
+
+
+def _is_yfinance_rate_limit_cooling_down() -> bool:
+    return _yfinance_rate_limit_cooldown_remaining_seconds() > 0
+
+
+def _select_yfinance_realtime_recovery_tickers(tickers: list[str]) -> list[str]:
+    """Rotate a bounded set of individual recovery requests across tickers."""
+    if len(tickers) <= YFINANCE_REALTIME_MAX_INDIVIDUAL_RECOVERY_TICKERS:
+        return tickers
+    global _yfinance_realtime_recovery_cursor
+    with YFINANCE_RATE_LIMIT_LOCK:
+        start_index = _yfinance_realtime_recovery_cursor % len(tickers)
+        selected = [
+            tickers[(start_index + offset) % len(tickers)]
+            for offset in range(YFINANCE_REALTIME_MAX_INDIVIDUAL_RECOVERY_TICKERS)
+        ]
+        _yfinance_realtime_recovery_cursor = (
+            start_index + YFINANCE_REALTIME_MAX_INDIVIDUAL_RECOVERY_TICKERS
+        ) % len(tickers)
+    return selected
 
 
 def _sanitize_network_diagnostic(value: object) -> str:
@@ -219,6 +261,12 @@ def _download_daily_history_with_yfinance(
     """
     if is_remote_market_access_disabled():
         raise YfinanceDownloadError("Remote market access is disabled for this process.")
+    cooldown_remaining = _yfinance_rate_limit_cooldown_remaining_seconds()
+    if cooldown_remaining:
+        raise YfinanceDownloadError(
+            "Yahoo requests are temporarily paused for "
+            f"{cooldown_remaining} seconds after a rate limit response."
+        )
     lookup_ticker: str | list[str]
     if isinstance(ticker, list):
         lookup_ticker = [yfinance_lookup_symbol(value) for value in ticker]
@@ -256,9 +304,16 @@ def _download_daily_history_with_yfinance(
                         log_value=log_buffer.getvalue(),
                         exception=exc,
                     )
-                    raise YfinanceDownloadError(
+                    error = YfinanceDownloadError(
                         f"yfinance request for {lookup_ticker} failed: {detail}"
-                    ) from exc
+                    )
+                    if _is_yfinance_rate_limit_error(error):
+                        cooldown_seconds = _activate_yfinance_rate_limit_cooldown()
+                        error = YfinanceDownloadError(
+                            f"{error} Yahoo requests are paused for at least "
+                            f"{math.ceil(cooldown_seconds)} seconds."
+                        )
+                    raise error from exc
         finally:
             YFINANCE_LOGGER.removeHandler(diagnostic_handler)
             diagnostic_handler.close()
@@ -269,9 +324,17 @@ def _download_daily_history_with_yfinance(
                 stdout_value=stdout_buffer.getvalue(),
                 log_value=log_buffer.getvalue(),
             )
-            raise YfinanceDownloadError(
+            error = YfinanceDownloadError(
                 f"yfinance returned no data for {lookup_ticker}: {detail}"
             )
+            if _is_yfinance_rate_limit_error(error):
+                cooldown_seconds = _activate_yfinance_rate_limit_cooldown()
+                error = YfinanceDownloadError(
+                    f"{error} Yahoo requests are paused for at least "
+                    f"{math.ceil(cooldown_seconds)} seconds."
+                )
+            raise error
+        _reset_yfinance_rate_limit_backoff()
         return dataset
 
 
@@ -384,6 +447,8 @@ def _download_recent_one_minute_history_with_yfinance(
                 end=window_end,
             )
         except Exception as exc:
+            if _is_yfinance_rate_limit_error(exc):
+                raise
             LOGGER.warning(
                 "Unable to download 1-minute yfinance window for %s between %s and %s: %s",
                 ticker,
@@ -443,6 +508,8 @@ def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
             )
         except Exception as exc:
             yfinance_errors.append((days, exc))
+            if _is_yfinance_rate_limit_error(exc):
+                break
 
     longbridge_error: Exception | None = None
     if _load_longbridge_market_settings() is not None:
@@ -1055,12 +1122,13 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
 
 def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
     """
-    Fetch realtime quotes in one batch, then retry missing tickers individually.
+    Fetch realtime quotes in one batch, then recover one missing ticker per poll.
 
     yfinance can return a partial or differently shaped batch on some platforms.
-    Per-ticker recovery prevents one malformed Windows batch from appearing as
-    many unrelated quote failures. An explicit Yahoo rate limit skips individual
-    recovery and starts a short cooldown so polling cannot amplify the limit.
+    A rotating, bounded recovery prevents one malformed Windows batch from
+    appearing as many unrelated quote failures without turning a browser poll
+    into per-ticker request fan-out. An explicit Yahoo rate limit skips recovery
+    and starts bounded backoff so polling cannot amplify the limit.
     """
     if not tickers:
         return []
@@ -1069,7 +1137,7 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
     ))
     if not normalized_list:
         return []
-    if _is_yfinance_realtime_rate_limit_cooling_down():
+    if _is_yfinance_rate_limit_cooling_down():
         return []
     results: list[dict[str, object]] = []
     batch_error: Exception | None = None
@@ -1140,21 +1208,22 @@ def fetch_yfinance_realtime_quotes(tickers: list[str]) -> list[dict[str, object]
                 continue
     except Exception as exc:  # noqa: BLE001
         if _is_yfinance_rate_limit_error(exc):
-            _activate_yfinance_realtime_rate_limit_cooldown()
+            _activate_yfinance_rate_limit_cooldown()
             LOGGER.debug("Yahoo rate-limited batched realtime quotes; recovery is cooling down.")
             return results
         batch_error = exc
 
     resolved_tickers = {str(item.get("ticker") or "") for item in results}
     recovery_failures: list[tuple[str, Exception]] = []
-    for normalized_ticker in normalized_list:
-        if normalized_ticker in resolved_tickers:
-            continue
+    unresolved_tickers = [
+        ticker for ticker in normalized_list if ticker not in resolved_tickers
+    ]
+    for normalized_ticker in _select_yfinance_realtime_recovery_tickers(unresolved_tickers):
         try:
             results.append(fetch_yfinance_realtime_quote(normalized_ticker))
         except Exception as exc:  # noqa: BLE001
             if _is_yfinance_rate_limit_error(exc):
-                _activate_yfinance_realtime_rate_limit_cooldown()
+                _activate_yfinance_rate_limit_cooldown()
                 LOGGER.debug(
                     "Yahoo rate-limited realtime quote recovery at %s; remaining requests are cooling down.",
                     normalized_ticker,
@@ -1253,6 +1322,24 @@ def _download_daily_history_with_fallback(
             return dataset
         except Exception as exc:
             yfinance_errors.append((candidate_period, exc))
+            if _is_yfinance_rate_limit_error(exc):
+                break
+
+    if yfinance_errors and _is_yfinance_rate_limit_error(yfinance_errors[-1][1]):
+        rate_limit_error = yfinance_errors[-1][1]
+        settings = _load_longbridge_market_settings()
+        if settings is not None:
+            try:
+                return _download_daily_history_with_longbridge(ticker, start=start)
+            except Exception as longbridge_error:
+                raise ValueError(
+                    f"Unable to fetch 1-day market data for {ticker}; Yahoo requests are paused after a rate limit. "
+                    f"Optional Longbridge fallback also failed: {longbridge_error}"
+                ) from longbridge_error
+        raise ValueError(
+            f"Unable to fetch 1-day market data for {ticker}; Yahoo requests are paused after a rate limit. "
+            "Optional Longbridge fallback is not configured."
+        ) from rate_limit_error
 
     yahoo_chart_errors: list[tuple[str | None, Exception]] = []
     lookup_ticker = yfinance_lookup_symbol(ticker)
@@ -1656,6 +1743,8 @@ def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
             )
         except Exception as exc:
             yfinance_errors.append((days, exc))
+            if _is_yfinance_rate_limit_error(exc):
+                break
 
     longbridge_error: Exception | None = None
     settings = _load_longbridge_market_settings()

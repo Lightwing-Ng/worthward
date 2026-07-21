@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.12`
+Documentation version: `v1.3.16`
 
 ## Supported commands
 
@@ -32,7 +32,7 @@ Run the complete quality gate:
 
 The complete gate runs, in order:
 
-1. Ruff critical-error checks.
+1. Full Ruff static checks for `app`, `strategies`, `tests`, and `scripts`.
 2. JavaScript syntax checks.
 3. Python tests with branch coverage.
 4. Node unit tests.
@@ -42,7 +42,7 @@ The complete gate runs, in order:
 
 Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `53.3%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,341` covered of `18,223` statements).
+- Total combined statement and branch coverage: `53.5%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,407` covered of `18,274` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
@@ -62,12 +62,12 @@ Priority coverage gaps:
 
 Current suite inventory remeasured on 21 Jul 2026:
 
-- 361 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
-  full Python run reports 355 passed, 6 skipped, and 7 subtests passed.
+- 378 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
+  full Python run reports 372 passed, 6 skipped, and 15 subtests passed.
 - 42 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority coverage.
-- 66 Playwright test cases listed by `npx playwright test --list`, generated
-  from 58 explicit top-level `test(...)` declarations with parameterized
+- 67 Playwright test cases listed by `npx playwright test --list`, generated
+  from 59 explicit top-level `test(...)` declarations with parameterized
   viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
@@ -78,7 +78,17 @@ Current suite inventory remeasured on 21 Jul 2026:
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers and `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string).
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
+- `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
+- `tests/test_broker_market_data.py`: Longbridge normalization and fail-closed one-minute cache persistence safeguards.
 - `tests/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
+- `tests/test_investment_ticker_lineage.py`, `tests/test_logos.py`, and
+  Investment Playwright coverage: standard-name fallbacks, bare-US alias
+  placeholders, yfinance symbol-only profile responses, and rendered Holdings
+  identity labels.
+- Ticker-format regressions assert that canonical persistence and presentation
+  use bare US symbols, retain `.HK`, `.SH`, and `.SZ` market suffixes, and
+  restrict Longbridge's `.US` and Yahoo's `.SS` spellings to their adapter
+  boundaries.
 - `tests/e2e/`: Playwright browser tests and inert fixtures.
 
 All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
@@ -104,6 +114,12 @@ DRAM parquet file and then attempt to restore it. This keeps the user's running
 application from racing with pytest and makes repeated full-suite coverage
 measurements deterministic.
 
+Longbridge one-minute-store tests also prove that an unreadable existing cache,
+including a cache that becomes unreadable while a refresh is in flight, raises
+without calling the atomic parquet writer. Tests compare the isolated file's
+exact bytes before and after the attempt and compare valid cached frames with
+`pd.testing.assert_frame_equal`.
+
 Flask integration tests that exercise investment import or transaction loading patch both `INVESTMENT_STORE_PATH` and `INVESTMENT_TRANSACTIONS_CACHE_PATH` to a per-test temporary directory. A regression assertion compares the real parquet bytes before and after a synthetic IBKR import.
 
 ## Yahoo transport isolation
@@ -118,6 +134,10 @@ remote endpoint. Temporary PEM files and mocked yfinance downloads cover:
 - certifi public roots remaining present in the combined CA bundle;
 - `verify=True` as the unconfigured default;
 - reuse of one shared curl_cffi session by the yfinance fallback;
+- global 5-minute initial Yahoo rate-limit cooldown with bounded exponential
+  backoff through 30 minutes, including a no-transport assertion while paused;
+- one batched Investment quote request per minute, with one rotating individual
+  recovery ticker rather than per-ticker polling fan-out;
 - reuse of one proxy-aware, verified urllib opener by Yahoo Chart, logo, and
   Network self-check requests without changing broker or SMTP transports;
 - actionable certificate-failure diagnostics without credentials or query

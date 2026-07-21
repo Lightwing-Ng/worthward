@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.6.3
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -204,8 +204,12 @@ def market_ticker_store_aliases(ticker: str) -> list[str]:
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "AMD": "Advanced Micro Devices, Inc.",
     "DRAM": "Roundhill Memory ETF",
+    "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
     "GOOG": "Alphabet Inc.",
     "GOOGL": "Alphabet Inc.",
+    "IBKR": "Interactive Brokers Group, Inc.",
+    "JEPQ": "JPMorgan Nasdaq Equity Premium Income ETF",
+    "META": "Meta Platforms, Inc.",
     "QQQI": "NEOS Nasdaq-100(R) High Income ETF",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
     "SGOV": "iShares 0-3 Month Treasury Bond ETF",
@@ -299,8 +303,12 @@ def is_ticker_fallback_company_name(company_name: str, ticker: str) -> bool:
     normalized_name = str(company_name or "").strip().upper()
     if not normalized_name or not normalized_ticker:
         return True
-    bare_ticker = normalized_ticker[:-3] if normalized_ticker.endswith(".US") else normalized_ticker
-    return normalized_name in {normalized_ticker, bare_ticker}
+    fallback_names = {normalized_ticker}
+    if normalized_ticker.endswith(".US"):
+        fallback_names.add(normalized_ticker[:-3])
+    elif "." not in normalized_ticker:
+        fallback_names.add(f"{normalized_ticker}.US")
+    return normalized_name in fallback_names
 
 
 def propagate_investment_lineage_identity_profiles(

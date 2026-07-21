@@ -1,7 +1,9 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.91.0
+ * Code version: v1.93.0
+ * - Fixed: US-suffixed ticker placeholders now resolve through the same standard-name fallback as their bare ticker aliases.
+ * - Changed: Investment realtime polling now uses the one-minute cadence of its yfinance source, reducing free-provider rate-limit pressure while preserving live session updates.
  * - Fixed: Stock-details live markers now retain their horizontal endpoint while using the eligible realtime quote price for the vertical coordinate.
  * - Added: Stock-details metrics share the live-marker pulse state; US extended-hours pulses require a Longbridge quote and remain off for yfinance fallback quotes.
  * - Fixed: Realtime chart points now preserve Longbridge, yfinance, or mixed provider provenance.
@@ -508,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
     const INVESTMENT_HISTORY_PAGE_SIZE = 100;
     const INVESTMENT_HISTORY_MIN_VISIBLE_ROWS = 2;
-    const INVESTMENT_REALTIME_QUOTE_POLL_MS = 10000;
+    const INVESTMENT_REALTIME_QUOTE_POLL_MS = 60000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
@@ -1711,7 +1713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean),
         ));
         if (!normalizedTickers.length) return [];
-        const BATCH_SIZE = 8;
+        const BATCH_SIZE = 20;
         const batches = [];
         for (let i = 0; i < normalizedTickers.length; i += BATCH_SIZE) {
             batches.push(normalizedTickers.slice(i, i + BATCH_SIZE));
@@ -5506,10 +5508,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayTicker = formatInvestmentTickerForDisplay(ticker);
         const normalizedName = String(companyName || '').trim().toUpperCase();
         if (!normalizedName) return true;
-        return (
-            normalizedName === normalizedTicker.toUpperCase()
-            || normalizedName === displayTicker.toUpperCase()
-        );
+        const fallbackNames = new Set([normalizedTicker, displayTicker]);
+        if (normalizedTicker.endsWith('.US')) {
+            fallbackNames.add(normalizedTicker.slice(0, -3));
+        } else if (!normalizedTicker.includes('.')) {
+            fallbackNames.add(`${normalizedTicker}.US`);
+        }
+        return fallbackNames.has(normalizedName);
     }
 
     function resolveKnownInvestmentTickerCompanyName(ticker) {

@@ -714,13 +714,9 @@ class LorentzianClassificationStrategy(BaseStrategy):
 
         is_bearish_rate = (yhat1.shift(1) > yhat1).fillna(False)
         is_bullish_rate = (yhat1.shift(1) < yhat1).fillna(False)
-        was_bearish_rate = (yhat1.shift(2) > yhat1.shift(1)).fillna(False)
         was_bullish_rate = (yhat1.shift(2) < yhat1.shift(1)).fillna(False)
 
         is_bearish_change = (is_bearish_rate & was_bullish_rate).fillna(False)
-        is_bullish_change = (is_bullish_rate & was_bearish_rate).fillna(False)
-
-        is_bullish_cross_alert = ((yhat2 > yhat1) & (yhat2.shift(1) <= yhat1.shift(1))).fillna(False)
         is_bearish_cross_alert = ((yhat2 < yhat1) & (yhat2.shift(1) >= yhat1.shift(1))).fillna(False)
 
         is_bullish_smooth = (yhat2 >= yhat1).fillna(False)

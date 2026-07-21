@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.16.0
+Code version: v0.18.0
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.infrastructure.connectivity import has_remote_market_access
 from app.services.date_constraints import nyse_market_session_state
 from app.services.market_data import (
     YfinanceDownloadError,
+    _activate_yfinance_rate_limit_cooldown,
     _download_daily_history_with_yfinance,
     _download_daily_history_with_fallback,
     classify_hk_equity_session,
@@ -48,8 +49,17 @@ from app.services.market_data import (
     refresh_history_store,
     refresh_one_minute_store,
     resolve_compare_overnight_tickers,
+    yfinance_lookup_symbol,
 )
 from tests.factories.market import close_frame_for_ticker, market_frame, ohlc_frame_for_dates, quote_profile_stub
+
+
+class TickerSymbolBoundaryTests(unittest.TestCase):
+    def test_yfinance_uses_provider_suffixes_only_for_its_outbound_lookup(self) -> None:
+        self.assertEqual(yfinance_lookup_symbol("META.US"), "META")
+        self.assertEqual(yfinance_lookup_symbol("600519.SH"), "600519.SS")
+        self.assertEqual(yfinance_lookup_symbol("700.HK"), "0700.HK")
+        self.assertEqual(yfinance_lookup_symbol("000001.SZ"), "000001.SZ")
 
 
 class MarketSessionClassificationTests(unittest.TestCase):
@@ -848,7 +858,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(result.source, "yfinance_7d")
         yfinance_mock.assert_called_once_with("QQQ", days=7)
 
-    def test_realtime_quote_batch_retries_each_ticker_after_batch_failure(self) -> None:
+    def test_realtime_quote_batch_rotates_one_individual_recovery_after_batch_failure(self) -> None:
         def fake_download(tickers, **kwargs):
             del kwargs
             if isinstance(tickers, list):
@@ -856,16 +866,23 @@ class MarketDataFreshnessTests(unittest.TestCase):
             return market_frame(str(tickers), intraday=True)
 
         with (
+            patch("app.services.market_data._yfinance_realtime_recovery_cursor", 0),
             patch(
                 "app.services.market_data._download_daily_history_with_yfinance",
                 side_effect=fake_download,
             ) as download_mock,
             patch("app.services.market_data.LOGGER.warning") as warning_mock,
         ):
-            quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
+            first_quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
+            second_quotes = fetch_yfinance_realtime_quotes(["QQQ", "AAPL"])
 
-        self.assertEqual([quote["ticker"] for quote in quotes], ["QQQ", "AAPL"])
-        self.assertEqual(download_mock.call_count, 3)
+        self.assertEqual([quote["ticker"] for quote in first_quotes], ["QQQ"])
+        self.assertEqual([quote["ticker"] for quote in second_quotes], ["AAPL"])
+        self.assertEqual(download_mock.call_count, 4)
+        self.assertEqual(
+            [call.args[0] for call in download_mock.call_args_list],
+            [["QQQ", "AAPL"], "QQQ", ["QQQ", "AAPL"], "AAPL"],
+        )
         warning_mock.assert_not_called()
 
     def test_realtime_quote_batch_rate_limit_skips_individual_retries_and_cools_down(self) -> None:
@@ -874,7 +891,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
         )
 
         with (
-            patch("app.services.market_data._yfinance_realtime_rate_limit_until", 0.0),
+            patch("app.services.market_data._yfinance_rate_limit_until", 0.0),
+            patch("app.services.market_data._yfinance_rate_limit_failures", 0),
             patch(
                 "app.services.market_data._download_daily_history_with_yfinance",
                 side_effect=rate_limit_error,
@@ -888,6 +906,50 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(second_quotes, [])
         download_mock.assert_called_once()
         warning_mock.assert_not_called()
+
+    def test_yfinance_rate_limit_backoff_doubles_and_is_bounded(self) -> None:
+        with (
+            patch("app.services.market_data._yfinance_rate_limit_until", 0.0),
+            patch("app.services.market_data._yfinance_rate_limit_failures", 0),
+            patch("app.services.market_data.monotonic", side_effect=[100.0, 400.0, 1_000.0, 2_200.0]),
+        ):
+            first_cooldown = _activate_yfinance_rate_limit_cooldown()
+            second_cooldown = _activate_yfinance_rate_limit_cooldown()
+            third_cooldown = _activate_yfinance_rate_limit_cooldown()
+            fourth_cooldown = _activate_yfinance_rate_limit_cooldown()
+
+        self.assertEqual(first_cooldown, 300.0)
+        self.assertEqual(second_cooldown, 600.0)
+        self.assertEqual(third_cooldown, 1_200.0)
+        self.assertEqual(fourth_cooldown, 1_800.0)
+
+    def test_yfinance_rate_limit_cooldown_blocks_the_transport_before_another_request(self) -> None:
+        with (
+            patch("app.services.market_data._yfinance_rate_limit_until", 160.0),
+            patch("app.services.market_data.monotonic", return_value=100.0),
+            patch("app.services.market_data.yf.download") as download_mock,
+        ):
+            with self.assertRaisesRegex(YfinanceDownloadError, "temporarily paused"):
+                _download_daily_history_with_yfinance("QQQ", period="1d")
+
+        download_mock.assert_not_called()
+
+    def test_daily_rate_limit_skips_all_yahoo_fallback_transport_retries(self) -> None:
+        rate_limit_error = YfinanceDownloadError("Too Many Requests. Rate limited.")
+
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=rate_limit_error,
+            ) as yfinance_mock,
+            patch("app.services.market_data.download_yahoo_chart_daily_history") as chart_mock,
+            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+        ):
+            with self.assertRaisesRegex(ValueError, "requests are paused"):
+                _download_daily_history_with_fallback("QQQ", period="max")
+
+        yfinance_mock.assert_called_once()
+        chart_mock.assert_not_called()
 
     def test_longbridge_realtime_quotes_select_pre_market_price(self) -> None:
         settings = BrokerSettings(
@@ -1088,6 +1150,26 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(quote_mock.call_count, 2)
         self.assertEqual(second.get_json()["count"], 2)
+
+    def test_realtime_quote_endpoint_reuses_a_complete_batch_for_one_minute(self) -> None:
+        qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}
+        aapl_quote = {"ticker": "AAPL", "price": 200.0, "source": "yfinance"}
+
+        with (
+            patch("app.web.runtime.fetch_longbridge_realtime_quotes", return_value=[]) as longbridge_mock,
+            patch(
+                "app.web.runtime.fetch_yfinance_realtime_quotes",
+                return_value=[qqq_quote, aapl_quote],
+            ) as yfinance_mock,
+        ):
+            client = create_app().test_client()
+            first = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
+            second = client.get("/api/investment/realtime-quotes?ticker=QQQ&ticker=AAPL")
+
+        self.assertEqual(first.get_json()["quotes"], [qqq_quote, aapl_quote])
+        self.assertEqual(second.get_json()["quotes"], [qqq_quote, aapl_quote])
+        longbridge_mock.assert_called_once()
+        yfinance_mock.assert_called_once_with(["QQQ", "AAPL"])
 
     def test_realtime_quote_endpoint_prefers_longbridge_then_falls_back_per_ticker(self) -> None:
         longbridge_quote = {"ticker": "QQQ", "price": 100.0, "source": "longbridge"}

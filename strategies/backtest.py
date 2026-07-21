@@ -1,7 +1,7 @@
 """
 Single-ticker long-only backtest engine.
 
-Code version: v0.3.2
+Code version: v0.3.3
 """
 
 from __future__ import annotations
@@ -62,8 +62,6 @@ def _build_win_rate_trade_pairs(
         return _build_trade_pairs(metric_trades)
 
     last_side = str(metric_trades[-1].get("side", ""))
-    added_close_trade = False
-
     # 1. Handle unclosed Long positions (Last was Buy)
     if last_side == "Buy" and open_shares > 0:
         entry_price = float(metric_trades[-1].get("price", 0.0))
@@ -83,7 +81,6 @@ def _build_win_rate_trade_pairs(
             "equity": round(current_cash, 4),
             "_virtual_close": True,
         })
-        added_close_trade = True
     # 2. Handle unclosed Short positions (Last was Sell)
     # Note: Currently the backtester is primarily long-only, but this logic
     # ensures that if a Short strategy is implemented, the win rate counts it.
@@ -105,7 +102,6 @@ def _build_win_rate_trade_pairs(
             "equity": round(current_cash, 4),
             "_virtual_close": True,
         })
-        added_close_trade = True
 
     return _build_trade_pairs(metric_trades)
 
@@ -369,9 +365,11 @@ def run_single_ticker_backtest(
                 # Do NOT allow entry short in long-only mode
         else:
             if buy_signal and pending_order is None:
-                if shares <= 0: pending_order = "buy"
+                if shares <= 0:
+                    pending_order = "buy"
             elif sell_signal and pending_order is None:
-                if shares > 0: pending_order = "sell"
+                if shares > 0:
+                    pending_order = "sell"
 
         equity_points.append(cash + (shares * close_price))
 

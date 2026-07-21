@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.25.1
+Code version: v0.27.0
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from io import BytesIO
 from pathlib import Path
@@ -22,8 +22,6 @@ import hashlib
 import pandas as pd
 from flask import g, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for, send_file
 from openpyxl import Workbook, load_workbook
-
-LOGGER = logging.getLogger(__name__)
 
 from app.core.backtest_settings import load_backtest_execution_mode, save_backtest_execution_mode
 from app.core.cash_equivalent_settings import (
@@ -151,32 +149,6 @@ from app.services.investment_import import (
     normalize_investment_payload_tickers,
 )
 
-FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
-    "frontend-fetch-aborts.env",
-    "frontend-fetch-aborts",
-)
-PROJECT_SOURCE_URL = "https://github.com/Lightwing-Ng/compareStocks"
-PROJECT_DISPLAY_URL = PROJECT_SOURCE_URL.removeprefix("https://").removeprefix("http://")
-
-
-def report_fetch_abort_debug_event(
-    hypothesis_id: str,
-    location: str,
-    msg: str,
-    data: dict[str, Any] | None = None,
-    run_id: str = "post-fix",
-) -> None:
-    # #region debug-point E:backend-fetch-abort
-    post_debug_event(
-        FETCH_ABORT_DEBUG_CONFIG,
-        hypothesis_id=hypothesis_id,
-        location=location,
-        msg=msg,
-        data=data,
-        run_id=run_id,
-        timeout_seconds=0.5,
-    )
-    # #endregion
 from app.services.live_trading import (
     load_longbridge_account_balances,
     load_longbridge_account_label,
@@ -193,7 +165,6 @@ from app.services.market_data import (
     fetch_history,
     fetch_longbridge_realtime_quotes,
     fetch_one_minute_history_for_trading_date,
-    fetch_yfinance_realtime_quote,
     fetch_yfinance_realtime_quotes,
     has_compare_overnight_market_data_source,
     infer_ticker_market,
@@ -275,9 +246,6 @@ from app.web.navigation import (
     LEGACY_VIEW_ALIASES,
     MAX_TICKERS,
     MIN_TICKERS,
-    SUPPORTED_SETTINGS_SECTIONS,
-    SUPPORTED_TRADE_SECTIONS,
-    SUPPORTED_VIEWS,
     VIEW_PATHS,
     build_settings_path,
     build_settings_url,
@@ -289,11 +257,44 @@ from app.web.navigation import (
     normalize_trade_section,
     normalize_view_name,
 )
+from app.web.market_history import (
+    align_datasets_on_common_dates,
+    build_supported_periods_for_history_store,
+    extract_union_dates,
+)
+
+LOGGER = logging.getLogger(__name__)
+FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
+    "frontend-fetch-aborts.env",
+    "frontend-fetch-aborts",
+)
+PROJECT_SOURCE_URL = "https://github.com/Lightwing-Ng/compareStocks"
+PROJECT_DISPLAY_URL = PROJECT_SOURCE_URL.removeprefix("https://").removeprefix("http://")
+
+
+def report_fetch_abort_debug_event(
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict[str, Any] | None = None,
+    run_id: str = "post-fix",
+) -> None:
+    # #region debug-point E:backend-fetch-abort
+    post_debug_event(
+        FETCH_ABORT_DEBUG_CONFIG,
+        hypothesis_id=hypothesis_id,
+        location=location,
+        msg=msg,
+        data=data,
+        run_id=run_id,
+        timeout_seconds=0.5,
+    )
+    # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
 INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v2"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
-INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 15.0
+INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
 REALTIME_BATCH_SIZE = 8
 PORTFOLIO_BENCHMARK_COLORS = {
@@ -3551,69 +3552,6 @@ def build_web_runtime() -> WebRuntime:
 
         return pairs
 
-    def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:
-        merged = datasets[0][["Date", "Close"]].rename(columns={"Close": "Close_0"}).copy()
-        for index, dataset in enumerate(datasets[1:], start=1):
-            merged = pd.merge(
-                merged,
-                dataset[["Date", "Close"]].rename(columns={"Close": f"Close_{index}"}),
-                on="Date",
-                how="inner",
-            ).sort_values("Date")
-        if merged.empty:
-            raise ValueError("The selected tickers do not share any common trading dates.")
-        return [
-            merged[["Date", f"Close_{index}"]].rename(columns={f"Close_{index}": "Close"}).copy()
-            for index in range(len(datasets))
-        ]
-
-    def extract_shared_dates(datasets: list[pd.DataFrame]) -> pd.Series:
-        if not datasets:
-            return pd.Series(dtype="datetime64[ns]")
-        merged = datasets[0][["Date"]].drop_duplicates().sort_values("Date")
-        for dataset in datasets[1:]:
-            merged = pd.merge(
-                merged,
-                dataset[["Date"]].drop_duplicates(),
-                on="Date",
-                how="inner",
-            ).sort_values("Date")
-            if merged.empty:
-                return pd.Series(dtype="datetime64[ns]")
-        return merged["Date"].reset_index(drop=True)
-
-    def extract_union_dates(datasets: list[pd.DataFrame]) -> pd.Series:
-        if not datasets:
-            return pd.Series(dtype="datetime64[ns]")
-        return pd.concat(
-            [dataset["Date"] for dataset in datasets if "Date" in dataset.columns],
-            ignore_index=True,
-        ).drop_duplicates().sort_values().reset_index(drop=True)
-
-    def build_supported_periods_for_history_store(ticker: str, interval: str = "1d") -> list[str]:
-        path = next(
-            (
-                candidate_path
-                for candidate in market_ticker_store_aliases(ticker)
-                if (
-                    candidate_path := intraday_history_store_path_for(candidate, interval)
-                    if interval == "1m"
-                    else history_store_path_for(candidate)
-                ).exists()
-                and candidate_path.stat().st_size > 0
-            ),
-            intraday_history_store_path_for(ticker, interval) if interval == "1m" else history_store_path_for(ticker),
-        )
-        if not path.exists() or path.stat().st_size == 0:
-            return ["1d"] if interval == "1m" else ["max"]
-        try:
-            dataset = pd.read_parquet(path, columns=["Date"])
-        except (ImportError, OSError, ValueError, KeyError, TypeError):
-            return ["1d"] if interval == "1m" else ["max"]
-        if dataset.empty:
-            return ["1d"] if interval == "1m" else ["max"]
-        return build_supported_periods_from_dates(dataset["Date"], interval=interval)
-
     def resolve_effective_period_for_many(requested_period: str, datasets: list[pd.DataFrame]) -> tuple[str, str | None]:
         return resolve_effective_period_for_datasets(requested_period, datasets)
 
@@ -3623,7 +3561,8 @@ def build_web_runtime() -> WebRuntime:
         language_settings = load_language_settings()
         labels = translate_labels(base_labels, language_settings)
         language_translations = build_translation_map(language_settings)
-        translate_ui = lambda value: translate_text(value, language_settings.language, language_translations)
+        def translate_ui(value: str) -> str:
+            return translate_text(value, language_settings.language, language_translations)
         language_history_rows = [
             {
                 "timestamp": str(entry.get("timestamp", "")),
