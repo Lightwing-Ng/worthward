@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.89.4
+ * Code version: v1.89.5
  * - Fixed: Realtime chart points now preserve Longbridge, yfinance, or mixed provider provenance.
  * - Fixed: Investment stock-details loads the current helper revision through an updated cache key.
  * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
@@ -9468,7 +9468,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncInvestmentFormLayout() {
         if (!formContainer || !historyTable || !parentSection) return;
         historyTable.style.transform = 'translateY(0)';
-        parentSection.style.paddingBottom = '20px';
+        parentSection.style.removeProperty('padding-bottom');
     }
 
     // Toggle form visibility

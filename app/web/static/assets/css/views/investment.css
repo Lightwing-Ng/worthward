@@ -1,4 +1,4 @@
-/* Code version: v1.40.7 */
+/* Code version: v1.40.9 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -4001,7 +4001,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 0;
     transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     --investment-history-scrollbar-width: 0px;
-    --investment-history-pagination-edge-inset: 3px;
+    --investment-history-pagination-edge-inset: 13px;
     --investment-history-pagination-shell-padding: 4px;
     --investment-history-pagination-clearance: calc(
         var(--local-store-pagination-slot-size)
@@ -4626,7 +4626,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
     .investment-history-surface {
         flex: 1 1 0;
-        padding-bottom: var(--workspace-mobile-surface-bottom-pad);
     }
 
     .investment-form-grid-primary,

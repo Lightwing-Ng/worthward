@@ -1,4 +1,4 @@
-/* Code version: v0.22.3 */
+/* Code version: v0.22.4 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5667,6 +5667,7 @@
             picker.popover.hidden = true;
             picker.trigger.setAttribute("aria-expanded", "false");
             picker.view = "days";
+            picker.stablePosition = null;
         });
         syncDatePickerPeerHighlight();
     };
@@ -5681,6 +5682,11 @@
     );
 
     const positionDatePickerPopover = (picker) => {
+        if (picker.stableFrame && picker.stablePosition) {
+            picker.popover.style.top = `${picker.stablePosition.top}px`;
+            picker.popover.style.left = `${picker.stablePosition.left}px`;
+            return;
+        }
         const triggerRect = picker.trigger.getBoundingClientRect();
         const visualViewport = window.visualViewport;
         const viewportLeft = visualViewport?.offsetLeft || 0;
@@ -5747,8 +5753,13 @@
             preferredLeft = triggerRect.left - popoverGap - popoverWidth;
         }
         const left = Math.min(Math.max(preferredLeft, leftBoundary), maxLeft);
-        picker.popover.style.top = `${Math.round(top)}px`;
-        picker.popover.style.left = `${Math.round(left)}px`;
+        const roundedTop = Math.round(top);
+        const roundedLeft = Math.round(left);
+        picker.popover.style.top = `${roundedTop}px`;
+        picker.popover.style.left = `${roundedLeft}px`;
+        if (picker.stableFrame) {
+            picker.stablePosition = {top: roundedTop, left: roundedLeft};
+        }
     };
 
     const lockDatePickerPopoverFrame = (picker) => {
@@ -6269,6 +6280,7 @@
                 keepOpenOnSelect: wrapper.dataset.datePickerKeepOpenOnSelect === "true",
                 selectMonth: wrapper.dataset.datePickerSelectMonth === "true",
                 stableFrame: wrapper.dataset.datePickerStableFrame === "true",
+                stablePosition: null,
                 avoidSelector: wrapper.dataset.datePickerAvoidSelector || "",
                 selectedMonthValue: "",
             };
@@ -6316,6 +6328,7 @@
                 popover.hidden = false;
                 trigger.setAttribute("aria-expanded", "true");
                 syncDatePickerPeerHighlight();
+                picker.stablePosition = null;
                 lockDatePickerPopoverFrame(picker);
                 positionDatePickerPopover(picker);
                 if (focusEditor) picker.triggerValue.focus();
@@ -6386,7 +6399,9 @@
             }, {capture: true});
             window.addEventListener("resize", () => {
                 datePickerState.forEach((picker) => {
-                    if (!picker.popover.hidden) positionDatePickerPopover(picker);
+                    if (picker.popover.hidden) return;
+                    picker.stablePosition = null;
+                    positionDatePickerPopover(picker);
                 });
             });
         }

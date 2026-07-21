@@ -1,6 +1,16 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.13`
+Documentation version: `v1.86.14`
+
+## Investment history surface padding is symmetric again on 21 Jul 2026
+
+- Layout synchronization no longer injects a `20px` inline bottom padding into
+  the Transaction history surface.
+- The surface now keeps its stylesheet-owned `10px` top and bottom padding on
+  both desktop and narrow viewports. It no longer duplicates the mobile dock
+  safe area inside the table card or lets a light-material strip obscure the
+  final visible row.
+- Pagination geometry and expanded-sidebar alignment remain unchanged.
 
 ## Investment pagination no longer inserts blank table-tail clearance on 21 Jul 2026
 

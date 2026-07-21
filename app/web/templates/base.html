@@ -1,4 +1,4 @@
-{# Code version: v0.5.7 #}
+{# Code version: v0.5.8 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -265,7 +265,7 @@
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.22.3') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.22.4') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
 {% endif %}

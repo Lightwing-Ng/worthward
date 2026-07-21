@@ -1,4 +1,4 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.0."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.1."""
 
 from pathlib import Path
 
@@ -24,6 +24,7 @@ def test_shared_banner_css_uses_top_aligned_icon_and_hanging_numbered_copy() -> 
     assert "margin-top: 2px;" in css
     assert ".notice-floating-banner-content" in css
     assert ".notice-floating-banner-copy" in css
+    assert ".notice-floating-banner-copy {\n    margin: 8px 0 0;\n    color: var(--text);" in css
     assert "font-weight: var(--font-weight-regular);" in css
     assert "list-style-position: outside;" in css
     assert ".notice-floating-banner-emphasis-danger" in css
