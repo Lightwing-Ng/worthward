@@ -1,4 +1,4 @@
-/* Code version: v1.43.1 */
+/* Code version: v1.43.2 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3940,6 +3940,10 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     max-width: calc(100vw - (var(--page-edge-pad) * 2));
     line-height: 1.5;
     z-index: 10000;
+}
+
+.investment-import-feedback-list {
+    color: var(--text);
 }
 
 .investment-import-feedback-banner[hidden] {

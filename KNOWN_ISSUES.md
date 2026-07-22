@@ -1,6 +1,10 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.87.3`
+Documentation version: `v1.87.4`
+
+## IBKR import completion copy now matches its heading color on 22 Jul 2026
+
+- The numbered IBKR import-completion details now use the same text color as the `IBKR import complete` heading. Danger emphasis for pending HSBC transfer review remains independently red.
 
 ## Univers Next for HSBC font collection consolidated on 22 Jul 2026
 
