@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.52.6`
+Documentation version: `v2.53.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -387,7 +387,10 @@ requirements-dev.txt            -> Pinned test, coverage, and static-check depen
 scripts/setup_python.sh         -> Pinned host-Python dependency installer
 scripts/run_app.sh              -> Pinned host-Python app launcher
 scripts/test.sh                 -> Pinned host-Python pytest wrapper
-app/core/                       -> Shared config and persisted settings helpers
+scripts/test_js.sh              -> Node unit tests and gradual JavaScript coverage thresholds
+scripts/check.sh                -> Complete local and CI quality gate
+.github/workflows/quality.yml   -> Push and pull-request quality-gate workflow
+app/core/                       -> Shared config, settings helpers, and market-calendar primitives
 app/infrastructure/             -> Storage, connectivity, and broker market-data integration
 app/services/                   -> Business logic for comparisons, market data, investment import, and presentation
 app/web/routes/                 -> Flask route registration by workspace
@@ -422,5 +425,9 @@ Run the complete Python, JavaScript, coverage, static, and browser quality gate:
 ```bash
 ./scripts/check.sh
 ```
+
+The same command runs in GitHub Actions for pushes and pull requests. Node unit
+tests enforce gradual first-party JavaScript coverage floors; current baselines
+and safe threshold overrides are documented in `TESTING.md`.
 
 The committed test suite, coverage baseline, shared factories, and E2E isolation rules are documented in `TESTING.md`.

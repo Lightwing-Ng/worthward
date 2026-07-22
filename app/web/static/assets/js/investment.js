@@ -1,331 +1,11 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v1.93.0
- * - Fixed: US-suffixed ticker placeholders now resolve through the same standard-name fallback as their bare ticker aliases.
- * - Changed: Investment realtime polling now uses the one-minute cadence of its yfinance source, reducing free-provider rate-limit pressure while preserving live session updates.
- * - Fixed: Stock-details live markers now retain their horizontal endpoint while using the eligible realtime quote price for the vertical coordinate.
- * - Added: Stock-details metrics share the live-marker pulse state; US extended-hours pulses require a Longbridge quote and remain off for yfinance fallback quotes.
- * - Fixed: Realtime chart points now preserve Longbridge, yfinance, or mixed provider provenance.
- * - Fixed: Investment stock-details loads the current helper revision through an updated cache key.
- * - Fixed: Stock-details date guidance now stays in the fixed feedback region without a redundant visible field label.
- * - Changed: The Stock-details date picker now uses dynamic guidance, an opaque surface, and a stable frame across day and month views.
- * - Changed: Stock-details Time filtering now selects one day or one natural month and keeps the date picker open after selection.
- * - Fixed: Type filter dropdowns now size to their widest option while respecting the available viewport width.
- * - Changed: Transaction-history arrows now switch five-page chunks, selecting the next chunk's first page or the previous chunk's last page.
- * - Fixed: Mixed y-axis tick formats now align exact-price badges to the visible fractional tick column.
- * - Fixed: Stock-details exact-price badges now align their integer or decimal column to the rendered y-axis tick anchor.
- * - Fixed: Fractional metric glyphs now share a precise visual bottom edge, with the decimal point sized as part of the fraction.
- * - Added: Stock-details hover guides now include an exact-price horizontal crosshair and y-axis badge across every supported range.
- * - Fixed: Pagination ellipses now use three geometry-centered solid dots instead of a font-baseline glyph.
- * - Changed: The Type filter now discovers every visible ledger event type instead of limiting selection to Buy and Sell.
- * - Changed: Transaction history pagination now uses fixed five-page chunks with one-page navigation arrows, boundary ellipses, and accessible page labels.
- * - Fixed: Variable-width pagination renders now synchronously recalculate the active indicator and preserve its cross-chunk animation in viewport coordinates.
- * - Changed: Transaction history pagination now displays 100 ledger rows per page.
- * - Changed: Transaction history pagination now mounts as a canonical Frosted glass overlay inside the lower table, revealing scrolling rows beneath it while preserving end-of-table clearance.
- * - Added: The primary Investment view rail now uses the shared equal-width overflow contract with a directional faded preview for future items.
- * - Changed: Overview 1W and 1M x-axis labels now show date and year only while tooltips retain minute precision.
- * - Changed: Stock-detail metric source rows now start collapsed and disclose independently through the shared table-arrow control.
- * - Fixed: Measured segmented controls now resolve edge-cap geometry from their rendered box, keeping the first and last thumb caps concentric with the rail.
- * - Fixed: Investment range rails now remain above chart canvases without clipping their elevation shadows.
- * - Fixed: The vertical split now reserves explicit in-flow chrome and pagination height, keeping page controls visible at the lower drag limit.
- * - Changed: Stock details now follows the Neo draft's three-column composition, with independently aligned identity, chart, metrics, and donut tracks.
- * - Changed: Responsive donut orbit sizing now uses the rendered circle diameter, maximizing the track without cropping satellite logos.
- * - Changed: The Stock-details range control now occupies its own layout row instead of overlapping the chart canvas.
- * - Changed: The vertical split now protects two visible transaction rows per history table, allowing Stock details charts to use more height.
- * - Fixed: Type menu selections now keep the dropdown open for continuous editing until an outside click or Escape closes it.
- * - Changed: The Type filter now supports checked multi-selection, mirrors All across every child check, and separates All from individual types.
- * - Fixed: Overview track reflows now resize the equity canvas after its stage settles, preserving both YTD x-axis label lines at low viewport heights.
- * - Changed: The Type filter's selected All option now toggles to no selection, and All restores the full transaction set from that state.
- * - Fixed: The hover-revealed Type filter label now inherits the table header typography instead of the browser's native button font.
- * - Fixed: Broker filter all-selection keeps individual broker checks without rendering every option as an active gray pill.
- * - Fixed: Manual internal-transfer binding preserves the active history filters, page, and scroll position.
- * - Fixed: Linked history scrolling now resolves the global history scrollport explicitly, avoiding the similarly named selected-ticker scrollport.
- * - Fixed: Hover-linked transaction tables now match the selected ticker by exact ledger entry and never scroll the table the user is inspecting.
- * - Changed: The Investment split now derives its limits from the chart stage and two visible transaction rows at the current resolution.
- * - Fixed: The 1M overview honors its requested 23-session calendar and preserves a tokenized guard above the curve peak.
- * - Fixed: Resized investment tracks now clamp against the workspace's real available height after viewport shrink, keeping Transaction history fully visible.
- * - Added: Overview and Transaction history share a responsive horizontal resizer with pointer and keyboard support.
- * - Changed: HSBC statement mode uses one smart multi-file selector and validates complete PDF pairs before enabling import.
- * - Changed: Investment Type headers now show the legacy Type label by default and reveal the current side filter only on hover, focus, or open interaction.
- * - Added: HSBC statement mode now accepts matched composite and investment PDF batches and refreshes from the committed store version before reporting success.
- * - Fixed: Fixed table headers and holdings summaries render canonical Frosted Glass directly on their interactive header table, matching the pre-refactor material hierarchy.
- * - Fixed: Broker filter controls in extracted investment table headers now receive pointer input and portal their dropdowns outside clipped Frosted glass table layers.
- * - Fixed: Investment range segmented controls now scroll the active edge option fully into view when horizontal space is constrained.
- * - Changed: Investment equity chart x-axis date labels now use weight 400 while preserving the existing font and size.
- * - Fixed: Investment stock-details helper import now revs to the x-axis date label font-weight update.
- * - Fixed: Investment stock-details helper import now revs to the pre-range overnight marker projection fix.
- * - Fixed: Investment stock-details helper import now revs to the no-dot intraday average-price line correction.
- * - Fixed: Investment stock-details helper import now revs to the intraday average-price event-stepped cost line update.
- * - Fixed: Investment stock-details helper import now revs to the overnight first-candle anchoring correction.
- * - Fixed: Investment entry module diagnostics now report the current loaded frontend file version after the stock-details intraday chart update.
- * - Changed: Stock details 1W now loads regular-session 1-minute candles independently of realtime polling so GKX intraday fills can be plotted precisely.
- * - Fixed: Investment history highlight cleanup now ignores empty cloned-row ids so post-import refresh cannot call querySelector("#").
- * - Fixed: Transaction history pagination now scopes history scroll and body lookups to the Transaction history surface so Stock details history tables cannot intercept updates.
- * - Fixed: Investment history pagination pointer handling now accepts browser pointerup events with neutral button codes, so coordinate mouse/touch clicks activate page buttons.
- * - Fixed: Investment history pagination binding now runs before heavier Investment view setup so page buttons remain interactive even if later initialization work is delayed.
- * - Fixed: Investment history pagination now handles pointer release directly as well as keyboard click, making page buttons respond reliably to real mouse and touch input.
- * - Fixed: Investment history pagination now preserves the shared Local store pagination bouncy indicator transition when changing pages.
- * - Fixed: Transaction history pagination now updates the real scroll table instead of the frosted underlay clone, and underlay table clones no longer duplicate DOM ids.
- * - Fixed: Scrollable investment overlay column syncing now preserves fractional body widths so per-column rounding cannot expand the fixed table past the shell.
- * - Fixed: Scrollable investment overlay tables now sync fixed cell border-box widths from body rows and assign the scrollbar track only to the final fixed cell.
- * - Fixed: Scrollable investment overlay tables now keep full-shell Frosted glass material while assigning the scrollbar track to the final fixed column only.
- * - Fixed: Scrollable investment overlay tables now use a shared content-width variable plus border compensation so rightmost fixed headers never occupy scrollbar tracks.
- * - Fixed: Scrollable investment table Frosted glass underlays now begin at the real scroll viewport edge, avoiding ghost rows at scroll top and restoring Transaction history header material.
- * - Fixed: Holdings table overlay now keeps a synced hidden body-table underlay behind the Frosted glass header and summary material.
- * - Fixed: Investment view Metrics segmented pill now relies on the edge-cap geometry solver without a manual optical offset, keeping both the right cap and text center aligned.
- * - Fixed: Investment view segmented edge pills now lock their outer cap centers to the shell cap centers while preserving text-centered geometry.
- * - Fixed: Investment view segmented pill schedules a post-transition remeasure so active labels stay pixel-centered after final text layout settles.
- * - Fixed: Investment view segmented pill measurement now reads text-node ranges instead of the flex label box, aligning short labels to the actual rendered glyph center.
- * - Fixed: Investment view segmented pill positioning now uses the active label text range center, removing the last 1 px visual offset on Metrics.
- * - Fixed: Investment view segmented pills now center the blue highlight on the active label text for short labels such as Holdings and Metrics.
- * - Fixed: Scrollable investment tables now measure overlay header height dynamically so fixed summary rows never cover top rows.
- * - Changed: Community share PNG capture now uses a 1080 px by 1730 px 2x export shell grid.
- * - Changed: Community share PNG capture now reads export dimensions and footer sizing from the same CSS tokens used by the settings export-image preview.
- * - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
- * - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
- * - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
- * - Removed: IBKR manual Flex file upload mode from the import UI and submit path.
- * - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
- * - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
- * - Added: IBKR GainsKeeper OFX/GKX multi-file import mode with idempotent precision upgrades for older CSV records.
- * - Fixed: IBKR CSV import now reports success as soon as the server commit finishes, then refreshes the large investment dataset in the background.
- * - Fixed: HSBC import validation now declares the selected statement/copy-paste mode before checking readiness, restoring Investment page initialization.
- * - Added: HSBC import mode now supports multi-file statement PDF upload for USD Foreign Currency Savings backfills while keeping copy/paste as the default path.
- * - Added: Investment Metrics now include Total offshore gain, combining holdings P&L with converted broker cash benefits without double-counting stock grants already inside holdings P&L.
- * - Fixed: Investment Metrics realized and cumulative P&L now exclude broker reward rows because broker benefits are reported in dedicated cards.
- * - Added: Investment Metrics now split broker benefits into coupon rebates, cash rewards, KOL rewards, and realized/unrealized stock-grant P&L.
- * - Fixed: Investment entry module version metadata now matches the loaded frontend file version.
- * - Fixed: Money-market Holdings icons now use an aligned green CSS-mask token instead of loading the black SVG fill through an img tag.
- * - Added: Cash-equivalent MMFs render as Holdings income rows with green dollar-token icons, while Franklin keeps its local fund logo.
- * - Fixed: Longbridge HK MMF transfers now replay as real cash plus synthetic cash-equivalent valuation anchors, removing saw-tooth overnight equity.
- * - Improved: Broker filter now uses a transaction broker index for large histories, avoiding full-list broker checks on every filter click while keeping options limited to brokers present in the loaded ledger.
- * - Refined: Tiger Trade and uSMART (HK) PDF import controls now reuse the shared bridge-field upload layout.
- * - Fixed: uSMART (HK) symbol-less fractional shares stay valued between purchase, withdrawal, and sale.
- * - Fixed: Tiger Trade Funds in Transit subscriptions no longer create false equity drawdowns.
- * - Fixed: Tiger Trade bond and money-market fund holdings retain statement-price equity between subscription and redemption.
- * - Added: uSMART (HK) and Tiger Trade statement PDF imports with multi-file validation and idempotent submission.
- * - Added: Broker-scoped Holdings P&L calibration keeps Longbridge HK and SG additive when both accounts are imported.
- * - Fixed: Investment Holdings now loads authoritative broker P&L calibrations from the refreshed data-utils module.
- * - Fixed: Longbridge HK money-market transfers preserve cash-equivalent equity through placements and recognize only redemption interest while retaining actual transfer amounts in history.
- * - Removed IBKR Gateway; added Flex Web Service v3 import mode and dry-run support.
- * - Fixed: IBKR forex trade component rows now dedupe across overlapping CSV imports and display the acquired quote currency with a compact conversion description.
- * - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
- * - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.
- * - Fixed: Investment broker filter dropdown now sizes to its longest option instead of using a fixed narrow width.
- * - Fixed: Investment broker filter now unions payload and transaction broker codes and shows Longbridge (HK)/(SG) labels instead of identical logo-only tiles.
- * - Refactored: Broker filter dropdown always renders full names for every broker (matching "Longbridge (SG)" style) and uses fixed positioning + internal scrolling so the full list is reachable via scroll at any viewport height.
- * - Fixed: Investment stock-details helper import now revs to the broker metric split-factor hint scope fix.
- * - Fixed: Investment replay now passes rendered split-factor hints through ledger processing so zero-price grant rows share the same SPYM/SPLG quantity basis as sibling trades.
- * - Fixed: Versioned investment helper module imports so browser ES-module cache drift cannot keep stale SPYM/SPLG valuation logic after a git pull.
- * - Added: Loaded investment helper module versions are exposed on `window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS` for automatic diagnostics.
- * - Fixed: Stock details metrics and price chart no longer fully re-render on realtime quote poll resets, so after-hours polling cannot blank metric cards or flicker the canvas.
- * - Fixed: Investment realtime polling and breathing pulse are disabled during New York post-market and on non-trading days.
- * - Fixed: Holdings Last always fetches open-position realtime quotes on page load and applies the latest US pre/post bar even when its session date is not today's New York calendar day.
- * - Fixed: Holdings Last now applies US post quotes from the prior session day and Hong Kong intraday quotes on their own market clocks during US after-hours.
- * - Fixed: Lineage profile lookup now uses exported data-utils helpers instead of an undefined local lineage-map reference.
- * - Fixed: Canonical lineage successors such as SPYM now inherit legacy ticker profiles so issuer full names remain visible after symbol-only subtitle suppression.
- * - Fixed: Investment ticker identity rows now resolve known issuer full names and hide duplicate symbol-only subtitles when no better label exists.
- * - Fixed: Investment holdings and overview chart now bootstrap yfinance pre/intraday/post quotes on first render instead of briefly showing the prior regular-session close.
- * - Fixed: Investment realtime quote application now only marks holdings and chart points when the quote session matches the active New York clock session.
- * - Fixed: Investment transaction descriptions now display canonical tickers, matching holdings and stock details.
- * - Fixed: Holdings, stock details, exports, and valuation replay now aggregate canonical investment tickers so MSFT.US merges into MSFT and SPLG.US inherits SPYM.
- * - Fixed: Investment cash replay now ignores IBKR FX Translation P&L accounting rows so broker cash stays aligned with the authoritative cash snapshot.
- * - Fixed: Investment cash replay now preallocates later same-currency funding to earlier broker-statement trades when missing intraday timestamps would otherwise create a false negative cash balance.
- * - Fixed: Investment history Max range and pagination now keep processed transaction caches current, so Gateway-ledger pages cannot render as empty while transactions exist.
- * - Added: Mixed-broker portfolios now calibrate each broker's latest history Balance from per-broker ending cash snapshots, so IBKR CSV Ending Cash can align with the broker app after HSBC merge
- * - Fixed: Investment export and share action buttons now align with the global theme toggle horizontally and the view segmented control vertical center.
- * - Fixed: Holdings Last now reuses the live digit-roll updater with green-up and red-down tone, and summary cash/equity values stay on the same realtime sync path.
- * - Fixed: Overview equity range switching now updates the chart in place so the segmented control is not destroyed and re-measured on every 1W through Max change.
- * - Fixed: Daily-equity live chart points now survive render-state preparation so 1M through Max can keep the is_realtime marker target needed by the breathing pulse.
- * - Fixed: Overview live-session slot, dedupe, shared-range extension, realtime polling chart writes, and breathing marker targeting now apply only to 1M through Max, leaving the specialized 1W intraday pipeline untouched.
- * - Fixed: Investment overview equity now keeps a single stable today slot during pre-market, regular, and post-market live sessions on daily ranges instead of appending a second same-day point that duplicated x-axis labels or shifted the plotted range.
- * - Fixed: Broker filter trigger now keeps a centered chevron in the resting state and no longer shows broker logos or placeholder tiles in the header cell.
- * - Improved: Holdings, Stock details, and Metrics live values now right-align integer digits, measure per-character slot widths, and animate only changed digit positions with easeOutCubic requestAnimationFrame rolls that avoid layout jitter.
- * - Changed: Investment metrics cards now add horizontal breathing room and right-align split metric values.
- * - Changed: USD funding metrics now omit the dollar sign because USD is the workspace default currency.
- * - Added: Investment metrics cumulative and unrealized P&L now reuse the Holdings live value updater during pre-market, regular, and post-market sessions.
- * - Fixed: Holdings and Stock details live value animations now reserve their measured maximum box so digit rolls do not resize surrounding table rows or metric cards.
- * - Fixed: Investment overview 1W now preserves the last healthy intraday equity curve when switching away and back from another range.
- * - Fixed: Investment overview 1W now rejects degraded flat recomputations so range switching cannot overwrite a real curve with a horizontal line.
- * - Fixed: Investment overview 1W ticker refresh requests now time out independently so one slow market-data source cannot block the whole chart.
- * - Fixed: Investment overview 1W now sends the exact five selected trading days to the intraday endpoint so missing days can be refreshed and returned.
- * - Fixed: Investment overview 1W now actively asks the intraday endpoint to refresh stale one-minute stores before calculating close-based equity.
- * - Fixed: Investment overview 1W now keeps successful ticker rows when another ticker's one-minute refresh fails.
- * - Fixed: Investment overview 1W now hides cross-day line segments so adjacent trading days can have factual gaps instead of forced joins.
- * - Removed: Investment overview 1W no longer keeps the unused flat-line fallback helper after switching to close-only intraday points.
- * - Fixed: Investment overview 1W now leaves a selected trading day blank when no local one-minute close data exists instead of drawing fallback flat steps.
- * - Fixed: Investment overview 1W now renders exactly five US trading days and only includes the current day while regular-session intraday is active.
- * - Fixed: Holdings live values now preserve the standard metric split-number layout during digit rolls so table rows do not jump while prices update.
- * - Fixed: Investment overview 1W now starts from an empty fixed intraday axis instead of briefly rendering the daily equity line before close-based data loads.
- * - Fixed: Investment overview 1W excludes the current New York calendar day before regular-session intraday begins.
- * - Fixed: Investment live metric updates now use a single in-place digit roll without rendering duplicate full-value spans or outside delta badges.
- * - Fixed: Investment overview 1W keeps blank intraday slots as null instead of coercing them to zero.
- * - Fixed: Investment overview 1W now leaves non-trading days and future intraday minutes blank unless at least one open holding has a real one-minute close for that slot.
- * - Changed: Investment overview 1W abandons candlesticks and renders a fixed five-trading-day intraday close equity line with 390 regular-session slots per day.
- * - Changed: Investment overview 1W applies dated trades and cash movements from the next trading-day open to match day-precision broker statements.
- * - Fixed: All investment share card titles and footer timestamps now use the Overview typography.
- * - Fixed: Stock details share cards now reserve the same 360 px chart height as the Overview share chart.
- * - Fixed: Holdings share cards now show the rendered summary row first and preserve view-colored P&L values.
- * - Fixed: Investment share footer brand icon and timestamp now share the same vertical centerline.
- * - Fixed: Investment share card titles now match the exported view instead of always rendering Overview.
- * - Fixed: Investment share donut previews now preserve satellite-logo safe bounds while using the available height.
- * - Fixed: Investment share footer now uses a 36 px brand icon and bottom-aligns the icon, timestamp, and QR code.
- * - Fixed: Investment share cards now apply the 108 px QR size in both template previews and all PNG export paths.
- * - Fixed: Overview share export now preserves identical curve coordinates when masking and replaces y-axis values with masked markers.
- * - Fixed: Holdings share export now eagerly resolves row logo assets and times out stalled screenshot encoding instead of leaving the output button busy.
- * - Changed: Investment share templates now align footer brand and QR sizing across all four exported views.
- * - Fixed: Investment share image capture now loads the screenshot renderer locally before falling back to CDN and reports stage timings.
- * - Fixed: Stock details intraday quote loading now stays off outside pre-market, regular, and post-market sessions.
- * - Fixed: Investment live values now stop polling and reset outside pre-market, regular, and post-market sessions.
- * - Fixed: Investment overview realtime pulse now only appears during pre-market, regular, or post-market sessions.
- * - Added: IBKR import feedback now reports incremental added and duplicate record counts
- * - Refined: Overview community share PNG export now redraws the equity chart on a share-card canvas so the curve uses the allocated height
- * - Refined: Overview community share PNG export now renders equity chart axis labels at 23 px
- * - Fixed: Overview community share PNG export now freezes donut satellite logos at their final orbit positions before capture
- * - Changed: Overview community share PNG export now uses the same 540 px token grid as the style-token preview
- * - Added: Investment share preview now renders the same community share card used by PNG export and refreshes across all four investment tabs
- * - Refined: Investment live values now show a transient signed delta badge while only rolling changed digit positions in the main value
- * - Added: Investment realtime quotes now update affected Stock details metric spans with the same live digit flip used by Holdings Last, Unrealized P&L, and weight cells
- * - Fixed: Share mask controls now stay expanded while masking is active so reveal/mask toggles remain clickable during repeated switching
- * - Added: Share masking now hides Investment overview y-axis numbers on the live chart and exported images without changing chart layout or point coordinates
- * - Refined: Investment overview realtime pulse now uses a calmer 1.8-second brokerage-style cadence with softer microwave opacity and glow
- * - Fixed: Investment overview realtime pulse now reserves enough chart padding so the right-side microwave rings are not clipped by the canvas edge
- * - Refined: Investment overview realtime marker now uses a strict 1-second pulse with a smaller solid-green contraction point and faster staggered microwave rings
- * - Added: Investment overview equity now appends a live yfinance 1-minute pre-market, regular-session, or post-market valuation point, polling every 10 seconds and marking the line end with a pulsing green ring
- * - Changed: Masked Holdings share cards now omit the `Shares` and `P&L` columns entirely instead of visually redacting stale table cells
- * - Added: Investment share actions now fan out to the right of the export button, let users mask stock-detail metric values as `***`, and save the currently visible panel as a local PNG screenshot
- * - Fixed: HSBC orders that carry matched bank settlement balances now reuse those authoritative post-trade cash snapshots, preventing impossible negative cash rows in the no-margin HSBC ledger
- * - Fixed: HSBC mirrored same-day settlement cash rows now stay in ledger replay but are hidden from Transaction history and Markdown export so trade-funding shadow deposits no longer masquerade as standalone events
- * - Refined: Investment fetch-abort debug reporting now uses the shared optional backend-provided config instead of a hard-coded localhost endpoint
- * - Changed: Investment page initial bootstrap now reuses the shared workspace modal dialog overlay instead of the floating import-feedback banner while data is loading
- * - Added: Stock details range segmented control now restores the 1Y option and adds an Auto window that keeps all buy and sell markers visible while trimming unrelated post-exit price history
- * - Refined: Stock details segmented control continues to reuse the shared nested range-label span markup while expanding to fit seven measured pill options
- * - Added: Initial investment page boot now shows the shared floating banner while transactions load, then clears it automatically once rendering finishes
- * - Refined: Internal-transfer link select now reuses the shared form-select styling, and the reference text matches the history table body size
- * - Added: Investment equity range segmented control now exposes a 1Y option between YTD and Max
- * - Refined: Resolved internal-transfer rows now show the bare HSBC reference in the history cell while the closed select displays a compact from HSBC label
- * - Refined: IBKR post-import feedback now renders as a numbered hanging-indent checklist and escalates immediate action when possible HSBC transfer links still need manual binding
- * - Refined: Manual internal-transfer rows now collapse into a compact resolved label, surface explicit USD currency evidence after linking, and expose an inline undo path inside the same select control
- * - Added: Mixed-broker investment history now supports manual internal-transfer binding for candidate deposit rows, with local persistence, unresolved pink prompts, and aggregate look-through cash bridging that removes duplicate-equity spikes between linked legs
- * - Added: Investment ledger rows now carry broker-scoped and aggregate valuation fields side by side, so mixed IBKR and HSBC imports keep per-broker Balance, Market value, and Equity without contaminating the combined portfolio panels
- * - Changed: Transaction history now renders broker-scoped valuation columns while Charts, Holdings, Stock details, and Metrics read explicit aggregate portfolio fields only
- * - Added: HSBC controlled browser bridge now includes an Edge-run dashboard collector that treats the HSBC Online Banking dashboard as the unified source for USD deposit and withdrawal records
- * - Fixed: Investment equity canvas now skips the synthetic pre-ledger starting-cash anchor, so the curve begins at the first real transaction row instead of the assumed 0.02 opening point while still extending forward across later valuation-only trading days
- * - Added: HSBC controlled browser bridge now closes blocking dialogs, opens Quick Trade in read-only mode, and captures cash-account buying power as authoritative cash without ever previewing or submitting an order
- * - Added: HSBC Order Status capture now proactively closes blocking dialogs before reading filters and pagination
- * - Changed: Authoritative broker position snapshots can now flow broker-supplied market values, last prices, and ending cash into the latest dashboard valuation
- * - Fixed: Investment equity canvas now keeps post-trade valuation dates in the rendered series, so the line extends from the last transaction day through the latest yfinance-backed trading day while holdings-linked hover anchors still target real ledger rows
- * - Changed: Investment equity canvas now rounds plotted values to the same 2-decimal precision used by the history table, so the curve starts at the first rendered total-equity value without hidden intermediate market-only micro-moves
- * - Added: Transaction history now uses the shared Local store pagination shell so large ledgers render a smaller DOM slice per page and switch faster
- * - Fixed: Stock detail and ticker identity displays now normalize Longbridge `.US` symbols to the short display ticker when rendering UI labels and fallback names
- * - Fixed: Stock details Average price cost curves now replay transaction unit costs onto the same split-adjusted price basis as the rendered chart, keeping split-affected tickers aligned without perturbing normal symbols
- * - Fixed: Stock details Markdown export now scopes the transaction-history section and metric snapshot to the currently selected ticker instead of reusing the full portfolio history table
- * - Added: Stock details price chart now renders a muted gray Average price cost curve, replaying ticker transactions onto every visible chart point so the line and tooltip match the point-in-time cost basis
- * - Refactored: Split chart-orbit helpers and transaction-valuation helpers into dedicated ES modules, keeping this entry file focused on page orchestration and reducing single-file context size
- * - Fixed: Restored missing cross-module orbit-state and position-state bindings after the split, so all investment view tabs render again without runtime ReferenceErrors
- * - Fixed: Stock details trade markers now infer cumulative stock-split factors from the rendered price series before mapping transaction fill prices onto the canvas, so older split-affected trades align with the chart without distorting normal unsplit fills
- * - Fixed: Stock details price-chart trade markers now wait for a stable visible chart box before first paint and resync again after the view-height animation settles, so hyperlink entry matches refresh rendering
- * - Fixed: Stock details tooltip now treats missing post-trade holdings keys as a flat position, so fully exited tickers no longer retain stale share counts on later hover dates
- * - Changed: Stock details share URLs now use the shorter `#stock_panel` hash while still recognizing the legacy long-form hash
- * - Fixed: Hover-linked history and stock-details tables now only auto-scroll their counterpart table, so the hovered table stays user-driven while the mirrored row remains visible
- * - Fixed: Holdings header table now compensates for the body scrollbar gutter, so numeric columns stay horizontally aligned with body cells even when the scroll state changes
- * - Fixed: Stock details price chart now keeps the same y-axis input domain across first paint and post-layout resync, so buy and sell triangles no longer jump vertically when opening a ticker view
- * - Added: Investment page now remembers the last visited view, stock-details ticker, and stock-details range in browser local storage, restoring bare `/trade/investment` visits back to the prior selection
- * - Changed: Stock details history table Realized P&L column now omits the USD dollar symbol while preserving numeric formatting and non-USD currency codes
- * - Fixed: Stock details buy and sell triangle markers now reserve horizontal in-canvas padding so edge markers no longer clip against the canvas boundary
- * - Changed: Stock details time-range segmented control replaces 1M with 3M and now filters by the natural prior 3-month window
- * - Changed: Stock details time-range segmented control removes the 1Y option and its matching date-filter branch
- * - Fixed: Segmented control measured-pill geometry now includes container inline padding in explicit width calculation, so the rightmost blue pill arc stays concentric with the outer shell and no longer clips
- * - Changed: Stock details now shows Average price instead of Buy cost so the metric matches the holdings average-price calculation
- * - Added: Stock details now uses local 1-minute OHLC candlesticks for the 3D and 1W ranges, auto-refreshing and storing missing intraday cache via the existing market-store pipeline
- * - Added: Stock details price chart now shows a right-aligned in-canvas time-range segmented control with 3D, 1W, 3M, YTD, and Max filters that reuse the shared pill animation
- * - Fixed: Stock details price chart y-axis now ignores shared-range gap points so sparse ticker histories no longer collapse toward zero
- * - Fixed: Stock details price chart now reuses the shared investment chart date range so every ticker keeps the same x-axis span as the main equity canvas
- * - Added: Stock details overview now includes a middle price chart card that plots the selected ticker close series with buy and sell triangle markers
- * - Fixed: Charts portfolio donut hover now coalesces duplicate updates and reuses cached orbit geometry to avoid flicker and animation stutter
- * - Improved: Charts portfolio donut satellites now enter from a distant transparent orbit, move along the shared orbit with non-linear angular easing, and resolve tiny-slice crowding with constrained on-orbit spacing
- * - Changed: Stock details donut now uses scoped non-linear orbit animation for its ring and ticker satellite while keeping the selected ticker on the standard blue token and cash on the standard green token
- * - Changed: Stock details donut is now decoupled from the Charts donut and renders a three-part allocation view for the selected ticker, cash, and remaining equity with hover-linked snapshot updates
- * - Fixed: History and stock-detail tables now respect recent manual scrolling, so hover-linked auto-scroll no longer snaps the view back to an older row while the user is browsing another date
- * - Added: Stock details transaction history now shows a per-row Market value column based on post-trade holdings times the same-day close, with flat positions rendered as '-'
- * - Improved: Investment Markdown export now reads the rendered Metrics panel so exported metric rows stay fully aligned with the page
- * - Added: Investment Metrics now include cumulative, realized, and unrealized P&L summary cards sourced from Holdings totals
- * - Fixed: Holdings weight column now uses the latest valuation-point total equity, so unlevered accounts no longer show allocations above 100% when the last trade date lags the latest 1d close
- * - Fixed: Investment Metrics no longer show false panel scrollbars when tooltip content extends beyond metric cards
- * - Added: Investment Metrics now include total commission and interest charged, and loss-like values render with explicit negative signs plus the shared negative color token
- * - Improved: Stock details metric cards now reuse the same negative-value treatment for total commission and align to the shared responsive metric grid pattern
- * - Fixed: Shared investment theme resolution now lives in page scope, so refresh no longer throws `resolvedTheme is not defined`
- * - Fixed: History-row and chart hover now preview matching stock-detail rows without overwriting the user's selected ticker
- * - Fixed: Holdings ticker clicks now use controlled stock-details hash syncing instead of native anchor jumps, so view state and scrolling stay aligned
- * - Fixed: Investment valuation now consumes bundled price history from the primary transactions payload, reports degraded states explicitly, and avoids per-ticker N+1 refresh fetches during first render
- * - Removed: Legacy manual-entry selector and transaction-form branches that no longer match the current Investment template contract
- * - Improved: Investment chart hover now scrolls the full same-day Transaction history row group into view instead of centering only the first matching row
- * - Added: Investment segmented control now appends a fourth "Stock details" view with same-page holdings links and animated pill focus
- * - Added: Stock details view now shows a selected ticker identity block, a standard donut shell, and a per-ticker detail table with realized P&L per transaction
- * - Improved: Trade effective price and realized P&L calculations now account for separate commissions in manual buy and sell rows
- * - Added: Settings action button import flow now exposes explicit disabled and in-progress states, including present-participle copy while the task is running
- * - Changed: Investment Charts now render one equity point per market day, filling no-trade trading days from parquet closes and collapsing same-day multi-trade activity into a single daily close snapshot
- * - Changed: Non-trading days with investment ledger activity now render on the curve using the previous available market close, while hover only anchors to history rows on dates that actually have ledger activity
- * - Fixed: Investment equity canvas now respects responsive container width at medium breakpoints instead of overflowing around 900 px layouts
- * - Fixed: Investment equity tooltip now uses viewport-safe positioning so frosted glass popovers no longer clip against ancestor overflow or screen edges
- * - Added: Charts hover now anchors and highlights all same-day Transaction history rows via the shared metric-style history locator
- * - Added: Holdings row hover now anchors and highlights the latest matching Transaction history row for that ticker via the shared metric-style history locator
- * - Improved: Metric, chart, and holdings interactions now share the same history-row highlight lifecycle and clear hover state on exit
- * - Fixed: Investment template, CSS, and JS now share the same chart-surface container contract again via investment_view_surface
- * - Improved: Transaction history rows now render through reusable cell classes instead of per-cell inline styles
- * - Improved: Holdings logos now use delegated fallback handling instead of inline onerror handlers
- * - Improved: Funding metric cards now render from a shared definition list instead of repeated hard-coded markup
- * - Fixed: Transaction processing no longer mutates the original API payload order while building the ledger view
- * - Fixed: Holdings header spelling now uses "Realized P&L"
- * - Reduced: Investment page accent colors now resolve through theme tokens instead of repeated hard-coded hex values
- * - Fixed: Holdings now keep a stable logo slot, so missing or failed ticker logos no longer break row alignment
- * - Fixed: Investment transaction payload now retries profile-based logo resolution when a local logo asset is missing
- * - Updated: Import feedback now appears as a top floating modal-banner notice with iOS-style drop-in motion
- * - Fixed: Import feedback copy no longer repeats the success prefix returned by the backend
- * - Updated: Investment segmented control now shows "Charts"
- * - Added: Export the Holdings and Transaction history tables as a Markdown download from the page header
- * - Fixed: Investment equity curve now starts from the first real transaction point instead of a synthetic zero-value seed
- * - Improved: Investment equity tooltip now shows equity, market value, and cash from the processed ledger snapshot
- * - Updated: Investment equity hover guide now matches the compare chart vertical hover line behavior
- * - Updated: Investment equity series color now resolves from the shared theme accent token
- * - Reworked: Holdings view now renders as a scrollable data table with per-ticker cost basis and P&L metrics
- * - Improved: Holdings and Metrics data now consistently use the Workspace metric value token
- * - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
- * - Fixed: Equity curve only renders inside the Chart view instead of bleeding into other tabs
- * - Fixed: Dashboard rendering no longer crashes on undefined transactions or parquet scope references
- * - Fixed: Total Equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
- * - Improved: Investment equity curve now reuses the shared chart tooltip tokens and layout
- * - Fixed: Equity curve seeds a zero-value point on the prior day when the first transaction starts above or below zero
- * - Adjusted: Investment chart panel better fills the available card height in Chart view
- * - Updated: Transaction history description format to TICKER@quantity for buy/sell operations
- * - Fixed: Cash calculation logic for payment_in_lieu and foreign tax withholding transactions
- * - Improved: Adjusted transaction table column widths for better readability
- * - Renamed: "Tax withholding" → "Foreign tax withholding" (value: tax_withholding → foreign_tax_withholding) for consistent naming
- * - Improved: Toggle button now switches plus/minus icons via reusable CSS classes
- * - Fixed: Transaction table header uses opaque background (var(--panel-strong)) instead of semi-transparent glass for better text readability
- * - Adjusted: Finalized transaction table column widths and min-widths per layout requirements
- * - Fixed: Added backward compatibility - normalize space-separated type names to snake_case for existing imported transactions (e.g., "foreign tax withholding" → foreign_tax_withholding)
- * - Improved: Show '-' instead of 0.00 in Commission column for transaction types that don't normally have commission (foreign tax withholding, dividend, adjustment, debit interest, payment in lieu, dividend reinvestment, forex trade, deposit, withdrawal, credit interest)
- * - Fixed: Investment history table now keeps the scrollbar below the rounded header and stays bottom-aligned with the sidebar
- * - Fixed: Add transaction form now reuses the standard controls and action button styling
- * - Improved: Add transaction form offset now follows the measured form height instead of hard-coded pixels
- * - Fixed: Grant transactions now add shares without affecting cash, while history still shows their economic amount
- * - Fixed: Holdings average price now uses out-of-pocket cost, so grant lots dilute cost per share instead of adding cost basis
- * - Fixed: Grant descriptions now use the standard TICKER @ PRICE x QTY transaction format
- * - Updated: Holdings summary row now colors only the cumulative P&L value, keeping the label text neutral
- * - Reworked: The investment import form now accepts the two IBKR CSV exports instead of manual transaction entry
- * - Added: Import feedback now spells out that the server discards raw CSV files after in-memory processing
- * - Improved: Empty transaction history now shows a compact guided import state with inline plus icon and width protection
- * - Updated: Import feedback now uses the standard modal dialog banner message token instead of the legacy modal dialog block
- * - Fixed: IBKR deposit rows no longer invent a USD currency when the CSV does not prove one
- * - Fixed: Forex Trade Component rows now render a precise English description and show the destination currency
- * - Refined: Deposit rows now describe the amount as a USD-equivalent credit when the source CSV only proves the base value
- * - Refined: Forex Trade Component rows now use compact trade-style wording and always display the acquired currency
- * - Fixed: Investment view segmented pill now stays hidden until the active label is measured, preventing the loading-time stretched Charts highlight
- * - Fixed: Stock-details average-price replay now uses split-adjusted quantities, preserving genuine flat-position gaps in the cost line.
- * - Changed: Stock-details metrics now retain complete historical broker trade and commission breakdowns.
- * - Added: Investment tables support a currency filter, and Stock details adds a guided reusable date-range filter.
+ * Code version: v2.2.0
+ * Realtime polling and value animation, Stock-details rules, transaction filters
+ * and table page state, split layout, and calculation-heavy data utilities live
+ * in tested modules.
+ * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
 
 import {
@@ -349,15 +29,54 @@ import {
 } from './investment/pagination.js?v=investment-pagination-v1.2.0';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+    buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
+    buildInvestmentIntradayDayFallbackIndex as buildInvestmentIntradayDayFallbackIndexCore,
     createInvestmentStockDetailsUtils,
-} from './investment/stock-details.js?v=investment-stock-details-v0.4.4';
+    getInvestmentTradeSessionType as getInvestmentTradeSessionTypeCore,
+    isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
+    normalizeInvestmentIntradayMinuteKey,
+    normalizeInvestmentRange,
+} from './investment/stock-details.js?v=investment-stock-details-v0.5.0';
+import {
+    INVESTMENT_REALTIME_MODULE_VERSION,
+    createInvestmentLiveValueAnimator,
+    createInvestmentRealtimeQuotePoller,
+} from './investment/realtime.js?v=investment-realtime-v1.1.0';
+import {
+    INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
+    buildInvestmentBrokerFilterIndex,
+    getAvailableInvestmentCurrencyCodes as getAvailableInvestmentCurrencyCodesFromRows,
+    isInvestmentBrokerFilterAllSelected,
+    matchesInvestmentCurrencyFilter as matchesInvestmentCurrencyFilterValue,
+    matchesInvestmentDateFilter,
+    normalizeInvestmentBroker,
+    normalizeInvestmentCurrencyFilter as normalizeInvestmentCurrencyFilterValue,
+    selectInvestmentBrokerRows,
+    sortInvestmentBrokerFilterCodes as sortInvestmentBrokerFilterCodesCore,
+} from './investment/transaction-filters.js?v=investment-transaction-filters-v1.0.0';
+import {
+    INVESTMENT_LAYOUT_MODULE_VERSION,
+    bindInvestmentSectionResizer,
+} from './investment/layout.js?v=investment-layout-v1.0.0';
+import {
+    INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
+    buildInvestmentHistoryPage,
+    getInvestmentHistoryPageForLedgerNos as getInvestmentHistoryPageForLedgerNosCore,
+    getInvestmentHistoryTotalPages,
+    isInvestmentHistoryDisplayHidden,
+    selectVisibleInvestmentHistoryTransactions,
+} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v1.91.0',
+    entry: 'v2.2.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    layout: INVESTMENT_LAYOUT_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
+    realtime: INVESTMENT_REALTIME_MODULE_VERSION,
     stockDetails: INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
+    transactionFilters: INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
+    transactionTable: INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
 });
 
 registerInvestmentChartHelpers(window);
@@ -508,262 +227,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_STOCK_DETAILS_PANEL_ID = 'stock_panel';
     const INVESTMENT_STOCK_DETAILS_HASH = '#stock_panel';
     const LEGACY_INVESTMENT_STOCK_DETAILS_HASH = '#investment_stock_details_panel';
-    const INVESTMENT_HISTORY_PAGE_SIZE = 100;
     const INVESTMENT_HISTORY_MIN_VISIBLE_ROWS = 2;
     const INVESTMENT_REALTIME_QUOTE_POLL_MS = 60000;
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
-    const INVESTMENT_LIVE_DIGIT_ANIMATION_MS = 520;
 
     function initInvestmentSectionResizer() {
-        if (
-            !(investmentWorkspaceHeader instanceof HTMLElement)
-            || !(investmentReportCard instanceof HTMLElement)
-            || !(investmentHistorySurface instanceof HTMLElement)
-            || !(investmentSectionResizer instanceof HTMLElement)
-            || typeof window.ANTIGRAVITY_RESIZER?.bind !== 'function'
-        ) return;
-
-        let overviewRatio = Number.NaN;
-        let resizeFrame = 0;
-        let chartResizeFrame = 0;
-        let overviewChromeHeight = 0;
-        const investmentSummaryCard = investmentWorkspaceHeader.querySelector(':scope > .workspace-summary-card');
-        const getBaselineMinimumHeight = () => {
-            const value = Number.parseFloat(
-                getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-section-min-height'),
-            );
-            return Number.isFinite(value) ? value : 132;
-        };
-        const readPixelProperty = (element, propertyName, fallback = 0) => {
-            if (!(element instanceof HTMLElement)) return fallback;
-            const value = Number.parseFloat(getComputedStyle(element).getPropertyValue(propertyName));
-            return Number.isFinite(value) ? value : fallback;
-        };
-        const getOverviewMinimumHeight = (baselineMinimum) => {
-            const stage = investmentReportCard.querySelector('.investment-equity-chart-stage');
-            if (!(stage instanceof HTMLElement)) return baselineMinimum;
-            const reportHeight = investmentReportCard.getBoundingClientRect().height;
-            const stageHeight = stage.getBoundingClientRect().height;
-            if (reportHeight > 0 && stageHeight > 0 && reportHeight >= stageHeight) {
-                overviewChromeHeight = Math.max(overviewChromeHeight, reportHeight - stageHeight);
-            }
-            const stageMinimum = readPixelProperty(
-                stage,
-                'min-height',
-                readPixelProperty(investmentWorkspaceHeader, '--investment-equity-stage-min-height', 180),
-            );
-            return Math.max(baselineMinimum, overviewChromeHeight + stageMinimum);
-        };
-        const getHistoryMinimumHeight = (baselineMinimum) => {
-            const primaryTableShell = investmentHistorySurface.querySelector('#history_table_wrap');
-            const stockDetailsTableShell = investmentHistorySurface.querySelector(
-                '#investment_stock_details_table_host:not([hidden]) .investment-stock-details-table-shell',
-            );
-            const isVisibleTableShell = (tableShell) => (
-                tableShell instanceof HTMLElement
-                && tableShell.getClientRects().length > 0
-                && getComputedStyle(tableShell).display !== 'none'
-            );
-            const tableShells = [primaryTableShell, stockDetailsTableShell]
-                .filter(isVisibleTableShell);
-            const fallbackRowHeight = readPixelProperty(
-                investmentWorkspaceHeader,
-                '--investment-history-row-min-height',
-                40,
-            );
-            const surfaceStyles = getComputedStyle(investmentHistorySurface);
-            const visibleFlowChildren = Array.from(investmentHistorySurface.children).filter((child) => {
-                if (!(child instanceof HTMLElement) || child.getClientRects().length === 0) return false;
-                const styles = getComputedStyle(child);
-                return styles.display !== 'none'
-                    && styles.visibility !== 'hidden'
-                    && styles.position !== 'absolute';
-            });
-            const tableFlowChildren = new Set(tableShells.map((tableShell) => (
-                visibleFlowChildren.find((child) => child === tableShell || child.contains(tableShell))
-            )).filter(Boolean));
-            const chromeHeight = visibleFlowChildren.reduce((total, child) => {
-                if (tableFlowChildren.has(child)) return total;
-                const styles = getComputedStyle(child);
-                return total
-                    + child.getBoundingClientRect().height
-                    + (Number.parseFloat(styles.marginTop) || 0)
-                    + (Number.parseFloat(styles.marginBottom) || 0);
-            }, (
-                (Number.parseFloat(surfaceStyles.paddingTop) || 0)
-                + (Number.parseFloat(surfaceStyles.paddingBottom) || 0)
-                + ((Number.parseFloat(surfaceStyles.rowGap) || 0) * Math.max(0, visibleFlowChildren.length - 1))
-            ));
-            const tableMinimumHeight = tableShells.reduce((total, tableShell) => {
-                const headerTable = tableShell?.querySelector('[data-table-header]');
-                const rows = tableShell?.matches('.investment-stock-details-table-shell')
-                    ? Array.from(tableShell.querySelectorAll('tbody > tr:not([data-table-empty-row])'))
-                        .slice(0, INVESTMENT_HISTORY_MIN_VISIBLE_ROWS)
-                    : Array.from(tableShell?.querySelectorAll('#investment_history > tr:not([data-table-empty-row])') || [])
-                        .slice(0, INVESTMENT_HISTORY_MIN_VISIBLE_ROWS);
-                const visibleRowsHeight = rows.reduce(
-                    (rowTotal, row) => rowTotal + Math.max(row.getBoundingClientRect().height, fallbackRowHeight),
-                    fallbackRowHeight * (INVESTMENT_HISTORY_MIN_VISIBLE_ROWS - rows.length),
-                );
-                const headerHeight = headerTable instanceof HTMLElement
-                    ? headerTable.getBoundingClientRect().height
-                    : readPixelProperty(tableShell, '--scrollable-data-table-header-height', 28);
-                return total + Math.max(0, headerHeight) + visibleRowsHeight + 1;
-            }, 0);
-            return Math.max(
-                baselineMinimum,
-                chromeHeight + tableMinimumHeight,
-            );
-        };
-        const getAvailableTrackHeight = () => {
-            const styles = getComputedStyle(investmentWorkspaceHeader);
-            const rowGap = Number.parseFloat(styles.rowGap) || 0;
-            const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
-            const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-            const summaryHeight = investmentSummaryCard instanceof HTMLElement
-                ? investmentSummaryCard.getBoundingClientRect().height
-                : 0;
-            const resizerHeight = investmentSectionResizer.getBoundingClientRect().height;
-            const availableHeight = (
-                investmentWorkspaceHeader.clientHeight
-                - paddingTop
-                - paddingBottom
-                - summaryHeight
-                - resizerHeight
-                - (rowGap * 3)
-            );
-            if (availableHeight > 0) return availableHeight;
-            return (
-                investmentReportCard.getBoundingClientRect().height
-                + investmentHistorySurface.getBoundingClientRect().height
-            );
-        };
-        const getRange = () => {
-            const availableHeight = getAvailableTrackHeight();
-            const baselineMinimum = Math.min(getBaselineMinimumHeight(), availableHeight / 2);
-            const desiredOverviewMinimum = getOverviewMinimumHeight(baselineMinimum);
-            const desiredHistoryMinimum = getHistoryMinimumHeight(baselineMinimum);
-            const desiredExtraHeight = (
-                (desiredOverviewMinimum - baselineMinimum)
-                + (desiredHistoryMinimum - baselineMinimum)
-            );
-            const availableExtraHeight = Math.max(0, availableHeight - (baselineMinimum * 2));
-            const minimumScale = desiredExtraHeight > 0
-                ? Math.min(1, availableExtraHeight / desiredExtraHeight)
-                : 1;
-            const overviewMinimum = (
-                baselineMinimum
-                + ((desiredOverviewMinimum - baselineMinimum) * minimumScale)
-            );
-            const historyMinimum = (
-                baselineMinimum
-                + ((desiredHistoryMinimum - baselineMinimum) * minimumScale)
-            );
-            investmentWorkspaceHeader.style.setProperty('--investment-overview-min-height', `${overviewMinimum}px`);
-            investmentWorkspaceHeader.style.setProperty('--investment-history-min-height', `${historyMinimum}px`);
-            return {
-                minimum: overviewMinimum,
-                maximum: Math.max(overviewMinimum, availableHeight - historyMinimum),
-            };
-        };
-        const getValue = () => investmentReportCard.getBoundingClientRect().height;
-        const scheduleOverviewChartResize = () => {
-            if (chartResizeFrame) return;
-            chartResizeFrame = window.requestAnimationFrame(() => {
-                chartResizeFrame = 0;
-                if (investmentEquityChartInstance?.canvas?.isConnected) {
-                    investmentEquityChartInstance.resize();
-                }
-            });
-        };
-        const setValue = (height) => {
-            const availableHeight = getAvailableTrackHeight();
-            if (!(availableHeight > 0)) return;
-            overviewRatio = height / availableHeight;
-            investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${height}px`);
-            scheduleOverviewChartResize();
-            investmentSectionResizer.setAttribute(
-                'aria-valuetext',
-                `Overview ${Math.round(overviewRatio * 100)} percent`,
-            );
-        };
-        const valueFromPointer = (clientY) => {
-            const reportRect = investmentReportCard.getBoundingClientRect();
-            const handleRect = investmentSectionResizer.getBoundingClientRect();
-            const rowGap = Number.parseFloat(getComputedStyle(investmentWorkspaceHeader).rowGap) || 0;
-            return clientY - reportRect.top - rowGap - (handleRect.height / 2);
-        };
-        const reflowRatio = () => {
-            resizeFrame = 0;
-            const availableHeight = getAvailableTrackHeight();
-            const range = getRange();
-            const defaultOverviewShare = Math.min(
-                0.8,
-                Math.max(
-                    0.2,
-                    Number.parseFloat(getComputedStyle(investmentWorkspaceHeader).getPropertyValue('--investment-default-overview-share')) || 0.44,
-                ),
-            );
-            if (!Number.isFinite(overviewRatio)) {
-                overviewRatio = defaultOverviewShare;
-            }
-            const requestedHeight = availableHeight * overviewRatio;
-            const nextHeight = Math.min(
-                Math.max(requestedHeight, range.minimum),
-                range.maximum,
-            );
-            if (Math.abs(nextHeight - getValue()) < 0.5) return;
-            investmentWorkspaceHeader.style.setProperty('--investment-overview-track', `${nextHeight}px`);
-            scheduleOverviewChartResize();
-        };
-        const scheduleRatioReflow = () => {
-            if (resizeFrame) return;
-            resizeFrame = window.requestAnimationFrame(reflowRatio);
-        };
-
-        const unbind = window.ANTIGRAVITY_RESIZER.bind(investmentSectionResizer, {
-            axis: 'block',
-            root: investmentWorkspaceHeader,
-            getRange,
-            getValue,
-            setValue,
-            valueFromPointer,
-            step: 16,
-            largeStep: 48,
-            onEnd: () => window.dispatchEvent(new Event('resize')),
+        return bindInvestmentSectionResizer({
+            workspaceHeader: investmentWorkspaceHeader,
+            reportCard: investmentReportCard,
+            historySurface: investmentHistorySurface,
+            sectionResizer: investmentSectionResizer,
+            minVisibleRows: INVESTMENT_HISTORY_MIN_VISIBLE_ROWS,
+            getChartInstance: () => investmentEquityChartInstance,
         });
-        let observer = null;
-        let mutationObserver = null;
-        if (typeof ResizeObserver === 'function') {
-            observer = new ResizeObserver(scheduleRatioReflow);
-            observer.observe(investmentWorkspaceHeader);
-            observer.observe(investmentReportCard);
-            observer.observe(investmentHistorySurface);
-        }
-        if (typeof MutationObserver === 'function') {
-            mutationObserver = new MutationObserver(scheduleRatioReflow);
-            mutationObserver.observe(investmentReportCard, {childList: true, subtree: true});
-            mutationObserver.observe(investmentHistorySurface, {childList: true, subtree: true});
-        }
-        scheduleRatioReflow();
-        window.addEventListener('resize', scheduleRatioReflow, {passive: true});
-        window.addEventListener('pagehide', () => {
-            unbind();
-            observer?.disconnect();
-            mutationObserver?.disconnect();
-            window.removeEventListener('resize', scheduleRatioReflow);
-            if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
-            if (chartResizeFrame) window.cancelAnimationFrame(chartResizeFrame);
-        }, {once: true});
     }
     const INVESTMENT_OVERVIEW_INTRADAY_DAY_COUNTS = {
         '1w': 5,
         '1m': 23,
     };
-    const investmentLiveCharWidthCache = new Map();
-    const investmentLiveValueAnimationCancels = new WeakMap();
     let investmentMarketSessionState = null;
     let investmentMarketSessionStateLoadedAt = 0;
     let investmentMarketSessionStateRequest = null;
@@ -1071,9 +554,6 @@ document.addEventListener('DOMContentLoaded', () => {
         points: [],
         quality: null,
     };
-    let investmentRealtimeQuoteTimer = 0;
-    let investmentRealtimeQuoteAbortController = null;
-    let investmentRealtimeQuoteInflight = false;
     const investmentRealtimeQuotesByTicker = new Map();
 
     const STOCK_DETAILS_DONUT_GRAY_FILL = 'color-mix(in srgb, var(--theme-muted) 34%, transparent)';
@@ -1229,21 +709,40 @@ document.addEventListener('DOMContentLoaded', () => {
         normalizeInvestmentEquityRange,
     });
 
+    const {
+        syncInvestmentLiveDirectionTone,
+        syncInvestmentLiveTone,
+        updateInvestmentLiveValueNode,
+    } = createInvestmentLiveValueAnimator({
+        epsilon: INVESTMENT_LIVE_DIGIT_EPSILON,
+        easeOutCubic,
+        renderWorkspaceMetricValueContent,
+    });
+
+    const investmentRealtimeQuotePoller = createInvestmentRealtimeQuotePoller({
+        pollDelayMs: INVESTMENT_REALTIME_QUOTE_POLL_MS,
+        idleDelayMs: INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS,
+        isDisposed: () => investmentPageDisposed,
+        hasData: () => investmentProcessedTransactionsCache.length > 0,
+        getTickers: getInvestmentRealtimeHoldingsTickers,
+        shouldRun: shouldRunInvestmentRealtimeQuotes,
+        requestQuotes: requestInvestmentRealtimeQuotes,
+        applyQuotes: applyInvestmentRealtimeQuotes,
+        resetState: resetInvestmentRealtimeChartState,
+        refreshSession: () => refreshInvestmentMarketSessionState({force: true}),
+        isLifecycleInterrupted: isLifecycleInterruptedFetch,
+        onError: (error) => console.warn('Unable to refresh investment realtime quotes', error),
+        setTimeoutFn: window.setTimeout.bind(window),
+        clearTimeoutFn: window.clearTimeout.bind(window),
+    });
+
     function normalizeInvestmentView(value) {
         const normalized = String(value || '').trim().toLowerCase();
         return INVESTMENT_VIEW_ORDER.includes(normalized) ? normalized : 'chart';
     }
 
     function stopInvestmentRealtimeQuotePolling() {
-        if (investmentRealtimeQuoteTimer) {
-            window.clearTimeout(investmentRealtimeQuoteTimer);
-            investmentRealtimeQuoteTimer = 0;
-        }
-        if (investmentRealtimeQuoteAbortController) {
-            investmentRealtimeQuoteAbortController.abort();
-            investmentRealtimeQuoteAbortController = null;
-        }
-        investmentRealtimeQuoteInflight = false;
+        investmentRealtimeQuotePoller.stop();
     }
 
     function getInvestmentRealtimeQuoteEndpoint() {
@@ -2080,56 +1579,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function scheduleInvestmentRealtimeQuotePolling() {
-        if (investmentPageDisposed || !investmentProcessedTransactionsCache.length) return;
-        const tickers = getInvestmentRealtimeHoldingsTickers();
-        if (!tickers.length) return;
-        if (investmentRealtimeQuoteTimer) {
-            window.clearTimeout(investmentRealtimeQuoteTimer);
-        }
-        const delayMs = shouldRunInvestmentRealtimeQuotes()
-            ? INVESTMENT_REALTIME_QUOTE_POLL_MS
-            : INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS;
-        investmentRealtimeQuoteTimer = window.setTimeout(() => {
-            pollInvestmentRealtimeQuotes();
-        }, delayMs);
+        investmentRealtimeQuotePoller.schedule();
     }
 
     async function pollInvestmentRealtimeQuotes() {
-        if (investmentPageDisposed || investmentRealtimeQuoteInflight) return;
-        const tickers = getInvestmentRealtimeHoldingsTickers();
-        if (!tickers.length) return;
-        if (!shouldRunInvestmentRealtimeQuotes()) {
-            resetInvestmentRealtimeChartState();
-            scheduleInvestmentRealtimeQuotePolling();
-            return;
-        }
-        investmentRealtimeQuoteInflight = true;
-        investmentRealtimeQuoteAbortController = new AbortController();
-        try {
-            const quotes = await requestInvestmentRealtimeQuotes(tickers, {
-                signal: investmentRealtimeQuoteAbortController.signal,
-            });
-            if (quotes.length) {
-                applyInvestmentRealtimeQuotes(quotes);
-            } else if (shouldRunInvestmentRealtimeQuotes()) {
-                resetInvestmentRealtimeChartState();
-            }
-        } catch (error) {
-            if (!isLifecycleInterruptedFetch(error)) {
-                console.warn('Unable to refresh investment realtime quotes', error);
-            }
-        } finally {
-            investmentRealtimeQuoteInflight = false;
-            investmentRealtimeQuoteAbortController = null;
-            scheduleInvestmentRealtimeQuotePolling();
-        }
+        return investmentRealtimeQuotePoller.poll();
     }
 
     function restartInvestmentRealtimeQuotePolling() {
-        stopInvestmentRealtimeQuotePolling();
-        void refreshInvestmentMarketSessionState({ force: true })
-            .catch(() => null)
-            .then(() => pollInvestmentRealtimeQuotes());
+        void investmentRealtimeQuotePoller.restart();
     }
 
     function readInvestmentPageMemory() {
@@ -3208,78 +2666,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isInvestmentStockDetailsIntradayRange(range) {
-        const normalizedRange = normalizeInvestmentStockDetailsRange(range);
-        return normalizedRange === '1w';
-    }
-
-    function parseInvestmentIntradayTimestamp(value) {
-        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-        if (!match) return null;
-        const year = Number(match[1]);
-        const monthIndex = Number(match[2]) - 1;
-        const day = Number(match[3]);
-        const hours = Number(match[4]);
-        const minutes = Number(match[5]);
-        if (![year, monthIndex, day, hours, minutes].every(Number.isFinite)) return null;
-        return new Date(year, monthIndex, day, hours, minutes, 0, 0);
-    }
-
-    function normalizeInvestmentIntradayMinuteKey(value) {
-        const parsed = parseInvestmentIntradayTimestamp(value);
-        if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return '';
-        const year = parsed.getFullYear();
-        const month = String(parsed.getMonth() + 1).padStart(2, '0');
-        const day = String(parsed.getDate()).padStart(2, '0');
-        const hours = String(parsed.getHours()).padStart(2, '0');
-        const minutes = String(parsed.getMinutes()).padStart(2, '0');
-        return `${year}-${month}-${day} ${hours}:${minutes}`;
+        return isInvestmentStockDetailsIntradayRangeCore(
+            range,
+            INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS,
+        );
     }
 
     function buildInvestmentIntradayDayFallbackIndex(labels = []) {
-        return (Array.isArray(labels) ? labels : []).reduce((accumulator, label, index) => {
-            const dayKey = normalizeLedgerDate(label);
-            if (dayKey) accumulator.set(dayKey, index);
-            return accumulator;
-        }, new Map());
+        return buildInvestmentIntradayDayFallbackIndexCore(labels, normalizeLedgerDate);
     }
 
     function buildInvestmentIntradayDayBoundaries(labels = []) {
-        const orderedDays = [];
-        const dayMap = new Map();
-        (Array.isArray(labels) ? labels : []).forEach((label, index) => {
-            const dayKey = normalizeLedgerDate(label);
-            if (!dayKey) return;
-            const existing = dayMap.get(dayKey);
-            if (existing) {
-                existing.lastIndex = index;
-                return;
-            }
-            const entry = {
-                dayKey,
-                ordinal: orderedDays.length,
-                firstIndex: index,
-                lastIndex: index,
-            };
-            orderedDays.push(entry);
-            dayMap.set(dayKey, entry);
-        });
-        return { orderedDays, dayMap };
+        return buildInvestmentIntradayDayBoundariesCore(labels, normalizeLedgerDate);
     }
 
     function getInvestmentTradeSessionType(value) {
-        const dateParts = parseInvestmentDateParts(value);
-        if (!dateParts || !Number.isInteger(dateParts.hours) || !Number.isInteger(dateParts.minutes)) {
-            return 'intraday';
-        }
-        const totalMinutes = (dateParts.hours * 60) + dateParts.minutes;
-        const intradayOpenMinutes = (9 * 60) + 30;
-        const intradayCloseMinutes = 16 * 60;
-        const premarketOpenMinutes = 4 * 60;
-        const postmarketCloseMinutes = 20 * 60;
-        if (totalMinutes >= intradayOpenMinutes && totalMinutes < intradayCloseMinutes) return 'intraday';
-        if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
-        if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
-        return 'night';
+        return getInvestmentTradeSessionTypeCore(value, parseInvestmentDateParts);
     }
 
     async function loadInvestmentStockDetailsIntradayRows(ticker, range) {
@@ -3894,17 +3296,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function normalizeInvestmentStockDetailsRange(range) {
-        const normalizedRange = String(range || '').trim().toLowerCase();
-        return INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.some((option) => option.value === normalizedRange)
-            ? normalizedRange
-            : 'max';
+        return normalizeInvestmentRange(range, INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS);
     }
 
     function normalizeInvestmentEquityRange(range) {
-        const normalizedRange = String(range || '').trim().toLowerCase();
-        return INVESTMENT_EQUITY_RANGE_OPTIONS.some((option) => option.value === normalizedRange)
-            ? normalizedRange
-            : 'max';
+        return normalizeInvestmentRange(range, INVESTMENT_EQUITY_RANGE_OPTIONS);
     }
 
     function getInvestmentHistoryHeadingElement() {
@@ -5581,14 +4977,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="suggestion-name ticker-identity-name" title="${escapeHtml(normalizedName)}">${escapeHtml(normalizedName)}</span>`;
     }
 
-    function normalizeInvestmentBroker(broker) {
-        const normalizedBroker = String(broker || '').trim().toLowerCase();
-        if (normalizedBroker === 'longbridge') {
-            return 'longbridge_hk';
-        }
-        return normalizedBroker || 'ibkr';
-    }
-
     function getInvestmentBrokerMeta(broker) {
         const normalizedBroker = normalizeInvestmentBroker(broker);
         if (INVESTMENT_BROKER_META[normalizedBroker]) {
@@ -5612,71 +5000,32 @@ document.addEventListener('DOMContentLoaded', () => {
         futuhk: 'futuhk',
         schwab: 'charlesschwab',
     };
-    const investmentBrokerFilterCollator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true });
-
-    function getInvestmentBrokerFilterSortKey(brokerCode) {
-        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
-        return INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS[normalizedBrokerCode]
-            || getInvestmentBrokerMeta(normalizedBrokerCode).label.trim().toLowerCase()
-            || normalizedBrokerCode;
-    }
-
-    function compareInvestmentBrokerFilterCodes(leftCode, rightCode) {
-        const bySortKey = investmentBrokerFilterCollator.compare(
-            getInvestmentBrokerFilterSortKey(leftCode),
-            getInvestmentBrokerFilterSortKey(rightCode),
-        );
-        if (bySortKey !== 0) return bySortKey;
-        return normalizeInvestmentBroker(leftCode).localeCompare(normalizeInvestmentBroker(rightCode));
-    }
-
     function sortInvestmentBrokerFilterCodes(brokerCodes = []) {
-        return Array.from(new Set(
-            (Array.isArray(brokerCodes) ? brokerCodes : [])
-                .map((brokerCode) => normalizeInvestmentBroker(brokerCode))
-                .filter(Boolean),
-        )).sort(compareInvestmentBrokerFilterCodes);
+        const labels = Object.fromEntries(
+            Object.entries(INVESTMENT_BROKER_META).map(([brokerCode, metadata]) => [brokerCode, metadata.label]),
+        );
+        return sortInvestmentBrokerFilterCodesCore(brokerCodes, {
+            labels,
+            sortKeys: INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS,
+        });
     }
 
     function rebuildInvestmentBrokerFilterTransactionIndex(processedTransactions = investmentProcessedTransactionsCache) {
         const source = Array.isArray(processedTransactions) ? processedTransactions : [];
-        const allRows = [];
-        const byBroker = new Map();
-
-        source.forEach((txn, index) => {
-            if (isInvestmentHistoryDisplayHidden(txn)) return;
-            const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
-            if (!brokerCode) return;
-            const row = {
-                txn,
-                index,
-                brokerCode,
-                dateLabel: normalizeLedgerDate(txn?.date),
-            };
-            allRows.push(row);
-            if (!byBroker.has(brokerCode)) {
-                byBroker.set(brokerCode, []);
-            }
-            byBroker.get(brokerCode).push(row);
-        });
-
-        const ledgerBrokerCodes = sortInvestmentBrokerFilterCodes(Array.from(byBroker.keys()));
         const payloadBrokerCodes = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.brokers)
             ? window.ANTIGRAVITY_INVESTMENT_DATA.brokers.map((broker) => normalizeInvestmentBroker(broker)).filter(Boolean)
             : [];
-        // Prefer brokers proven by rendered ledger rows; use the server broker list only before
-        // processed transactions exist so the filter never advertises an empty broker in large ledgers.
-        const availableCodes = ledgerBrokerCodes.length
-            ? ledgerBrokerCodes
-            : sortInvestmentBrokerFilterCodes(payloadBrokerCodes);
-
-        investmentBrokerFilterTransactionIndex = {
-            source,
-            allRows,
-            byBroker,
-            availableCodes,
-            availableSet: new Set(availableCodes),
-        };
+        const labels = Object.fromEntries(
+            Object.entries(INVESTMENT_BROKER_META).map(([brokerCode, metadata]) => [brokerCode, metadata.label]),
+        );
+        investmentBrokerFilterTransactionIndex = buildInvestmentBrokerFilterIndex(source, {
+            isHidden: isInvestmentHistoryDisplayHidden,
+            getBrokerCode: getTransactionBrokerCode,
+            normalizeDate: normalizeLedgerDate,
+            payloadBrokers: payloadBrokerCodes,
+            labels,
+            sortKeys: INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS,
+        });
     }
 
     function ensureInvestmentBrokerFilterTransactionIndex(processedTransactions = investmentProcessedTransactionsCache) {
@@ -5713,12 +5062,6 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
-    function isInvestmentBrokerFilterAllSelected(selectedCodes = getInvestmentBrokerFilterSelectedCodes(), availableCodes = getAvailableInvestmentBrokerCodes()) {
-        if (!availableCodes.length) return true;
-        if (!selectedCodes.size) return false;
-        return availableCodes.every((brokerCode) => selectedCodes.has(brokerCode));
-    }
-
     function matchesInvestmentBrokerFilter(txn) {
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         if (!availableBrokerCodes.length) return true;
@@ -5734,27 +5077,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentBrokerFilteredTransactionRows(processedTransactions = []) {
         const index = ensureInvestmentBrokerFilterTransactionIndex(processedTransactions);
-        const availableBrokerCodes = index.availableCodes;
-        if (!availableBrokerCodes.length) return [];
-
         const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
-        if (isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes)) {
-            return index.allRows;
-        }
-        if (!selectedBrokerCodes.size) {
-            return [];
-        }
-
-        const selectedBrokerList = availableBrokerCodes.filter((brokerCode) => selectedBrokerCodes.has(brokerCode));
-        if (selectedBrokerList.length === 1) {
-            return index.byBroker.get(selectedBrokerList[0]) || [];
-        }
-        if (selectedBrokerList.length > Math.max(1, availableBrokerCodes.length / 2)) {
-            return index.allRows.filter((row) => selectedBrokerCodes.has(row.brokerCode));
-        }
-        return selectedBrokerList
-            .flatMap((brokerCode) => index.byBroker.get(brokerCode) || [])
-            .sort((left, right) => left.index - right.index);
+        return selectInvestmentBrokerRows(index, selectedBrokerCodes);
     }
 
     function initializeInvestmentBrokerFilterSelection() {
@@ -6354,23 +5678,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getAvailableInvestmentCurrencyCodes(processedTransactions = investmentProcessedTransactionsCache) {
-        return Array.from(new Set(
-            (Array.isArray(processedTransactions) ? processedTransactions : [])
-                .filter((txn) => !isInvestmentHistoryDisplayHidden(txn))
-                .map((txn) => String(formatTransactionCurrency(txn) || '').trim().toUpperCase())
-                .filter((currency) => /^[A-Z]{3}$/.test(currency)),
-        )).sort((left, right) => left.localeCompare(right));
+        return getAvailableInvestmentCurrencyCodesFromRows(processedTransactions, {
+            isHidden: isInvestmentHistoryDisplayHidden,
+            formatCurrency: formatTransactionCurrency,
+        });
     }
 
     function normalizeInvestmentCurrencyFilter(value) {
-        const normalized = String(value || '').trim().toUpperCase();
-        if (!normalized || normalized === 'ALL') return 'all';
-        return getAvailableInvestmentCurrencyCodes().includes(normalized) ? normalized : 'all';
+        return normalizeInvestmentCurrencyFilterValue(value, getAvailableInvestmentCurrencyCodes());
     }
 
     function matchesInvestmentCurrencyFilter(txn) {
-        if (investmentCurrencyFilter === 'all') return true;
-        return String(formatTransactionCurrency(txn) || '').trim().toUpperCase() === investmentCurrencyFilter;
+        return matchesInvestmentCurrencyFilterValue(
+            txn,
+            investmentCurrencyFilter,
+            formatTransactionCurrency,
+        );
     }
 
     function renderInvestmentCurrencyFilterHeaderInnerMarkup(filterId = 'investment_history_currency_filter') {
@@ -6509,14 +5832,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function matchesInvestmentStockDetailsDateFilter(txn) {
-        const mode = String(investmentStockDetailsDateFilter.mode || 'all');
-        const value = String(investmentStockDetailsDateFilter.value || '').trim();
-        if (mode === 'all' || !value) return true;
-        const transactionDate = normalizeLedgerDate(txn?.date);
-        if (!transactionDate) return false;
-        if (mode === 'day') return transactionDate === value;
-        if (mode === 'month') return transactionDate.startsWith(`${value}-`);
-        return false;
+        return matchesInvestmentDateFilter(
+            txn,
+            investmentStockDetailsDateFilter,
+            normalizeLedgerDate,
+        );
     }
 
     function renderInvestmentStockDetailsDatePickerField({ role, inputId, label, value }) {
@@ -10457,466 +9777,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function resolveInvestmentLiveNumberDirection(previousValue, nextValue) {
-        const previousNumber = Number(previousValue);
-        const nextNumber = Number(nextValue);
-        if (!Number.isFinite(previousNumber) || !Number.isFinite(nextNumber)) return 'flat';
-        if (Math.abs(nextNumber - previousNumber) <= INVESTMENT_LIVE_DIGIT_EPSILON) return 'flat';
-        return nextNumber > previousNumber ? 'rise' : 'fall';
-    }
-
-    function parseInvestmentLiveDisplaySegments(display) {
-        const raw = String(display ?? '').trim();
-        if (!raw || raw === '-') {
-            return null;
-        }
-        const match = raw.match(/^([+\-]?(?:[A-Z]{3}\s|\$)?)(\d[\d,]*)(\.)(\d*)(%?)$/);
-        if (!match) {
-            return {
-                isStructured: false,
-                chars: Array.from(raw),
-            };
-        }
-        const [, prefix, integerPart, dot, fractionalPart, suffix] = match;
-        return {
-            isStructured: true,
-            prefix: Array.from(prefix),
-            integer: Array.from(integerPart),
-            dot: [dot],
-            fraction: Array.from(fractionalPart),
-            suffix: Array.from(suffix),
-        };
-    }
-
-    function alignInvestmentLiveSegmentChars(previousChars, nextChars, align = 'left') {
-        const safePrevious = Array.isArray(previousChars) ? previousChars : [];
-        const safeNext = Array.isArray(nextChars) ? nextChars : [];
-        const maxLength = Math.max(safePrevious.length, safeNext.length);
-        const pairs = [];
-        for (let index = 0; index < maxLength; index += 1) {
-            const previousIndex = align === 'right'
-                ? index - (maxLength - safePrevious.length)
-                : index;
-            const nextIndex = align === 'right'
-                ? index - (maxLength - safeNext.length)
-                : index;
-            const previousChar = previousIndex >= 0 && previousIndex < safePrevious.length
-                ? safePrevious[previousIndex]
-                : '';
-            const nextChar = nextIndex >= 0 && nextIndex < safeNext.length
-                ? safeNext[nextIndex]
-                : '';
-            if (!previousChar && !nextChar) continue;
-            pairs.push({ previousChar, nextChar });
-        }
-        return pairs;
-    }
-
-    function buildInvestmentLiveSegmentPairs(previousDisplay, nextDisplay) {
-        const previousSegments = parseInvestmentLiveDisplaySegments(previousDisplay);
-        const nextSegments = parseInvestmentLiveDisplaySegments(nextDisplay);
-        if (!previousSegments && !nextSegments) {
-            return [];
-        }
-        if (!previousSegments || !nextSegments) {
-            return alignInvestmentLiveSegmentChars(
-                Array.from(String(previousDisplay || '')),
-                Array.from(String(nextDisplay || '')),
-                'right',
-            ).map((pair) => ({ ...pair, partClassName: '' }));
-        }
-        if (!previousSegments.isStructured || !nextSegments.isStructured) {
-            return alignInvestmentLiveSegmentChars(previousSegments.chars, nextSegments.chars, 'right')
-                .map((pair) => ({ ...pair, partClassName: '' }));
-        }
-        const segmentOrder = ['prefix', 'integer', 'dot', 'fraction', 'suffix'];
-        const segmentAlign = {
-            prefix: 'left',
-            integer: 'right',
-            dot: 'left',
-            fraction: 'left',
-            suffix: 'left',
-        };
-        const segmentPartClass = {
-            prefix: 'workspace-metric-value-major',
-            integer: 'workspace-metric-value-major',
-            dot: 'workspace-metric-value-minor',
-            fraction: 'workspace-metric-value-minor',
-            suffix: 'workspace-metric-value-suffix',
-        };
-        return segmentOrder.flatMap((segmentKey) => (
-            alignInvestmentLiveSegmentChars(
-                previousSegments[segmentKey],
-                nextSegments[segmentKey],
-                segmentAlign[segmentKey],
-            ).map((pair) => ({
-                ...pair,
-                partClassName: segmentPartClass[segmentKey],
-            }))
-        ));
-    }
-
-    function getInvestmentLiveMeasurementFingerprint(node, partClassName = '') {
-        if (!(node instanceof HTMLElement)) return '';
-        const styles = window.getComputedStyle(node);
-        return [
-            partClassName,
-            styles.fontFamily,
-            styles.fontSize,
-            styles.fontWeight,
-            styles.fontStyle,
-            styles.letterSpacing,
-            styles.fontVariantNumeric,
-        ].join('|');
-    }
-
-    function measureInvestmentLiveCharWidth(node, char, partClassName = '') {
-        const safeChar = String(char || '0');
-        const fingerprint = getInvestmentLiveMeasurementFingerprint(node, partClassName);
-        const cacheKey = `${fingerprint}::${safeChar}`;
-        if (investmentLiveCharWidthCache.has(cacheKey)) {
-            return investmentLiveCharWidthCache.get(cacheKey);
-        }
-        if (!(node instanceof HTMLElement) || !(document.body instanceof HTMLElement)) {
-            return 0;
-        }
-        const wrapper = document.createElement('span');
-        wrapper.className = node.className;
-        wrapper.style.position = 'absolute';
-        wrapper.style.left = '-10000px';
-        wrapper.style.top = '0';
-        wrapper.style.visibility = 'hidden';
-        wrapper.style.pointerEvents = 'none';
-        wrapper.style.whiteSpace = 'nowrap';
-        const measurer = document.createElement('span');
-        measurer.className = partClassName || 'workspace-metric-value-major';
-        measurer.style.whiteSpace = 'pre';
-        measurer.textContent = safeChar;
-        wrapper.appendChild(measurer);
-        document.body.appendChild(wrapper);
-        const width = Math.ceil(Math.max(0, measurer.getBoundingClientRect().width || 0));
-        wrapper.remove();
-        investmentLiveCharWidthCache.set(cacheKey, width);
-        return width;
-    }
-
-    function resolveInvestmentLiveSlotWidth(node, previousChar, nextChar, partClassName = '') {
-        const widths = [previousChar, nextChar]
-            .filter(Boolean)
-            .map((char) => measureInvestmentLiveCharWidth(node, char, partClassName));
-        if (widths.length) return Math.max(...widths);
-        return measureInvestmentLiveCharWidth(node, '0', partClassName);
-    }
-
-    function applyInvestmentLiveDigitSlotWidth(digit, width) {
-        if (!(digit instanceof HTMLElement) || !Number.isFinite(width) || width <= 0) return;
-        digit.style.width = `${Math.ceil(width)}px`;
-        digit.style.minWidth = `${Math.ceil(width)}px`;
-        digit.style.maxWidth = `${Math.ceil(width)}px`;
-    }
-
-    function createInvestmentLiveDigit(previousChar, nextChar, direction, slotWidth = 0) {
-        const digit = document.createElement('span');
-        const previous = String(previousChar || '');
-        const next = String(nextChar || '');
-        const displayChar = next || previous;
-        const changed = previous !== next && direction !== 'flat' && Boolean(previous || next);
-        applyInvestmentLiveDigitSlotWidth(digit, slotWidth);
-
-        if (!changed) {
-            digit.className = 'investment-live-digit';
-            digit.textContent = displayChar;
-            return { digit, animate: false };
-        }
-
-        digit.className = `investment-live-digit investment-live-digit--changed investment-live-digit--${direction}`;
-        if (previous) {
-            const oldFace = document.createElement('span');
-            oldFace.className = 'investment-live-digit-face investment-live-digit-face--old';
-            oldFace.textContent = previous;
-            digit.appendChild(oldFace);
-        }
-        if (next) {
-            const newFace = document.createElement('span');
-            newFace.className = 'investment-live-digit-face investment-live-digit-face--new';
-            newFace.textContent = next;
-            if (direction === 'rise') {
-                newFace.style.color = 'var(--theme-accent-positive)';
-            } else if (direction === 'fall') {
-                newFace.style.color = 'var(--theme-accent-secondary)';
-            }
-            digit.appendChild(newFace);
-        }
-        return { digit, animate: true };
-    }
-
-    function applyInvestmentLiveDigitFrame(digit, direction, eased) {
-        const oldFace = digit.querySelector('.investment-live-digit-face--old');
-        const newFace = digit.querySelector('.investment-live-digit-face--new');
-        const isRise = direction === 'rise';
-        const oldYOffset = isRise ? (-100 * eased) : (100 * eased);
-        const newYOffset = isRise ? (100 * (1 - eased)) : (-100 * (1 - eased));
-        if (oldFace instanceof HTMLElement) {
-            oldFace.style.opacity = String(1 - eased);
-            oldFace.style.transform = `translate(-50%, calc(-50% + ${oldYOffset}%))`;
-        }
-        if (newFace instanceof HTMLElement) {
-            newFace.style.opacity = String(eased);
-            newFace.style.transform = `translate(-50%, calc(-50% + ${newYOffset}%))`;
-        }
-    }
-
-    function animateInvestmentLiveDigit(digit, direction, onComplete) {
-        if (!(digit instanceof HTMLElement)) {
-            if (typeof onComplete === 'function') onComplete();
-            return () => {};
-        }
-        const startTime = performance.now();
-        let frameId = 0;
-        const step = (now) => {
-            const progress = Math.min(1, (now - startTime) / INVESTMENT_LIVE_DIGIT_ANIMATION_MS);
-            applyInvestmentLiveDigitFrame(digit, direction, easeOutCubic(progress));
-            if (progress < 1) {
-                frameId = window.requestAnimationFrame(step);
-                return;
-            }
-            if (typeof onComplete === 'function') onComplete();
-        };
-        applyInvestmentLiveDigitFrame(digit, direction, 0);
-        frameId = window.requestAnimationFrame(step);
-        return () => {
-            if (frameId) window.cancelAnimationFrame(frameId);
-        };
-    }
-
-    function runInvestmentLiveDigitAnimations(digits, onComplete) {
-        const animatedDigits = (Array.isArray(digits) ? digits : []).filter((entry) => entry?.animate);
-        if (!animatedDigits.length) {
-            if (typeof onComplete === 'function') onComplete();
-            return () => {};
-        }
-        let remaining = animatedDigits.length;
-        const cancelers = [];
-        const finishOne = () => {
-            remaining -= 1;
-            if (remaining <= 0 && typeof onComplete === 'function') {
-                onComplete();
-            }
-        };
-        animatedDigits.forEach(({ digit, direction }) => {
-            cancelers.push(animateInvestmentLiveDigit(digit, direction, finishOne));
-        });
-        return () => {
-            cancelers.forEach((cancel) => {
-                if (typeof cancel === 'function') cancel();
-            });
-        };
-    }
-
-    function cancelInvestmentLiveValueAnimation(node) {
-        const cancel = investmentLiveValueAnimationCancels.get(node);
-        if (typeof cancel === 'function') cancel();
-        investmentLiveValueAnimationCancels.delete(node);
-    }
-
-    function buildInvestmentLiveValueFragment(referenceNode, previousDisplay, nextDisplay, direction, useSplit = false) {
-        const fragment = document.createDocumentFragment();
-        const pairs = buildInvestmentLiveSegmentPairs(previousDisplay, nextDisplay);
-        const animatedDigits = [];
-        let splitWrapper = null;
-        let splitPartClassName = '';
-
-        const ensureSplitWrapper = (partClassName) => {
-            if (!useSplit) return fragment;
-            const safeClassName = partClassName || 'workspace-metric-value-major';
-            if (splitWrapper && splitPartClassName === safeClassName) return splitWrapper;
-            splitWrapper = document.createElement('span');
-            splitWrapper.className = safeClassName;
-            splitPartClassName = safeClassName;
-            fragment.appendChild(splitWrapper);
-            return splitWrapper;
-        };
-
-        pairs.forEach(({ previousChar, nextChar, partClassName }) => {
-            const slotWidth = resolveInvestmentLiveSlotWidth(
-                referenceNode,
-                previousChar,
-                nextChar,
-                partClassName,
-            );
-            const { digit, animate } = createInvestmentLiveDigit(
-                previousChar,
-                nextChar,
-                direction,
-                slotWidth,
-            );
-            const target = ensureSplitWrapper(partClassName);
-            target.appendChild(digit);
-            if (animate) {
-                animatedDigits.push({ digit, direction });
-            }
-        });
-
-        return { fragment, animatedDigits };
-    }
-
-    function renderInvestmentLiveStaticContent(node, nextDisplay, useSplit) {
-        if (!(node instanceof HTMLElement)) return;
-        if (useSplit) {
-            node.innerHTML = renderWorkspaceMetricValueContent(nextDisplay);
-        } else {
-            node.textContent = nextDisplay;
-        }
-    }
-
-    function measureInvestmentLiveStaticContent(node, display, useSplit) {
-        if (!(node instanceof HTMLElement) || !(document.body instanceof HTMLElement)) {
-            return { width: 0, height: 0 };
-        }
-        const clone = document.createElement('span');
-        clone.className = node.className;
-        clone.classList.remove('is-live-rise', 'is-live-fall');
-        clone.style.position = 'absolute';
-        clone.style.left = '-10000px';
-        clone.style.top = '0';
-        clone.style.visibility = 'hidden';
-        clone.style.pointerEvents = 'none';
-        clone.style.minWidth = '0';
-        clone.style.minHeight = '0';
-        clone.style.whiteSpace = 'nowrap';
-        renderInvestmentLiveStaticContent(clone, display, useSplit);
-        const measurementHost = node.parentElement instanceof HTMLElement ? node.parentElement : document.body;
-        measurementHost.appendChild(clone);
-        const rect = clone.getBoundingClientRect();
-        clone.remove();
-        return {
-            width: Math.ceil(Math.max(0, rect.width || 0)),
-            height: Math.ceil(Math.max(0, rect.height || 0)),
-        };
-    }
-
-    function reserveInvestmentLiveValueLayout(node, previousDisplay, nextDisplay, useSplit) {
-        if (!(node instanceof HTMLElement)) return;
-        const currentRect = node.getBoundingClientRect();
-        const previousSize = measureInvestmentLiveStaticContent(node, previousDisplay, useSplit);
-        const nextSize = measureInvestmentLiveStaticContent(node, nextDisplay, useSplit);
-        const previousReservedWidth = Number(node.dataset.investmentLiveReserveWidth || 0);
-        const previousReservedHeight = Number(node.dataset.investmentLiveReserveHeight || 0);
-        const reserveWidth = Math.ceil(Math.max(
-            previousReservedWidth,
-            currentRect.width || 0,
-            previousSize.width,
-            nextSize.width,
-        ));
-        const reserveHeight = Math.ceil(Math.max(
-            previousReservedHeight,
-            currentRect.height || 0,
-            previousSize.height,
-            nextSize.height,
-        ));
-        if (reserveWidth > 0) {
-            node.dataset.investmentLiveReserveWidth = String(reserveWidth);
-            node.style.minWidth = `${reserveWidth}px`;
-        }
-        if (reserveHeight > 0) {
-            node.dataset.investmentLiveReserveHeight = String(reserveHeight);
-            node.style.minHeight = `${reserveHeight}px`;
-        }
-    }
-
-    function shouldUseSplitLiveValue(node) {
-        return node instanceof HTMLElement && (
-            node.classList.contains('investment-stock-details-metric-value')
-            || node.closest('.investment-holdings-summary-row')
-        );
-    }
-
-    function updateInvestmentLiveValueNode(node, nextDisplay, nextNumber) {
-        if (!(node instanceof HTMLElement)) return;
-        const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
-        const nextDisplayNormalized = String(nextDisplay ?? '').trim();
-        const previousNumber = String(node.dataset.investmentLiveNumber || '').trim();
-        const nextNumberNormalized = Number.isFinite(Number(nextNumber)) ? String(nextNumber) : '';
-        if (
-            previousDisplay === nextDisplayNormalized
-            && previousNumber === nextNumberNormalized
-            && !node.dataset.investmentLiveAnimationToken
-        ) {
-            return;
-        }
-        cancelInvestmentLiveValueAnimation(node);
-        const direction = resolveInvestmentLiveNumberDirection(node.dataset.investmentLiveNumber, nextNumber);
-        const useSplit = shouldUseSplitLiveValue(node);
-        const shouldAnimate = (
-            previousDisplay
-            && previousDisplay !== nextDisplay
-            && direction !== 'flat'
-            && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-        );
-        reserveInvestmentLiveValueLayout(node, previousDisplay, nextDisplay, useSplit);
-        node.classList.remove('is-live-rise', 'is-live-fall');
-        node.replaceChildren();
-        if (shouldAnimate) {
-            const animationToken = `${Date.now()}:${Math.random()}`;
-            node.dataset.investmentLiveAnimationToken = animationToken;
-            const { fragment, animatedDigits } = buildInvestmentLiveValueFragment(
-                node,
-                previousDisplay,
-                nextDisplay,
-                direction,
-                useSplit,
-            );
-            node.appendChild(fragment);
-            node.classList.add(direction === 'rise' ? 'is-live-rise' : 'is-live-fall');
-            const cancelAnimation = runInvestmentLiveDigitAnimations(animatedDigits, () => {
-                if (!node.isConnected) return;
-                if (node.dataset.investmentLiveAnimationToken !== animationToken) return;
-                renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
-                node.classList.remove('is-live-rise', 'is-live-fall');
-                delete node.dataset.investmentLiveAnimationToken;
-                investmentLiveValueAnimationCancels.delete(node);
-            });
-            investmentLiveValueAnimationCancels.set(node, cancelAnimation);
-        } else {
-            delete node.dataset.investmentLiveAnimationToken;
-            renderInvestmentLiveStaticContent(node, nextDisplay, useSplit);
-        }
-        node.dataset.investmentLiveDisplay = nextDisplay;
-        if (Number.isFinite(Number(nextNumber))) {
-            node.dataset.investmentLiveNumber = String(nextNumber);
-        } else {
-            delete node.dataset.investmentLiveNumber;
-        }
-    }
-
-    function syncInvestmentLiveTone(targets, numericValue, { enableSignedTone = false } = {}) {
-        const elements = Array.isArray(targets) ? targets : [targets];
-        elements.forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            if (!enableSignedTone || !Number.isFinite(Number(numericValue))) {
-                element.classList.remove('investment-holdings-value-positive', 'investment-holdings-value-negative');
-                return;
-            }
-            element.classList.toggle('investment-holdings-value-positive', Number(numericValue) >= 0);
-            element.classList.toggle('investment-holdings-value-negative', Number(numericValue) < 0);
-        });
-    }
-
-    function syncInvestmentLiveDirectionTone(targets, previousValue, nextValue) {
-        const direction = resolveInvestmentLiveNumberDirection(previousValue, nextValue);
-        if (direction === 'flat') return;
-        const elements = Array.isArray(targets) ? targets : [targets];
-        elements.forEach((element) => {
-            if (!(element instanceof HTMLElement)) return;
-            element.classList.remove('investment-holdings-value-positive', 'investment-holdings-value-negative');
-            if (direction === 'rise') {
-                element.classList.add('investment-holdings-value-positive');
-            } else if (direction === 'fall') {
-                element.classList.add('investment-holdings-value-negative');
-            }
-        });
-    }
-
     function syncInvestmentHoldingsRealtimeValues() {
         const realtimeState = getInvestmentHoldingsRealtimeState();
         if (!realtimeState) return;
@@ -11003,13 +9863,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncInvestmentStockDetailsLivePulse() {
         if (!(investmentStockDetailsPanel instanceof HTMLElement)) return;
-        const activeTicker = normalizeInvestmentTicker(selectedInvestmentStockTicker || '');
         const metrics = investmentStockDetailsPanel.querySelector('.investment-stock-details-metrics');
-        const pulseTarget = activeTicker && activeInvestmentView === 'stock_details'
-            ? getInvestmentStockDetailsRealtimePulseTarget(activeTicker)
-            : null;
         if (metrics instanceof HTMLElement) {
-            metrics.classList.toggle('is-investment-realtime-pulse', Boolean(pulseTarget));
+            // Realtime eligibility belongs to the chart marker, never to metric-card chrome.
+            // Price-derived values communicate direction through their digit-roll animation.
+            metrics.classList.remove('is-investment-realtime-pulse');
         }
         const chartCanvas = investmentStockDetailsPriceChartInstance?.canvas;
         if (typeof chartCanvas?._syncInvestmentStockDetailsRealtimePulse === 'function') {
@@ -11517,35 +10375,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function isInvestmentHistoryDisplayHidden(txn) {
-        return txn?.presentation_hidden === true;
-    }
-
     function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
-        const brokerFilteredRows = getInvestmentBrokerFilteredTransactionRows(processedTransactions);
-        const sideFilteredRows = brokerFilteredRows.filter((row) => (
-            (window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(row.txn, investmentSideFilter) ?? true)
-            && matchesInvestmentCurrencyFilter(row.txn)
-        ));
-        if (normalizeInvestmentEquityRange(selectedInvestmentEquityRange) === 'max') {
-            return sideFilteredRows.map((row) => row.txn);
-        }
-        const normalizedChartPoints = Array.isArray(chartPoints) ? chartPoints : [];
-        const visibleRangeLabels = new Set(getInvestmentEquityRangeLabels(
-            normalizedChartPoints.map((point) => point?.date),
-            selectedInvestmentEquityRange,
-        ));
-        if (!visibleRangeLabels.size) {
-            return sideFilteredRows.map((row) => row.txn);
-        }
-        return sideFilteredRows
-            .filter((row) => visibleRangeLabels.has(row.dateLabel))
-            .map((row) => row.txn);
-    }
-
-    function getInvestmentHistoryTotalPages(totalRows = 0) {
-        const normalizedTotalRows = Math.max(0, Number(totalRows) || 0);
-        return Math.max(1, Math.ceil(normalizedTotalRows / INVESTMENT_HISTORY_PAGE_SIZE));
+        return selectVisibleInvestmentHistoryTransactions({
+            brokerFilteredRows: getInvestmentBrokerFilteredTransactionRows(processedTransactions),
+            chartPoints,
+            selectedRange: selectedInvestmentEquityRange,
+            matchesSide: (transaction) => (
+                window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(
+                    transaction,
+                    investmentSideFilter,
+                ) ?? true
+            ),
+            matchesCurrency: matchesInvestmentCurrencyFilter,
+            normalizeRange: normalizeInvestmentEquityRange,
+            getRangeLabels: getInvestmentEquityRangeLabels,
+        });
     }
 
     function mountInvestmentHistoryPagination() {
@@ -11747,13 +10591,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentHistoryPageForLedgerNos(ledgerNos = []) {
-        const normalizedLedgerNos = normalizeInvestmentLedgerNos(ledgerNos);
-        if (!normalizedLedgerNos.length || !Array.isArray(investmentHistoryVisibleTransactionsCache) || !investmentHistoryVisibleTransactionsCache.length) {
-            return 0;
-        }
-        const targetIndex = investmentHistoryVisibleTransactionsCache.findIndex((txn) => normalizedLedgerNos.includes(Number(txn?.ledger_no)));
-        if (targetIndex < 0) return 0;
-        return Math.floor(targetIndex / INVESTMENT_HISTORY_PAGE_SIZE) + 1;
+        return getInvestmentHistoryPageForLedgerNosCore(
+            investmentHistoryVisibleTransactionsCache,
+            normalizeInvestmentLedgerNos(ledgerNos),
+        );
     }
 
     function resetInvestmentHistoryScrollPosition() {
@@ -11790,8 +10631,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(tbody instanceof HTMLElement)) return;
         clearInvestmentHistoryHighlights();
         const visibleTransactions = getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints);
-        investmentHistoryVisibleTransactionsCache = [...visibleTransactions].reverse();
         if (!visibleTransactions.length) {
+            investmentHistoryVisibleTransactionsCache = [];
             investmentHistoryCurrentPage = 1;
             tbody.innerHTML = `
                 <tr data-table-empty-row>
@@ -11802,23 +10643,16 @@ document.addEventListener('DOMContentLoaded', () => {
             attachHistoryTableAlignmentSync(historyTable);
             return;
         }
-        const totalPages = getInvestmentHistoryTotalPages(investmentHistoryVisibleTransactionsCache.length);
-        if (resetPage) {
-            investmentHistoryCurrentPage = 1;
-        } else {
-            investmentHistoryCurrentPage = Math.min(totalPages, Math.max(1, investmentHistoryCurrentPage || 1));
-        }
-        const pageStart = (investmentHistoryCurrentPage - 1) * INVESTMENT_HISTORY_PAGE_SIZE;
-        let pageTransactions = investmentHistoryVisibleTransactionsCache.slice(pageStart, pageStart + INVESTMENT_HISTORY_PAGE_SIZE);
-        if (!pageTransactions.length && investmentHistoryVisibleTransactionsCache.length) {
-            investmentHistoryCurrentPage = totalPages;
-            const fallbackPageStart = (investmentHistoryCurrentPage - 1) * INVESTMENT_HISTORY_PAGE_SIZE;
-            pageTransactions = investmentHistoryVisibleTransactionsCache.slice(
-                fallbackPageStart,
-                fallbackPageStart + INVESTMENT_HISTORY_PAGE_SIZE,
-            );
-        }
-        tbody.innerHTML = pageTransactions.map((txn) => renderInvestmentHistoryRowMarkup(txn)).join('');
+        const pageState = buildInvestmentHistoryPage(
+            visibleTransactions,
+            investmentHistoryCurrentPage,
+            {resetPage},
+        );
+        investmentHistoryVisibleTransactionsCache = pageState.visibleTransactions;
+        investmentHistoryCurrentPage = pageState.currentPage;
+        tbody.innerHTML = pageState.pageTransactions
+            .map((txn) => renderInvestmentHistoryRowMarkup(txn))
+            .join('');
         renderInvestmentHistoryPagination(investmentHistoryVisibleTransactionsCache.length);
         bindInvestmentHistoryChartInteractions(tbody);
         bindInvestmentHistoryTransferControls(tbody);

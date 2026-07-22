@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.8.8`
+Documentation version: `v1.9.0`
 
 ## Runtime flow
 
@@ -17,7 +17,8 @@ main.py
 
 ## Layers
 
-- `app/core/`: configuration and persisted local settings.
+- `app/core/`: configuration, persisted local settings, and dependency-neutral
+  market-calendar primitives.
 - `app/models/`: shared data schemas.
 - `app/infrastructure/`: filesystem storage, network boundaries, and broker clients.
 - `app/services/`: domain logic for comparisons, market data, investments, DCA, logos, and live trading.
@@ -25,6 +26,12 @@ main.py
 - `strategies/`: strategy discovery, signal generation, and backtest execution.
 
 Dependencies should point inward: web handlers call services; services use infrastructure boundaries; templates and JavaScript do not own accounting rules.
+
+Infrastructure may import `app/core`, models, and infrastructure peers, but it
+must not import a service merely to reuse a domain-neutral primitive. NYSE
+calendar and completed-session calculations therefore live in
+`app/core/market_calendar.py`; `app/services/date_constraints.py` re-exports
+their established public names for compatibility.
 
 ## Canonical navigation
 
@@ -99,8 +106,30 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/web/navigation.py`: canonical workspace, settings, and trade path constants and builders.
 - `app/web/market_history.py`: read-only local-history range and date-alignment helpers used by WebRuntime.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
+- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Broker parsers remain in `investment_import.py` until they can move without obscuring their reconciliation invariants.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index and theme-token helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. Consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
+- `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
+- `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.
+- `app/web/static/assets/js/investment/transaction-table.js`: visible-row selection, stable descending order, page clamping, and ledger-to-page lookup.
+- `app/web/static/assets/js/investment/layout.js`: split-layout measurement, clamping, observers, and resizer cleanup.
+
+`investment.js` imports these browser modules and remains their composition root.
+Each extracted module has a direct Node unit-test suite; Playwright verifies the
+assembled browser behavior.
+
+## Quality-gate topology
+
+`scripts/check.sh` is the single local and CI entry point. It runs Ruff,
+JavaScript syntax checks, Python coverage, Node tests with source coverage, and
+isolated Chromium E2E tests. `.github/workflows/quality.yml` invokes the same
+script on pushes and pull requests, so CI does not maintain a parallel test
+definition.
 
 ## Known structural debt
 
-`app/web/runtime.py`, `app/services/investment_import.py`, and the investment browser modules remain large. Prefer extracting cohesive behavior behind tested interfaces rather than adding another branch to these files.
+`app/web/runtime.py`, the broker-specific parser collection in
+`app/services/investment_import.py`, and the remaining Investment entry
+composition are still large. Extend the parser registry and tested JavaScript
+module boundaries instead of adding route-level dispatch or another cohesive
+feature implementation directly to those files.

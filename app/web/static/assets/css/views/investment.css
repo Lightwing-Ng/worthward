@@ -1,4 +1,4 @@
-/* Code version: v1.42.0 */
+/* Code version: v1.43.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2524,24 +2524,6 @@
     min-height: 0;
     max-height: none;
     align-content: start;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-    .investment-stock-details-metrics.is-investment-realtime-pulse > .investment-stock-details-metric-card {
-        animation: investment-stock-details-live-metrics-breath 1.8s var(--motion-emphasized) infinite;
-    }
-}
-
-@keyframes investment-stock-details-live-metrics-breath {
-    0%, 100% {
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-accent-positive) 0%, transparent);
-    }
-
-    50% {
-        box-shadow:
-            0 0 0 1px color-mix(in srgb, var(--theme-accent-positive) 18%, transparent),
-            0 0 12px color-mix(in srgb, var(--theme-accent-positive) 16%, transparent);
-    }
 }
 
 .investment-stock-details-metric-card-with-breakdown {

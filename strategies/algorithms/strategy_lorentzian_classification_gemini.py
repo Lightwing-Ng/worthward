@@ -1,3 +1,8 @@
+"""Gemini variant of the Lorentzian Classification strategy.
+
+Code version: v0.1.1
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -194,7 +199,8 @@ def _bars_since(condition: pd.Series) -> pd.Series:
 
 
 def _shift_bool(series: pd.Series, periods: int) -> pd.Series:
-    return series.shift(periods).fillna(False).astype(bool)
+    shifted = series.astype(bool).shift(periods)
+    return shifted.where(~shifted.isna(), False).astype(bool)
 
 
 def _shift_int(series: pd.Series, periods: int, fill_value: int = 0) -> pd.Series:

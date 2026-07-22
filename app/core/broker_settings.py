@@ -1,7 +1,7 @@
 """
 Broker connection preferences for local integrations.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -44,8 +44,6 @@ class BrokerSettings:
     # IBKR Flex Web Service configuration (reporting-only; tokens live only in env)
     ibkr_account_id: str = ""
     # Legacy Gateway fields kept for module compatibility in market data fallbacks (no longer functional)
-    ibkr_base_url: str = ""
-    ibkr_verify_ssl: bool = False
     # Flex secrets are stored directly here (like Longbridge tokens), configured via web UI.
     # No need for terminal export of secrets. The *_env fields below are for backward compat / env fallback only.
     ibkr_flex_token: str = ""
@@ -130,7 +128,6 @@ def load_broker_settings() -> BrokerSettings:
     payload = load_settings_section("brokers")
     if not payload:
         return BrokerSettings()
-    # Backward compat: ignore legacy Gateway keys (ibkr_base_url, ibkr_port, ibkr_verify_ssl).
     # New Flex fields use environment variables for secrets.
     return BrokerSettings(
         selected_broker=_normalize_selected_broker(payload.get("selected_broker")),

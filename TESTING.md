@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.3.16`
+Documentation version: `v1.4.2`
 
 ## Supported commands
 
@@ -35,37 +35,56 @@ The complete gate runs, in order:
 1. Full Ruff static checks for `app`, `strategies`, `tests`, and `scripts`.
 2. JavaScript syntax checks.
 3. Python tests with branch coverage.
-4. Node unit tests.
+4. Node unit tests with source coverage thresholds.
 5. Playwright Chromium E2E tests.
+
+GitHub Actions runs this same script on every push and pull request through
+`.github/workflows/quality.yml`.
 
 ## Coverage baseline
 
 Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `53.5%` (pytest-cov `TOTAL` line from the latest full gate; `coverage.json` reports `10,407` covered of `18,274` statements).
+- Total combined statement and branch coverage: `59.4%` (`coverage.json`
+  reports `11,577` covered of `18,202` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
+- `app/infrastructure/ibkr_flex.py`: `65.6%`, with redaction, URL validation,
+  bounded responses, retry policy, malformed XML, and environment contracts.
+- Seven previously weak strategy variants now measure `88.4%` to `96.9%`
+  through parameter-schema, signal-contract, and empty-frame tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
   regress below the current safety floor. Set `ANTIGRAVITY_COVERAGE_MINIMUM` to
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- The next project target is `55%`, followed by measured module-level improvements.
+- The next project target is `60%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
-- Alternative strategy implementations: approximately `9%` to `14%`.
-- `app/infrastructure/ibkr_flex.py`: approximately `21.4%`.
-- `app/infrastructure/broker_market_data.py`: approximately `33.9%`.
-- `app/services/live_trading.py`: approximately `45.2%`.
+- `app/services/live_trading.py`: `34.5%`.
+- `app/infrastructure/broker_market_data.py`: `39.7%` after removing the
+  unreachable IBKR Client Portal transport.
+- `app/services/investment_import.py`: `48.4%`, with broker-specific
+  reconciliation paths remaining more valuable than aggregate line gains.
+
+JavaScript source coverage is measured by Node's built-in test runner for the
+first-party modules loaded by direct Node suites. The current baseline is
+`43.41%` lines, `62.93%` branches, and `70.25%` functions. The gate enforces
+gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
+for an intentional diagnostic with
+`ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
+`ANTIGRAVITY_JS_COVERAGE_BRANCHES_MINIMUM`, or
+`ANTIGRAVITY_JS_COVERAGE_FUNCTIONS_MINIMUM`. This is not whole-browser bundle
+coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
 Current suite inventory remeasured on 21 Jul 2026:
 
-- 378 Python tests collected (`./scripts/test.sh --collect-only -q`); the latest
-  full Python run reports 372 passed, 6 skipped, and 15 subtests passed.
-- 42 Node unit tests (`npm run test:js`), including shared chart-axis theme
-  fallback priority coverage.
+- 398 Python tests collected; the latest full Python run reports 392 passed,
+  6 skipped, and 35 subtests passed.
+- 72 Node unit tests (`npm run test:js`), including shared chart-axis theme
+  fallback priority and direct Investment module coverage.
 - 67 Playwright test cases listed by `npx playwright test --list`, generated
   from 59 explicit top-level `test(...)` declarations with parameterized
   viewport coverage.
@@ -74,13 +93,33 @@ Current suite inventory remeasured on 21 Jul 2026:
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
 - `tests/test_*.py`: Python unit and Flask integration tests.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
+- `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
+  parsing, alignment, and green-up/red-down transition contracts.
+- `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
+  session, and day-boundary contracts.
+- `tests/test_investment_transaction_filters.mjs`: broker, currency, type, and
+  canonical date-filter behavior.
+- `tests/test_investment_transaction_table.mjs`: visible-row selection,
+  descending page state, clamping, and ledger-to-page lookup.
+- `tests/test_investment_layout.mjs`: split-layout measurement and clamp rules.
 - `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers and `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string).
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
 - `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
-- `tests/test_broker_market_data.py`: Longbridge normalization and fail-closed one-minute cache persistence safeguards.
+- `tests/test_web_token_registry.py`: foundation-default drift, canonical
+  material references, and globally unique Style token registry names.
+- `tests/test_broker_market_data.py`: Longbridge normalization, fail-closed
+  one-minute cache persistence safeguards, and the absence of the retired IBKR
+  Client Portal transport.
 - `tests/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
+- `tests/test_investment_import_registry.py`: parser registration, duplicate and
+  unknown-format rejection, payload validation, idempotent commit, atomic
+  persistence, and readback boundaries.
+- `tests/test_ibkr_flex.py`: offline IBKR Flex security, retry, size, XML, and
+  credential-presence contracts.
+- `tests/test_strategy_variants.py`: behavior contracts for every formerly
+  low-coverage alternative strategy without asserting implementation trivia.
 - `tests/test_investment_ticker_lineage.py`, `tests/test_logos.py`, and
   Investment Playwright coverage: standard-name fallbacks, bare-US alias
   placeholders, yfinance symbol-only profile responses, and rendered Holdings

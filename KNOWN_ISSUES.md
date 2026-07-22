@@ -1,6 +1,58 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.86.20`
+Documentation version: `v1.87.1`
+
+## IBKR Gateway remnants removed on 21 Jul 2026
+
+- IBKR remains reporting-only through Flex Web Service v3, official CSV
+  exports, and GainsKeeper files. It has no local Gateway session, trading,
+  market-data, or brokerage-authentication path.
+- Unreachable Client Portal HTTP, authentication retry, account probing,
+  certificate bypass, port-conflict diagnostics, and connection methods were
+  deleted from the broker market-data infrastructure.
+- Legacy Gateway-only settings fields and the unused Settings guide, status,
+  pulse, and action selectors were removed. Existing persisted unknown keys are
+  ignored by the settings loader and are never written back as active fields.
+
+## Investment boundaries and coverage gates hardened on 21 Jul 2026
+
+- Investment realtime polling and numeric transitions, Stock-details rules,
+  transaction filtering and table page state, and split-layout behavior now
+  live in independently tested JavaScript modules. The entry module remains the
+  composition root.
+- Broker import dispatch now uses an explicit parser registry. Normalization,
+  idempotent merge, atomic persistence, cache invalidation, and readback
+  verification share one commit boundary without changing broker-specific
+  parsing rules.
+- NYSE calendar primitives moved into `app/core/market_calendar.py`, removing
+  the infrastructure-to-service dependency while preserving the public service
+  imports for compatibility.
+- The complete local gate now enforces JavaScript line, branch, and function
+  coverage and runs unchanged in GitHub Actions. Current thresholds are
+  intentionally incremental rather than a claim of whole-frontend coverage.
+- Focused tests raise meaningful coverage for IBKR Flex transport security and
+  every low-coverage strategy variant. No broker, market, or settings store is
+  written by these tests.
+- The former source-header history for `investment.js` is retained permanently
+  in `docs/INVESTMENT_FRONTEND_CHANGELOG.md`.
+
+## Stock-details realtime updates animate values, not metric cards, on 21 Jul 2026
+
+- Realtime price-derived values in Stock details roll only when their numeric
+  value changes. An increase rolls in green and a decrease rolls in red; once
+  the animation ends, signed P&L values retain their normal positive or
+  negative tone.
+- The metric grid no longer receives a breathing outline, glow, or box-shadow.
+  Realtime eligibility controls the chart's live marker only, never the metric
+  card chrome.
+- Digit-roll batches retain their animated entries, and a repeated sync with
+  the same quote no longer cancels a roll already in progress. A visible update
+  therefore completes even when multiple client refresh paths converge on the
+  same live value.
+- A browser regression test verifies Longbridge extended-hours marker placement,
+  rising and falling digit-roll tones, and the absence of the former
+  metric-card animation. The test uses mocked read APIs only and does not
+  mutate any market or settings store.
 
 ## Investment standard names survive yfinance placeholder profiles on 21 Jul 2026
 
@@ -51,8 +103,11 @@ Documentation version: `v1.86.20`
 ## Investment extended-hours live pulse now follows Longbridge provenance on 21 Jul 2026
 
 - Stock details keeps the live marker at the final chart x-coordinate while its y-coordinate and visible scale use the selected ticker's current eligible quote price.
-- The Stock details metric grid and price marker now share one pulse decision. US pre-market and post-market pulses require that ticker's `longbridge` quote; a yfinance fallback can still refresh the value but does not show a pulse.
-- Regular-session fallback behavior remains available. Reduced-motion preferences suppress the metric-card glow while retaining the value update.
+- The price marker's pulse decision follows quote provenance. US pre-market and
+  post-market pulses require that ticker's `longbridge` quote; a yfinance
+  fallback can still refresh the value but does not show a pulse.
+- The metric grid never pulses or glows. Its changed numeric values roll when
+  motion is allowed and update immediately under reduced-motion preferences.
 
 ## Manual transfer bindings and paginator tail clearance hardened on 21 Jul 2026
 
@@ -1179,6 +1234,8 @@ Documentation version: `v1.86.20`
 - Workspace navigation orders Market cap comparison after Price performance and before Compute your portfolio.
 
 - Browser requests show missing optional `HelveticaNeueforHSBCW84` WOFF2 assets; the committed TTF fallback loads successfully. This should be cleaned up or the missing assets should be supplied.
-- Overall Python statement and branch coverage is `53.3%`; the weakest modules are listed in `TESTING.md`.
-- Core runtime and investment-import modules remain oversized and expensive to reason about.
+- Overall Python statement and branch coverage is `59.4%`; the measured module
+  gaps and JavaScript coverage boundaries are listed in `TESTING.md`.
+- `app/web/runtime.py`, `investment.js`, and the broker-specific import parser
+  collection remain oversized despite the new tested composition boundaries.
 - E2E currently covers Chromium only. Add WebKit when its rendering differences can be maintained without making the local gate excessively slow.

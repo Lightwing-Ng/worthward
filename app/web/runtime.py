@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.27.0
+Code version: v0.28.2
 """
 
 from __future__ import annotations
@@ -133,21 +133,12 @@ from app.services.range_options import (
     resolve_requested_period_from_supported,
 )
 from app.services.investment_import import (
-    build_investment_payload_from_futuhk_statement_pdfs,
-    build_investment_payload_from_hsbc_pasted_text,
-    build_investment_payload_from_hsbc_statement_bundle,
-    build_investment_payload_from_ibkr_csvs,
-    build_investment_payload_from_ibkr_flex,
-    build_investment_payload_from_ibkr_gainskeeper_files,
-    build_investment_payload_from_longbridge_hk_files,
-    build_investment_payload_from_longbridge_sg_files,
-    build_investment_payload_from_schwab_csv,
-    build_investment_payload_from_tigertrade_statement_pdfs,
-    build_investment_payload_from_usmart_hk_statement_pdfs,
     merge_investment_payloads,
     normalize_investment_internal_transfer_bindings,
     normalize_investment_payload_tickers,
+    parse_investment_payload,
 )
+from app.services.investment_import_registry import commit_investment_import
 
 from app.services.live_trading import (
     load_longbridge_account_balances,
@@ -342,7 +333,6 @@ class WebRuntime:
     email_smtp_action: Any
     broker_access_action: Any
     ibkr_flex_test_api: Any
-    # IBKR Gateway APIs removed (Flex Web Service is reporting-only)
     local_market_store_action: Any
     settings_cache_action: Any
     market_store_logo: Any
@@ -861,27 +851,23 @@ def build_web_runtime() -> WebRuntime:
                 "Refusing to persist an IBKR test-fixture account into the investment store."
             )
 
-        def merge_payload(current_payload: dict[str, object]) -> tuple[dict[str, object], dict[str, Any]]:
-            investment_payload = merge_investment_payloads(
-                normalize_investment_payload_tickers(current_payload),
-                imported_payload,
-            )
-            normalized_payload = cast(dict[str, Any], normalize_investment_payload_tickers(investment_payload))
-            return normalized_payload, normalized_payload
+        def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+            return cast(dict[str, Any], normalize_investment_payload_tickers(payload))
 
-        investment_payload = cast(
-            dict[str, Any],
-            update_investment_store_payload(merge_payload, INVESTMENT_STORE_PATH),
-        )
-        invalidate_investment_transactions_cache()
-        persisted_payload = load_normalized_investment_payload()
-        expected_transactions = investment_payload.get("transactions", [])
-        persisted_transactions = persisted_payload.get("transactions", [])
-        if persisted_transactions != expected_transactions:
-            raise RuntimeError(
-                "Investment import store readback did not match the committed merged transactions."
+        def update_store(updater):
+            return cast(
+                dict[str, Any],
+                update_investment_store_payload(updater, INVESTMENT_STORE_PATH),
             )
-        return persisted_payload
+
+        return commit_investment_import(
+            imported_payload,
+            normalize_payload=normalize_payload,
+            merge_payloads=merge_investment_payloads,
+            update_store=update_store,
+            load_store=load_normalized_investment_payload,
+            invalidate_cache=invalidate_investment_transactions_cache,
+        )
 
     def refresh_investment_import_price_caches(
         imported_payload: dict[str, Any],
@@ -2692,8 +2678,6 @@ def build_web_runtime() -> WebRuntime:
                 "tokens": [
                     px_token("--trade-control-input-height", 30, 0),
                     px_token("--ticker-input-control-radius", 999, 0),
-                    raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
-                    raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),
                     raw_token("--control-liquid-shadow", "none"),
                     raw_token("--control-liquid-shadow-focus", "none"),
                     raw_token("--ticker-input-glass-background", "transparent"),
@@ -4885,7 +4869,6 @@ def build_web_runtime() -> WebRuntime:
                 "compareLive": "/api/compare/live",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
-                # IBKR Gateway endpoints removed (Flex is reporting-only)
                 "ibkrFlexTest": "/api/settings/ibkr-flex/test",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
@@ -6347,8 +6330,10 @@ def build_web_runtime() -> WebRuntime:
                 if ibkr_import_mode == "flex":
                     # Dry-run support for Flex
                     dry_run = str(request.form.get("dry_run", "")).strip().lower() in {"1", "true", "yes", "on"}
-                    imported_payload = build_investment_payload_from_ibkr_flex(
-                        load_broker_settings(),
+                    imported_payload = parse_investment_payload(
+                        "ibkr",
+                        "flex",
+                        settings=load_broker_settings(),
                         dry_run=dry_run,
                     )
                     success_message = (
@@ -6378,8 +6363,10 @@ def build_web_runtime() -> WebRuntime:
                             "success": False,
                             "error": "Please upload at least one IBKR GainsKeeper .gkx file.",
                         }), 400
-                    imported_payload = build_investment_payload_from_ibkr_gainskeeper_files(
-                        gainskeeper_payloads,
+                    imported_payload = parse_investment_payload(
+                        "ibkr",
+                        "gainskeeper",
+                        files=gainskeeper_payloads,
                     )
                     success_message = (
                         "IBKR GainsKeeper import complete. OFX/GKX records were parsed in memory, "
@@ -6401,7 +6388,9 @@ def build_web_runtime() -> WebRuntime:
                             "error": "Both CSV files must be non-empty.",
                         }), 400
 
-                    imported_payload = build_investment_payload_from_ibkr_csvs(
+                    imported_payload = parse_investment_payload(
+                        "ibkr",
+                        "csv",
                         transaction_csv_bytes=transactions_payload,
                         positions_csv_bytes=positions_payload,
                     )
@@ -6427,7 +6416,9 @@ def build_web_runtime() -> WebRuntime:
                         "error": "Both Longbridge (HK) import files must be non-empty.",
                     }), 400
 
-                imported_payload = build_investment_payload_from_longbridge_hk_files(
+                imported_payload = parse_investment_payload(
+                    "longbridge_hk",
+                    "paired_files",
                     fund_details_text=hk_fund_details_text,
                     history_orders_xlsx_bytes=hk_history_orders_bytes,
                     fund_details_filename=str(getattr(hk_fund_details_file, "filename", "") or "").strip(),
@@ -6454,7 +6445,9 @@ def build_web_runtime() -> WebRuntime:
                         "error": "Both Longbridge (SG) import files must be non-empty.",
                     }), 400
 
-                imported_payload = build_investment_payload_from_longbridge_sg_files(
+                imported_payload = parse_investment_payload(
+                    "longbridge_sg",
+                    "paired_files",
                     fund_details_text=fund_details_text,
                     history_orders_xlsx_bytes=history_orders_bytes,
                     fund_details_filename=str(getattr(fund_details_file, "filename", "") or "").strip(),
@@ -6479,8 +6472,10 @@ def build_web_runtime() -> WebRuntime:
                             str(getattr(statement_pdf_file, "filename", "") or "").strip(),
                         )
                     )
-                imported_payload = build_investment_payload_from_futuhk_statement_pdfs(
-                    statement_pdf_payloads,
+                imported_payload = parse_investment_payload(
+                    "futuhk",
+                    "statement_pdfs",
+                    statement_pdf_payloads=statement_pdf_payloads,
                 )
                 success_message = (
                     "Futu (HK) import complete. Monthly statement PDFs were parsed in memory and merged "
@@ -6500,8 +6495,10 @@ def build_web_runtime() -> WebRuntime:
                             pdf_bytes,
                             str(getattr(statement_pdf_file, "filename", "") or "").strip(),
                         ))
-                    imported_payload = build_investment_payload_from_hsbc_statement_bundle(
-                        statement_pdf_payloads,
+                    imported_payload = parse_investment_payload(
+                        "hsbc",
+                        "statement_bundle",
+                        statement_pdf_payloads=statement_pdf_payloads,
                     )
                     success_message = (
                         "HSBC statement import complete. Matching composite and investment statements were reconciled "
@@ -6509,7 +6506,9 @@ def build_web_runtime() -> WebRuntime:
                         "was read back."
                     )
                 else:
-                    imported_payload = build_investment_payload_from_hsbc_pasted_text(
+                    imported_payload = parse_investment_payload(
+                        "hsbc",
+                        "pasted_text",
                         portfolio_text=str(
                             request.form.get("hsbc_portfolio_text", "")
                         ).strip(),
@@ -6538,7 +6537,11 @@ def build_web_runtime() -> WebRuntime:
                 schwab_payload = schwab_file.read()
                 if not schwab_payload:
                     return jsonify({"success": False, "error": "The Schwab CSV file is empty."}), 400
-                imported_payload = build_investment_payload_from_schwab_csv(schwab_payload)
+                imported_payload = parse_investment_payload(
+                    "schwab",
+                    "csv",
+                    csv_bytes=schwab_payload,
+                )
                 success_message = (
                     "Charles Schwab import complete. Records were merged incrementally into the local investment store "
                     "without clearing older data first."
@@ -6557,13 +6560,17 @@ def build_web_runtime() -> WebRuntime:
                         str(getattr(statement_pdf_file, "filename", "") or "").strip(),
                     ))
                 if broker == "tigertrade":
-                    imported_payload = build_investment_payload_from_tigertrade_statement_pdfs(
-                        statement_pdf_payloads,
+                    imported_payload = parse_investment_payload(
+                        "tigertrade",
+                        "statement_pdfs",
+                        statement_pdf_payloads=statement_pdf_payloads,
                     )
                     broker_label = "Tiger Trade"
                 else:
-                    imported_payload = build_investment_payload_from_usmart_hk_statement_pdfs(
-                        statement_pdf_payloads,
+                    imported_payload = parse_investment_payload(
+                        "usmart_hk",
+                        "statement_pdfs",
+                        statement_pdf_payloads=statement_pdf_payloads,
                     )
                     broker_label = "uSMART (HK)"
                 success_message = (

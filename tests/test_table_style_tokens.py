@@ -1,10 +1,21 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.3.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.0."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from app import create_app
+
+
+def test_settings_css_has_no_legacy_ibkr_gateway_selectors() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    settings_css = (
+        project_root / "app/web/static/assets/css/views/settings.css"
+    ).read_text(encoding="utf-8")
+
+    assert "settings-ibkr-gateway" not in settings_css
+    assert "settings-broker-guide" not in settings_css
+    assert "settingsIbkrGatewayPulse" not in settings_css
 
 
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:

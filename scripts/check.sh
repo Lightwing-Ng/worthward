@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.2.0
+# Code version: v1.3.0
 
 set -euo pipefail
 
@@ -52,7 +52,7 @@ echo "[3/5] Python tests with coverage"
 	--cov-report=json:coverage.json \
 	--cov-fail-under="$COVERAGE_MINIMUM"
 
-echo "[4/5] JavaScript unit tests"
+echo "[4/5] JavaScript unit tests with coverage"
 npm run test:js
 
 echo "[5/5] Browser end-to-end tests"

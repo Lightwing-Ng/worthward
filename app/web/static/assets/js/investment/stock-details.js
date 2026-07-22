@@ -1,7 +1,8 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.4.4
+ * Code version: v0.5.0
+ * - Refactored: Range, intraday-minute, day-boundary, and trade-session rules are exported for direct unit testing.
  * - Fixed: Eligible live markers keep the final chart x-position while resolving their y-position and y-scale from the current realtime quote price.
  * - Fixed: Mixed integer and fractional y-axis ticks now select a fractional tick when resolving the shared decimal anchor.
  * - Fixed: Exact-price badges now reuse the rendered y-axis label anchor and font so integer and decimal columns align with the covered tick labels.
@@ -25,7 +26,88 @@
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.4.4';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.5.0';
+
+export function normalizeInvestmentRange(range, options = [], fallback = 'max') {
+    const normalizedRange = String(range || '').trim().toLowerCase();
+    return options.some((option) => option?.value === normalizedRange)
+        ? normalizedRange
+        : fallback;
+}
+
+export function isInvestmentStockDetailsIntradayRange(range, options = []) {
+    return normalizeInvestmentRange(range, options) === '1w';
+}
+
+export function parseInvestmentIntradayTimestamp(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const monthIndex = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const hours = Number(match[4]);
+    const minutes = Number(match[5]);
+    if (![year, monthIndex, day, hours, minutes].every(Number.isFinite)) return null;
+    return new Date(year, monthIndex, day, hours, minutes, 0, 0);
+}
+
+export function normalizeInvestmentIntradayMinuteKey(value) {
+    const parsed = parseInvestmentIntradayTimestamp(value);
+    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+export function buildInvestmentIntradayDayFallbackIndex(labels = [], normalizeDate = (value) => value) {
+    return (Array.isArray(labels) ? labels : []).reduce((accumulator, label, index) => {
+        const dayKey = normalizeDate(label);
+        if (dayKey) accumulator.set(dayKey, index);
+        return accumulator;
+    }, new Map());
+}
+
+export function buildInvestmentIntradayDayBoundaries(labels = [], normalizeDate = (value) => value) {
+    const orderedDays = [];
+    const dayMap = new Map();
+    (Array.isArray(labels) ? labels : []).forEach((label, index) => {
+        const dayKey = normalizeDate(label);
+        if (!dayKey) return;
+        const existing = dayMap.get(dayKey);
+        if (existing) {
+            existing.lastIndex = index;
+            return;
+        }
+        const entry = {
+            dayKey,
+            ordinal: orderedDays.length,
+            firstIndex: index,
+            lastIndex: index,
+        };
+        orderedDays.push(entry);
+        dayMap.set(dayKey, entry);
+    });
+    return {orderedDays, dayMap};
+}
+
+export function getInvestmentTradeSessionType(value, parseDateParts) {
+    const dateParts = parseDateParts(value);
+    if (!dateParts || !Number.isInteger(dateParts.hours) || !Number.isInteger(dateParts.minutes)) {
+        return 'intraday';
+    }
+    const totalMinutes = (dateParts.hours * 60) + dateParts.minutes;
+    const intradayOpenMinutes = (9 * 60) + 30;
+    const intradayCloseMinutes = 16 * 60;
+    const premarketOpenMinutes = 4 * 60;
+    const postmarketCloseMinutes = 20 * 60;
+    if (totalMinutes >= intradayOpenMinutes && totalMinutes < intradayCloseMinutes) return 'intraday';
+    if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
+    if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
+    return 'night';
+}
 
 export function createInvestmentStockDetailsUtils({
     STOCK_DETAILS_MARKER_VIEW_BOX,

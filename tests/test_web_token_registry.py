@@ -1,12 +1,13 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.5.1
+Code version: v0.6.0
 """
 
 from __future__ import annotations
 
 import ast
+from collections import Counter
 import re
 import unittest
 from pathlib import Path
@@ -54,6 +55,28 @@ def collect_literal_runtime_defaults(function_name: str) -> dict[str, str]:
     return defaults
 
 
+def collect_literal_runtime_token_names(function_name: str) -> list[str]:
+    module = ast.parse(read_text(WEB_RUNTIME_PATH))
+    target_function = next(
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+
+    names: list[str] = []
+    for node in ast.walk(target_function):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id not in {"px_token", "raw_token", "material_reference_token"}:
+            continue
+        if not node.args:
+            continue
+        token_name_node = node.args[0]
+        if isinstance(token_name_node, ast.Constant) and isinstance(token_name_node.value, str):
+            names.append(token_name_node.value)
+    return names
+
+
 def collect_material_rows() -> dict[str, set[str]]:
     module = ast.parse(read_text(WEB_RUNTIME_PATH))
     target_function = next(
@@ -94,6 +117,17 @@ def collect_material_rows() -> dict[str, set[str]]:
 
 
 class WebTokenRegistryTests(unittest.TestCase):
+    def test_style_token_registry_names_are_unique(self) -> None:
+        token_names = collect_literal_runtime_token_names("build_style_token_rows")
+        duplicates = sorted(
+            token_name
+            for token_name, count in Counter(token_names).items()
+            if count > 1
+        )
+
+        self.assertGreaterEqual(len(token_names), 100)
+        self.assertEqual(duplicates, [])
+
     def test_loader_reads_foundation_root_tokens(self) -> None:
         registry = load_foundation_css_token_registry()
 
@@ -123,10 +157,6 @@ class WebTokenRegistryTests(unittest.TestCase):
         }
 
         self.assertGreaterEqual(len(comparable_defaults), 50)
-        
-        
-        
-
         drift = {
             token_name: {
                 "runtime": runtime_value,
