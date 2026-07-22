@@ -1,4 +1,4 @@
-/* Code version: v1.43.2 */
+/* Code version: v1.44.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2620,15 +2620,16 @@
 
 .investment-stock-details-donut-card {
     grid-column: 3;
-    grid-row: 2;
+    grid-row: 1 / -1;
     container-type: size;
+    box-sizing: border-box;
     min-width: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     min-height: 0;
-    padding: 0;
+    padding: 38px 0 0;
     --investment-stock-details-donut-frame-size: min(100cqi, 100cqb);
     --investment-donut-orbit-extra-width: calc(var(--portfolio-donut-orbit-logo-size, 20px) * 2.41421356237);
     --portfolio-donut-orbit-donut-size: max(48px, calc(var(--investment-stock-details-donut-frame-size) - var(--investment-donut-orbit-extra-width)));
@@ -4759,6 +4760,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
     .investment-stock-details-donut-card {
         min-height: 180px;
+        padding: 0;
     }
 
     .investment-stock-details-price-chart-card {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.0.2
+# Code version: v1.1.0
 
 set -euo pipefail
 
@@ -36,13 +36,16 @@ if [[ -d "$RUNTIME_ROOT" ]]; then
 	find "$RUNTIME_ROOT" -depth -delete
 fi
 mkdir -p "$RUNTIME_ROOT"
-cp -R "$ROOT_DIR/market_store" "$RUNTIME_ROOT/market_store"
+mkdir -p "$RUNTIME_ROOT/market_store"
+cp -R "$ROOT_DIR/market_store/logos" "$RUNTIME_ROOT/market_store/logos"
 mkdir -p "$RUNTIME_ROOT/settings_store"
 
 export ANTIGRAVITY_MARKET_STORE_DIR="$RUNTIME_ROOT/market_store"
 export ANTIGRAVITY_SETTINGS_STORE_DIR="$RUNTIME_ROOT/settings_store"
 export ANTIGRAVITY_REMOTE_MARKET_ACCESS="disabled"
 export ANTIGRAVITY_PORT="8699"
+
+PYTHONPATH="$ROOT_DIR" "$PYTHON_BIN" "$ROOT_DIR/scripts/seed_e2e_market_store.py" "$ANTIGRAVITY_MARKET_STORE_DIR"
 
 "$PYTHON_BIN" "$ROOT_DIR/main.py" &
 APP_PID="$!"

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.6.2`
+Documentation version: `v1.7.0`
 
 ## Supported commands
 
@@ -139,13 +139,14 @@ All tests are committed to Git. Do not add `tests/` back to `.gitignore`.
 ## Browser test isolation
 
 Playwright starts a dedicated app server on `127.0.0.1:8699` through
-`scripts/run_e2e_app.sh`. The launcher copies `market_store` into
-`test-results/runtime-store`, points `settings_store` to an empty isolated
-directory, and disables remote market access for that process. Browser tests
-therefore cannot alter the user's production stores or depend on Yahoo,
-Longbridge, a corporate proxy, or transient rate limits. Normal manual launches
-remain unchanged. The `npm run test:e2e` wrapper removes the isolated runtime
-copy after Playwright exits, including failed test runs.
+`scripts/run_e2e_app.sh`. The launcher copies only bundled logo assets, then
+builds fixed daily, one-minute, profile, and market-cap fixtures inside
+`test-results/runtime-store`. It points both application stores at that isolated
+runtime and disables remote market access for the process. Browser checks
+therefore use the same deterministic history on local machines and clean GitHub
+runners without reading or copying production Parquet stores. Normal manual
+launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
+runtime copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
 
