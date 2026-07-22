@@ -1,6 +1,17 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.87.4`
+Documentation version: `v1.87.5`
+
+## Investment overview now redraws after each eligible realtime quote on 22 Jul 2026
+
+- During US regular trading, the first eligible quote received after page load now
+  updates the Overview equity dataset in place, positions the live endpoint marker,
+  and exposes its existing breathing animation.
+- The correction removes an identity check that wrote the next quote series to the
+  cache before comparing it, which previously caused every eligible poll to return
+  before redrawing the Overview chart.
+- The marker remains hidden when no eligible provider quote exists; the interface
+  therefore never presents a stale valuation as a live price.
 
 ## IBKR import completion copy now matches its heading color on 22 Jul 2026
 

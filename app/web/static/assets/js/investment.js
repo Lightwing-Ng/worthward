@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.2.1
+ * Code version: v2.2.2
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, split layout, and calculation-heavy data utilities live
  * in tested modules.
@@ -68,7 +68,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.2.0',
+    entry: 'v2.2.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     layout: INVESTMENT_LAYOUT_MODULE_VERSION,
@@ -1560,11 +1560,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
-        if (isInvestmentDailyEquityLiveRange() && liveChartPoints.length && liveChartPoints !== investmentChartPointsCache) {
-            investmentChartPointsCache = liveChartPoints;
-        }
         if (!isInvestmentDailyEquityLiveRange()) return;
-        if (!liveChartPoints.length || liveChartPoints === investmentChartPointsCache) return;
+        if (!liveChartPoints.length) return;
         investmentChartPointsCache = liveChartPoints;
         renderInvestmentHistoryTableRows(investmentProcessedTransactionsCache, liveChartPoints, { resetPage: false, scrollToTop: false });
         syncInvestmentEquityChartRealtime(liveChartPoints);
