@@ -1,114 +1,76 @@
-/* Code version: v0.2.0 */
+/* Code version: v0.3.0 */
+/*
+ * Univers Next for HSBC is packaged as one OpenType collection so every
+ * available family face remains in sync with the host-maintained source.
+ */
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
 	font-weight: 100;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-UltLt.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-UltraLight") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: italic;
 	font-weight: 100;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-UtLtI.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-UltraLightItalic") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
 	font-weight: 200;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Th.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-Thin") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: italic;
 	font-weight: 200;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-ThIt.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-ThinItalic") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
 	font-weight: 300;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Lt.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-Light") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: italic;
 	font-weight: 300;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-LtIt.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-LightItalic") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
 	font-weight: 400;
-	src:
-		url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Rg.ttf") format("truetype"),
-		url("../../fonts/hsbc-compatible/UniversNextforHSBCW02-Rg.ttf") format("truetype");
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-Regular") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
-	font-weight: 500;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Md.ttf") format("truetype");
+	font-weight: 500 600;
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-Medium") format("truetype-collection");
 }
 
 @font-face {
 	font-display: swap;
-	font-family: "HSBC Univers Next";
+	font-family: "Univers Next for HSBC";
 	font-style: normal;
-	font-weight: 600;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Md.ttf") format("truetype");
-}
-
-@font-face {
-	font-display: swap;
-	font-family: "HSBC Univers Next";
-	font-style: normal;
-	font-weight: 700;
-	src: url("../../fonts/hsbc-compatible/UniversNextforHSBCW01-Bd.ttf") format("truetype");
-}
-
-@font-face {
-	font-display: swap;
-	font-family: "HSBC Neue Helvetica";
-	font-style: normal;
-	font-weight: 400;
-	src: url("../../fonts/hsbc-compatible/HelveticaNeueforHSBCW84-Rm.woff2") format("woff2");
-}
-
-@font-face {
-	font-display: swap;
-	font-family: "HSBC Neue Helvetica";
-	font-style: normal;
-	font-weight: 300;
-	src: url("../../fonts/hsbc-compatible/HelveticaNeueforHSBCW84-Lt.woff2") format("woff2");
-}
-
-@font-face {
-	font-display: swap;
-	font-family: "HSBC Neue Helvetica";
-	font-style: normal;
-	font-weight: 500;
-	src: url("../../fonts/hsbc-compatible/HelveticaNeueforHSBCW84-Md.woff2") format("woff2");
-}
-
-@font-face {
-	font-display: swap;
-	font-family: "HSBC Neue Helvetica";
-	font-style: normal;
-	font-weight: 700;
-	src: url("../../fonts/hsbc-compatible/HelveticaNeueforHSBCW84-Bd.woff2") format("woff2");
+	font-weight: 700 900;
+	src: url("../../fonts/UniversNextforHSBC.ttc#UniversNextforHSBC-Bold") format("truetype-collection");
 }

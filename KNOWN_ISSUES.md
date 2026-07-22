@@ -1,6 +1,12 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.87.2`
+Documentation version: `v1.87.3`
+
+## Univers Next for HSBC font collection consolidated on 22 Jul 2026
+
+- The web application now loads the complete, host-maintained `UniversNextforHSBC.ttc` collection as its single HSBC font source. It exposes every available family face: Ultra Light, Thin, Light, Regular, Medium, Bold, plus the provided Ultra Light, Thin, and Light italics.
+- The former fragmentary Univers TTF assets and the missing Neue Helvetica references are no longer in the loading path. A canonical `--font-family-brand` token makes the primary family explicit, while system and CJK fallbacks remain available for unsupported characters.
+- Synthetic weights and italics are disabled, so future typography requests resolve to an actual packaged face or a deliberate fallback rather than a browser-generated approximation.
 
 ## Investment range control adopts the compact Segmented control contract on 22 Jul 2026
 

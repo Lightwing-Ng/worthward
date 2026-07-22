@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.6.0
+Code version: v0.6.1
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_c
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
 WEB_CSS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "css"
+WEB_FONTS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "fonts"
 
 
 def read_text(path: Path) -> str:
@@ -117,6 +118,32 @@ def collect_material_rows() -> dict[str, set[str]]:
 
 
 class WebTokenRegistryTests(unittest.TestCase):
+    def test_univers_next_uses_the_complete_collection_and_face_contract(self) -> None:
+        fonts_css = read_text(WEB_CSS_ROOT / "foundation" / "fonts.css")
+        tokens_css = read_text(FOUNDATION_TOKENS_CSS_PATH)
+        collection_path = WEB_FONTS_ROOT / "UniversNextforHSBC.ttc"
+
+        self.assertTrue(collection_path.is_file())
+        self.assertEqual(collection_path.read_bytes()[:4], b"ttcf")
+        self.assertIn('font-family: "Univers Next for HSBC";', fonts_css)
+        self.assertIn('format("truetype-collection")', fonts_css)
+        self.assertNotIn("hsbc-compatible/", fonts_css)
+        self.assertIn('--font-family-brand: "Univers Next for HSBC";', tokens_css)
+        self.assertIn("font-synthesis: none", tokens_css)
+
+        for postscript_name in (
+            "UniversNextforHSBC-UltraLight",
+            "UniversNextforHSBC-UltraLightItalic",
+            "UniversNextforHSBC-Thin",
+            "UniversNextforHSBC-ThinItalic",
+            "UniversNextforHSBC-Light",
+            "UniversNextforHSBC-LightItalic",
+            "UniversNextforHSBC-Regular",
+            "UniversNextforHSBC-Medium",
+            "UniversNextforHSBC-Bold",
+        ):
+            self.assertIn(f"#{postscript_name}", fonts_css)
+
     def test_style_token_registry_names_are_unique(self) -> None:
         token_names = collect_literal_runtime_token_names("build_style_token_rows")
         duplicates = sorted(
