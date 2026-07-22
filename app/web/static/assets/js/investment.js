@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.2.0
+ * Code version: v2.2.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, split layout, and calculation-heavy data utilities live
  * in tested modules.
@@ -2442,7 +2442,7 @@ document.addEventListener('DOMContentLoaded', () => {
             control.style.width = `${requestedControlWidth}px`;
             renderedControlRect = control.getBoundingClientRect();
             renderedControlWidth = renderedControlRect.width;
-            shouldOverflow = control.scrollWidth > control.clientWidth + 1;
+            shouldOverflow = control.scrollWidth > control.clientWidth + 3;
             control.dataset.segmentedOverflow = shouldOverflow ? '1' : '0';
         }
         const activeMeasureTarget = labelSelector

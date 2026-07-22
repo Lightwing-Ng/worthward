@@ -1,6 +1,12 @@
 # Known issues and test-failure classification
 
-Documentation version: `v1.87.1`
+Documentation version: `v1.87.2`
+
+## Investment range control adopts the compact Segmented control contract on 22 Jul 2026
+
+- The six-option Equity history and Stock details time-range controls now use the compact Segmented control values: `2px` rail padding and gap, `32px` rail height, `2px` thumb inset, `4px` thumb offset, `8px` label padding, and `24px` label height.
+- The compact contract remains scoped to these chart controls. Other segmented controls retain their established layout geometry and overflow behavior.
+- A three-pixel rounding tolerance prevents a sub-pixel intrinsic-width difference from falsely marking an otherwise fully visible range rail as horizontally overflowed.
 
 ## IBKR Gateway remnants removed on 21 Jul 2026
 

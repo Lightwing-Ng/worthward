@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.1."""
 
 from __future__ import annotations
 
@@ -30,6 +30,30 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert "--scrollable-data-table-header-height" in html
     assert "--scrollable-data-table-summary-background" in html
     assert 'data-summary-scope="both"' in html
+
+
+def test_investment_equity_range_uses_the_compact_segmented_control_contract() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+
+    range_rule = investment_css.split(
+        ".investment-stock-details-range-segmented {",
+        1,
+    )[1].split("}", 1)[0]
+
+    for declaration in (
+        "--mode-switch-pad: 2px;",
+        "--mode-switch-gap: 2px;",
+        "--mode-switch-min-height: 32px;",
+        "--mode-switch-thumb-inset: 2px;",
+        "--mode-switch-thumb-offset: 4px;",
+        "--mode-switch-label-pad-inline: 8px;",
+        "--mode-switch-label-min-height: 24px;",
+        "--mode-switch-thumb-background: var(--accent-fill);",
+    ):
+        assert declaration in range_rule
 
 
 def test_investment_table_header_is_interactive_and_body_is_measurable() -> None:

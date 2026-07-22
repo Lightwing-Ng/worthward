@@ -1,4 +1,4 @@
-/* Code version: v1.43.0 */
+/* Code version: v1.43.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2362,8 +2362,14 @@
 }
 
 .investment-stock-details-range-segmented {
-    --mode-switch-pad: 5px;
-    --mode-switch-thumb-inset: 5px;
+    --mode-switch-pad: 2px;
+    --mode-switch-gap: 2px;
+    --mode-switch-min-height: 32px;
+    --mode-switch-thumb-inset: 2px;
+    --mode-switch-thumb-offset: 4px;
+    --mode-switch-label-pad-inline: 8px;
+    --mode-switch-label-min-height: 24px;
+    --mode-switch-thumb-background: var(--accent-fill);
     --segmented-text-render-safety-px: 3px;
     grid-template-columns: repeat(var(--segmented-option-count, 7), minmax(0, 1fr));
     width: fit-content;
@@ -2374,7 +2380,7 @@
 
 .investment-stock-details-range-segmented > .segmented-control-option > span {
     min-height: calc(var(--mode-switch-min-height) - (var(--mode-switch-pad) * 2));
-    padding: 0 9px;
+    padding: 0 var(--mode-switch-label-pad-inline);
     font-size: var(--font-ui-xs);
     color: var(--theme-muted) !important;
 }
@@ -4760,7 +4766,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     }
 
     .investment-stock-details-range-segmented > .segmented-control-option > span {
-        padding: 0 6px;
+        padding: 0 var(--mode-switch-label-pad-inline);
         font-size: 10px;
     }
 
