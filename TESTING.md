@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.4.2`
+Documentation version: `v1.6.2`
 
 ## Supported commands
 
@@ -39,14 +39,16 @@ The complete gate runs, in order:
 5. Playwright Chromium E2E tests.
 
 GitHub Actions runs this same script on every push and pull request through
-`.github/workflows/quality.yml`.
+`.github/workflows/quality.yml`. The workflow uses Node.js 22 for first-party
+tests and Node.js 24-based `v7` releases of the official checkout, setup, and
+artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 21 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
+Baseline remeasured on 22 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `59.4%` (`coverage.json`
-  reports `11,577` covered of `18,202` statements).
+- Total combined statement and branch coverage: `59.5%` (`coverage.json`
+  reports `11,609` covered of `18,212` statements).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - `app/infrastructure/ibkr_flex.py`: `65.6%`, with redaction, URL validation,
   bounded responses, retry policy, malformed XML, and environment contracts.
@@ -79,9 +81,9 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 21 Jul 2026:
+Current suite inventory remeasured on 22 Jul 2026:
 
-- 398 Python tests collected; the latest full Python run reports 392 passed,
+- 406 Python tests collected; the latest full Python run reports 400 passed,
   6 skipped, and 35 subtests passed.
 - 72 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
@@ -107,6 +109,8 @@ Current suite inventory remeasured on 21 Jul 2026:
 - `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers and `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string).
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
 - `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
+- `tests/test_web_strategy_forms.py`: pure strategy grouping, field-schema,
+  injected factory, and Settings catalog presentation contracts.
 - `tests/test_web_token_registry.py`: foundation-default drift, canonical
   material references, and globally unique Style token registry names.
 - `tests/test_broker_market_data.py`: Longbridge normalization, fail-closed
@@ -144,6 +148,16 @@ remain unchanged. The `npm run test:e2e` wrapper removes the isolated runtime
 copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
+
+## Python settings-store isolation
+
+The root pytest bootstrap assigns `ANTIGRAVITY_SETTINGS_STORE_DIR` to one
+process-scoped temporary directory before importing the Flask application.
+This applies whether tests run through `scripts/test.sh`, `scripts/check.sh`,
+or a direct root-level pytest invocation. Module-level transaction-cache,
+ticker-usage, and strategy-usage paths therefore cannot resolve into the
+user's production `settings_store`. Pytest removes the temporary directory at
+the end of the session, including after test failures.
 
 ## Market persistence test isolation
 

@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.0
+Code version: v0.18.1
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from app.services.market_data import (
     _activate_yfinance_rate_limit_cooldown,
     _download_daily_history_with_yfinance,
     _download_daily_history_with_fallback,
+    _reset_yfinance_rate_limit_backoff,
     classify_hk_equity_session,
     classify_kr_equity_session,
     classify_us_equity_session,
@@ -242,6 +243,12 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _reset_yfinance_rate_limit_backoff()
+
+    def tearDown(self) -> None:
+        _reset_yfinance_rate_limit_backoff()
+
     def test_store_directory_override_is_explicit_and_process_local(self) -> None:
         fallback = BASE_DIR / "market_store"
         with TemporaryDirectory() as temp_dir:

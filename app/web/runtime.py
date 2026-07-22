@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.28.2
+Code version: v0.29.0
 """
 
 from __future__ import annotations
@@ -91,7 +91,6 @@ from app.core.email_settings import (
     test_smtp_connection,
 )
 from strategies.backtest import run_single_ticker_backtest
-from strategies.base import StrategyParameterDefinition
 from strategies.loader import instantiate_strategy, list_enabled_strategies, get_strategy_definition
 from app.infrastructure.connectivity import (
     has_google_hk_access,
@@ -253,6 +252,11 @@ from app.web.market_history import (
     build_supported_periods_for_history_store,
     extract_union_dates,
 )
+from app.web.strategy_forms import (
+    build_strategy_form_fields as build_strategy_form_fields_for_strategy,
+    build_strategy_option_groups as build_strategy_option_groups_for_recent,
+    build_strategy_settings_rows as build_strategy_settings_rows_for_factory,
+)
 
 LOGGER = logging.getLogger(__name__)
 FETCH_ABORT_DEBUG_CONFIG = load_optional_debug_endpoint(
@@ -294,11 +298,6 @@ PORTFOLIO_BENCHMARK_COLORS = {
 }
 LOCAL_STORE_PAGE_SIZE = 10
 SETTINGS_FEEDBACK_COOKIE = "antigravity_settings_feedback"
-STRATEGY_CATEGORY_LABELS = {
-    "baseline": "Baseline",
-    "recent": "Recent",
-    "all": "All",
-}
 @dataclass(frozen=True)
 class WebRuntime:
     """Callable handlers and helpers shared across split route modules."""
@@ -2070,10 +2069,6 @@ def build_web_runtime() -> WebRuntime:
         base_path = build_settings_path("local-market-store")
         return f"{base_path}?{query_string}" if query_string else base_path
 
-    def format_strategy_category_label(category: str) -> str:
-        normalized = (category or "general").strip().lower()
-        return STRATEGY_CATEGORY_LABELS.get(normalized, normalized.replace("-", " ").title())
-
     def _run_backtest_from_request():
         backtest_execution_mode = load_backtest_execution_mode()
         requested_tickers = parse_requested_tickers()
@@ -2171,122 +2166,10 @@ def build_web_runtime() -> WebRuntime:
         )
 
     def build_strategy_option_groups(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
-        baseline_items = [item for item in strategy_options if item.get("id") == "buy-and-hold"]
-
-        recent_ids = top_used_strategies(limit=3)
-        recent_items = []
-        for sid in recent_ids:
-            # Avoid showing baseline in recent
-            if sid == "buy-and-hold":
-                continue
-            matching = [item for item in strategy_options if item.get("id") == sid]
-            if matching:
-                recent_items.append(matching[0])
-
-        all_other_items = sorted(
-            [item for item in strategy_options if item.get("id") != "buy-and-hold"],
-            key=lambda item: str(item.get("name", "")).lower()
+        return build_strategy_option_groups_for_recent(
+            strategy_options,
+            top_used_strategies(limit=3),
         )
-
-        groups = []
-        if baseline_items:
-            groups.append({
-                "key": "baseline",
-                "label": STRATEGY_CATEGORY_LABELS["baseline"],
-                "items": baseline_items
-            })
-
-        if recent_items:
-            groups.append({
-                "key": "recent",
-                "label": STRATEGY_CATEGORY_LABELS["recent"],
-                "items": recent_items
-            })
-
-        if all_other_items:
-            groups.append({
-                "key": "all",
-                "label": STRATEGY_CATEGORY_LABELS["all"],
-                "items": all_other_items
-            })
-
-        return groups
-
-    def build_strategy_form_field(definition: StrategyParameterDefinition, value: Any) -> dict[str, object]:
-        def format_numeric_value(raw_value: Any, *, kind: str, step: Any) -> Any:
-            if kind != "number":
-                return raw_value
-            try:
-                numeric_value = float(raw_value)
-            except (TypeError, ValueError):
-                return raw_value
-            step_text = "" if step is None else str(step)
-            decimals = len(step_text.split(".", 1)[1]) if "." in step_text else 1
-            return f"{numeric_value:.{decimals}f}"
-
-        resolved_value = definition.default if value is None else value
-        input_mode = "text"
-        slider_min: int | float | None = None
-        slider_max: int | float | None = None
-        slider_step: int | float | None = None
-        switch_checked = False
-        switch_on_value: str | int = 1
-        switch_off_value: str | int = 0
-
-        if definition.kind in {"integer", "number"}:
-            field_type = "number"
-            input_mode = "decimal" if definition.kind == "number" else "numeric"
-            base_value = resolved_value if isinstance(resolved_value, (int, float)) else definition.default
-            if not isinstance(base_value, (int, float)):
-                base_value = 0
-            slider_step = definition.step if definition.step is not None else (0.1 if definition.kind == "number" else 1)
-            slider_min = definition.minimum if definition.minimum is not None else min(0, base_value)
-            if definition.maximum is not None:
-                slider_max = definition.maximum
-            else:
-                scale = max(abs(float(base_value or 0)), abs(float(definition.default or 0)), 1.0)
-                slider_max = scale * 4
-                if definition.kind == "integer":
-                    slider_max = max(int(slider_min) + 1, int(round(slider_max)))
-                else:
-                    slider_max = max(float(slider_min) + float(slider_step), round(float(slider_max), 4))
-        elif definition.kind == "string":
-            field_type = "text"
-        elif definition.kind == "boolean":
-            field_type = "switch"
-            switch_checked = bool(resolved_value)
-        else:
-            field_type = "select"
-            options = tuple(str(option) for option in definition.options)
-            if options in {("Off", "On"), ("On", "Off")}:
-                field_type = "switch"
-                switch_on_value = "On"
-                switch_off_value = "Off"
-                switch_checked = str(resolved_value) == "On"
-
-        return {
-            "key": definition.key,
-            "label": definition.label,
-            "kind": definition.kind,
-            "field_type": field_type,
-            "input_mode": input_mode,
-            "value": format_numeric_value(resolved_value, kind=definition.kind, step=definition.step),
-            "default": definition.default,
-            "minimum": definition.minimum,
-            "maximum": definition.maximum,
-            "step": definition.step,
-            "slider_min": slider_min,
-            "slider_max": slider_max,
-            "slider_step": slider_step,
-            "options": list(definition.options),
-            "editable": definition.editable,
-            "help_text": definition.help_text,
-            "unit_hint": definition.unit_hint,
-            "placeholder": definition.placeholder,
-            "switch_checked": switch_checked,
-            "switch_on_value": switch_on_value,
-            "switch_off_value": switch_off_value,
-        }
 
     def collect_strategy_form_values(strategy_id: str) -> dict[str, Any]:
         strategy = instantiate_strategy(strategy_id)
@@ -2300,49 +2183,17 @@ def build_web_runtime() -> WebRuntime:
         return strategy.normalize_params(raw_values)
 
     def build_strategy_form_fields(strategy_id: str, values: dict[str, Any] | None = None) -> list[dict[str, object]]:
-        strategy = instantiate_strategy(strategy_id)
-        normalized_values = strategy.normalize_params(values or {})
-        return [
-            build_strategy_form_field(definition, normalized_values.get(definition.key))
-            for definition in strategy.get_parameter_definitions()
-        ]
+        return build_strategy_form_fields_for_strategy(
+            strategy_id,
+            values,
+            strategy_factory=instantiate_strategy,
+        )
 
     def build_strategy_settings_rows(strategy_options: list[dict[str, object]]) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for item in strategy_options:
-            strategy = instantiate_strategy(str(item["id"]))
-            rows.append(
-                {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "category": format_strategy_category_label(str(item.get("category", "general"))),
-                    "description": item.get("description", ""),
-                    "supports": item.get("supports", {}),
-                    "parameters": [
-                        {
-                            "label": definition.label,
-                            "default_display": definition.display_default(),
-                            "meaning": definition.help_text,
-                        }
-                        for definition in strategy.get_parameter_definitions()
-                    ],
-                }
-            )
-        supertrend_ai_row = next((row for row in rows if row.get("id") == "supertrend-ai"), None)
-        if supertrend_ai_row is not None:
-            raw_parameters = supertrend_ai_row.get("parameters", [])
-            copied_parameters = (
-                [dict(parameter) for parameter in raw_parameters if isinstance(parameter, dict)]
-                if isinstance(raw_parameters, list)
-                else []
-            )
-            rows.append(
-                {
-                    **supertrend_ai_row,
-                    "parameters": copied_parameters,
-                }
-            )
-        return rows
+        return build_strategy_settings_rows_for_factory(
+            strategy_options,
+            strategy_factory=instantiate_strategy,
+        )
 
     def build_style_token_rows() -> list[dict[str, object]]:
         def style_token_id(name: str) -> str:

@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.4.0
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -81,7 +81,14 @@ class BacktestPageTests(unittest.TestCase):
             patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
             patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result(intraday=True)),
             patch("app.web.runtime.record_strategy_usage"),
-            patch("app.web.runtime.has_recent_one_minute_store", return_value=True),
+            patch(
+                "app.web.runtime.list_available_market_intervals",
+                return_value=["1d", "1m"],
+            ),
+            patch(
+                "app.web.runtime.build_supported_periods_for_history_store",
+                return_value=["1d"],
+            ),
         ):
             client = create_app().test_client()
             response = client.get("/workspaces/backtest?ticker=DRAM&strategy=buy-and-hold&period=1w&interval=1m&capital=10000")

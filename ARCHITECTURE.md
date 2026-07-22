@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.9.0`
+Documentation version: `v1.10.0`
 
 ## Runtime flow
 
@@ -105,6 +105,9 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/web/form_parsing.py`: pure query/form parsing and portfolio weight normalization used by WebRuntime.
 - `app/web/navigation.py`: canonical workspace, settings, and trade path constants and builders.
 - `app/web/market_history.py`: read-only local-history range and date-alignment helpers used by WebRuntime.
+- `app/web/strategy_forms.py`: pure strategy selector, parameter-field, and
+  Settings catalog presentation builders. WebRuntime supplies strategy usage
+  history and the strategy factory while retaining request assembly.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Broker parsers remain in `investment_import.py` until they can move without obscuring their reconciliation invariants.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index and theme-token helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. Consumers keep local fallbacks if the shared script is unavailable.
