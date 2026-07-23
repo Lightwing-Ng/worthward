@@ -1,6 +1,6 @@
 # Known issues, operating constraints, and behavior-change history
 
-Documentation version: `v1.98.1`
+Documentation version: `v1.98.2`
 
 ## Current operating constraints
 
@@ -25,6 +25,15 @@ the dated entries preserve their rationale and failure classifications.
   before an event is sent.
 - The current test inventory and coverage baseline are maintained in
   `TESTING.md`; do not infer them from older dated entries in this file.
+
+## Korean exact-day intraday data retains Yahoo Chart fallback on 23 Jul 2026
+
+- A yfinance rate-limit cooldown no longer leaves a current Korean or other
+  non-US exact-day comparison blank when its local one-minute cache is stale.
+  The request now falls through to the free Yahoo Chart endpoint for that
+  trading date without writing an inferred or synthetic price into the cache.
+- Longbridge remains limited to its supported markets and contributes only the
+  selected US overnight series; it is never treated as a Korean-data fallback.
 
 ## Cross-market one-day Exact transitions retain the active date on 23 Jul 2026
 

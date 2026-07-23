@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.2
+Code version: v0.10.3
 """
 
 from __future__ import annotations
@@ -143,6 +143,54 @@ class ComparePageTests(unittest.TestCase):
         self.assertNotIn("SKHYV", payload["sources"])
         skhy_series = next(item for item in payload["series"] if item["ticker"] == "SKHY")
         self.assertEqual(skhy_series["raw_dates"][-1], "2026-07-14 04:40")
+
+    def test_live_compare_api_uses_exact_yahoo_fallback_for_missing_korean_current_day(self) -> None:
+        reference_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-07-15 00:00", "2026-07-15 02:00"],
+            ),
+            "7709.HK": ohlc_frame_for_dates(
+                "7709.HK",
+                ["2026-07-15 00:00", "2026-07-15 02:00"],
+            ),
+        }
+        live_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                ["2026-07-23 00:00", "2026-07-23 02:00"],
+            ),
+            "7709.HK": ohlc_frame_for_dates(
+                "7709.HK",
+                ["2026-07-23 00:00", "2026-07-23 02:00"],
+            ),
+        }
+        for frame in live_frames.values():
+            frame.attrs["market_data_source"] = "yahoo_chart_exact"
+
+        def fetch_history_for_test(ticker: str, *_args: object, **_kwargs: object) -> pd.DataFrame:
+            return reference_frames[ticker]
+
+        with (
+            patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
+            patch(
+                "app.web.runtime.fetch_one_minute_history_for_trading_date",
+                side_effect=lambda ticker, *_args, **_kwargs: live_frames[ticker],
+            ) as exact_day_fetch_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/compare/live?ticker=000660.KS&ticker=7709.HK&period=1d"
+                "&axis_date=2026-07-15&live_date=2026-07-23&refresh=0"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["sources"]["000660.KS"], "yahoo_chart_exact")
+        exact_day_fetch_mock.assert_called_once()
+        self.assertEqual(exact_day_fetch_mock.call_args.args[0], "000660.KS")
+        korean_series = next(item for item in payload["series"] if item["ticker"] == "000660.KS")
+        self.assertTrue(any(value is not None for value in korean_series["prices"]))
 
     def test_one_day_price_page_keeps_new_us_listing_pending_before_first_quote(self) -> None:
         def _fetch_history(

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.19.0
+Code version: v0.19.1
 """
 
 from __future__ import annotations
@@ -704,17 +704,39 @@ def fetch_one_minute_history_for_trading_date(
         tz=market_timezone,
     )
     local_end = local_start + pd.Timedelta(days=1)
-    history = _download_daily_history_with_yfinance(
-        normalized_ticker,
-        start=local_start.tz_convert("UTC").to_pydatetime(),
-        end=local_end.tz_convert("UTC").to_pydatetime(),
-        interval="1m",
-        prepost=infer_ticker_market(normalized_ticker) != "US",
-    )
-    if history.empty:
-        raise ValueError(f"No 1-minute market data returned for {normalized_ticker} on {target_date.date()} via yfinance.")
-
-    normalized_dataset = normalize_history_frame(history, normalized_ticker, interval="1m")
+    utc_start = local_start.tz_convert("UTC")
+    utc_end = local_end.tz_convert("UTC")
+    try:
+        history = _download_daily_history_with_yfinance(
+            normalized_ticker,
+            start=utc_start.to_pydatetime(),
+            end=utc_end.to_pydatetime(),
+            interval="1m",
+            prepost=infer_ticker_market(normalized_ticker) != "US",
+        )
+        if history.empty:
+            raise ValueError(
+                f"No 1-minute market data returned for {normalized_ticker} on {target_date.date()} via yfinance."
+            )
+        normalized_dataset = normalize_history_frame(history, normalized_ticker, interval="1m")
+        normalized_dataset.attrs["market_data_source"] = "yfinance_exact"
+    except (ImportError, OSError, ValueError, KeyError, TypeError) as yfinance_error:
+        LOGGER.warning(
+            "Unable to fetch exact-day yfinance 1-minute data for %s on %s; trying Yahoo Chart: %s",
+            normalized_ticker,
+            target_date.date(),
+            yfinance_error,
+        )
+        normalized_dataset = _download_one_minute_history_with_yahoo_chart_window(
+            normalized_ticker,
+            start=utc_start,
+            end=utc_end,
+        )
+        if normalized_dataset.empty:
+            raise ValueError(
+                f"No 1-minute market data returned for {normalized_ticker} on {target_date.date()} via Yahoo Chart."
+            ) from yfinance_error
+        normalized_dataset.attrs["market_data_source"] = "yahoo_chart_exact"
     return select_price_series(
         normalized_dataset,
         include_dividends,

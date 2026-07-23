@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.2
+Code version: v0.18.3
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ from app.services.market_data import (
     download_full_history,
     fetch_compare_one_day_extended_history,
     ensure_fresh_history_store,
+    fetch_one_minute_history_for_trading_date,
     fetch_compare_one_day_overnight_history,
     fetch_history,
     fetch_longbridge_realtime_quotes,
@@ -61,6 +62,31 @@ class TickerSymbolBoundaryTests(unittest.TestCase):
         self.assertEqual(yfinance_lookup_symbol("600519.SH"), "600519.SS")
         self.assertEqual(yfinance_lookup_symbol("700.HK"), "0700.HK")
         self.assertEqual(yfinance_lookup_symbol("000001.SZ"), "000001.SZ")
+
+    def test_exact_one_minute_history_uses_yahoo_chart_after_yfinance_rate_limit(self) -> None:
+        expected = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-22 20:00", "2026-07-23 02:19"],
+        )
+        rate_limit_error = YfinanceDownloadError(
+            "YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')"
+        )
+
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=rate_limit_error,
+            ),
+            patch(
+                "app.services.market_data._download_one_minute_history_with_yahoo_chart_window",
+                return_value=expected,
+            ) as yahoo_chart_mock,
+        ):
+            result = fetch_one_minute_history_for_trading_date("000660.KS", "2026-07-23")
+
+        self.assertEqual(result["Date"].tolist(), expected["Date"].tolist())
+        self.assertEqual(result.attrs["market_data_source"], "yahoo_chart_exact")
+        self.assertEqual(yahoo_chart_mock.call_args.args[0], "000660.KS")
 
 
 class MarketSessionClassificationTests(unittest.TestCase):

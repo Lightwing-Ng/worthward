@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.34.0
+Code version: v0.34.1
 """
 
 from __future__ import annotations
@@ -1766,6 +1766,22 @@ def build_web_runtime() -> WebRuntime:
             ticker,
             live_trading_date,
         )
+        if intraday_dataset.empty and infer_ticker_market(ticker) != "US":
+            try:
+                intraday_dataset = fetch_one_minute_history_for_trading_date(
+                    ticker,
+                    live_trading_date,
+                    include_dividends=False,
+                    dividend_mode="price",
+                )
+                source = str(intraday_dataset.attrs.get("market_data_source") or "yfinance_exact")
+            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.warning(
+                    "Unable to fetch missing live 1-minute compare data for %s on %s: %s",
+                    ticker,
+                    live_trading_date,
+                    exc,
+                )
         if infer_ticker_market(ticker) == "US" and not include_extended_hours_flag:
             intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
         if intraday_dataset.empty:
