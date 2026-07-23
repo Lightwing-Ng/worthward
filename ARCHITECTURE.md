@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.12.0`
+Documentation version: `v1.12.1`
 
 ## Runtime flow
 
@@ -13,7 +13,7 @@ main.py
   -> app/services/* and app/infrastructure/*
 ```
 
-`app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; account and order APIs apply the separate strong access-token check at the request boundary.
+`app/web/runtime.py` assembles request handlers and presentation state. Route modules only register canonical and compatibility URLs. The trade module also owns the browser PIN unlock endpoint; live account and order APIs authorize either that signed browser session or a valid strong access token at the request boundary.
 
 ## Layers
 
@@ -94,9 +94,9 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   converts canonical Shanghai `.SH` to Yahoo's `.SS` only for its remote
   request. Legacy aliases and raw import provenance can retain their original
   spelling for compatibility, but cannot become canonical project tickers.
-- Live-order APIs remain locked unless the server has a strong access token and the request presents it.
-- Browser Live trading additionally requires a six-digit PIN, with the unlock
-  held only in the signed browser session.
+- Live account and order APIs authorize a request through either a signed browser
+  session established by the six-digit PIN or a configured, correctly presented
+  access token of at least 32 characters. The PIN unlock remains browser-session-only.
 - A Yahoo rate-limit signal pauses every yfinance request routed through the
   shared market-data service; the backoff is bounded and browser Investment
   polling must not bypass it with per-ticker request fan-out.

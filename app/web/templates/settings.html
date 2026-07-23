@@ -1,3 +1,4 @@
+{# Code version: v0.1.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -85,7 +86,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.13.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.13.2') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}

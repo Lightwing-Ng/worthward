@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -391,14 +391,11 @@ def _pad_dataset_to_market_session_close(dataset: pd.DataFrame, ticker: str | No
     if missing_dates.empty:
         return dataset
 
-    padding_rows: list[dict[str, object]] = []
-    for missing_date in missing_dates:
-        row: dict[str, object] = {column: pd.NA for column in dataset.columns}
-        row["Date"] = missing_date
-        padding_rows.append(row)
-
-    padded = pd.concat([dataset, pd.DataFrame(padding_rows)], ignore_index=True)
-    return padded.drop_duplicates(subset=["Date"], keep="first").sort_values("Date").reset_index(drop=True)
+    prepared = dataset.drop_duplicates(subset=["Date"], keep="first").copy()
+    padded_index = pd.DatetimeIndex(prepared["Date"]).union(missing_dates)
+    padded = prepared.set_index("Date").reindex(padded_index)
+    padded.index.name = "Date"
+    return padded.reset_index().sort_values("Date").reset_index(drop=True)
 
 
 def _fill_intraday_market_session_gaps(dataset: pd.DataFrame, ticker: str | None = None) -> pd.DataFrame:

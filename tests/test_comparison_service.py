@@ -1,16 +1,18 @@
 """
 Tests for comparison logic.
 
-Code version: v0.8.1
+Code version: v0.8.2
 """
 
 from __future__ import annotations
 
 import unittest
+import warnings
 
 import pandas as pd
 
 from app.services.comparisons import (
+    _pad_dataset_to_market_session_close,
     align_intraday_datasets_for_compare,
     align_datasets_on_common_dates,
     build_series_payload,
@@ -71,6 +73,32 @@ class ComparisonServiceTests(unittest.TestCase):
             shifted["Date"].iloc[-1] - shifted["Date"].iloc[0],
             reference["Date"].iloc[-1] - reference["Date"].iloc[0],
         )
+
+    def test_market_session_close_padding_avoids_all_na_concat_inference(self) -> None:
+        dataset = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2026-07-03 02:27"]),
+                "Close": [100.0],
+                "Turnover": pd.Series([pd.NA], dtype="Float64"),
+            }
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            padded = _pad_dataset_to_market_session_close(dataset, "000660.KS")
+
+        self.assertEqual(
+            padded["Date"].tolist(),
+            pd.to_datetime([
+                "2026-07-03 02:27",
+                "2026-07-03 02:28",
+                "2026-07-03 02:29",
+                "2026-07-03 02:30",
+            ]).tolist(),
+        )
+        self.assertEqual(padded["Close"].iloc[0], 100.0)
+        self.assertTrue(pd.isna(padded["Close"].iloc[1]))
+        self.assertEqual(str(padded["Turnover"].dtype), "Float64")
 
     def test_build_series_payload_uses_first_shared_row_as_baseline(self) -> None:
         dataset = pd.DataFrame(

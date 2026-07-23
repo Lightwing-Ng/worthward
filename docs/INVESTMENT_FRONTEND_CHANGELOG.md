@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.0.3`
+Documentation version: `v1.0.4`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
@@ -330,7 +330,7 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: Grant descriptions now use the standard TICKER @ PRICE x QTY transaction format
 - Updated: Holdings summary row now colors only the cumulative P&L value, keeping the label text neutral
 - Reworked: The investment import form now accepts the two IBKR CSV exports instead of manual transaction entry
-- Added: Import feedback now spells out that the server discards raw CSV files after in-memory processing
+- Superseded: The earlier in-memory-only raw-CSV feedback was replaced by SHA-256-verified immutable source-evidence persistence. Exact uploaded IBKR CSV and GainsKeeper files are now retained locally, while the ledger stores verified manifests and metadata.
 - Improved: Empty transaction history now shows a compact guided import state with inline plus icon and width protection
 - Updated: Import feedback now uses the standard modal dialog banner message token instead of the legacy modal dialog block
 - Fixed: IBKR deposit rows no longer invent a USD currency when the CSV does not prove one

@@ -1,4 +1,4 @@
-/* Code version: v0.13.1 */
+/* Code version: v0.13.2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -181,6 +181,7 @@
         let stopped = false;
         let successDismissTimer = 0;
         let consecutiveFetchFailures = 0;
+        // Only transport or JSON-decoding failures retry; JSON status responses are terminal service states.
         const maxTransientFetchFailures = 3;
 
         const stop = () => {

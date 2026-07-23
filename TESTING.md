@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.4`
+Documentation version: `v1.8.5`
 
 ## Supported commands
 
@@ -47,9 +47,9 @@ artifact actions.
 
 Baseline remeasured on 23 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `61.1%` (`coverage.json`
-  reports `11,894` covered lines of `18,198` statements and `3,659` covered
-  branches of `7,258`).
+- Total combined statement-and-branch coverage: `61.3%` (`coverage.json`
+  reports `11,935` covered lines of `18,212` statements and `3,673` covered
+  branches of `7,260`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -82,7 +82,7 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 Current suite inventory remeasured on 23 Jul 2026:
 
-- 432 Python tests collected; the latest full Python run reports 426 passed,
+- 437 Python tests collected; the latest full Python run reports 431 passed,
   6 skipped, and 52 subtests passed.
 - 72 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
@@ -92,6 +92,13 @@ Current suite inventory remeasured on 23 Jul 2026:
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
 - `tests/test_*.py`: Python unit and Flask integration tests.
+- `tests/test_app_startup.py`: fail-closed application-startup source-evidence scans.
+- `tests/test_debug_reporting.py`: opt-in local debug endpoint validation and
+  sensitive-data redaction.
+- `tests/test_longbridge_cli.py`: Longbridge CLI path safety and client-safe
+  OAuth or connection failure feedback.
+- `tests/test_runtime_error_redaction.py`: stable client failures that retain
+  full unexpected-error diagnostics only in local logs.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.

@@ -1,6 +1,6 @@
 # Known issues, operating constraints, and behavior-change history
 
-Documentation version: `v1.98.2`
+Documentation version: `v1.98.3`
 
 ## Current operating constraints
 
@@ -15,8 +15,9 @@ the dated entries preserve their rationale and failure classifications.
   lock; imports require both materialization and persisted-readback verification;
   startup fails closed if a manifest or artifact is invalid.
 - Longbridge browser OAuth polls only an explicit `refresh_pending` state. It
-  stops for every terminal state and after three consecutive status-fetch
-  failures, then shows recovery feedback instead of polling indefinitely.
+  stops for every terminal JSON status response, including a JSON `503`, and
+  after three consecutive transport or JSON-decoding failures, then shows
+  recovery feedback instead of polling indefinitely.
 - Unexpected browser-facing failures use stable domain-specific messages while
   full diagnostics remain in local server logs. Explicit product validation
   errors retain their established `400` responses.
@@ -86,7 +87,7 @@ the dated entries preserve their rationale and failure classifications.
 ## Longbridge OAuth terminal feedback and Investment evidence clearing are bounded on 23 Jul 2026
 
 - Browser OAuth polling continues only while the Longbridge CLI explicitly reports `refresh_pending`. Expired, missing, malformed, and failed token states stop polling and provide a safe recovery instruction; valid tokens still perform one read-only connection check.
-- Transient OAuth status fetch failures remain retryable. After three consecutive failures, the browser stops polling and surfaces a local-connection message instead of silently continuing indefinitely.
+- The three-attempt retry budget applies only when `fetch` rejects or the response cannot be decoded as JSON. A JSON `status: error` response, including HTTP `503`, is an explicit terminal service state and stops the current monitor immediately.
 - Investment-store clearing now holds the ledger lock while removing its immutable evidence directory. An import cannot commit a manifest that references evidence concurrently removed by a clear action.
 - The Style Tokens action-package demonstration handles only its marked `type="button"` control. A future real submit button in that visual region keeps normal form-submission behavior.
 

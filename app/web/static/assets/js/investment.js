@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.5.0
+ * Code version: v2.5.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, split layout, and calculation-heavy data utilities live
  * in tested modules.
@@ -68,7 +68,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.5.0',
+    entry: 'v2.5.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     layout: INVESTMENT_LAYOUT_MODULE_VERSION,
@@ -4594,7 +4594,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const duplicateRecordCount = Number(incrementalImport?.duplicate_record_count);
         const items = [
             'Matching records were merged <strong>incrementally</strong> into the local investment store <strong>without clearing older data first</strong>.',
-            'The server <strong>does not store your original CSV files</strong>. They were processed in memory and discarded after the import finished.',
+            'Exact uploaded source files are retained locally as <strong>SHA-256-verified immutable evidence</strong>. The investment ledger retains only their verified manifests and metadata.',
         ];
         if (
             Number.isFinite(importedRecordCount)

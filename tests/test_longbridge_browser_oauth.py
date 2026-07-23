@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.3.1
+Code version: v1.3.2
 """
 
 from __future__ import annotations
@@ -190,6 +190,37 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "pending")
+        connection_test.assert_not_called()
+
+    def test_browser_oauth_status_returns_terminal_json_error_when_status_check_fails(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch(
+                    "app.web.runtime.get_longbridge_cli_auth_status",
+                    side_effect=RuntimeError("CLI status is unavailable"),
+                ),
+                patch("app.web.runtime.test_longbridge_cli_connection") as connection_test,
+            ):
+                client = create_app().test_client()
+                client.post(
+                    "/settings/broker-access/action",
+                    data={"selected_broker": "longbridge", "action": "save"},
+                )
+                response = client.get("/api/settings/longbridge-oauth/status")
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(
+            payload["message"],
+            "Longbridge authorization status is temporarily unavailable. Try again later.",
+        )
         connection_test.assert_not_called()
 
     def test_browser_oauth_status_reports_terminal_token_failures(self) -> None:
