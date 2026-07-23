@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.7.0`
+Documentation version: `v1.8.4`
 
 ## Supported commands
 
@@ -45,13 +45,12 @@ artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 22 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-cov `7.1.0`, and coverage.py `7.15.0`:
+Baseline remeasured on 23 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement and branch coverage: `59.5%` (`coverage.json`
-  reports `11,609` covered of `18,212` statements).
+- Total combined statement-and-branch coverage: `61.1%` (`coverage.json`
+  reports `11,894` covered lines of `18,198` statements and `3,659` covered
+  branches of `7,258`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
-- `app/infrastructure/ibkr_flex.py`: `65.6%`, with redaction, URL validation,
-  bounded responses, retry policy, malformed XML, and environment contracts.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
 - The complete gate enforces `--cov-fail-under=50` so coverage cannot silently
@@ -59,14 +58,14 @@ Baseline remeasured on 22 Jul 2026 with Python `3.13`, pytest `9.0.2`, pytest-co
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- The next project target is `60%`, followed by measured module-level improvements.
+- The next project target is `62%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
-- `app/services/live_trading.py`: `34.5%`.
-- `app/infrastructure/broker_market_data.py`: `39.7%` after removing the
+- `app/services/live_trading.py`: `32.8%`.
+- `app/infrastructure/broker_market_data.py`: `44.0%` after removing the
   unreachable IBKR Client Portal transport.
-- `app/services/investment_import.py`: `48.4%`, with broker-specific
+- `app/services/investment_import.py`: `51.9%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 JavaScript source coverage is measured by Node's built-in test runner for the
@@ -81,15 +80,14 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 22 Jul 2026:
+Current suite inventory remeasured on 23 Jul 2026:
 
-- 406 Python tests collected; the latest full Python run reports 400 passed,
-  6 skipped, and 35 subtests passed.
+- 432 Python tests collected; the latest full Python run reports 426 passed,
+  6 skipped, and 52 subtests passed.
 - 72 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 67 Playwright test cases listed by `npx playwright test --list`, generated
-  from 59 explicit top-level `test(...)` declarations with parameterized
-  viewport coverage.
+- 76 Playwright test cases listed by `npx playwright test --list`, including
+  parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
@@ -120,8 +118,6 @@ Current suite inventory remeasured on 22 Jul 2026:
 - `tests/test_investment_import_registry.py`: parser registration, duplicate and
   unknown-format rejection, payload validation, idempotent commit, atomic
   persistence, and readback boundaries.
-- `tests/test_ibkr_flex.py`: offline IBKR Flex security, retry, size, XML, and
-  credential-presence contracts.
 - `tests/test_strategy_variants.py`: behavior contracts for every formerly
   low-coverage alternative strategy without asserting implementation trivia.
 - `tests/test_investment_ticker_lineage.py`, `tests/test_logos.py`, and
@@ -149,6 +145,8 @@ launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
+
+Investment Markdown export E2E tests must observe the downloaded file and assert its semantic column labels, declared filter scope, and filtered row/date-range alignment. Verifying only that the export button is present is insufficient.
 
 ## Python settings-store isolation
 

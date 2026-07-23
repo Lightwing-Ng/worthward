@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.29.0
+Code version: v0.34.0
 """
 
 from __future__ import annotations
@@ -58,7 +58,11 @@ from app.infrastructure.broker_market_data import (
     one_minute_lookback_start,
     test_broker_connection,
 )
-from app.infrastructure.longbridge_cli import start_longbridge_cli_browser_oauth
+from app.infrastructure.longbridge_cli import (
+    get_longbridge_cli_auth_status,
+    start_longbridge_cli_browser_oauth,
+    test_longbridge_cli_connection,
+)
 from app.core.broker_settings import (
     BrokerSettings,
     load_broker_settings,
@@ -203,6 +207,7 @@ from app.infrastructure.storage import (
     load_profile_record,
     market_ticker_store_aliases,
     market_store_file_lock,
+    materialize_investment_source_artifacts,
     investment_ticker_identity_store_aliases,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
@@ -215,6 +220,7 @@ from app.infrastructure.storage import (
     save_investment_store_payload,
     top_used_strategies,
     update_investment_store_payload,
+    verify_investment_source_artifacts,
     write_json_atomic,
 )
 from app.web.form_parsing import (
@@ -331,7 +337,7 @@ class WebRuntime:
     cash_equivalents_action: Any
     email_smtp_action: Any
     broker_access_action: Any
-    ibkr_flex_test_api: Any
+    longbridge_oauth_status_api: Any
     local_market_store_action: Any
     settings_cache_action: Any
     market_store_logo: Any
@@ -866,6 +872,14 @@ def build_web_runtime() -> WebRuntime:
             update_store=update_store,
             load_store=load_normalized_investment_payload,
             invalidate_cache=invalidate_investment_transactions_cache,
+            materialize_payload=lambda payload: materialize_investment_source_artifacts(
+                payload,
+                INVESTMENT_STORE_PATH,
+            ),
+            verify_persisted_payload=lambda payload: verify_investment_source_artifacts(
+                payload,
+                INVESTMENT_STORE_PATH,
+            ),
         )
 
     def refresh_investment_import_price_caches(
@@ -877,8 +891,11 @@ def build_web_runtime() -> WebRuntime:
                     extract_all_investment_tickers(imported_payload)
                 )
             )
-        except Exception as exc:
-            return [f"Price cache refresh failed after import: {exc}"]
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Investment import price-cache refresh failed")
+            return [
+                "Price cache refresh failed after import. Retry it from Local Market Store."
+            ]
 
     def load_local_investment_dividend_actions(
         tickers: set[str],
@@ -1104,11 +1121,12 @@ def build_web_runtime() -> WebRuntime:
                     })
                     continue
                 price_history_by_ticker[ticker] = prices
-            except Exception as exc:
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not read local market history for %s", ticker)
                 failures.append({
                     "ticker": ticker,
                     "reason": "read_failed",
-                    "message": f"Could not read local market history for {ticker}: {exc}",
+                    "message": f"Could not read local market history for {ticker}.",
                 })
         return price_history_by_ticker, failures
 
@@ -1161,7 +1179,14 @@ def build_web_runtime() -> WebRuntime:
         return {
             key: str(value).strip()
             for key, value in payload.items()
-            if key in {"notice", "error", "broker_test_status", "broker_test_message", "broker_test_checked_at"}
+            if key in {
+                "notice",
+                "error",
+                "broker_test_status",
+                "broker_test_message",
+                "broker_test_checked_at",
+                "longbridge_oauth_pending",
+            }
                and str(value).strip()
         }
 
@@ -1173,6 +1198,7 @@ def build_web_runtime() -> WebRuntime:
             broker_test_status: str = "",
             broker_test_message: str = "",
             broker_test_checked_at: str = "",
+            longbridge_oauth_pending: str = "",
             query_params: dict[str, Any] | None = None,
     ):
         target_path = build_settings_path(section_name)
@@ -1193,6 +1219,7 @@ def build_web_runtime() -> WebRuntime:
                 "broker_test_status": broker_test_status,
                 "broker_test_message": broker_test_message,
                 "broker_test_checked_at": broker_test_checked_at,
+                "longbridge_oauth_pending": longbridge_oauth_pending,
             }.items()
             if value and value.strip()
         }
@@ -2324,6 +2351,9 @@ def build_web_runtime() -> WebRuntime:
                     px_token("--settings-action-package-copy-gap", 4),
                     raw_token("--settings-action-package-background", "var(--frosted-glass-background)"),
                     raw_token("--settings-action-package-border", "var(--frosted-glass-border)"),
+                    px_token("--settings-action-package-live-marker-size", 8, 1),
+                    raw_token("--settings-action-package-live-marker-color", "var(--theme-accent-positive)"),
+                    raw_token("--settings-action-package-live-marker-duration", "1.8s"),
                     px_token("--style-token-demo-width", 384),
                 ],
                 "related_styles": [
@@ -3475,6 +3505,11 @@ def build_web_runtime() -> WebRuntime:
             if current_view == "settings"
             else (request.args.get("broker_test_checked_at", "").strip() or None)
         )
+        longbridge_oauth_pending = (
+            settings_feedback.get("longbridge_oauth_pending") == "1"
+            if current_view == "settings"
+            else request.args.get("longbridge_oauth_pending", "").strip() == "1"
+        )
         floating_banner_icon_class = "icon-modal-dialog-banner-default"
         if notice and "Successfully connected" in notice:
             floating_banner_icon_class = "icon-settings-broker"
@@ -4501,8 +4536,9 @@ def build_web_runtime() -> WebRuntime:
                             ]
                         ticker_slots = (control_tickers or validated_tickers).copy()
                         record_ticker_usage(validated_tickers)
-        except Exception as exc:  # noqa: BLE001
-            error = str(exc) or None
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to render %s workspace", current_view)
+            error = "Unable to load this workspace. Check your local data and try again."
             if should_use_modal_banner_message(error):
                 floating_banner_icon_class = modal_banner_icon_class(error)
 
@@ -4673,6 +4709,7 @@ def build_web_runtime() -> WebRuntime:
             broker_test_status=broker_test_status,
             broker_test_message=broker_test_message,
             broker_test_checked_at=broker_test_checked_at,
+            longbridge_oauth_pending=longbridge_oauth_pending,
             live_trading_account_label=live_trading_account_label,
             local_market_rows=local_market_rows,
             local_store_current_page=local_store_current_page,
@@ -4720,7 +4757,6 @@ def build_web_runtime() -> WebRuntime:
                 "compareLive": "/api/compare/live",
                 "strategyFields": "/api/trade-strategy-fields",
                 "settingsNetworkStatus": "/api/settings/network-status",
-                "ibkrFlexTest": "/api/settings/ibkr-flex/test",
                 "localStorePageData": "/api/settings/local-market-store/page-data",
                 "marketStorePresence": "/api/market-store/presence",
                 "investmentIntraday": "/api/investment/intraday",
@@ -4853,8 +4889,9 @@ def build_web_runtime() -> WebRuntime:
                             "```",
                             ""
                         ])
-            except Exception as e:
-                md_lines.append(f"\n*(Failed to load strategy source: {str(e)})*")
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Unable to load strategy source for exported backtest report")
+                md_lines.append("\n*(Strategy source was unavailable for this export.)*")
 
             # 4. LLM Strategy Developer Prompt
             md_lines.extend([
@@ -4957,8 +4994,9 @@ def build_web_runtime() -> WebRuntime:
                 as_attachment=True,
                 download_name=report_filename
             )
-        except Exception as exc:
-            return str(exc), 500
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to export backtest transactions")
+            return "Unable to export backtest transactions. Try again later.", 500
 
     def root():
         legacy_view = request.args.get("view")
@@ -5130,8 +5168,20 @@ def build_web_runtime() -> WebRuntime:
                     and load_date_display_settings().full_date_format == "yyyy_mm_dd_cjk"
                 ):
                     save_full_date_display_format("d_mmm_yyyy")
-            except Exception as exc:  # noqa: BLE001
-                return _redirect_with_settings_feedback("general", error=f"Language spreadsheet import failed: {exc}")
+            except ValueError as exc:
+                return _redirect_with_settings_feedback(
+                    "general",
+                    error=(
+                        "Language spreadsheet import failed: "
+                        f"{str(exc).strip() or 'check the file and try again.'}"
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Language spreadsheet import failed")
+                return _redirect_with_settings_feedback(
+                    "general",
+                    error="Language spreadsheet import failed. Check the file and try again.",
+                )
         elif "language_code" in request.form or "translation_en" in request.form:
             current_language_settings = load_language_settings()
             translation_rows = _language_rows_from_request_form()
@@ -5337,7 +5387,6 @@ def build_web_runtime() -> WebRuntime:
         if action == "authorize" and selected_broker == "longbridge":
             longbridge_auth_mode = "cli_oauth"
 
-        # IBKR settings are now Flex Web Service (reporting-only). Only account filter and Flex config are persisted.
         updated_settings = BrokerSettings(
             selected_broker=selected_broker,
             longbridge_auth_mode=longbridge_auth_mode,
@@ -5349,21 +5398,6 @@ def build_web_runtime() -> WebRuntime:
             longbridge_app_secret=current_settings.longbridge_app_secret,
             longbridge_access_token=current_settings.longbridge_access_token,
             ibkr_account_id=str(request.form.get("ibkr_account_id", "")).strip() or current_settings.ibkr_account_id,
-            # Actual secrets: if blank in form, keep existing (like Longbridge password fields)
-            ibkr_flex_token=str(request.form.get("ibkr_flex_token", "")).strip() or current_settings.ibkr_flex_token,
-            ibkr_flex_activity_query_id=str(request.form.get("ibkr_flex_activity_query_id", "")).strip() or current_settings.ibkr_flex_activity_query_id,
-            ibkr_flex_trade_confirm_query_id=str(request.form.get("ibkr_flex_trade_confirm_query_id", "")).strip() or current_settings.ibkr_flex_trade_confirm_query_id,
-            ibkr_flex_token_env=str(request.form.get("ibkr_flex_token_env", current_settings.ibkr_flex_token_env)).strip() or "IBKR_FLEX_TOKEN",
-            ibkr_flex_activity_query_id_env=str(
-                request.form.get("ibkr_flex_activity_query_id_env", current_settings.ibkr_flex_activity_query_id_env)
-            ).strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID",
-            ibkr_flex_trade_confirm_query_id_env=str(
-                request.form.get("ibkr_flex_trade_confirm_query_id_env", current_settings.ibkr_flex_trade_confirm_query_id_env)
-            ).strip() or "IBKR_FLEX_TRADE_CONFIRM_QUERY_ID",
-            ibkr_flex_send_request_url=str(
-                request.form.get("ibkr_flex_send_request_url", current_settings.ibkr_flex_send_request_url)
-            ).strip() or current_settings.ibkr_flex_send_request_url,
-            ibkr_flex_lookback_days=request.form.get("ibkr_flex_lookback_days", current_settings.ibkr_flex_lookback_days),
         )
         save_broker_settings(updated_settings)
         if action == "authorize":
@@ -5377,6 +5411,7 @@ def build_web_runtime() -> WebRuntime:
                 "broker-access",
                 notice=message if success else "",
                 error="" if success else message,
+                longbridge_oauth_pending="1" if success else "",
             )
         if action == "test":
             success, message = test_broker_connection(updated_settings)
@@ -5399,53 +5434,58 @@ def build_web_runtime() -> WebRuntime:
             )
             return _redirect_with_settings_feedback("broker-access", notice=notice)
 
-    def _build_ibkr_settings_from_request() -> BrokerSettings:
-        current_settings = load_broker_settings()
-        # Build a minimal IBKR Flex settings object for test flows. No Gateway fields.
-        return BrokerSettings(
-            selected_broker="ibkr",
-            longbridge_auth_mode=current_settings.longbridge_auth_mode,
-            longbridge_cli_path=current_settings.longbridge_cli_path,
-            longbridge_cli_home=current_settings.longbridge_cli_home,
-            longbridge_app_key=current_settings.longbridge_app_key,
-            longbridge_app_secret=current_settings.longbridge_app_secret,
-            longbridge_access_token=current_settings.longbridge_access_token,
-            ibkr_account_id=str(request.form.get("ibkr_account_id", current_settings.ibkr_account_id) or request.args.get("ibkr_account_id", "")).strip(),
-            ibkr_flex_token=str(request.form.get("ibkr_flex_token", "")).strip() or current_settings.ibkr_flex_token,
-            ibkr_flex_activity_query_id=str(request.form.get("ibkr_flex_activity_query_id", "")).strip() or current_settings.ibkr_flex_activity_query_id,
-            ibkr_flex_trade_confirm_query_id=str(request.form.get("ibkr_flex_trade_confirm_query_id", "")).strip() or current_settings.ibkr_flex_trade_confirm_query_id,
-            ibkr_flex_token_env=str(request.form.get("ibkr_flex_token_env", current_settings.ibkr_flex_token_env)).strip() or "IBKR_FLEX_TOKEN",
-            ibkr_flex_activity_query_id_env=str(
-                request.form.get("ibkr_flex_activity_query_id_env", current_settings.ibkr_flex_activity_query_id_env)
-            ).strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID",
-            ibkr_flex_trade_confirm_query_id_env=str(
-                request.form.get("ibkr_flex_trade_confirm_query_id_env", current_settings.ibkr_flex_trade_confirm_query_id_env)
-            ).strip() or "IBKR_FLEX_TRADE_CONFIRM_QUERY_ID",
-            ibkr_flex_send_request_url=str(
-                request.form.get("ibkr_flex_send_request_url", current_settings.ibkr_flex_send_request_url)
-            ).strip() or current_settings.ibkr_flex_send_request_url,
-            ibkr_flex_lookback_days=request.form.get("ibkr_flex_lookback_days", current_settings.ibkr_flex_lookback_days),
-        )
+    def longbridge_oauth_status_api():
+        settings = load_broker_settings()
+        if settings.selected_broker != "longbridge":
+            response = jsonify({
+                "status": "error",
+                "message": "Select Longbridge before checking browser authorization.",
+            })
+            response.status_code = 400
+            return apply_no_store_headers(response)
 
-    def ibkr_flex_test_api():
-        """Reporting-only Flex configuration and connectivity validation.
-        Delegates to the shared Flex test logic (same as the generic "Test connection" button).
-        """
-        settings = _build_ibkr_settings_from_request()
-        save_broker_settings(settings)
-        from app.infrastructure.broker_market_data import _test_ibkr_flex_connection
-        success, message = _test_ibkr_flex_connection(settings)
-        checked_at = datetime.now().astimezone()
-        checked_at_label = format_display_datetime(
-            checked_at,
-            include_seconds=True,
-            timezone_suffix=checked_at.strftime("%Z"),
-        )
-        return jsonify({
-            "success": success,
+        try:
+            auth_status = get_longbridge_cli_auth_status(settings)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Longbridge authorization status check failed")
+            response = jsonify({
+                "status": "error",
+                "message": "Longbridge authorization status is temporarily unavailable. Try again later.",
+            })
+            response.status_code = 503
+            return apply_no_store_headers(response)
+
+        token_status = str(((auth_status.get("token") or {}).get("status") or "")).strip().lower()
+        if token_status == "refresh_pending":
+            return apply_no_store_headers(jsonify({
+                "status": "pending",
+                "message": "Waiting for Longbridge browser authorization to finish.",
+                "token_status": token_status,
+            }))
+
+        if token_status != "valid":
+            token_failure_messages = {
+                "expired": "Longbridge browser authorization expired. Start authorization again.",
+                "error": "Longbridge browser authorization failed. Start authorization again.",
+                "missing": "Longbridge authorization is unavailable. Start authorization again.",
+            }
+            return apply_no_store_headers(jsonify({
+                "status": "error",
+                "message": token_failure_messages.get(
+                    token_status,
+                    "Longbridge authorization did not report a usable token. Start authorization again.",
+                ),
+                "token_status": token_status or "unknown",
+            }))
+
+        success, message = test_longbridge_cli_connection(settings)
+        response = jsonify({
+            "status": "success" if success else "error",
             "message": message,
-            "checked_at": checked_at_label,
+            "token_status": token_status,
         })
+        response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
+        return apply_no_store_headers(response)
 
     def local_market_store_action():
         ticker = normalize_ticker_input(request.form.get("ticker", ""))
@@ -5562,11 +5602,11 @@ def build_web_runtime() -> WebRuntime:
                     notice=notice,
                     query_params={"page": page},
                 )
-        except Exception as exc:  # noqa: BLE001
-            message = str(exc).strip() or f"Unable to update local cache for {ticker}."
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to update local market cache for %s", ticker)
             return _redirect_with_settings_feedback(
                 "local-market-store",
-                error=message,
+                error=f"Unable to update local cache for {ticker}. Try again later.",
                 query_params={"page": page},
             )
 
@@ -5599,9 +5639,12 @@ def build_web_runtime() -> WebRuntime:
                     "and left ticker usage records untouched."
                 )
             return _redirect_with_settings_feedback(section_name, notice=notice)
-        except Exception as exc:  # noqa: BLE001
-            message = str(exc).strip() or "Unable to clear cached settings data."
-            return _redirect_with_settings_feedback(section_name, error=message)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to clear cached settings data")
+            return _redirect_with_settings_feedback(
+                section_name,
+                error="Unable to clear cached settings data. Try again later.",
+            )
 
     def market_store_logo(filename: str):
         candidate = LOGOS_STORE_DIR / filename
@@ -5926,8 +5969,12 @@ def build_web_runtime() -> WebRuntime:
                 "fetchedAt": pd.Timestamp.now(tz="UTC").isoformat(),
             })
             return apply_no_store_headers(response)
-        except Exception as exc:  # noqa: BLE001
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Live comparison request failed")
+            response = jsonify({
+                "success": False,
+                "error": "Live comparison is temporarily unavailable. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6144,8 +6191,12 @@ def build_web_runtime() -> WebRuntime:
                 },
             )
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load local investment transactions")
+            response = jsonify({
+                "success": False,
+                "error": "Unable to load local investment transactions. Try again later.",
+            })
             response.status_code = 500
             report_fetch_abort_debug_event(
                 "E",
@@ -6153,7 +6204,6 @@ def build_web_runtime() -> WebRuntime:
                 "investment transactions failed",
                 {
                     "status": 500,
-                    "error": str(exc),
                 },
             )
             return apply_no_store_headers(response)
@@ -6178,25 +6228,7 @@ def build_web_runtime() -> WebRuntime:
             dry_run = False
             if broker == "ibkr":
                 ibkr_import_mode = str(request.form.get("ibkr_import_mode", "csv")).strip().lower()
-                if ibkr_import_mode == "flex":
-                    # Dry-run support for Flex
-                    dry_run = str(request.form.get("dry_run", "")).strip().lower() in {"1", "true", "yes", "on"}
-                    imported_payload = parse_investment_payload(
-                        "ibkr",
-                        "flex",
-                        settings=load_broker_settings(),
-                        dry_run=dry_run,
-                    )
-                    success_message = (
-                        "IBKR Flex import complete. Activity Flex records were fetched via the IBKR Flex Web Service v3, "
-                        "mapped to the canonical ledger, and merged incrementally. This integration is reporting-only. "
-                        "No trading or live market data is used. Use CSV for historical backfills when needed. "
-                        "Dry-run was performed; nothing was written." if dry_run else
-                        "IBKR Flex import complete. Activity Flex records were fetched via the IBKR Flex Web Service v3, "
-                        "mapped to the canonical ledger, and merged incrementally into the local investment store "
-                        "without clearing older data first. This integration is reporting-only."
-                    )
-                elif ibkr_import_mode == "gainskeeper":
+                if ibkr_import_mode == "gainskeeper":
                     gainskeeper_files = request.files.getlist("gainskeeper_files")
                     gainskeeper_payloads: list[tuple[bytes, str]] = []
                     for gainskeeper_file in gainskeeper_files:
@@ -6220,9 +6252,9 @@ def build_web_runtime() -> WebRuntime:
                         files=gainskeeper_payloads,
                     )
                     success_message = (
-                        "IBKR GainsKeeper import complete. OFX/GKX records were parsed in memory, "
-                        "merged idempotently, and matching older CSV records were upgraded with "
-                        "intraday trade timestamps where available."
+                        "IBKR GainsKeeper import complete. OFX/GKX records were merged idempotently, "
+                        "matching CSV records were upgraded with intraday trade timestamps where available, "
+                        "and exact uploaded source files were retained locally as SHA-256-verified immutable evidence."
                     )
                 else:
                     if transactions_file is None or positions_file is None:
@@ -6244,11 +6276,17 @@ def build_web_runtime() -> WebRuntime:
                         "csv",
                         transaction_csv_bytes=transactions_payload,
                         positions_csv_bytes=positions_payload,
+                        transaction_filename=str(
+                            getattr(transactions_file, "filename", "") or ""
+                        ).strip(),
+                        positions_filename=str(
+                            getattr(positions_file, "filename", "") or ""
+                        ).strip(),
                     )
                     success_message = (
                         "IBKR import complete. Matching records were merged incrementally into the local investment store "
-                        "without clearing older data first. The server does not store your original CSV files. "
-                        "They were processed in memory and discarded after the import finished."
+                        "without clearing older data first. Exact uploaded CSV source files are retained locally as "
+                        "SHA-256-verified immutable evidence."
                     )
             elif broker == "longbridge_hk":
                 hk_fund_details_file = request.files.get("longbridge_hk_fund_details_txt")
@@ -6444,8 +6482,8 @@ def build_web_runtime() -> WebRuntime:
                 def background_refresh(payload: dict[str, Any]) -> None:
                     try:
                         refresh_investment_import_price_caches(payload)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        LOGGER.exception("Investment import background refresh failed")
                 
                 threading.Thread(target=background_refresh, args=(imported_payload,), daemon=True).start()
             freshness_refresh_failures: list[str] = []
@@ -6471,17 +6509,20 @@ def build_web_runtime() -> WebRuntime:
                 },
             )
             return jsonify({"success": False, "error": str(exc)}), 400
-        except Exception as exc:
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Investment import failed")
             report_fetch_abort_debug_event(
                 "E",
                 "runtime.py:investment_add_transactions",
                 "investment import failed",
                 {
                     "status": 500,
-                    "error": str(exc),
                 },
             )
-            return jsonify({"success": False, "error": str(exc)}), 500
+            return jsonify({
+                "success": False,
+                "error": "The investment import could not be completed. Try again later.",
+            }), 500
 
     def investment_update_internal_transfer_binding():
         """Persist a manual internal-transfer binding into the local investment store."""
@@ -6524,8 +6565,12 @@ def build_web_runtime() -> WebRuntime:
                 "success": True,
                 "manual_internal_transfer_bindings": next_bindings,
             })
-        except Exception as exc:
-            return jsonify({"success": False, "error": str(exc)}), 500
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to update internal transfer binding")
+            return jsonify({
+                "success": False,
+                "error": "Unable to update the internal transfer binding. Try again later.",
+            }), 500
 
     def investment_get_latest_price():
         """Get the latest closing price for a ticker from local market store."""
@@ -6560,8 +6605,12 @@ def build_web_runtime() -> WebRuntime:
                 "latest_date": latest_date
             })
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load the latest local price for %s", ticker)
+            response = jsonify({
+                "success": False,
+                "error": f"Unable to load the latest local price for {ticker}. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6613,8 +6662,12 @@ def build_web_runtime() -> WebRuntime:
                 "target_trading_day": section_freshness["target_trading_day"] if section_freshness else "",
             })
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load local price history for %s", ticker)
+            response = jsonify({
+                "success": False,
+                "error": f"Unable to load local price history for {ticker}. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6725,8 +6778,12 @@ def build_web_runtime() -> WebRuntime:
                 "source": refresh_result.source if refresh_result is not None else "local",
             })
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load 1-minute market data for %s", ticker)
+            response = jsonify({
+                "success": False,
+                "error": f"Unable to load 1-minute market data for {ticker}. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6770,11 +6827,12 @@ def build_web_runtime() -> WebRuntime:
         fetched_at = pd.Timestamp.now(tz="UTC")
         try:
             quotes = load_investment_realtime_quotes(requested_tickers)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load realtime investment quotes")
             failures = [
                 {
                     "ticker": ticker,
-                    "error": str(exc),
+                    "error": "Realtime quote data is temporarily unavailable.",
                 }
                 for ticker in requested_tickers
             ]
@@ -6814,10 +6872,11 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({"success": True, "trading_days": trading_days, **session_state})
             response.status_code = 200
             return apply_no_store_headers(response)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load US-equity market session state")
             response = jsonify({
                 "success": False,
-                "error": str(exc),
+                "error": "US-equity market session information is temporarily unavailable.",
                 "market": "us_equity",
                 "is_trading_day": False,
                 "is_early_close": False,
@@ -6910,8 +6969,12 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({"success": False, "error": str(exc)})
             response.status_code = 400
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to load live trading account data")
+            response = jsonify({
+                "success": False,
+                "error": "Live trading account data is temporarily unavailable. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6960,8 +7023,12 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({"success": False, "error": str(exc)})
             response.status_code = 400
             return apply_no_store_headers(response)
-        except Exception as exc:
-            response = jsonify({"success": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to submit live trading order")
+            response = jsonify({
+                "success": False,
+                "error": "The live order could not be submitted. Try again later.",
+            })
             response.status_code = 500
             return apply_no_store_headers(response)
 
@@ -6995,7 +7062,7 @@ def build_web_runtime() -> WebRuntime:
         cash_equivalents_action=cash_equivalents_action,
         email_smtp_action=email_smtp_action,
         broker_access_action=broker_access_action,
-        ibkr_flex_test_api=ibkr_flex_test_api,
+        longbridge_oauth_status_api=longbridge_oauth_status_api,
         local_market_store_action=local_market_store_action,
         settings_cache_action=settings_cache_action,
         market_store_logo=market_store_logo,

@@ -85,7 +85,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/settings.js', v=version) }}"></script>
+<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.13.1') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -595,15 +595,19 @@
             </div>
     </form>
     {% elif settings_section == "local-market-store" %}
-    <section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
+    <section class="settings-action-package settings-callout-card-primary local-store-maintain-card"
+             data-action-package-live="false"
+             data-action-package-default-copy="{{ labels.local_store_maintain_note }}"
+             data-action-package-pending-copy="{{ labels.local_store_maintain_pending_note }}">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
                 <div class="settings-action-package-copy settings-callout-text">
-                    <p class="settings-service-note">{{ labels.local_store_maintain_note }}</p>
+                    <p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="{{ labels.local_store_maintain_live_marker }}" title="{{ labels.local_store_maintain_live_marker }}" hidden></span>{{ labels.local_store_maintain_title }}</p>
+                    <p class="settings-service-note" data-action-package-copy>{{ labels.local_store_maintain_note }}</p>
                 </div>
                 <form method="post" action="/settings/local-market-store/action" class="settings-stack-form settings-callout-form settings-action-package-form">
                     <input type="hidden" name="action" value="maintain">
                     <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                    <button type="submit" class="settings-inline-button settings-inline-button-primary">{{ labels.local_store_maintain_button }}</button>
+                    <button type="submit" class="settings-inline-button settings-inline-button-primary" data-action-package-button data-default-label="{{ labels.local_store_maintain_button }}" data-pending-label="{{ labels.local_store_maintain_pending_button }}">{{ labels.local_store_maintain_button }}</button>
                 </form>
     </section>
     <p class="settings-summary">{{ labels.local_store_summary }}</p>
@@ -800,6 +804,11 @@
                 </div>
 
                 <div class="settings-action-package-grid" data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    {% if longbridge_oauth_pending %}
+                    <span data-longbridge-oauth-monitor
+                          data-status-url="/api/settings/longbridge-oauth/status"
+                          hidden></span>
+                    {% endif %}
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
@@ -812,24 +821,22 @@
                     </section>
                 </div>
 
-                <div data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
-                    <div class="settings-form-row">
-                        <label class="settings-form-label">IBKR Flex Token</label>
-                        <input type="password" name="ibkr_flex_token" class="settings-form-control settings-form-control-secret" placeholder="{% if broker_settings.ibkr_flex_token_present %}••••••••••••{% else %}Paste your Flex token{% endif %}">
-                        <span class="settings-general-option-desc">Presence: {% if broker_settings.ibkr_flex_token_present %}set{% else %}missing{% endif %}</span>
-                    </div>
-                    <div class="settings-form-row">
-                        <label class="settings-form-label">Activity Query ID</label>
-                        <input type="text" name="ibkr_flex_activity_query_id" class="settings-form-control" value="{{ broker_settings.ibkr_flex_activity_query_id or '' }}" placeholder="Enter Query ID (or leave to use env)">
-                        <span class="settings-general-option-desc">Presence: {% if broker_settings.ibkr_flex_activity_query_id_present %}set{% else %}missing{% endif %}</span>
-                    </div>
-                </div>
-
-                <div class="settings-action-package-grid">
+                <div class="settings-action-package-grid" data-broker-fields="ibkr" {% if broker_settings.selected_broker != 'ibkr' %}hidden{% endif %}>
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-note">Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.</p>
+                            <p class="settings-service-name">IBKR</p>
+                            <p class="settings-service-note">Direct IBKR connectivity is not configured. For trading history, import official IBKR CSV or GainsKeeper files in Trade → Investment. For personal prices and market data, use Longbridge.</p>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="settings-action-package-grid" data-broker-fields="longbridge" {% if broker_settings.selected_broker != 'longbridge' %}hidden{% endif %}>
+                    <section class="settings-action-package settings-callout-card-primary">
+                        <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
+                        <div class="settings-action-package-copy settings-callout-text">
+                            <p class="settings-service-name"><span class="settings-broker-health-indicator" data-broker-connection-health role="img" aria-label="Healthy connection" title="Healthy connection"{% if broker_test_status != 'success' %} hidden{% endif %}></span>Broker connection test</p>
+                            <p class="settings-service-note" data-broker-connection-summary>{% if broker_test_status == 'success' %}The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order.{% else %}Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.{% endif %}</p>
                             {% if broker_test_status and broker_test_message %}
                             <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite" data-broker-test-feedback>
                                 {% if broker_test_status == 'success' %}
@@ -977,16 +984,27 @@
                         <span class="icon {{ row.sample_icon_class }}" aria-hidden="true"></span>
                     </button>
                     {% elif row.sample_kind == "action-package" %}
-                    <div class="settings-action-package {{ row.sample_icon_shell_class }}">
+                    <div class="settings-action-package {{ row.sample_icon_shell_class }}"
+                         data-style-token-action-package
+                         data-action-package-live="false"
+                         data-action-package-default-copy="{{ row.sample_copy }}"
+                         data-action-package-pending-copy="{{ labels.local_store_maintain_pending_note }}">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name">{{ row.sample_title }}</p>
-                            <p class="settings-service-note">{{ row.sample_copy }}</p>
+                            <p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="{{ labels.local_store_maintain_live_marker }}" title="{{ labels.local_store_maintain_live_marker }}" hidden></span>{{ row.sample_title }}</p>
+                            <p class="settings-service-note" data-action-package-copy>{{ row.sample_copy }}</p>
                         </div>
                         <div class="settings-action-package-form">
-                            <button type="button" class="{{ row.sample_button_class }}">{{ row.sample_button }}</button>
+                            <button type="button" class="{{ row.sample_button_class }}" data-action-package-button data-default-label="{{ row.sample_button }}" data-pending-label="{{ labels.local_store_maintain_pending_button }}">{{ row.sample_button }}</button>
                         </div>
                     </div>
+                    <label class="style-token-action-package-live-control" for="style_token_action_package_live">
+                        <span>Live marker</span>
+                        <span class="ios-switch-shell">
+                            <input id="style_token_action_package_live" type="checkbox" data-style-token-action-package-live>
+                            <span class="ios-switch-slider" aria-hidden="true"></span>
+                        </span>
+                    </label>
                     {% elif row.sample_kind == "workspace-article" %}
                     <section class="workspace-header style-token-workspace-header-demo" aria-hidden="true">
                         <article class="report-card workspace-article-card style-token-workspace-article-demo">
@@ -1086,11 +1104,12 @@
                     <div class="style-token-portfolio-donut-shell">
                         <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit" aria-hidden="true">
                             <div class="portfolio-donut-logo-layer">
-                                <img class="portfolio-donut-logo" src="/static/images/Google__G__logo.svg" alt="Sample ticker logo" data-style-token-donut-angle="44.4">
-                                <img class="portfolio-donut-logo" src="/static/images/Google__G__logo.svg" alt="Sample ticker logo" data-style-token-donut-angle="134.4">
-                                <img class="portfolio-donut-logo" src="/static/images/Google__G__logo.svg" alt="Sample ticker logo" data-style-token-donut-angle="269.4">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/AAPL.svg" alt="" data-ticker="AAPL" data-style-token-donut-angle="45" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/GOOGL.svg" alt="" data-ticker="GOOGL" data-style-token-donut-angle="135" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/NVDA.svg" alt="" data-ticker="NVDA" data-style-token-donut-angle="225" decoding="async">
+                                <img class="portfolio-donut-logo" src="/market-store/logos/MSFT.svg" alt="" data-ticker="MSFT" data-style-token-donut-angle="315" decoding="async">
                             </div>
-                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 88.8deg, transparent 88.8deg 90deg, color-mix(in srgb, var(--theme-accent-primary) 50%, var(--theme-accent-secondary) 50%) 90deg 178.8deg, transparent 178.8deg 180deg, var(--theme-accent-secondary) 180deg 358.8deg, transparent 358.8deg 360deg);"></div>
+                            <div class="portfolio-donut" style="--portfolio-donut-fill: conic-gradient(var(--theme-accent-primary) 0deg 88.8deg, transparent 88.8deg 90deg, color-mix(in srgb, var(--theme-accent-primary) 72%, var(--theme-accent-secondary) 28%) 90deg 178.8deg, transparent 178.8deg 180deg, color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-accent-secondary) 72%) 180deg 268.8deg, transparent 268.8deg 270deg, var(--theme-accent-secondary) 270deg 358.8deg, transparent 358.8deg 360deg);"></div>
                         </div>
                     </div>
                     {% elif row.sample_kind == "metric-value" %}

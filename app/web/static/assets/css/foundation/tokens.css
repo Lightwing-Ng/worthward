@@ -1,4 +1,4 @@
-/* Code version: v0.8.1 */
+/* Code version: v0.8.3 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -86,6 +86,9 @@
 	--settings-action-package-background: var(--frosted-glass-background);
 	--settings-action-package-border: var(--frosted-glass-border);
 	--settings-action-package-max-width: 680px;
+	--settings-action-package-live-marker-size: 8px;
+	--settings-action-package-live-marker-color: var(--theme-accent-positive);
+	--settings-action-package-live-marker-duration: 1.8s;
 	--settings-action-button-radius: var(--radius-pill);
 	--settings-action-button-pad-block: 0px;
 	--settings-action-button-pad-inline: 18px;
@@ -274,6 +277,13 @@
 	--frosted-glass-background:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
 		rgba(255, 255, 255, 0.08);
+	--frosted-glass-opaque-background:
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--color-white-adaptive) 16%, transparent) 0%,
+			color-mix(in srgb, var(--color-white-adaptive) 8%, transparent) 100%
+		),
+		var(--theme-background);
 	--frosted-glass-background-hover:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(248, 249, 250, 0.24) 100%),
 		rgba(255, 255, 255, 0.12);

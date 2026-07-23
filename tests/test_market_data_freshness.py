@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.1
+Code version: v0.18.2
 """
 
 from __future__ import annotations
@@ -941,22 +941,44 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         download_mock.assert_not_called()
 
-    def test_daily_rate_limit_skips_all_yahoo_fallback_transport_retries(self) -> None:
+    def test_daily_rate_limit_uses_direct_yahoo_chart_before_longbridge(self) -> None:
         rate_limit_error = YfinanceDownloadError("Too Many Requests. Rate limited.")
+        chart_history = market_frame("000660.KS")
 
         with (
             patch(
                 "app.services.market_data._download_daily_history_with_yfinance",
                 side_effect=rate_limit_error,
             ) as yfinance_mock,
-            patch("app.services.market_data.download_yahoo_chart_daily_history") as chart_mock,
-            patch("app.services.market_data._load_longbridge_market_settings", return_value=None),
+            patch(
+                "app.services.market_data.download_yahoo_chart_daily_history",
+                return_value=chart_history,
+            ) as chart_mock,
+            patch("app.services.market_data._load_longbridge_market_settings") as settings_mock,
         ):
-            with self.assertRaisesRegex(ValueError, "requests are paused"):
-                _download_daily_history_with_fallback("QQQ", period="max")
+            result = _download_daily_history_with_fallback("000660.KS", period="max")
 
+        pd.testing.assert_frame_equal(result, chart_history)
         yfinance_mock.assert_called_once()
-        chart_mock.assert_not_called()
+        chart_mock.assert_called_once_with("000660.KS", start=None, period="max")
+        settings_mock.assert_not_called()
+
+    def test_daily_history_does_not_probe_longbridge_for_unsupported_korean_market(self) -> None:
+        with (
+            patch(
+                "app.services.market_data._download_daily_history_with_yfinance",
+                side_effect=ConnectionError("curl transport unavailable"),
+            ),
+            patch(
+                "app.services.market_data.download_yahoo_chart_daily_history",
+                side_effect=ConnectionError("urllib transport unavailable"),
+            ),
+            patch("app.services.market_data._load_longbridge_market_settings") as settings_mock,
+        ):
+            with self.assertRaisesRegex(ValueError, "Longbridge does not provide market data for this market"):
+                _download_daily_history_with_fallback("000660.KS", start="2026-07-20")
+
+        settings_mock.assert_not_called()
 
     def test_longbridge_realtime_quotes_select_pre_market_price(self) -> None:
         settings = BrokerSettings(

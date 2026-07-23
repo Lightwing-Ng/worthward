@@ -1,7 +1,7 @@
 """
 Settings route registration.
 
-Code version: v0.3.5
+Code version: v0.4.1
 """
 
 from flask import Flask
@@ -21,7 +21,7 @@ def register_settings_routes(app: Flask, runtime: WebRuntime) -> None:
     app.post("/settings/cash-equivalents/action")(runtime.cash_equivalents_action)
     app.post("/settings/email-smtp/action")(runtime.email_smtp_action)
     app.post("/settings/broker-access/action")(runtime.broker_access_action)
-    app.post("/api/settings/ibkr-flex/test")(runtime.ibkr_flex_test_api)
+    app.get("/api/settings/longbridge-oauth/status")(runtime.longbridge_oauth_status_api)
     app.post("/settings/local-market-store/action")(runtime.local_market_store_action)
     app.post("/settings/cache/action")(runtime.settings_cache_action)
     app.get("/market-store/logos/<path:filename>")(runtime.market_store_logo)

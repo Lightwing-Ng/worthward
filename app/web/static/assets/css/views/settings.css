@@ -1,4 +1,4 @@
-/* Code version: v0.12.0 */
+/* Code version: v0.13.0 */
 .settings-service-main {
     min-width: 0;
     display: grid;
@@ -259,7 +259,7 @@
 .settings-action-package {
     position: relative;
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-columns: 36px minmax(0, 1fr) auto;
     column-gap: var(--settings-action-package-column-gap);
     row-gap: var(--settings-action-package-row-gap);
     align-items: flex-start;
@@ -275,7 +275,9 @@
 
 .settings-action-package-icon-shell {
     flex: 0 0 auto;
+    grid-column: 1;
     grid-row: 1 / span 2;
+    align-self: center;
     width: 36px;
     height: 36px;
     border-radius: 12px;
@@ -299,11 +301,109 @@
     grid-column: auto;
 }
 
+.settings-action-package .settings-service-name {
+    position: relative;
+}
+
+.settings-broker-health-indicator,
+.settings-action-package-live-marker {
+    position: absolute;
+    top: 50%;
+    left: calc(var(--settings-action-package-live-marker-size) * -1.25);
+    width: var(--settings-action-package-live-marker-size);
+    height: var(--settings-action-package-live-marker-size);
+    border-radius: 50%;
+    background: var(--settings-action-package-live-marker-color);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--settings-action-package-live-marker-color) 18%, transparent);
+    transform: translateY(-50%);
+}
+
+.settings-broker-health-indicator::before,
+.settings-broker-health-indicator::after,
+.settings-action-package-live-marker::before,
+.settings-action-package-live-marker::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    border: 1.6px solid color-mix(in srgb, var(--settings-action-package-live-marker-color) 72%, transparent);
+    border-radius: 50%;
+    content: "";
+    opacity: 0.46;
+    transform: translate(-50%, -50%) scale(0.36);
+    animation: settings-action-package-live-breath var(--settings-action-package-live-marker-duration) var(--motion-emphasized) infinite;
+}
+
+.settings-broker-health-indicator::after,
+.settings-action-package-live-marker::after {
+    width: 12px;
+    height: 12px;
+    opacity: 0.28;
+    animation-delay: 0.9s;
+}
+
+@keyframes settings-action-package-live-breath {
+    0% {
+        opacity: 0.44;
+        transform: translate(-50%, -50%) scale(0.36);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
 .settings-action-package-form {
-    grid-column: 2;
-    justify-self: start;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    align-self: center;
     width: auto;
     margin: 0;
+}
+
+.settings-action-package:has(.settings-service-name) {
+    row-gap: var(--settings-action-package-copy-gap);
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-icon-shell {
+    grid-row: 1;
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-copy {
+    display: contents;
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-copy .settings-service-name {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-copy .settings-service-note {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.settings-action-package:has(.settings-service-name) .settings-action-package-form {
+    grid-row: 1 / span 3;
+}
+
+.settings-action-package:has(.settings-service-name) .settings-broker-test-feedback {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-broker-health-indicator::before,
+    .settings-broker-health-indicator::after,
+    .settings-action-package-live-marker::before,
+    .settings-action-package-live-marker::after {
+        animation: none;
+        opacity: 0;
+    }
 }
 
 .settings-broker-test-feedback {
@@ -1025,12 +1125,42 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .style-token-demo[data-style-token-density="compact"] .settings-action-package,
 .style-token-demo[data-style-token-density="tight"] .settings-action-package {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 36px minmax(0, 1fr);
 }
 
 .style-token-demo[data-style-token-density="compact"] .settings-action-package-form,
 .style-token-demo[data-style-token-density="tight"] .settings-action-package-form {
-    grid-column: 1;
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
+    align-self: start;
+}
+
+.style-token-action-package-live-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
+}
+
+.style-token-action-package-live-control .ios-switch-shell {
+    width: 32px;
+    height: 20px;
+    flex-basis: 32px;
+}
+
+.style-token-action-package-live-control .ios-switch-slider::after {
+    width: 16px;
+    height: 16px;
+}
+
+.style-token-action-package-live-control .ios-switch-shell input:checked + .ios-switch-slider::after {
+    transform: translateX(12px);
 }
 
 .style-token-demo[data-style-token-density="compact"] .workspace-modal-dialog,

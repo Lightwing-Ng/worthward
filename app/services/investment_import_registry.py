@@ -1,6 +1,6 @@
 """Registry and commit boundaries for broker investment imports.
 
-Code version: v1.0.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -113,8 +113,14 @@ def commit_investment_import(
         ],
         load_store: Callable[[], InvestmentPayload],
         invalidate_cache: Callable[[], None],
+        materialize_payload: Callable[[InvestmentPayload], InvestmentPayload],
+        verify_persisted_payload: Callable[[InvestmentPayload], None],
 ) -> InvestmentPayload:
     """Atomically normalize, idempotently merge, persist, and verify one import."""
+    if not callable(materialize_payload):
+        raise TypeError("Investment import requires a source-evidence materializer.")
+    if not callable(verify_persisted_payload):
+        raise TypeError("Investment import requires a persisted source-evidence verifier.")
     normalized_import = normalize_payload(deepcopy(validate_investment_import_payload(imported_payload)))
 
     def merge_current_payload(
@@ -122,6 +128,7 @@ def commit_investment_import(
     ) -> tuple[dict[str, object], InvestmentPayload]:
         normalized_current = normalize_payload(dict(current_payload))
         merged_payload = merge_payloads(normalized_current, normalized_import)
+        merged_payload = materialize_payload(merged_payload)
         normalized_merged = normalize_payload(merged_payload)
         validate_investment_import_payload(normalized_merged)
         return normalized_merged, normalized_merged
@@ -130,10 +137,13 @@ def commit_investment_import(
     invalidate_cache()
     persisted_payload = normalize_payload(load_store())
     validate_investment_import_payload(persisted_payload)
-    if persisted_payload.get("transactions") != committed_payload.get("transactions"):
+    for section_name in ("transactions", "source_artifacts", "broker_snapshots"):
+        if persisted_payload.get(section_name) == committed_payload.get(section_name):
+            continue
         raise RuntimeError(
-            "Investment import store readback did not match the committed merged transactions."
+            f"Investment import store readback did not match committed {section_name}."
         )
+    verify_persisted_payload(persisted_payload)
     return persisted_payload
 
 

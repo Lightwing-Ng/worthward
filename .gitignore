@@ -63,9 +63,12 @@ settings_store/
 node_modules/
 coverage.json
 .coverage
+.coverage.*
+.coverage [0-9]*
 htmlcov/
 playwright-report/
 test-results/
 .vercel/
 .vercelignore
 .lb-home/
+.dbg/

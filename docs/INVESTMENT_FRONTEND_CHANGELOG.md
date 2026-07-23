@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.3`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
@@ -8,6 +8,8 @@ architectural boundary summary so code navigation begins at the imports.
 
 ## Historical changes
 
+- Changed: Markdown transaction exports now declare their active broker, event-type, currency, and date/range filters, preserve the Broker column label, and scope Stock details date ranges to the same filtered rows rendered in the exported table.
+- Fixed: Overview realtime markers now use the active market's calendar day. During Hong Kong trading after the US session has closed, the marker is anchored to Hong Kong's current date instead of the previous New York date.
 - Refactored: Realtime quote polling cadence, in-flight cancellation, and restart sequencing now use the tested realtime module.
 - Refactored: Investment split-layout measurement, clamping, observation, and resizer cleanup now live in a dedicated tested module.
 - Refactored: Stock-details range and intraday boundary rules now come from the tested Stock-details module.
@@ -98,7 +100,7 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: Aggregate display cash no longer sums broker display balances, preventing internal-transfer bridge days from drawing zero-equity pits.
 - Fixed: HSBC pending-settlement display cash now flows into Holdings cash, total equity, and realtime quote refreshes.
 - Improved: Broker filter opens from cached ledger brokers without forced dropdown width measurement or first-click index rebuilds.
-- Removed: IBKR manual Flex file upload mode from the import UI and submit path.
+- Removed: the retired IBKR manual API upload mode from the import UI and submit path.
 - Fixed: Measured segmented controls keep the selected item above the glowing pill and scroll internal items into view without moving the outer frame.
 - Refined: Investment import help now gives GOV.UK-style guidance for IBKR CSV, IBKR GainsKeeper, and HSBC copy/paste imports.
 - Added: IBKR GainsKeeper OFX/GKX multi-file import mode with idempotent precision upgrades for older CSV records.
@@ -121,7 +123,7 @@ architectural boundary summary so code navigation begins at the imports.
 - Added: Broker-scoped Holdings P&L calibration keeps Longbridge HK and SG additive when both accounts are imported.
 - Fixed: Investment Holdings now loads authoritative broker P&L calibrations from the refreshed data-utils module.
 - Fixed: Longbridge HK money-market transfers preserve cash-equivalent equity through placements and recognize only redemption interest while retaining actual transfer amounts in history.
-- Removed IBKR Gateway; added Flex Web Service v3 import mode and dry-run support.
+- Removed IBKR Gateway; the former web-service importer was subsequently retired in favor of offline files.
 - Fixed: IBKR forex trade component rows now dedupe across overlapping CSV imports and display the acquired quote currency with a compact conversion description.
 - Fixed: Investment donut cash-equivalent tickers now keep their original holding order while using the standard cash-green token, and non-cash gradient colors are compressed around them.
 - Fixed: Investment import broker dropdown refresh now stays idempotent, so selecting HSBC and other brokers is not broken by duplicate shared-select bindings.

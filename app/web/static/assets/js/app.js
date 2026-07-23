@@ -1,4 +1,4 @@
-/* Code version: v0.22.4 */
+/* Code version: v0.22.6 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5347,6 +5347,11 @@
         const parsedDate = parseManualDateInput(String(rawValue || "").trim());
         return parsedDate ? formatIsoDate(parsedDate) : "";
     };
+    const parseOneDayTradingDateTextToIso = (rawValue) => {
+        const normalized = String(rawValue || "").trim();
+        return parseDisplayDateTextToIso(normalized)
+            || parseDisplayDateTextToIso(normalized.replace(/\s+[A-Za-z]{2,5}$/, ""));
+    };
     const parseMonthToken = (rawValue) => {
         const normalized = String(rawValue || "").trim().toLowerCase().replace(/\.$/, "");
         if (!normalized) return null;
@@ -5430,21 +5435,23 @@
     const diffDaysUtc = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / MS_PER_DAY));
 
     const getRenderedChartDateRange = () => {
+        if (["tickers", "market-caps", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
+            const displayRangeDate = parseOneDayTradingDateTextToIso(
+                $("#compare_summary_date_range, .price-compare-range")?.textContent || "",
+            );
+            if (displayRangeDate) {
+                return {
+                    start: displayRangeDate,
+                    end: displayRangeDate,
+                };
+            }
+        }
         if (["tickers", "market-caps", "prices"].includes(state.currentView) && state.chart?.tradingDate) {
             const tradingDate = String(state.chart.tradingDate || "");
             if (parseIsoDate(tradingDate)) {
                 return {
                     start: tradingDate,
                     end: tradingDate,
-                };
-            }
-        }
-        if (["tickers", "market-caps", "prices"].includes(state.currentView) && periodSelect?.value === "1d") {
-            const displayRangeDate = parseDisplayDateTextToIso($("#compare_summary_date_range")?.textContent || "");
-            if (displayRangeDate) {
-                return {
-                    start: displayRangeDate,
-                    end: displayRangeDate,
                 };
             }
         }
@@ -5484,15 +5491,28 @@
 
     const syncExactInputsToRenderedRange = () => {
         if (!exactStartInput || !exactEndInput) return false;
-        const range = getRenderedChartDateRange();
-        if (!range?.start || !range?.end) return false;
         if (isOneDayExactDateMode() && exactTradingDateInput) {
-            exactTradingDateInput.value = range.start;
-            if (exactStartInput) exactStartInput.value = range.start;
-            if (exactEndInput) exactEndInput.value = range.start;
+            const range = getRenderedChartDateRange();
+            const summaryTradingDate = parseOneDayTradingDateTextToIso(
+                $("#compare_summary_date_range, .price-compare-range")?.textContent || "",
+            );
+            const tradingDate = [
+                summaryTradingDate,
+                exactTradingDateInput.value,
+                exactEndInput.value,
+                exactStartInput.value,
+                range?.end,
+                range?.start,
+            ].find((value) => parseIsoDate(String(value || "")));
+            if (!tradingDate) return false;
+            exactTradingDateInput.value = tradingDate;
+            if (exactStartInput) exactStartInput.value = tradingDate;
+            if (exactEndInput) exactEndInput.value = tradingDate;
             refreshDatePickers();
             return true;
         }
+        const range = getRenderedChartDateRange();
+        if (!range?.start || !range?.end) return false;
         exactStartInput.value = range.start;
         exactEndInput.value = range.end;
         refreshDatePickers();

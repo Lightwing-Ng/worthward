@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.18.0
+Code version: v0.19.0
 """
 
 from __future__ import annotations
@@ -585,6 +585,11 @@ def infer_ticker_market(ticker: str) -> str:
     if normalized_ticker.endswith(".QA"):
         return "QA"
     return "US"
+
+
+def _supports_longbridge_history_fallback(ticker: str) -> bool:
+    """Return whether Longbridge documents daily-history coverage for this market."""
+    return infer_ticker_market(ticker) in {"US", "HK", "CN", "SG"}
 
 
 def supports_compare_extended_hours(tickers: list[str], period: str) -> bool:
@@ -1325,22 +1330,6 @@ def _download_daily_history_with_fallback(
             if _is_yfinance_rate_limit_error(exc):
                 break
 
-    if yfinance_errors and _is_yfinance_rate_limit_error(yfinance_errors[-1][1]):
-        rate_limit_error = yfinance_errors[-1][1]
-        settings = _load_longbridge_market_settings()
-        if settings is not None:
-            try:
-                return _download_daily_history_with_longbridge(ticker, start=start)
-            except Exception as longbridge_error:
-                raise ValueError(
-                    f"Unable to fetch 1-day market data for {ticker}; Yahoo requests are paused after a rate limit. "
-                    f"Optional Longbridge fallback also failed: {longbridge_error}"
-                ) from longbridge_error
-        raise ValueError(
-            f"Unable to fetch 1-day market data for {ticker}; Yahoo requests are paused after a rate limit. "
-            "Optional Longbridge fallback is not configured."
-        ) from rate_limit_error
-
     yahoo_chart_errors: list[tuple[str | None, Exception]] = []
     lookup_ticker = yfinance_lookup_symbol(ticker)
     for candidate_period in candidate_periods:
@@ -1361,11 +1350,17 @@ def _download_daily_history_with_fallback(
         f"{last_yahoo_chart_error}"
     )
 
-    settings = _load_longbridge_market_settings()
+    supports_longbridge_fallback = _supports_longbridge_history_fallback(ticker)
+    settings = _load_longbridge_market_settings() if supports_longbridge_fallback else None
     if settings is None:
+        longbridge_availability = (
+            "Longbridge does not provide market data for this market."
+            if not supports_longbridge_fallback
+            else "Optional Longbridge fallback is not configured."
+        )
         raise ValueError(
             f"Unable to fetch 1-day market data for {ticker} from Yahoo. "
-            f"{yahoo_failure_detail}. Optional Longbridge fallback is not configured."
+            f"{yahoo_failure_detail}. {longbridge_availability}"
         ) from last_yahoo_chart_error
 
     try:

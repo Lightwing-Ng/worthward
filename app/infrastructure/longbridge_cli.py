@@ -1,13 +1,14 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -17,6 +18,7 @@ from typing import Any
 
 from app.core.broker_settings import BrokerSettings, resolve_longbridge_cli_home
 
+LOGGER = logging.getLogger(__name__)
 DEFAULT_LONGBRIDGE_CLI_CANDIDATES = (
     "longbridge",
     "~/.local/bin/longbridge",
@@ -34,24 +36,53 @@ class LongbridgeCliResult:
     exit_code: int
 
 
+def _normalize_longbridge_cli_path(candidate: str | None) -> str | None:
+    """Return a safe canonical CLI executable path, or ``None`` when invalid."""
+    candidate_text = str(candidate or "").strip()
+    if not candidate_text or "\x00" in candidate_text:
+        return None
+
+    expanded_candidate = os.path.expanduser(candidate_text)
+    if not os.path.isabs(expanded_candidate):
+        return None
+
+    try:
+        resolved_candidate = Path(expanded_candidate).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+    try:
+        if (
+            resolved_candidate.name != "longbridge"
+            or not resolved_candidate.is_file()
+            or not os.access(resolved_candidate, os.X_OK)
+        ):
+            return None
+    except OSError:
+        return None
+
+    return str(resolved_candidate)
+
+
 def resolve_longbridge_cli_path(settings: BrokerSettings) -> str:
     explicit_path = settings.longbridge_cli_path.strip()
     if explicit_path:
-        expanded_explicit_path = os.path.expanduser(explicit_path)
-        if os.path.isfile(expanded_explicit_path):
-            return expanded_explicit_path
+        normalized_explicit_path = _normalize_longbridge_cli_path(explicit_path)
+        if normalized_explicit_path:
+            return normalized_explicit_path
+        display_path = explicit_path.replace("\x00", r"\0")
         raise FileNotFoundError(
-            f"Longbridge CLI was not found at {expanded_explicit_path}. Update the CLI path in Settings > Broker Access."
+            f"Longbridge CLI was not found at {display_path}. Update the CLI path in Settings > Broker Access."
         )
 
-    discovered = shutil.which("longbridge")
-    if discovered:
-        return discovered
+    discovered_path = _normalize_longbridge_cli_path(shutil.which("longbridge"))
+    if discovered_path:
+        return discovered_path
 
     for candidate in DEFAULT_LONGBRIDGE_CLI_CANDIDATES[1:]:
-        expanded_candidate = os.path.expanduser(candidate)
-        if os.path.isfile(expanded_candidate):
-            return expanded_candidate
+        candidate_path = _normalize_longbridge_cli_path(candidate)
+        if candidate_path:
+            return candidate_path
 
     raise FileNotFoundError(
         "Longbridge CLI is not installed. Install it first, or set the CLI path in Settings > Broker Access."
@@ -162,8 +193,9 @@ def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, 
                 env=_build_longbridge_cli_env(settings),
                 start_new_session=True,
             )
-        except Exception as exc:
-            return False, f"Could not start Longbridge browser authorization: {exc}"
+        except Exception:
+            LOGGER.exception("Could not start Longbridge browser authorization.")
+            return False, "Could not start Longbridge browser authorization. Check the CLI path and try again."
 
     return (
         True,
@@ -174,8 +206,9 @@ def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, 
 def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]:
     try:
         auth_status = get_longbridge_cli_auth_status(settings)
-    except Exception as exc:
-        return False, f"Longbridge CLI auth status failed: {exc}"
+    except Exception:
+        LOGGER.exception("Longbridge CLI auth status check failed.")
+        return False, "Longbridge CLI auth status failed. Check the CLI path and OAuth session, then try again."
 
     token_status = str(((auth_status.get("token") or {}).get("status") or "")).strip().lower()
     if token_status != "valid":
@@ -191,8 +224,9 @@ def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]
             ["quote", "AAPL.US", "--format", "json"],
             timeout_seconds=20,
         )
-    except Exception as exc:
-        return False, f"Longbridge CLI quote test failed: {exc}"
+    except Exception:
+        LOGGER.exception("Longbridge CLI quote test failed.")
+        return False, "Longbridge CLI quote test failed. Check the CLI path and OAuth session, then try again."
 
     if isinstance(quote_payload, list) and quote_payload:
         return True, "Successfully connected to Longbridge via CLI OAuth."

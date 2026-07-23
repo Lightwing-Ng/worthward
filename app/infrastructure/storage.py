@@ -1,11 +1,13 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.7.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import shutil
@@ -64,6 +66,13 @@ _MIGRATION_RUNNING = False
 _MIGRATION_LOCK = threading.RLock()
 _TABLE_THREAD_LOCKS: dict[str, threading.RLock] = {}
 _TABLE_THREAD_LOCKS_GUARD = threading.Lock()
+_MARKET_STORE_LOCK_DEPTHS = threading.local()
+
+# Exact broker uploads are expected to be ordinary statements, not bulk archives.
+# The limits keep immutable source evidence useful without allowing one import to
+# consume the device-local store indefinitely.
+MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES = 64 * 1024 * 1024
+MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES = 256 * 1024 * 1024
 
 
 def ensure_market_store_dir() -> None:
@@ -714,16 +723,266 @@ def update_investment_store_payload(
         return result
 
 
+def investment_evidence_dir_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
+    """Return the isolated immutable-evidence directory for one investment ledger."""
+    parquet_path = _investment_parquet_path_for(path)
+    return parquet_path.parent / f"{parquet_path.stem}_evidence"
+
+
+def _parse_investment_evidence_byte_count(value: object) -> int:
+    if isinstance(value, bool) or value is None:
+        raise ValueError("Investment source evidence has an invalid byte count.")
+    if isinstance(value, int):
+        byte_count = value
+    elif isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+        byte_count = int(value.strip())
+    else:
+        raise ValueError("Investment source evidence has an invalid byte count.")
+    if byte_count < 0:
+        raise ValueError("Investment source evidence byte count cannot be negative.")
+    return byte_count
+
+
+def _investment_evidence_directory_size(evidence_dir: Path) -> int:
+    if evidence_dir.is_symlink():
+        raise RuntimeError("Investment source evidence directory must not be a symbolic link.")
+    if not evidence_dir.exists():
+        return 0
+    if not evidence_dir.is_dir():
+        raise RuntimeError("Investment source evidence path is not a directory.")
+
+    total_bytes = 0
+    try:
+        for candidate in evidence_dir.rglob("*"):
+            if candidate.is_symlink():
+                raise RuntimeError("Investment source evidence directory contains a symbolic link.")
+            if candidate.is_file():
+                total_bytes += candidate.stat().st_size
+    except OSError as exc:
+        raise RuntimeError("Investment source evidence directory could not be inspected.") from exc
+    return total_bytes
+
+
+def _assert_investment_evidence_capacity(
+    evidence_dir: Path,
+    additional_bytes: int,
+) -> None:
+    if additional_bytes < 0:
+        raise ValueError("Investment source evidence capacity cannot be negative.")
+    total_bytes = _investment_evidence_directory_size(evidence_dir) + additional_bytes
+    if total_bytes > MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES:
+        raise ValueError(
+            "Investment source evidence would exceed the 256 MiB local storage limit."
+        )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_immutable_evidence_bytes(
+    target: Path,
+    payload: bytes,
+    *,
+    expected_sha256: str,
+) -> None:
+    if target.parent.is_symlink():
+        raise RuntimeError("Investment source evidence directory must not be a symbolic link.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with market_store_file_lock(target):
+        if target.is_symlink():
+            raise RuntimeError("Investment source evidence file must not be a symbolic link.")
+        if target.exists():
+            if _sha256_file(target) != expected_sha256:
+                raise RuntimeError(
+                    f"Immutable investment evidence hash mismatch for {target.name}."
+                )
+            return
+        temporary = target.with_name(f"{target.stem}.{uuid4().hex}.tmp{target.suffix}")
+        try:
+            temporary.write_bytes(payload)
+            if _sha256_file(temporary) != expected_sha256:
+                raise RuntimeError("Investment evidence write did not preserve the source bytes.")
+            temporary.replace(target)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+
+def materialize_investment_source_artifacts(
+    payload: dict[str, Any],
+    path: Path = INVESTMENT_STORE_PATH,
+) -> dict[str, Any]:
+    """Persist exact uploaded source bytes and leave only immutable manifests in the ledger."""
+    raw_artifacts = payload.get("source_artifacts")
+    if not isinstance(raw_artifacts, list):
+        return dict(payload)
+    parquet_path = _investment_parquet_path_for(path)
+    with market_store_file_lock(parquet_path):
+        evidence_dir = investment_evidence_dir_for(path)
+        _investment_evidence_directory_size(evidence_dir)
+        materialized: list[dict[str, Any]] = []
+        pending_writes: list[tuple[Path, bytes, str]] = []
+        seen_sha256: set[str] = set()
+        additional_bytes = 0
+
+        for raw_artifact in raw_artifacts:
+            if not isinstance(raw_artifact, dict):
+                raise ValueError("Investment source evidence manifest is malformed.")
+            expected_sha256 = str(raw_artifact.get("sha256") or "").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+                raise ValueError("Investment source evidence requires a valid SHA-256 digest.")
+            expected_size = _parse_investment_evidence_byte_count(raw_artifact.get("byte_count"))
+            if expected_size > MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES:
+                raise ValueError(
+                    "Investment source evidence exceeds the 64 MiB per-file storage limit."
+                )
+
+            storage_key = str(raw_artifact.get("storage_key") or "").strip().lower()
+            if storage_key and storage_key != expected_sha256:
+                raise ValueError(
+                    "Investment source evidence storage key does not match its SHA-256 digest."
+                )
+            raw_content = raw_artifact.get("content_base64")
+            content_encoding = str(raw_artifact.get("content_encoding") or "").strip().lower()
+            manifest = {
+                key: value
+                for key, value in raw_artifact.items()
+                if key not in {"content_encoding", "content_base64", "storage_key"}
+            }
+            source_bytes: bytes | None = None
+            if isinstance(raw_content, str) and raw_content:
+                if content_encoding != "base64":
+                    raise ValueError("Investment source evidence uses an unsupported content encoding.")
+                try:
+                    source_bytes = base64.b64decode(raw_content.encode("ascii"), validate=True)
+                except (UnicodeEncodeError, ValueError) as exc:
+                    raise ValueError("Investment source evidence is not valid Base64 data.") from exc
+                if hashlib.sha256(source_bytes).hexdigest() != expected_sha256:
+                    raise ValueError("Investment source evidence SHA-256 does not match its uploaded bytes.")
+                if expected_size != len(source_bytes):
+                    raise ValueError("Investment source evidence byte count does not match its uploaded bytes.")
+                manifest["storage_key"] = expected_sha256
+            elif raw_content is not None and raw_content != "":
+                raise ValueError("Investment source evidence is not valid Base64 data.")
+            elif storage_key:
+                manifest["storage_key"] = storage_key
+            else:
+                raise ValueError(
+                    "Investment source evidence requires uploaded bytes or a verified storage key."
+                )
+
+            if expected_sha256 in seen_sha256:
+                continue
+            seen_sha256.add(expected_sha256)
+            materialized.append(manifest)
+            if source_bytes is None:
+                continue
+            target = evidence_dir / f"{expected_sha256}.bin"
+            if not target.exists():
+                additional_bytes += len(source_bytes)
+            pending_writes.append((target, source_bytes, expected_sha256))
+
+        _assert_investment_evidence_capacity(evidence_dir, additional_bytes)
+        for target, source_bytes, expected_sha256 in pending_writes:
+            _write_immutable_evidence_bytes(
+                target,
+                source_bytes,
+                expected_sha256=expected_sha256,
+            )
+
+        next_payload = dict(payload)
+        next_payload["source_artifacts"] = materialized
+        _verify_investment_source_artifacts_locked(next_payload, path)
+        return next_payload
+
+
+def verify_investment_source_artifacts(
+    payload: dict[str, Any],
+    path: Path = INVESTMENT_STORE_PATH,
+) -> None:
+    """Verify every materialized source artifact referenced by a ledger payload."""
+    raw_artifacts = payload.get("source_artifacts")
+    if raw_artifacts is None:
+        return
+    if not isinstance(raw_artifacts, list):
+        raise RuntimeError("Investment source evidence manifest list is malformed.")
+    parquet_path = _investment_parquet_path_for(path)
+    with market_store_file_lock(parquet_path):
+        _verify_investment_source_artifacts_locked(payload, path)
+
+
+def _verify_investment_source_artifacts_locked(
+    payload: dict[str, Any],
+    path: Path,
+) -> int:
+    raw_artifacts = payload.get("source_artifacts")
+    if raw_artifacts is None:
+        return 0
+    if not isinstance(raw_artifacts, list):
+        raise RuntimeError("Investment source evidence manifest list is malformed.")
+    evidence_dir = investment_evidence_dir_for(path)
+    evidence_directory_bytes = _investment_evidence_directory_size(evidence_dir)
+    if evidence_directory_bytes > MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES:
+        raise RuntimeError("Investment source evidence exceeds the 256 MiB local storage limit.")
+
+    verified_sha256: set[str] = set()
+    for artifact in raw_artifacts:
+        if not isinstance(artifact, dict):
+            raise RuntimeError("Investment source evidence manifest is malformed.")
+        if "content_base64" in artifact or "content_encoding" in artifact:
+            raise RuntimeError("Investment ledger must not retain raw source evidence bytes.")
+        expected_sha256 = str(artifact.get("sha256") or "").strip().lower()
+        storage_key = str(artifact.get("storage_key") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256) or not storage_key:
+            raise RuntimeError("Investment source evidence manifest is incomplete.")
+        if storage_key != expected_sha256:
+            raise RuntimeError("Investment source evidence storage key does not match its SHA-256 digest.")
+        try:
+            expected_size = _parse_investment_evidence_byte_count(artifact.get("byte_count"))
+        except ValueError as exc:
+            raise RuntimeError("Investment source evidence byte count is invalid.") from exc
+        if expected_size > MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES:
+            raise RuntimeError("Investment source evidence exceeds the 64 MiB per-file storage limit.")
+        target = evidence_dir / f"{storage_key}.bin"
+        if target.is_symlink() or not target.is_file() or _sha256_file(target) != expected_sha256:
+            raise RuntimeError("Investment source evidence file is missing or has changed.")
+        if target.stat().st_size != expected_size:
+            raise RuntimeError("Investment source evidence file size has changed.")
+        verified_sha256.add(expected_sha256)
+    return len(verified_sha256)
+
+
+def verify_persisted_investment_source_artifacts(
+    path: Path = INVESTMENT_STORE_PATH,
+) -> int:
+    """Verify the source-evidence manifests stored in one persisted investment ledger."""
+    parquet_path = _investment_parquet_path_for(path)
+    with market_store_file_lock(parquet_path):
+        payload = load_investment_store_payload(path)
+        return _verify_investment_source_artifacts_locked(payload, path)
+
+
 def clear_investment_store(path: Path = INVESTMENT_STORE_PATH) -> bool:
     removed = False
-    for candidate in (
-            _investment_parquet_path_for(path),
-            _investment_legacy_json_path_for(path),
-    ):
-        with market_store_file_lock(candidate):
-            if candidate.exists():
-                candidate.unlink()
+    parquet_path = _investment_parquet_path_for(path)
+    legacy_path = _investment_legacy_json_path_for(path)
+    evidence_dir = investment_evidence_dir_for(path)
+    with market_store_file_lock(parquet_path):
+        if parquet_path.exists():
+            parquet_path.unlink()
+            removed = True
+        with market_store_file_lock(legacy_path):
+            if legacy_path.exists():
+                legacy_path.unlink()
                 removed = True
+        if evidence_dir.exists():
+            shutil.rmtree(evidence_dir)
+            removed = True
     return removed
 
 
@@ -771,8 +1030,26 @@ def _parquet_table_lock(path: Path):
 
 @contextmanager
 def market_store_file_lock(path: Path):
-    with _parquet_table_lock(path):
-        yield
+    resolved_path = Path(path).resolve()
+    lock_key = str(resolved_path)
+    held_lock_depths = getattr(_MARKET_STORE_LOCK_DEPTHS, "depths", None)
+    if held_lock_depths is None:
+        held_lock_depths = {}
+        _MARKET_STORE_LOCK_DEPTHS.depths = held_lock_depths
+
+    held_lock_depths[lock_key] = held_lock_depths.get(lock_key, 0) + 1
+    try:
+        if held_lock_depths[lock_key] > 1:
+            yield
+            return
+        with _parquet_table_lock(resolved_path):
+            yield
+    finally:
+        remaining_depth = held_lock_depths[lock_key] - 1
+        if remaining_depth:
+            held_lock_depths[lock_key] = remaining_depth
+        else:
+            del held_lock_depths[lock_key]
 
 
 def _utc_iso_timestamp(path: Path | None = None) -> str:

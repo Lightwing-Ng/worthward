@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.1.0
+Code version: v1.3.1
 """
 
 from __future__ import annotations
@@ -104,6 +104,7 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
         self.assertIn('value="ibkr"', html)
         self.assertIn('value="longbridge"', html)
         self.assertIn("Authorize in browser", html)
+        self.assertIn("Broker connection test", html)
         oauth_start = html.index('data-broker-fields="longbridge"')
         oauth_end = html.index('data-broker-fields="ibkr"')
         oauth_markup = html[oauth_start:oauth_end]
@@ -113,6 +114,150 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
         self.assertIn("settings-action-package-form", oauth_markup)
         self.assertNotIn("longbridge_auth_code", html)
         self.assertNotIn('name="longbridge_access_token"', html)
+
+    def test_browser_oauth_redirect_marks_page_for_automatic_status_monitoring(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch(
+                    "app.web.runtime.start_longbridge_cli_browser_oauth",
+                    return_value=(True, "Browser opened."),
+                ),
+            ):
+                client = create_app().test_client()
+                response = client.post(
+                    "/settings/broker-access/action",
+                    data={"selected_broker": "longbridge", "action": "authorize"},
+                    follow_redirects=True,
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data-longbridge-oauth-monitor", html)
+        self.assertIn('/api/settings/longbridge-oauth/status', html)
+
+    def test_broker_access_marks_a_verified_connection_as_healthy(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+            ):
+                client = create_app().test_client()
+                client.set_cookie(
+                    "antigravity_settings_feedback",
+                    json.dumps({"broker_test_status": "success", "broker_test_message": "Connected."}),
+                    path="/settings",
+                )
+                response = client.get("/settings/broker-access")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-broker-connection-health role="img"', html)
+        self.assertNotIn('data-broker-connection-health role="img" aria-label="Healthy connection" title="Healthy connection" hidden', html)
+        self.assertIn("The broker is connected and ready.", html)
+        self.assertIn("including latency", html)
+
+    def test_browser_oauth_status_waits_without_running_quote_test(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch(
+                    "app.web.runtime.get_longbridge_cli_auth_status",
+                    return_value={"token": {"status": "refresh_pending"}},
+                ),
+                patch("app.web.runtime.test_longbridge_cli_connection") as connection_test,
+            ):
+                client = create_app().test_client()
+                client.post(
+                    "/settings/broker-access/action",
+                    data={"selected_broker": "longbridge", "action": "save"},
+                )
+                response = client.get("/api/settings/longbridge-oauth/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "pending")
+        connection_test.assert_not_called()
+
+    def test_browser_oauth_status_reports_terminal_token_failures(self) -> None:
+        expected_messages = {
+            "expired": "Longbridge browser authorization expired. Start authorization again.",
+            "error": "Longbridge browser authorization failed. Start authorization again.",
+            "missing": "Longbridge authorization is unavailable. Start authorization again.",
+            "": "Longbridge authorization did not report a usable token. Start authorization again.",
+        }
+        for token_status, expected_message in expected_messages.items():
+            with self.subTest(token_status=token_status or "unknown"), TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                with (
+                    patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                    patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                    patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                    patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                    patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                    patch(
+                        "app.web.runtime.get_longbridge_cli_auth_status",
+                        return_value={"token": {"status": token_status}},
+                    ),
+                    patch("app.web.runtime.test_longbridge_cli_connection") as connection_test,
+                ):
+                    client = create_app().test_client()
+                    client.post(
+                        "/settings/broker-access/action",
+                        data={"selected_broker": "longbridge", "action": "save"},
+                    )
+                    response = client.get("/api/settings/longbridge-oauth/status")
+
+            payload = response.get_json()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(payload["status"], "error")
+            self.assertEqual(payload["token_status"], token_status or "unknown")
+            self.assertEqual(payload["message"], expected_message)
+            connection_test.assert_not_called()
+
+    def test_browser_oauth_status_verifies_connection_after_valid_token(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch(
+                    "app.web.runtime.get_longbridge_cli_auth_status",
+                    return_value={"token": {"status": "valid"}},
+                ),
+                patch(
+                    "app.web.runtime.test_longbridge_cli_connection",
+                    return_value=(True, "Successfully connected to Longbridge via CLI OAuth."),
+                ) as connection_test,
+            ):
+                client = create_app().test_client()
+                client.post(
+                    "/settings/broker-access/action",
+                    data={"selected_broker": "longbridge", "action": "save"},
+                )
+                response = client.get("/api/settings/longbridge-oauth/status")
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["token_status"], "valid")
+        connection_test.assert_called_once()
 
 
 if __name__ == "__main__":

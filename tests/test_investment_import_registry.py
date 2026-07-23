@@ -1,6 +1,6 @@
 """Tests for investment parser registration and persistence boundaries.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -72,6 +72,8 @@ class InvestmentImportRegistryTests(unittest.TestCase):
             "update_store": update_store,
             "load_store": lambda: deepcopy(store),
             "invalidate_cache": lambda: invalidations.append(True),
+            "materialize_payload": deepcopy,
+            "verify_persisted_payload": lambda _payload: None,
         }
         imported = {"transactions": [{"id": "incoming"}]}
 
@@ -95,6 +97,34 @@ class InvestmentImportRegistryTests(unittest.TestCase):
                 update_store=update_store,
                 load_store=lambda: {"transactions": []},
                 invalidate_cache=lambda: None,
+                materialize_payload=deepcopy,
+                verify_persisted_payload=lambda _payload: None,
+            )
+
+    def test_commit_boundary_requires_evidence_materialization_and_verification(self) -> None:
+        common_kwargs = {
+            "normalize_payload": deepcopy,
+            "merge_payloads": lambda _existing, incoming: incoming,
+            "update_store": lambda updater: updater({"transactions": []})[1],
+            "load_store": lambda: {"transactions": []},
+            "invalidate_cache": lambda: None,
+        }
+
+        with self.assertRaises(TypeError):
+            commit_investment_import({"transactions": []}, **common_kwargs)
+        with self.assertRaisesRegex(TypeError, "source-evidence materializer"):
+            commit_investment_import(
+                {"transactions": []},
+                materialize_payload=None,
+                verify_persisted_payload=lambda _payload: None,
+                **common_kwargs,
+            )
+        with self.assertRaisesRegex(TypeError, "persisted source-evidence verifier"):
+            commit_investment_import(
+                {"transactions": []},
+                materialize_payload=deepcopy,
+                verify_persisted_payload=None,
+                **common_kwargs,
             )
 
 

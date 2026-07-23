@@ -185,9 +185,8 @@
                                     [
                                         {"id": "ibkr_import_mode_csv", "value": "csv", "label": "CSV"},
                                         {"id": "ibkr_import_mode_gainskeeper", "value": "gainskeeper", "label": "GainsKeeper"},
-                                        {"id": "ibkr_import_mode_flex", "value": "flex", "label": "Flex API"},
                                     ],
-                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="3" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
+                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="2" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
                                 ) }}
                             </div>
                             <div data-ibkr-import-mode-panel="csv">
@@ -657,17 +656,17 @@
                     </colgroup>
                     <thead>
                     <tr>
-                        <th aria-label="Broker"></th>
-                        <th>No.</th>
-                        <th>Time</th>
-                        <th aria-label="Side">Type</th>
-                        <th>Description</th>
-                        <th aria-label="Currency">Currency</th>
-                        <th>Amount</th>
-                        <th>Commission</th>
-                        <th>Market value</th>
-                        <th>Cash</th>
-                        <th>Equity</th>
+                        <th aria-label="Broker" data-markdown-export-label="Broker"></th>
+                        <th data-markdown-export-label="No.">No.</th>
+                        <th data-markdown-export-label="Time">Time</th>
+                        <th aria-label="Side" data-markdown-export-label="Type">Type</th>
+                        <th data-markdown-export-label="Description">Description</th>
+                        <th aria-label="Currency" data-markdown-export-label="Currency">Currency</th>
+                        <th data-markdown-export-label="Amount">Amount</th>
+                        <th data-markdown-export-label="Commission">Commission</th>
+                        <th data-markdown-export-label="Market value">Market value</th>
+                        <th data-markdown-export-label="Cash">Cash</th>
+                        <th data-markdown-export-label="Equity">Equity</th>
                     </tr>
                     </thead>
                 </table>
@@ -706,5 +705,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.2.2') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.5.0') }}"></script>
 {% endblock %}

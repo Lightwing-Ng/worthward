@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.2.2
+ * Code version: v2.5.0
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, split layout, and calculation-heavy data utilities live
  * in tested modules.
@@ -68,7 +68,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.2.2',
+    entry: 'v2.5.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     layout: INVESTMENT_LAYOUT_MODULE_VERSION,
@@ -910,9 +910,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentLiveSessionDateKey() {
         const sessionState = getCachedInvestmentMarketSessionState();
-        return shouldRunInvestmentRealtimeQuotes()
-            ? (sessionState?.session_date || getInvestmentNewYorkClockParts().dateKey)
-            : '';
+        if (sessionState?.is_realtime_allowed) {
+            return sessionState.session_date || getInvestmentNewYorkClockParts().dateKey;
+        }
+        if (
+            shouldShowInvestmentRealtimePulse(getInvestmentHongKongClockSession())
+            && portfolioHasOpenHongKongHoldings()
+        ) {
+            return getInvestmentHongKongClockParts().dateKey;
+        }
+        return '';
     }
 
     function getInvestmentDailyEquityLiveSessionDateKey() {
@@ -1493,8 +1500,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ? rawAggregateDisplayCash
             : aggregateRunningCash + aggregatePendingSettlementCash;
         const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
-        const realtimeDateKey = normalizeLedgerDate(realtimeTimestamp)
-            || getInvestmentDailyEquityLiveSessionDateKey()
+        const realtimeDateKey = getInvestmentDailyEquityLiveSessionDateKey()
+            || normalizeLedgerDate(realtimeTimestamp)
             || normalizeLedgerDate(latestBasePoint?.date);
         const session = Array.from(quoteByTicker.values()).find((quote) => quote?.session)?.session || 'realtime';
         const realtimeSource = resolveRealtimeQuoteSource(Array.from(quoteByTicker.values()));
@@ -6082,17 +6089,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
-        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
-        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
-        const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
-        const brokerFilteredDetailRows = allSelected
-            ? detailRows
-            : detailRows.filter((txn) => selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn))));
-        const filteredDetailRows = brokerFilteredDetailRows.filter((txn) => (
-            (window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(txn, investmentSideFilter) ?? true)
-            && matchesInvestmentCurrencyFilter(txn)
-            && matchesInvestmentStockDetailsDateFilter(txn)
-        ));
+        const filteredDetailRows = getVisibleInvestmentStockDetailTransactions(detailRows);
         if (!filteredDetailRows.length) {
             return `
                 <tr data-table-empty-row>
@@ -6140,7 +6137,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function getSelectedIbkrImportMode() {
         const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
-        if (value === 'flex') return 'flex';
         if (value === 'gainskeeper') return 'gainskeeper';
         return 'csv';
     }
@@ -6155,10 +6151,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
             investmentImportIbkrMode.dataset.active = selectedMode;
-            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '2');
             const activeIndex = selectedMode === 'gainskeeper'
                 ? '1'
-                : (selectedMode === 'flex' ? '2' : '0');
+                : '0';
             investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
             scheduleIbkrImportSegmentedPillUpdate();
         }
@@ -6439,7 +6435,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
         const hsbcImportMode = getSelectedHsbcImportMode();
-        const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
         const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
@@ -6450,7 +6445,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
-        const usesSyncAction = isIbkrFlex || isLongbridgeHk || (isHsbc && hsbcImportMode === 'paste');
+        const usesSyncAction = isLongbridgeHk || (isHsbc && hsbcImportMode === 'paste');
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
@@ -6525,10 +6520,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.parquet</code> without clearing existing records.'
                         : (isFutuhk
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
-                        : (isIbkrFlex
-                            ? 'Fetches IBKR Activity Flex via Flex Web Service v3 (reporting-only) and merges into the local ledger. Use CSV for historical backfills.'
-                            : (isIbkrGainskeeper
-                                ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
+                        : (isIbkrGainskeeper
+                            ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
                                 ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isUsmartHk
@@ -6537,7 +6530,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))));
+                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.'))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -6633,17 +6626,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function extractMarkdownTableCellText(cell) {
         if (!(cell instanceof HTMLElement)) return '';
+        const exportLabel = normalizeMarkdownCellWhitespace(cell.getAttribute('data-markdown-export-label') || '');
+        if (cell.tagName === 'TH' && exportLabel) return exportLabel;
         const clone = cell.cloneNode(true);
         clone.querySelectorAll('br').forEach((lineBreakNode) => {
             lineBreakNode.replaceWith('\n');
         });
         const rawText = clone.innerText || clone.textContent || '';
         const normalized = normalizeMarkdownCellWhitespace(rawText, { preserveLineBreaks: true });
-        return normalized
+        const extractedText = normalized
             .split('\n')
             .map((line) => line.replace(/\s+/g, ' ').trim())
             .filter(Boolean)
             .join('<br/>');
+        if (extractedText) return extractedText;
+        return normalizeMarkdownCellWhitespace(cell.getAttribute('aria-label') || '');
     }
 
     function escapeMarkdownTableCell(value) {
@@ -6944,6 +6941,44 @@ document.addEventListener('DOMContentLoaded', () => {
         return table;
     }
 
+    function getVisibleInvestmentStockDetailTransactions(detailRows = []) {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const allBrokersSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+        return (Array.isArray(detailRows) ? detailRows : []).filter((txn) => (
+            (allBrokersSelected || selectedBrokerCodes.has(normalizeInvestmentBroker(getTransactionBrokerCode(txn))))
+            && (window.ANTIGRAVITY_INVESTMENT_FILTERS?.matchesSideFilter(txn, investmentSideFilter) ?? true)
+            && matchesInvestmentCurrencyFilter(txn)
+            && matchesInvestmentStockDetailsDateFilter(txn)
+        ));
+    }
+
+    function buildInvestmentMarkdownFilterSummary({ includeTransactionDate = false } = {}) {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const allBrokersSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
+        const selectedBrokerLabels = availableBrokerCodes
+            .filter((brokerCode) => selectedBrokerCodes.has(brokerCode))
+            .map((brokerCode) => getInvestmentBrokerMeta(brokerCode).label);
+        const sideLabels = Array.isArray(investmentSideFilter)
+            ? investmentSideFilter.map((side) => formatEventType(side)).filter(Boolean)
+            : [];
+        const scopeParts = [
+            `Broker: ${allBrokersSelected ? 'All brokers' : (selectedBrokerLabels.join(', ') || 'No brokers')}`,
+            `Type: ${investmentSideFilter === 'all' ? 'All types' : (sideLabels.join(', ') || 'No types')}`,
+            `Currency: ${investmentCurrencyFilter === 'all' ? 'All currencies' : investmentCurrencyFilter}`,
+        ];
+        if (includeTransactionDate) {
+            scopeParts.push(`Transaction date: ${getInvestmentStockDetailsDateFilterLabel()}`);
+        } else {
+            const rangeLabel = INVESTMENT_EQUITY_RANGE_OPTIONS
+                .find((option) => option.value === normalizeInvestmentEquityRange(selectedInvestmentEquityRange))?.label
+                || 'Max';
+            scopeParts.push(`Equity range: ${rangeLabel}`);
+        }
+        return scopeParts.join('; ');
+    }
+
     function buildInvestmentMarkdownExport() {
         const latestEquityDate = String(investmentLatestChartPoint?.date || '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
         if (activeInvestmentView === 'stock_details') {
@@ -6960,7 +6995,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
                 ? investmentProcessedTransactionsCache
                 : [];
-            const tickerTransactions = processedTransactions.filter((txn) => getInvestmentCanonicalTicker(txn?.ticker) === activeTicker);
+            const tickerTransactions = getVisibleInvestmentStockDetailTransactions(
+                buildInvestmentStockDetailRows(processedTransactions, activeTicker),
+            );
             const dateRange = buildExportDateRange(tickerTransactions, latestEquityDate);
             if (!dateRange) {
                 return null;
@@ -6978,6 +7015,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeTicker ? `**Ticker:** ${activeTicker}` : '',
                 companyName ? `**Company:** ${companyName}` : '',
                 `**Range:** ${formattedRange}`,
+                `Filters: ${buildInvestmentMarkdownFilterSummary({ includeTransactionDate: true })}`,
                 '',
                 '## Metrics',
                 '',
@@ -7029,6 +7067,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `# ${title}`,
             '',
             `**Range:** ${formattedRange}`,
+            `Filters: ${buildInvestmentMarkdownFilterSummary()}`,
             '',
             '## Holdings',
             '',
@@ -8504,7 +8543,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
-        const isIbkrFlex = isIbkr && ibkrImportMode === 'flex';
         const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
@@ -8555,7 +8593,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
-            || isIbkrFlex
             || gainskeeperReady
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
@@ -8899,9 +8936,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (selectedBroker === 'ibkr') {
                 formData.append('ibkr_import_mode', ibkrImportMode);
-                if (ibkrImportMode === 'flex') {
-                    // Flex config comes from Broker Access; no additional per-import UI
-                } else if (ibkrImportMode === 'gainskeeper') {
+                if (ibkrImportMode === 'gainskeeper') {
                     const gainskeeperFiles = gainskeeperFilesInput?.files ? Array.from(gainskeeperFilesInput.files) : [];
                     if (!gainskeeperFiles.length) {
                         setImportFeedback('Please choose at least one IBKR GainsKeeper .gkx file before importing.', 'error');
@@ -10260,16 +10295,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${renderInvestmentStockDetailsColgroup()}
                         <thead>
                         <tr>
-                            <th aria-label="Broker">${renderInvestmentBrokerFilterHeaderInnerMarkup('investment_stock_details_broker_filter')}</th>
-                            <th>No.</th>
-                            <th aria-label="Time">Time</th>
-                            <th aria-label="Side">Type</th>
-                            <th>Description</th>
-                            <th aria-label="Currency">Currency</th>
-                            <th>Amount</th>
-                            <th>Commission</th>
-                            <th>Market value</th>
-                            <th>Realized P&amp;L</th>
+                            <th aria-label="Broker" data-markdown-export-label="Broker">${renderInvestmentBrokerFilterHeaderInnerMarkup('investment_stock_details_broker_filter')}</th>
+                            <th data-markdown-export-label="No.">No.</th>
+                            <th aria-label="Time" data-markdown-export-label="Time">Time</th>
+                            <th aria-label="Side" data-markdown-export-label="Type">Type</th>
+                            <th data-markdown-export-label="Description">Description</th>
+                            <th aria-label="Currency" data-markdown-export-label="Currency">Currency</th>
+                            <th data-markdown-export-label="Amount">Amount</th>
+                            <th data-markdown-export-label="Commission">Commission</th>
+                            <th data-markdown-export-label="Market value">Market value</th>
+                            <th data-markdown-export-label="Realized P&amp;L">Realized P&amp;L</th>
                         </tr>
                         </thead>
                     </table>

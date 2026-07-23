@@ -1,6 +1,6 @@
 """Security boundary regression tests.
 
-Code version: v1.4.0
+Code version: v1.4.2
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from urllib.request import ProxyHandler, Request
 
 import certifi
 
+from app import create_app
 from app.infrastructure import connectivity, runtime_network, yahoo_chart
-from app.infrastructure.ibkr_flex import IbkrFlexError, send_flex_request
 from app.infrastructure.runtime_network import (
     YAHOO_CA_PEM_ENV,
     YahooTLSConfigurationError,
@@ -29,30 +29,6 @@ from app.infrastructure.runtime_network import (
     resolve_yahoo_enterprise_ca_path,
 )
 from app.services import logos
-
-
-class IbkrFlexSecurityTests(unittest.TestCase):
-    def test_send_request_rejects_non_https_url_before_sending_token(self) -> None:
-        with patch("app.infrastructure.ibkr_flex.urlopen") as mocked_urlopen:
-            with self.assertRaisesRegex(IbkrFlexError, "Flex SendRequest URL must use HTTPS"):
-                send_flex_request(
-                    token="audit-token",
-                    query_id="audit-query",
-                    send_request_url="http://127.0.0.1:7777/collect",
-                )
-
-        mocked_urlopen.assert_not_called()
-
-    def test_send_request_rejects_unapproved_https_host_before_sending_token(self) -> None:
-        with patch("app.infrastructure.ibkr_flex.urlopen") as mocked_urlopen:
-            with self.assertRaisesRegex(IbkrFlexError, "Flex SendRequest URL uses unapproved host"):
-                send_flex_request(
-                    token="audit-token",
-                    query_id="audit-query",
-                    send_request_url="https://example.test/collect",
-                )
-
-        mocked_urlopen.assert_not_called()
 
 
 class RuntimeNetworkSecurityTests(unittest.TestCase):
@@ -207,6 +183,24 @@ class DefaultServerSecurityTests(unittest.TestCase):
         self.assertEqual(config["server"]["host"], "0.0.0.0")
         self.assertEqual(config["server"]["port"], 8688)
         self.assertEqual(config["security"]["live_trading_pin"], "195135")
+
+
+class BaselineResponseSecurityHeaderTests(unittest.TestCase):
+    def test_html_and_json_responses_receive_compatible_baseline_headers(self) -> None:
+        client = create_app().test_client()
+        expected_headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "no-referrer",
+        }
+
+        for path in ("/trade/live-trading", "/api/market-session/us-equity"):
+            with self.subTest(path=path):
+                response = client.get(path)
+
+                self.assertEqual(response.status_code, 200)
+                for header_name, expected_value in expected_headers.items():
+                    self.assertEqual(response.headers.get(header_name), expected_value)
 
 
 if __name__ == "__main__":

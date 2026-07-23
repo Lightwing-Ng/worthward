@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.10.0`
+Documentation version: `v1.12.0`
 
 ## Runtime flow
 
@@ -73,6 +73,11 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 ## High-risk invariants
 
 - Broker imports are incremental and must remain idempotent.
+- IBKR is a file-import-only integration. Official CSV and GainsKeeper files may enter the ledger, but Flex Web Service, Client Portal, Gateway, credentials, sessions, market data, and order-routing must not be reintroduced without an explicit user-approved architecture and security decision.
+- Investment source evidence is immutable, SHA-256-addressed, capacity-bounded, and verified under the ledger lock before persistence and at application startup. A ledger manifest must never retain raw uploaded Base64 bytes.
+- Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
+- `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.
+- Evidence materialization, persisted-manifest verification, and `clear_investment_store` evidence-directory removal all hold the same reentrant `market_store_file_lock(parquet_path)`. A per-artifact file lock is supplementary and must never replace the ledger lock for an operation that changes or validates the manifest-to-directory relationship.
 - Manually confirmed internal-transfer bindings are durable ledger facts. Import
   adapters must preserve their cross-import leg identities and must fail back to
   explicit review when an identity becomes ambiguous.

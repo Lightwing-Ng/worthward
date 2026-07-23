@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.4."""
 
 from __future__ import annotations
 
@@ -30,6 +30,34 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert "--scrollable-data-table-header-height" in html
     assert "--scrollable-data-table-summary-background" in html
     assert 'data-summary-scope="both"' in html
+
+
+def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'data-style-token-action-package' in html
+    assert 'data-style-token-action-package-live' in html
+    assert 'data-action-package-live-marker' in html
+    assert 'data-action-package-pending-copy' in html
+    assert "--settings-action-package-live-marker-size" in html
+    assert "--settings-action-package-live-marker-color" in html
+    assert "--settings-action-package-live-marker-duration" in html
+
+
+def test_style_tokens_portfolio_orbit_uses_four_distinct_mega_cap_logos() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    for ticker in ("AAPL", "GOOGL", "NVDA", "MSFT"):
+        assert f'data-ticker="{ticker}"' in html
+        assert f'src="/market-store/logos/{ticker}.svg"' in html
 
 
 def test_investment_equity_range_uses_the_compact_segmented_control_contract() -> None:
@@ -65,7 +93,7 @@ def test_investment_table_header_is_interactive_and_body_is_measurable() -> None
     assert response.status_code == 200
     assert "data-table-interactive-header" in html
     assert 'aria-label="Side"' in html
-    assert '<th aria-label="Side">Type</th>' in html
+    assert '<th aria-label="Side" data-markdown-export-label="Type">Type</th>' in html
     assert "data-table-body" in html
     assert 'aria-hidden="true"' not in html.split("investment-ledger-table", 1)[1].split("</table>", 1)[0]
 

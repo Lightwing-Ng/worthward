@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.53.0`
+Documentation version: `v2.56.0`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -161,7 +161,7 @@ market-store key.
 - Used by comparison views, portfolio views, investment valuation, and default backtests
 - Downloaded through `yfinance` first
 - Retries the same authoritative Yahoo Chart endpoint through the standard-library network stack when the `yfinance` transport fails, including on Windows
-- Falls back to Longbridge only when both Yahoo transports fail and valid Longbridge credentials are configured
+- Falls back to Longbridge only when both Yahoo transports fail, valid Longbridge credentials are configured, and the ticker's market is covered by Longbridge. A `yfinance` rate limit still permits the direct Yahoo Chart retry.
 
 ### 1-minute history
 
@@ -310,14 +310,14 @@ This record keeps only the operational convention that remains compatible with t
 IBKR is separate from HSBC behavior. Under the current repository convention, entries are booked directly from IBKR transaction flow and no HSBC-style unsettled replay is applied. For handoff and sanity checks:
 
 - Import source rule:
-  - Use IBKR Flex Web Service v3 or official IBKR CSV exports as the source of truth.
+  - Use official IBKR CSV exports or GainsKeeper files as the source of truth.
   - Do not apply HSBC pending logic to IBKR data.
 - Booking and reconciliation:
   - Record each row using imported fields for gross amount, commission, taxes, and cash movement.
   - Treat ledger cash changes as ledger data from transaction rows, with no HSBC-style "transferable cash" manual offset.
 - Failure modes:
   - With consistent IBKR imports, positions and equity should progress on a stable accounting basis without abrupt cross-row resets to zero.
-  - If equity suddenly drops abnormally, first check for mixed source imports (CSV + Flex overlap) or duplicate range imports.
+  - If equity suddenly drops abnormally, first check for overlapping CSV or GainsKeeper imports and duplicate date ranges.
 
 ## Broker and email support
 
@@ -340,18 +340,14 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 
 ### IBKR
 
-- IBKR integration is **reporting-only** via the official Flex Web Service v3. No trading, order placement, real-time market data, or brokerage sessions.
-- Two import paths:
-  - **Flex** (recommended for incremental sync): uses environment variables `IBKR_FLEX_TOKEN` and `IBKR_FLEX_ACTIVITY_QUERY_ID`. Lookback 1-365 days. Activity Flex query is authoritative.
-  - **CSV** (manual historical backfill): Transaction History + Realized Summary exports. Preserved for full history and closed positions.
-- Configure in IBKR Client Portal: Performance & Reports > Flex Queries. Create an Activity Flex query (XML output) and enable Web Service access to generate a token.
-- Required query fields (at minimum): account id, dates, symbol, conid, buy/sell or transaction type, quantity, price, proceeds/gross, commission, net amount, trade/settle/report dates, currency, and cash transaction types (deposits, dividends, withholding, interest, fees, forex, corporate actions).
-- Environment variables (names configurable in Broker Access):
-  - `IBKR_FLEX_TOKEN`
-  - `IBKR_FLEX_ACTIVITY_QUERY_ID`
-  - Optional `IBKR_FLEX_TRADE_CONFIRM_QUERY_ID` (deferred)
-- The Flex client validates response URLs, redacts tokens, bounds responses, and uses safe XML parsing. Secrets are never persisted.
-- Gateway (Client Portal local Java) has been fully removed. Historical Gateway-origin records in your ledger remain mergeable.
+- IBKR has no direct connection or credential configuration in this app. It cannot place orders, request live data, or start a brokerage session.
+- IBKR Flex Web Service, Client Portal, and Gateway integrations are deliberately retired, not deferred fallbacks. Do not reintroduce a direct IBKR transport without an explicit user-approved architecture and security review.
+- Import official files only:
+  - **CSV**: Transaction History plus Realized Summary exports for historical backfills.
+  - **GainsKeeper**: OFX/GKX files for precision upgrades and overlapping historical coverage.
+- Each newly imported file is retained locally as an immutable source-evidence artifact under `settings_store/investment_evidence/`, keyed by its SHA-256 digest. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
+- Application startup verifies every persisted source-evidence manifest before routes are registered. If a referenced artifact is missing, altered, oversized, malformed, or still contains raw Base64 in the ledger, startup stops with a recovery-safe integrity error instead of serving an unauditable ledger.
+- Existing ledger records remain readable and mergeable. Legacy imports that predate source-evidence persistence remain explicitly without a reconstructed raw artifact; the application never fabricates one.
 
 ### Investment import adapters
 

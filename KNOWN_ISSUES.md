@@ -1,6 +1,142 @@
-# Known issues and test-failure classification
+# Known issues, operating constraints, and behavior-change history
 
-Documentation version: `v1.87.5`
+Documentation version: `v1.98.1`
+
+## Current operating constraints
+
+Read this section before the dated entries below. It summarizes active contracts;
+the dated entries preserve their rationale and failure classifications.
+
+- IBKR is file-import-only through official CSV and GainsKeeper files. Flex Web
+  Service, Client Portal, Gateway, credentials, sessions, market-data, and
+  order-routing integrations are intentionally retired.
+- Source evidence is SHA-256-addressed immutable data derived from the ledger
+  parquet path. Materialization, verification, and clearing share the ledger
+  lock; imports require both materialization and persisted-readback verification;
+  startup fails closed if a manifest or artifact is invalid.
+- Longbridge browser OAuth polls only an explicit `refresh_pending` state. It
+  stops for every terminal state and after three consecutive status-fetch
+  failures, then shows recovery feedback instead of polling indefinitely.
+- Unexpected browser-facing failures use stable domain-specific messages while
+  full diagnostics remain in local server logs. Explicit product validation
+  errors retain their established `400` responses.
+- Optional debug reporting is opt-in from an untracked `.dbg/` directory. It
+  permits only loopback HTTP(S) endpoints and redacts recognizable credentials
+  before an event is sent.
+- The current test inventory and coverage baseline are maintained in
+  `TESTING.md`; do not infer them from older dated entries in this file.
+
+## Cross-market one-day Exact transitions retain the active date on 23 Jul 2026
+
+- Switching a Relative `1 day` Price performance view to `Exact` now preserves
+  the resolved current trading date from the date controls. It no longer derives
+  the choice from a stale reference axis that can begin on an earlier session.
+- Mixed Korean, Hong Kong, and US comparisons remain eligible for the existing
+  Longbridge `Overnight` switch whenever the selected list contains a US symbol;
+  the US extended session remains automatic for the same one-day comparison.
+
+## Local browser and developer-boundary protections hardened on 23 Jul 2026
+
+- Every Flask response now receives `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, and `Referrer-Policy: no-referrer`. Existing
+  no-store and static-cache behavior remains endpoint-specific. A Content
+  Security Policy is intentionally deferred because current templates still
+  require inline scripts, styles, and event handlers; it must follow a
+  deliberate nonce or externalization migration rather than weaken itself with
+  broad `unsafe-inline` directives.
+- Unexpected exceptions in browser APIs, settings feedback, workspace rendering,
+  exports, and price-history warnings are logged locally but no longer return
+  filesystem paths, CLI stderr, SDK diagnostics, or token-shaped text. Known
+  input and order-validation messages remain explicit to preserve product
+  feedback.
+- PDF text-extraction diagnostics are retained only in local logs. Longbridge
+  OAuth startup, status checks, CLI connection checks, and legacy SDK connection
+  tests likewise return stable recovery messages instead of raw exceptions.
+- User-configured Longbridge CLI paths must resolve to an absolute executable
+  regular file named `longbridge`; normal symlinks remain valid after their
+  target is canonicalized. This constrains accidental or crafted path input but
+  is not a provenance guarantee for an arbitrary locally installed executable.
+- The formerly tracked `.dbg` endpoint configurations and debug logs were
+  removed and `.dbg/` is ignored. Optional reports now require a local config,
+  accept only loopback HTTP(S) URLs, revalidate the URL at send time, and redact
+  sensitive keys, Bearer values, JWT-shaped values, and common credential
+  assignments recursively.
+
+## Korean daily prices retain Yahoo Chart fallback during yfinance rate limits on 23 Jul 2026
+
+- A `yfinance` rate limit now pauses only the shared `yfinance` transport. Daily-history refreshes still retry Yahoo's direct Chart endpoint, which remains the free authoritative path for Korean `.KS` and `.KQ` symbols.
+- Longbridge history fallback is limited to its documented US, Hong Kong, China, and Singapore market coverage. Korean symbols therefore never make a guaranteed-empty Longbridge request after both Yahoo transports fail.
+
+## Investment evidence persistence is fail-closed on 23 Jul 2026
+
+- Evidence materialization, verification, and store clearing now share the same reentrant ledger lock. A direct storage caller cannot write a source artifact while a clear action is removing that ledger's evidence directory.
+- Import commits require both a source-evidence materializer and a persisted-payload verifier. The registry rejects omitted or non-callable callbacks before it changes the ledger.
+- A manifest now rejects malformed byte counts, forged storage keys, missing source bytes, raw Base64 retained in a persisted ledger, and symbolic-link evidence paths. Materialization verifies the complete manifest before the ledger write, then the commit verifies the persisted readback again.
+- Each source artifact is limited to 64 MiB and the evidence directory to 256 MiB. The application factory scans every persisted manifest during startup and fails closed if source evidence is missing, changed, oversized, or malformed.
+
+## Longbridge OAuth terminal feedback and Investment evidence clearing are bounded on 23 Jul 2026
+
+- Browser OAuth polling continues only while the Longbridge CLI explicitly reports `refresh_pending`. Expired, missing, malformed, and failed token states stop polling and provide a safe recovery instruction; valid tokens still perform one read-only connection check.
+- Transient OAuth status fetch failures remain retryable. After three consecutive failures, the browser stops polling and surfaces a local-connection message instead of silently continuing indefinitely.
+- Investment-store clearing now holds the ledger lock while removing its immutable evidence directory. An import cannot commit a manifest that references evidence concurrently removed by a clear action.
+- The Style Tokens action-package demonstration handles only its marked `type="button"` control. A future real submit button in that visual region keeps normal form-submission behavior.
+
+## IBKR source evidence and per-account snapshots persist across mixed imports on 23 Jul 2026
+
+- Every newly imported IBKR CSV or GainsKeeper OFX/GKX file is now persisted as exact local bytes under an immutable SHA-256 key. The ledger stores only the verified manifest, preserving statement title, period, generated timestamp, account, file role, and source filename without inflating normal ledger reads with raw file content.
+- IBKR Transaction History and Realized Summary exports fail closed when their observable account or period metadata contradicts. A masked Transaction History account remains compatible with its corresponding full account identifier.
+- Broker-account snapshots are retained independently of the mixed global portfolio. Each snapshot evidence record preserves its source, as-of date, holdings-validation result, raw position fields, performance fields, and artifact hashes; active position and performance snapshots are selected deterministically from the newest authoritative evidence, then source reliability and completeness.
+- CSV trade rows remain subordinate only when a matching GainsKeeper row proves the same IBKR trade. The GainsKeeper row retains FITID and intraday time, while both original files remain available as immutable evidence regardless of import order.
+
+## Investment broker chooser now blocks content behind its menu on 23 Jul 2026
+
+- The shared broker chooser uses an opaque, theme-aware Frosted Glass base while
+  retaining its highlight, border, shadow, and backdrop blur.
+- The prior background had only an `8%` opaque base, which made the IBKR import
+  controls legible beneath the menu even though its top-level stacking order was
+  correct.
+- The targeted Chromium regression now asserts the opaque light-theme material;
+  it continues to exercise file readiness only and never submits an import.
+
+## Portfolio donut orbit now shows four distinct mega-cap logos on 23 Jul 2026
+
+- The Style Tokens orbit preview uses protected local Apple, Alphabet, NVIDIA,
+  and Microsoft SVG assets at four evenly spaced positions. The four donut
+  segments now match the visible company set without requesting a remote logo.
+
+## Settings action packages now expose active maintenance state on 23 Jul 2026
+
+- The shared action-package layout aligns a service icon to its title and places
+  its action on the trailing edge. This applies to Local Market Store, Broker
+  Access, and the Settings Style Tokens preview.
+- Local Market Store changes its supporting copy and button label as maintenance
+  begins. Its Style Tokens preview has a true/false Live marker switch and a
+  safe, local-only pending-state demonstration; it never starts maintenance.
+- Active maintenance uses the standard positive-green breathing marker. Its
+  accessible hover label states that maintenance is active, while reduced-motion
+  preferences suppress the pulse rings.
+
+## IBKR direct integration retired on 23 Jul 2026
+
+- Broker Access now retains IBKR only as a credential-free shell. The prior token,
+  query, transport, connection-test, and import paths have been removed.
+- Existing local IBKR ledger records and the official CSV/GainsKeeper import paths
+  remain available. The application does not create a broker session or retain an
+  IBKR secret.
+
+## Longbridge browser authorization now resolves its Settings feedback on 23 Jul 2026
+
+- Broker access now monitors the browser OAuth result after authorization starts.
+  A valid token triggers one read-only quote connection check, replaces the stale
+  instruction banner with the actual result, and preserves the result beside the
+  connection action.
+- Successful authorization feedback dismisses its temporary banner after six
+  seconds. OAuth tokens and authorization codes remain outside the web process and
+  are never returned by the status endpoint.
+- Broker connection testing now marks a verified success with the standard
+  positive-green breathing token. The marker deliberately appears only after a
+  verified connection result, never merely because credentials are present; the
+  card still invites a user to test detailed parameters such as latency.
 
 ## Investment overview now redraws after each eligible realtime quote on 22 Jul 2026
 
@@ -29,11 +165,11 @@ Documentation version: `v1.87.5`
 - The compact contract remains scoped to these chart controls. Other segmented controls retain their established layout geometry and overflow behavior.
 - A three-pixel rounding tolerance prevents a sub-pixel intrinsic-width difference from falsely marking an otherwise fully visible range rail as horizontally overflowed.
 
-## IBKR Gateway remnants removed on 21 Jul 2026
+## IBKR direct-integration remnants removed on 21 Jul 2026
 
-- IBKR remains reporting-only through Flex Web Service v3, official CSV
-  exports, and GainsKeeper files. It has no local Gateway session, trading,
-  market-data, or brokerage-authentication path.
+- IBKR remains available only for official CSV exports and GainsKeeper files.
+  It has no local Gateway session, trading, market-data, or
+  brokerage-authentication path.
 - Unreachable Client Portal HTTP, authentication retry, account probing,
   certificate bypass, port-conflict diagnostics, and connection methods were
   deleted from the broker market-data infrastructure.
@@ -57,8 +193,8 @@ Documentation version: `v1.87.5`
 - The complete local gate now enforces JavaScript line, branch, and function
   coverage and runs unchanged in GitHub Actions. Current thresholds are
   intentionally incremental rather than a claim of whole-frontend coverage.
-- Focused tests raise meaningful coverage for IBKR Flex transport security and
-  every low-coverage strategy variant. No broker, market, or settings store is
+- Focused tests raise meaningful coverage for broker-boundary behavior and every
+  low-coverage strategy variant. No broker, market, or settings store is
   written by these tests.
 - The former source-header history for `investment.js` is retained permanently
   in `docs/INVESTMENT_FRONTEND_CHANGELOG.md`.
@@ -884,8 +1020,8 @@ Documentation version: `v1.87.5`
   bundle as yfinance.
 - The policy is capability-based rather than location-based. A blocked optional
   website does not disable Yahoo, local caches, or unrelated application views.
-- Process-wide TLS defaults, IBKR Flex, Longbridge OpenAPI, and SMTP transports
-  remain unchanged.
+- Process-wide TLS defaults, Longbridge OpenAPI, and SMTP transports remain
+  unchanged.
 
 ## Ticker search and profile proxy trust corrected on 15 Jul 2026
 

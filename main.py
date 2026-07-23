@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.4.7
+Code version: v0.4.8
 """
 
 from json import JSONDecodeError
@@ -62,7 +62,7 @@ def _build_run_options(config: dict) -> dict:
     if use_reloader and _should_manage_longbridge_as_long_lived():
         _log_startup("Disabled Flask reloader to keep the Longbridge quote context long-lived.")
         use_reloader = False
-    # Note: IBKR is reporting-only via Flex Web Service; no local Gateway process is managed.
+    # Note: IBKR remains an offline historical-import source; no local broker process is managed.
     return {
         "debug": debug_enabled,
         "host": os.environ.get("ANTIGRAVITY_HOST") or config["server"].get("host", DEFAULT_HOST),

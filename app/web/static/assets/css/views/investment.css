@@ -1,4 +1,4 @@
-/* Code version: v1.44.0 */
+/* Code version: v1.46.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3961,11 +3961,12 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     z-index: 2;
     padding-top: 10px;
     border-radius: var(--settings-action-package-radius);
-    background: var(--settings-action-package-background);
-    backdrop-filter: var(--liquid-glass-blur);
-    -webkit-backdrop-filter: var(--liquid-glass-blur);
-    border: var(--settings-action-package-border);
-    box-shadow: var(--liquid-glass-shadow);
+    background: var(--frosted-glass-opaque-background);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    border: var(--frosted-glass-border);
+    box-shadow: var(--frosted-glass-shadow);
+    isolation: isolate;
 }
 
 .investment-import-action-icon {

@@ -1,13 +1,14 @@
 """
 Broker-backed market data services.
 
-Code version: v0.10.0
+Code version: v0.12.0
 """
 
 from __future__ import annotations
 
 import base64
 from dataclasses import replace
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
@@ -29,12 +30,6 @@ from app.core.broker_settings import (
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
 from app.core.market_calendar import latest_completed_nyse_trading_day
-from app.infrastructure.ibkr_flex import (
-    DEFAULT_FLEX_SEND_REQUEST_URL,
-    fetch_ibkr_flex_statement,
-    IbkrFlexError,
-    redact_flex_token_from_url,
-)
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.storage import (
     ensure_market_store_dir,
@@ -44,6 +39,9 @@ from app.infrastructure.storage import (
     normalize_ticker,
     write_parquet_atomic,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 ONE_MINUTE_LOOKBACK_MONTHS = 6
 ONE_MINUTE_CHUNK_SIZE = 500
@@ -187,6 +185,7 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
             return False, "Connected but no data returned. Check your permissions."
         except Exception as e:
             message = str(e)
+            LOGGER.exception("Longbridge connectivity test failed.")
             # #region debug-point D:sdk-error
             _report_longbridge_debug_event(
                 "D",
@@ -194,8 +193,8 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
                 "Longbridge SDK raised an exception during connectivity test.",
                 {
                     "exception_type": type(e).__name__,
-                    "message": message,
-                    "args": [str(item) for item in getattr(e, "args", ())],
+                    "message_length": len(message),
+                    "is_timeout": "timeout" in message.lower(),
                 },
             )
             # #endregion
@@ -206,83 +205,17 @@ def test_broker_connection(settings: BrokerSettings) -> tuple[bool, str]:
                     False,
                     "Connection failed: Longbridge rejected the Access Token. "
                     "Paste only the raw token without the `Bearer ` prefix, "
-                    "then regenerate the token in Longbridge Developers if it still fails. "
-                    f"Original error: {message}",
+                    "then regenerate the token in Longbridge Developers if it still fails.",
                 )
-            return False, f"Connection failed: {message}"
+            return False, "Connection failed. Check Longbridge settings and network connectivity."
 
     if settings.selected_broker == "ibkr":
-        return _test_ibkr_flex_connection(settings)
+        return False, (
+            "IBKR direct connectivity is unavailable. Use Longbridge for quotes, or import "
+            "official IBKR CSV or GainsKeeper files in Trade > Investment."
+        )
 
     return False, f"Unsupported broker: {settings.selected_broker}"
-
-
-def _test_ibkr_flex_connection(settings: BrokerSettings) -> tuple[bool, str]:
-    """
-    Test IBKR Flex Web Service configuration (reporting-only).
-    Prefers values stored directly in settings (via web UI at /settings/broker-access),
-    falls back to named env vars. No terminal export required for secrets.
-    """
-    token = settings.ibkr_flex_token.strip()
-    if not token:
-        token_env = (settings.ibkr_flex_token_env or "IBKR_FLEX_TOKEN").strip() or "IBKR_FLEX_TOKEN"
-        token = (os.environ.get(token_env) or "").strip()
-
-    query_id = settings.ibkr_flex_activity_query_id.strip()
-    if not query_id:
-        query_env = (settings.ibkr_flex_activity_query_id_env or "IBKR_FLEX_ACTIVITY_QUERY_ID").strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID"
-        query_id = (os.environ.get(query_env) or "").strip()
-
-    if not token:
-        token_env = (settings.ibkr_flex_token_env or "IBKR_FLEX_TOKEN").strip() or "IBKR_FLEX_TOKEN"
-        return False, f"IBKR Flex token not set. Enter it directly in Broker Access page or set env '{token_env}'."
-    if not query_id:
-        query_env = (settings.ibkr_flex_activity_query_id_env or "IBKR_FLEX_ACTIVITY_QUERY_ID").strip() or "IBKR_FLEX_ACTIVITY_QUERY_ID"
-        return False, f"IBKR Flex Activity Query ID not set. Enter it directly in Broker Access page or set env '{query_env}'."
-
-    send_url = (settings.ibkr_flex_send_request_url or DEFAULT_FLEX_SEND_REQUEST_URL).strip()
-
-    # For Test connection we use a minimal 1-day range for validation (avoids rate limits on repeated clicks,
-    # and large data). The full configured lookback is used for actual import/sync in the Investment page.
-    # Both fd and td required. Disclose that a (small) statement request is issued.
-    from_date = None
-    to_date = None
-    try:
-        from datetime import date, timedelta
-        today = date.today()
-        to_date = today.strftime("%Y%m%d")
-        from_date = (today - timedelta(days=1)).strftime("%Y%m%d")
-    except Exception:
-        pass
-
-    try:
-        _ = fetch_ibkr_flex_statement(
-            token=token,
-            query_id=query_id,
-            send_request_url=send_url,
-            from_date=from_date,
-            to_date=to_date,
-        )
-        return True, "IBKR Flex Web Service connection successful (SendRequest + minimal 1-day validation statement retrieved). Note: a real (small) Flex statement request was issued. Use the Investment page Flex option with your Lookback for full data."
-    except IbkrFlexError as exc:
-        redacted = redact_flex_token_from_url(str(exc))
-        if "1003" in str(exc) or "Statement is not available" in str(exc):
-            return True, (
-                "IBKR Flex configuration looks valid (SendRequest succeeded), "
-                "but no statement data for the minimal validation window. "
-                "This is normal with no recent activity. Try the manual Flex sync in Investment page (uses your full Lookback). A real Flex request was issued."
-            )
-        if "1025" in str(exc) or "Too many failed attempts" in str(exc):
-            return False, (
-                "IBKR Flex error 1025: Too many failed attempts (likely from prior tests with bad ranges or no-data). "
-                "Wait 30-60+ minutes before retrying Flex Web Service. "
-                "Use CSV or GainsKeeper files in the Investment import form for manual backfills. "
-                f"Error: {redacted}"
-            )
-        return False, f"IBKR Flex error: {redacted}"
-    except Exception as exc:
-        redacted = redact_flex_token_from_url(str(exc))
-        return False, f"IBKR Flex request failed: {redacted}"
 
 
 def _load_longbridge_openapi() -> tuple[Any, Any, Any, Any]:

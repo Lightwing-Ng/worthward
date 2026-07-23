@@ -1,4 +1,4 @@
-/* Code version: v0.8.1 */
+/* Code version: v0.8.4 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -858,7 +858,7 @@
 .backtest-shared-select-dropdown {
 	position: absolute;
 	color: var(--text);
-	background: var(--frosted-glass-background);
+	background: var(--frosted-glass-opaque-background);
 	border: var(--frosted-glass-border);
 	box-shadow: var(--frosted-glass-shadow-hover);
 	backdrop-filter: var(--frosted-glass-blur);

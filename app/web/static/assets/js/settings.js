@@ -1,4 +1,4 @@
-/* Code version: v0.11.2 */
+/* Code version: v0.13.1 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -10,6 +10,7 @@
     let activeStyleTokenResizerCleanup = null;
     let activeStyleTokenDemoDensityCleanup = null;
     let activeSettingsSummaryMorphCleanup = null;
+    let activeLongbridgeOauthMonitorCleanup = null;
     let refreshStyleTokenDemoDensity = null;
 
     const getStyleTokenShell = () => (
@@ -41,6 +42,33 @@
     const getShortDatePlaceholder = () => {
         const helper = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.getShortDatePlaceholder;
         return typeof helper === "function" ? helper() : "0000/00/00";
+    };
+    const setActionPackageLiveState = (packageElement, isLive) => {
+        if (!(packageElement instanceof HTMLElement)) return;
+        const nextLiveState = Boolean(isLive);
+        packageElement.dataset.actionPackageLive = nextLiveState ? "true" : "false";
+        packageElement.querySelectorAll("[data-action-package-live-marker]").forEach((marker) => {
+            if (!(marker instanceof HTMLElement)) return;
+            marker.hidden = !nextLiveState;
+        });
+    };
+    const setActionPackagePresentation = (packageElement, {pending = false} = {}) => {
+        if (!(packageElement instanceof HTMLElement)) return;
+        const copy = packageElement.querySelector("[data-action-package-copy]");
+        if (copy instanceof HTMLElement) {
+            const nextCopy = pending
+                ? packageElement.dataset.actionPackagePendingCopy
+                : packageElement.dataset.actionPackageDefaultCopy;
+            if (nextCopy) copy.textContent = nextCopy;
+        }
+        const button = packageElement.querySelector("[data-action-package-button]");
+        if (button instanceof HTMLButtonElement) {
+            const nextLabel = pending ? button.dataset.pendingLabel : button.dataset.defaultLabel;
+            if (nextLabel) button.textContent = nextLabel;
+            button.disabled = pending;
+            button.classList.toggle("is-pending", pending);
+            button.toggleAttribute("aria-busy", pending);
+        }
     };
     const canTransitionDom = () => Boolean(getContext().canTransitionDom);
     const rememberCurrentViewUrl = (url) => getContext().rememberCurrentViewUrl?.(url);
@@ -133,6 +161,119 @@
         };
         brokerSelect.addEventListener("change", syncBrokerFields);
         syncBrokerFields();
+    };
+
+    const attachLongbridgeOauthMonitor = () => {
+        const monitor = document.querySelector("[data-longbridge-oauth-monitor]");
+        if (monitor instanceof HTMLElement && monitor.dataset.bound === "1") return;
+        if (typeof activeLongbridgeOauthMonitorCleanup === "function") {
+            activeLongbridgeOauthMonitorCleanup();
+            activeLongbridgeOauthMonitorCleanup = null;
+        }
+
+        if (!(monitor instanceof HTMLElement)) return;
+        const statusUrl = (monitor.dataset.statusUrl || "").trim();
+        if (!statusUrl) return;
+        monitor.dataset.bound = "1";
+
+        let intervalId = 0;
+        let requestInFlight = false;
+        let stopped = false;
+        let successDismissTimer = 0;
+        let consecutiveFetchFailures = 0;
+        const maxTransientFetchFailures = 3;
+
+        const stop = () => {
+            if (stopped) return;
+            stopped = true;
+            if (intervalId) window.clearInterval(intervalId);
+            if (successDismissTimer) window.clearTimeout(successDismissTimer);
+            window.removeEventListener("focus", checkStatus);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+
+        const updateFeedback = (status, message) => {
+            const isSuccess = status === "success";
+            const healthIndicator = document.querySelector("[data-broker-connection-health]");
+            const healthSummary = document.querySelector("[data-broker-connection-summary]");
+            if (healthIndicator instanceof HTMLElement) healthIndicator.hidden = !isSuccess;
+            if (healthSummary instanceof HTMLElement) {
+                healthSummary.textContent = isSuccess
+                    ? "The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order."
+                    : "Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.";
+            }
+            const feedback = document.querySelector("[data-broker-test-feedback]");
+            if (feedback instanceof HTMLElement) {
+                feedback.hidden = false;
+                feedback.classList.toggle("is-success", isSuccess);
+                feedback.classList.toggle("is-error", !isSuccess);
+                feedback.replaceChildren();
+                if (isSuccess) {
+                    const icon = document.createElement("span");
+                    icon.className = "settings-broker-test-feedback-icon";
+                    icon.setAttribute("aria-hidden", "true");
+                    feedback.append(icon);
+                }
+                const copy = document.createElement("span");
+                copy.textContent = message;
+                feedback.append(copy);
+            }
+
+            const banner = document.querySelector(".notice-floating-banner-global");
+            if (!(banner instanceof HTMLElement)) return;
+            banner.classList.toggle("notice", isSuccess);
+            banner.classList.toggle("error", !isSuccess);
+            const heading = banner.querySelector(".notice-floating-banner-heading");
+            const copy = banner.querySelector(".notice-floating-banner-copy");
+            const icon = banner.querySelector(".notice-floating-banner-icon");
+            if (heading instanceof HTMLElement) heading.textContent = isSuccess ? "Connected" : "Connection issue";
+            if (copy instanceof HTMLElement) copy.textContent = message;
+            if (icon instanceof HTMLElement && isSuccess) icon.classList.add("icon-settings-broker");
+            if (isSuccess) {
+                successDismissTimer = window.setTimeout(() => {
+                    if (banner.isConnected) banner.hidden = true;
+                }, 6000);
+            }
+        };
+
+        async function checkStatus() {
+            if (stopped || requestInFlight || !monitor.isConnected) return;
+            requestInFlight = true;
+            try {
+                const response = await fetch(statusUrl, {
+                    credentials: "same-origin",
+                    headers: {"Accept": "application/json"},
+                    cache: "no-store",
+                });
+                const payload = await response.json();
+                const status = String(payload?.status || "error").trim().toLowerCase();
+                consecutiveFetchFailures = 0;
+                if (status === "pending") return;
+                const message = String(payload?.message || "Longbridge authorization status is unavailable.").trim();
+                stop();
+                updateFeedback(status, message);
+            } catch {
+                consecutiveFetchFailures += 1;
+                if (consecutiveFetchFailures < maxTransientFetchFailures) return;
+                stop();
+                updateFeedback(
+                    "error",
+                    "Longbridge authorization status checks could not reach this app after 3 attempts. Check your local connection, then authorize again.",
+                );
+            } finally {
+                requestInFlight = false;
+            }
+        }
+
+        function handleVisibilityChange() {
+            if (document.visibilityState === "visible") void checkStatus();
+        }
+
+        window.addEventListener("focus", checkStatus);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        intervalId = window.setInterval(checkStatus, 1500);
+        activeLongbridgeOauthMonitorCleanup = stop;
+        void checkStatus();
     };
 
     const applyTemplateInlineStyles = () => {
@@ -619,8 +760,30 @@
                 }
                 return;
             }
-            const actionButton = event.target.closest(".settings-action-package-form button");
+            const actionButton = event.target instanceof Element
+                ? event.target.closest(".settings-action-package-form button[data-action-package-button][type='button']")
+                : null;
             if (actionButton) {
+                const actionPackage = actionButton.closest("[data-style-token-action-package]");
+                if (actionPackage instanceof HTMLElement && shell.contains(actionPackage)) {
+                    event.preventDefault();
+                    const liveControl = actionPackage.parentElement?.querySelector("[data-style-token-action-package-live]");
+                    if (actionPackage.dataset.actionPackagePendingTimer) {
+                        window.clearTimeout(Number(actionPackage.dataset.actionPackagePendingTimer));
+                    }
+                    setActionPackageLiveState(actionPackage, true);
+                    setActionPackagePresentation(actionPackage, {pending: true});
+                    const timer = window.setTimeout(() => {
+                        setActionPackagePresentation(actionPackage);
+                        setActionPackageLiveState(
+                            actionPackage,
+                            liveControl instanceof HTMLInputElement && liveControl.checked,
+                        );
+                        delete actionPackage.dataset.actionPackagePendingTimer;
+                    }, 1200);
+                    actionPackage.dataset.actionPackagePendingTimer = String(timer);
+                    return;
+                }
                 const controlContainer = document.querySelector('[data-style-token-name="--settings-action-button-background"]');
                 if (controlContainer instanceof HTMLElement) {
                     controlContainer.scrollIntoView({behavior: "smooth", block: "center"});
@@ -647,6 +810,34 @@
                     }
                 }
             }
+        });
+    };
+
+    const attachStyleTokenActionPackageLiveControl = () => {
+        const shell = getStyleTokenShell();
+        if (!(shell instanceof HTMLElement)) return;
+        shell.querySelectorAll("[data-style-token-action-package-live]").forEach((control) => {
+            if (!(control instanceof HTMLInputElement) || control.dataset.bound === "1") return;
+            const actionPackage = control.closest(".style-token-demo")?.querySelector("[data-style-token-action-package]");
+            if (!(actionPackage instanceof HTMLElement)) return;
+            control.dataset.bound = "1";
+            const sync = () => setActionPackageLiveState(actionPackage, control.checked);
+            control.addEventListener("change", sync);
+            sync();
+        });
+    };
+
+    const attachLocalStoreMaintainAction = () => {
+        const actionPackage = document.querySelector(".local-store-maintain-card");
+        if (!(actionPackage instanceof HTMLElement) || actionPackage.dataset.bound === "1") return;
+        const form = actionPackage.querySelector("form");
+        if (!(form instanceof HTMLFormElement)) return;
+        actionPackage.dataset.bound = "1";
+        form.addEventListener("submit", () => {
+            const action = form.querySelector('input[name="action"]');
+            if (!(action instanceof HTMLInputElement) || action.value !== "maintain") return;
+            setActionPackageLiveState(actionPackage, true);
+            setActionPackagePresentation(actionPackage, {pending: true});
         });
     };
 
@@ -1515,12 +1706,13 @@
 					<p class="report-heading">${labels.local_market_store || "Local Market Store"}</p>
 				</div>
 			</article>
-			<section class="settings-action-package settings-callout-card-primary local-store-maintain-card">
+			<section class="settings-action-package settings-callout-card-primary local-store-maintain-card" data-action-package-live="true">
 				<span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
 				<div class="settings-action-package-copy settings-callout-text">
-					<p class="settings-service-note">${labels.local_store_maintain_note || ""}</p>
+					<p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="${labels.local_store_maintain_live_marker || "Live maintenance is active"}" title="${labels.local_store_maintain_live_marker || "Live maintenance is active"}"></span>${labels.local_store_maintain_title || "Maintain all data"}</p>
+					<p class="settings-service-note" data-action-package-copy>${labels.local_store_maintain_pending_note || "Refreshing all cached daily datasets and protected brand assets. Keep this page open while maintenance is in progress."}</p>
 				</div>
-				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_button || "Maintain all data"}</span>
+				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_pending_button || "Maintaining"}</span>
 			</section>
 			<p class="settings-summary">${labels.local_store_summary || ""}</p>
 			<div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
@@ -2228,6 +2420,7 @@
         seedExportImageTokenDefaults();
         renderStyleTokenInvestmentSharePreview();
         attachBrokerSettingsHandlers();
+        attachLongbridgeOauthMonitor();
         attachNetworkRefreshButton();
         attachSettingsSummaryMorph();
         attachStyleTokenResizer();
@@ -2237,7 +2430,9 @@
         attachStyleTokenCopyButtons();
         attachStyleTokenModeSwitches();
         attachStyleTokenDemoInteractions();
+        attachStyleTokenActionPackageLiveControl();
         revealStyleTokenHashTarget();
+        attachLocalStoreMaintainAction();
         attachLocalStorePagination();
         attachSettingsSectionNavigation();
         attachLanguageMappingHandlers();
