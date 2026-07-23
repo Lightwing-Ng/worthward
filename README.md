@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.56.1`
+Documentation version: `v2.56.2`
 
 `antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -222,7 +222,7 @@ On a computer that connects directly, leave both CA settings empty and do not
 set proxy environment variables. The session then uses `verify=True` with the
 secure curl_cffi default. Never work around `CertificateVerifyError` or curl
 error `60` with `verify=False`; configure the corporate CA PEM instead. The
-focused offline regression command is documented in `TESTING.md`.
+focused offline regression command is documented in [the testing guide](docs/TESTING.md).
 
 After pulling a dependency update on Windows, refresh the active Python `3.13`
 environment before launching the app:
@@ -375,10 +375,10 @@ reconciliation rules; imports are local and incremental.
 main.py                         -> Flask runtime entry point
 config.toml                     -> App metadata, defaults, server bind, labels, and integration settings
 README.md                       -> Project documentation
-AGENTS.md                       -> Agent workflow, safety, and quality boundaries
-ARCHITECTURE.md                 -> Runtime layers, routes, data ownership, and invariants
-TESTING.md                      -> Test commands, factories, coverage, and E2E isolation
-KNOWN_ISSUES.md                 -> Current debt and classified historical failures
+docs/AGENTS.md                  -> Agent workflow, safety, and quality boundaries
+docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and invariants
+docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
+docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
 requirements.txt                -> Python dependency pin set
 requirements-dev.txt            -> Pinned test, coverage, and static-check dependencies
 scripts/setup_python.sh         -> Pinned host-Python dependency installer
@@ -398,6 +398,15 @@ strategies/                     -> Strategy framework, loader, backtest engine, 
 market_store/                   -> Local market history, profile, and logo caches
 settings_store/                 -> Runtime-generated local settings, investment ledger, and search caches
 ```
+
+## Agent documentation
+
+Agents should use these authoritative documents for persistent context, contracts, workflow, and project memory:
+
+- [Agent operating guide](docs/AGENTS.md)
+- [Architecture guide](docs/ARCHITECTURE.md)
+- [Testing guide](docs/TESTING.md)
+- [Known issues and behavior history](docs/KNOWN_ISSUES.md)
 
 ## Versioning note
 
@@ -425,6 +434,6 @@ Run the complete Python, JavaScript, coverage, static, and browser quality gate:
 
 The same command runs in GitHub Actions for pushes and pull requests. Node unit
 tests enforce gradual first-party JavaScript coverage floors; current baselines
-and safe threshold overrides are documented in `TESTING.md`.
+and safe threshold overrides are documented in [the testing guide](docs/TESTING.md).
 
-The committed test suite, coverage baseline, shared factories, and E2E isolation rules are documented in `TESTING.md`.
+The committed test suite, coverage baseline, shared factories, and E2E isolation rules are documented in [the testing guide](docs/TESTING.md).
