@@ -1,7 +1,7 @@
 """
 Tests for Longbridge live trading order flows.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -13,7 +13,13 @@ from unittest.mock import patch
 
 from app import create_app
 from app.core.broker_settings import BrokerSettings
-from app.services.live_trading import LiveOrderResult, submit_longbridge_limit_order
+from app.core.live_trading_security import authorize_live_trading_api_request
+from app.services.live_trading import (
+    LiveOrderResult,
+    load_longbridge_account_balances,
+    load_longbridge_stock_positions,
+    submit_longbridge_limit_order,
+)
 
 LIVE_TRADING_TEST_TOKEN = "audit-live-trading-token-32-chars"
 
@@ -44,6 +50,27 @@ class _FakeTradeContext:
     def submit_order(self, **kwargs: object) -> object:
         _FakeTradeContext.last_submit_kwargs = kwargs
         return _FakeTradeContext.next_response
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeReadTradeContext:
+    def __init__(
+            self,
+            *,
+            account_balance_response: object = None,
+            stock_positions_response: object = None,
+    ) -> None:
+        self.account_balance_response = account_balance_response
+        self.stock_positions_response = stock_positions_response
+        self.closed = False
+
+    def account_balance(self) -> object:
+        return self.account_balance_response
+
+    def stock_positions(self) -> object:
+        return self.stock_positions_response
 
     def close(self) -> None:
         self.closed = True
@@ -140,6 +167,301 @@ class LongbridgeLiveTradingServiceTests(unittest.TestCase):
                 quantity="100",
             )
 
+    def test_submit_longbridge_limit_order_rejects_invalid_inputs_without_submitting(self) -> None:
+        invalid_cases = (
+            (
+                "empty ticker",
+                {"ticker": "", "side": "buy", "price": "250", "quantity": "1"},
+                "Ticker is required.",
+            ),
+            (
+                "unsupported side",
+                {"ticker": "TSLA.US", "side": "hold", "price": "250", "quantity": "1"},
+                "Side must be Buy or Sell.",
+            ),
+            (
+                "zero price",
+                {"ticker": "TSLA.US", "side": "buy", "price": "0", "quantity": "1"},
+                "Price must be greater than 0.",
+            ),
+            (
+                "invalid quantity",
+                {"ticker": "TSLA.US", "side": "buy", "price": "250", "quantity": "bad"},
+                "Quantity must be a valid positive number.",
+            ),
+        )
+
+        with patch(
+            "app.services.live_trading._load_longbridge_trade_api",
+            return_value=(
+                _FakeConfig,
+                _FakeTradeContext,
+                SimpleNamespace(LO="LO"),
+                SimpleNamespace(Buy="BUY", Sell="SELL"),
+                SimpleNamespace(Day="DAY"),
+            ),
+        ):
+            for label, order_input, expected_message in invalid_cases:
+                with self.subTest(label=label):
+                    _FakeTradeContext.last_submit_kwargs = None
+                    with self.assertRaisesRegex(ValueError, expected_message):
+                        submit_longbridge_limit_order(self.settings, **order_input)
+                    self.assertIsNone(_FakeTradeContext.last_submit_kwargs)
+                    self.assertTrue(_FakeTradeContext.instances[-1].closed)
+
+    def test_legacy_account_readers_reject_missing_credentials_without_transport(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="legacy_apikey",
+        )
+
+        with (
+            patch("app.services.live_trading._build_longbridge_trade_context") as mocked_sdk_context,
+            patch("app.services.live_trading.run_longbridge_cli_json") as mocked_cli_json,
+        ):
+            for loader in (load_longbridge_account_balances, load_longbridge_stock_positions):
+                with self.subTest(loader=loader.__name__):
+                    with self.assertRaisesRegex(ValueError, "Save your Longbridge App Key"):
+                        loader(settings)
+
+        mocked_sdk_context.assert_not_called()
+        mocked_cli_json.assert_not_called()
+
+    def test_load_longbridge_account_balances_uses_legacy_sdk_and_closes_context(self) -> None:
+        context = _FakeReadTradeContext(
+            account_balance_response=SimpleNamespace(
+                list=[],
+                data=SimpleNamespace(
+                    list=[
+                        SimpleNamespace(
+                            currency="USD",
+                            total_cash="120.50",
+                            cash_infos=[
+                                SimpleNamespace(
+                                    withdraw_cash="100",
+                                    available_cash="99",
+                                    frozen_cash="1",
+                                    settling_cash="0",
+                                    currency="USD",
+                                ),
+                            ],
+                            frozen_transaction_fees=[
+                                SimpleNamespace(currency="USD", frozen_transaction_fee="2"),
+                            ],
+                        ),
+                        SimpleNamespace(base_currency="HKD", total_cash="80"),
+                    ],
+                ),
+            ),
+        )
+
+        with (
+            patch(
+                "app.services.live_trading._build_longbridge_trade_context",
+                return_value=context,
+            ) as mocked_sdk_context,
+            patch("app.services.live_trading.run_longbridge_cli_json") as mocked_cli_json,
+        ):
+            balances = load_longbridge_account_balances(self.settings)
+
+        mocked_sdk_context.assert_called_once_with(self.settings)
+        mocked_cli_json.assert_not_called()
+        self.assertEqual([balance.currency for balance in balances], ["HKD", "USD"])
+        self.assertEqual(balances[1].total_cash, "120.50")
+        self.assertEqual(balances[1].cash_infos[0].available_cash, "99")
+        self.assertEqual(balances[1].frozen_transaction_fees[0].frozen_transaction_fee, "2")
+        self.assertTrue(context.closed)
+
+    def test_load_longbridge_stock_positions_uses_legacy_sdk_and_skips_missing_symbols(self) -> None:
+        context = _FakeReadTradeContext(
+            stock_positions_response=SimpleNamespace(
+                data=SimpleNamespace(
+                    channels=[
+                        SimpleNamespace(
+                            account_channel="Primary",
+                            stock_info=[
+                                SimpleNamespace(
+                                    symbol="TSLA.US",
+                                    symbol_name="Tesla",
+                                    quantity="10",
+                                    enable_quantity="8",
+                                    cost_price="250",
+                                    currency="USD",
+                                    market="US",
+                                ),
+                                SimpleNamespace(symbol="", quantity="1"),
+                            ],
+                        ),
+                        SimpleNamespace(
+                            account_channel="Secondary",
+                            positions=[
+                                SimpleNamespace(
+                                    stock_code="AAPL.US",
+                                    name="Apple",
+                                    quantity="5",
+                                    available_quantity="4",
+                                    cost_price="200",
+                                    currency="USD",
+                                    market="US",
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ),
+        )
+
+        with (
+            patch(
+                "app.services.live_trading._build_longbridge_trade_context",
+                return_value=context,
+            ) as mocked_sdk_context,
+            patch("app.services.live_trading.run_longbridge_cli_json") as mocked_cli_json,
+        ):
+            positions = load_longbridge_stock_positions(self.settings)
+
+        mocked_sdk_context.assert_called_once_with(self.settings)
+        mocked_cli_json.assert_not_called()
+        self.assertEqual([position.symbol for position in positions], ["AAPL.US", "TSLA.US"])
+        self.assertEqual(positions[0].account_channel, "Secondary")
+        self.assertEqual(positions[1].available_quantity, "8")
+        self.assertTrue(context.closed)
+
+    def test_load_longbridge_account_balances_uses_cli_oauth_and_normalizes_items(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+        cli_payload = [
+            None,
+            {
+                "currency": "USD",
+                "total_cash": "120.50",
+                "cash_infos": [
+                    {
+                        "withdraw_cash": "100",
+                        "available_cash": "99",
+                        "frozen_cash": "1",
+                        "settling_cash": "0",
+                        "currency": "USD",
+                    },
+                ],
+                "frozen_transaction_fees": [{"currency": "USD", "frozen_transaction_fee": "2"}],
+            },
+            {"base_currency": "HKD", "total_cash": "80"},
+        ]
+
+        with (
+            patch("app.services.live_trading.run_longbridge_cli_json", return_value=cli_payload) as mocked_cli_json,
+            patch("app.services.live_trading._build_longbridge_trade_context") as mocked_sdk_context,
+        ):
+            balances = load_longbridge_account_balances(settings)
+
+        mocked_cli_json.assert_called_once_with(settings, ["assets", "--format", "json"], timeout_seconds=20)
+        mocked_sdk_context.assert_not_called()
+        self.assertEqual([balance.currency for balance in balances], ["HKD", "USD"])
+        self.assertEqual(balances[1].cash_infos[0].available_cash, "99")
+        self.assertEqual(balances[1].frozen_transaction_fees[0].frozen_transaction_fee, "2")
+
+    def test_load_longbridge_stock_positions_uses_cli_oauth_and_skips_invalid_items(self) -> None:
+        settings = BrokerSettings(selected_broker="longbridge", longbridge_auth_mode="cli_oauth")
+        cli_payload = [
+            None,
+            {"symbol": "", "quantity": "1"},
+            {
+                "stock_code": "TSLA.US",
+                "name": "Tesla",
+                "quantity": "10",
+                "enable_quantity": "8",
+                "cost_price": "250",
+                "currency": "USD",
+                "market": "US",
+                "account_channel": "Primary",
+            },
+            {
+                "symbol": "AAPL.US",
+                "symbol_name": "Apple",
+                "quantity": "5",
+                "available_quantity": "4",
+                "cost_price": "200",
+                "currency": "USD",
+                "market": "US",
+                "account_channel": "Secondary",
+            },
+        ]
+
+        with (
+            patch("app.services.live_trading.run_longbridge_cli_json", return_value=cli_payload) as mocked_cli_json,
+            patch("app.services.live_trading._build_longbridge_trade_context") as mocked_sdk_context,
+        ):
+            positions = load_longbridge_stock_positions(settings)
+
+        mocked_cli_json.assert_called_once_with(settings, ["positions", "--format", "json"], timeout_seconds=20)
+        mocked_sdk_context.assert_not_called()
+        self.assertEqual([position.symbol for position in positions], ["AAPL.US", "TSLA.US"])
+        self.assertEqual(positions[0].account_channel, "Secondary")
+        self.assertEqual(positions[1].available_quantity, "8")
+
+
+class LiveTradingAuthorizationContractTests(unittest.TestCase):
+    def test_live_api_authorization_matrix_preserves_pin_session_or_token_contract(self) -> None:
+        cases = (
+            (
+                "no session and no configured token",
+                False,
+                {},
+                None,
+                False,
+                503,
+                "Live trading is locked. Set ANTIGRAVITY_LIVE_TRADING_TOKEN to a random token of "
+                "at least 32 characters before reading account data or submitting orders.",
+            ),
+            (
+                "no session and wrong token",
+                False,
+                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                "wrong",
+                False,
+                401,
+                "Live trading access token is missing or invalid.",
+            ),
+            (
+                "no session and correct token",
+                False,
+                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                LIVE_TRADING_TEST_TOKEN,
+                True,
+                200,
+                "",
+            ),
+            ("pin session and no configured token", True, {}, None, True, 200, ""),
+            (
+                "pin session and wrong token header",
+                True,
+                {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN},
+                "wrong",
+                True,
+                200,
+                "",
+            ),
+        )
+
+        for (
+            label,
+            pin_session_unlocked,
+            environment,
+            presented_token,
+            expected_granted,
+            expected_status,
+            expected_message,
+        ) in cases:
+            with self.subTest(label=label), patch.dict("os.environ", environment, clear=True):
+                access_granted, status_code, message = authorize_live_trading_api_request(
+                    pin_session_unlocked,
+                    presented_token,
+                )
+
+            self.assertEqual(access_granted, expected_granted)
+            self.assertEqual(status_code, expected_status)
+            self.assertEqual(message, expected_message)
+
 
 class LiveTradingOrderApiTests(unittest.TestCase):
     def test_live_trading_page_requires_pin_then_renders_order_controls(self) -> None:
@@ -194,18 +516,72 @@ class LiveTradingOrderApiTests(unittest.TestCase):
         self.assertIn("The PIN is incorrect.", response.get_data(as_text=True))
 
     def test_live_trading_pin_session_authorizes_positions_api(self) -> None:
-        client = create_app().test_client()
-        client.post("/trade/live-trading/unlock", data={"pin": "195135"})
+        with patch.dict("os.environ", {}, clear=True):
+            client = create_app().test_client()
+            client.post("/trade/live-trading/unlock", data={"pin": "195135"})
 
-        with (
-            patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
-            patch("app.web.runtime.load_longbridge_account_balances", return_value=[]),
-            patch("app.web.runtime.load_longbridge_stock_positions", return_value=[]),
-        ):
-            response = client.get("/api/live-trading/positions")
+            with (
+                patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
+                patch("app.web.runtime.load_longbridge_account_balances", return_value=[]) as mocked_balances,
+                patch("app.web.runtime.load_longbridge_stock_positions", return_value=[]) as mocked_positions,
+            ):
+                response = client.get("/api/live-trading/positions")
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["success"])
+        mocked_balances.assert_called_once()
+        mocked_positions.assert_called_once()
+
+    def test_live_trading_positions_api_accepts_correct_access_token(self) -> None:
+        client = create_app().test_client()
+
+        with (
+            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch("app.web.runtime.load_broker_settings", return_value=BrokerSettings()),
+            patch("app.web.runtime.load_longbridge_account_balances", return_value=[]) as mocked_balances,
+            patch("app.web.runtime.load_longbridge_stock_positions", return_value=[]) as mocked_positions,
+        ):
+            response = client.get(
+                "/api/live-trading/positions",
+                headers={"X-Antigravity-Live-Trading-Token": LIVE_TRADING_TEST_TOKEN},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        mocked_balances.assert_called_once()
+        mocked_positions.assert_called_once()
+
+    def test_live_trading_pin_session_ignores_invalid_token_header_for_order(self) -> None:
+        client = create_app().test_client()
+
+        with (
+            patch.dict("os.environ", {"ANTIGRAVITY_LIVE_TRADING_TOKEN": LIVE_TRADING_TEST_TOKEN}),
+            patch(
+                "app.web.runtime.submit_longbridge_limit_order",
+                return_value=LiveOrderResult(
+                    order_id="order-999",
+                    symbol="TSLA.US",
+                    side="buy",
+                    price="250.00",
+                    quantity="1",
+                    order_type="LO",
+                    time_in_force="Day",
+                    status="submitted",
+                    remark="",
+                ),
+            ) as mocked_submit_order,
+        ):
+            unlock_response = client.post("/trade/live-trading/unlock", data={"pin": "195135"})
+            response = client.post(
+                "/api/live-trading/orders",
+                headers={"X-Antigravity-Live-Trading-Token": "wrong-token"},
+                json={"ticker": "TSLA.US", "side": "buy", "price": "250", "quantity": "1"},
+            )
+
+        self.assertEqual(unlock_response.status_code, 303)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        mocked_submit_order.assert_called_once()
 
     def test_live_trading_orders_api_returns_submitted_longbridge_buy_order(self) -> None:
         client = create_app().test_client()
@@ -331,6 +707,7 @@ class LiveTradingOrderApiTests(unittest.TestCase):
             response = client.get("/api/live-trading/positions")
 
         self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["WWW-Authenticate"], 'Bearer realm="antigravity-live-trading"')
         self.assertFalse(response.get_json()["success"])
         mocked_balances.assert_not_called()
         mocked_positions.assert_not_called()

@@ -1,4 +1,4 @@
-/* Code version: v0.9.2 */
+/* Code version: v0.9.3 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -39,7 +39,12 @@
 					accentSecondary: readThemeToken(computed, "--theme-accent-secondary"),
 					accentPositive: readThemeToken(computed, "--theme-accent-positive"),
 				};
-			})()
+		})()
+	);
+	const normalizeSafeImageUrl = (value) => (
+		typeof chartAxis.normalizeSafeImageUrl === "function"
+			? chartAxis.normalizeSafeImageUrl(value)
+			: ""
 	);
 
 	const bindColorSchemeRefresh = (callback) => {
@@ -452,22 +457,18 @@
 			return Math.round(newYorkWallMs / 60000);
 		};
 
-		const buildCrossMarketTooltipHtml = (pointIndex) => {
-			if (!isCrossMarketOneDayRange) return "";
+		const buildCrossMarketTooltipContent = (pointIndex) => {
+			if (!isCrossMarketOneDayRange) return null;
 			const serialMinute = getRawDateSerialMinute(rawDates[pointIndex]);
-			if (!Number.isFinite(serialMinute)) return "";
+			if (!Number.isFinite(serialMinute)) return null;
 			const dateLine = selectedTradingDate
 				? formatSerialMinuteDate(getRawDateSerialMinute(selectedTradingDate))
 				: formatSerialMinuteDate(serialMinute);
 			const timeLines = series.map((item) => {
 				const config = resolveMarketTimeConfig(item?.ticker);
-				const timeText = formatSerialMinuteLocalTime(serialMinute, config);
-				return timeText ? `<span class="chart-tooltip-market-time">${timeText}</span>` : "";
-			}).filter(Boolean).join("");
-			return `
-				<span class="chart-tooltip-primary-date">${dateLine}</span>
-				${timeLines ? `<span class="chart-tooltip-market-times">${timeLines}</span>` : ""}
-			`;
+				return formatSerialMinuteLocalTime(serialMinute, config);
+			}).filter(Boolean);
+			return {dateLine, timeLines};
 		};
 
 		const buildCrossMarketTickDefinitions = () => {
@@ -957,13 +958,71 @@
 			},
 		};
 
+		const createTooltipTextElement = (className, value) => {
+			const element = document.createElement("span");
+			element.className = className;
+			element.textContent = String(value ?? "");
+			return element;
+		};
+
+		const renderCrossMarketTooltipContent = (dateElement, content) => {
+			const primaryDate = createTooltipTextElement(
+				"chart-tooltip-primary-date",
+				content.dateLine,
+			);
+			dateElement.replaceChildren(primaryDate);
+			if (!content.timeLines.length) return;
+
+			const times = document.createElement("span");
+			times.className = "chart-tooltip-market-times";
+			content.timeLines.forEach((timeText) => {
+				times.appendChild(
+					createTooltipTextElement("chart-tooltip-market-time", timeText),
+				);
+			});
+			dateElement.appendChild(times);
+		};
+
+		const renderTooltipRows = (listElement, rows) => {
+			const fragment = document.createDocumentFragment();
+			rows.forEach((item) => {
+				const row = document.createElement("div");
+				row.className = "chart-tooltip-row";
+
+				const dot = document.createElement("span");
+				dot.className = "chart-tooltip-dot";
+				dot.style.backgroundColor = String(item.color ?? "");
+				row.appendChild(dot);
+
+				const logoUrl = normalizeSafeImageUrl(item.logoUrl);
+				if (logoUrl) {
+					const logo = document.createElement("img");
+					logo.className = "chart-tooltip-logo";
+					logo.src = logoUrl;
+					logo.alt = `${String(item.label ?? "")} logo`;
+					row.appendChild(logo);
+				} else {
+					row.appendChild(document.createElement("span"));
+				}
+
+				row.appendChild(createTooltipTextElement("chart-tooltip-label", item.label));
+				row.appendChild(createTooltipTextElement("chart-tooltip-value", item.value));
+				fragment.appendChild(row);
+			});
+			listElement.replaceChildren(fragment);
+		};
+
 		const getOrCreateTooltip = (chart) => {
 			const parent = chart.canvas.parentNode;
 			let tooltip = parent.querySelector(".chart-tooltip");
 			if (tooltip) return tooltip;
 			tooltip = document.createElement("div");
 			tooltip.className = "chart-tooltip";
-			tooltip.innerHTML = '<div class="chart-tooltip-date"></div><div class="chart-tooltip-list"></div>';
+			const date = document.createElement("div");
+			date.className = "chart-tooltip-date";
+			const list = document.createElement("div");
+			list.className = "chart-tooltip-list";
+			tooltip.append(date, list);
 			parent.appendChild(tooltip);
 			return tooltip;
 		};
@@ -976,12 +1035,13 @@
 			}
 			const dateEl = tooltipEl.querySelector(".chart-tooltip-date");
 			const listEl = tooltipEl.querySelector(".chart-tooltip-list");
+			if (!dateEl || !listEl) return;
 			if (tooltip.dataPoints?.length) {
 				const pointIndex = tooltip.dataPoints[0].dataIndex;
 				const parsedDate = parseRawDate(rawDates[pointIndex]);
-				const crossMarketHtml = buildCrossMarketTooltipHtml(pointIndex);
-				if (crossMarketHtml) {
-					dateEl.innerHTML = crossMarketHtml;
+				const crossMarketContent = buildCrossMarketTooltipContent(pointIndex);
+				if (crossMarketContent) {
+					renderCrossMarketTooltipContent(dateEl, crossMarketContent);
 				} else {
 					dateEl.textContent = parsedDate ? formatChartDate(parsedDate) : (tooltip.title?.[0] || "");
 				}
@@ -997,14 +1057,7 @@
 				};
 			});
 
-			listEl.innerHTML = bodyLines.map((item) => `
-				<div class="chart-tooltip-row">
-					<span class="chart-tooltip-dot" style="background:${item.color}"></span>
-					${item.logoUrl ? `<img class="chart-tooltip-logo" src="${item.logoUrl}" alt="${item.label} logo">` : "<span></span>"}
-					<span class="chart-tooltip-label">${item.label}</span>
-					<span class="chart-tooltip-value">${item.value}</span>
-				</div>
-			`).join("");
+			renderTooltipRows(listEl, bodyLines);
 
 			const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
 			tooltipEl.classList.add("is-visible");

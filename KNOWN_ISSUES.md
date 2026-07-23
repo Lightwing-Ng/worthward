@@ -1,6 +1,6 @@
 # Known issues, operating constraints, and behavior-change history
 
-Documentation version: `v1.98.3`
+Documentation version: `v1.98.4`
 
 ## Current operating constraints
 
@@ -26,6 +26,21 @@ the dated entries preserve their rationale and failure classifications.
   before an event is sent.
 - The current test inventory and coverage baseline are maintained in
   `TESTING.md`; do not infer them from older dated entries in this file.
+
+## Investment upload bounds and chart tooltip rendering hardened on 23 Jul 2026
+
+- Flask now limits each complete request body to 257 MiB: the existing 256 MiB
+  source-evidence capacity plus a 1 MiB multipart-envelope allowance. This is a
+  fail-fast parsing bound, not streaming import processing; the 64 MiB
+  per-artifact cap and source-evidence SHA-256 rules are unchanged.
+- `/api/investment/transactions` returns stable no-store JSON with `413` when
+  that total is exceeded. Rejection occurs before a broker parser or the
+  durable investment-store write boundary runs.
+- Workspace return-chart tooltips now construct dynamic labels, values, logo
+  attributes, and color swatches through DOM properties. Logo values accept
+  only HTTP(S) URLs or the two controlled local market-store logo paths;
+  malformed, protocol-relative, `data:`, and `javascript:` sources render no
+  logo.
 
 ## Korean exact-day intraday data retains Yahoo Chart fallback on 23 Jul 2026
 

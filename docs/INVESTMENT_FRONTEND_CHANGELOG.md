@@ -1,10 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.0.4`
+Documentation version: `v1.0.5`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
+
+- Refactored: IBKR import-feedback markup now lives in tested pure `investment/import-feedback.js`; `investment.js` remains the composition root and injects its established HTML escaper, preserving evidence and transfer-review copy.
 
 ## Historical changes
 

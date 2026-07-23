@@ -1,10 +1,10 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.5.1
+ * Code version: v2.5.2
  * Realtime polling and value animation, Stock-details rules, transaction filters
- * and table page state, split layout, and calculation-heavy data utilities live
- * in tested modules.
+ * and table page state, import feedback, split layout, and calculation-heavy
+ * data utilities live in tested modules.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
 
@@ -23,6 +23,10 @@ import {
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
 } from './investment/data-utils.js?v=investment-data-utils-v1.48.2';
+import {
+    INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
+    buildIbkrImportFeedbackMessage,
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.0.0';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
@@ -68,9 +72,10 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.5.1',
+    entry: 'v2.5.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     layout: INVESTMENT_LAYOUT_MODULE_VERSION,
     pagination: INVESTMENT_PAGINATION_MODULE_VERSION,
     realtime: INVESTMENT_REALTIME_MODULE_VERSION,
@@ -4566,58 +4571,6 @@ document.addEventListener('DOMContentLoaded', () => {
             Boolean(txn?.manual_internal_transfer_needs_binding)
             && Number(txn?.manual_internal_transfer_candidate_count || 0) > 0
         )).length;
-    }
-
-    function buildInvestmentImportFeedbackListHtml(items = []) {
-        const normalizedItems = Array.isArray(items)
-            ? items.map((item) => String(item || '').trim()).filter(Boolean)
-            : [];
-        if (!normalizedItems.length) return '';
-        return `
-            <ol class="notice-floating-banner-list investment-import-feedback-list">
-                ${normalizedItems.map((item) => `<li>${item}</li>`).join('')}
-            </ol>
-        `.trim();
-    }
-
-    function buildIbkrImportFeedbackMessage({
-        importSummary = null,
-        refreshNotice = '',
-        valuationNotice = '',
-        pendingTransferCount = 0,
-    } = {}) {
-        const incrementalImport = importSummary && typeof importSummary === 'object'
-            ? importSummary.incremental_import
-            : null;
-        const importedRecordCount = Number(incrementalImport?.imported_record_count);
-        const addedRecordCount = Number(incrementalImport?.added_record_count);
-        const duplicateRecordCount = Number(incrementalImport?.duplicate_record_count);
-        const items = [
-            'Matching records were merged <strong>incrementally</strong> into the local investment store <strong>without clearing older data first</strong>.',
-            'Exact uploaded source files are retained locally as <strong>SHA-256-verified immutable evidence</strong>. The investment ledger retains only their verified manifests and metadata.',
-        ];
-        if (
-            Number.isFinite(importedRecordCount)
-            && Number.isFinite(addedRecordCount)
-            && Number.isFinite(duplicateRecordCount)
-        ) {
-            items.unshift(
-                `This run parsed <strong>${importedRecordCount.toLocaleString('en-US')}</strong> records, added <strong>${addedRecordCount.toLocaleString('en-US')}</strong>, and treated <strong>${duplicateRecordCount.toLocaleString('en-US')}</strong> as already present.`
-            );
-        }
-        if (pendingTransferCount > 0) {
-            items.push(
-                `<span class="notice-floating-banner-emphasis-danger"><u>Immediate action</u>:</span> Review and bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} possible HSBC transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history to remove duplicate-equity spikes.`
-            );
-        }
-        const trimmedRefreshNotice = String(refreshNotice || '').trim();
-        const trimmedValuationNotice = String(valuationNotice || '').trim();
-        if (trimmedRefreshNotice) items.push(escapeHtml(trimmedRefreshNotice));
-        if (trimmedValuationNotice) items.push(escapeHtml(trimmedValuationNotice));
-        return `
-            <p class="notice-floating-banner-heading">IBKR import complete</p>
-            ${buildInvestmentImportFeedbackListHtml(items)}
-        `.trim();
     }
 
     function setImportFeedback(message, variant = 'success', { allowHtml = false } = {}) {
@@ -9123,7 +9076,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     refreshNotice,
                                     valuationNotice: '',
                                     pendingTransferCount,
-                                }),
+                                }, { escapeHtml }),
                                 'success',
                                 { allowHtml: true }
                             );

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.12.1`
+Documentation version: `v1.12.3`
 
 ## Runtime flow
 
@@ -113,9 +113,12 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/web/strategy_forms.py`: pure strategy selector, parameter-field, and
   Settings catalog presentation builders. WebRuntime supplies strategy usage
   history and the strategy factory while retaining request assembly.
+- `app/web/style_token_rows.py`: pure Settings design-token presentation
+  builders. WebRuntime supplies translated labels and the project display URL;
+  the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Broker parsers remain in `investment_import.py` until they can move without obscuring their reconciliation invariants.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index and theme-token helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. Consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing theme-token consumers keep local fallbacks if the shared script is unavailable.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
 - `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.

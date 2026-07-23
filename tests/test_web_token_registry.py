@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.6.1
+Code version: v0.6.2
 """
 
 from __future__ import annotations
@@ -13,10 +13,17 @@ import unittest
 from pathlib import Path
 
 from app.web.token_registry import FOUNDATION_TOKENS_CSS_PATH, load_foundation_css_token_registry
+from app.web.style_token_rows import (
+    build_export_image_rows,
+    build_font_token_rows,
+    build_material_token_rows,
+    build_style_token_rows,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_RUNTIME_PATH = REPO_ROOT / "app" / "web" / "runtime.py"
+STYLE_TOKEN_ROWS_PATH = REPO_ROOT / "app" / "web" / "style_token_rows.py"
 WEB_CSS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "css"
 WEB_FONTS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "fonts"
 
@@ -26,7 +33,7 @@ def read_text(path: Path) -> str:
 
 
 def collect_literal_runtime_defaults(function_name: str) -> dict[str, str]:
-    module = ast.parse(read_text(WEB_RUNTIME_PATH))
+    module = ast.parse(read_text(STYLE_TOKEN_ROWS_PATH))
     target_function = next(
         node
         for node in ast.walk(module)
@@ -57,7 +64,7 @@ def collect_literal_runtime_defaults(function_name: str) -> dict[str, str]:
 
 
 def collect_literal_runtime_token_names(function_name: str) -> list[str]:
-    module = ast.parse(read_text(WEB_RUNTIME_PATH))
+    module = ast.parse(read_text(STYLE_TOKEN_ROWS_PATH))
     target_function = next(
         node
         for node in ast.walk(module)
@@ -79,7 +86,7 @@ def collect_literal_runtime_token_names(function_name: str) -> list[str]:
 
 
 def collect_material_rows() -> dict[str, set[str]]:
-    module = ast.parse(read_text(WEB_RUNTIME_PATH))
+    module = ast.parse(read_text(STYLE_TOKEN_ROWS_PATH))
     target_function = next(
         node
         for node in ast.walk(module)
@@ -154,6 +161,30 @@ class WebTokenRegistryTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(token_names), 100)
         self.assertEqual(duplicates, [])
+
+    def test_design_token_builders_use_only_explicit_presentation_inputs(self) -> None:
+        labels = {
+            "local_store_maintain_button": "Maintain local data",
+            "local_store_maintain_title": "Local data maintenance",
+            "local_store_maintain_note": "Keep local price data current.",
+            "portfolio_total_return": "Portfolio return",
+            "hero_title": "Control center",
+            "portfolio_title": "Portfolio workspace",
+            "backtest_ticker": "Ticker",
+            "period": "Period",
+            "backtest_strategy": "Strategy",
+        }
+
+        style_rows = build_style_token_rows(labels)
+        export_rows = build_export_image_rows("example.test/design-preview")
+        font_rows = build_font_token_rows(labels)
+        material_rows = build_material_token_rows()
+
+        action_package = next(row for row in style_rows if row["name"] == "Settings action package")
+        self.assertEqual(action_package["sample_title"], labels["local_store_maintain_title"])
+        self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
+        self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
+        self.assertEqual(material_rows[0]["name"], "Frosted glass")
 
     def test_loader_reads_foundation_root_tokens(self) -> None:
         registry = load_foundation_css_token_registry()
@@ -234,7 +265,7 @@ class WebTokenRegistryTests(unittest.TestCase):
 
     def test_every_canonical_frosted_glass_reference_is_defined(self) -> None:
         registry = load_foundation_css_token_registry()
-        source_text = read_text(WEB_RUNTIME_PATH)
+        source_text = read_text(WEB_RUNTIME_PATH) + read_text(STYLE_TOKEN_ROWS_PATH)
         source_text += "\n".join(read_text(path) for path in WEB_CSS_ROOT.rglob("*.css"))
         references = set(re.findall(r"var\((--frosted-glass-[a-z-]+)\)", source_text))
 

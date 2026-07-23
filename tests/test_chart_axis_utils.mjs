@@ -1,4 +1,4 @@
-/* Shared chart axis helper contracts. Code version: v1.1.0 */
+/* Shared chart axis helper contracts. Code version: v1.1.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,6 +109,38 @@ test('exposes a versioned shared chart axis API', () => {
     assert.equal(typeof utils.sortedTickIndexes, 'function');
     assert.equal(typeof utils.readThemeTokens, 'function');
     assert.equal(typeof utils.readThemeToken, 'function');
+    assert.equal(typeof utils.normalizeSafeImageUrl, 'function');
+});
+
+test('normalizeSafeImageUrl permits only HTTP(S) and controlled local logo paths', () => {
+    assert.equal(
+        utils.normalizeSafeImageUrl('/market-store/logos/AAPL.svg?version=1#mark'),
+        '/market-store/logos/AAPL.svg?version=1#mark',
+    );
+    assert.equal(
+        utils.normalizeSafeImageUrl('/api/market-store/logos/QQQ.png'),
+        '/api/market-store/logos/QQQ.png',
+    );
+    assert.equal(
+        utils.normalizeSafeImageUrl('https://logos.example/AAPL.svg'),
+        'https://logos.example/AAPL.svg',
+    );
+    assert.equal(
+        utils.normalizeSafeImageUrl('http://logos.example/QQQ.png'),
+        'http://logos.example/QQQ.png',
+    );
+
+    [
+        'javascript:alert(1)',
+        'data:image/svg+xml,<svg></svg>',
+        '//logos.example/AAPL.svg',
+        '/market-store/logos/../private.svg',
+        '/static/images/AAPL.svg',
+        'logos/AAPL.svg',
+        'https://[invalid',
+    ].forEach((unsafeValue) => {
+        assert.equal(utils.normalizeSafeImageUrl(unsafeValue), '', unsafeValue);
+    });
 });
 
 test('buildTickIndexSet handles empty, single, and three-tick layouts', () => {

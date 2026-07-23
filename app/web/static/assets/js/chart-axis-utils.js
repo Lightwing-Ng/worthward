@@ -1,7 +1,7 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.0.1
+ * Code version: v1.0.2
  */
 (function bootstrapChartAxisUtils(globalScope) {
     "use strict";
@@ -9,6 +9,12 @@
     const WIDE_CHART_BREAKPOINT_PX = 768;
     const WIDE_MAX_TICK_COUNT = 4;
     const NARROW_MAX_TICK_COUNT = 3;
+    const CONTROLLED_RELATIVE_IMAGE_PATH_PREFIXES = Object.freeze([
+        "/market-store/logos/",
+        "/api/market-store/logos/",
+    ]);
+    const SAFE_IMAGE_URL_PROTOCOLS = new Set(["http:", "https:"]);
+    const SAFE_IMAGE_URL_BASE = "https://antigravity.invalid";
 
     /**
      * Choose stable x-axis tick indexes for a series of `count` points.
@@ -36,6 +42,37 @@
     const readThemeToken = (computed, tokenName) => (
         computed.getPropertyValue(tokenName).trim()
     );
+
+    /**
+     * Normalize image sources accepted by dynamic chart markup.
+     * Root-relative sources are limited to the application's logo routes.
+     */
+    const normalizeSafeImageUrl = (value) => {
+        const rawValue = String(value ?? "").trim();
+        if (!rawValue) return "";
+
+        if (rawValue.startsWith("/") && !rawValue.startsWith("//")) {
+            try {
+                const parsed = new URL(rawValue, SAFE_IMAGE_URL_BASE);
+                if (!CONTROLLED_RELATIVE_IMAGE_PATH_PREFIXES.some(
+                    (prefix) => parsed.pathname.startsWith(prefix),
+                )) {
+                    return "";
+                }
+                return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+            } catch (_error) {
+                return "";
+            }
+        }
+
+        try {
+            const parsed = new URL(rawValue);
+            if (!SAFE_IMAGE_URL_PROTOCOLS.has(parsed.protocol)) return "";
+            return parsed.href;
+        } catch (_error) {
+            return "";
+        }
+    };
 
     /**
      * Read theme color tokens from the document body.
@@ -68,7 +105,8 @@
         sortedTickIndexes,
         readThemeToken,
         readThemeTokens,
-        CHART_AXIS_UTILS_VERSION: "v1.0.1",
+        normalizeSafeImageUrl,
+        CHART_AXIS_UTILS_VERSION: "v1.0.2",
     });
 
     globalScope.ANTIGRAVITY_CHART_AXIS = api;

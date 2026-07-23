@@ -1,6 +1,6 @@
 """Live trading access-token validation.
 
-Code version: v1.1.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
@@ -63,3 +63,13 @@ def validate_live_trading_access_token(presented_token: str | None) -> tuple[boo
         return False, 401, "Live trading access token is missing or invalid."
 
     return True, 200, ""
+
+
+def authorize_live_trading_api_request(
+    is_pin_session_unlocked: bool,
+    presented_token: str | None,
+) -> tuple[bool, int, str]:
+    """Authorize a live account or order API request through either supported path."""
+    if is_pin_session_unlocked:
+        return True, 200, ""
+    return validate_live_trading_access_token(presented_token)

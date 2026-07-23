@@ -1,4 +1,4 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.2."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.3."""
 
 from pathlib import Path
 
@@ -32,9 +32,11 @@ def test_shared_banner_css_uses_top_aligned_icon_and_hanging_numbered_copy() -> 
 
 
 def test_ibkr_feedback_contains_plain_title_rich_emphasis_and_numbered_list() -> None:
-    javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
+    javascript = (STATIC_ROOT / "js/investment/import-feedback.js").read_text(encoding="utf-8")
+    entry_javascript = (STATIC_ROOT / "js/investment.js").read_text(encoding="utf-8")
     investment_css = (STATIC_ROOT / "css/views/investment.css").read_text(encoding="utf-8")
 
+    assert "from './investment/import-feedback.js?" in entry_javascript
     assert '<p class="notice-floating-banner-heading">IBKR import complete</p>' in javascript
     assert "<strong>incrementally</strong>" in javascript
     assert "<u>Immediate action</u>" in javascript

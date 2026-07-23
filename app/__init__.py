@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.6.0
+Code version: v0.7.0
 """
 
 import secrets
@@ -14,8 +14,21 @@ from app.core.broker_catalog import (
     SETTINGS_BROKER_CODES,
     sorted_broker_entries,
 )
-from app.infrastructure.storage import verify_persisted_investment_source_artifacts
+from app.infrastructure.storage import (
+    MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES,
+    verify_persisted_investment_source_artifacts,
+)
 from app.web.routes_entry import register_routes
+
+
+# This global Flask request cap permits one complete investment multipart upload
+# while preserving the existing 256 MiB immutable-evidence capacity. It is a
+# request parsing limit, not a streaming-import implementation.
+INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES = 1 * 1024 * 1024
+MAX_INVESTMENT_IMPORT_REQUEST_BYTES = (
+    MAX_INVESTMENT_SOURCE_EVIDENCE_BYTES
+    + INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES
+)
 
 
 def create_app() -> Flask:
@@ -34,6 +47,7 @@ def create_app() -> Flask:
     # Browser unlocks last only for this process and browser session.
     app.secret_key = secrets.token_bytes(32)
     app.config.update(
+        MAX_CONTENT_LENGTH=MAX_INVESTMENT_IMPORT_REQUEST_BYTES,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )

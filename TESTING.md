@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.5`
+Documentation version: `v1.8.6`
 
 ## Supported commands
 
@@ -47,9 +47,9 @@ artifact actions.
 
 Baseline remeasured on 23 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `61.3%` (`coverage.json`
-  reports `11,935` covered lines of `18,212` statements and `3,673` covered
-  branches of `7,260`).
+- Total combined statement-and-branch coverage: `62.0%` (`coverage.json`
+  reports `12,057` covered lines of `18,221` statements and `3,730` covered
+  branches of `7,258`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -58,19 +58,24 @@ Baseline remeasured on 23 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
   an explicit integer from `0` to `100` only when performing a deliberate local
   diagnostic run.
 - Raise the threshold only after adding tests, never by excluding production modules.
-- The next project target is `62%`, followed by measured module-level improvements.
+- The next project target is `63%`, followed by measured module-level improvements.
 
 Priority coverage gaps:
 
-- `app/services/live_trading.py`: `32.8%`.
 - `app/infrastructure/broker_market_data.py`: `44.0%` after removing the
   unreachable IBKR Client Portal transport.
 - `app/services/investment_import.py`: `51.9%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
+Recently strengthened coverage:
+
+- `app/services/live_trading.py`: `73.8%`, with offline CLI OAuth, legacy SDK,
+  order-validation, and API authorization-contract paths covered without a
+  real account request or order.
+
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
-`43.41%` lines, `62.93%` branches, and `70.25%` functions. The gate enforces
+`44.43%` lines, `64.26%` branches, and `70.88%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -82,9 +87,9 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 Current suite inventory remeasured on 23 Jul 2026:
 
-- 437 Python tests collected; the latest full Python run reports 431 passed,
-  6 skipped, and 52 subtests passed.
-- 72 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 448 Python tests collected; the latest full Python run reports 442 passed,
+  6 skipped, and 63 subtests passed.
+- 78 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
 - 76 Playwright test cases listed by `npx playwright test --list`, including
   parameterized viewport coverage.
@@ -100,6 +105,8 @@ Current suite inventory remeasured on 23 Jul 2026:
 - `tests/test_runtime_error_redaction.py`: stable client failures that retain
   full unexpected-error diagnostics only in local logs.
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
+- `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
+  escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
 - `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
@@ -111,13 +118,17 @@ Current suite inventory remeasured on 23 Jul 2026:
 - `tests/test_investment_layout.mjs`: split-layout measurement and clamp rules.
 - `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
 - `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
-- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers and `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string).
+- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `ANTIGRAVITY_APP.theme`, empty string), and safe dynamic logo URL normalization.
 - `tests/test_form_parsing.py`: pure workspace query parsing, portfolio weight, and navigation path contracts.
 - `tests/test_web_market_history.py`: extracted, read-only local-history date and supported-period helpers.
 - `tests/test_web_strategy_forms.py`: pure strategy grouping, field-schema,
   injected factory, and Settings catalog presentation contracts.
+- `tests/test_live_trading_orders.py`: PIN-session-or-token authorization,
+  stable API failures, mocked Longbridge account readers, and order-validation
+  contracts without a broker request or order.
 - `tests/test_web_token_registry.py`: foundation-default drift, canonical
-  material references, and globally unique Style token registry names.
+  material references, globally unique Style token registry names, and pure
+  Settings design-token builder inputs.
 - `tests/test_broker_market_data.py`: Longbridge normalization, fail-closed
   one-minute cache persistence safeguards, and the absence of the retired IBKR
   Client Portal transport.

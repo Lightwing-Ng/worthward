@@ -1,4 +1,4 @@
-{# Code version: v0.5.14 #}
+{# Code version: v0.5.15 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -256,7 +256,7 @@
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.0.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.0.2') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
 <script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.3.0') }}"></script>
@@ -267,7 +267,7 @@
 {% endif %}
 <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.22.6') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
-<script src="{{ url_for('static', filename='assets/js/chart.js', v=version) }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.3') }}"></script>
 {% endif %}
 {% if current_view in ["backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/backtest.js', v=version) }}"></script>
