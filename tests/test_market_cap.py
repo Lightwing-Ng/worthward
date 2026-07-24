@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.9.1
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -502,6 +502,89 @@ class MarketCapTests(unittest.TestCase):
         self.assertTrue(pd.isna(result.loc[0, "MarketCap"]))
         self.assertEqual(result.loc[1:, "MarketCap"].tolist(), [400_000_000_000.0, 410_000_000_000.0])
         self.assertEqual(result.attrs["market_cap_source"], "sec_nport_net_assets")
+
+    def test_sec_reported_shares_falls_back_to_us_gaap_common_stock_fact(self) -> None:
+        payload = {
+            "facts": {
+                "dei": {},
+                "us-gaap": {
+                    "CommonStockSharesOutstanding": {
+                        "units": {
+                            "shares": [
+                                {"filed": "2026-01-15", "val": 10_000_000_000},
+                                {"filed": "2026-04-15", "val": 9_900_000_000},
+                            ],
+                        },
+                    },
+                },
+            },
+        }
+        with (
+            patch("app.services.market_cap._sec_ticker_cik", return_value=1652044),
+            patch("app.services.market_cap._sec_json", return_value=payload),
+        ):
+            result = market_cap.fetch_sec_reported_shares("GOOGL")
+
+        self.assertEqual(result["Shares"].tolist(), [10_000_000_000.0, 9_900_000_000.0])
+        self.assertEqual(result.attrs["reported_shares_scope"], "issuer_total")
+
+    def test_alphabet_market_cap_uses_total_issuer_shares_when_yfinance_is_limited(self) -> None:
+        prices = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-02", "2026-01-05"]),
+            "Close": [100.0, 120.0],
+        })
+        issuer_shares = pd.DataFrame({
+            "Date": pd.to_datetime(["2025-12-31"]),
+            "Shares": [10.0],
+        })
+        companion_prices = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-02", "2026-01-05"]),
+            "Close": [99.0, 119.0],
+        })
+        with (
+            patch("app.services.market_cap._fetch_market_cap_component_shares", return_value=(issuer_shares, "issuer_total")),
+            patch("app.services.market_cap._load_market_cap_component_prices", return_value=companion_prices),
+            patch("app.services.market_cap._is_recent_market_cap_window", return_value=False),
+        ):
+            result = build_market_cap_history("GOOGL", prices)
+
+        self.assertEqual(result["MarketCap"].tolist(), [1_000.0, 1_200.0])
+        self.assertEqual(result.attrs["market_cap_source"], "sec_issuer_total_history")
+
+    def test_alphabet_market_cap_sums_both_share_class_aliases(self) -> None:
+        prices = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-02", "2026-01-05"]),
+            "Close": [100.0, 120.0],
+        })
+        googl_shares = pd.DataFrame({
+            "Date": pd.to_datetime(["2025-12-31"]),
+            "Shares": [6.0],
+        })
+        goog_shares = pd.DataFrame({
+            "Date": pd.to_datetime(["2025-12-31"]),
+            "Shares": [4.0],
+        })
+        companion_prices = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-02", "2026-01-05"]),
+            "Close": [99.0, 119.0],
+        })
+        with (
+            patch(
+                "app.services.market_cap._fetch_market_cap_component_shares",
+                side_effect=[(googl_shares, "class_specific"), (goog_shares, "class_specific")],
+            ),
+            patch(
+                "app.services.market_cap._load_market_cap_component_prices",
+                side_effect=lambda component, selected, selected_prices: (
+                    selected_prices if component == selected else companion_prices
+                ),
+            ),
+            patch("app.services.market_cap._is_recent_market_cap_window", return_value=False),
+        ):
+            result = build_market_cap_history("GOOGL", prices)
+
+        self.assertEqual(result["MarketCap"].tolist(), [996.0, 1_196.0])
+        self.assertEqual(result.attrs["market_cap_source"], "yfinance_share_class_history")
 
 
 if __name__ == "__main__":

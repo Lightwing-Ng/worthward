@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.10.0
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -24,7 +24,12 @@ from app.infrastructure.broker_market_data import (
     normalize_longbridge_symbol,
 )
 from app.infrastructure.runtime_network import get_yfinance_session
-from app.infrastructure.storage import market_store_file_lock, normalize_ticker, write_parquet_atomic
+from app.infrastructure.storage import (
+    history_store_path_for,
+    market_store_file_lock,
+    normalize_ticker,
+    write_parquet_atomic,
+)
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.models.schemas import SeriesPayload
 from app.services.presentation import format_display_date, format_display_datetime
@@ -62,6 +67,8 @@ MARKET_CAP_ORIGINAL_CURRENCY_ATTR = "market_cap_original_currency"
 MARKET_CAP_FX_SOURCE_ATTR = "market_cap_fx_source"
 MARKET_CAP_FX_PAIR_ATTR = "market_cap_fx_pair"
 FX_SOURCE = "yahoo_fx_daily_close"
+ALPHABET_SHARE_CLASS_TICKERS = ("GOOGL", "GOOG")
+ALPHABET_SHARE_CLASS_TICKER_SET = set(ALPHABET_SHARE_CLASS_TICKERS)
 
 # Yahoo publishes the major currencies either as a local-currency-per-USD
 # quote (for example HKD=X) or as a USD-per-local-currency pair (for example
@@ -339,6 +346,237 @@ def _positive_number(value: object) -> float | None:
     return float(parsed) if pd.notna(parsed) and float(parsed) > 0 else None
 
 
+def _normalize_market_cap_price_frame(values: pd.DataFrame | None) -> pd.DataFrame:
+    if values is None or values.empty:
+        return pd.DataFrame(columns=["Date", "Close"])
+    frame = values.copy()
+    if "Date" not in frame.columns:
+        frame = frame.reset_index()
+    if "Date" not in frame.columns or "Close" not in frame.columns:
+        return pd.DataFrame(columns=["Date", "Close"])
+    frame = frame[["Date", "Close"]].copy()
+    frame["Date"] = _normalize_new_york_timestamps(frame["Date"])
+    frame["Close"] = pd.to_numeric(frame["Close"], errors="coerce")
+    return (
+        frame.dropna(subset=["Date", "Close"])
+        .loc[lambda item: item["Close"] > 0]
+        .drop_duplicates(subset=["Date"], keep="last")
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+
+def _load_market_cap_component_prices(
+        ticker: str,
+        selected_ticker: str,
+        selected_prices: pd.DataFrame,
+) -> pd.DataFrame:
+    normalized_ticker = normalize_ticker(ticker)
+    if normalized_ticker == selected_ticker:
+        return selected_prices[["Date", "Close"]].copy()
+    path = history_store_path_for(normalized_ticker)
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return _normalize_market_cap_price_frame(pd.read_parquet(path))
+        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.warning("Unable to read market-cap component history for %s: %s", normalized_ticker, exc)
+    try:
+        return _normalize_market_cap_price_frame(
+            download_yahoo_chart_daily_history(
+                yahoo_quote_symbol(normalized_ticker),
+                period="max",
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Unable to load market-cap component history for %s: %s", normalized_ticker, exc)
+        return pd.DataFrame(columns=["Date", "Close"])
+
+
+def _fetch_market_cap_component_shares(
+        ticker: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+) -> tuple[pd.DataFrame, str]:
+    """Fetch one Alphabet share class without persisting a companion cache."""
+    normalized_ticker = normalize_ticker(ticker)
+    cached = load_reported_shares(normalized_ticker)
+    cache_path = shares_store_path_for(normalized_ticker)
+    cached_is_fresh = (
+        not cached.empty
+        and cache_path.exists()
+        and time.time() - cache_path.stat().st_mtime <= SHARES_CACHE_TTL_SECONDS
+    )
+    cached_scope = (
+        "class_specific"
+        if "yfinance" in _reported_shares_source_tokens(
+            cached.attrs.get(REPORTED_SHARES_SOURCE_ATTR)
+        )
+        else "issuer_total"
+    )
+    if cached_is_fresh:
+        return cached, cached_scope
+
+    request_start = pd.Timestamp(start).tz_localize(None).normalize() - pd.DateOffset(years=2)
+    request_end = pd.Timestamp(end).tz_localize(None).normalize() + pd.Timedelta(days=2)
+    try:
+        remote = normalize_reported_shares(
+            yf.Ticker(
+                yahoo_quote_symbol(normalized_ticker),
+                session=get_yfinance_session(),
+            ).get_shares_full(start=request_start, end=request_end)
+        )
+        if not remote.empty:
+            remote.attrs[REPORTED_SHARES_SOURCE_ATTR] = "yfinance_reported_shares"
+            return remote, "class_specific"
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Unable to refresh yfinance share-class data for %s: %s", normalized_ticker, exc)
+
+    try:
+        sec_history = fetch_sec_reported_shares(normalized_ticker)
+        if not sec_history.empty:
+            return sec_history, "issuer_total"
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Unable to refresh SEC issuer-share data for %s: %s", normalized_ticker, exc)
+    return cached, cached_scope
+
+
+def _asof_market_cap_values(
+        target_dates: pd.DataFrame,
+        source: pd.DataFrame,
+        value_column: str,
+) -> pd.Series:
+    if source.empty:
+        return pd.Series(float("nan"), index=target_dates.index, dtype="float64")
+    aligned = pd.merge_asof(
+        target_dates[["Date"]].sort_values("Date"),
+        source[["Date", value_column]].sort_values("Date"),
+        on="Date",
+        direction="backward",
+    )
+    aligned.index = target_dates[["Date"]].sort_values("Date").index
+    return aligned[value_column].reindex(target_dates.index)
+
+
+def _build_alphabet_market_cap_history(
+        ticker: str,
+        price_frame: pd.DataFrame,
+        split_events: pd.DataFrame | None,
+        longbridge_snapshot: dict[str, Any] | None,
+) -> pd.DataFrame:
+    """Build Alphabet's total issuer value from its Class A and Class C aliases."""
+    normalized_ticker = normalize_ticker(ticker)
+    target_dates = price_frame[["Date"]].copy().sort_values("Date").reset_index(drop=True)
+    component_prices = {
+        component: _load_market_cap_component_prices(
+            component,
+            normalized_ticker,
+            price_frame,
+        )
+        for component in ALPHABET_SHARE_CLASS_TICKERS
+    }
+    component_shares = {
+        component: _fetch_market_cap_component_shares(
+            component,
+            target_dates["Date"].min(),
+            target_dates["Date"].max(),
+        )
+        for component in ALPHABET_SHARE_CLASS_TICKERS
+    }
+    aligned_closes = {
+        component: _asof_market_cap_values(target_dates, prices, "Close")
+        for component, prices in component_prices.items()
+    }
+    aligned_shares: dict[str, pd.Series] = {}
+    share_scopes: dict[str, str] = {}
+    for component, (shares, scope) in component_shares.items():
+        adjusted_shares = adjust_reported_shares_to_price_basis(shares, split_events)
+        aligned_shares[component] = _asof_market_cap_values(target_dates, adjusted_shares, "Shares")
+        share_scopes[component] = scope
+
+    market_caps = pd.Series(float("nan"), index=target_dates.index, dtype="float64")
+    class_specific_components = [
+        component
+        for component in ALPHABET_SHARE_CLASS_TICKERS
+        if share_scopes.get(component) == "class_specific"
+    ]
+    issuer_total_components = [
+        component
+        for component in ALPHABET_SHARE_CLASS_TICKERS
+        if share_scopes.get(component) == "issuer_total"
+    ]
+    history_source = "unavailable"
+    if len(class_specific_components) == len(ALPHABET_SHARE_CLASS_TICKERS):
+        component_values = pd.DataFrame({
+            component: aligned_closes[component] * aligned_shares[component]
+            for component in ALPHABET_SHARE_CLASS_TICKERS
+        })
+        market_caps = component_values.sum(axis=1, min_count=len(ALPHABET_SHARE_CLASS_TICKERS))
+        history_source = "yfinance_share_class_history"
+    elif class_specific_components and issuer_total_components:
+        known_component = class_specific_components[0]
+        missing_component = next(
+            component
+            for component in ALPHABET_SHARE_CLASS_TICKERS
+            if component != known_component
+        )
+        total_shares = aligned_shares[issuer_total_components[0]]
+        missing_shares = total_shares - aligned_shares[known_component]
+        valid = (
+            aligned_closes[known_component].notna()
+            & aligned_closes[missing_component].notna()
+            & aligned_shares[known_component].notna()
+            & total_shares.notna()
+            & (missing_shares >= 0)
+        )
+        market_caps.loc[valid] = (
+            aligned_closes[known_component].loc[valid] * aligned_shares[known_component].loc[valid]
+            + aligned_closes[missing_component].loc[valid] * missing_shares.loc[valid]
+        )
+        history_source = "yfinance_share_class_with_sec_issuer_history"
+    elif issuer_total_components:
+        issuer_total_shares = aligned_shares[issuer_total_components[0]]
+        selected_close = _asof_market_cap_values(
+            target_dates,
+            price_frame[["Date", "Close"]],
+            "Close",
+        )
+        market_caps = selected_close * issuer_total_shares
+        history_source = "sec_issuer_total_history"
+    elif class_specific_components:
+        component = class_specific_components[0]
+        market_caps = aligned_closes[component] * aligned_shares[component]
+        history_source = "yfinance_share_class_history_incomplete"
+
+    result = pd.DataFrame({"Date": target_dates["Date"], "MarketCap": market_caps})
+    result = result.sort_values("Date").reset_index(drop=True)
+    if longbridge_snapshot is not None and not result.empty:
+        had_historical_value = result["MarketCap"].notna().any()
+        latest_date = result["Date"].max().normalize()
+        latest_mask = result["Date"].dt.normalize() == latest_date
+        latest_history_value = _positive_number(result.loc[latest_mask, "MarketCap"].iloc[-1])
+        implied_shares = _positive_number(longbridge_snapshot.get("implied_shares"))
+        latest_close = _positive_number(price_frame["Close"].iloc[-1])
+        longbridge_value = latest_close * implied_shares if latest_close and implied_shares else None
+        if latest_history_value and longbridge_value:
+            delta_percent = ((latest_history_value / longbridge_value) - 1.0) * 100.0
+            result.attrs["market_cap_cross_check"] = {
+                "status": _cross_check_status(delta_percent),
+                "delta_percent": round(delta_percent, 4),
+                "yfinance_market_cap": round(latest_history_value, 2),
+                "longbridge_market_cap": round(longbridge_value, 2),
+            }
+        if longbridge_value:
+            result.loc[latest_mask, "MarketCap"] = longbridge_value
+            history_source = (
+                "longbridge_current"
+                if not had_historical_value
+                else f"longbridge_current_with_{history_source}"
+            )
+    result.attrs["market_cap_source"] = history_source
+    result.attrs.setdefault("market_cap_cross_check", None)
+    return result
+
+
 def fetch_longbridge_market_cap_snapshot(ticker: str) -> dict[str, Any] | None:
     """Return Longbridge's current market cap and its same-timestamp implied shares."""
     symbol = normalize_longbridge_symbol(ticker)
@@ -607,18 +845,30 @@ def fetch_sec_reported_shares(ticker: str) -> pd.DataFrame:
     if cik is None:
         return normalize_reported_shares(None)
     payload = _sec_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json")
-    observations = (
-        payload.get("facts", {})
-        .get("dei", {})
-        .get("EntityCommonStockSharesOutstanding", {})
-        .get("units", {})
-        .get("shares", [])
-    )
-    return normalize_reported_shares(pd.DataFrame([
-        {"Date": item.get("filed"), "Shares": item.get("val")}
-        for item in observations
-        if item.get("filed") and item.get("val")
-    ]))
+    facts = payload.get("facts", {})
+    observations: list[dict[str, object]] = []
+    for namespace, concept in (
+        ("dei", "EntityCommonStockSharesOutstanding"),
+        ("us-gaap", "CommonStockSharesOutstanding"),
+    ):
+        candidate = (
+            facts.get(namespace, {})
+            .get(concept, {})
+            .get("units", {})
+            .get("shares", [])
+        )
+        if isinstance(candidate, list) and candidate:
+            observations = [
+                {"Date": item.get("filed"), "Shares": item.get("val")}
+                for item in candidate
+                if isinstance(item, dict) and item.get("filed") and item.get("val")
+            ]
+            if observations:
+                break
+    result = normalize_reported_shares(pd.DataFrame(observations))
+    if not result.empty:
+        result.attrs["reported_shares_scope"] = "issuer_total"
+    return result
 
 
 def fetch_sec_fund_net_assets(ticker: str) -> pd.DataFrame:
@@ -738,6 +988,23 @@ def build_market_cap_history(
             prices,
             split_events,
             embedded_events_are_authoritative=split_events_are_authoritative,
+        )
+    normalized_ticker = normalize_ticker(ticker)
+    if normalized_ticker in ALPHABET_SHARE_CLASS_TICKER_SET:
+        latest_price_date = price_frame["Date"].max()
+        longbridge_snapshot = (
+            fetch_longbridge_market_cap_snapshot(ticker)
+            if _is_recent_market_cap_window(latest_price_date)
+            else None
+        )
+        return _convert_market_cap_history_to_usd(
+            ticker,
+            _build_alphabet_market_cap_history(
+                ticker,
+                price_frame,
+                split_events,
+                longbridge_snapshot,
+            ),
         )
     shares = fetch_reported_shares(ticker, price_frame["Date"].min(), price_frame["Date"].max())
     reported_shares_attrs = shares.attrs.copy()
