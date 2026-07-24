@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.4
+Code version: v0.10.7
 """
 
 from __future__ import annotations
@@ -681,6 +681,217 @@ class ComparePageTests(unittest.TestCase):
         self.assertNotIn("Unable to load this workspace", html)
         refresh_mock.assert_called_once_with("000660.KS")
         self.assertIn('"2026-07-22 20:00"', html)
+
+    def test_cross_market_one_day_recovers_a_missing_shared_date_from_the_exact_source(self) -> None:
+        stale_kr_frame = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-12 20:00", "2026-07-13 02:30"],
+        )
+        restored_kr_frame = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-22 20:00", "2026-07-23 02:30"],
+        )
+        overnight_frames = {
+            "SKHY": ohlc_frame_for_dates(
+                "SKHY",
+                ["2026-07-22 20:00", "2026-07-23 19:55"],
+            ),
+            "DRAM": ohlc_frame_for_dates(
+                "DRAM",
+                ["2026-07-22 20:00", "2026-07-23 19:55"],
+            ),
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                **_kwargs: object,
+        ) -> pd.DataFrame:
+            del ticker, include_dividends, interval
+            return close_frame_for_ticker("DRAM", dates=["2026-07-22", "2026-07-23"])
+
+        with _write_intraday_stores({"000660.KS": stale_kr_frame}) as tempdir:
+            temp_root = Path(tempdir)
+
+            def _store_path(ticker: str, interval: str = "1m") -> Path:
+                del interval
+                return temp_root / f"{ticker}.parquet"
+
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
+                patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
+                patch("app.web.runtime.is_one_minute_store_fresh", return_value=False),
+                patch(
+                    "app.web.runtime.refresh_one_minute_store",
+                    side_effect=ValueError("The stale local cache could not be refreshed."),
+                ) as refresh_mock,
+                patch(
+                    "app.web.runtime.fetch_one_minute_history_for_trading_date",
+                    return_value=restored_kr_frame,
+                ) as exact_day_fetch_mock,
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_overnight_history",
+                    side_effect=lambda ticker, **_kwargs: overnight_frames[ticker],
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&period=1d&overnight=1"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        self.assertIn("Loaded on-demand 1-minute data for 000660.KS", html)
+        refresh_mock.assert_called_once_with("000660.KS")
+        self.assertEqual(exact_day_fetch_mock.call_args.args[0], "000660.KS")
+        self.assertEqual(str(exact_day_fetch_mock.call_args.args[1]), "2026-07-23")
+
+    def test_cross_market_one_day_reuses_stale_market_date_after_rate_limit(self) -> None:
+        stale_kr_frame = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-14 20:00", "2026-07-15 02:30"],
+        )
+        current_us_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-07-23 20:00", "2026-07-24 19:55"],
+            )
+            for ticker in ("SKHY", "DRAM")
+        }
+        stale_date_us_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-07-14 20:00", "2026-07-15 19:55"],
+            )
+            for ticker in ("SKHY", "DRAM")
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                **_kwargs: object,
+        ) -> pd.DataFrame:
+            del include_dividends
+            if interval == "1m":
+                self.assertEqual(ticker, "000660.KS")
+                return stale_kr_frame
+            return close_frame_for_ticker(
+                ticker,
+                dates=["2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-23"],
+            )
+
+        def _fetch_overnight(ticker: str, *, trading_date: object | None = None) -> pd.DataFrame:
+            if trading_date is None:
+                return current_us_frames[ticker]
+            self.assertEqual(str(trading_date), "2026-07-15")
+            return stale_date_us_frames[ticker]
+
+        with _write_intraday_stores({"000660.KS": stale_kr_frame}) as tempdir:
+            temp_root = Path(tempdir)
+
+            def _store_path(ticker: str, interval: str = "1m") -> Path:
+                del interval
+                return temp_root / f"{ticker}.parquet"
+
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
+                patch("app.web.runtime.has_compare_overnight_market_data_source", return_value=True),
+                patch("app.web.runtime.is_one_minute_store_fresh", return_value=False),
+                patch(
+                    "app.web.runtime.refresh_one_minute_store",
+                    side_effect=ValueError("Yahoo minute history is rate limited."),
+                ) as refresh_mock,
+                patch(
+                    "app.web.runtime.fetch_one_minute_history_for_trading_date",
+                    side_effect=ValueError("Yahoo minute history is rate limited."),
+                ) as exact_day_fetch_mock,
+                patch(
+                    "app.web.runtime.fetch_compare_one_day_overnight_history",
+                    side_effect=_fetch_overnight,
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&period=1d&overnight=1"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        self.assertIn("Loaded on-demand 1-minute data for SKHY, DRAM", html)
+        refresh_mock.assert_called_once_with("000660.KS")
+        self.assertEqual(str(exact_day_fetch_mock.call_args.args[1]), "2026-07-23")
+
+    def test_cross_market_three_day_refreshes_only_open_market_data(self) -> None:
+        intraday_frames = {
+            "000660.KS": ohlc_frame_for_dates(
+                "000660.KS",
+                [
+                    "2026-07-20 20:00", "2026-07-21 02:30",
+                    "2026-07-21 20:00", "2026-07-22 02:30",
+                    "2026-07-22 20:00", "2026-07-23 02:30",
+                ],
+            ),
+            "SKHY": ohlc_frame_for_dates(
+                "SKHY",
+                [
+                    "2026-07-21 09:30", "2026-07-21 15:59",
+                    "2026-07-22 09:30", "2026-07-22 15:59",
+                    "2026-07-23 09:30", "2026-07-23 15:59",
+                ],
+            ),
+            "DRAM": ohlc_frame_for_dates(
+                "DRAM",
+                [
+                    "2026-07-21 09:30", "2026-07-21 15:59",
+                    "2026-07-22 09:30", "2026-07-22 15:59",
+                    "2026-07-23 09:30", "2026-07-23 15:59",
+                ],
+            ),
+        }
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                **_kwargs: object,
+        ) -> pd.DataFrame:
+            del include_dividends
+            if interval == "1m":
+                return intraday_frames[ticker]
+            return close_frame_for_ticker(ticker, dates=["2026-07-21", "2026-07-22", "2026-07-23"])
+
+        with _write_intraday_stores(intraday_frames) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+                patch.object(
+                    pd.Timestamp,
+                    "now",
+                    return_value=pd.Timestamp("2026-07-23 15:00", tz="America/New_York"),
+                ),
+                patch("app.web.runtime.refresh_one_minute_store") as refresh_live_mock,
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=SKHY&ticker=DRAM&period=3d"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        self.assertEqual([call.args[0] for call in refresh_live_mock.call_args_list], ["SKHY", "DRAM"])
 
     def test_compare_page_exact_one_day_uses_single_trading_date_picker(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:

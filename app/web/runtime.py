@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.36.3
+Code version: v0.36.7
 """
 
 from __future__ import annotations
@@ -3668,12 +3668,95 @@ def build_web_runtime() -> WebRuntime:
                                     for dataset in loaded_intraday_datasets
                                 ]
                                 common_end_date = min(dataset["Date"].max() for dataset in intraday_datasets)
-                                aligned_datasets = slice_intraday_datasets_for_compare_period(
-                                    intraday_datasets,
-                                    period,
-                                    common_end_date,
-                                    validated_tickers,
-                                )
+                                try:
+                                    aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                        intraday_datasets,
+                                        period,
+                                        common_end_date,
+                                        validated_tickers,
+                                    )
+                                except ValueError as alignment_error:
+                                    fallback_trading_days: list[object] = []
+                                    preferred_fallback_date = pd.to_datetime(
+                                        date_constraints.max_date,
+                                        errors="coerce",
+                                    )
+                                    if not pd.isna(preferred_fallback_date):
+                                        fallback_trading_days.append(preferred_fallback_date.date())
+
+                                    latest_local_market_dates: list[object] = []
+                                    for ticker, dataset in zip(validated_tickers, intraday_datasets):
+                                        available_dates = {
+                                            market_trading_date_for_timestamp(value, ticker)
+                                            for value in dataset["Date"]
+                                        }
+                                        if available_dates:
+                                            latest_local_market_dates.append(max(available_dates))
+                                    if latest_local_market_dates:
+                                        stale_market_fallback_date = min(latest_local_market_dates)
+                                        if stale_market_fallback_date not in fallback_trading_days:
+                                            fallback_trading_days.append(stale_market_fallback_date)
+
+                                    recovered_alignment = False
+                                    for fallback_trading_day in fallback_trading_days:
+                                        restored_tickers: list[str] = []
+                                        restored_intraday_datasets = intraday_datasets.copy()
+                                        restore_failed = False
+                                        for index, (ticker, dataset) in enumerate(
+                                                zip(validated_tickers, intraday_datasets)
+                                        ):
+                                            available_trading_days = {
+                                                market_trading_date_for_timestamp(value, ticker)
+                                                for value in dataset["Date"]
+                                            }
+                                            if fallback_trading_day in available_trading_days:
+                                                continue
+                                            try:
+                                                restored_intraday_datasets[index] = load_compare_one_day_intraday_dataset(
+                                                    ticker,
+                                                    include_extended_hours_flag=include_extended_hours,
+                                                    include_overnight_flag=include_overnight,
+                                                    trading_date=fallback_trading_day,
+                                                )
+                                                restored_tickers.append(ticker)
+                                            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                                                LOGGER.info(
+                                                    "Unable to restore the shared one-day comparison date for %s: %s",
+                                                    ticker,
+                                                    exc,
+                                                )
+                                                restore_failed = True
+                                                break
+                                        if restore_failed or not restored_tickers:
+                                            continue
+
+                                        try:
+                                            common_end_date = min(
+                                                dataset["Date"].max()
+                                                for dataset in restored_intraday_datasets
+                                            )
+                                            aligned_datasets = slice_intraday_datasets_for_compare_period(
+                                                restored_intraday_datasets,
+                                                period,
+                                                common_end_date,
+                                                validated_tickers,
+                                            )
+                                        except ValueError:
+                                            continue
+
+                                        restored_preview = ", ".join(restored_tickers)
+                                        restore_notice = (
+                                            f"Loaded on-demand 1-minute data for {restored_preview} to restore "
+                                            "the shared one-day market date."
+                                        )
+                                        if notice is None:
+                                            notice = restore_notice
+                                        else:
+                                            notice += f" {restore_notice}"
+                                        recovered_alignment = True
+                                        break
+                                    if not recovered_alignment:
+                                        raise alignment_error
                                 reference_timestamp = pd.Timestamp(aligned_datasets[0]["Date"].max())
                                 if reference_timestamp.tzinfo is None:
                                     reference_timestamp = reference_timestamp.tz_localize("America/New_York")
@@ -3691,11 +3774,16 @@ def build_web_runtime() -> WebRuntime:
                                     interval="1m",
                                     dividend_mode="price",
                                 )
-                                if period in {"3d", "1w"} and should_append_relative_live:
+                                if (
+                                        period in {"3d", "1w"}
+                                        and is_market_regular_session_active_for_ticker(ticker)
+                                ):
                                     intraday_dataset = append_live_compare_intraday_dataset(
                                         ticker,
                                         intraday_dataset,
-                                        live_trading_date=live_session_date,
+                                        live_trading_date=pd.Timestamp.now(
+                                            tz=market_timezone_for_ticker(ticker)
+                                        ).date(),
                                         include_extended_hours_flag=include_extended_hours,
                                         force_refresh=True,
                                     )[0]

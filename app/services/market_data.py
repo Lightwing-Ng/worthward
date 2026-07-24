@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.20.0
+Code version: v0.20.1
 """
 
 from __future__ import annotations
@@ -512,7 +512,7 @@ def _download_one_minute_history_with_fallback(ticker: str) -> pd.DataFrame:
                 break
 
     longbridge_error: Exception | None = None
-    if _load_longbridge_market_settings() is not None:
+    if _supports_longbridge_history_fallback(normalized_ticker) and _load_longbridge_market_settings() is not None:
         for attempt in range(DOWNLOAD_RETRY_ATTEMPTS):
             delay = (
                 DOWNLOAD_RETRY_DELAYS_SECONDS[attempt]
@@ -1764,7 +1764,11 @@ def refresh_one_minute_store(ticker: str) -> OneMinuteRefreshResult:
                 break
 
     longbridge_error: Exception | None = None
-    settings = _load_longbridge_market_settings()
+    settings = (
+        _load_longbridge_market_settings()
+        if _supports_longbridge_history_fallback(normalized_ticker)
+        else None
+    )
     if settings is not None:
         try:
             refresh_longbridge_one_minute_store(normalized_ticker, settings)

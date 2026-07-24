@@ -1,4 +1,4 @@
-/* Code version: v0.9.3 */
+/* Code version: v0.9.4 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -244,6 +244,9 @@
 		const rawDates = Array.isArray(series[0].raw_dates) ? series[0].raw_dates : [];
 		const pageParams = new URLSearchParams(window.location.search);
 		const selectedPeriod = pageParams.get("period")?.trim().toLowerCase() || "";
+		const isDateOnlyMarketCapRange = isMarketCapView
+			&& selectedPeriod !== "1d"
+			&& selectedPeriod !== "3d";
 		const selectedTradingDateParam = pageParams.get("trading_date")
 			|| pageParams.get("exact_trading_date")
 			|| pageParams.get("from")
@@ -1131,11 +1134,18 @@
 				: `${dateParts.day}/${dateParts.monthIndex + 1}/${dateParts.year}`
 		);
 
-		const formatChartDateLines = (dateParts) => (
-			typeof formatFullDateLines === "function"
-				? formatFullDateLines(dateParts, { allowWrap: true })
-				: [`${dateParts.day}/${dateParts.monthIndex + 1}`, `${dateParts.year}`]
-		);
+		const formatChartDateLines = (dateParts) => {
+			const displayDateParts = isDateOnlyMarketCapRange
+				? {
+					year: dateParts.year,
+					monthIndex: dateParts.monthIndex,
+					day: dateParts.day,
+				}
+				: dateParts;
+			return typeof formatFullDateLines === "function"
+				? formatFullDateLines(displayDateParts, { allowWrap: true })
+				: [`${displayDateParts.day}/${displayDateParts.monthIndex + 1}`, `${displayDateParts.year}`];
+		};
 
 		const buildTickIndexSet = (count, plotWidth) => (
 			typeof chartAxis.buildTickIndexSet === "function"

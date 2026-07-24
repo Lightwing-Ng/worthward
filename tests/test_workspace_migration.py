@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.3.5
+Code version: v1.3.8
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from tests.factories.market import FakeStrategy, backtest_result, fetch_history_
 ROOT = Path(__file__).resolve().parents[1]
 APP_JS = ROOT / "app/web/static/assets/js/app.js"
 SETTINGS_JS = ROOT / "app/web/static/assets/js/settings.js"
+PRICE_COMPARE_JS = ROOT / "app/web/static/assets/js/price-compare.js"
 SHELL_CSS = ROOT / "app/web/static/assets/css/layout/shell.css"
 RESPONSIVE_CSS = ROOT / "app/web/static/assets/css/utilities/responsive.css"
 WORKSPACE_CSS = ROOT / "app/web/static/assets/css/views/workspace.css"
@@ -95,6 +96,37 @@ class OptimisticNavigationTests(unittest.TestCase):
         )
         self.assertIn("backdrop-filter: var(--glass-mask-blur)", source)
         self.assertIn('data-workspace-mask="trade-metric"', source)
+
+    def test_price_range_modal_reuses_the_ticker_fetch_spinner(self) -> None:
+        source = APP_JS.read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"suggestion-loading-spinner workspace-modal-icon"',
+            source,
+        )
+        price_loading_dialog = source.split("const showImmediateRangeLoadingDialog = () => {", 1)[1].split(
+            "const showCompareOverlay", 1
+        )[0]
+        self.assertIn('title: "Updating price history"', price_loading_dialog)
+        self.assertIn("loadingSpinner: true", price_loading_dialog)
+        self.assertNotIn("showImmediateRangeLoadingDialog();\n            refreshSharedSelectField", source)
+        self.assertIn(
+            'if (["market-caps", "prices"].includes(state.currentView)) {',
+            source,
+        )
+        can_auto_submit = source.split("const canAutoSubmit = () => {", 1)[1].split(
+            "const scheduleAutoSubmit", 1
+        )[0]
+        self.assertNotIn("!hasInitialResult", can_auto_submit)
+
+    def test_empty_price_history_does_not_request_live_data_without_tickers(self) -> None:
+        source = PRICE_COMPARE_JS.read_text(encoding="utf-8")
+        refresh_live_prices = source.split("const refreshLivePrices = async () => {", 1)[1].split(
+            "bootstrap.initPriceCompareWorkspace", 1
+        )[0]
+
+        self.assertIn("if (tickers.length < 2) return;", refresh_live_prices)
+        self.assertIn("tickers.forEach((ticker) => params.append(\"ticker\", ticker));", refresh_live_prices)
 
 
 class WorkspaceMigrationTests(unittest.TestCase):

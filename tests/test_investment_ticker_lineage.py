@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.4.0
+Code version: v0.4.1
 """
 
 from __future__ import annotations
@@ -29,6 +29,8 @@ class InvestmentTickerLineageTests(unittest.TestCase):
         self.assertEqual(normalize_ticker("0700.HK"), "700.HK")
         self.assertEqual(normalize_ticker("600519.SH"), "600519.SH")
         self.assertEqual(normalize_ticker("000001.SZ"), "000001.SZ")
+        self.assertEqual(normalize_ticker("660.KS"), "000660.KS")
+        self.assertEqual(normalize_ticker("000660.KS"), "000660.KS")
 
     def test_sk_hynix_transition_prefers_requested_symbol_then_compatible_alias(self) -> None:
         self.assertEqual(market_ticker_store_aliases("SKHYV"), ["SKHYV", "SKHY"])

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.56.7`
+Documentation version: `v2.56.9`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -11,7 +11,7 @@ Documentation version: `v2.56.7`
 ## What the app does
 
 - Compare up to 5 tickers over the same window on a normalized return basis
-- Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time
+- Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time. Direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it.
 - Build weighted portfolios with custom allocations
 - Run single-ticker backtests across the built-in strategy library
 - Switch between relative periods and exact date ranges
@@ -100,7 +100,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Return comparison`
   Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
 - `Market cap comparison`
-  Compare up to 10 historical market-cap series using cached prices and point-in-time yfinance shares, with SEC company-facts and Form N-PORT fallbacks. Non-US quote currencies use same-date daily Yahoo FX closes for USD conversion. Longbridge is optional and can cross-check or replace only the latest trading-day point.
+  Compare up to 10 historical market-cap series using cached prices and point-in-time yfinance shares, with SEC company-facts, filing-level XBRL, and Form N-PORT fallbacks. Non-US quote currencies use same-date daily Yahoo FX closes for USD conversion. Longbridge is optional and can cross-check or replace only the latest trading-day point.
 - `Price performance`
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`

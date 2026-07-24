@@ -1,4 +1,4 @@
-/* Code version: v0.22.8 */
+/* Code version: v0.22.9 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4116,8 +4116,10 @@
         if (!workspaceModalOverlay) return;
         if (workspaceModalOverlayTitle && options.title) workspaceModalOverlayTitle.textContent = options.title;
         if (workspaceModalOverlayCopy && options.copy) workspaceModalOverlayCopy.textContent = options.copy;
-        if (workspaceModalOverlayIcon && options.iconClass) {
-            workspaceModalOverlayIcon.className = `icon ${options.iconClass} workspace-modal-icon`;
+        if (workspaceModalOverlayIcon) {
+            workspaceModalOverlayIcon.className = options.loadingSpinner
+                ? "suggestion-loading-spinner workspace-modal-icon"
+                : `icon ${options.iconClass || "icon-overlay-refresh"} workspace-modal-icon`;
         }
         workspaceModalOverlay.hidden = false;
     };
@@ -4127,7 +4129,7 @@
             showWorkspaceModal({
                 title: "Updating price history",
                 copy: "Loading the selected New York market-time range while keeping the current chart context visible.",
-                iconClass: "icon-hourglass",
+                loadingSpinner: true,
             });
             return;
         }
@@ -5656,7 +5658,6 @@
 
     const canAutoSubmit = () => {
         if (!form) return false;
-        if (!hasInitialResult && !(isBacktestView || isDcaView)) return false;
         const values = getFilledTickers();
         if (values.length < minimumRequiredTickers) return false;
         if (new Set(values).size !== values.length) return false;
@@ -6792,7 +6793,6 @@
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
-            showImmediateRangeLoadingDialog();
             syncDateConstraints();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("range-controls");
             scheduleAutoSubmit();
@@ -6829,7 +6829,6 @@
     form?.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement && target.id === "period") {
-            showImmediateRangeLoadingDialog();
             refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
             syncExactDateModeControls();
             syncOneDayExtendedHoursSwitch();
@@ -7707,7 +7706,7 @@
                     iconClass: "icon-hourglass",
                 });
             } else if (["tickers", "market-caps", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
-                if (state.currentView === "market-caps") {
+                if (["market-caps", "prices"].includes(state.currentView)) {
                     showImmediateRangeLoadingDialog();
                 } else {
                     showWorkspaceModal({

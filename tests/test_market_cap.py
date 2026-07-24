@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.10.1
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -49,6 +49,47 @@ class _TickerWithoutShares:
 
 
 class MarketCapTests(unittest.TestCase):
+    def test_reported_shares_uses_direct_yahoo_timeseries_when_yfinance_is_rate_limited(self) -> None:
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                del exc_type, exc_value, traceback
+                return False
+
+            def read(self):
+                return b'''{
+                    "timeseries": {
+                        "result": [{
+                            "timestamp": [1767225600, 1767398400],
+                            "shares_out": [5969782550, 5969782550]
+                        }]
+                    }
+                }'''
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            isolated_path = Path(tempdir) / "shares" / "005930.KS.parquet"
+            with (
+                patch("app.services.market_cap.shares_store_path_for", return_value=isolated_path),
+                patch(
+                    "app.services.market_cap.yf.Ticker",
+                    side_effect=market_cap.yf.exceptions.YFRateLimitError(),
+                ),
+                patch("app.services.market_cap.open_scoped_network_url", return_value=_Response()) as open_mock,
+            ):
+                result = fetch_reported_shares(
+                    "005930.KS",
+                    pd.Timestamp("2026-01-01"),
+                    pd.Timestamp("2026-01-03"),
+                )
+
+        self.assertEqual(result["Shares"].tolist(), [5_969_782_550.0, 5_969_782_550.0])
+        self.assertEqual(result.attrs["reported_shares_source"], "yfinance_reported_shares")
+        request = open_mock.call_args.args[0]
+        self.assertIn("query1.finance.yahoo.com/ws/fundamentals-timeseries", request.full_url)
+        self.assertIn("symbol=005930.KS", request.full_url)
+
     def test_sec_json_uses_the_scoped_network_transport(self) -> None:
         class _Response:
             def __enter__(self):
@@ -68,6 +109,63 @@ class MarketCapTests(unittest.TestCase):
         request = open_mock.call_args.args[0]
         self.assertEqual(request.full_url, "https://data.sec.gov/example.json")
         self.assertEqual(request.get_header("User-agent"), market_cap.SEC_USER_AGENT)
+
+    def test_sec_reported_shares_reads_multi_class_filing_xbrl_when_company_facts_are_empty(self) -> None:
+        company_facts = {"facts": {"dei": {}, "us-gaap": {}}}
+        submissions = {
+            "filings": {
+                "recent": {
+                    "form": ["10-K"],
+                    "accessionNumber": ["0001326801-26-000001"],
+                    "primaryDocument": ["meta-20251231.htm"],
+                    "filingDate": ["2026-01-30"],
+                },
+            },
+        }
+        filing_xml = b'''<?xml version="1.0" encoding="UTF-8"?>
+        <xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
+              xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+              xmlns:dei="http://xbrl.org/2022-01-31/dei">
+          <xbrli:context id="class-a"><xbrli:entity><xbrli:identifier>1326801</xbrli:identifier>
+            <xbrli:segment><xbrldi:explicitMember dimension="class">class-a</xbrldi:explicitMember></xbrli:segment>
+          </xbrli:entity><xbrli:period><xbrli:instant>2026-01-23</xbrli:instant></xbrli:period></xbrli:context>
+          <xbrli:context id="class-b"><xbrli:entity><xbrli:identifier>1326801</xbrli:identifier>
+            <xbrli:segment><xbrldi:explicitMember dimension="class">class-b</xbrldi:explicitMember></xbrli:segment>
+          </xbrli:entity><xbrli:period><xbrli:instant>2026-01-23</xbrli:instant></xbrli:period></xbrli:context>
+          <dei:EntityCommonStockSharesOutstanding contextRef="class-a" unitRef="shares">2187177748</dei:EntityCommonStockSharesOutstanding>
+          <dei:EntityCommonStockSharesOutstanding contextRef="class-b" unitRef="shares">342377716</dei:EntityCommonStockSharesOutstanding>
+        </xbrl>'''
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                del exc_type, exc_value, traceback
+                return False
+
+            def read(self):
+                return filing_xml
+
+        with (
+            patch("app.services.market_cap._sec_ticker_cik", return_value=1326801),
+            patch(
+                "app.services.market_cap._sec_json",
+                side_effect=[company_facts, submissions],
+            ),
+            patch("app.services.market_cap.open_scoped_network_url", return_value=_Response()),
+        ):
+            result = market_cap.fetch_sec_reported_shares(
+                "META",
+                start=pd.Timestamp("2026-01-01"),
+                end=pd.Timestamp("2026-02-01"),
+            )
+
+        self.assertEqual(result.to_dict("records"), [{
+            "Date": pd.Timestamp("2026-01-30"),
+            "Shares": 2_529_555_464.0,
+        }])
+        self.assertEqual(result.attrs["reported_shares_scope"], "issuer_total")
 
     def test_non_us_market_cap_is_converted_with_each_day_usd_fx_close(self) -> None:
         prices = pd.DataFrame({

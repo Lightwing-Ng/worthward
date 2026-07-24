@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.11.1
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import time
 from typing import Any
+from urllib.parse import quote, urlencode
 from urllib.request import Request
 from xml.etree import ElementTree
 
@@ -843,7 +844,148 @@ def _sec_ticker_cik(ticker: str) -> int | None:
     return _SEC_TICKER_INDEX.get(normalize_ticker(ticker).removesuffix(".US"))
 
 
-def fetch_sec_reported_shares(ticker: str) -> pd.DataFrame:
+def _sec_filing_instance_name(cik: int, accession: str, primary_document: str | None = None) -> str | None:
+    """Return the XBRL instance file published with an SEC filing."""
+    document_name = str(primary_document or "").rsplit("/", maxsplit=1)[-1]
+    if "." in document_name:
+        document_stem = document_name.rsplit(".", maxsplit=1)[0]
+        return f"{document_stem}_htm.xml"
+    archive_accession = accession.replace("-", "")
+    payload = _sec_json(
+        f"https://www.sec.gov/Archives/edgar/data/{cik}/{archive_accession}/index.json"
+    )
+    names = [
+        str(item.get("name") or "")
+        for item in payload.get("directory", {}).get("item", [])
+        if isinstance(item, dict)
+    ]
+    return next(
+        (
+            name
+            for name in names
+            if name.lower().endswith("_htm.xml") or name.lower().endswith("-htm.xml")
+        ),
+        None,
+    )
+
+
+def _parse_sec_filing_share_observation(xml_payload: bytes, filed: object) -> dict[str, object] | None:
+    """Sum each class's cover-page shares from one SEC XBRL instance."""
+    try:
+        root = ElementTree.fromstring(xml_payload)
+    except ElementTree.ParseError:
+        return None
+
+    contexts = {
+        element.attrib.get("id"): element
+        for element in root.iter()
+        if element.tag.rsplit("}", 1)[-1] == "context" and element.attrib.get("id")
+    }
+    shares_by_instant: dict[pd.Timestamp, list[float]] = {}
+    for fact in root.iter():
+        if fact.tag.rsplit("}", 1)[-1] != "EntityCommonStockSharesOutstanding":
+            continue
+        if fact.attrib.get("unitRef") != "shares" or not fact.text:
+            continue
+        context = contexts.get(fact.attrib.get("contextRef"))
+        if context is None:
+            continue
+        instant_value = next(
+            (
+                element.text
+                for element in context.iter()
+                if element.tag.rsplit("}", 1)[-1] == "instant"
+            ),
+            None,
+        )
+        instant = to_naive_timestamp(instant_value)
+        if pd.isna(instant):
+            continue
+        try:
+            value = float(fact.text)
+            scale = int(fact.attrib.get("scale", "0"))
+        except (TypeError, ValueError):
+            continue
+        value *= 10 ** scale
+        if value > 0:
+            shares_by_instant.setdefault(instant, []).append(value)
+
+    if not shares_by_instant:
+        return None
+    latest_instant = max(shares_by_instant)
+    total_shares = sum(shares_by_instant[latest_instant])
+    if total_shares <= 0:
+        return None
+    return {"Date": filed, "Shares": total_shares}
+
+
+def _fetch_sec_filing_reported_shares(
+        ticker: str,
+        cik: int,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Read issuer shares from SEC filing instances when company facts omit classes."""
+    submissions = _sec_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
+    recent = submissions.get("filings", {}).get("recent", {})
+    candidates: list[tuple[pd.Timestamp, str, str, str]] = []
+    for index, (form, accession, filed) in enumerate(zip(
+            recent.get("form", []), recent.get("accessionNumber", []),
+            recent.get("filingDate", []), strict=False,
+    )):
+        if form not in {"10-Q", "10-K"}:
+            continue
+        filed_date = to_naive_timestamp(filed)
+        if pd.isna(filed_date):
+            continue
+        documents = recent.get("primaryDocument", [])
+        primary_document = documents[index] if index < len(documents) else ""
+        candidates.append((filed_date, str(accession), str(primary_document or ""), str(filed)))
+
+    end_date = to_naive_timestamp(end) if end is not None else None
+    start_date = to_naive_timestamp(start) if start is not None else None
+    candidates = [
+        candidate
+        for candidate in candidates
+        if end_date is None or candidate[0] <= end_date
+    ]
+    if start_date is not None:
+        prior = [candidate for candidate in candidates if candidate[0] < start_date]
+        in_range = [candidate for candidate in candidates if candidate[0] >= start_date]
+        candidates = ([max(prior)] if prior else []) + in_range
+
+    observations: list[dict[str, object]] = []
+    for _, accession, primary_document, filed in sorted(candidates):
+        try:
+            instance_name = _sec_filing_instance_name(cik, accession, primary_document)
+            if not instance_name:
+                continue
+            archive_accession = accession.replace("-", "")
+            request = Request(
+                f"https://www.sec.gov/Archives/edgar/data/{cik}/{archive_accession}/{instance_name}",
+                headers={"User-Agent": SEC_USER_AGENT},
+            )
+            with open_scoped_network_url(request, timeout=12) as response:
+                observation = _parse_sec_filing_share_observation(response.read(), filed)
+        except (OSError, ValueError, ElementTree.ParseError) as exc:
+            LOGGER.warning(
+                "Unable to read SEC filing shares for %s (%s): %s",
+                ticker,
+                accession,
+                exc,
+            )
+            continue
+        if observation is not None:
+            observations.append(observation)
+
+    return normalize_reported_shares(pd.DataFrame(observations))
+
+
+def fetch_sec_reported_shares(
+        ticker: str,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+) -> pd.DataFrame:
     """Return SEC-filed shares observations, dated when each filing became public."""
     cik = _sec_ticker_cik(ticker)
     if cik is None:
@@ -870,6 +1012,8 @@ def fetch_sec_reported_shares(ticker: str) -> pd.DataFrame:
             if observations:
                 break
     result = normalize_reported_shares(pd.DataFrame(observations))
+    if result.empty:
+        result = _fetch_sec_filing_reported_shares(ticker, cik, start=start, end=end)
     if not result.empty:
         result.attrs["reported_shares_scope"] = "issuer_total"
     return result
@@ -926,6 +1070,47 @@ def load_reported_shares(ticker: str) -> pd.DataFrame:
     return cached
 
 
+def fetch_yahoo_reported_shares_direct(
+        ticker: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Read Yahoo's public shares-out history when the yfinance host is unavailable."""
+    request_start = pd.Timestamp(start).tz_localize(None).normalize()
+    request_end = pd.Timestamp(end).tz_localize(None).normalize() + pd.Timedelta(days=2)
+    symbol = yahoo_quote_symbol(ticker)
+    query = urlencode({
+        "symbol": symbol,
+        "period1": int(request_start.tz_localize("UTC").timestamp()),
+        "period2": int(request_end.tz_localize("UTC").timestamp()),
+    })
+    request = Request(
+        "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/"
+        f"v1/finance/timeseries/{quote(symbol, safe='.-')}?{query}",
+        headers={"User-Agent": SEC_USER_AGENT},
+    )
+    with open_scoped_network_url(request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    rows: list[dict[str, object]] = []
+    results = payload.get("timeseries", {}).get("result", []) if isinstance(payload, dict) else []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        timestamps = result.get("timestamp", [])
+        shares = result.get("shares_out", [])
+        if not isinstance(timestamps, list) or not isinstance(shares, list):
+            continue
+        rows.extend(
+            {
+                "Date": pd.to_datetime(timestamp, unit="s", utc=True),
+                "Shares": share_count,
+            }
+            for timestamp, share_count in zip(timestamps, shares, strict=False)
+        )
+    return normalize_reported_shares(pd.DataFrame(rows))
+
+
 def fetch_reported_shares(ticker: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     """Refresh and merge Yahoo's reported shares without inventing missing observations."""
     cached = load_reported_shares(ticker)
@@ -951,7 +1136,13 @@ def fetch_reported_shares(ticker: str, start: pd.Timestamp, end: pd.Timestamp) -
 
     if refreshed.empty:
         try:
-            refreshed = fetch_sec_reported_shares(ticker)
+            refreshed = fetch_yahoo_reported_shares_direct(ticker, start=start, end=end)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Unable to use the direct Yahoo shares fallback for %s: %s", ticker, exc)
+
+    if refreshed.empty:
+        try:
+            refreshed = fetch_sec_reported_shares(ticker, start=start, end=end)
             refreshed_source = "sec_reported_shares"
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Unable to refresh SEC-reported shares for %s: %s", ticker, exc)

@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.4
+Code version: v0.18.5
 """
 
 from __future__ import annotations
@@ -851,6 +851,40 @@ class MarketDataFreshnessTests(unittest.TestCase):
         pd.testing.assert_frame_equal(result, longbridge_history)
         self.assertEqual(yfinance_mock.call_count, 2)
         longbridge_mock.assert_called_once_with("AAPL")
+
+    def test_intraday_history_skips_longbridge_for_unsupported_korean_ticker(self) -> None:
+        rate_limit_error = YfinanceDownloadError("Yahoo requests are temporarily paused after a rate limit response.")
+
+        with (
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                side_effect=rate_limit_error,
+            ) as yfinance_mock,
+            patch("app.services.market_data._load_longbridge_market_settings") as settings_mock,
+            patch("app.services.market_data._download_one_minute_history_with_longbridge") as longbridge_mock,
+        ):
+            with self.assertRaisesRegex(ValueError, "Unable to download 1-minute market data"):
+                download_full_history("000660.KS", interval="1m")
+
+        self.assertEqual(yfinance_mock.call_count, 1)
+        settings_mock.assert_not_called()
+        longbridge_mock.assert_not_called()
+
+        with (
+            patch("app.services.market_data.has_recent_one_minute_store", return_value=True),
+            patch(
+                "app.services.market_data._download_recent_one_minute_history_with_yfinance",
+                side_effect=rate_limit_error,
+            ) as refresh_yfinance_mock,
+            patch("app.services.market_data._load_longbridge_market_settings") as refresh_settings_mock,
+            patch("app.services.market_data.refresh_longbridge_one_minute_store") as refresh_longbridge_mock,
+        ):
+            with self.assertRaisesRegex(ValueError, "Unable to refresh 1-minute market data"):
+                refresh_one_minute_store("000660.KS")
+
+        refresh_yfinance_mock.assert_called_once_with("000660.KS", days=7)
+        refresh_settings_mock.assert_not_called()
+        refresh_longbridge_mock.assert_not_called()
 
     def test_refresh_one_minute_store_uses_yfinance_before_configured_longbridge(self) -> None:
         yfinance_history = market_frame("QQQ", intraday=True)

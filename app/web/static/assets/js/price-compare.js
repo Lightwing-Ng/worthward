@@ -1,4 +1,4 @@
-/* Code version: v0.15.4 */
+/* Code version: v0.15.5 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const state = window.ANTIGRAVITY_APP;
@@ -1039,8 +1039,12 @@
 		if (rangeMode === "exact" && period !== "1d") return;
 		const selectedTradingDate = pageParams.get("trading_date") || pageParams.get("exact_trading_date") || "";
 		if (rangeMode === "exact" && selectedTradingDate !== formatLocalIsoDate()) return;
+		const tickers = (state.chart?.series || [])
+			.map((item) => String(item?.ticker || "").trim())
+			.filter(Boolean);
+		if (tickers.length < 2) return;
 		const params = new URLSearchParams();
-		(state.chart?.series || []).forEach((item) => params.append("ticker", item.ticker));
+		tickers.forEach((ticker) => params.append("ticker", ticker));
 		params.set("period", period);
 		params.set("live_date", formatLocalIsoDate());
 		if (rangeMode === "exact") params.set("axis_date", state.chart?.tradingDate || pageParams.get("trading_date") || "");
