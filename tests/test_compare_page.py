@@ -351,6 +351,8 @@ class ComparePageTests(unittest.TestCase):
         self.assertIn('value="AAPL"', html)
         self.assertIn("/api/market-store/logos/QQQ.png", html)
         self.assertIn("/api/market-store/logos/AAPL.png", html)
+        self.assertIn('class="ticker-input-logo" alt="QQQ logo" src="/api/market-store/logos/QQQ.png"', html)
+        self.assertIn('class="ticker-input-logo" alt="AAPL logo" src="/api/market-store/logos/AAPL.png"', html)
         self.assertIn("QQQ Holdings", html)
         self.assertIn("AAPL Holdings", html)
         self.assertIn('data-price-only-field', html)

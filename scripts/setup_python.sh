@@ -17,7 +17,7 @@ fi
 "$PYTHON_BIN" - <<'PY'
 import sys
 
-if sys.version_info[:2] != (3, 13):
+if sys.version_info[:2] < (3, 13):
     raise SystemExit(
         f"Expected Python 3.13, but got {sys.version_info.major}.{sys.version_info.minor}."
     )

@@ -1,4 +1,4 @@
-/* Code version: v0.22.6 */
+/* Code version: v0.22.8 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -3749,7 +3749,9 @@
         input.addEventListener("blur", () => {
             window.setTimeout(closePanel, 120);
             if (input.dataset.composing === "1") return;
-            void validateTickerExistence(input, {preferFresh: true});
+            void validateTickerExistence(input, {preferFresh: true}).then((isKnown) => {
+                if (isKnown) finalizeTickerLoad("ticker-change");
+            });
         });
         input.addEventListener("keydown", (event) => {
             if (event.isComposing || input.dataset.composing === "1" || event.keyCode === 229) return;
@@ -4261,6 +4263,13 @@
         dispatchPortfolioPreviewUpdate();
         input?.focus();
     };
+
+    // Bind this control before the optional workspace enhancements so a
+    // recoverable enhancement failure does not disable ticker entry.
+    $("#add_ticker")?.addEventListener("click", () => {
+        if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
+        addTickerField();
+    });
 
     const compactTickerInputs = () => {
         const values = getFilledTickers();
@@ -6738,10 +6747,6 @@
         scheduleSegmentedControlLayoutSync();
     });
 
-    $("#add_ticker")?.addEventListener("click", () => {
-        if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
-        addTickerField();
-    });
     const handleRangeModeChange = (input) => {
         const nextRangeMode = input.value;
         const previousRangeMode = lastRangeMode;

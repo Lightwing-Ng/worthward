@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -49,6 +49,26 @@ class _TickerWithoutShares:
 
 
 class MarketCapTests(unittest.TestCase):
+    def test_sec_json_uses_the_scoped_network_transport(self) -> None:
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                del exc_type, exc_value, traceback
+                return False
+
+            def read(self):
+                return b'{"ok": true}'
+
+        with patch("app.services.market_cap.open_scoped_network_url", return_value=_Response()) as open_mock:
+            result = market_cap._sec_json("https://data.sec.gov/example.json")
+
+        self.assertEqual(result, {"ok": True})
+        request = open_mock.call_args.args[0]
+        self.assertEqual(request.full_url, "https://data.sec.gov/example.json")
+        self.assertEqual(request.get_header("User-agent"), market_cap.SEC_USER_AGENT)
+
     def test_non_us_market_cap_is_converted_with_each_day_usd_fx_close(self) -> None:
         prices = pd.DataFrame({
             "Date": pd.to_datetime(["2026-07-13 04:00", "2026-07-14 04:00"], utc=True),

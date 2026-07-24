@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.11.0
+Code version: v0.11.1
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import time
 from typing import Any
+from urllib.request import Request
 from xml.etree import ElementTree
 
 import pandas as pd
@@ -23,7 +24,10 @@ from app.infrastructure.broker_market_data import (
     fetch_longbridge_market_cap_snapshot as fetch_longbridge_market_cap_snapshot_from_provider,
     normalize_longbridge_symbol,
 )
-from app.infrastructure.runtime_network import get_yfinance_session
+from app.infrastructure.runtime_network import (
+    get_yfinance_session,
+    open_scoped_network_url,
+)
 from app.infrastructure.storage import (
     history_store_path_for,
     market_store_file_lock,
@@ -822,9 +826,9 @@ def adjust_reported_shares_to_price_basis(
 
 
 def _sec_json(url: str) -> Any:
-    response = get_yfinance_session().get(url, headers={"User-Agent": SEC_USER_AGENT}, timeout=12)
-    response.raise_for_status()
-    return json.loads(response.content)
+    request = Request(url, headers={"User-Agent": SEC_USER_AGENT})
+    with open_scoped_network_url(request, timeout=12) as response:
+        return json.loads(response.read())
 
 
 def _sec_ticker_cik(ticker: str) -> int | None:
