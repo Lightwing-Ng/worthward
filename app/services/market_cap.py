@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.6.1
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pandas as pd
 import yfinance as yf
 
 from app.core.broker_settings import load_broker_settings
-from app.core.config import MARKET_STORE_DIR
+from app.core.config import BASE_CURRENCY, BASE_TIMEZONE, MARKET_STORE_DIR
 from app.infrastructure.broker_market_data import (
     fetch_longbridge_market_cap_snapshot as fetch_longbridge_market_cap_snapshot_from_provider,
     normalize_longbridge_symbol,
@@ -28,12 +28,15 @@ from app.infrastructure.storage import market_store_file_lock, normalize_ticker,
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.models.schemas import SeriesPayload
 from app.services.presentation import format_display_date, format_display_datetime
+from app.services.market_data import infer_ticker_market
 
 LOGGER = logging.getLogger(__name__)
 SHARES_STORE_DIR = MARKET_STORE_DIR / "fundamentals" / "shares"
 SPLITS_STORE_DIR = MARKET_STORE_DIR / "fundamentals" / "splits"
+FX_STORE_DIR = MARKET_STORE_DIR / "fundamentals" / "fx"
 SHARES_CACHE_TTL_SECONDS = 24 * 60 * 60
 SPLITS_CACHE_TTL_SECONDS = 24 * 60 * 60
+FX_CACHE_TTL_SECONDS = 24 * 60 * 60
 REPORTED_SHARES_SOURCE_ATTR = "reported_shares_source"
 CACHED_REPORTED_SHARES_SOURCE = "cached_reported_shares"
 REPORTED_SHARES_SOURCE_TOKENS = (
@@ -54,6 +57,82 @@ SHARE_SPLIT_FACTOR_CANDIDATES = tuple(sorted({
     *(1.0 / factor for factor in COMMON_SHARE_SPLIT_FACTORS),
 }))
 SHARE_SPLIT_MATCH_TOLERANCE = math.log(1.03)
+MARKET_CAP_CURRENCY_ATTR = "market_cap_currency"
+MARKET_CAP_ORIGINAL_CURRENCY_ATTR = "market_cap_original_currency"
+MARKET_CAP_FX_SOURCE_ATTR = "market_cap_fx_source"
+MARKET_CAP_FX_PAIR_ATTR = "market_cap_fx_pair"
+FX_SOURCE = "yahoo_fx_daily_close"
+
+# Yahoo publishes the major currencies either as a local-currency-per-USD
+# quote (for example HKD=X) or as a USD-per-local-currency pair (for example
+# EURUSD=X). The orientation is explicit so no rate is guessed from its size.
+FX_RATE_SPECS: dict[str, tuple[str, str]] = {
+    "ARS": ("ARS=X", "local_per_usd"),
+    "AUD": ("AUDUSD=X", "usd_per_local"),
+    "BRL": ("BRL=X", "local_per_usd"),
+    "CAD": ("CAD=X", "local_per_usd"),
+    "CHF": ("CHF=X", "local_per_usd"),
+    "CNY": ("CNY=X", "local_per_usd"),
+    "DKK": ("DKK=X", "local_per_usd"),
+    "EUR": ("EURUSD=X", "usd_per_local"),
+    "GBP": ("GBPUSD=X", "usd_per_local"),
+    "HKD": ("HKD=X", "local_per_usd"),
+    "IDR": ("IDR=X", "local_per_usd"),
+    "ILS": ("ILS=X", "local_per_usd"),
+    "INR": ("INR=X", "local_per_usd"),
+    "JPY": ("JPY=X", "local_per_usd"),
+    "KRW": ("KRW=X", "local_per_usd"),
+    "MXN": ("MXN=X", "local_per_usd"),
+    "MYR": ("MYR=X", "local_per_usd"),
+    "NOK": ("NOK=X", "local_per_usd"),
+    "NZD": ("NZDUSD=X", "usd_per_local"),
+    "PLN": ("PLN=X", "local_per_usd"),
+    "QAR": ("QAR=X", "local_per_usd"),
+    "SAR": ("SAR=X", "local_per_usd"),
+    "SEK": ("SEK=X", "local_per_usd"),
+    "SGD": ("SGD=X", "local_per_usd"),
+    "THB": ("THB=X", "local_per_usd"),
+    "TRY": ("TRY=X", "local_per_usd"),
+    "TWD": ("TWD=X", "local_per_usd"),
+    "ZAR": ("ZAR=X", "local_per_usd"),
+}
+MARKET_CURRENCIES = {
+    "US": "USD",
+    "HK": "HKD",
+    "KR": "KRW",
+    "JP": "JPY",
+    "CN": "CNY",
+    "SG": "SGD",
+    "UK": "GBP",
+    "AU": "AUD",
+    "CA": "CAD",
+    "EU": "EUR",
+    "FI": "EUR",
+    "IN": "INR",
+    "TW": "TWD",
+    "MY": "MYR",
+    "TH": "THB",
+    "ID": "IDR",
+    "NZ": "NZD",
+    "BR": "BRL",
+    "IL": "ILS",
+    "SA": "SAR",
+    "ZA": "ZAR",
+    "QA": "QAR",
+    # Keep a regional fallback for future LATAM suffixes; concrete suffixes
+    # below override it when their currencies differ.
+    "LATAM": "MXN",
+}
+MARKET_SUFFIX_CURRENCIES = {
+    ".BA": "ARS",
+    ".MX": "MXN",
+    ".SW": "CHF",
+    ".CO": "DKK",
+    ".OL": "NOK",
+    ".ST": "SEK",
+    ".IS": "TRY",
+    ".WA": "PLN",
+}
 
 
 def to_naive_timestamp(value: object) -> pd.Timestamp:
@@ -61,6 +140,181 @@ def to_naive_timestamp(value: object) -> pd.Timestamp:
     if pd.isna(timestamp):
         return pd.NaT
     return timestamp.tz_localize(None) if timestamp.tzinfo is not None else timestamp
+
+
+def market_currency_for_ticker(ticker: str) -> str:
+    """Return the quote currency implied by a canonical ticker market."""
+    normalized = normalize_ticker(ticker)
+    for suffix, currency in MARKET_SUFFIX_CURRENCIES.items():
+        if normalized.endswith(suffix):
+            return currency
+    return MARKET_CURRENCIES.get(infer_ticker_market(normalized), BASE_CURRENCY)
+
+
+def _normalize_new_york_timestamp(value: object) -> pd.Timestamp:
+    timestamp = pd.Timestamp(pd.to_datetime(value, errors="coerce"))
+    if pd.isna(timestamp):
+        return pd.NaT
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert(BASE_TIMEZONE).tz_localize(None)
+    return timestamp
+
+
+def _normalize_new_york_timestamps(values: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(values, errors="coerce")
+    if isinstance(parsed.dtype, pd.DatetimeTZDtype):
+        parsed = parsed.dt.tz_convert(BASE_TIMEZONE).dt.tz_localize(None)
+    elif parsed.dtype == "object":
+        parsed = parsed.map(_normalize_new_york_timestamp)
+    return parsed.astype("datetime64[ns]")
+
+
+def fx_store_path_for(currency: str) -> Path:
+    return FX_STORE_DIR / f"{str(currency).strip().upper()}.parquet"
+
+
+def _normalize_fx_history(values: pd.DataFrame | None) -> pd.DataFrame:
+    if values is None or values.empty:
+        return pd.DataFrame(columns=["Date", "UsdPerUnit"])
+    frame = values.copy()
+    if "Date" in frame.columns:
+        dates = frame["Date"]
+    else:
+        dates = pd.Series(frame.index, index=frame.index)
+    if "Close" in frame.columns:
+        rates = frame["Close"]
+    elif "UsdPerUnit" in frame.columns:
+        rates = frame["UsdPerUnit"]
+    else:
+        return pd.DataFrame(columns=["Date", "UsdPerUnit"])
+    normalized = pd.DataFrame({
+        "Date": _normalize_new_york_timestamps(pd.Series(dates).reset_index(drop=True)),
+        "UsdPerUnit": pd.to_numeric(pd.Series(rates).reset_index(drop=True), errors="coerce"),
+    })
+    return (
+        normalized.dropna(subset=["Date", "UsdPerUnit"])
+        .loc[lambda item: item["UsdPerUnit"] > 0]
+        .drop_duplicates(subset=["Date"], keep="last")
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+
+def load_fx_history(currency: str) -> pd.DataFrame:
+    path = fx_store_path_for(currency)
+    if not path.exists() or path.stat().st_size == 0:
+        return _normalize_fx_history(None)
+    try:
+        return _normalize_fx_history(pd.read_parquet(path))
+    except (ImportError, OSError, ValueError, KeyError, TypeError):
+        return _normalize_fx_history(None)
+
+
+def fetch_usd_exchange_rate_history(
+        currency: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Return daily USD-per-unit rates, using only authoritative Yahoo closes."""
+    normalized_currency = str(currency or "").strip().upper()
+    requested_start = _normalize_new_york_timestamp(start)
+    requested_end = _normalize_new_york_timestamp(end)
+    if pd.isna(requested_start) or pd.isna(requested_end):
+        raise ValueError(f"Invalid USD FX date range for {normalized_currency}.")
+    if requested_end < requested_start:
+        raise ValueError(f"Invalid USD FX date range for {normalized_currency}.")
+    if normalized_currency == BASE_CURRENCY:
+        return pd.DataFrame({
+            "Date": [requested_start, requested_end],
+            "UsdPerUnit": [1.0, 1.0],
+        }).drop_duplicates("Date")
+    spec = FX_RATE_SPECS.get(normalized_currency)
+    if spec is None:
+        raise ValueError(f"No USD exchange-rate mapping is available for {normalized_currency}.")
+
+    cached = load_fx_history(normalized_currency)
+    cache_path = fx_store_path_for(normalized_currency)
+    cache_covers_request = (
+        not cached.empty
+        and cached["Date"].min() <= requested_start
+        and cached["Date"].max() >= requested_end
+    )
+    cache_is_fresh = cache_path.exists() and time.time() - cache_path.stat().st_mtime <= FX_CACHE_TTL_SECONDS
+    if cache_covers_request and cache_is_fresh:
+        return cached
+
+    try:
+        remote = _normalize_fx_history(
+            download_yahoo_chart_daily_history(spec[0], period="max")
+        )
+        if remote.empty:
+            raise ValueError(f"Yahoo returned no daily FX history for {normalized_currency}.")
+        if spec[1] == "local_per_usd":
+            remote["UsdPerUnit"] = 1.0 / remote["UsdPerUnit"]
+        remote = _normalize_fx_history(remote)
+        available_frames = [frame for frame in (cached, remote) if not frame.empty]
+        merged = _normalize_fx_history(pd.concat(available_frames, ignore_index=True))
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with market_store_file_lock(cache_path):
+            write_parquet_atomic(cache_path, merged)
+        return merged
+    except Exception as exc:  # noqa: BLE001
+        if cache_covers_request:
+            LOGGER.warning("Using cached %s FX history after refresh failure: %s", normalized_currency, exc)
+            return cached
+        raise ValueError(
+            f"Authoritative USD FX history is unavailable for {normalized_currency}."
+        ) from exc
+
+
+def _convert_market_cap_history_to_usd(ticker: str, history: pd.DataFrame) -> pd.DataFrame:
+    """Convert local-currency market caps to the immutable USD base currency."""
+    currency = market_currency_for_ticker(ticker)
+    converted = history.copy()
+    attrs = history.attrs.copy()
+    attrs[MARKET_CAP_CURRENCY_ATTR] = BASE_CURRENCY
+    attrs[MARKET_CAP_ORIGINAL_CURRENCY_ATTR] = currency
+    if currency == BASE_CURRENCY:
+        attrs[MARKET_CAP_FX_SOURCE_ATTR] = "identity"
+        attrs[MARKET_CAP_FX_PAIR_ATTR] = None
+        converted.attrs.update(attrs)
+        return converted
+
+    if converted.empty or not pd.to_numeric(converted["MarketCap"], errors="coerce").notna().any():
+        converted.attrs.update(attrs)
+        return converted
+    converted["Date"] = _normalize_new_york_timestamps(converted["Date"])
+    rates = fetch_usd_exchange_rate_history(
+        currency,
+        converted["Date"].min().normalize(),
+        converted["Date"].max().normalize(),
+    )
+    merged = pd.merge_asof(
+        converted.sort_values("Date"),
+        rates.sort_values("Date"),
+        on="Date",
+        direction="backward",
+    )
+    market_cap_values = pd.to_numeric(merged["MarketCap"], errors="coerce")
+    missing_rate = market_cap_values.notna() & merged["UsdPerUnit"].isna()
+    if missing_rate.any():
+        first_missing = merged.loc[missing_rate, "Date"].iloc[0].strftime("%Y-%m-%d")
+        raise ValueError(f"No USD FX rate is available for {currency} on {first_missing}.")
+    fx_rate = merged["UsdPerUnit"].copy()
+    merged["MarketCap"] = market_cap_values * merged["UsdPerUnit"]
+    merged = merged.drop(columns=["UsdPerUnit"])
+    cross_check = attrs.get("market_cap_cross_check")
+    if isinstance(cross_check, dict) and pd.notna(fx_rate.iloc[-1]):
+        converted_cross_check = cross_check.copy()
+        for key in ("yfinance_market_cap", "longbridge_market_cap"):
+            if key in converted_cross_check:
+                converted_cross_check[key] = round(float(converted_cross_check[key]) * float(fx_rate.iloc[-1]), 2)
+        attrs["market_cap_cross_check"] = converted_cross_check
+    attrs["market_cap_source"] = f"{attrs.get('market_cap_source', 'market_cap')}_converted_to_usd"
+    attrs[MARKET_CAP_FX_SOURCE_ATTR] = FX_SOURCE
+    attrs[MARKET_CAP_FX_PAIR_ATTR] = FX_RATE_SPECS[currency][0]
+    merged.attrs.update(attrs)
+    return merged
 
 
 def shares_store_path_for(ticker: str) -> Path:
@@ -471,12 +725,11 @@ def build_market_cap_history(
         resolve_missing_split_events: bool = False,
         split_events_are_authoritative: bool = False,
 ) -> pd.DataFrame:
-    """Multiply each price by the latest shares report known on that timestamp."""
+    """Build a USD market-cap history from prices and reported shares."""
     if prices.empty or "Date" not in prices.columns or "Close" not in prices.columns:
         raise ValueError(f"No price history is available for {ticker}.")
     price_frame = prices[["Date", "Close"]].copy()
-    price_frame["Date"] = price_frame["Date"].map(to_naive_timestamp)
-    price_frame["Date"] = price_frame["Date"].astype("datetime64[ns]")
+    price_frame["Date"] = _normalize_new_york_timestamps(price_frame["Date"])
     price_frame["Close"] = pd.to_numeric(price_frame["Close"], errors="coerce")
     price_frame = price_frame.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     if resolve_missing_split_events:
@@ -505,7 +758,7 @@ def build_market_cap_history(
             fund_history = pd.DataFrame()
         if not fund_history.empty:
             fund_history = fund_history.copy()
-            fund_history["Date"] = fund_history["Date"].map(to_naive_timestamp).astype("datetime64[ns]")
+            fund_history["Date"] = _normalize_new_york_timestamps(fund_history["Date"])
             result = pd.merge_asof(price_frame[["Date"]], fund_history, on="Date", direction="backward")
             if longbridge_snapshot is not None:
                 latest_day_mask = result["Date"].dt.normalize() == latest_price_date.normalize()
@@ -515,7 +768,7 @@ def build_market_cap_history(
                 if longbridge_snapshot is not None else "sec_nport_net_assets"
             )
             result.attrs["market_cap_cross_check"] = None
-            return result
+            return _convert_market_cap_history_to_usd(ticker, result)
     if not had_reported_shares and longbridge_snapshot is None:
         raise ValueError(f"No authoritative shares-outstanding history is available for {ticker}.")
     if not had_reported_shares:
@@ -558,7 +811,7 @@ def build_market_cap_history(
     result = merged[["Date", "MarketCap"]]
     result.attrs["market_cap_source"] = source
     result.attrs["market_cap_cross_check"] = cross_check
-    return result
+    return _convert_market_cap_history_to_usd(ticker, result)
 
 
 def build_market_cap_series_payload(
@@ -589,6 +842,7 @@ def build_market_cap_series_payload(
         normalized_returns=[None for _ in range(len(history))],
         color=color,
         market_caps=[round(float(value), 2) if pd.notna(value) else None for value in market_caps],
+        market_cap_currency=history.attrs.get(MARKET_CAP_CURRENCY_ATTR, BASE_CURRENCY),
         market_cap_source=history.attrs.get("market_cap_source"),
         market_cap_cross_check=history.attrs.get("market_cap_cross_check"),
     )

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.19.1
+Code version: v0.20.0
 """
 
 from __future__ import annotations
@@ -556,7 +556,7 @@ def infer_ticker_market(ticker: str) -> str:
         return "AU"
     if normalized_ticker.endswith((".TO", ".V", ".NE", ".CN", ".CA")):
         return "CA"
-    if normalized_ticker.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS")):
+    if normalized_ticker.endswith((".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS", ".WA")):
         return "EU"
     if normalized_ticker.endswith(".HE"):
         return "FI"

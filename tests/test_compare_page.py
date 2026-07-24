@@ -30,6 +30,66 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_market_cap_page_accepts_ten_tickers_and_keeps_usd_new_york_base(self) -> None:
+        daily_dates = pd.to_datetime(["2026-06-29", "2026-06-30", "2026-07-01"])
+        tickers = [f"TICK{index}" for index in range(1, 11)]
+
+        def _fetch_history(
+                ticker: str,
+                include_dividends: bool,
+                interval: str = "1d",
+                dividend_mode: str = "price",
+        ) -> pd.DataFrame:
+            del ticker, include_dividends, interval, dividend_mode
+            return pd.DataFrame({"Date": daily_dates, "Close": [100.0, 101.0, 102.0]})
+
+        def _build_market_cap_series(
+                ticker: str,
+                dataset: pd.DataFrame,
+                *,
+                color: str | None = None,
+                **_kwargs,
+        ) -> SeriesPayload:
+            raw_dates = pd.to_datetime(dataset["Date"]).dt.strftime("%Y-%m-%d %H:%M").tolist()
+            return SeriesPayload(
+                ticker=ticker,
+                dates=pd.to_datetime(dataset["Date"]).dt.strftime("%-d %b %Y").tolist(),
+                raw_dates=raw_dates,
+                normalized_returns=[None] * len(raw_dates),
+                color=color,
+                market_caps=[1_000_000.0] * len(raw_dates),
+                market_cap_currency="USD",
+            )
+
+        query = "&".join(f"ticker={ticker}" for ticker in tickers)
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+            patch("app.web.runtime.build_market_cap_series_payload", side_effect=_build_market_cap_series),
+        ):
+            response = create_app().test_client().get(
+                f"/workspaces/market-caps?{query}&range=exact&period=5y&from=2026-06-29&to=2026-07-01"
+            )
+
+        html = response.get_data(as_text=True)
+        state_match = re.search(
+            r'<script id="antigravity_state" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(state_match)
+        state = json.loads(unescape(state_match.group(1)))
+        self.assertEqual(len(state["chart"]["series"]), 10)
+        self.assertEqual(state["constraints"]["maxTickers"], 10)
+        self.assertEqual(state["base"], {"currency": "USD", "timezone": "America/New_York"})
+        self.assertEqual(
+            re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html),
+            tickers,
+        )
+
     def test_price_page_overnight_adds_canonical_skhynix_companion(self) -> None:
         intraday_frames = {
             "000660.KS": ohlc_frame_for_dates(

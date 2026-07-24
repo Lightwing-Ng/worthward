@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.6`
+Documentation version: `v1.8.8`
 
 ## Supported commands
 
@@ -45,11 +45,11 @@ artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 23 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
+Baseline remeasured on 24 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `62.0%` (`coverage.json`
-  reports `12,057` covered lines of `18,221` statements and `3,730` covered
-  branches of `7,258`).
+- Total combined statement-and-branch coverage: `62.1%` (`coverage.json`
+  reports `12,164` covered lines of `18,356` statements and `3,762` covered
+  branches of `7,308`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -85,9 +85,9 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 23 Jul 2026:
+Current suite inventory remeasured on 24 Jul 2026:
 
-- 448 Python tests collected; the latest full Python run reports 442 passed,
+- 450 Python tests collected; the latest full Python run reports 444 passed,
   6 skipped, and 63 subtests passed.
 - 78 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.

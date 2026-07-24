@@ -1,20 +1,29 @@
 """
 Project entrypoint.
 
-Code version: v0.4.8
+Code version: v0.4.9
 """
 
 from json import JSONDecodeError
 import os
+import sys
 
-from app.core.broker_settings import (
+EXPECTED_PYTHON = (3, 13)
+
+if sys.version_info[:2] != EXPECTED_PYTHON:
+    raise SystemExit(
+        "Antigravity requires Python 3.13. "
+        f"Detected Python {sys.version_info.major}.{sys.version_info.minor}."
+    )
+
+from app.core.broker_settings import (  # noqa: E402
     has_longbridge_credentials,
     load_broker_settings,
     uses_longbridge_cli_oauth,
 )
-from app.core.settings import get_settings
-from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context
-from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance
+from app.core.settings import get_settings  # noqa: E402
+from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context  # noqa: E402
+from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance  # noqa: E402
 
 LOG_PREFIX = "[compareStocks]"
 DEFAULT_DEBUG = False

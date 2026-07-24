@@ -1,11 +1,12 @@
 """Canonical workspace, trade, and settings path helpers.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
 
 MAX_TICKERS = 5
+MARKET_CAP_MAX_TICKERS = 10
 MIN_TICKERS = 2
 
 LEGACY_VIEW_ALIASES = {
@@ -57,6 +58,11 @@ VIEW_PATHS = {
     "trade": "/trade/investment",
     "settings": "/settings/about",
 }
+
+
+def max_tickers_for_view(view_name: str | None) -> int:
+    """Return the ticker-input limit for a canonical workspace view."""
+    return MARKET_CAP_MAX_TICKERS if normalize_view_name(view_name) == "market-caps" else MAX_TICKERS
 
 
 def normalize_view_name(view_name: str | None) -> str:

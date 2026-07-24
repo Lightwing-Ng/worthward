@@ -1,7 +1,7 @@
 """
 Shared application configuration.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 import os
@@ -29,6 +29,10 @@ SETTINGS_STORE_DIR = resolve_store_directory(
 DEFAULT_TICKERS = ("QQQ", "JEPQ")
 DEFAULT_PERIOD = "1y"
 DEFAULT_INTERVAL = "1d"
+# These are application invariants. User-facing pages may display localized
+# labels, but financial comparison values stay in USD and New York wall time.
+BASE_CURRENCY = "USD"
+BASE_TIMEZONE = "America/New_York"
 PERIOD_LABELS = {
     "1d": "1 day",
     "3d": "3 days",

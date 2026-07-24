@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.6.1
+Code version: v0.9.1
 """
 
 from __future__ import annotations
@@ -49,6 +49,44 @@ class _TickerWithoutShares:
 
 
 class MarketCapTests(unittest.TestCase):
+    def test_non_us_market_cap_is_converted_with_each_day_usd_fx_close(self) -> None:
+        prices = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-07-13 04:00", "2026-07-14 04:00"], utc=True),
+            "Close": [100.0, 120.0],
+        })
+        shares = pd.DataFrame({
+            "Date": pd.to_datetime(["2026-01-01"]),
+            "Shares": [10.0],
+        })
+        fx_history = pd.DataFrame(
+            {"Close": [8.0, 7.5]},
+            index=pd.to_datetime(["2026-07-13", "2026-07-14"]),
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            fx_path = Path(tempdir) / "fx" / "HKD.parquet"
+            with (
+                patch("app.services.market_cap.fetch_reported_shares", return_value=shares),
+                patch("app.services.market_cap._is_recent_market_cap_window", return_value=False),
+                patch("app.services.market_cap.fx_store_path_for", return_value=fx_path),
+                patch(
+                    "app.services.market_cap.download_yahoo_chart_daily_history",
+                    return_value=fx_history,
+                ) as fx_download,
+            ):
+                payload = build_market_cap_series_payload("0700.HK", prices)
+
+        self.assertEqual(payload.market_caps, [125.0, 160.0])
+        self.assertEqual(payload.raw_dates, ["2026-07-13 00:00", "2026-07-14 00:00"])
+        self.assertEqual(payload.market_cap_currency, "USD")
+        self.assertEqual(payload.market_cap_source, "cached_reported_shares_converted_to_usd")
+        self.assertEqual(fx_download.call_args.args[0], "HKD=X")
+        self.assertEqual(market_cap.market_currency_for_ticker("NESN.SW"), "CHF")
+        self.assertEqual(market_cap.market_currency_for_ticker("NOVO-B.CO"), "DKK")
+        self.assertEqual(market_cap.market_currency_for_ticker("EQNR.OL"), "NOK")
+        self.assertEqual(market_cap.market_currency_for_ticker("VOLV-B.ST"), "SEK")
+        self.assertEqual(market_cap.market_currency_for_ticker("GARAN.IS"), "TRY")
+        self.assertEqual(market_cap.market_currency_for_ticker("CDR.WA"), "PLN")
+
     def test_reported_shares_cache_hit_restores_persisted_yfinance_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"

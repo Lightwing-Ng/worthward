@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.35.1
+Code version: v0.36.1
 """
 
 from __future__ import annotations
@@ -107,6 +107,8 @@ from app.infrastructure.connectivity import (
     reset_connectivity_caches,
 )
 from app.core.config import (
+    BASE_CURRENCY,
+    BASE_TIMEZONE,
     CODE_VERSION,
     DEFAULT_INTERVAL,
     DEFAULT_PERIOD,
@@ -240,7 +242,6 @@ from app.web.form_parsing import (
 )
 from app.web.navigation import (
     BACKTEST_VIEWS,
-    LEGACY_VIEW_ALIASES,
     MAX_TICKERS,
     MIN_TICKERS,
     VIEW_PATHS,
@@ -250,6 +251,7 @@ from app.web.navigation import (
     build_trade_url,
     build_view_path,
     build_view_url,
+    max_tickers_for_view,
     normalize_settings_section,
     normalize_trade_section,
     normalize_view_name,
@@ -1263,10 +1265,10 @@ def build_web_runtime() -> WebRuntime:
             raise ValueError(f"Invalid ticker format: {raw_ticker}.")
         return normalized_ticker
 
-    def parse_requested_tickers() -> list[str]:
+    def parse_requested_tickers(view_name: str | None = None) -> list[str]:
         return parse_requested_tickers_from_args(
             request.args,
-            max_tickers=MAX_TICKERS,
+            max_tickers=max_tickers_for_view(view_name),
             normalize=normalize_ticker_input,
             getlist=request.args.getlist,
         )
@@ -2561,10 +2563,11 @@ def build_web_runtime() -> WebRuntime:
     def local_store_page_value() -> int:
         return max(parse_int_value(request.args.get("page", request.args.get("local_page")), 1), 1)
 
-    def build_modern_query_pairs() -> list[tuple[str, str]]:
+    def build_modern_query_pairs(view_name: str | None = None) -> list[tuple[str, str]]:
         pairs: list[tuple[str, str]] = []
+        view_max_tickers = max_tickers_for_view(view_name)
 
-        for ticker in parse_requested_tickers():
+        for ticker in parse_requested_tickers(view_name):
             pairs.append(("ticker", ticker))
 
         has_weight_args = bool(request.args.getlist("weight")) or any(
@@ -2576,10 +2579,10 @@ def build_web_runtime() -> WebRuntime:
         )
         if allocation_mode == "shares" and has_share_args:
             pairs.append(("allocation", "shares"))
-            for share_count in parse_requested_shares(MAX_TICKERS):
+            for share_count in parse_requested_shares(view_max_tickers):
                 pairs.append(("shares", str(share_count)))
         elif has_weight_args:
-            for weight in parse_requested_weights(MAX_TICKERS):
+            for weight in parse_requested_weights(view_max_tickers):
                 pairs.append(("weight", str(weight)))
 
         period_value = request.args.get("period", "").strip().lower()
@@ -2665,9 +2668,9 @@ def build_web_runtime() -> WebRuntime:
             "ticker_a",
             "ticker_b",
         }
-        passthrough_keys.update({f"ticker_{index}" for index in range(1, MAX_TICKERS + 1)})
-        passthrough_keys.update({f"weight_{index}" for index in range(1, MAX_TICKERS + 1)})
-        passthrough_keys.update({f"shares_{index}" for index in range(1, MAX_TICKERS + 1)})
+        passthrough_keys.update({f"ticker_{index}" for index in range(1, view_max_tickers + 1)})
+        passthrough_keys.update({f"weight_{index}" for index in range(1, view_max_tickers + 1)})
+        passthrough_keys.update({f"shares_{index}" for index in range(1, view_max_tickers + 1)})
 
         strategy_param_keys: set[str] = set()
         strategy_value = request.args.get("strategy", "").strip()
@@ -2710,7 +2713,8 @@ def build_web_runtime() -> WebRuntime:
             for change in entry.get("changes", [])
         ]
         is_dock_prefetch = request.headers.get("X-Requested-With") == "dock-prefetch"
-        requested_tickers = parse_requested_tickers()
+        view_max_tickers = max_tickers_for_view(current_view)
+        requested_tickers = parse_requested_tickers(current_view)
         range_mode, period, exact_start, exact_end = parse_range_request_args()
         price_only = parse_bool_flag("price_only", "price_return_only", default=bool(defaults.get("price_only", False)))
         include_dividends = False if price_only else parse_bool_flag("dividends", "include_dividends")
@@ -2737,7 +2741,7 @@ def build_web_runtime() -> WebRuntime:
                                     normalize_ticker_input(value)
                                     for value in defaults.get("portfolio_tickers", ["NVDA", "AAPL", "QQQ"])
                                     if normalize_ticker_input(value)
-                                ][:MAX_TICKERS]
+                                ][:view_max_tickers]
             include_dividends = False
         elif current_view in BACKTEST_VIEWS and not requested_tickers:
             default_trade_ticker = normalize_ticker_input(
@@ -3215,7 +3219,7 @@ def build_web_runtime() -> WebRuntime:
                         overnight_tickers = resolve_compare_overnight_tickers(control_tickers)
                         show_overnight_toggle = (
                             current_view in {"tickers", "market-caps", "prices"}
-                            and len(overnight_tickers) <= MAX_TICKERS
+                            and len(overnight_tickers) <= view_max_tickers
                             and supports_compare_overnight(control_tickers, period)
                             and has_compare_overnight_market_data_source()
                         )
@@ -3935,8 +3939,10 @@ def build_web_runtime() -> WebRuntime:
             dca_weekday=dca_weekday,
             dca_month_day=dca_month_day,
             ticker_slots=ticker_slots,
-            max_tickers=MAX_TICKERS,
+            max_tickers=view_max_tickers,
             min_tickers=MIN_TICKERS,
+            base_currency=BASE_CURRENCY,
+            base_timezone=BASE_TIMEZONE,
             include_dividends=include_dividends,
             price_only=price_only,
             include_extended_hours=include_extended_hours,
@@ -4277,7 +4283,7 @@ def build_web_runtime() -> WebRuntime:
             target_view = resolve_view() if legacy_view else "tickers"
             target_section = resolve_settings_section() if target_view == "settings" else "about"
             target_path = build_settings_path(target_section) if target_view == "settings" else build_view_path(target_view)
-            query_string = urlencode(build_modern_query_pairs(), doseq=True)
+            query_string = urlencode(build_modern_query_pairs(target_view), doseq=True)
             return redirect(f"{target_path}?{query_string}" if query_string else target_path)
         return redirect(build_view_path("tickers"))
 
@@ -4949,9 +4955,10 @@ def build_web_runtime() -> WebRuntime:
         return jsonify([] if not has_valid_ticker_format(query) else search_tickers(query, limit=limit))
 
     def date_constraints_api():
-        requested_tickers = parse_requested_tickers()
-        requested_view = request.args.get("view", request.args.get("mode", "tickers")).strip().lower()
-        requested_view = LEGACY_VIEW_ALIASES.get(requested_view, requested_view)
+        requested_view = normalize_view_name(
+            request.args.get("view", request.args.get("mode", "tickers"))
+        )
+        requested_tickers = parse_requested_tickers(requested_view)
         minimum_required = 1 if requested_view in {"backtest", "dca"} else MIN_TICKERS
         if len(requested_tickers) < minimum_required:
             return jsonify(date_constraint_payload_to_json(build_date_constraint_payload()))

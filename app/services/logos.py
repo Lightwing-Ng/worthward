@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ SUPPORTED_MARKET_SUFFIXES = {
     "HE", "HK", "HM", "IR", "IS", "JK", "JP", "KL", "KQ", "KS", "L", "MC", "MI",
     "MX", "NE", "NS", "NZ", "OL", "PA", "QA", "SA", "SE", "SG", "SH", "SI", "SR",
     "SS", "ST", "SW", "SZ", "TA", "T", "TO", "TWO", "TW", "V", "VI",
+    "WA",
 }
 SUPPORTED_MARKET_EXCHANGES = US_EXCHANGES | {"HKG", "LSE"}
 LOGGER = logging.getLogger(__name__)

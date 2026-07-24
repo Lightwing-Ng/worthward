@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.3
+Code version: v0.18.4
 """
 
 from __future__ import annotations
@@ -93,6 +93,7 @@ class MarketSessionClassificationTests(unittest.TestCase):
     def test_infer_ticker_market_detects_hong_kong_symbols(self) -> None:
         self.assertEqual(infer_ticker_market("2800.HK"), "HK")
         self.assertEqual(infer_ticker_market("000660.KS"), "KR")
+        self.assertEqual(infer_ticker_market("CDR.WA"), "EU")
         self.assertEqual(infer_ticker_market("DRAM"), "US")
 
     def test_nyse_post_market_session_allows_realtime_quotes(self) -> None:

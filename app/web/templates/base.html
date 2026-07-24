@@ -1,4 +1,4 @@
-{# Code version: v0.5.15 #}
+{# Code version: v0.5.16 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -228,6 +228,7 @@
     "chartConfig": chart_config,
     "endpoints": endpoints,
     "constraints": {"minTickers": min_tickers, "maxTickers": max_tickers},
+    "base": {"currency": base_currency, "timezone": base_timezone},
     "chart": {"series": series, "profiles": profiles_json, "tradingDate": chart_trading_date},
     "portfolio": {"items": portfolio_items, "weights": portfolio_weights, "totalReturn": portfolio_total_return},
     "dcaResult": dca_result,

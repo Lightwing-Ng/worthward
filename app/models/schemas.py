@@ -1,7 +1,7 @@
 """
 Dataclasses shared across routes and services.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 from dataclasses import dataclass, field
@@ -20,6 +20,7 @@ class SeriesPayload:
     candlestick_prices: Optional[List[dict[str, Any]]] = None
     prices: Optional[List[float | None]] = None
     market_caps: Optional[List[float | None]] = None
+    market_cap_currency: Optional[str] = None
     market_cap_source: Optional[str] = None
     market_cap_cross_check: Optional[dict[str, Any]] = None
 

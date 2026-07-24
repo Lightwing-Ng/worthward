@@ -1,8 +1,8 @@
 # antigravity
 
-Documentation version: `v2.56.2`
+Documentation version: `v2.56.6`
 
-`antigravity` is a local-first Flask web app for comparing US stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
+`antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
 ## Screenshot
 
@@ -11,6 +11,7 @@ Documentation version: `v2.56.2`
 ## What the app does
 
 - Compare up to 5 tickers over the same window on a normalized return basis
+- Compare up to 10 tickers by historical market capitalization; non-USD listings are converted with the same-date daily FX close, while the chart base remains USD and New York wall time
 - Build weighted portfolios with custom allocations
 - Run single-ticker backtests across the built-in strategy library
 - Switch between relative periods and exact date ranges
@@ -31,7 +32,9 @@ Documentation version: `v2.56.2`
 - Optional `tradingview_ta` if you want TradingView timing analysis
 - Yahoo Mail app password for SMTP alerts
 
-This repository uses the host machine's Python interpreter directly. The helper scripts pin Python `3.13` so shell-level defaults such as Python `3.14` do not affect the project.
+The supported launch and test workflows use the pinned host Python `3.13`.
+Direct `python3` commands must resolve to Python `3.13`; the helper scripts
+avoid accidental use of another shell default such as Python `3.14`.
 
 ## Quick start
 
@@ -53,13 +56,15 @@ If your Python `3.13` executable lives elsewhere, override it explicitly:
 ANTIGRAVITY_PYTHON=/absolute/path/to/python3.13 ./scripts/setup_python.sh
 ```
 
-Run the app manually from the project root:
+Run the app from the project root with the pinned interpreter:
 
 ```bash
-python3 main.py
+./scripts/run_app.sh
 ```
 
-`./scripts/run_app.sh` remains available when the pinned host-Python launcher is preferred.
+The launcher invokes Python `3.13`. Direct `python3 main.py` is supported only
+when `python3 --version` reports Python `3.13`; otherwise the entrypoint exits
+with an explicit version error.
 
 The default server bind is:
 
@@ -95,7 +100,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - `Return comparison`
   Compare the normalized percentage returns of up to 5 tickers, with optional cash dividend inclusion.
 - `Market cap comparison`
-  Compare historical market capitalization using cached prices and point-in-time yfinance shares, with SEC company-facts and Form N-PORT fallbacks. Longbridge is optional and can cross-check or replace only the latest trading-day point.
+  Compare up to 10 historical market-cap series using cached prices and point-in-time yfinance shares, with SEC company-facts and Form N-PORT fallbacks. Non-US quote currencies use same-date daily Yahoo FX closes for USD conversion. Longbridge is optional and can cross-check or replace only the latest trading-day point.
 - `Price performance`
   Review up to 5 tickers on separate charts using their original market-price scales.
 - `Portfolio`
@@ -115,7 +120,8 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
 - Language: American English
 - Currency: USD
 - Date format: `dd Mmm yyyy` (for example, `2 Jul 2026`)
-- Timezone: America/New_York for handoff records
+- Timezone: America/New_York for handoff records and comparison chart axes
+- Market-cap base currency and comparison timezone are application invariants: USD and America/New_York
 
 ## Settings navigation
 
@@ -333,7 +339,7 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   presented configured server access token of at least 32 characters:
   ```bash
   export ANTIGRAVITY_LIVE_TRADING_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-  python3 main.py
+  ./scripts/run_app.sh
   ```
 - Non-browser API clients present the token through the
   `X-Antigravity-Live-Trading-Token` header. The browser unlock uses the PIN
@@ -379,6 +385,7 @@ docs/AGENTS.md                  -> Agent workflow, safety, and quality boundarie
 docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and invariants
 docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
 docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
+docs/INVESTMENT_FRONTEND_CHANGELOG.md -> Historical Investment frontend changes
 requirements.txt                -> Python dependency pin set
 requirements-dev.txt            -> Pinned test, coverage, and static-check dependencies
 scripts/setup_python.sh         -> Pinned host-Python dependency installer
@@ -407,10 +414,11 @@ Agents should use these authoritative documents for persistent context, contract
 - [Architecture guide](docs/ARCHITECTURE.md)
 - [Testing guide](docs/TESTING.md)
 - [Known issues and behavior history](docs/KNOWN_ISSUES.md)
+- [Investment frontend changelog](docs/INVESTMENT_FRONTEND_CHANGELOG.md) (optional historical reference)
 
 ## Versioning note
 
-The version displayed in the web UI comes from `config.toml` under `[app].version`. Some Python files also contain file-level `Code version:` comments; those are source-file revision markers, not the app metadata shown in the interface.
+The version displayed in the web UI comes from `config.toml` under `[app].version`. The documentation version markers in this README and `docs/*.md` track document revisions independently and are not expected to match the application version. Some Python files also contain file-level `Code version:` comments; those are source-file revision markers, not the app metadata shown in the interface.
 
 ## Running tests
 
