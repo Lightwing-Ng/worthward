@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.36.1
+Code version: v0.36.3
 """
 
 from __future__ import annotations
@@ -123,6 +123,7 @@ from app.core.config import (
     SUPPORTED_PERIODS_1D,
     SUPPORTED_PERIODS_1M,
 )
+from app.core.upload_limits import MAX_INVESTMENT_IMPORT_REQUEST_MIB
 from app.services.date_constraints import (
     build_date_constraint_payload,
     build_date_constraint_availability,
@@ -1582,7 +1583,11 @@ def build_web_runtime() -> WebRuntime:
         market_dates = dataset["Date"].map(date_for_market)
         return dataset[market_dates.isin(selected_dates)].copy()
 
-    def load_local_compare_one_day_intraday_dataset(ticker: str) -> pd.DataFrame:
+    def load_local_compare_one_day_intraday_dataset(
+            ticker: str,
+            *,
+            refresh_stale: bool = False,
+    ) -> pd.DataFrame:
         path = next(
             (
                 candidate_path
@@ -1594,6 +1599,24 @@ def build_web_runtime() -> WebRuntime:
         )
         if not path.exists() or path.stat().st_size == 0:
             refresh_one_minute_store(ticker)
+            path = next(
+                (
+                    candidate_path
+                    for candidate in market_ticker_store_aliases(ticker)
+                    if (candidate_path := intraday_history_store_path_for(candidate, "1m")).exists()
+                    and candidate_path.stat().st_size > 0
+                ),
+                intraday_history_store_path_for(ticker, "1m"),
+            )
+        elif refresh_stale and not is_one_minute_store_fresh(ticker):
+            try:
+                refresh_one_minute_store(ticker)
+            except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.warning(
+                    "Unable to refresh stale local 1-minute compare data for %s; using the existing cache: %s",
+                    ticker,
+                    exc,
+                )
             path = next(
                 (
                     candidate_path
@@ -1618,6 +1641,7 @@ def build_web_runtime() -> WebRuntime:
             include_extended_hours_flag: bool,
             include_overnight_flag: bool = False,
             trading_date: object | None = None,
+            refresh_stale_local: bool = False,
     ) -> pd.DataFrame:
         if infer_ticker_market(ticker) == "US" and include_overnight_flag:
             intraday_dataset = fetch_request_compare_one_day_overnight_history(
@@ -1637,7 +1661,10 @@ def build_web_runtime() -> WebRuntime:
             return intraday_dataset
 
         if trading_date is None:
-            intraday_dataset = load_local_compare_one_day_intraday_dataset(ticker)
+            intraday_dataset = load_local_compare_one_day_intraday_dataset(
+                ticker,
+                refresh_stale=refresh_stale_local,
+            )
             if infer_ticker_market(ticker) == "US" and not include_extended_hours_flag:
                 intraday_dataset = filter_intraday_dataset_to_regular_session(intraday_dataset)
             if intraday_dataset.empty:
@@ -3576,6 +3603,10 @@ def build_web_runtime() -> WebRuntime:
                                     infer_ticker_market(ticker) == "US"
                                     for ticker in validated_tickers
                                 )
+                                refresh_stale_local = len({
+                                    infer_ticker_market(ticker)
+                                    for ticker in validated_tickers
+                                }) > 1
                                 loaded_intraday_datasets: list[pd.DataFrame | None] = []
                                 first_intraday_error: Exception | None = None
                                 for ticker in validated_tickers:
@@ -3585,6 +3616,7 @@ def build_web_runtime() -> WebRuntime:
                                                 ticker,
                                                 include_extended_hours_flag=include_extended_hours,
                                                 include_overnight_flag=include_overnight,
+                                                refresh_stale_local=refresh_stale_local,
                                             )
                                         )
                                     except Exception as exc:  # noqa: BLE001
@@ -5782,7 +5814,7 @@ def build_web_runtime() -> WebRuntime:
             response = jsonify({
                 "success": False,
                 "error": (
-                    "The investment import exceeds the 257 MiB total upload limit. "
+                    f"The investment import exceeds the {MAX_INVESTMENT_IMPORT_REQUEST_MIB} MiB total upload limit. "
                     "Upload fewer or smaller files."
                 ),
             })

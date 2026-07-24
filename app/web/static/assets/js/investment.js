@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.5.2
+ * Code version: v2.5.4
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -25,8 +25,9 @@ import {
 } from './investment/data-utils.js?v=investment-data-utils-v1.48.2';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
+    buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.0.0';
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.2.0';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
@@ -72,7 +73,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.5.2',
+    entry: 'v2.5.4',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -9076,6 +9077,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                     refreshNotice,
                                     valuationNotice: '',
                                     pendingTransferCount,
+                                }, { escapeHtml }),
+                                'success',
+                                { allowHtml: true }
+                            );
+                        } else if (selectedBroker === 'hsbc') {
+                            setImportFeedback(
+                                buildHsbcImportFeedbackMessage({
+                                    importSummary: result.summary,
+                                    refreshNotice,
                                 }, { escapeHtml }),
                                 'success',
                                 { allowHtml: true }

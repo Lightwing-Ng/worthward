@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.8`
+Documentation version: `v1.8.9`
 
 ## Supported commands
 
@@ -47,8 +47,8 @@ artifact actions.
 
 Baseline remeasured on 24 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `62.1%` (`coverage.json`
-  reports `12,164` covered lines of `18,356` statements and `3,762` covered
+- Total combined statement-and-branch coverage: `62.4%` (`coverage.json`
+  reports `12,234` covered lines of `18,360` statements and `3,795` covered
   branches of `7,308`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
@@ -62,8 +62,6 @@ Baseline remeasured on 24 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
 
 Priority coverage gaps:
 
-- `app/infrastructure/broker_market_data.py`: `44.0%` after removing the
-  unreachable IBKR Client Portal transport.
 - `app/services/investment_import.py`: `51.9%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
@@ -72,6 +70,10 @@ Recently strengthened coverage:
 - `app/services/live_trading.py`: `73.8%`, with offline CLI OAuth, legacy SDK,
   order-validation, and API authorization-contract paths covered without a
   real account request or order.
+- `app/infrastructure/broker_market_data.py`: `53.7%`, with offline Longbridge
+  CLI normalization, candlestick adapters, one-minute cache freshness, and
+  fail-closed refresh/status paths covered without live network or production
+  store writes.
 
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
@@ -87,7 +89,7 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 Current suite inventory remeasured on 24 Jul 2026:
 
-- 450 Python tests collected; the latest full Python run reports 444 passed,
+- 450 Python tests collected; the latest full Python run reports 450 passed,
   6 skipped, and 63 subtests passed.
 - 78 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
@@ -129,9 +131,10 @@ Current suite inventory remeasured on 24 Jul 2026:
 - `tests/test_web_token_registry.py`: foundation-default drift, canonical
   material references, globally unique Style token registry names, and pure
   Settings design-token builder inputs.
-- `tests/test_broker_market_data.py`: Longbridge normalization, fail-closed
-  one-minute cache persistence safeguards, and the absence of the retired IBKR
-  Client Portal transport.
+- `tests/test_broker_market_data.py`: Longbridge normalization, CLI and SDK
+  candlestick adapters, fail-closed one-minute cache freshness and completeness,
+  isolated refresh/status paths, and the absence of the retired IBKR Client
+  Portal transport.
 - `tests/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
 - `tests/test_investment_import_registry.py`: parser registration, duplicate and
   unknown-format rejection, payload validation, idempotent commit, atomic

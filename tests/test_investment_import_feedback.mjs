@@ -1,9 +1,10 @@
-/* Tests for Investment import-feedback markup. Code version: v1.0.0 */
+/* Tests for Investment import-feedback markup. Code version: v1.2.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
+    buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildInvestmentImportFeedbackListHtml,
 } from '../app/web/static/assets/js/investment/import-feedback.js';
@@ -68,4 +69,74 @@ test('IBKR feedback requires the composition root HTML escaper', () => {
         () => buildIbkrImportFeedbackMessage(),
         /requires an HTML escape function/,
     );
+});
+
+test('HSBC feedback requires the composition root HTML escaper', () => {
+    assert.throws(
+        () => buildHsbcImportFeedbackMessage(),
+        /requires an HTML escape function/,
+    );
+});
+
+test('HSBC feedback explains rolling order coverage and pending cash settlement', () => {
+    const message = buildHsbcImportFeedbackMessage({
+        importSummary: {
+            hsbc_snapshot: {
+                order_status_coverage: {
+                    mode: 'rolling_recent_window',
+                    calendar_days: '17',
+                },
+                cash_posting_status: 'awaiting_settlement',
+                cash_latest_post_date: '2026-07-21',
+                execution_price_reconciliation: {
+                    pending_order_ids: ['P-725710'],
+                },
+            },
+            hsbc_portfolio_calibrated_order_count: 1,
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /authoritative position source/);
+    assert.match(message, /last <strong>17 calendar days<\/strong>/);
+    assert.match(message, /available balance<\/strong>/);
+    assert.match(message, /2026-07-21/);
+    assert.match(message, /original Order Status limit price remains in source metadata/);
+    assert.match(message, /newer executed order remains provisional/);
+});
+
+test('HSBC feedback explains when settled cash finalizes execution price', () => {
+    const message = buildHsbcImportFeedbackMessage({
+        importSummary: {
+            hsbc_snapshot: {
+                execution_price_reconciliation: {
+                    status: 'settled',
+                },
+            },
+            hsbc_final_settled_execution_count: 1,
+            hsbc_portfolio_calibrated_order_count: 1,
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /finalized from the settled USD Savings cash flow/);
+    assert.match(message, /provisional Portfolio calibration/);
+});
+
+test('HSBC feedback escapes dynamic dates and rolling-window values', () => {
+    const message = buildHsbcImportFeedbackMessage({
+        importSummary: {
+            hsbc_snapshot: {
+                order_status_coverage: {
+                    mode: 'rolling_recent_window',
+                    calendar_days: '<17>',
+                },
+                cash_posting_status: 'awaiting_settlement',
+                cash_latest_post_date: '<latest>',
+            },
+        },
+    }, {escapeHtml});
+
+    assert.match(message, /&lt;17&gt;/);
+    assert.match(message, /&lt;latest&gt;/);
+    assert.doesNotMatch(message, /<17>/);
+    assert.doesNotMatch(message, /<latest>/);
 });

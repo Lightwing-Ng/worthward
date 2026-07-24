@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.3
+Code version: v0.10.4
 """
 
 from __future__ import annotations
@@ -624,6 +624,61 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(refresh_mock.call_count, 1)
         self.assertIn('"raw_dates": ["2026-03-27 09:30", "2026-03-27 15:59"]', html)
+
+    def test_cross_market_one_day_refreshes_stale_intraday_store(self) -> None:
+        old_kr_frame = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-12 20:00", "2026-07-13 02:30"],
+        )
+        refreshed_kr_frame = ohlc_frame_for_dates(
+            "000660.KS",
+            ["2026-07-22 20:00", "2026-07-23 02:30"],
+        )
+        hk_frame = ohlc_frame_for_dates(
+            "7709.HK",
+            ["2026-07-22 21:30", "2026-07-23 02:59"],
+        )
+        frames = {
+            "000660.KS": old_kr_frame,
+            "7709.HK": hk_frame,
+        }
+
+        def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", **_kwargs: object) -> pd.DataFrame:
+            del include_dividends, interval
+            return close_frame_for_ticker(ticker, dates=["2026-07-22", "2026-07-23"])
+
+        with _write_intraday_stores(frames) as tempdir:
+            temp_root = Path(tempdir)
+
+            def _store_path(ticker: str, interval: str = "1m") -> Path:
+                del interval
+                return temp_root / f"{ticker}.parquet"
+
+            def _refresh_stale_store(ticker: str) -> object:
+                self.assertEqual(ticker, "000660.KS")
+                refreshed_kr_frame.to_parquet(_store_path(ticker), index=False)
+                return object()
+
+            with (
+                patch("app.web.runtime.intraday_history_store_path_for", side_effect=_store_path),
+                patch(
+                    "app.web.runtime.is_one_minute_store_fresh",
+                    side_effect=lambda ticker: ticker == "7709.HK",
+                ),
+                patch("app.web.runtime.refresh_one_minute_store", side_effect=_refresh_stale_store) as refresh_mock,
+                patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                patch("app.web.runtime.record_ticker_usage"),
+            ):
+                response = create_app().test_client().get(
+                    "/workspaces/prices?ticker=000660.KS&ticker=7709.HK&period=1d"
+                )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Unable to load this workspace", html)
+        refresh_mock.assert_called_once_with("000660.KS")
+        self.assertIn('"2026-07-22 20:00"', html)
 
     def test_compare_page_exact_one_day_uses_single_trading_date_picker(self) -> None:
         def _fetch_history(ticker: str, include_dividends: bool, interval: str = "1d", dividend_mode: str = "reinvest") -> pd.DataFrame:

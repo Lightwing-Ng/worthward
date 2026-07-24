@@ -1,10 +1,10 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.0.0
+ * Code version: v1.2.0
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.0.0';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.2.0';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -60,6 +60,71 @@ export function buildIbkrImportFeedbackMessage({
     if (trimmedValuationNotice) items.push(escapeHtml(trimmedValuationNotice));
     return `
         <p class="notice-floating-banner-heading">IBKR import complete</p>
+        ${buildInvestmentImportFeedbackListHtml(items)}
+    `.trim();
+}
+
+export function buildHsbcImportFeedbackMessage({
+    importSummary = null,
+    refreshNotice = '',
+} = {}, {
+    escapeHtml,
+} = {}) {
+    if (typeof escapeHtml !== 'function') {
+        throw new TypeError('HSBC import feedback requires an HTML escape function.');
+    }
+
+    const summary = importSummary && typeof importSummary === 'object' ? importSummary : {};
+    const snapshot = summary.hsbc_snapshot && typeof summary.hsbc_snapshot === 'object'
+        ? summary.hsbc_snapshot
+        : {};
+    const coverage = snapshot.order_status_coverage && typeof snapshot.order_status_coverage === 'object'
+        ? snapshot.order_status_coverage
+        : {};
+    const items = [
+        'Current holdings use the HSBC <strong>Portfolio</strong> snapshot as the authoritative position source.',
+    ];
+    if (coverage.mode === 'rolling_recent_window') {
+        const calendarDays = escapeHtml(coverage.calendar_days || 'recent');
+        items.push(
+            `The copied <strong>Order Status</strong> page is a rolling recent-history window covering the last <strong>${calendarDays} calendar days</strong>; it is used to add current executed orders without replacing older history.`,
+        );
+    }
+    if (snapshot.cash_posting_status === 'awaiting_settlement') {
+        const latestCashDate = escapeHtml(snapshot.cash_latest_post_date || 'the latest visible posting date');
+        items.push(
+            `The current <strong>USD Savings available balance</strong> remains the cash authority; bank postings are visible through <strong>${latestCashDate}</strong> and may update after the pending order settles.`,
+        );
+    }
+    const settledExecutionCount = Number(summary.hsbc_final_settled_execution_count);
+    const reconciliation = snapshot.execution_price_reconciliation
+        && typeof snapshot.execution_price_reconciliation === 'object'
+        ? snapshot.execution_price_reconciliation
+        : {};
+    const pendingExecutionCount = Array.isArray(reconciliation.pending_order_ids)
+        ? reconciliation.pending_order_ids.length
+        : 0;
+    if (Number.isFinite(settledExecutionCount) && settledExecutionCount > 0) {
+        items.push(
+            `<strong>${settledExecutionCount.toLocaleString('en-US')}</strong> execution ${settledExecutionCount === 1 ? 'price was' : 'prices were'} finalized from the settled USD Savings cash flow; the provisional Portfolio calibration and original Order Status limit price remain in source metadata.`,
+        );
+    } else {
+        const calibratedOrderCount = Number(summary.hsbc_portfolio_calibrated_order_count);
+        if (Number.isFinite(calibratedOrderCount) && calibratedOrderCount > 0) {
+            items.push(
+                `<strong>${calibratedOrderCount.toLocaleString('en-US')}</strong> current executed order ${calibratedOrderCount === 1 ? 'price was' : 'prices were'} calibrated from the authoritative Portfolio average purchase price; the original Order Status limit price remains in source metadata.`,
+            );
+        }
+    }
+    if (pendingExecutionCount > 0) {
+        items.push(
+            `<strong>${pendingExecutionCount.toLocaleString('en-US')}</strong> newer executed ${pendingExecutionCount === 1 ? 'order remains' : 'orders remain'} provisional until its matching USD Savings settlement appears in a later paste.`,
+        );
+    }
+    const trimmedRefreshNotice = String(refreshNotice || '').trim();
+    if (trimmedRefreshNotice) items.push(escapeHtml(trimmedRefreshNotice));
+    return `
+        <p class="notice-floating-banner-heading">HSBC sync complete</p>
         ${buildInvestmentImportFeedbackListHtml(items)}
     `.trim();
 }

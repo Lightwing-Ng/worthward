@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.56.6`
+Documentation version: `v2.56.7`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -378,6 +378,7 @@ reconciliation rules; imports are local and incremental.
 ## Project layout
 
 ```text
+AGENTS.md                       -> Root compatibility pointer to docs/AGENTS.md
 main.py                         -> Flask runtime entry point
 config.toml                     -> App metadata, defaults, server bind, labels, and integration settings
 README.md                       -> Project documentation
@@ -410,7 +411,8 @@ settings_store/                 -> Runtime-generated local settings, investment 
 
 Agents should use these authoritative documents for persistent context, contracts, workflow, and project memory:
 
-- [Agent operating guide](docs/AGENTS.md)
+- [Root agent compatibility pointer](AGENTS.md)
+- [Canonical agent operating guide](docs/AGENTS.md)
 - [Architecture guide](docs/ARCHITECTURE.md)
 - [Testing guide](docs/TESTING.md)
 - [Known issues and behavior history](docs/KNOWN_ISSUES.md)
