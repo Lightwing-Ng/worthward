@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.9`
+Documentation version: `v1.8.10`
 
 ## Supported commands
 
@@ -9,6 +9,10 @@ Install all runtime and development dependencies:
 ```bash
 ./scripts/setup_python.sh
 ```
+
+The supported host interpreters are Python `3.13` and `3.14`. On Windows,
+install the same dependency sets with `py -3.14 -m pip install -r
+requirements.txt -r requirements-dev.txt`.
 
 Run Python tests only:
 

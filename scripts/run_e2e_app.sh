@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-# Code version: v1.1.0
+# Code version: v1.2.0
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
-PYTHON_BIN="${ANTIGRAVITY_PYTHON:-$DEFAULT_PYTHON}"
+source "$ROOT_DIR/scripts/resolve_python.sh"
+PYTHON_BIN="$(resolve_python_bin)"
 RUNTIME_ROOT="$ROOT_DIR/test-results/runtime-store"
 APP_PID=""
 
@@ -27,7 +27,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
 	exit 1
 fi

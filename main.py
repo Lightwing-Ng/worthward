@@ -1,20 +1,19 @@
 """
 Project entrypoint.
 
-Code version: v0.4.9
+Code version: v0.5.0
 """
 
 from json import JSONDecodeError
 import os
 import sys
 
-EXPECTED_PYTHON = (3, 13)
+from app.core.runtime import require_supported_python
 
-if sys.version_info[:2] != EXPECTED_PYTHON:
-    raise SystemExit(
-        "Antigravity requires Python 3.13. "
-        f"Detected Python {sys.version_info.major}.{sys.version_info.minor}."
-    )
+try:
+    require_supported_python(sys.version_info)
+except RuntimeError as exc:
+    raise SystemExit(str(exc)) from exc
 
 from app.core.broker_settings import (  # noqa: E402
     has_longbridge_credentials,

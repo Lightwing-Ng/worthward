@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.56.9`
+Documentation version: `v2.56.10`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -25,16 +25,17 @@ Documentation version: `v2.56.9`
 
 ## Runtime requirements
 
-- Python `3.13`
+- Python `3.13` or `3.14`
 - Dependencies from `requirements.txt`
 - `pyarrow` for parquet persistence
 - Optional Longbridge credentials for broker-backed market-data fallback
 - Optional `tradingview_ta` if you want TradingView timing analysis
 - Yahoo Mail app password for SMTP alerts
 
-The supported launch and test workflows use the pinned host Python `3.13`.
-Direct `python3` commands must resolve to Python `3.13`; the helper scripts
-avoid accidental use of another shell default such as Python `3.14`.
+The supported launch and test workflows use host Python `3.13` or `3.14`.
+Direct `python3` commands must resolve to one of those supported versions.
+The helper scripts prefer the pinned macOS `3.13` interpreter when it exists
+and otherwise use the first supported interpreter available on the host.
 
 ## Quick start
 
@@ -50,10 +51,10 @@ By default, the setup script uses:
 /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
 ```
 
-If your Python `3.13` executable lives elsewhere, override it explicitly:
+If your Python `3.13` or `3.14` executable lives elsewhere, override it explicitly:
 
 ```bash
-ANTIGRAVITY_PYTHON=/absolute/path/to/python3.13 ./scripts/setup_python.sh
+ANTIGRAVITY_PYTHON=/absolute/path/to/python3.14 ./scripts/setup_python.sh
 ```
 
 Run the app from the project root with the pinned interpreter:
@@ -62,9 +63,17 @@ Run the app from the project root with the pinned interpreter:
 ./scripts/run_app.sh
 ```
 
-The launcher invokes Python `3.13`. Direct `python3 main.py` is supported only
-when `python3 --version` reports Python `3.13`; otherwise the entrypoint exits
-with an explicit version error.
+The launcher invokes Python `3.13` or `3.14`. Direct `python3 main.py` is
+supported when `python3 --version` reports either version; otherwise the
+entrypoint exits with an explicit version error.
+
+On Windows PowerShell, install dependencies and launch with the Python
+Launcher for Windows:
+
+```powershell
+py -3.14 -m pip install --upgrade -r requirements.txt -r requirements-dev.txt
+py -3.14 main.py
+```
 
 The default server bind is:
 
@@ -230,11 +239,11 @@ secure curl_cffi default. Never work around `CertificateVerifyError` or curl
 error `60` with `verify=False`; configure the corporate CA PEM instead. The
 focused offline regression command is documented in [the testing guide](docs/TESTING.md).
 
-After pulling a dependency update on Windows, refresh the active Python `3.13`
+After pulling a dependency update on Windows, refresh the active Python `3.14`
 environment before launching the app:
 
 ```powershell
-py -3.13 -m pip install --upgrade -r requirements.txt
+py -3.14 -m pip install --upgrade -r requirements.txt
 ```
 
 ### Metadata and search caches
@@ -389,9 +398,9 @@ docs/KNOWN_ISSUES.md            -> Current debt and classified historical failur
 docs/INVESTMENT_FRONTEND_CHANGELOG.md -> Historical Investment frontend changes
 requirements.txt                -> Python dependency pin set
 requirements-dev.txt            -> Pinned test, coverage, and static-check dependencies
-scripts/setup_python.sh         -> Pinned host-Python dependency installer
-scripts/run_app.sh              -> Pinned host-Python app launcher
-scripts/test.sh                 -> Pinned host-Python pytest wrapper
+scripts/setup_python.sh         -> Supported host-Python dependency installer
+scripts/run_app.sh              -> Supported host-Python app launcher
+scripts/test.sh                 -> Supported host-Python pytest wrapper
 scripts/test_js.sh              -> Node unit tests and gradual JavaScript coverage thresholds
 scripts/check.sh                -> Complete local and CI quality gate
 .github/workflows/quality.yml   -> Push and pull-request quality-gate workflow

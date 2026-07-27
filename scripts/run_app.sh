@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
-# Code version: v0.3.0
+# Code version: v0.4.0
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
-PYTHON_BIN="${ANTIGRAVITY_PYTHON:-$DEFAULT_PYTHON}"
+source "$ROOT_DIR/scripts/resolve_python.sh"
+PYTHON_BIN="$(resolve_python_bin)"
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
 	echo "Configured Python interpreter not found: $PYTHON_BIN" >&2
-	echo "Run $ROOT_DIR/scripts/setup_python.sh first or set ANTIGRAVITY_PYTHON." >&2
+	echo "Install Python 3.13 or 3.14, run $ROOT_DIR/scripts/setup_python.sh, or set ANTIGRAVITY_PYTHON." >&2
 	exit 1
 fi
 
