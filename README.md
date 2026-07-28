@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.57.1`
+Documentation version: `v2.57.2`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -369,6 +369,31 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 - Each newly imported file is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
 - Application startup verifies every persisted source-evidence manifest before routes are registered. If a referenced artifact is missing, altered, oversized, malformed, or still contains raw Base64 in the ledger, startup stops with a recovery-safe integrity error instead of serving an unauditable ledger.
 - Existing ledger records remain readable and mergeable. Legacy imports that predate source-evidence persistence remain explicitly without a reconstructed raw artifact; the application never fabricates one.
+
+### Cross-platform evidence recovery
+
+`settings_store/` is intentionally ignored by Git. Therefore, a Git pull never
+transfers an investment ledger's matching immutable evidence directory. Copy
+`investment.parquet` and its sibling `investment_evidence/` directory together
+from the same source device through a byte-preserving transfer method. Do not
+regenerate an evidence `.bin` file from a CSV or text editor, and do not permit
+line-ending conversion: the SHA-256 value represents the exact original upload.
+
+On Windows PowerShell, inspect the local pair before starting the app:
+
+```powershell
+py -3.14 scripts/verify_investment_evidence.py
+```
+
+For a non-default ledger location, pass its Parquet path explicitly:
+
+```powershell
+py -3.14 scripts/verify_investment_evidence.py --store D:\antigravity\settings_store\investment.parquet
+```
+
+If verification reports a missing or changed artifact, stop the app and restore
+the exact matching evidence directory from the Mac that created that ledger.
+The diagnostic script does not rewrite the ledger or evidence files.
 
 ### Investment import adapters
 

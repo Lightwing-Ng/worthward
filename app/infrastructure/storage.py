@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.9.2
+Code version: v0.9.3
 """
 
 from __future__ import annotations
@@ -959,10 +959,29 @@ def _verify_investment_source_artifacts_locked(
         if expected_size > MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES:
             raise RuntimeError("Investment source evidence exceeds the 64 MiB per-file storage limit.")
         target = evidence_dir / f"{storage_key}.bin"
-        if target.is_symlink() or not target.is_file() or _sha256_file(target) != expected_sha256:
-            raise RuntimeError("Investment source evidence file is missing or has changed.")
+        if target.is_symlink():
+            raise RuntimeError(
+                "Investment source evidence file must not be a symbolic link: "
+                f"{target}"
+            )
+        if not target.is_file():
+            raise RuntimeError(
+                "Investment source evidence file is missing: "
+                f"{target}. Restore the exact SHA-256-addressed artifact from the device "
+                "that created this ledger. Investment evidence is local runtime data and "
+                "is not tracked by Git."
+            )
+        if _sha256_file(target) != expected_sha256:
+            raise RuntimeError(
+                "Investment source evidence file has changed: "
+                f"{target}. Restore the exact original bytes; do not normalize line endings "
+                "or recreate the artifact from text."
+            )
         if target.stat().st_size != expected_size:
-            raise RuntimeError("Investment source evidence file size has changed.")
+            raise RuntimeError(
+                "Investment source evidence file size has changed: "
+                f"{target}. Restore the exact original bytes."
+            )
         verified_sha256.add(expected_sha256)
     return len(verified_sha256)
 

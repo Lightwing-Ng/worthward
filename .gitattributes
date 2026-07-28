@@ -1,0 +1,4 @@
+# Investment evidence is immutable raw broker input. Preserve its byte sequence
+# if a user explicitly stages it despite settings_store/ being Git-ignored.
+settings_store/investment_evidence/** -text
+settings_store/*_evidence/** -text
