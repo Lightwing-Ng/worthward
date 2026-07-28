@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.9.3
+Code version: v0.9.4
 """
 
 from __future__ import annotations
@@ -216,6 +216,7 @@ def market_ticker_store_aliases(ticker: str) -> list[str]:
 # affects display labels and profile refresh fallbacks.
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "AMD": "Advanced Micro Devices, Inc.",
+    "AAPL": "Apple Inc.",
     "BOXX": "Alpha Architect 1-3 Month Box ETF",
     "DRAM": "Roundhill Memory ETF",
     "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
@@ -228,6 +229,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "NVDA": "NVIDIA Corporation",
     "QQQ": "Invesco QQQ Trust, Series 1",
     "QQQI": "NEOS Nasdaq-100(R) High Income ETF",
+    "QCOM": "QUALCOMM Incorporated",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
     "SGOV": "iShares 0-3 Month Treasury Bond ETF",
     "SKHY": "SK hynix Inc.",

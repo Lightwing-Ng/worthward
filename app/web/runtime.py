@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.38.0
+Code version: v0.38.1
 """
 
 from __future__ import annotations
@@ -178,7 +178,6 @@ from app.services.market_data import (
 from app.services.market_freshness import (
     ensure_latest_daily_caches,
     ensure_latest_investment_daily_caches,
-    extract_all_investment_tickers,
     extract_open_investment_tickers,
 )
 from app.services.market_freshness import ensure_latest_backtest_caches
@@ -912,7 +911,7 @@ def build_web_runtime() -> WebRuntime:
         try:
             return ensure_latest_investment_daily_caches(
                 exclude_configured_money_market_tickers(
-                    extract_all_investment_tickers(imported_payload)
+                    extract_open_investment_tickers(imported_payload)
                 )
             )
         except Exception:  # noqa: BLE001
@@ -1044,10 +1043,21 @@ def build_web_runtime() -> WebRuntime:
                 )
         return quotes
 
-    def build_investment_ticker_profiles(transactions: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+    def build_investment_ticker_profiles(
+            transactions: list[dict[str, Any]],
+            open_tickers: list[str] | set[str] | tuple[str, ...],
+    ) -> dict[str, dict[str, str]]:
+        open_ticker_set = {
+            normalize_ticker_input(str(ticker))
+            for ticker in open_tickers
+            if str(ticker or "").strip()
+        }
         ticker_profiles: dict[str, dict[str, str]] = {}
         for raw_ticker in collect_investment_display_tickers(transactions):
-            company_name, logo_url = resolve_ticker_identity_snapshot(raw_ticker)
+            company_name, logo_url = resolve_ticker_identity_snapshot(
+                raw_ticker,
+                allow_remote_refresh=raw_ticker in open_ticker_set,
+            )
             if company_name == raw_ticker:
                 known_company_name = resolve_known_ticker_company_name(raw_ticker)
                 if known_company_name:
@@ -5545,7 +5555,10 @@ def build_web_runtime() -> WebRuntime:
                 transactions,
                 open_tickers=section_freshness["open_tickers"],
             )
-            data["ticker_profiles"] = build_investment_ticker_profiles(transactions)
+            data["ticker_profiles"] = build_investment_ticker_profiles(
+                transactions,
+                section_freshness["open_tickers"],
+            )
             data["price_history_by_ticker"] = price_history_by_ticker
             data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
@@ -6044,23 +6057,24 @@ def build_web_runtime() -> WebRuntime:
         try:
             path = resolve_investment_history_store_path(ticker)
             freshness_scope = request.args.get("freshness_scope", "").strip().lower()
-            section_freshness = None
+            section_freshness = build_investment_section_freshness(
+                load_normalized_investment_payload()
+            )
+            should_refresh_ticker = (
+                ticker in set(section_freshness["open_tickers"])
+                and ticker not in configured_money_market_tickers
+            )
             if path is None:
-                if ticker in configured_money_market_tickers:
+                if not should_refresh_ticker:
                     response = jsonify({"success": False, "error": f"No local data for {ticker}"})
                     response.status_code = 404
                     return apply_no_store_headers(response)
                 fetch_history(ticker, include_dividends=False)
                 path = resolve_investment_history_store_path(ticker)
             else:
-                if ticker not in configured_money_market_tickers:
-                    should_refresh_ticker = True
-                    if freshness_scope == "section":
-                        section_freshness = build_investment_section_freshness(load_normalized_investment_payload())
-                        should_refresh_ticker = ticker in set(section_freshness["open_tickers"])
-                    if should_refresh_ticker:
-                        ensure_latest_investment_daily_caches([ticker])
-                        path = resolve_investment_history_store_path(ticker) or path
+                if should_refresh_ticker:
+                    ensure_latest_investment_daily_caches([ticker])
+                    path = resolve_investment_history_store_path(ticker) or path
 
             if path is None:
                 response = jsonify({"success": False, "error": f"No local data for {ticker}"})
@@ -6078,7 +6092,7 @@ def build_web_runtime() -> WebRuntime:
                 "prices": prices,
                 "count": len(prices),
                 "freshness_scope": freshness_scope or "ticker",
-                "target_trading_day": section_freshness["target_trading_day"] if section_freshness else "",
+                "target_trading_day": section_freshness["target_trading_day"] if freshness_scope == "section" else "",
             })
             return apply_no_store_headers(response)
         except Exception:  # noqa: BLE001
