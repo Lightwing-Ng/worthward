@@ -1,16 +1,19 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from __future__ import annotations
 
 import atexit
+import logging
 import os
 from pathlib import Path
 import shutil
 import ssl
+import subprocess
+import sys
 import tempfile
 from threading import RLock
 from typing import Mapping
@@ -31,10 +34,65 @@ _YFINANCE_SESSION: curl_requests.Session | None = None
 _YFINANCE_ENTERPRISE_CA_PATH: Path | None = None
 _SCOPED_NETWORK_OPENER: OpenerDirector | None = None
 _CA_BUNDLE_DIRECTORY: Path | None = None
+_MACOS_SYSTEM_CA_LOCK = RLock()
+_MACOS_SYSTEM_CA_DETECTION_ATTEMPTED = False
+_MACOS_SYSTEM_CA_PEM: Path | None = None
 
 
 class YahooTLSConfigurationError(ValueError):
     """Raised when the configured Yahoo enterprise CA cannot be used safely."""
+
+
+def detect_macos_system_ca_pem() -> Path | None:
+    """Export the macOS system keychains once for scoped Yahoo TLS trust."""
+    global _CA_BUNDLE_DIRECTORY
+    global _MACOS_SYSTEM_CA_DETECTION_ATTEMPTED, _MACOS_SYSTEM_CA_PEM
+
+    if sys.platform != "darwin":
+        return None
+
+    with _MACOS_SYSTEM_CA_LOCK:
+        if _MACOS_SYSTEM_CA_DETECTION_ATTEMPTED:
+            return _MACOS_SYSTEM_CA_PEM
+        _MACOS_SYSTEM_CA_DETECTION_ATTEMPTED = True
+
+        keychains = (
+            "/System/Library/Keychains/SystemRootCertificates.keychain",
+            "/Library/Keychains/System.keychain",
+        )
+        try:
+            pem_outputs = []
+            for keychain in keychains:
+                completed = subprocess.run(
+                    ["security", "find-certificate", "-a", "-p", keychain],
+                    check=True,
+                    capture_output=True,
+                )
+                pem_outputs.append(completed.stdout)
+            combined_pem = b"".join(
+                output.rstrip(b"\n") + b"\n"
+                for output in pem_outputs
+            )
+            if _CA_BUNDLE_DIRECTORY is None:
+                _CA_BUNDLE_DIRECTORY = Path(
+                    tempfile.mkdtemp(prefix="antigravity-yahoo-ca-")
+                )
+            detected_path = _CA_BUNDLE_DIRECTORY / "macos-system-keychains.pem"
+            detected_path.write_bytes(combined_pem)
+        except (OSError, subprocess.SubprocessError) as exc:
+            logging.warning(
+                "Unable to auto-detect macOS system CA certificates: %s",
+                exc,
+            )
+            return None
+
+        _MACOS_SYSTEM_CA_PEM = detected_path
+        certificate_count = combined_pem.count(b"BEGIN CERTIFICATE")
+        logging.info(
+            "Auto-detected %d certificates from the macOS system keychains.",
+            certificate_count,
+        )
+        return _MACOS_SYSTEM_CA_PEM
 
 
 def resolve_yahoo_enterprise_ca_path(
@@ -46,7 +104,7 @@ def resolve_yahoo_enterprise_ca_path(
     environment = os.environ if environ is None else environ
     raw_path = str(environment.get(YAHOO_CA_PEM_ENV, "") or configured_path or "").strip()
     if not raw_path:
-        return None
+        return detect_macos_system_ca_pem()
     path = Path(raw_path).expanduser()
     if not path.is_file():
         raise YahooTLSConfigurationError(
@@ -162,10 +220,17 @@ def add_yahoo_tls_configuration_hint(diagnostic: str) -> str:
         return diagnostic
     if not any(marker in normalized for marker in _TLS_ERROR_MARKERS):
         return diagnostic
-    return (
+    hint = (
         f"{diagnostic} Configure the corporate CA PEM with {YAHOO_CA_PEM_ENV} "
-        "or config.toml [network].yahoo_ca_pem; TLS verification remains required."
+        "or config.toml [network].yahoo_ca_pem; TLS verification remains required"
     )
+    if sys.platform == "darwin":
+        hint += (
+            "; on macOS the system keychain was checked automatically — if the "
+            "corporate CA is in a user keychain, export it and set "
+            f"{YAHOO_CA_PEM_ENV} explicitly"
+        )
+    return f"{hint}."
 
 
 def bootstrap_runtime_network_for_yfinance(

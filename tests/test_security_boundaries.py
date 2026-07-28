@@ -1,6 +1,6 @@
 """Security boundary regression tests.
 
-Code version: v1.4.2
+Code version: v1.4.3
 """
 
 from __future__ import annotations
@@ -43,6 +43,9 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
                     YAHOO_CA_PEM_ENV: "",
                 },
                 clear=False,
+        ), patch(
+                "app.infrastructure.runtime_network.detect_macos_system_ca_pem",
+                return_value=None,
         ):
             session = bootstrap_runtime_network_for_yfinance()
 
@@ -95,7 +98,10 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
         self.assertIs(logos.urlopen, open_scoped_network_url)
 
     def test_direct_session_needs_neither_proxy_nor_enterprise_ca(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch(
+                "app.infrastructure.runtime_network.detect_macos_system_ca_pem",
+                return_value=None,
+        ):
             session = bootstrap_runtime_network_for_yfinance()
 
             self.assertNotIn("HTTP_PROXY", os.environ)
@@ -141,7 +147,10 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
                 build_yahoo_ca_bundle(invalid_ca)
 
     def test_yfinance_session_is_reused_after_bootstrap(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch(
+                "app.infrastructure.runtime_network.detect_macos_system_ca_pem",
+                return_value=None,
+        ):
             bootstrapped_session = bootstrap_runtime_network_for_yfinance()
 
             self.assertIs(get_yfinance_session(), bootstrapped_session)

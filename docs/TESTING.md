@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.9.1`
+Documentation version: `v1.10.0`
 
 ## Supported commands
 
@@ -205,6 +205,8 @@ Yahoo transport unit tests never contact Yahoo, a corporate proxy, or any other
 remote endpoint. Temporary PEM files and mocked yfinance downloads cover:
 
 - macOS-style `HTTP_PROXY` and `HTTPS_PROXY` environments with a corporate CA;
+- mocked macOS System Roots and System keychain export, caching, and fallback;
+- immediate system-CA detection bypass on non-macOS platforms;
 - direct-connect environments with all proxy and corporate CA variables absent;
 - environment-variable precedence over `[network].yahoo_ca_pem`;
 - fail-closed handling for missing or malformed enterprise CA files;

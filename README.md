@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.57.3`
+Documentation version: `v2.58.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -231,18 +231,23 @@ yahoo_ca_pem = "/absolute/path/to/corporate-ca.pem"
 ```
 
 `ANTIGRAVITY_YAHOO_CA_PEM` takes precedence over
-`[network].yahoo_ca_pem`. The configured corporate CA is appended to certifi's
+`[network].yahoo_ca_pem`. When both settings are empty on macOS, the app
+automatically exports the System Roots and System keychains as a third-precedence
+fallback. The selected corporate or system CA bundle is appended to certifi's
 public CA bundle, so both intercepted Yahoo certificates and normal public
 certificate chains remain verified. The same scoped trust bundle is used only
 for Yahoo, remote logo providers, and Network self-check probes; broker, SMTP,
 and other transports are not changed. Restart the app after changing either CA
-setting because the verified clients are created during runtime bootstrap.
+setting because the verified clients are created during runtime bootstrap. A
+corporate CA installed only in a macOS user keychain must be exported to a PEM
+file and configured explicitly.
 
-On a computer that connects directly, leave both CA settings empty and do not
-set proxy environment variables. The session then uses `verify=True` with the
-secure curl_cffi default. Never work around `CertificateVerifyError` or curl
-error `60` with `verify=False`; configure the corporate CA PEM instead. The
-focused offline regression command is documented in [the testing guide](docs/TESTING.md).
+On a non-macOS computer that connects directly, leave both CA settings empty and
+do not set proxy environment variables. The session then uses `verify=True`
+with the secure curl_cffi default. Never work around `CertificateVerifyError`
+or curl error `60` with `verify=False`; configure the corporate CA PEM instead.
+The focused offline regression command is documented in
+[the testing guide](docs/TESTING.md).
 
 After pulling a dependency update on Windows, refresh the active Python `3.14`
 environment before launching the app:
