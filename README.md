@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.57.2`
+Documentation version: `v2.57.3`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -393,7 +393,16 @@ py -3.14 scripts/verify_investment_evidence.py --store D:\antigravity\settings_s
 
 If verification reports a missing or changed artifact, stop the app and restore
 the exact matching evidence directory from the Mac that created that ledger.
-The diagnostic script does not rewrite the ledger or evidence files.
+After copying that directory, or the original broker export files, into a
+temporary Windows folder, safely materialize only exact manifest matches:
+
+```powershell
+py -3.14 scripts/verify_investment_evidence.py --restore-from D:\antigravity-evidence-recovery
+```
+
+The recovery mode does not rewrite the ledger and does not overwrite an existing
+artifact. It writes a missing artifact only when both its SHA-256 digest and byte
+count match the ledger manifest, then runs the complete verification again.
 
 ### Investment import adapters
 
