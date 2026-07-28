@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.5.4
+ * Code version: v2.8.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -18,11 +18,12 @@ import {
 } from './investment/chart-orbit.js?v=investment-chart-orbit-v1.37.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
+    classifyInvestmentUsRealtimeSession,
     createInvestmentDataUtils,
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.48.2';
+} from './investment/data-utils.js?v=investment-data-utils-v1.49.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -73,7 +74,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.5.4',
+    entry: 'v2.8.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -849,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function shouldShowInvestmentRealtimePulse(session) {
-        return ['pre', 'intraday', 'post'].includes(String(session || '').trim().toLowerCase());
+        return ['overnight', 'pre', 'intraday', 'post'].includes(String(session || '').trim().toLowerCase());
     }
 
     function getInvestmentNewYorkClockParts(date = new Date()) {
@@ -875,19 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getInvestmentRealtimeClockSession(date = new Date()) {
-        const { weekday, hour, minute } = getInvestmentNewYorkClockParts(date);
-        if (weekday === 'Sat' || weekday === 'Sun' || !Number.isFinite(hour) || !Number.isFinite(minute)) {
-            return 'off';
-        }
-        const totalMinutes = (hour * 60) + minute;
-        const intradayOpenMinutes = (9 * 60) + 30;
-        const intradayCloseMinutes = 16 * 60;
-        const premarketOpenMinutes = 4 * 60;
-        const postmarketCloseMinutes = 20 * 60;
-        if (totalMinutes >= intradayOpenMinutes && totalMinutes < intradayCloseMinutes) return 'intraday';
-        if (totalMinutes >= premarketOpenMinutes && totalMinutes < intradayOpenMinutes) return 'pre';
-        if (totalMinutes >= intradayCloseMinutes && totalMinutes < postmarketCloseMinutes) return 'post';
-        return 'off';
+        return classifyInvestmentUsRealtimeSession(getInvestmentNewYorkClockParts(date));
     }
 
     function shouldRunInvestmentRealtimeQuotes() {
@@ -1149,8 +1138,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const market = getInvestmentQuoteMarket(quote);
         if (market !== 'US') return false;
         const quoteSession = String(quote?.session || '').trim().toLowerCase();
+        const quoteSource = String(quote?.source || '').trim().toLowerCase();
         const activeSession = getInvestmentRealtimeClockSession();
         if (quoteSession === 'post' && (activeSession === 'post' || activeSession === 'off')) {
+            return true;
+        }
+        if (
+            quoteSession === 'post'
+            && activeSession === 'overnight'
+            && quoteSource === 'yfinance'
+        ) {
             return true;
         }
         if (quoteSession === 'pre' && (activeSession === 'pre' || activeSession === 'off')) {
@@ -3166,6 +3163,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             index: realtimeIndex,
             session: visibleChartPoints[realtimeIndex]?.realtime_session,
+            source: visibleChartPoints[realtimeIndex]?.realtime_source,
         };
     }
 
@@ -7704,7 +7702,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const bodyTable = document.querySelector('#investment_holdings_panel .investment-holdings-table-scroll table');
         if (!(headerTable instanceof HTMLTableElement) || !(bodyTable instanceof HTMLTableElement)) return null;
 
-        const removedColumnIndexes = maskSensitive ? [6, 3, 1] : [1];
+        const removedColumnIndexes = maskSensitive ? [7, 5, 3, 1] : [1];
         const pruneShareHoldingsRow = (tableRow) => {
             if (!(tableRow instanceof HTMLTableRowElement)) return;
             removedColumnIndexes.forEach((index) => {
@@ -9282,6 +9280,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(positionDisplay)}</span>
                     </td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">
+                        ${renderInvestmentLiveValue('market_value', summary.hasOpenPosition ? summary.marketValue : null, {
+                            ticker: summary.ticker,
+                            className: 'trade-metric-value investment-stock-details-metric-value',
+                            formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                            useSplitValue: true,
+                        })}
+                    </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
                         ${renderHoldingsDualCurrencyValue(
                             summary.realizedPnl,
@@ -9310,7 +9316,11 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
 
+        const cashEquivalents = computeHoldingsCashEquivalents(summaries, AGGREGATE_CASH);
         const cashClass = Number.isFinite(AGGREGATE_CASH) && AGGREGATE_CASH >= 0
+            ? ' investment-holdings-value-positive'
+            : ' investment-holdings-value-negative';
+        const cashEquivalentsClass = Number.isFinite(cashEquivalents) && cashEquivalents >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
         const totalEquityClass = Number.isFinite(TOTAL_EQUITY) && TOTAL_EQUITY >= 0
@@ -9333,7 +9343,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 })}
                             </span>
                             <span class="investment-holdings-summary-metric-row">
-                                <span class="investment-holdings-summary-metric-label">Total Equity</span>
+                                <span class="investment-holdings-summary-metric-label">Cash equivalents</span>
+                                ${renderInvestmentLiveValue('summary_cash_equivalents', cashEquivalents, {
+                                    className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cashEquivalentsClass}`,
+                                    formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                                    useSplitValue: true,
+                                })}
+                            </span>
+                            <span class="investment-holdings-summary-metric-row">
+                                <span class="investment-holdings-summary-metric-label">Total equity</span>
                                 ${renderInvestmentLiveValue('summary_total_equity', Number.isFinite(TOTAL_EQUITY) ? TOTAL_EQUITY : null, {
                                     className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${totalEquityClass}`,
                                     formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
@@ -9354,6 +9372,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-money"></td>
+                <td class="investment-holdings-cell investment-holdings-cell-money">
+                    ${renderInvestmentLiveValue('summary_market_value', totalNetMarketValue, {
+                        className: 'trade-metric-value investment-stock-details-metric-value',
+                        formatter: (nextValue) => formatHoldingsMoney(nextValue),
+                        useSplitValue: true,
+                    })}
+                </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(formatHoldingsMoney(totalRealizedPnl))}</span>
                 </td>
@@ -9372,10 +9397,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
             </tr>
         `;
+        const holdingsColumnGroupHtml = `
+            <colgroup>
+                <col style="width: 8%;">
+                <col style="width: 32%;">
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 7%;">
+                <col style="width: 7%;">
+                <col style="width: 6%;">
+            </colgroup>
+        `;
 
         return `
             <div class="scrollable-data-table-shell investment-holdings-table-shell">
                 <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table" data-table-header data-table-summary-scope="${normalizedSummaryScope}" aria-label="Holdings columns and portfolio summary">
+                    ${holdingsColumnGroupHtml}
                     <thead>
                         <tr>
                             <th>No.</th>
@@ -9383,6 +9422,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <th>Average price</th>
                             <th>Last</th>
                             <th>Position</th>
+                            <th>Market value</th>
                             <th>Realized P&amp;L</th>
                             <th>Unrealized P&amp;L</th>
                             <th>%</th>
@@ -9392,6 +9432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </table>
                 <div class="trade-transactions-wrap scrollable-data-table-scroll investment-holdings-table-scroll" data-table-scroll>
                     <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table" data-table-body>
+                        ${holdingsColumnGroupHtml}
                         <tbody>${rowsHtml}</tbody>
                     </table>
                 </div>
@@ -9654,6 +9695,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return safeCash + openMarketValue;
     }
 
+    function computeHoldingsCashEquivalents(summaries, aggregateCash) {
+        if (aggregateCash === null || aggregateCash === undefined || aggregateCash === '') return null;
+        const cash = Number(aggregateCash);
+        if (!Number.isFinite(cash)) return null;
+        const configuredTickers = getCashEquivalentTickerSet();
+        const cashEquivalentMarketValue = (Array.isArray(summaries) ? summaries : [])
+            .filter((summary) => (
+                summary?.hasOpenPosition
+                && configuredTickers.has(String(summary.ticker || '').trim().toUpperCase())
+            ))
+            .reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
+        return cash + cashEquivalentMarketValue;
+    }
+
     function resolveInvestmentTickerReferenceClose(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return null;
@@ -9784,6 +9839,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (!(row instanceof HTMLTableRowElement)) return;
             const lastNode = row.querySelector('[data-investment-live-field="last"]');
+            const marketValueNode = row.querySelector('[data-investment-live-field="market_value"]');
             const unrealizedNode = row.querySelector('[data-investment-live-field="unrealized_pnl"]');
             const weightNode = row.querySelector('[data-investment-live-field="position_weight"]');
             const lastCell = lastNode?.closest('td');
@@ -9794,6 +9850,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastNode,
                 formatHoldingsLocalMoney(summary.lastPrice, summary.quoteCurrency),
                 summary.lastPrice,
+            );
+            updateInvestmentLiveValueNode(
+                marketValueNode,
+                summary.hasOpenPosition ? formatHoldingsMoney(summary.marketValue) : '-',
+                summary.hasOpenPosition ? summary.marketValue : null,
             );
             updateInvestmentLiveValueNode(
                 unrealizedNode,
@@ -9819,8 +9880,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON
             ? (totalNetMarketValue / totalEquity) * 100
             : 0;
+        const cashEquivalents = computeHoldingsCashEquivalents(summaries, aggregateCash);
 
         const cashNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]');
+        const cashEquivalentsNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_equivalents"]');
+        const summaryMarketValueNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_market_value"]');
         const totalEquityNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_total_equity"]');
         const cumulativeNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cumulative_pnl"]');
         const summaryUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_unrealized_pnl"]');
@@ -9833,11 +9897,22 @@ document.addEventListener('DOMContentLoaded', () => {
             aggregateCash,
         );
         updateInvestmentLiveValueNode(
+            cashEquivalentsNode,
+            cashEquivalents === null ? '-' : formatHoldingsMoney(cashEquivalents),
+            cashEquivalents,
+        );
+        updateInvestmentLiveValueNode(
+            summaryMarketValueNode,
+            formatHoldingsMoney(totalNetMarketValue),
+            totalNetMarketValue,
+        );
+        updateInvestmentLiveValueNode(
             totalEquityNode,
             totalEquity === null ? '-' : formatHoldingsMoney(totalEquity),
             totalEquity,
         );
         syncInvestmentLiveTone(cashNode, aggregateCash, { enableSignedTone: aggregateCash !== null });
+        syncInvestmentLiveTone(cashEquivalentsNode, cashEquivalents, { enableSignedTone: cashEquivalents !== null });
         syncInvestmentLiveTone(totalEquityNode, totalEquity, { enableSignedTone: totalEquity !== null });
         const metricsCumulativeNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_cumulative_pnl"]');
         const metricsUnrealizedNode = document.querySelector('#investment_metrics_panel [data-investment-live-field="metrics_unrealized_pnl"]');
@@ -11985,6 +12060,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 const realtimeIndex = markerTarget.index;
                 if (!shouldShowInvestmentRealtimePulse(markerTarget.session)) {
+                    markerElement.hidden = true;
+                    return;
+                }
+                if (!isRealtimeQuotePulseProviderEligible({
+                    market: 'US',
+                    session: markerTarget.session,
+                    source: markerTarget.source,
+                })) {
                     markerElement.hidden = true;
                     return;
                 }

@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.48.2
+ * Code version: v1.49.0
+ * - Added: US overnight quote sessions require Longbridge provenance and use the Investment realtime clock contract.
  * - Added: Extended-hours Investment pulse eligibility now requires the per-ticker Longbridge quote source while preserving regular-session fallback behavior.
  * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
  * - Added: HSBC statement-bundle readiness validates complete even PDF pairs for the smart multi-file selector.
@@ -62,8 +63,36 @@ export function resolveRealtimeQuoteSource(quotes = []) {
 export function isRealtimeQuotePulseProviderEligible(quote) {
     const market = String(quote?.market || 'US').trim().toUpperCase();
     const session = String(quote?.session || '').trim().toLowerCase();
-    if (market !== 'US' || !['pre', 'post'].includes(session)) return true;
+    if (market !== 'US' || !['overnight', 'pre', 'post'].includes(session)) return true;
     return String(quote?.source || '').trim().toLowerCase() === 'longbridge';
+}
+
+export function classifyInvestmentUsRealtimeSession({weekday, hour, minute} = {}) {
+    const normalizedWeekday = String(weekday || '').trim();
+    const normalizedHour = Number(hour);
+    const normalizedMinute = Number(minute);
+    if (
+        !Number.isFinite(normalizedHour)
+        || !Number.isFinite(normalizedMinute)
+        || normalizedHour < 0
+        || normalizedHour > 23
+        || normalizedMinute < 0
+        || normalizedMinute > 59
+    ) {
+        return 'off';
+    }
+    const totalMinutes = (normalizedHour * 60) + normalizedMinute;
+    if (totalMinutes >= 20 * 60) {
+        return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'].includes(normalizedWeekday) ? 'overnight' : 'off';
+    }
+    if (totalMinutes < 4 * 60) {
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(normalizedWeekday) ? 'overnight' : 'off';
+    }
+    if (['Sat', 'Sun'].includes(normalizedWeekday)) return 'off';
+    if (totalMinutes >= (9 * 60) + 30 && totalMinutes < 16 * 60) return 'intraday';
+    if (totalMinutes >= 4 * 60 && totalMinutes < (9 * 60) + 30) return 'pre';
+    if (totalMinutes >= 16 * 60 && totalMinutes < 20 * 60) return 'post';
+    return 'off';
 }
 
 export function createInvestmentDataUtils({
@@ -2191,4 +2220,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.48.2';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.49.0';

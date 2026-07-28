@@ -1,3 +1,4 @@
+{# Code version: v0.2.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -28,7 +29,6 @@
         </article>
         <article class="workspace-mode-main">
             {% if series %}
-            {{ render_investment_share_actions(shell_id='workspace_share_drawer_tickers', share_drawer='tickers', show_mask=false, capture_label='Save comparison screenshot', anchor_label='Share comparison') }}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <article class="report-card workspace-article-card workspace-summary-card">
                     <div class="report-heading-row">
@@ -38,6 +38,7 @@
 
                 <article class="report-card workspace-content-card compare-summary-content-card">
                     <div id="compare_summary_panel">
+                        {{ render_investment_share_actions(shell_id='workspace_share_drawer_tickers', share_drawer='tickers', show_mask=false, capture_label='Save comparison screenshot', anchor_label='Share comparison', placement='summary-panel') }}
                         {% if display_range %}
                         <p id="compare_summary_date_range" class="compare-summary-date-range">{{ display_range }}</p>
                         {% endif %}

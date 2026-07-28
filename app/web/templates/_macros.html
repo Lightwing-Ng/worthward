@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.5.0 #}
 
 {% macro render_notice_banner(
     title='',
@@ -101,6 +101,7 @@
 {%- endmacro %}
 
 {% macro render_date_picker_field(role, input_id, input_name, value, label, aria_label, feedback_id, disabled=false, hidden=false) -%}
+{% set initial_date_text = format_display_date(value) if value and format_display_date is defined else '' %}
 <div class="date-picker-field" data-date-picker data-date-role="{{ role }}"{% if hidden %} hidden{% endif %}>
     <label for="{{ input_id }}"{% if role == "end" %} class="date-end-label"{% endif %}>{{ label }}</label>
     <input id="{{ input_id }}" name="{{ input_name }}" type="hidden" value="{{ value }}"{% if disabled %} disabled{% endif %}>
@@ -115,9 +116,9 @@
             aria-label="{{ aria_label }}"
             aria-describedby="{{ feedback_id }}"
             data-placeholder="Select date"
-            data-empty="1"
+            data-empty="{{ '0' if initial_date_text else '1' }}"
             spellcheck="false"
-        ></span>
+        >{{ initial_date_text }}</span>
     </div>
     <div class="date-picker-popover" data-date-popover hidden>
         <p id="{{ feedback_id }}" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
@@ -211,8 +212,8 @@
 </div>
 {%- endmacro %}
 
-{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None) -%}
-<div class="investment-share-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %} hidden>
+{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None, placement=none) -%}
+<div class="investment-share-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %}{% if placement %} data-share-placement="{{ placement }}"{% endif %} hidden>
     <button type="button" class="investment-share-action-button" id="share_capture_button"
             aria-label="{{ capture_label }}" title="{{ capture_label }}">
         <span class="icon"

@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.18.5
+Code version: v0.19.0
 """
 
 from __future__ import annotations
@@ -101,6 +101,22 @@ class MarketSessionClassificationTests(unittest.TestCase):
 
         self.assertEqual(session_state["session"], "post")
         self.assertTrue(session_state["is_realtime_allowed"])
+
+    def test_nyse_investment_session_maps_overnight_to_the_next_trading_date(self) -> None:
+        session_state = nyse_market_session_state(
+            "2026-07-28T03:19:00Z",
+            include_overnight=True,
+        )
+
+        self.assertEqual(session_state["session"], "overnight")
+        self.assertEqual(session_state["session_date"], "2026-07-28")
+        self.assertTrue(session_state["is_realtime_allowed"])
+
+    def test_nyse_default_session_contract_keeps_overnight_disabled(self) -> None:
+        session_state = nyse_market_session_state("2026-07-28T03:19:00Z")
+
+        self.assertEqual(session_state["session"], "off")
+        self.assertFalse(session_state["is_realtime_allowed"])
 
     def test_classify_hk_equity_session_maps_regular_hours(self) -> None:
         self.assertEqual(classify_hk_equity_session("2026-06-25 10:15"), "intraday")
@@ -1136,6 +1152,34 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(quotes[0]["price"], 54.88)
         self.assertEqual(quotes[0]["timestamp"], "2026-07-20 17:30")
         self.assertEqual(quotes[0]["session"], "post")
+
+    def test_longbridge_realtime_quotes_select_overnight_price_and_trading_date(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        with (
+            patch("app.services.market_data.load_broker_settings", return_value=settings),
+            patch(
+                "app.services.market_data.nyse_market_session_state",
+                return_value={"session": "overnight", "session_date": "2026-07-28"},
+            ) as session_mock,
+            patch(
+                "app.services.market_data.run_longbridge_cli_json",
+                return_value=[{
+                    "symbol": "DRAM.US",
+                    "last": "52.43",
+                    "overnight": {"last": "49.40", "timestamp": "2026-07-28T03:19:06Z"},
+                }],
+            ),
+        ):
+            quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+        self.assertEqual(quotes[0]["price"], 49.40)
+        self.assertEqual(quotes[0]["timestamp"], "2026-07-27 23:19")
+        self.assertEqual(quotes[0]["session"], "overnight")
+        self.assertEqual(quotes[0]["session_date"], "2026-07-28")
+        session_mock.assert_called_once_with(include_overnight=True)
 
     def test_longbridge_realtime_quotes_fail_closed_for_transport_errors(self) -> None:
         settings = BrokerSettings(

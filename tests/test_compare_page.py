@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.7
+Code version: v0.10.8
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app import create_app
+from app.core.date_display_settings import DateDisplaySettings
 from app.models.schemas import SeriesPayload
 from tests.factories.market import close_frame_for_ticker, ohlc_frame_for_dates, quote_profile_stub
 
@@ -62,12 +63,15 @@ class ComparePageTests(unittest.TestCase):
             )
 
         query = "&".join(f"ticker={ticker}" for ticker in tickers)
+        date_display_settings = DateDisplaySettings(full_date_format="yyyy_mmm_dd")
         with (
             patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
             patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
             patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
             patch("app.web.runtime.record_ticker_usage"),
             patch("app.web.runtime.build_market_cap_series_payload", side_effect=_build_market_cap_series),
+            patch("app.web.runtime.load_date_display_settings", return_value=date_display_settings),
+            patch("app.services.presentation.load_date_display_settings", return_value=date_display_settings),
         ):
             response = create_app().test_client().get(
                 f"/workspaces/market-caps?{query}&range=exact&period=5y&from=2026-06-29&to=2026-07-01"
@@ -89,6 +93,10 @@ class ComparePageTests(unittest.TestCase):
             re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html),
             tickers,
         )
+        self.assertIn(">2026 Jun 29</span>", html)
+        self.assertIn(">2026 Jul 01</span>", html)
+        self.assertNotIn(">2026-06-29</span>", html)
+        self.assertNotIn(">2026-07-01</span>", html)
 
     def test_price_page_overnight_adds_canonical_skhynix_companion(self) -> None:
         intraday_frames = {

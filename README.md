@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.56.10`
+Documentation version: `v2.57.1`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -190,10 +190,15 @@ market-store key.
 
 Longbridge is optional for every market-data view. Daily history, intraday charts,
 and extended-hours comparisons use `yfinance` by default. When configured,
-Investment realtime quotes use Longbridge first for US pre-market, regular, and
-post-market sessions; unresolved quotes fall back to batched `yfinance` requests,
-which make at most one rotating individual recovery request per poll. Investment
-polling and its server-side complete-batch cache use a 60-second interval. An
+Investment realtime quotes use Longbridge first for US overnight, pre-market,
+regular, and post-market sessions. Overnight values require Longbridge because
+Yahoo does not expose that session. During the overnight window, a machine
+without a usable Longbridge quote keeps the latest `yfinance` post-market close
+for Holdings valuation without labeling or animating it as a live overnight
+quote. Other unresolved supported-session quotes also fall back to batched
+`yfinance` requests, which make at most one rotating individual recovery request
+per poll. Investment polling and its server-side
+complete-batch cache use a 60-second interval. An
 explicit Yahoo rate limit pauses all yfinance requests for 5 minutes, then uses
 bounded exponential backoff up to 30 minutes for repeated limits. Each returned
 quote identifies its provider, and a mixed response preserves that per-quote

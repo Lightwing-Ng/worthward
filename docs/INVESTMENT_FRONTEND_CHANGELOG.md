@@ -1,11 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.0.7`
+Documentation version: `v1.3.1`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Fixed: The Holdings summary uses sentence case for Total equity and keeps the Cash through Cumulative P&L values on one shared right edge after live-number transitions reserve different widths.
+- Added: Holdings now includes a live Market value column between Position and Realized P&L. Its 70%–80% horizontal track and numeric right edge match Transaction history at every supported width; the two P&L columns remain equal and the percent column uses the remaining compact track.
+- Added: Holdings now displays Cash equivalents between Cash and Total equity, combining cash with the current market value of configured cash-equivalent positions and refreshing the total with live quotes.
+- Added: Holdings and live valuation now accept Longbridge overnight quotes during the eligible US 20:00–04:00 New York session.
+- Changed: During the overnight session, Holdings preserves the latest yfinance post-market quote when Longbridge is unavailable, while keeping the aggregate realtime pulse disabled because the fallback is not a live overnight quote.
 - Refactored: IBKR import-feedback markup now lives in tested pure `investment/import-feedback.js`; `investment.js` remains the composition root and injects its established HTML escaper, preserving evidence and transfer-review copy.
 - Changed: HSBC import feedback now explains the rolling Order Status scope, pending USD Savings settlement, and Portfolio-based execution-price calibration after a current-moment paste.
 - Changed: HSBC import feedback now distinguishes provisional Portfolio pricing from final execution pricing repaired by a later settled USD Savings cash flow.
@@ -313,7 +318,7 @@ architectural boundary summary so code navigation begins at the imports.
 - Fixed: Investment view segmented control now switches cleanly between Chart, Holdings, and Metrics
 - Fixed: Equity curve only renders inside the Chart view instead of bleeding into other tabs
 - Fixed: Dashboard rendering no longer crashes on undefined transactions or parquet scope references
-- Fixed: Total Equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
+- Fixed: Total equity calculation uses historical close prices from parquet files instead of latest prices for each transaction date
 - Improved: Investment equity curve now reuses the shared chart tooltip tokens and layout
 - Fixed: Equity curve seeds a zero-value point on the prior day when the first transaction starts above or below zero
 - Adjusted: Investment chart panel better fills the available card height in Chart view

@@ -1,6 +1,6 @@
 """NYSE trading-calendar primitives shared across application layers.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ _NYSE_PREMARKET_OPEN_MINUTE = 4 * 60
 _NYSE_REGULAR_OPEN_MINUTE = (9 * 60) + 30
 _NYSE_REGULAR_CLOSE_MINUTE = 16 * 60
 _NYSE_POSTMARKET_CLOSE_MINUTE = 20 * 60
+_NYSE_OVERNIGHT_CLOSE_MINUTE = 4 * 60
 _NYSE_EARLY_CLOSE_MINUTE = 13 * 60
 _NYSE_EARLY_CLOSE_OVERRIDES: dict[int, frozenset[date]] = {
     2025: frozenset({date(2025, 11, 28)}),
@@ -133,16 +134,21 @@ def is_nyse_early_close(value: date | pd.Timestamp | str) -> bool:
     return is_nyse_trading_day(current) and _nyse_has_early_close_for(current)
 
 
-def nyse_market_session_state(reference: pd.Timestamp | str | None = None) -> dict[str, object]:
+def nyse_market_session_state(
+        reference: pd.Timestamp | str | None = None,
+        *,
+        include_overnight: bool = False,
+) -> dict[str, object]:
     anchor = pd.Timestamp.now(tz=_NYSE_SESSION_TIMEZONE) if reference is None else pd.Timestamp(reference)
     if anchor.tzinfo is None:
         anchor = anchor.tz_localize("UTC").tz_convert(_NYSE_SESSION_TIMEZONE)
     else:
         anchor = anchor.tz_convert(_NYSE_SESSION_TIMEZONE)
 
-    trading_date = anchor.date()
-    is_trading_day = is_nyse_trading_day(trading_date)
-    is_early_close = is_nyse_early_close(trading_date)
+    calendar_date = anchor.date()
+    trading_date = calendar_date
+    is_trading_day = is_nyse_trading_day(calendar_date)
+    is_early_close = is_nyse_early_close(calendar_date)
     regular_close_minute = _NYSE_EARLY_CLOSE_MINUTE if is_early_close else _NYSE_REGULAR_CLOSE_MINUTE
     total_minutes = (int(anchor.hour) * 60) + int(anchor.minute)
     session = "off"
@@ -151,9 +157,20 @@ def nyse_market_session_state(reference: pd.Timestamp | str | None = None) -> di
             session = "pre"
         elif _NYSE_REGULAR_OPEN_MINUTE <= total_minutes < regular_close_minute:
             session = "intraday"
-        elif total_minutes < _NYSE_POSTMARKET_CLOSE_MINUTE and not is_early_close:
+        elif regular_close_minute <= total_minutes < _NYSE_POSTMARKET_CLOSE_MINUTE and not is_early_close:
             session = "post"
+    if include_overnight and session == "off":
+        if total_minutes >= _NYSE_POSTMARKET_CLOSE_MINUTE:
+            overnight_trading_date = calendar_date + timedelta(days=1)
+            if is_nyse_trading_day(overnight_trading_date):
+                trading_date = overnight_trading_date
+                is_trading_day = True
+                is_early_close = is_nyse_early_close(trading_date)
+                session = "overnight"
+        elif total_minutes < _NYSE_OVERNIGHT_CLOSE_MINUTE and is_nyse_trading_day(calendar_date):
+            session = "overnight"
 
+    regular_close_minute = _NYSE_EARLY_CLOSE_MINUTE if is_early_close else _NYSE_REGULAR_CLOSE_MINUTE
     next_trading_day = _find_next_nyse_trading_day(trading_date + timedelta(days=1))
     next_trading_day_open = f"{next_trading_day.isoformat()}T{_format_minute_clock(_NYSE_REGULAR_OPEN_MINUTE)}:00"
     next_trading_day_close = f"{next_trading_day.isoformat()}T{_format_minute_clock(_NYSE_REGULAR_CLOSE_MINUTE)}:00"
@@ -166,7 +183,9 @@ def nyse_market_session_state(reference: pd.Timestamp | str | None = None) -> di
         "session_date": trading_date.isoformat(),
         "as_of": anchor.isoformat(),
         "timezone": _NYSE_SESSION_TIMEZONE,
-        "is_realtime_allowed": is_trading_day and session in {"pre", "intraday", "post"},
+        "is_realtime_allowed": is_trading_day and session in {"overnight", "pre", "intraday", "post"},
+        "overnight_open": _format_minute_clock(_NYSE_POSTMARKET_CLOSE_MINUTE),
+        "overnight_close": _format_minute_clock(_NYSE_OVERNIGHT_CLOSE_MINUTE),
         "premarket_open": _format_minute_clock(_NYSE_PREMARKET_OPEN_MINUTE),
         "regular_open": _format_minute_clock(_NYSE_REGULAR_OPEN_MINUTE),
         "regular_close": _format_minute_clock(regular_close_minute),

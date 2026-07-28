@@ -1,4 +1,4 @@
-/* Code version: v0.22.9 */
+/* Code version: v0.25.2 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -3681,11 +3681,6 @@
                     if (query) tickerValidationCache.set(query, exactMatch);
                     input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
                     validateTickerInput(input);
-                    if (exactMatch) {
-                        closePanel();
-                        syncCommittedTickerSelection("ticker-change");
-                        return;
-                    }
                     renderItems(payload);
                 } catch (error) {
                     reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search request failed", {
@@ -4879,6 +4874,10 @@
             syncNativeSelectSelection(parts.select, parts.select.value);
             refreshSharedSelectField(field);
         });
+        if (parts.select.id === "period" && parts.select.dataset.periodChangeJsBound !== "1") {
+            parts.select.dataset.periodChangeJsBound = "1";
+            parts.select.addEventListener("change", handlePeriodSelectionChange);
+        }
     };
 
     const getBacktestIntervalShell = () => document.querySelector("[data-backtest-interval-shell]");
@@ -5343,7 +5342,7 @@
         return readFullDateFormat().startsWith("yyyy_") ? `${year} ${monthLabel}` : `${monthLabel} ${year}`;
     };
     const getDateEntryExample = () => formatFullDateParts({year: 2025, monthIndex: 5, day: 5});
-    const getDateEntryHint = () => `${getDateEntryExample()} or 2025-06-05`;
+    const getDateEntryHint = () => getDateEntryExample();
     const getShortDatePlaceholder = () => readShortDateFormat() === "dd_mm_yyyy" ? "00/00/0000" : "0000/00/00";
     const formatDisplayDate = (rawValue) => {
         const date = parseIsoDate(rawValue);
@@ -5457,7 +5456,11 @@
                 };
             }
         }
-        if (["tickers", "market-caps", "prices"].includes(state.currentView) && state.chart?.tradingDate) {
+        if (
+            ["tickers", "market-caps", "prices"].includes(state.currentView)
+            && (periodSelect?.value || defaults.period) === "1d"
+            && state.chart?.tradingDate
+        ) {
             const tradingDate = String(state.chart.tradingDate || "");
             if (parseIsoDate(tradingDate)) {
                 return {
@@ -5591,6 +5594,7 @@
     };
 
     let lastRangeMode = $("input[name='range']:checked")?.value || defaults.range_mode;
+    let hasDerivedExactDateRange = false;
 
     const clampTradeCapital = (value) => Math.min(1000000, Math.max(1, value || 1));
     const parseTradeCapitalValue = (rawValue) => {
@@ -5691,6 +5695,20 @@
             form.requestSubmit();
         }, delay);
     };
+
+    function handlePeriodSelectionChange() {
+        refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+        syncExactDateModeControls();
+        syncOneDayExtendedHoursSwitch();
+        syncDividendModeSwitches();
+        if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
+
+        // Period is an explicit calculation request. Submit through the canonical
+        // handler so cold ticker validation can resolve before navigation.
+        if (form && !isSubmittingWithOverlay) {
+            form.requestSubmit();
+        }
+    }
 
     const closeAllDatePickers = () => {
         datePickerState.forEach((picker) => {
@@ -6751,18 +6769,26 @@
     const handleRangeModeChange = (input) => {
         const nextRangeMode = input.value;
         const previousRangeMode = lastRangeMode;
+        const hasExactDateSelection = !hasDerivedExactDateRange && (isOneDayExactDateMode()
+            ? Boolean(exactTradingDateInput?.value)
+            : Boolean(exactStartInput?.value || exactEndInput?.value));
         let shouldAutoSubmit = true;
         if (previousRangeMode !== nextRangeMode) {
             if (nextRangeMode === "exact") {
                 const synced = syncExactInputsToRenderedRange();
+                hasDerivedExactDateRange = synced;
                 if (synced && hasInitialResult) {
                     shouldAutoSubmit = false;
                 }
             } else if (nextRangeMode === "period") {
-                const matchedPeriod = chooseRelativePeriodForExactRange();
-                if (matchedPeriod && periodSelect) {
-                    periodSelect.value = matchedPeriod;
-                    refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+                if (!hasExactDateSelection) {
+                    shouldAutoSubmit = false;
+                } else {
+                    const matchedPeriod = chooseRelativePeriodForExactRange();
+                    if (matchedPeriod && periodSelect) {
+                        periodSelect.value = matchedPeriod;
+                        refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
+                    }
                 }
             }
         }
@@ -6776,23 +6802,11 @@
     };
     rangeModeInputs.forEach((input) => {
         input.addEventListener("change", () => handleRangeModeChange(input));
-        input.addEventListener("input", () => handleRangeModeChange(input));
     });
-    const rangeModeShell = $(".range-mode-shell");
-    if (rangeModeShell instanceof HTMLElement) {
-        rangeModeShell.addEventListener("click", (event) => {
-            const option = event.target instanceof Element ? event.target.closest(".segmented-control-option") : null;
-            if (!(option instanceof HTMLElement) || !rangeModeShell.contains(option)) return;
-            const input = option.querySelector('input[name="range"]');
-            if (!(input instanceof HTMLInputElement) || input.disabled) return;
-            event.preventDefault();
-            input.checked = true;
-            handleRangeModeChange(input);
-        });
-    }
     [exactStartInput, exactEndInput, exactTradingDateInput].forEach((input) => {
         if (!input) return;
         input.addEventListener("change", () => {
+            hasDerivedExactDateRange = false;
             syncDateConstraints();
             if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("range-controls");
             scheduleAutoSubmit();
@@ -6829,12 +6843,8 @@
     form?.addEventListener("change", (event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement && target.id === "period") {
-            refreshSharedSelectField(periodPanel?.querySelector("[data-shared-select-field]"));
-            syncExactDateModeControls();
-            syncOneDayExtendedHoursSwitch();
-            syncDividendModeSwitches();
-            if (!(isBacktestView || isDcaView)) requestWorkspaceChartTransition("period");
-            scheduleAutoSubmit();
+            // The Period select owns its change handler so custom dropdown events
+            // remain reliable even when a sidebar control is repaired in place.
             return;
         }
         if (target instanceof HTMLSelectElement && (target.id === "dca_weekday" || target.id === "dca_month_day")) {

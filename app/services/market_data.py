@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.20.1
+Code version: v0.21.0
 """
 
 from __future__ import annotations
@@ -1064,6 +1064,8 @@ def _longbridge_realtime_quote_value(row: object, session: str) -> tuple[object,
         candidate = _longbridge_realtime_quote_field(row, "pre_market", "pre_market_quote")
     elif session == "post":
         candidate = _longbridge_realtime_quote_field(row, "post_market", "post_market_quote")
+    elif session == "overnight":
+        candidate = _longbridge_realtime_quote_field(row, "overnight", "overnight_quote")
     else:
         candidate = row
     if candidate is None:
@@ -1086,10 +1088,10 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
     if not has_longbridge_market_data_source(settings):
         return []
 
-    session_state = nyse_market_session_state()
+    session_state = nyse_market_session_state(include_overnight=True)
     session = str(session_state.get("session") or "off")
     session_date = str(session_state.get("session_date") or "").strip()
-    if session not in {"pre", "intraday", "post"}:
+    if session not in {"overnight", "pre", "intraday", "post"}:
         return []
     us_tickers = [ticker for ticker in normalized_tickers if infer_ticker_market(ticker) == "US"]
     if not us_tickers:
@@ -1134,7 +1136,8 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
             if not pd.isna(timestamp):
                 new_york_timestamp = timestamp.tz_convert(NEW_YORK_TIMEZONE)
                 display_timestamp = new_york_timestamp.strftime("%Y-%m-%d %H:%M")
-                quote_session_date = new_york_timestamp.strftime("%Y-%m-%d")
+                if session != "overnight":
+                    quote_session_date = new_york_timestamp.strftime("%Y-%m-%d")
         results.append({
             "ticker": ticker,
             "price": price,

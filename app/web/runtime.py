@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.36.7
+Code version: v0.38.0
 """
 
 from __future__ import annotations
@@ -4073,6 +4073,7 @@ def build_web_runtime() -> WebRuntime:
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,
+            format_display_date=format_display_date,
             chart_trading_date=chart_trading_date_value or exact_start_value,
             version=app_meta.get("version", CODE_VERSION),
             updated_on=app_meta.get("updated_on", ""),
@@ -6282,7 +6283,10 @@ def build_web_runtime() -> WebRuntime:
             except (TypeError, ValueError):
                 requested_day_count = 5
             requested_day_count = max(1, min(365, requested_day_count))
-            session_state = nyse_market_session_state(reference if reference else None)
+            session_state = nyse_market_session_state(
+                reference if reference else None,
+                include_overnight=True,
+            )
             trading_days = nyse_recent_trading_days(
                 reference if reference else None,
                 day_count=requested_day_count,
@@ -6303,6 +6307,8 @@ def build_web_runtime() -> WebRuntime:
                 "as_of": pd.Timestamp.now(tz="America/New_York").isoformat(),
                 "timezone": "America/New_York",
                 "is_realtime_allowed": False,
+                "overnight_open": "20:00",
+                "overnight_close": "04:00",
                 "premarket_open": "04:00",
                 "regular_open": "09:30",
                 "regular_close": "16:00",

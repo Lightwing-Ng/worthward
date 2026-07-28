@@ -1,4 +1,4 @@
-/* Code version: v0.3.0 */
+/* Code version: v0.5.0 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -522,6 +522,24 @@
 
 	const syncWorkspaceShareDrawerPosition = () => {
 		const drawer = getDrawerForView();
+		if (drawer?.dataset.sharePlacement === "summary-panel") {
+			const panel = drawer.parentElement;
+			const themeToggle = document.getElementById("global_theme_toggle");
+			if (!(panel instanceof HTMLElement) || !(themeToggle instanceof HTMLElement)) return;
+			const panelRect = panel.getBoundingClientRect();
+			const themeRect = themeToggle.getBoundingClientRect();
+			if (!panelRect.height || !themeRect.height) return;
+			const centerY = themeRect.top + (themeRect.height / 2);
+			const top = centerY - panelRect.top - (drawer.offsetHeight / 2);
+			drawer.style.setProperty("--investment-share-actions-top", `${top}px`);
+			drawer.style.top = `${top}px`;
+			return;
+		}
+		if (drawer?.dataset.sharePlacement === "summary-heading") {
+			drawer.style.removeProperty("--investment-share-actions-top");
+			drawer.style.removeProperty("top");
+			return;
+		}
 		const headingRow = document.querySelector(".workspace-mode-results-stack .workspace-summary-card .report-heading-row");
 		if (!(drawer instanceof HTMLElement) || !(headingRow instanceof HTMLElement)) return;
 		const rect = headingRow.getBoundingClientRect();

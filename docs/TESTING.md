@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.8.10`
+Documentation version: `v1.9.1`
 
 ## Supported commands
 
@@ -97,8 +97,8 @@ Current suite inventory remeasured on 24 Jul 2026:
   6 skipped, and 63 subtests passed.
 - 78 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 76 Playwright test cases listed by `npx playwright test --list`, including
-  parameterized viewport coverage.
+- 84 Playwright test cases passed through `./scripts/check.sh` on 27 Jul 2026,
+  including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
@@ -232,9 +232,14 @@ with `verify=False`, an unverified SSL context, or a process-wide TLS patch.
   known New York session date is retained.
 - Provider timestamps are converted to New York display time before reaching
   the Investment frontend.
-- Pre-market, regular, and post-market selection, transport failure, non-US and
-  off-session short circuits, per-ticker yfinance fallback, and mixed provider
-  provenance are deterministic regressions.
+- Overnight, pre-market, regular, and post-market selection, transport failure,
+  non-US and off-session short circuits, per-ticker yfinance fallback, and mixed
+  provider provenance are deterministic regressions.
+- Overnight regressions preserve the next NYSE trading date across the 20:00
+  boundary and reject Friday and Saturday windows. Longbridge provenance is
+  required for an overnight pulse; when Longbridge is unavailable, Holdings
+  may retain the latest yfinance post-market quote without displaying a live
+  overnight marker.
 - Browser coverage verifies the actual loaded `stock-details.js` resource URL
   and module version, preventing a stale cache key from passing source-only
   assertions.
