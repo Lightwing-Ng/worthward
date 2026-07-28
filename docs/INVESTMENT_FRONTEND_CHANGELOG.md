@@ -1,11 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.3.1`
+Documentation version: `v1.3.2`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Fixed: Holdings now supplies canonical issuer or fund names for BOXX, MU, NVDA, QQQ, TQQQ, and TSM when a local market profile contains only its ticker placeholder.
 - Fixed: The Holdings summary uses sentence case for Total equity and keeps the Cash through Cumulative P&L values on one shared right edge after live-number transitions reserve different widths.
 - Added: Holdings now includes a live Market value column between Position and Realized P&L. Its 70%–80% horizontal track and numeric right edge match Transaction history at every supported width; the two P&L columns remain equal and the percent column uses the remaining compact track.
 - Added: Holdings now displays Cash equivalents between Cash and Total equity, combining cash with the current market value of configured cash-equivalent positions and refreshing the total with live quotes.

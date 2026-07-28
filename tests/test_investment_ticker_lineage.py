@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.4.1
+Code version: v0.4.2
 """
 
 from __future__ import annotations
@@ -129,10 +129,16 @@ class InvestmentTickerLineageTests(unittest.TestCase):
 
     def test_known_ticker_company_names_cover_yfinance_placeholder_profiles(self) -> None:
         expected_names = {
+            "BOXX": "Alpha Architect 1-3 Month Box ETF",
             "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
             "IBKR": "Interactive Brokers Group, Inc.",
             "JEPQ": "JPMorgan Nasdaq Equity Premium Income ETF",
             "META": "Meta Platforms, Inc.",
+            "MU": "Micron Technology, Inc.",
+            "NVDA": "NVIDIA Corporation",
+            "QQQ": "Invesco QQQ Trust, Series 1",
+            "TQQQ": "ProShares UltraPro QQQ",
+            "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
         }
         payload = known_ticker_company_names_payload()
 
