@@ -1,6 +1,6 @@
-"""Tests for application-startup integrity checks.
+"""Tests for portable application startup.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -12,20 +12,15 @@ from app import create_app
 
 
 class AppStartupTests(unittest.TestCase):
-    def test_app_factory_runs_the_persisted_investment_evidence_scan(self) -> None:
-        with patch("app.verify_persisted_investment_source_artifacts", return_value=2) as verifier:
+    def test_app_factory_does_not_require_device_local_investment_evidence(self) -> None:
+        with patch(
+            "app.infrastructure.storage.verify_persisted_investment_source_artifacts",
+            side_effect=RuntimeError("Device-local evidence is unavailable."),
+        ) as verifier:
             application = create_app()
 
         self.assertEqual(application.name, "app")
-        verifier.assert_called_once_with()
-
-    def test_app_factory_fails_closed_when_persisted_evidence_is_invalid(self) -> None:
-        with patch(
-            "app.verify_persisted_investment_source_artifacts",
-            side_effect=RuntimeError("Investment source evidence file is missing or has changed."),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "integrity check failed at startup"):
-                create_app()
+        verifier.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.8.0
+Code version: v0.9.0
 """
 
 import secrets
@@ -18,7 +18,6 @@ from app.core.upload_limits import (
     INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES as INVESTMENT_IMPORT_MULTIPART_ALLOWANCE_BYTES,
     MAX_INVESTMENT_IMPORT_REQUEST_BYTES,
 )
-from app.infrastructure.storage import verify_persisted_investment_source_artifacts
 from app.web.routes_entry import register_routes
 
 
@@ -28,13 +27,6 @@ from app.web.routes_entry import register_routes
 
 
 def create_app() -> Flask:
-    try:
-        verify_persisted_investment_source_artifacts()
-    except RuntimeError as exc:
-        raise RuntimeError(
-            f"Investment source evidence integrity check failed at startup: {exc}"
-        ) from exc
-
     app = Flask(
         __name__,
         template_folder="web/templates",

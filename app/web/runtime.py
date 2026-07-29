@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.38.1
+Code version: v0.39.0
 """
 
 from __future__ import annotations
@@ -741,10 +741,17 @@ def build_web_runtime() -> WebRuntime:
         INVESTMENT_TRANSACTIONS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     def invalidate_investment_transactions_cache() -> None:
-        ensure_investment_transactions_cache_dir()
-        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
-            if INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
-                INVESTMENT_TRANSACTIONS_CACHE_PATH.unlink()
+        try:
+            ensure_investment_transactions_cache_dir()
+            with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+                if INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
+                    INVESTMENT_TRANSACTIONS_CACHE_PATH.unlink()
+        except OSError:
+            LOGGER.warning(
+                "Unable to invalidate the derived investment transaction cache; "
+                "continuing with the portable investment ledger.",
+                exc_info=True,
+            )
 
     def build_file_fingerprint(path: Path) -> dict[str, object]:
         if not path.exists():
@@ -791,15 +798,15 @@ def build_web_runtime() -> WebRuntime:
     def read_investment_transactions_cache(
             investment_store_fingerprint: dict[str, object],
     ) -> dict[str, Any] | None:
-        ensure_investment_transactions_cache_dir()
-        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
-            if not INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
-                return None
-            try:
+        try:
+            ensure_investment_transactions_cache_dir()
+            with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+                if not INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
+                    return None
                 with open(INVESTMENT_TRANSACTIONS_CACHE_PATH, "r", encoding="utf-8") as f:
                     cached = json.load(f)
-            except (json.JSONDecodeError, OSError, TypeError):
-                return None
+        except (json.JSONDecodeError, OSError, TypeError):
+            return None
 
         if cached.get("schema_version") != INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION:
             return None
@@ -837,9 +844,16 @@ def build_web_runtime() -> WebRuntime:
             "price_stores": price_store_fingerprints,
             "payload": payload,
         }
-        ensure_investment_transactions_cache_dir()
-        with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
-            write_json_atomic(INVESTMENT_TRANSACTIONS_CACHE_PATH, cache_payload)
+        try:
+            ensure_investment_transactions_cache_dir()
+            with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
+                write_json_atomic(INVESTMENT_TRANSACTIONS_CACHE_PATH, cache_payload)
+        except OSError:
+            LOGGER.warning(
+                "Unable to write the derived investment transaction cache; "
+                "continuing with the portable investment ledger.",
+                exc_info=True,
+            )
 
     def load_normalized_investment_payload() -> dict[str, Any]:
         return normalize_investment_payload_tickers(

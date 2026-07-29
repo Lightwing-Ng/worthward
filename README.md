@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.58.0`
+Documentation version: `v2.59.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -282,7 +282,7 @@ profile name.
 ## Investment ledger notes
 
 - Investment transactions are read from `settings_store/investment.parquet`
-- The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these files are ignored by Git and are rebuilt from `investment.parquet` plus local market history files
+- The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these device-local files are ignored by Git, are never required for startup, and are rebuilt from `investment.parquet` plus local market history files
 - The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
 - The Overview and Transaction history surfaces share a responsive horizontal separator that appears on hover or focus and supports pointer, touch, and keyboard resizing
 - Holdings reuse locally cached ticker profiles and logos when available
@@ -372,19 +372,31 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   - **CSV**: Transaction History plus Realized Summary exports for historical backfills.
   - **GainsKeeper**: OFX/GKX files for precision upgrades and overlapping historical coverage.
 - Each newly imported file is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
-- Application startup verifies every persisted source-evidence manifest before routes are registered. If a referenced artifact is missing, altered, oversized, malformed, or still contains raw Base64 in the ledger, startup stops with a recovery-safe integrity error instead of serving an unauditable ledger.
-- Existing ledger records remain readable and mergeable. Legacy imports that predate source-evidence persistence remain explicitly without a reconstructed raw artifact; the application never fabricates one.
+- Application startup and read-only Investment browsing require only `investment.parquet`. Source-evidence verification remains mandatory at the investment-import commit boundary, so a device without the matching evidence sidecar can inspect the portable ledger but cannot silently extend it with unauditable imports.
+- Existing ledger records remain readable after a Parquet-only transfer and
+  remain mergeable when their matching evidence sidecar is present. Legacy
+  imports that predate source-evidence persistence remain explicitly without a
+  reconstructed raw artifact; the application never fabricates one.
 
 ### Cross-platform evidence recovery
 
 `settings_store/` is intentionally ignored by Git. Therefore, a Git pull never
-transfers an investment ledger's matching immutable evidence directory. Copy
-`investment.parquet` and its sibling `investment_evidence/` directory together
-from the same source device through a byte-preserving transfer method. Do not
-regenerate an evidence `.bin` file from a CSV or text editor, and do not permit
-line-ending conversion: the SHA-256 value represents the exact original upload.
+transfers the investment ledger or its device-local derived cache. To start the
+app and browse the ledger on another macOS or Windows device, transfer only
+`investment.parquet` through a binary-safe copy method. Do not transfer
+`investment_cache/`; it contains disposable machine-local fingerprints and is
+rebuilt automatically. A stale, malformed, or unwritable cache is treated as a
+cache miss and never blocks ledger startup.
 
-On Windows PowerShell, inspect the local pair before starting the app:
+The sibling `investment_evidence/` directory is optional for startup and
+read-only browsing, but remains necessary to verify old source files and to
+commit later imports against the complete audit trail. Copy it separately when
+those operations are required. Do not regenerate an evidence `.bin` file from a
+CSV or text editor, and do not permit line-ending conversion: the SHA-256 value
+represents the exact original upload.
+
+On Windows PowerShell, inspect the local ledger and any evidence sidecar before
+performing another broker import:
 
 ```powershell
 py -3.14 scripts/verify_investment_evidence.py
@@ -396,10 +408,11 @@ For a non-default ledger location, pass its Parquet path explicitly:
 py -3.14 scripts/verify_investment_evidence.py --store D:\antigravity\settings_store\investment.parquet
 ```
 
-If verification reports a missing or changed artifact, stop the app and restore
-the exact matching evidence directory from the Mac that created that ledger.
-After copying that directory, or the original broker export files, into a
-temporary Windows folder, safely materialize only exact manifest matches:
+If verification reports a missing or changed artifact, read-only startup remains
+available, but do not perform another broker import until the exact matching
+evidence has been restored from the Mac that created that ledger. After copying
+that directory, or the original broker export files, into a temporary Windows
+folder, safely materialize only exact manifest matches:
 
 ```powershell
 py -3.14 scripts/verify_investment_evidence.py --restore-from D:\antigravity-evidence-recovery
