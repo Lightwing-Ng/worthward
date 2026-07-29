@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.3.0
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -331,12 +331,12 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                     "label": "Total equity",
                     "amount_integer": "72,224",
                     "amount_fraction": "12",
-                    "percent_integer": "100",
+                    "percent_integer": "99",
                     "percent_fraction": "00",
                 },
             ],
             "tokens": [
-                px_token("--investment-holdings-allocation-badge-inline-size", 64, 1),
+                px_token("--investment-holdings-allocation-badge-inline-size", 52, 1),
                 px_token("--investment-holdings-allocation-badge-padding-block", 2, 0),
                 px_token("--investment-holdings-allocation-badge-padding-inline", 6, 0),
                 px_token("--investment-holdings-allocation-badge-radius", 4, 0),

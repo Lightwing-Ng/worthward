@@ -1,4 +1,4 @@
-/* Code version: v0.11.0 */
+/* Code version: v0.12.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -262,7 +262,7 @@
 	--shared-select-option-padding: 9px 10px;
 	--shared-select-option-gap: 8px;
 	--investment-holdings-cell-padding: 4px 6px;
-	--investment-holdings-allocation-badge-inline-size: 64px;
+	--investment-holdings-allocation-badge-inline-size: 52px;
 	--investment-holdings-allocation-badge-padding-block: 2px;
 	--investment-holdings-allocation-badge-padding-inline: 6px;
 	--investment-holdings-allocation-badge-radius: 4px;

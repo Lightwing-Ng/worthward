@@ -1,4 +1,4 @@
-/* Code version: v1.53.0 */
+/* Code version: v1.54.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3285,7 +3285,7 @@
     display: inline-flex;
     align-items: flex-end;
     justify-content: flex-end;
-    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4.8em);
+    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4em);
     min-inline-size: 0;
     padding-block: var(--investment-holdings-allocation-badge-padding-block);
     padding-inline: var(--investment-holdings-allocation-badge-padding-inline);
@@ -3303,7 +3303,7 @@
 
 .investment-holdings-allocation-track {
     display: block;
-    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4.8em);
+    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4em);
     min-inline-size: 0;
     background: transparent;
 }
