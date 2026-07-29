@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.4.0
+Code version: v1.4.1
 """
 
 from __future__ import annotations
@@ -339,7 +339,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                 px_token("--investment-holdings-allocation-badge-inline-size", 52, 1),
                 px_token("--investment-holdings-allocation-badge-padding-block", 2, 0),
                 px_token("--investment-holdings-allocation-badge-padding-inline", 6, 0),
-                px_token("--investment-holdings-allocation-badge-radius", 4, 0),
+                px_token("--investment-holdings-allocation-badge-radius", 2, 0),
                 raw_token("--investment-holdings-allocation-badge-background-positive", "var(--theme-accent-positive)"),
                 raw_token("--investment-holdings-allocation-badge-background-negative", "var(--theme-accent-secondary)"),
                 raw_token("--investment-holdings-allocation-badge-color", "var(--color-white-adaptive)"),

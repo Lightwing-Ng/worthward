@@ -1,4 +1,4 @@
-/* Code version: v0.12.0 */
+/* Code version: v0.12.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -265,7 +265,7 @@
 	--investment-holdings-allocation-badge-inline-size: 52px;
 	--investment-holdings-allocation-badge-padding-block: 2px;
 	--investment-holdings-allocation-badge-padding-inline: 6px;
-	--investment-holdings-allocation-badge-radius: 4px;
+	--investment-holdings-allocation-badge-radius: 2px;
 	--investment-holdings-allocation-badge-background-positive: var(--theme-accent-positive);
 	--investment-holdings-allocation-badge-background-negative: var(--theme-accent-secondary);
 	--investment-holdings-allocation-badge-color: var(--color-white-adaptive);
