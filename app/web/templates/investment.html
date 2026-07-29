@@ -1,4 +1,4 @@
-{# Code version: v1.21.3 #}
+{# Code version: v1.24.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -705,5 +705,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.8.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.11.0') }}"></script>
 {% endblock %}

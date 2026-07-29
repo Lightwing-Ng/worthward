@@ -1,4 +1,4 @@
-/* Code version: v1.49.1 */
+/* Code version: v1.53.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3256,7 +3256,7 @@
 
 .investment-holdings-summary-metrics {
     display: grid;
-    grid-template-columns: 105px max-content;
+    grid-template-columns: 105px max-content max-content;
     align-items: end;
     column-gap: 6px;
     row-gap: 2px;
@@ -3278,6 +3278,71 @@
     justify-self: end;
     justify-content: flex-end;
     text-align: right;
+}
+
+.investment-holdings-allocation-badge {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4.8em);
+    min-inline-size: 0;
+    padding-block: var(--investment-holdings-allocation-badge-padding-block);
+    padding-inline: var(--investment-holdings-allocation-badge-padding-inline);
+    border-radius: var(--investment-holdings-allocation-badge-radius);
+    background: var(--investment-holdings-allocation-badge-background-positive);
+    color: var(--investment-holdings-allocation-badge-color);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.investment-holdings-allocation-badge.investment-holdings-allocation-badge-negative {
+    background: var(--investment-holdings-allocation-badge-background-negative);
+}
+
+.investment-holdings-allocation-track {
+    display: block;
+    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4.8em);
+    min-inline-size: 0;
+    background: transparent;
+}
+
+#investment_holdings_panel .investment-holdings-allocation-badge-value.trade-metric-value,
+.style-token-holdings-allocation-badge-demo .investment-holdings-allocation-badge-value.trade-metric-value {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: flex-end !important;
+    inline-size: 100%;
+    max-inline-size: none;
+    min-height: 0;
+    padding-bottom: 0;
+    color: inherit;
+}
+
+#investment_holdings_panel .investment-community-share-table-shell .investment-holdings-table .investment-holdings-allocation-badge-value.trade-metric-value {
+    display: grid !important;
+}
+
+.investment-holdings-allocation-badge-value > .workspace-metric-value-major,
+.investment-holdings-allocation-badge-value > .workspace-metric-value-minor,
+.investment-holdings-allocation-badge-value > .workspace-metric-value-suffix {
+    align-self: end;
+    display: flex;
+    align-items: flex-end;
+    line-height: 1;
+}
+
+.investment-holdings-allocation-badge-value > .workspace-metric-value-major {
+    justify-self: end;
+}
+
+.investment-holdings-allocation-badge-value > .workspace-metric-value-minor {
+    transform: none;
+}
+
+.investment-holdings-allocation-badge-value > .workspace-metric-value-suffix {
+    justify-self: end;
 }
 
 .investment-holdings-live-value {
@@ -3324,7 +3389,7 @@
 }
 
 .investment-holdings-value-negative {
-    color: #ff2f92;
+    color: var(--theme-accent-secondary);
 }
 
 

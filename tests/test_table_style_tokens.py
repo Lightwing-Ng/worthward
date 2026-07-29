@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.4.4."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -46,6 +46,22 @@ def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:
     assert "--settings-action-package-live-marker-size" in html
     assert "--settings-action-package-live-marker-color" in html
     assert "--settings-action-package-live-marker-duration" in html
+
+
+def test_style_tokens_expose_the_investment_holdings_allocation_badge_contract() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/settings/style-tokens")
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'data-style-token-card="investment-holdings-allocation-badge"' in html
+    assert "style-token-holdings-allocation-badge-demo" in html
+    assert "--investment-holdings-allocation-badge-inline-size" in html
+    assert "--investment-holdings-allocation-badge-radius" in html
+    assert "--investment-holdings-allocation-badge-background-positive" in html
+    assert "--investment-holdings-allocation-badge-background-negative" in html
+    assert "--investment-holdings-allocation-badge-color" in html
 
 
 def test_style_tokens_portfolio_orbit_uses_four_distinct_mega_cap_logos() -> None:

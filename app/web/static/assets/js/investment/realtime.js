@@ -1,11 +1,11 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  * - Added: Realtime quote scheduling, cancellation, and active/idle cadence are encapsulated behind a tested poller.
  */
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.1.0';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.2.0';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -455,6 +455,7 @@ export function createInvestmentLiveValueAnimator({
             && previousDisplay !== nextDisplayNormalized
             && direction !== 'flat'
             && !windowRef.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+            && !node.closest('#investment_holdings_panel')
         );
         reserveValueLayout(node, previousDisplay, nextDisplayNormalized, useSplit);
         node.classList.remove('is-live-rise', 'is-live-fall');

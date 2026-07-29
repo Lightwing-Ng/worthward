@@ -1,4 +1,27 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.15.0 */
+
+.style-token-holdings-allocation-badge-demo {
+    display: grid;
+    grid-template-columns: 105px max-content max-content;
+    align-items: end;
+    column-gap: 6px;
+    row-gap: 6px;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.style-token-holdings-allocation-badge-demo .investment-holdings-summary-metric-label {
+    color: var(--text);
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.style-token-holdings-allocation-amount.trade-metric-value {
+    align-items: flex-end !important;
+    justify-self: end;
+    padding-bottom: 0;
+}
 .settings-service-main {
     min-width: 0;
     display: grid;

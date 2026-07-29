@@ -1,4 +1,4 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.3.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -1150,6 +1150,14 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+                    {% elif row.sample_kind == "investment-holdings-allocation-badge" %}
+                    <div class="style-token-holdings-allocation-badge-demo" aria-hidden="true">
+                        {% for allocation in row.sample_allocations %}
+                        <span class="investment-holdings-summary-metric-label">{{ allocation.label }}</span>
+                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount"><span class="workspace-metric-value-major">{{ allocation.amount_integer }}</span><span class="workspace-metric-value-minor">.{{ allocation.amount_fraction }}</span></span>
+                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value"><span class="workspace-metric-value-major">{{ allocation.percent_integer }}</span><span class="workspace-metric-value-minor">.{{ allocation.percent_fraction }}</span><span class="workspace-metric-value-suffix">%</span></span></span>
+                        {% endfor %}
                     </div>
                     {% elif row.sample_kind == "shared-select-filter" %}
                     <div class="style-token-shared-select-shell">

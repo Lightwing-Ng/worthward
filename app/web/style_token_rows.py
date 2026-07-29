@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.0.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -303,6 +303,59 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "related_styles": [],
         },
         {
+            "id": style_token_id("Investment Holdings allocation badge"),
+            "name": "Investment Holdings allocation badge",
+            "sample_kind": "investment-holdings-allocation-badge",
+            "sample_title": "",
+            "sample_copy": "",
+            "sample_button": "",
+            "sample_button_class": "",
+            "sample_icon_class": "",
+            "sample_icon_shell_class": "",
+            "sample_allocations": [
+                {
+                    "label": "Cash",
+                    "amount_integer": "22,032",
+                    "amount_fraction": "02",
+                    "percent_integer": "30",
+                    "percent_fraction": "51",
+                },
+                {
+                    "label": "Cash equivalents",
+                    "amount_integer": "32,098",
+                    "amount_fraction": "02",
+                    "percent_integer": "44",
+                    "percent_fraction": "44",
+                },
+                {
+                    "label": "Total equity",
+                    "amount_integer": "72,224",
+                    "amount_fraction": "12",
+                    "percent_integer": "100",
+                    "percent_fraction": "00",
+                },
+            ],
+            "tokens": [
+                px_token("--investment-holdings-allocation-badge-inline-size", 64, 1),
+                px_token("--investment-holdings-allocation-badge-padding-block", 2, 0),
+                px_token("--investment-holdings-allocation-badge-padding-inline", 6, 0),
+                px_token("--investment-holdings-allocation-badge-radius", 4, 0),
+                raw_token("--investment-holdings-allocation-badge-background-positive", "var(--theme-accent-positive)"),
+                raw_token("--investment-holdings-allocation-badge-background-negative", "var(--theme-accent-secondary)"),
+                raw_token("--investment-holdings-allocation-badge-color", "var(--color-white-adaptive)"),
+            ],
+            "related_styles": [
+                {
+                    "name": "Scrollable data table",
+                    "target_id": style_token_id("Scrollable data table"),
+                },
+                {
+                    "name": "Workspace metric value",
+                    "target_id": style_token_id("Workspace metric value"),
+                },
+            ],
+        },
+        {
             "id": style_token_id("Ticker identity row"),
             "name": "Ticker identity row",
             "sample_kind": "ticker-identity-row",
@@ -526,6 +579,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
         "Workspace metric value": 35,
         "Portfolio donut orbit": 36,
         "Scrollable data table": 37,
+        "Investment Holdings allocation badge": 38,
         "Settings action button": 40,
         "Settings action package": 50,
         "Circular icon button": 60,

@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.8.1
+ * Code version: v2.11.0
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -47,7 +47,7 @@ import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.1.0';
+} from './investment/realtime.js?v=investment-realtime-v1.2.0';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -74,7 +74,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.8.1',
+    entry: 'v2.10.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -9317,6 +9317,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
 
         const cashEquivalents = computeHoldingsCashEquivalents(summaries, AGGREGATE_CASH);
+        const cashAllocation = calculateHoldingsSummaryAllocation(AGGREGATE_CASH, TOTAL_EQUITY);
+        const cashEquivalentsAllocation = calculateHoldingsSummaryAllocation(cashEquivalents, TOTAL_EQUITY);
         const cashClass = Number.isFinite(AGGREGATE_CASH) && AGGREGATE_CASH >= 0
             ? ' investment-holdings-value-positive'
             : ' investment-holdings-value-negative';
@@ -9341,6 +9343,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
                                     useSplitValue: true,
                                 })}
+                                ${renderInvestmentHoldingsAllocationBadge('summary_cash_allocation', cashAllocation, AGGREGATE_CASH)}
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cash equivalents</span>
@@ -9349,6 +9352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
                                     useSplitValue: true,
                                 })}
+                                ${renderInvestmentHoldingsAllocationBadge('summary_cash_equivalents_allocation', cashEquivalentsAllocation, cashEquivalents)}
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Total equity</span>
@@ -9357,6 +9361,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
                                     useSplitValue: true,
                                 })}
+                                <span class="investment-holdings-allocation-track" aria-hidden="true"></span>
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cumulative P&amp;L</span>
@@ -9687,6 +9692,67 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="investment-live-value${classToken}" data-investment-live-field="${escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${escapeHtml(displayText)}">${innerHtml}</span>`;
     }
 
+    function calculateHoldingsSummaryAllocation(value, totalEquity) {
+        const numericValue = Number(value);
+        const numericTotalEquity = Number(totalEquity);
+        if (
+            !Number.isFinite(numericValue)
+            || !Number.isFinite(numericTotalEquity)
+            || Math.abs(numericTotalEquity) <= INVESTMENT_LIVE_DIGIT_EPSILON
+        ) {
+            return null;
+        }
+        return (numericValue / numericTotalEquity) * 100;
+    }
+
+    function getInvestmentHoldingsAllocationBadgeToneClass(toneValue) {
+        const numericToneValue = Number(toneValue);
+        if (!Number.isFinite(numericToneValue)) return '';
+        return numericToneValue >= 0
+            ? ' investment-holdings-allocation-badge-positive'
+            : ' investment-holdings-allocation-badge-negative';
+    }
+
+    function renderInvestmentHoldingsAllocationBadge(field, value, toneValue = value) {
+        const numericValue = Number(value);
+        const displayText = Number.isFinite(numericValue) ? formatHoldingsPercent(numericValue) : '-';
+        const numberAttr = Number.isFinite(numericValue)
+            ? ` data-investment-live-number="${escapeHtml(String(numericValue))}"`
+            : '';
+        const toneClass = getInvestmentHoldingsAllocationBadgeToneClass(toneValue);
+        return `
+            <span class="investment-holdings-allocation-badge${toneClass}">
+                <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value" data-investment-live-field="${escapeHtml(field)}"${numberAttr} data-investment-live-display="${escapeHtml(displayText)}">${renderWorkspaceMetricValueContent(displayText)}</span>
+            </span>
+        `;
+    }
+
+    function updateInvestmentHoldingsAllocationBadge(node, value, toneValue = value) {
+        if (!(node instanceof HTMLElement)) return;
+        const numericValue = Number(value);
+        const displayText = Number.isFinite(numericValue) ? formatHoldingsPercent(numericValue) : '-';
+        node.dataset.investmentLiveDisplay = displayText;
+        if (Number.isFinite(numericValue)) {
+            node.dataset.investmentLiveNumber = String(numericValue);
+        } else {
+            delete node.dataset.investmentLiveNumber;
+        }
+        const badge = node.closest('.investment-holdings-allocation-badge');
+        if (badge instanceof HTMLElement) {
+            const numericToneValue = Number(toneValue);
+            const hasTone = Number.isFinite(numericToneValue);
+            badge.classList.toggle(
+                'investment-holdings-allocation-badge-positive',
+                hasTone && numericToneValue >= 0,
+            );
+            badge.classList.toggle(
+                'investment-holdings-allocation-badge-negative',
+                hasTone && numericToneValue < 0,
+            );
+        }
+        node.innerHTML = renderWorkspaceMetricValueContent(displayText);
+    }
+
     function computeLiveHoldingsTotalEquity(summaries, aggregateCash) {
         const safeCash = Number.isFinite(Number(aggregateCash)) ? Number(aggregateCash) : 0;
         const openMarketValue = (Array.isArray(summaries) ? summaries : [])
@@ -9886,6 +9952,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const cashEquivalentsNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_equivalents"]');
         const summaryMarketValueNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_market_value"]');
         const totalEquityNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_total_equity"]');
+        const cashAllocationNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_allocation"]');
+        const cashEquivalentsAllocationNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_equivalents_allocation"]');
         const cumulativeNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cumulative_pnl"]');
         const summaryUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_unrealized_pnl"]');
         const summaryWeightNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_position_weight"]');
@@ -9910,6 +9978,16 @@ document.addEventListener('DOMContentLoaded', () => {
             totalEquityNode,
             totalEquity === null ? '-' : formatHoldingsMoney(totalEquity),
             totalEquity,
+        );
+        updateInvestmentHoldingsAllocationBadge(
+            cashAllocationNode,
+            calculateHoldingsSummaryAllocation(aggregateCash, totalEquity),
+            aggregateCash,
+        );
+        updateInvestmentHoldingsAllocationBadge(
+            cashEquivalentsAllocationNode,
+            calculateHoldingsSummaryAllocation(cashEquivalents, totalEquity),
+            cashEquivalents,
         );
         syncInvestmentLiveTone(cashNode, aggregateCash, { enableSignedTone: aggregateCash !== null });
         syncInvestmentLiveTone(cashEquivalentsNode, cashEquivalents, { enableSignedTone: cashEquivalents !== null });
