@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -73,6 +73,7 @@ NETWORK_SECRET_QUERY_PATTERN = re.compile(
 
 TICKER_WEBSITE_OVERRIDES = {
     "QQQ": "https://www.invesco.com",
+    "XQQI": "https://neosfunds.com/xqqi/",
     "JEPQ": "https://www.jpmorganchase.com",
     "DRAM": "https://www.roundhillinvestments.com/etf/dram/",
     "RAM": "https://www.roundhillinvestments.com/etf/ram/",
@@ -102,6 +103,7 @@ ISSUER_WEBSITE_HINTS = {
 STORED_LOGO_ALIASES = {
     "SKHY": ("000660.KS",),
     "SKHYV": ("000660.KS",),
+    "XQQI": ("QQQI",),
 }
 
 
@@ -194,6 +196,8 @@ def is_known_ticker(ticker: str) -> bool:
     if not has_valid_ticker_format(normalized_ticker):
         return False
     if history_store_path_for(normalized_ticker).exists() or has_profile_record(normalized_ticker):
+        return True
+    if resolve_known_ticker_company_name(normalized_ticker):
         return True
     if not has_remote_market_access():
         return False
@@ -721,16 +725,17 @@ def _build_local_suggestion(symbol: str, *, query: str, seen: set[str]) -> dict[
     canonical_symbol = normalize_ticker_input(normalized_symbol)
     if canonical_symbol in seen:
         return None
+    known_company_name = resolve_known_ticker_company_name(normalized_symbol)
     if not (
             history_store_path_for(normalized_symbol).exists()
             or has_profile_record(normalized_symbol)
             or has_logo_asset(normalized_symbol)
+            or known_company_name
     ):
         return None
     profile_record = load_profile_record(normalized_symbol)
     display_symbol = display_search_symbol(normalized_symbol)
     record_company_name = str((profile_record or {}).get("company_name") or "").strip()
-    known_company_name = resolve_known_ticker_company_name(normalized_symbol)
     company_name = (
             known_company_name
             if is_ticker_fallback_company_name(record_company_name, normalized_symbol)
@@ -742,7 +747,11 @@ def _build_local_suggestion(symbol: str, *, query: str, seen: set[str]) -> dict[
     if not is_supported_local_symbol(normalized_symbol, query, company_name):
         return None
     seen.add(canonical_symbol)
-    logo_url = resolve_stored_logo_url(normalized_symbol) if has_logo_asset(normalized_symbol) else ""
+    has_resolvable_logo = has_logo_asset(normalized_symbol) or any(
+        has_logo_asset(alias)
+        for alias in STORED_LOGO_ALIASES.get(normalized_symbol, ())
+    )
+    logo_url = resolve_stored_logo_url(normalized_symbol) if has_resolvable_logo else ""
     return {
         "symbol": display_symbol,
         "name": company_name,

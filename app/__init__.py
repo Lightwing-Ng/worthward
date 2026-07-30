@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.9.0
+Code version: v0.10.0
 """
 
 import secrets
@@ -19,6 +19,7 @@ from app.core.upload_limits import (
     MAX_INVESTMENT_IMPORT_REQUEST_BYTES,
 )
 from app.web.routes_entry import register_routes
+from app.web.request_security import get_or_create_investment_csrf_token
 
 
 # This global Flask request cap permits one artifact-sized multipart request
@@ -55,6 +56,7 @@ def create_app() -> Flask:
             "settings_broker_codes": SETTINGS_BROKER_CODES,
             "live_trading_broker_codes": LIVE_TRADING_BROKER_CODES,
             "investment_import_broker_codes": INVESTMENT_IMPORT_BROKER_CODES,
+            "investment_csrf_token": get_or_create_investment_csrf_token(),
         }
 
     register_routes(app)

@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.21.0
+Code version: v0.22.0
 """
 
 from __future__ import annotations
@@ -622,11 +622,15 @@ def resolve_compare_overnight_tickers(tickers: list[str]) -> list[str]:
 
 
 def supports_compare_overnight(tickers: list[str], period: str) -> bool:
-    resolved_tickers = resolve_compare_overnight_tickers(tickers)
+    requested_tickers = [
+        normalize_ticker(ticker)
+        for ticker in tickers
+        if str(ticker or "").strip()
+    ]
     return (
-        bool(resolved_tickers)
+        bool(requested_tickers)
         and str(period or "").strip().lower() == "1d"
-        and any(infer_ticker_market(ticker) == "US" for ticker in resolved_tickers)
+        and any(infer_ticker_market(ticker) == "US" for ticker in requested_tickers)
     )
 
 

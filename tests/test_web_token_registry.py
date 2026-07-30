@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.6.2
+Code version: v0.7.2
 """
 
 from __future__ import annotations
@@ -197,7 +197,10 @@ class WebTokenRegistryTests(unittest.TestCase):
             "0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 52%, transparent)",
         )
         self.assertEqual(registry["--font-size-8"].value, "36px")
-        self.assertEqual(registry["--tooltip-background"].value, "var(--frosted-glass-background)")
+        self.assertEqual(
+            registry["--tooltip-background"].value,
+            "var(--frosted-glass-opaque-background)",
+        )
         self.assertEqual(registry["--glass-mask-shadow"].value, "0 12px 24px var(--theme-glass-border)")
         self.assertEqual(registry["--mode-switch-radius"].source_path.resolve(), FOUNDATION_TOKENS_CSS_PATH.resolve())
         self.assertGreater(registry["--mode-switch-radius"].line, 1)

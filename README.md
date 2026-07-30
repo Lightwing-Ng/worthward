@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.60.0`
+Documentation version: `v2.64.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -18,7 +18,8 @@ Documentation version: `v2.60.0`
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
 - Choose the backtest execution mode between `signal_close` and `next_open`
-- Import IBKR CSV, GainsKeeper, or pasted Trade Notifications into a local investment ledger used by `Trade -> Investment`
+- Import broker files, including the validated Zircon HK manual XLSX template, into a local investment ledger used by `Trade -> Investment`
+- Protect browser investment writes with a same-origin check and a session-bound CSRF token
 - Review imported holdings, equity history, and transaction history from `Trade -> Investment`
 - Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
@@ -433,8 +434,23 @@ count match the ledger manifest, then runs the complete verification again.
 
 The Investment workspace currently exposes import adapters for HSBC, IBKR,
 Futu (HK), Longbridge (HK), Longbridge (SG), Charles Schwab, Tiger Trade,
-uSMART (HK), and CMB Wing Lung Bank. Each adapter preserves its source-specific
-reconciliation rules; imports are local and incremental.
+uSMART (HK), CMB Wing Lung Bank, and Zircon HK. The Zircon HK flow downloads a
+plain generic fallback XLSX template whose Broker dropdown covers every cataloged
+broker. It provides transaction-type, currency, date/date-time, and numeric
+validation; the browser prevalidates the completed workbook without writing the
+ledger, then enables the ordinary incremental import only for that exact file.
+Date-only entries default to 23:00 Hong Kong time. Trade cash is derived from
+Quantity, Trade Price, and Commission; the Amount column is reserved for
+non-trade cash activity.
+Reusing a non-empty Reference ID within the same account lets a later corrected
+workbook replace that manual entry instead of duplicating it.
+Currency conversions use exactly two Forex trade component rows at the same
+date and time with one shared Reference ID: the sold-currency Amount is
+negative, while the acquired-currency Amount is positive. The shared ID is
+scoped by currency during reconciliation so both legs remain distinct and a
+later corrected pair replaces both original legs safely.
+Each adapter preserves its source-specific reconciliation rules; imports are
+local and incremental.
 
 ### Yahoo Mail SMTP
 

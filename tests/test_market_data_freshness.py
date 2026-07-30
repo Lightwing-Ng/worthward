@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.19.0
+Code version: v0.20.0
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from app.services.market_data import (
     refresh_history_store,
     refresh_one_minute_store,
     resolve_compare_overnight_tickers,
+    supports_compare_overnight,
     yfinance_lookup_symbol,
 )
 from tests.factories.market import close_frame_for_ticker, market_frame, ohlc_frame_for_dates, quote_profile_stub
@@ -145,6 +146,10 @@ class UsEquitySessionClassificationTests(unittest.TestCase):
             resolve_compare_overnight_tickers(["000660.KS", "7709.HK", "SKHYV"]),
             ["000660.KS", "7709.HK", "SKHY"],
         )
+
+    def test_compare_overnight_requires_an_explicit_us_ticker(self) -> None:
+        self.assertFalse(supports_compare_overnight(["000660.KS", "7709.HK"], "1d"))
+        self.assertTrue(supports_compare_overnight(["000660.KS", "SKHY"], "1d"))
 
     def test_compare_overnight_switch_requires_true_overnight_provider(self) -> None:
         with (

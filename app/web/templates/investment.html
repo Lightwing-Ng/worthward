@@ -1,4 +1,4 @@
-{# Code version: v1.25.1 #}
+{# Code version: v1.32.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -200,7 +200,7 @@
                                     <span class="investment-import-label-text">Transaction History CSV</span>
                                     <span class="investment-import-status-icon" id="transactions_csv_status"
                                           aria-hidden="true"></span>
-                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                    <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                           role="tooltip">
                                         <span class="investment-import-help-title">Get the IBKR Transaction History CSV</span>
                                         <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
@@ -224,7 +224,7 @@
                                     <span class="investment-import-label-text">Realized Summary CSV</span>
                                     <span class="investment-import-status-icon" id="positions_csv_status"
                                           aria-hidden="true"></span>
-                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                    <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                           role="tooltip">
                                         <span class="investment-import-help-title">Get the IBKR Realized Summary CSV</span>
                                         <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
@@ -250,7 +250,7 @@
                                     <span class="investment-import-label-text">GainsKeeper OFX/GKX files</span>
                                     <span class="investment-import-status-icon" id="gainskeeper_files_status"
                                           aria-hidden="true"></span>
-                                    <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                    <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                           role="tooltip">
                                         <span class="investment-import-help-title">Get IBKR GainsKeeper files</span>
                                         <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
@@ -278,7 +278,7 @@
                                         <span class="investment-import-label-text">Trade Notifications plain text</span>
                                         <span class="investment-import-status-icon" id="ibkr_trade_notifications_text_status"
                                               aria-hidden="true"></span>
-                                        <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
                                             <span class="investment-import-help-title">Copy IBKR filled trade notifications</span>
                                             <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
@@ -322,7 +322,7 @@
                                             <span class="investment-import-label-text">Fund Details text (HK files)</span>
                                             <span class="investment-import-status-icon" id="longbridge_hk_fund_details_txt_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to download this file in Longbridge (HK)</span>
                                                 <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Hong Kong account.</span>
@@ -347,7 +347,7 @@
                                             <span class="investment-import-label-text">History Orders spreadsheet (HK files)</span>
                                             <span class="investment-import-status-icon" id="longbridge_hk_history_orders_xlsx_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to download this file in Longbridge (HK)</span>
                                                 <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Hong Kong account.</span>
@@ -374,7 +374,7 @@
                                             <span class="investment-import-label-text">Fund Details text</span>
                                             <span class="investment-import-status-icon" id="longbridge_sg_fund_details_txt_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to download this file in Longbridge (SG)</span>
                                                 <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Singapore account.</span>
@@ -401,7 +401,7 @@
                                             <span class="investment-import-label-text">History Orders spreadsheet</span>
                                             <span class="investment-import-status-icon" id="longbridge_sg_history_orders_xlsx_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to download this file in Longbridge (SG)</span>
                                                 <span class="investment-import-help-step">🄌 Sign in to the Longbridge app or web portal for your Singapore account.</span>
@@ -430,7 +430,7 @@
                                             <span class="investment-import-label-text">Monthly statement PDFs</span>
                                             <span class="investment-import-status-icon" id="futuhk_statement_pdfs_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to download these files in Futu (HK)</span>
                                                 <span class="investment-import-help-step">🄌 Sign in to the Futu app or web portal.</span>
@@ -452,6 +452,58 @@
                                 </div>
                             </div>
 
+                            <div class="investment-import-field-group"
+                                 id="investment_import_zircon_hk_fields"
+                                 hidden>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field"
+                                     data-import-field="zircon-hk-template">
+                                    <div class="trade-strategy-param-label">
+                                        <span class="investment-import-label-trigger">
+                                            <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                            <span class="investment-import-label-text">Download the fallback XLSX template</span>
+                                        </span>
+                                    </div>
+                                    <div class="investment-import-plain-control-row investment-import-template-download-row">
+                                        <a class="settings-inline-button settings-inline-button-primary investment-import-template-download"
+                                           id="zircon_hk_template_download"
+                                           href="/api/investment/imports/zircon-hk/template.xlsx"
+                                           download="Manual_investment_import.xlsx">
+                                            Download fallback XLSX
+                                        </a>
+                                    </div>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field investment-import-plain-field"
+                                     data-import-field="zircon-hk-workbook">
+                                    <label class="trade-strategy-param-label"
+                                           for="zircon_hk_transactions_xlsx">
+                                        <span class="trade-strategy-param-label-trigger investment-import-label-trigger"
+                                              tabindex="0">
+                                            <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                            <span class="investment-import-label-text">Completed manual investment XLSX</span>
+                                            <span class="investment-import-status-icon"
+                                                  id="zircon_hk_transactions_xlsx_status"
+                                                  aria-hidden="true"></span>
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
+                                                  role="tooltip">
+                                                <span class="investment-import-help-title">Complete and validate the workbook</span>
+                                                <span class="investment-import-help-step">➊ Use the dropdowns for Broker, Type, and Currency.</span>
+                                                <span class="investment-import-help-step">➋ Enter an Excel date or date-time in Hong Kong time; a date alone defaults to 23:00.</span>
+                                                <span class="investment-import-help-step">➌ Enter Quantity, Trade Price, Amount, and Commission as numeric cells where applicable.</span>
+                                                <span class="investment-import-help-step">➍ For a currency conversion, enter two Forex trade component rows at the same time: the sold currency is negative, the acquired currency is positive, and both use one Reference ID.</span>
+                                                <span class="investment-import-help-step">➎ Upload the completed workbook. It is validated before Import now becomes available.</span>
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="zircon_hk_transactions_xlsx"
+                                               name="zircon_hk_transactions_xlsx"
+                                               type="file"
+                                               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                               class="settings-form-control investment-import-file-input">
+                                    </div>
+                                </div>
+                            </div>
+
                             {% for statement_broker in [
                                 {"code": "tigertrade", "label": "Tiger Trade", "help": "activity statement"},
                                 {"code": "usmart_hk", "label": "uSMART (HK)", "help": "monthly statement"}
@@ -465,7 +517,7 @@
                                             <span class="investment-import-label-text">{{ statement_broker.label }} statement PDFs</span>
                                             <span class="investment-import-status-icon" id="{{ statement_broker.code }}_statement_pdfs_status"
                                                   aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">How to import {{ statement_broker.label }}</span>
                                                 <span class="investment-import-help-step">➊ Download one or more {{ statement_broker.label }} {{ statement_broker.help }} PDFs from the broker portal or app.</span>
@@ -493,7 +545,7 @@
                                         <span class="investment-import-label-text">Order Status / Transactions CSV</span>
                                         <span class="investment-import-status-icon" id="schwab_transactions_csv_status"
                                               aria-hidden="true"></span>
-                                        <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
                                             <span class="investment-import-help-title">How to download this file from Charles Schwab</span>
                                             <span class="investment-import-help-step">🄌 Sign in to Schwab.com (or international.schwab.com).</span>
@@ -532,7 +584,7 @@
                                             <span class="investment-import-label-step" aria-hidden="true">➊</span>
                                             <span class="investment-import-label-text">USD Savings plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_cash_account_text_status" aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">Copy the HSBC USD Savings page</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
@@ -570,7 +622,7 @@
                                             <span class="investment-import-label-step" aria-hidden="true">➋</span>
                                             <span class="investment-import-label-text">Portfolio plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_portfolio_text_status" aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">Copy the HSBC Portfolio page</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
@@ -608,7 +660,7 @@
                                             <span class="investment-import-label-step" aria-hidden="true">➌</span>
                                             <span class="investment-import-label-text">Order Status plain text</span>
                                             <span class="investment-import-status-icon" id="hsbc_order_status_text_status" aria-hidden="true"></span>
-                                            <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                            <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                                   role="tooltip">
                                                 <span class="investment-import-help-title">Copy the HSBC Order Status page</span>
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
@@ -749,5 +801,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.12.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.17.0') }}"></script>
 {% endblock %}

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.11.1`
+Documentation version: `v1.15.0`
 
 ## Supported commands
 
@@ -51,9 +51,9 @@ artifact actions.
 
 Baseline remeasured on 30 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `63.4%` (`coverage.json`
-  reports `12,846` covered lines of `19,015` statements and `4,015` covered
-  branches of `7,576`).
+- Total combined statement-and-branch coverage: `63.97%` (`coverage.json`
+  reports `13,348` covered lines of `19,589` statements and `4,172` covered
+  branches of `7,800`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -66,7 +66,7 @@ Baseline remeasured on 30 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
 
 Priority coverage gaps:
 
-- `app/services/investment_import.py`: `53.5%`, with broker-specific
+- `app/services/investment_import.py`: `53.7%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 Recently strengthened coverage:
@@ -93,11 +93,11 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 Current suite inventory remeasured on 30 Jul 2026:
 
-- 492 Python tests collected; the latest full Python run reports 486 passed,
-  6 skipped, and 73 subtests passed.
+- 517 Python tests collected; the latest full Python run reports 511 passed,
+  6 skipped, and 80 subtests passed.
 - 83 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 88 Playwright test cases passed through `./scripts/check.sh` on 30 Jul 2026,
+- 89 Playwright test cases passed through `./scripts/check.sh` on 30 Jul 2026,
   including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
@@ -116,7 +116,14 @@ Current suite inventory remeasured on 30 Jul 2026:
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
   Notifications paste parsing, Beijing-to-New York conversion, exact 15-share
   DRAM and one-share GOOGL gap validation, authoritative GainsKeeper correction,
-  route persistence, and immutable evidence materialization.
+  provisional-source pruning, GKX statement metadata, same-origin and CSRF
+  rejection, route persistence, and immutable evidence materialization.
+- `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
+  template structure, full broker-dropdown coverage, absence of Excel-repaired
+  table and conditional-formatting parts, 23:00 Hong Kong date-only default,
+  Hong Kong-to-New York time conversion, text-date and text-number rejection,
+  formula rejection, cash-sign contracts, precise cell diagnostics, read-only
+  prevalidation, isolated persistence, and immutable workbook evidence.
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
 - `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
@@ -173,7 +180,15 @@ runners without reading or copying production Parquet stores. Normal manual
 launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
 
-The investment-import E2E verifies broker selection, file readiness, and submit enablement but does not submit the form. This prevents mutation of the real local investment store.
+The investment-import E2E verifies broker selection, file readiness, submit
+enablement, and the Zircon HK prevalidation success state but does not submit the
+form. This prevents mutation of the real local investment store.
+
+The generic manual-workbook unit suite verifies paired currency conversions:
+exactly two Forex trade component rows must share broker, account, timestamp,
+and Reference ID; currencies must differ; and Amount signs must identify one
+sold and one acquired leg. It also verifies that a later workbook corrects both
+currency-scoped legs without collapsing the pair.
 
 Investment Markdown export E2E tests must observe the downloaded file and assert its semantic column labels, declared filter scope, and filtered row/date-range alignment. Verifying only that the export button is present is insufficient.
 

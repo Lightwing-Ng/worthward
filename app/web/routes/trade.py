@@ -1,7 +1,7 @@
 """
 Trade route registration.
 
-Code version: v0.5.0
+Code version: v0.6.0
 """
 
 from flask import Flask
@@ -19,6 +19,12 @@ def register_trade_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/investment")(runtime.investment_page)
     app.get("/api/investment/transactions")(runtime.investment_get_transactions)
     app.post("/api/investment/transactions")(runtime.investment_add_transaction)
+    app.get("/api/investment/imports/zircon-hk/template.xlsx")(
+        runtime.investment_download_zircon_hk_template
+    )
+    app.post("/api/investment/imports/zircon-hk/validate")(
+        runtime.investment_validate_zircon_hk_workbook
+    )
     app.get("/api/investment/latest-price")(runtime.investment_get_latest_price)
     app.get("/api/investment/parquet")(runtime.investment_get_parquet)
     app.get("/api/market-session/us-equity")(runtime.investment_get_market_session)

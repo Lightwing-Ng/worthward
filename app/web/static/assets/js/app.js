@@ -1,4 +1,4 @@
-/* Code version: v0.25.2 */
+/* Code version: v0.26.0 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -4369,15 +4369,7 @@
     const syncOneDayOvernightSwitch = () => {
         if (!(overnightField instanceof HTMLElement) || !overnightInput) return;
         const isOneDayPeriod = ["tickers", "market-caps", "prices"].includes(state.currentView) && (periodSelect?.value || defaults.period) === "1d";
-        const companionTickers = new Set(
-            String(overnightField.dataset.overnightCompanionTickers || "")
-                .split(",")
-                .map((ticker) => sanitizeTicker(ticker))
-                .filter(Boolean),
-        );
-        const hasEligibleTicker = getFilledTickers().some((ticker) => (
-            isUsTicker(ticker) || companionTickers.has(ticker)
-        ));
+        const hasEligibleTicker = getFilledTickers().some(isUsTicker);
         const canUseOvernight = (
             overnightField.dataset.overnightSourceReady === "1"
             && isOneDayPeriod

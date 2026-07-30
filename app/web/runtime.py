@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.40.0
+Code version: v0.45.0
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from app.core.live_trading_security import (
     authorize_live_trading_api_request,
     validate_live_trading_pin,
 )
+from app.web.request_security import validate_investment_browser_write_request
 from app.infrastructure.broker_market_data import (
     classify_daily_store_status,
     classify_one_minute_store_status,
@@ -146,6 +147,10 @@ from app.services.investment_import import (
     parse_investment_payload,
 )
 from app.services.investment_import_registry import commit_investment_import
+from app.services.zircon_hk_import import (
+    ZIRCON_HK_TEMPLATE_FILENAME,
+    build_zircon_hk_template_xlsx,
+)
 
 from app.services.live_trading import (
     load_longbridge_account_balances,
@@ -156,7 +161,6 @@ from app.services.live_trading import (
 from app.services.logos import fetch_quote_profile, has_valid_ticker_format, normalize_ticker_input, refresh_quote_profile_cache, \
     resolve_stored_logo_url, search_tickers
 from app.services.market_data import (
-    COMPARE_OVERNIGHT_COMPANION_SYMBOLS,
     canonical_compare_overnight_ticker,
     fetch_compare_one_day_extended_history,
     fetch_compare_one_day_overnight_history,
@@ -361,6 +365,8 @@ class WebRuntime:
     investment_page: Any
     investment_get_transactions: Any
     investment_add_transaction: Any
+    investment_download_zircon_hk_template: Any
+    investment_validate_zircon_hk_workbook: Any
     investment_get_latest_price: Any
     investment_get_parquet: Any
     investment_get_intraday_history: Any
@@ -574,6 +580,41 @@ def build_web_runtime() -> WebRuntime:
                 except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
                     LOGGER.warning("Unable to refresh 1-minute date constraints for %s: %s", ticker, exc)
                     refresh_failures.append(ticker)
+            available_dates = set(date_frame["Date"].dt.date) if not date_frame.empty else set()
+            missing_requested_dates = requested_dates - available_dates
+            if not use_overnight_source:
+                for requested_date in sorted(missing_requested_dates):
+                    try:
+                        exact_dataset = fetch_one_minute_history_for_trading_date(
+                            ticker,
+                            requested_date,
+                            include_dividends=False,
+                            dividend_mode="price",
+                        )
+                        prepared_exact_dataset = prepare_intraday_dataset_for_compare(
+                            exact_dataset,
+                            ticker,
+                            regular_session_only=True,
+                        )
+                        exact_date_frame = market_local_trading_dates_frame(
+                            prepared_exact_dataset,
+                            ticker,
+                        )
+                        date_frame = (
+                            pd.concat([date_frame, exact_date_frame], ignore_index=True)
+                            .drop_duplicates(subset=["Date"])
+                            .sort_values("Date")
+                            .reset_index(drop=True)
+                        )
+                    except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+                        LOGGER.warning(
+                            "Unable to load exact-day date constraints for %s on %s: %s",
+                            ticker,
+                            requested_date,
+                            exc,
+                        )
+                        if ticker not in refresh_failures:
+                            refresh_failures.append(ticker)
             has_live_session_date = has_live_session_date or bool(
                 not date_frame.empty and (date_frame["Date"].dt.date == live_session_date).any()
             )
@@ -4093,7 +4134,6 @@ def build_web_runtime() -> WebRuntime:
             show_extended_hours_toggle=show_extended_hours_toggle,
             include_overnight=include_overnight,
             show_overnight_toggle=show_overnight_toggle,
-            overnight_companion_tickers=sorted(COMPARE_OVERNIGHT_COMPANION_SYMBOLS),
             range_mode=range_mode,
             exact_start=exact_start_value,
             exact_end=exact_end_value,
@@ -5636,11 +5676,99 @@ def build_web_runtime() -> WebRuntime:
             )
             return apply_no_store_headers(response)
 
+    def investment_download_zircon_hk_template():
+        """Download the typed generic fallback investment workbook."""
+        response = send_file(
+            BytesIO(build_zircon_hk_template_xlsx()),
+            as_attachment=True,
+            download_name=ZIRCON_HK_TEMPLATE_FILENAME,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            max_age=0,
+        )
+        return apply_no_store_headers(response)
+
+    def investment_validate_zircon_hk_workbook():
+        """Validate a generic fallback workbook without writing investment data."""
+        try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+            workbook_file = request.files.get("zircon_hk_transactions_xlsx")
+            if workbook_file is None:
+                response = jsonify({
+                    "success": False,
+                    "error": "Please upload the completed manual investment XLSX workbook.",
+                })
+                response.status_code = 400
+                return apply_no_store_headers(response)
+            workbook_bytes = workbook_file.read()
+            if not workbook_bytes:
+                response = jsonify({
+                    "success": False,
+                    "error": "The manual investment XLSX workbook is empty.",
+                })
+                response.status_code = 400
+                return apply_no_store_headers(response)
+            imported_payload = parse_investment_payload(
+                "zircon_hk",
+                "manual_xlsx",
+                xlsx_bytes=workbook_bytes,
+                filename=str(
+                    getattr(workbook_file, "filename", "") or ""
+                ).strip(),
+            )
+            transaction_count = len(imported_payload.get("transactions", []))
+            response = jsonify({
+                "success": True,
+                "message": (
+                    f"Validated {transaction_count:,} manual investment "
+                    f"{'transaction' if transaction_count == 1 else 'transactions'}."
+                ),
+                "transaction_count": transaction_count,
+                "summary": imported_payload.get("summary", {}),
+            })
+            return apply_no_store_headers(response)
+        except RequestEntityTooLarge:
+            response = jsonify({
+                "success": False,
+                "error": (
+                    f"The workbook exceeds the {MAX_INVESTMENT_IMPORT_REQUEST_MIB} MiB "
+                    "investment upload limit."
+                ),
+            })
+            response.status_code = 413
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to validate manual investment workbook")
+            response = jsonify({
+                "success": False,
+                "error": (
+                    "The manual investment workbook could not be validated. "
+                    "Download a fresh template and try again."
+                ),
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
     def investment_add_transactions():
         """Import or sync broker activity into the local investment store."""
         transactions_file = None
         positions_file = None
         try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
             broker = str(request.form.get("broker", "ibkr")).strip().lower() or "ibkr"
             report_fetch_abort_debug_event(
                 "E",
@@ -5884,6 +6012,32 @@ def build_web_runtime() -> WebRuntime:
                     "Charles Schwab import complete. Records were merged incrementally into the local investment store "
                     "without clearing older data first."
                 )
+            elif broker == "zircon_hk":
+                workbook_file = request.files.get("zircon_hk_transactions_xlsx")
+                if workbook_file is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Please upload the completed manual investment XLSX workbook.",
+                    }), 400
+                workbook_bytes = workbook_file.read()
+                if not workbook_bytes:
+                    return jsonify({
+                        "success": False,
+                        "error": "The manual investment XLSX workbook is empty.",
+                    }), 400
+                imported_payload = parse_investment_payload(
+                    "zircon_hk",
+                    "manual_xlsx",
+                    xlsx_bytes=workbook_bytes,
+                    filename=str(
+                        getattr(workbook_file, "filename", "") or ""
+                    ).strip(),
+                )
+                success_message = (
+                    "Manual investment workbook import complete. Validated records were "
+                    "merged incrementally into the local investment store, and the exact "
+                    "uploaded XLSX was retained as SHA-256-verified immutable evidence."
+                )
             elif broker in {"tigertrade", "usmart_hk"}:
                 field_name = f"{broker}_statement_pdfs"
                 statement_pdf_payloads: list[tuple[bytes, str]] = []
@@ -5994,6 +6148,11 @@ def build_web_runtime() -> WebRuntime:
     def investment_update_internal_transfer_binding():
         """Persist a manual internal-transfer binding into the local investment store."""
         try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
             payload = request.get_json(silent=True) or {}
             source_key = str(payload.get("source_key", "")).strip()
             target_key = str(payload.get("target_key", "")).strip()
@@ -6530,6 +6689,8 @@ def build_web_runtime() -> WebRuntime:
         investment_page=investment_page,
         investment_get_transactions=investment_get_transactions,
         investment_add_transaction=investment_add_transactions,
+        investment_download_zircon_hk_template=investment_download_zircon_hk_template,
+        investment_validate_zircon_hk_workbook=investment_validate_zircon_hk_workbook,
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,
         investment_get_intraday_history=investment_get_intraday_history,

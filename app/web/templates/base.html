@@ -1,4 +1,4 @@
-{# Code version: v0.11.3 #}
+{# Code version: v0.12.5 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -125,7 +125,7 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.33.37') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.33.44') }}">
 </head>
 <body>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
@@ -248,7 +248,10 @@
     "settingsSection": settings_section,
     "debug": {
         "fetchAbort": fetch_abort_debug_config,
-    }
+    },
+    "security": {
+        "investmentCsrfToken": investment_csrf_token,
+    },
 }|tojson }}</script>
 <script>
     window.ANTIGRAVITY_APP = JSON.parse(document.getElementById("antigravity_state").textContent);
@@ -266,7 +269,7 @@
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.25.2') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.26.0') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
 {% endif %}

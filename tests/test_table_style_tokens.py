@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.1."""
 
 from __future__ import annotations
 
@@ -62,6 +62,19 @@ def test_style_tokens_expose_the_investment_holdings_allocation_badge_contract()
     assert "--investment-holdings-allocation-badge-background-positive" in html
     assert "--investment-holdings-allocation-badge-background-negative" in html
     assert "--investment-holdings-allocation-badge-color" in html
+
+
+def test_holdings_allocation_badge_uses_the_active_theme_background_for_text() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    badge_rule = investment_css.split(
+        ".investment-holdings-allocation-badge {", maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+
+    assert "color: var(--theme-background);" in badge_rule
+    assert "color: var(--investment-holdings-allocation-badge-color);" not in badge_rule
 
 
 def test_style_tokens_portfolio_orbit_uses_four_distinct_mega_cap_logos() -> None:

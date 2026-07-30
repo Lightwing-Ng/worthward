@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.13.0`
+Documentation version: `v1.17.0`
 
 ## Runtime flow
 
@@ -73,12 +73,30 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 ## High-risk invariants
 
 - Broker imports are incremental and must remain idempotent.
+- Browser investment writes require a local same-origin request and a
+  session-bound CSRF token. Cross-site forms, non-local rebinding hosts, and
+  requests without the rendered session proof fail before request bodies reach
+  an investment parser or persistence boundary.
 - IBKR is an offline import-only integration. Official CSV and GainsKeeper files,
   plus user-pasted Trade Notifications text, may enter the ledger. Pasted trades
   are provisional current-moment evidence and matching CSV or GainsKeeper rows
   supersede their rounded values. Flex Web Service, Client Portal, Gateway,
   credentials, sessions, market data, and order-routing must not be reintroduced
   without an explicit user-approved architecture and security decision.
+- Zircon HK exposes the offline generic fallback-workbook integration. The
+  downloadable XLSX provides controlled broker, transaction-type, and currency
+  lists plus typed date/date-time and numeric validation. Date-only entries
+  default to 23:00 Asia/Hong_Kong time. Trade totals are derived from Quantity,
+  Trade Price, and Commission; Amount is used only for non-trade cash activity.
+  A currency conversion is represented by exactly two Forex trade component
+  rows sharing broker, account, timestamp, and Reference ID. One signed Amount
+  removes the sold currency and the other adds the acquired currency. Manual
+  reconciliation scopes the shared correction identity by leg currency so the
+  pair cannot collapse during an incremental correction.
+  Its prevalidation endpoint runs the same parser as the
+  commit route but never reaches persistence. The exact validated workbook must
+  be resubmitted through the immutable-evidence and readback-verified commit
+  boundary.
 - Investment source evidence is immutable, SHA-256-addressed, capacity-bounded, and verified under the ledger lock before persistence and at application startup. A ledger manifest must never retain raw uploaded Base64 bytes.
 - Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
 - `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.
@@ -115,6 +133,8 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
 - `app/web/form_parsing.py`: pure query/form parsing and portfolio weight normalization used by WebRuntime.
 - `app/web/navigation.py`: canonical workspace, settings, and trade path constants and builders.
 - `app/web/market_history.py`: read-only local-history range and date-alignment helpers used by WebRuntime.
+- `app/web/request_security.py`: local-host, same-origin, and session-CSRF
+  validation for browser investment writes.
 - `app/web/strategy_forms.py`: pure strategy selector, parameter-field, and
   Settings catalog presentation builders. WebRuntime supplies strategy usage
   history and the strategy factory while retaining request assembly.
@@ -122,7 +142,7 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   builders. WebRuntime supplies translated labels and the project display URL;
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
-- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Broker parsers remain in `investment_import.py` until they can move without obscuring their reconciliation invariants.
+- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon HK template and parser live in `zircon_hk_import.py`.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing theme-token consumers keep local fallbacks if the shared script is unavailable.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.

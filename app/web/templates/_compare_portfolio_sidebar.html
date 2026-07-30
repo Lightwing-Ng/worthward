@@ -83,7 +83,6 @@
          data-one-day-overnight-field
          data-overnight-source-ready="{{ 1 if show_overnight_toggle else 0 }}"
          data-overnight-source-policy="longbridge"
-         data-overnight-companion-tickers="{{ overnight_companion_tickers | join(',') }}"
         {% if not show_overnight_toggle %}hidden{% endif %}>
         <label class="switch-row" for="include_overnight_hours">
             <span class="switch-label" title="Longbridge adds the 20:00–04:00 New York overnight session.">Overnight</span>

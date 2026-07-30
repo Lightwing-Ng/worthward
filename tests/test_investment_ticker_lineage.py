@@ -161,6 +161,12 @@ class InvestmentTickerLineageTests(unittest.TestCase):
         self.assertEqual(resolve_known_ticker_company_name("QQQI"), expected_name)
         self.assertEqual(known_ticker_company_names_payload()["QQQI.US"], expected_name)
 
+    def test_known_ticker_company_names_cover_xqqi(self) -> None:
+        expected_name = "NEOS Boosted Nasdaq-100(R) High Income ETF"
+
+        self.assertEqual(resolve_known_ticker_company_name("XQQI"), expected_name)
+        self.assertEqual(known_ticker_company_names_payload()["XQQI.US"], expected_name)
+
 
 if __name__ == "__main__":
     unittest.main()

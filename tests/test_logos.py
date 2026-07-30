@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.7.0
+Code version: v0.8.0
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from app.services.logos import (
     build_quote_profile_payload,
     fetch_and_store_logo,
     fetch_quote_profile,
+    is_known_ticker,
     quote_lookup_symbol,
     refresh_logo_store,
     resolve_stored_logo_url,
@@ -215,6 +216,51 @@ class LogoServiceTests(unittest.TestCase):
 
         self.assertEqual(logo_url, "/market-store/logos/000660.KS.svg?v=123")
         refresh_mock.assert_not_called()
+
+    def test_xqqi_reuses_qqqi_logo_without_remote_refresh(self) -> None:
+        with create_app().test_request_context():
+            with patch("app.services.logos.resolve_logo_store_path") as resolve_mock:
+                resolve_mock.side_effect = lambda ticker: (
+                    Path("/tmp/QQQI.png")
+                    if ticker == "QQQI"
+                    else None
+                )
+                with patch.object(Path, "stat") as stat_mock:
+                    stat_mock.return_value.st_mtime_ns = 456
+                    logo_url = resolve_stored_logo_url("XQQI")
+
+        self.assertIn("/market-store/logos/QQQI.png", logo_url)
+
+    def test_known_xqqi_is_selectable_when_remote_discovery_is_unavailable(self) -> None:
+        with (
+            patch("app.services.logos.history_store_path_for") as history_path_mock,
+            patch("app.services.logos.has_profile_record", return_value=False),
+            patch(
+                "app.services.logos.has_logo_asset",
+                side_effect=lambda ticker: ticker == "QQQI",
+            ),
+            patch("app.services.logos.has_remote_market_access") as remote_access_mock,
+            patch(
+                "app.services.logos.resolve_stored_logo_url",
+                return_value="/market-store/logos/QQQI.png?v=456",
+            ),
+        ):
+            history_path_mock.return_value.exists.return_value = False
+            suggestion = _build_local_suggestion("XQQI", query="XQQI", seen=set())
+            known = is_known_ticker("XQQI")
+
+        self.assertTrue(known)
+        self.assertIsNotNone(suggestion)
+        self.assertEqual(suggestion["symbol"], "XQQI")
+        self.assertEqual(
+            suggestion["name"],
+            "NEOS Boosted Nasdaq-100(R) High Income ETF",
+        )
+        self.assertEqual(
+            suggestion["logo_url"],
+            "/market-store/logos/QQQI.png?v=456",
+        )
+        remote_access_mock.assert_not_called()
 
     def test_build_logo_provider_ticker_candidates_supports_share_class_spacing(self) -> None:
         candidates = build_logo_provider_ticker_candidates("BRK B")

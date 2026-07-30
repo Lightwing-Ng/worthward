@@ -1,11 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.3.3`
+Documentation version: `v1.3.4`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Fixed: Holdings allocation badges now render their text with the active theme background color, producing white text in light mode and dark text in dark mode without changing the established color-token contract.
 - Fixed: Holdings now supplies canonical issuer or fund names for AAPL, BOXX, MU, NVDA, QQQ, QCOM, TQQQ, and TSM when a local market profile contains only its ticker placeholder.
 - Fixed: The Holdings summary uses sentence case for Total equity and keeps the Cash through Cumulative P&L values on one shared right edge after live-number transitions reserve different widths.
 - Added: Holdings now includes a live Market value column between Position and Realized P&L. Its 70%–80% horizontal track and numeric right edge match Transaction history at every supported width; the two P&L columns remain equal and the percent column uses the remaining compact track.

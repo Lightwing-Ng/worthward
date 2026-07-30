@@ -1,4 +1,4 @@
-/* Code version: v1.55.0 */
+/* Code version: v1.59.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3094,11 +3094,24 @@
     background: var(--ticker-identity-background-hover);
 }
 
-.investment-holdings-ticker-link .investment-cash-equivalent-token-logo {
+.investment-holdings-ticker-link .investment-cash-equivalent-token-logo,
+.investment-holdings-ticker-link .investment-broker-reward-token-logo {
     background: var(--theme-accent-positive);
     box-shadow: none;
+}
+
+.investment-holdings-ticker-link .investment-cash-equivalent-token-logo {
     mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
     -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+}
+
+.investment-holdings-ticker-link .investment-broker-reward-token-logo {
+    mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
+    -webkit-mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
+}
+
+.investment-holdings-broker-rewards-identity {
+    cursor: default;
 }
 
 .investment-holdings-table th:nth-child(1),
@@ -3291,7 +3304,7 @@
     padding-inline: var(--investment-holdings-allocation-badge-padding-inline);
     border-radius: var(--investment-holdings-allocation-badge-radius);
     background: var(--investment-holdings-allocation-badge-background-positive);
-    color: var(--investment-holdings-allocation-badge-color);
+    color: var(--theme-background);
     font-variant-numeric: tabular-nums;
     line-height: 1.3;
     white-space: nowrap;
@@ -3753,6 +3766,19 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     margin-top: 0;
 }
 
+.investment-import-template-download-row {
+    display: flex;
+    align-items: center;
+}
+
+.investment-import-template-download {
+    width: fit-content;
+    min-height: var(--settings-form-control-height);
+    padding-inline: 16px;
+    text-decoration: none;
+    box-shadow: none;
+}
+
 .investment-import-plain-control-row .date-picker-trigger,
 .investment-import-plain-control-row .investment-import-file-input,
 .investment-import-plain-field .date-picker-trigger,
@@ -3962,12 +3988,14 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-import-label-trigger:hover .investment-import-help,
 .investment-import-label-trigger:focus .investment-import-help,
 .investment-import-label-trigger:focus-within .investment-import-help {
+    display: block;
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
 }
 
 .investment-import-help {
+    display: none;
     position: absolute;
     left: 0;
     top: calc(100% + 8px);
@@ -3975,11 +4003,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     max-width: min(420px, calc(100vw - 48px));
     padding: 14px 16px;
     color: var(--text);
-    background: var(--liquid-glass-background);
-    box-shadow: var(--liquid-glass-shadow);
-    backdrop-filter: var(--liquid-glass-blur);
-    -webkit-backdrop-filter: var(--liquid-glass-blur);
-    border: var(--liquid-glass-border);
     white-space: normal;
     z-index: var(--layer-global-popover);
 }

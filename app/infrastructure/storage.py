@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.9.4
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -236,6 +236,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "SKHYV": "SK hynix Inc.",
     "TQQQ": "ProShares UltraPro QQQ",
     "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
+    "XQQI": "NEOS Boosted Nasdaq-100(R) High Income ETF",
 }
 
 ROUNDHILL_PRODUCT_LOGO_TICKERS = frozenset({

@@ -1,4 +1,4 @@
-/* Code version: v0.12.1 */
+/* Code version: v0.13.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -299,7 +299,7 @@
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
 	--frosted-glass-blur: saturate(160%) blur(18px);
-	--tooltip-background: var(--frosted-glass-background);
+	--tooltip-background: var(--frosted-glass-opaque-background);
 	--tooltip-border: var(--frosted-glass-border);
 	--tooltip-shadow: var(--frosted-glass-shadow);
 	--tooltip-blur: var(--frosted-glass-blur);

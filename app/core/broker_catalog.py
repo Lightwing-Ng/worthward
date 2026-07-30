@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and pinyin-initial sort order.
 
-Code version: v0.2.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -63,6 +63,13 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
         icon_filename="uSAMRT.png",
         description="Upload one or more uSMART Securities (HK) monthly statement PDFs.",
     ),
+    "zircon_hk": BrokerCatalogEntry(
+        code="zircon_hk",
+        label="Zircon HK",
+        pinyin_sort_key="zirconhk",
+        icon_filename="Zircon HK.png",
+        description="Download, complete, validate, and upload the generic fallback XLSX template.",
+    ),
     "longbridge_hk": BrokerCatalogEntry(
         code="longbridge_hk",
         label="Longbridge (HK)",
@@ -105,6 +112,7 @@ INVESTMENT_IMPORT_BROKER_CODES = (
     "schwab",
     "tigertrade",
     "usmart_hk",
+    "zircon_hk",
 )
 
 

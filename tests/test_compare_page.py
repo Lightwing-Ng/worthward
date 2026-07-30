@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.10.8
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -31,6 +31,50 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_one_day_date_constraints_include_requested_exact_day_fallback(self) -> None:
+        stale_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-07-14 20:00", "2026-07-15 02:30"],
+            )
+            for ticker in ("000660.KS", "7709.HK")
+        }
+        exact_frames = {
+            ticker: ohlc_frame_for_dates(
+                ticker,
+                ["2026-07-29 20:00", "2026-07-30 02:30"],
+            )
+            for ticker in ("000660.KS", "7709.HK")
+        }
+
+        with (
+            patch(
+                "app.web.runtime.fetch_history",
+                side_effect=lambda ticker, *_args, **_kwargs: stale_frames[ticker],
+            ),
+            patch(
+                "app.web.runtime.refresh_recent_one_minute_store_with_yfinance",
+                side_effect=ValueError("Recent minute history is unavailable."),
+            ),
+            patch(
+                "app.web.runtime.fetch_one_minute_history_for_trading_date",
+                side_effect=lambda ticker, *_args, **_kwargs: exact_frames[ticker],
+            ) as exact_day_fetch_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/date-constraints?view=prices&range=exact&period=1d"
+                "&from=2026-07-30&to=2026-07-30"
+                "&ticker=000660.KS&ticker=7709.HK"
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertEqual(payload["adjusted_start"], "2026-07-30")
+        self.assertEqual(payload["adjusted_end"], "2026-07-30")
+        self.assertEqual(payload["max_date"], "2026-07-30")
+        self.assertIn("2026-07-30", payload["trading_dates"])
+        self.assertEqual(exact_day_fetch_mock.call_count, 2)
+
     def test_market_cap_page_accepts_ten_tickers_and_keeps_usd_new_york_base(self) -> None:
         daily_dates = pd.to_datetime(["2026-06-29", "2026-06-30", "2026-07-01"])
         tickers = [f"TICK{index}" for index in range(1, 11)]
@@ -98,7 +142,7 @@ class ComparePageTests(unittest.TestCase):
         self.assertNotIn(">2026-06-29</span>", html)
         self.assertNotIn(">2026-07-01</span>", html)
 
-    def test_price_page_overnight_adds_canonical_skhynix_companion(self) -> None:
+    def test_price_page_hides_overnight_for_korean_and_hong_kong_tickers(self) -> None:
         intraday_frames = {
             "000660.KS": ohlc_frame_for_dates(
                 "000660.KS",
@@ -145,24 +189,20 @@ class ComparePageTests(unittest.TestCase):
         ticker_inputs = re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(ticker_inputs, ["000660.KS", "7709.HK"])
-        self.assertIn('id="include_overnight_hours" name="overnight" type="checkbox" value="1" checked', html)
+        self.assertRegex(
+            html,
+            r'data-one-day-overnight-field[^>]+data-overnight-source-ready="0"[^>]+hidden',
+        )
+        self.assertNotIn('id="include_overnight_hours" name="overnight" type="checkbox" value="1" checked', html)
         self.assertIn('data-overnight-source-policy="longbridge"', html)
-        self.assertIn(">Overnight</span>", html)
-        self.assertNotIn("US overnight companion", html)
-        self.assertIn('data-ticker="SKHY"', html)
+        self.assertNotIn('data-ticker="SKHY"', html)
         self.assertNotIn("SKHYV", html)
-        self.assertIn('"2026-07-12 20:00"', html)
-        self.assertIn('"2026-07-13 04:00"', html)
-        self.assertIn('"2026-07-13 19:55"', html)
         refresh_intraday_mock.assert_not_called()
         refresh_target_mock.assert_not_called()
         exact_day_fetch_mock.assert_not_called()
-        broker_overnight_mock.assert_called_once_with(
-            "SKHY",
-            trading_date="2026-07-13",
-        )
+        broker_overnight_mock.assert_not_called()
 
-    def test_live_compare_api_reports_yfinance_overnight_fallback_source(self) -> None:
+    def test_live_compare_api_ignores_overnight_for_korean_and_hong_kong_tickers(self) -> None:
         intraday_frames = {
             "000660.KS": ohlc_frame_for_dates(
                 "000660.KS",
@@ -195,7 +235,7 @@ class ComparePageTests(unittest.TestCase):
                 patch(
                     "app.web.runtime.fetch_compare_one_day_overnight_history",
                     return_value=intraday_frames["SKHY"],
-                ),
+                ) as broker_overnight_mock,
                 patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
                 patch("app.web.runtime.refresh_one_minute_store"),
             ):
@@ -207,10 +247,12 @@ class ComparePageTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(response.status_code, 200, payload)
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["sources"]["SKHY"], "yfinance_extended")
-        self.assertNotIn("SKHYV", payload["sources"])
-        skhy_series = next(item for item in payload["series"] if item["ticker"] == "SKHY")
-        self.assertEqual(skhy_series["raw_dates"][-1], "2026-07-14 04:40")
+        self.assertEqual(set(payload["sources"]), {"000660.KS", "7709.HK"})
+        self.assertEqual(
+            {item["ticker"] for item in payload["series"]},
+            {"000660.KS", "7709.HK"},
+        )
+        broker_overnight_mock.assert_not_called()
 
     def test_live_compare_api_uses_exact_yahoo_fallback_for_missing_korean_current_day(self) -> None:
         reference_frames = {

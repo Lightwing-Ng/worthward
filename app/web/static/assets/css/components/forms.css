@@ -1,4 +1,4 @@
-/* Code version: v0.8.4 */
+/* Code version: v0.9.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1640,14 +1640,14 @@
 .sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span {
 	color: var(--theme-muted);
 }
-.chart-tooltip, .field-tooltip { background: var(--frosted-glass-background); box-shadow: var(--frosted-glass-shadow); backdrop-filter: var(--frosted-glass-blur); -webkit-backdrop-filter: var(--frosted-glass-blur); border: var(--frosted-glass-border); border-radius: var(--radius-soft); }
+.chart-tooltip, .field-tooltip { background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: var(--radius-soft); }
 .field-tooltip,
 .field-tooltip-validation {
-	background: var(--frosted-glass-background);
-	border: var(--frosted-glass-border);
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	background: var(--tooltip-background);
+	border: var(--tooltip-border);
+	box-shadow: var(--tooltip-shadow);
+	backdrop-filter: var(--tooltip-blur);
+	-webkit-backdrop-filter: var(--tooltip-blur);
 	isolation: isolate;
 }
 .liquid-glass-surface {
@@ -1669,11 +1669,11 @@
 }
 .field-tooltip.liquid-glass-surface,
 .field-tooltip-validation.liquid-glass-surface {
-	background: var(--frosted-glass-background);
-	border: var(--frosted-glass-border);
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	background: var(--tooltip-background);
+	border: var(--tooltip-border);
+	box-shadow: var(--tooltip-shadow);
+	backdrop-filter: var(--tooltip-blur);
+	-webkit-backdrop-filter: var(--tooltip-blur);
 }
 .field-tooltip.liquid-glass-surface::after,
 .field-tooltip-validation.liquid-glass-surface::after {

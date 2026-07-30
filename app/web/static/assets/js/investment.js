@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.12.0
+ * Code version: v2.17.0
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -172,6 +172,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentImportSchwabFields = document.getElementById('investment_import_schwab_fields');
     const schwabTransactionsCsvInput = document.getElementById('schwab_transactions_csv');
     const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
+    const investmentImportZirconHkFields = document.getElementById('investment_import_zircon_hk_fields');
+    const zirconHkTransactionsXlsxInput = document.getElementById('zircon_hk_transactions_xlsx');
+    const zirconHkTransactionsXlsxStatus = document.getElementById('zircon_hk_transactions_xlsx_status');
     const futuhkStatementPdfsInput = document.getElementById('futuhk_statement_pdfs');
     const futuhkStatementPdfsStatus = document.getElementById('futuhk_statement_pdfs_status');
     const investmentImportTigertradeFields = document.getElementById('investment_import_tigertrade_fields');
@@ -417,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'total-offshore-gain',
             label: 'Total offshore gain',
-            summary: 'Mainland-resident offshore gain view: holdings cumulative P&L plus converted broker coupon, cash, and KOL benefits. Stock-grant P&L is included once through holdings P&L, not added again.',
+            summary: 'Mainland-resident offshore gain view: cumulative P&L including converted broker coupon, cash, and KOL rewards. Stock-grant P&L remains included once through its ticker holdings.',
             valueKey: 'totalOffshoreGain',
             rowsKey: 'totalOffshoreGainRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalOffshoreGain),
@@ -428,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'cumulative-pnl',
             label: 'Cumulative P&L',
-            summary: 'Combined realized and unrealized profit and loss across all tracked holdings.',
+            summary: 'Combined realized and unrealized profit and loss, including converted broker coupon, cash, and KOL rewards.',
             valueKey: 'cumulativePnl',
             rowsKey: 'cumulativePnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.cumulativePnl),
@@ -439,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Realized profit and loss from holdings activity, excluding broker coupons, cash rewards, and KOL rewards that are shown separately.',
+            summary: 'Realized profit and loss from holdings activity plus converted broker coupon, cash, and KOL rewards.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
@@ -461,10 +464,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentSurfaceCleanupTimer = null;
     let investmentFormHideTimer = null;
     let investmentImportInFlight = false;
+    let zirconHkWorkbookValidationAbortController = null;
+    let zirconHkWorkbookValidation = {
+        signature: '',
+        valid: false,
+        transactionCount: 0,
+    };
     let investmentSegmentedMeasureRaf = 0;
     let investmentSegmentedMeasureTimer = 0;
     let investmentIbkrModeMeasureRaf = 0;
     let investmentHsbcModeMeasureRaf = 0;
+    let investmentImportStableHeight = 0;
     let activeInvestmentHistoryRowIds = [];
     let activeInvestmentStockDetailRowIds = [];
     const INVESTMENT_MANUAL_SCROLL_SUPPRESS_MS = 1400;
@@ -644,8 +654,14 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/uSAMRT.png',
             logoAlt: 'uSMART (HK) logo',
         },
+        zircon_hk: {
+            code: 'zircon_hk',
+            label: 'Zircon HK',
+            logoUrl: '/market-store/logos/brokers/Zircon%20HK.png',
+            logoAlt: 'Zircon HK logo',
+        },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk', 'zircon_hk']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -1732,12 +1748,13 @@ document.addEventListener('DOMContentLoaded', () => {
         writeInvestmentInternalTransferBindings(nextBindings);
         try {
             fetch('/api/investment/internal-transfer-binding', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    source_key: normalizedSourceKey,
-                    target_key: normalizedTargetKey,
+                ...buildInvestmentRequestOptions({
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_key: normalizedSourceKey,
+                        target_key: normalizedTargetKey,
+                    }),
                 }),
             }).catch(() => {});
         } catch (_error) {
@@ -4740,6 +4757,103 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function getImportFileSignature(file) {
+        if (!(file instanceof File)) return '';
+        return [
+            String(file.name || '').trim(),
+            String(file.size || 0),
+            String(file.lastModified || 0),
+        ].join(':');
+    }
+
+    function isLikelyXlsxFile(file) {
+        if (!(file instanceof File)) return false;
+        const lowerName = String(file.name || '').trim().toLowerCase();
+        const mimeType = String(file.type || '').trim().toLowerCase();
+        return (
+            lowerName.endsWith('.xlsx')
+            || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+    }
+
+    async function validateZirconHkWorkbook() {
+        const file = zirconHkTransactionsXlsxInput?.files?.[0];
+        zirconHkWorkbookValidationAbortController?.abort();
+        zirconHkWorkbookValidationAbortController = null;
+        zirconHkWorkbookValidation = {
+            signature: getImportFileSignature(file),
+            valid: false,
+            transactionCount: 0,
+        };
+        setImportStatusIcon(zirconHkTransactionsXlsxStatus, false);
+        syncImportValidationState();
+        if (!file) return;
+        if (!isLikelyXlsxFile(file)) {
+            setImportFeedback('Please upload the completed manual investment workbook as an .xlsx file.', 'error');
+            return;
+        }
+
+        const signature = getImportFileSignature(file);
+        const abortController = new AbortController();
+        zirconHkWorkbookValidationAbortController = abortController;
+        const formData = new FormData();
+        formData.append('zircon_hk_transactions_xlsx', file);
+        setImportFeedback('Validating the manual investment workbook…', 'loading');
+        try {
+            const response = await fetch(
+                '/api/investment/imports/zircon-hk/validate',
+                buildInvestmentRequestOptions({
+                    method: 'POST',
+                    body: formData,
+                    signal: abortController.signal,
+                }),
+            );
+            const result = await response.json();
+            if (signature !== getImportFileSignature(
+                zirconHkTransactionsXlsxInput?.files?.[0]
+            )) {
+                return;
+            }
+            if (!response.ok || !result.success) {
+                zirconHkWorkbookValidation = {
+                    signature,
+                    valid: false,
+                    transactionCount: 0,
+                };
+                setImportFeedback(
+                    result.error || 'The manual investment workbook did not pass validation.',
+                    'error',
+                );
+                return;
+            }
+            const transactionCount = Number(result.transaction_count || 0);
+            zirconHkWorkbookValidation = {
+                signature,
+                valid: transactionCount > 0,
+                transactionCount,
+            };
+            setImportStatusIcon(
+                zirconHkTransactionsXlsxStatus,
+                transactionCount > 0,
+                result.message || 'Workbook validated.',
+            );
+            setImportFeedback(result.message || 'Manual investment workbook validated.', 'success');
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+            zirconHkWorkbookValidation = {
+                signature,
+                valid: false,
+                transactionCount: 0,
+            };
+            setImportFeedback(`Unable to validate the manual investment workbook: ${error.message}`, 'error');
+        } finally {
+            if (zirconHkWorkbookValidationAbortController === abortController) {
+                zirconHkWorkbookValidationAbortController = null;
+            }
+            syncImportValidationState();
+        }
+    }
+
     function getSelectedFutuStatementPdfFiles() {
         if (!(futuhkStatementPdfsInput instanceof HTMLInputElement)) return [];
         return Array.from(futuhkStatementPdfsInput.files || []).filter((file) => file instanceof File);
@@ -4750,9 +4864,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(input.files || []).filter((file) => file instanceof File);
     }
 
-    function setImportStatusIcon(icon, visible) {
+    function setImportStatusIcon(icon, visible, title = '') {
         if (!icon) return;
         icon.classList.toggle('is-visible', Boolean(visible));
+        if (visible && title) {
+            icon.setAttribute('title', title);
+        } else {
+            icon.removeAttribute('title');
+        }
     }
 
     function setInvestmentExportButtonVisibility(isVisible) {
@@ -6472,6 +6591,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
+        const isZirconHk = selectedBroker === 'zircon_hk';
         const usesSyncAction = isLongbridgeHk
             || isIbkrWebPaste
             || (isHsbc && hsbcImportMode === 'paste');
@@ -6501,6 +6621,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (investmentImportUsmartHkFields instanceof HTMLElement) {
             investmentImportUsmartHkFields.hidden = !isUsmartHk;
+        }
+        if (investmentImportZirconHkFields instanceof HTMLElement) {
+            investmentImportZirconHkFields.hidden = !isZirconHk;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
             transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
@@ -6535,6 +6658,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (usmartHkStatementPdfsInput instanceof HTMLInputElement) {
             usmartHkStatementPdfsInput.required = isUsmartHk;
         }
+        if (zirconHkTransactionsXlsxInput instanceof HTMLInputElement) {
+            zirconHkTransactionsXlsxInput.required = isZirconHk;
+        }
         if (hsbcStatementPdfsInput instanceof HTMLInputElement) {
             hsbcStatementPdfsInput.required = isHsbc && hsbcImportMode === 'statement_pdf';
         }
@@ -6557,11 +6683,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isUsmartHk
                                     ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                                    : (isZirconHk
+                                        ? 'Download the typed Zircon HK sample workbook, enter only real broker activity, then upload it for server validation before importing.'
                                     : (isSchwab
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))));
+                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.'))))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -7864,7 +7992,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const headerRow = headerTable.querySelector('thead tr:first-child');
         const summaryRow = headerTable.querySelector('.investment-holdings-summary-row');
-        const dataRows = Array.from(bodyTable.querySelectorAll('tbody tr')).slice(0, 5);
+        const allDataRows = Array.from(bodyTable.querySelectorAll('tbody tr'));
+        const brokerRewardsRow = allDataRows.find((row) => row.matches('[data-investment-broker-rewards-row]'));
+        const dataRows = allDataRows
+            .filter((row) => row !== brokerRewardsRow)
+            .slice(0, brokerRewardsRow ? 4 : 5);
+        if (brokerRewardsRow) {
+            dataRows.push(brokerRewardsRow);
+        }
         if (!(headerRow instanceof HTMLTableRowElement) || !dataRows.length) return null;
 
         const shell = createInvestmentShareSection('investment-community-share-section--chart investment-community-share-table-shell');
@@ -7894,7 +8029,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(sharedRow instanceof HTMLTableRowElement)) return;
             pruneShareHoldingsRow(sharedRow);
             const tickerCell = sharedRow.cells.item(0);
-            if (tickerCell instanceof HTMLTableCellElement) {
+            if (
+                tickerCell instanceof HTMLTableCellElement
+                && !sharedRow.matches('[data-investment-broker-rewards-row]')
+            ) {
                 const ticker = String(sharedRow.dataset.investmentHoldingsTicker || tickerCell.textContent || '').trim();
                 tickerCell.textContent = '';
                 tickerCell.appendChild(buildShareTickerCell(ticker));
@@ -8499,28 +8637,36 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    function getTotalOffshoreGainMetrics(holdingsSummaryMetrics, brokerBenefitMetrics) {
+    function getBrokerRewardRealizedIncome(brokerBenefitMetrics) {
+        return (
+            (Number(brokerBenefitMetrics?.couponRebateIncome) || 0)
+            + (Number(brokerBenefitMetrics?.cashRewardIncome) || 0)
+            + (Number(brokerBenefitMetrics?.kolRewardIncome) || 0)
+        );
+    }
+
+    function getBrokerRewardLedgerRows(brokerBenefitMetrics) {
+        return Array.from(new Set([
+            ...(Array.isArray(brokerBenefitMetrics?.couponRebateHkdRows) ? brokerBenefitMetrics.couponRebateHkdRows : []),
+            ...(Array.isArray(brokerBenefitMetrics?.couponRebateUsdRows) ? brokerBenefitMetrics.couponRebateUsdRows : []),
+            ...(Array.isArray(brokerBenefitMetrics?.cashRewardHkdRows) ? brokerBenefitMetrics.cashRewardHkdRows : []),
+            ...(Array.isArray(brokerBenefitMetrics?.cashRewardUsdRows) ? brokerBenefitMetrics.cashRewardUsdRows : []),
+            ...(Array.isArray(brokerBenefitMetrics?.kolRewardRows) ? brokerBenefitMetrics.kolRewardRows : []),
+        ]));
+    }
+
+    function getTotalOffshoreGainMetrics(holdingsSummaryMetrics) {
         const cumulativePnl = Number(holdingsSummaryMetrics?.cumulativePnl) || 0;
-        const cashBenefitIncome = Number(brokerBenefitMetrics?.couponRebateIncome) || 0;
-        const cashRewardIncome = Number(brokerBenefitMetrics?.cashRewardIncome) || 0;
-        const kolRewardIncome = Number(brokerBenefitMetrics?.kolRewardIncome) || 0;
         return {
-            totalOffshoreGain: cumulativePnl + cashBenefitIncome + cashRewardIncome + kolRewardIncome,
-            totalOffshoreGainRows: Array.from(new Set([
-                ...(Array.isArray(holdingsSummaryMetrics?.cumulativePnlRows) ? holdingsSummaryMetrics.cumulativePnlRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.couponRebateHkdRows) ? brokerBenefitMetrics.couponRebateHkdRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.couponRebateUsdRows) ? brokerBenefitMetrics.couponRebateUsdRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.cashRewardHkdRows) ? brokerBenefitMetrics.cashRewardHkdRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.cashRewardUsdRows) ? brokerBenefitMetrics.cashRewardUsdRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.kolRewardRows) ? brokerBenefitMetrics.kolRewardRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.stockGrantRealizedRows) ? brokerBenefitMetrics.stockGrantRealizedRows : []),
-                ...(Array.isArray(brokerBenefitMetrics?.stockGrantUnrealizedRows) ? brokerBenefitMetrics.stockGrantUnrealizedRows : []),
-            ])),
+            totalOffshoreGain: cumulativePnl,
+            totalOffshoreGainRows: Array.isArray(holdingsSummaryMetrics?.cumulativePnlRows)
+                ? [...holdingsSummaryMetrics.cumulativePnlRows]
+                : [],
         };
     }
 
     function renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics) {
-        const offshoreGainMetrics = getTotalOffshoreGainMetrics(holdingsSummaryMetrics, brokerBenefitMetrics);
+        const offshoreGainMetrics = getTotalOffshoreGainMetrics(holdingsSummaryMetrics);
         return [
             renderMetricCards(OFFSHORE_GAIN_METRIC_DEFINITIONS, offshoreGainMetrics),
             renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics),
@@ -8586,6 +8732,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
+        const isZirconHk = selectedBroker === 'zircon_hk';
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
         const hsbcStatementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
         const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
@@ -8627,6 +8774,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const usmartHkStatementsReady = isUsmartHk
             && usmartHkStatementFiles.length > 0
             && usmartHkStatementFiles.every((file) => isLikelyPdfFile(file));
+        const zirconHkWorkbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
+        const zirconHkWorkbookReady = isZirconHk
+            && isLikelyXlsxFile(zirconHkWorkbookFile)
+            && zirconHkWorkbookValidation.valid
+            && zirconHkWorkbookValidation.signature === getImportFileSignature(zirconHkWorkbookFile);
         const brokerReady = SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
@@ -8640,6 +8792,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || (isSchwab && Boolean(schwabReady))
             || (isTigertrade && Boolean(tigertradeStatementsReady))
             || (isUsmartHk && Boolean(usmartHkStatementsReady))
+            || Boolean(zirconHkWorkbookReady)
         );
 
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
@@ -8664,6 +8817,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabReady));
         setImportStatusIcon(tigertradeStatementPdfsStatus, Boolean(tigertradeStatementsReady));
         setImportStatusIcon(usmartHkStatementPdfsStatus, Boolean(usmartHkStatementsReady));
+        setImportStatusIcon(
+            zirconHkTransactionsXlsxStatus,
+            Boolean(zirconHkWorkbookReady),
+            zirconHkWorkbookReady
+                ? `Validated ${zirconHkWorkbookValidation.transactionCount.toLocaleString()} Zircon HK transactions.`
+                : '',
+        );
 
         const submitButton = investmentForm?.querySelector('button[type="submit"]');
         syncActionButtonState(submitButton, {
@@ -8672,7 +8832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function syncInvestmentImportContainerHeight() {
+    function syncInvestmentImportContainerHeight({ preserveVertical = false } = {}) {
         if (!(formContainer instanceof HTMLElement) || formContainer.style.display === 'none' || !investmentHistorySurface) {
             return;
         }
@@ -8685,23 +8845,37 @@ document.addEventListener('DOMContentLoaded', () => {
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
             formContainer.style.removeProperty('max-height');
+            formContainer.style.removeProperty('height');
             return;
         }
         const edgeGap = window.innerWidth <= 767 ? 8 : 10;
         // Compute left/right from the surface rect so the form width always obeys the mother container (responds to sidebar etc.)
         const leftInset = Math.max(edgeGap, Math.floor(surfaceRect.left) + edgeGap);
         const rightInset = Math.max(edgeGap, Math.floor(viewportWidth - surfaceRect.right) + edgeGap);
+        const existingTopInset = Number.parseFloat(formContainer.style.top);
+        const existingMaxHeight = Number.parseFloat(formContainer.style.maxHeight);
         let topInset = edgeGap;
-        if (toggleRect) {
-            topInset = Math.max(topInset, Math.floor(toggleRect.bottom) + edgeGap);
+        let availableHeight = 0;
+        if (preserveVertical && Number.isFinite(existingTopInset) && Number.isFinite(existingMaxHeight)) {
+            topInset = existingTopInset;
+            availableHeight = existingMaxHeight;
         } else {
-            topInset = Math.max(topInset, 42);
+            if (toggleRect) {
+                topInset = Math.max(topInset, Math.floor(toggleRect.bottom) + edgeGap);
+            } else {
+                topInset = Math.max(topInset, 42);
+            }
+            availableHeight = Math.max(80, viewportHeight - topInset - edgeGap);
+            formContainer.style.top = `${topInset}px`;
+            formContainer.style.maxHeight = `${availableHeight}px`;
         }
-        const availableHeight = Math.max(80, viewportHeight - topInset - edgeGap);
-        formContainer.style.top = `${topInset}px`;
         formContainer.style.left = `${leftInset}px`;
         formContainer.style.right = `${rightInset}px`;
-        formContainer.style.maxHeight = `${availableHeight}px`;
+        if (investmentImportStableHeight > 0) {
+            formContainer.style.height = `${Math.min(investmentImportStableHeight, availableHeight)}px`;
+        } else {
+            formContainer.style.removeProperty('height');
+        }
     }
 
     function openInvestmentImportForm() {
@@ -8711,6 +8885,8 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentFormHideTimer = null;
         }
         clearImportFeedback();
+        investmentImportStableHeight = 0;
+        formContainer.style.removeProperty('height');
         formContainer.style.display = 'flex';
         formContainer.scrollTop = 0;
         syncInvestmentFormLayout();
@@ -8724,6 +8900,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (investmentImportBrokerSelect) {
             investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
         }
+        investmentImportStableHeight = formContainer.offsetHeight;
+        syncInvestmentImportContainerHeight();
         setTimeout(() => {
             formContainer.style.opacity = '1';
             formContainer.style.transform = 'scale(1)';
@@ -8771,6 +8949,8 @@ document.addEventListener('DOMContentLoaded', () => {
             formContainer.style.removeProperty('left');
             formContainer.style.removeProperty('right');
             formContainer.style.removeProperty('max-height');
+            formContainer.style.removeProperty('height');
+            investmentImportStableHeight = 0;
             syncInvestmentFormLayout();
             investmentFormHideTimer = null;
         }, 400);
@@ -8779,8 +8959,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildInvestmentRequestOptions(overrides = {}) {
+        const csrfToken = String(
+            window.ANTIGRAVITY_APP?.security?.investmentCsrfToken || ''
+        ).trim();
         const headers = {
             'Cache-Control': 'no-cache',
+            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
             ...(overrides.headers || {}),
         };
         return {
@@ -8878,6 +9062,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+    if (zirconHkTransactionsXlsxInput instanceof HTMLInputElement) {
+        zirconHkTransactionsXlsxInput.addEventListener('change', () => {
+            clearImportFeedback();
+            syncInvestmentImportContainerHeight();
+            validateZirconHkWorkbook();
+        });
+    }
     document.querySelectorAll('input[name="ibkr_import_mode"]').forEach((input) => {
         if (!(input instanceof HTMLInputElement)) return;
         input.addEventListener('change', () => {
@@ -8962,7 +9153,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const surfaceResizeObserver = new ResizeObserver(() => {
                     requestAnimationFrame(() => {
                         if (formContainer && formContainer.style.display === 'flex') {
-                            syncInvestmentImportContainerHeight();
+                            syncInvestmentImportContainerHeight({ preserveVertical: true });
                         }
                     });
                 });
@@ -9126,6 +9317,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 formData.append('transactions_csv', schwabFile);
+            } else if (selectedBroker === 'zircon_hk') {
+                const workbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
+                const workbookSignature = getImportFileSignature(workbookFile);
+                if (!workbookFile || !isLikelyXlsxFile(workbookFile)) {
+                    setImportFeedback('Please upload the completed Zircon HK .xlsx workbook.', 'error');
+                    return;
+                }
+                if (
+                    !zirconHkWorkbookValidation.valid
+                    || zirconHkWorkbookValidation.signature !== workbookSignature
+                ) {
+                    setImportFeedback(
+                        'Wait for the manual investment workbook to pass validation before importing.',
+                        'error',
+                    );
+                    return;
+                }
+                formData.append('zircon_hk_transactions_xlsx', workbookFile);
             } else if (selectedBroker === 'tigertrade' || selectedBroker === 'usmart_hk') {
                 const input = selectedBroker === 'tigertrade'
                     ? tigertradeStatementPdfsInput
@@ -9152,10 +9361,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 hasTransactionsFile: Boolean(transactionsFile),
                 hasPositionsFile: Boolean(positionsFile),
             });
-            fetch('/api/investment/transactions', {
+            fetch('/api/investment/transactions', buildInvestmentRequestOptions({
                 method: 'POST',
                 body: formData,
-            })
+            }))
             .then(response => {
                 reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'transactions import response received', {
                     broker: selectedBroker,
@@ -9301,9 +9510,15 @@ document.addEventListener('DOMContentLoaded', () => {
         tickerProfiles,
         TOTAL_EQUITY,
         AGGREGATE_CASH,
-        { filteredSummaries = summaries, summaryScope = 'all' } = {},
+        {
+            filteredSummaries = summaries,
+            summaryScope = 'all',
+            brokerBenefitMetrics = {},
+        } = {},
     ) {
-        if (!summaries.length) {
+        const brokerRewardRealizedIncome = getBrokerRewardRealizedIncome(brokerBenefitMetrics);
+        const hasBrokerRewardRealizedIncome = Math.abs(brokerRewardRealizedIncome) > 1e-9;
+        if (!summaries.length && !hasBrokerRewardRealizedIncome) {
             return `
                 <div class="investment-holdings-table-shell">
                     <div class="investment-holdings-empty">No holdings or ticker-linked transactions yet.</div>
@@ -9321,7 +9536,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const openSummaries = summarySummaries.filter((summary) => summary.hasOpenPosition);
         const openCount = openSummaries.length;
         const closedCount = summarySummaries.length - openCount;
-        const totalRealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const holdingsRealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const totalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
         const totalUnrealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
@@ -9434,6 +9650,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             `;
         }).join('');
+        const brokerRewardRowHtml = hasBrokerRewardRealizedIncome
+            ? `
+                <tr class="investment-holdings-broker-rewards-row" data-investment-broker-rewards-row>
+                    <td class="investment-holdings-cell investment-holdings-cell-center">${summaries.length + 1}</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-ticker">
+                        <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link investment-holdings-broker-rewards-identity">
+                            <div class="ticker-identity-row">
+                                <span class="ticker-identity-logo investment-broker-reward-token-logo" aria-hidden="true"></span>
+                                <span class="ticker-identity-copy">
+                                    <span class="suggestion-symbol ticker-identity-symbol">Broker rewards</span>
+                                    <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards &amp; KOL rewards">Coupons, cash rewards &amp; KOL rewards</span>
+                                </span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money investment-holdings-value-positive">
+                        <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive">${renderWorkspaceMetricValueContent(`${brokerBenefitMetrics?.hasNonUsdRewardSource ? '*' : ''}${formatHoldingsMoney(brokerRewardRealizedIncome)}`)}</span>
+                    </td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                    <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                </tr>
+            `
+            : '';
 
         const cashEquivalents = computeHoldingsCashEquivalents(summaries, AGGREGATE_CASH);
         const cashAllocation = calculateHoldingsSummaryAllocation(AGGREGATE_CASH, TOTAL_EQUITY);
@@ -9557,7 +9800,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="trade-transactions-wrap scrollable-data-table-scroll investment-holdings-table-scroll" data-table-scroll>
                     <table class="settings-table trade-transactions-table scrollable-data-table investment-holdings-table" data-table-body>
                         ${holdingsColumnGroupHtml}
-                        <tbody>${rowsHtml}</tbody>
+                        <tbody>${rowsHtml}${brokerRewardRowHtml}</tbody>
                     </table>
                 </div>
             </div>
@@ -10058,7 +10301,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const openSummaries = summaries.filter((summary) => summary.hasOpenPosition);
-        const totalRealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
+        const brokerBenefitMetrics = getBrokerBenefitMetrics(
+            investmentRawTransactionsCache,
+            investmentLatestPricesCache,
+            totalEquity,
+        );
+        const totalRealizedPnl = (
+            summaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0)
+            + getBrokerRewardRealizedIncome(brokerBenefitMetrics)
+        );
         const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
@@ -11634,8 +11885,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const tickerSummaries = buildTickerSummaries(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY, tickerClosePrices);
         const fundingMetrics = getUsdFundingMetrics(processed);
-        const holdingsSummaryMetrics = getHoldingsSummaryMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
         const brokerBenefitMetrics = getBrokerBenefitMetrics(rawTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY);
+        const holdingsSummaryMetrics = getHoldingsSummaryMetrics(
+            rawTransactions,
+            mergedLatestPrices,
+            AGGREGATE_TOTAL_EQUITY,
+            brokerBenefitMetrics,
+        );
         if (investmentProcessedTransactionsCache !== processed) {
             investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
             refreshInvestmentAvailableBrokerCodes();
@@ -11646,7 +11902,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const AGGREGATE_CASH = Number.isFinite(rawAggregateDisplayCash)
             ? rawAggregateDisplayCash
             : Number(last?.aggregate_running_cash ?? last?.running_cash);
-        holdingsPanel.innerHTML = renderHoldingsTable(tickerSummaries, tickerProfiles, AGGREGATE_TOTAL_EQUITY, AGGREGATE_CASH);
+        holdingsPanel.innerHTML = renderHoldingsTable(
+            tickerSummaries,
+            tickerProfiles,
+            AGGREGATE_TOTAL_EQUITY,
+            AGGREGATE_CASH,
+            { brokerBenefitMetrics },
+        );
         attachHoldingsTableAlignmentSync(holdingsPanel);
         bindHoldingsLogoFallbacks(holdingsPanel);
         bindHoldingsHistoryInteractions(holdingsPanel);
@@ -12676,7 +12938,12 @@ document.addEventListener('DOMContentLoaded', () => {
             .reduce((sum, t) => sum + getTransactionAmount(t), 0);
     }
 
-    function getHoldingsSummaryMetrics(transactions, latestPrices, TOTAL_EQUITY) {
+    function getHoldingsSummaryMetrics(
+        transactions,
+        latestPrices,
+        TOTAL_EQUITY,
+        brokerBenefitMetrics = null,
+    ) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeLatestPrices = latestPrices && typeof latestPrices === 'object' ? latestPrices : {};
         const tickerSummaries = buildTickerSummaries(
@@ -12686,7 +12953,13 @@ document.addEventListener('DOMContentLoaded', () => {
             normalizePriceHistoryPayload(window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {})
         );
         const holdingsRealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
-        const totalRealizedPnl = holdingsRealizedPnl;
+        const resolvedBrokerBenefitMetrics = brokerBenefitMetrics || getBrokerBenefitMetrics(
+            safeTransactions,
+            safeLatestPrices,
+            TOTAL_EQUITY,
+        );
+        const brokerRewardRealizedIncome = getBrokerRewardRealizedIncome(resolvedBrokerBenefitMetrics);
+        const totalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
         const totalUnrealizedPnl = tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const openTickers = new Set(
@@ -12702,7 +12975,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 txn,
                 ledgerNo: sortedIndex + 1,
             }));
-        const realizedPnlRows = [];
+        const realizedPnlRows = getBrokerRewardLedgerRows(resolvedBrokerBenefitMetrics);
         const unrealizedPnlRows = [];
 
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
@@ -12914,6 +13187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let kolRewardIncome = 0;
         let couponRebateIncome = 0;
         let cashRewardIncome = 0;
+        let hasNonUsdRewardSource = false;
         const couponRebateHkdRowSet = new Set();
         const couponRebateUsdRowSet = new Set();
         const cashRewardHkdRowSet = new Set();
@@ -12927,6 +13201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(amount > 1e-9)) return;
             const currency = formatTransactionCurrency(txn) || baseCurrency;
             const ledgerDate = normalizeLedgerDate(txn?.date);
+            hasNonUsdRewardSource = hasNonUsdRewardSource || currency !== 'USD';
 
             if (benefitType === 'kol_reward') {
                 kolRewardIncome += convertAmountToBaseCurrency(
@@ -12941,6 +13216,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (benefitType === 'coupon_hkd_notional') {
+                hasNonUsdRewardSource = true;
                 couponRebateHkd += 100;
                 couponRebateIncome += convertAmountToBaseCurrency(
                     100,
@@ -13010,6 +13286,7 @@ document.addEventListener('DOMContentLoaded', () => {
             kolRewardIncome,
             couponRebateIncome,
             cashRewardIncome,
+            hasNonUsdRewardSource,
             couponRebateHkdRows: Array.from(couponRebateHkdRowSet),
             couponRebateUsdRows: Array.from(couponRebateUsdRowSet),
             cashRewardHkdRows: Array.from(cashRewardHkdRowSet),
