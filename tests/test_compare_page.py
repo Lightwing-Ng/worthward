@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.12.0
+Code version: v0.12.1
 """
 
 from __future__ import annotations
@@ -281,17 +281,33 @@ class ComparePageTests(unittest.TestCase):
         def fetch_history_for_test(ticker: str, *_args: object, **_kwargs: object) -> pd.DataFrame:
             return reference_frames[ticker]
 
-        with (
-            patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
-            patch(
-                "app.web.runtime.fetch_one_minute_history_for_trading_date",
-                side_effect=lambda ticker, *_args, **_kwargs: live_frames[ticker],
-            ) as exact_day_fetch_mock,
-        ):
-            response = create_app().test_client().get(
-                "/api/compare/live?ticker=000660.KS&ticker=7709.HK&period=1d"
-                "&axis_date=2026-07-15&live_date=2026-07-23&refresh=0"
-            )
+        local_frames = {
+            "000660.KS": reference_frames["000660.KS"],
+            "7709.HK": pd.concat(
+                [reference_frames["7709.HK"], live_frames["7709.HK"]],
+                ignore_index=True,
+            ),
+        }
+        with _write_intraday_stores(local_frames) as tempdir:
+            with (
+                patch(
+                    "app.web.runtime.intraday_history_store_path_for",
+                    side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
+                ),
+                patch("app.web.runtime.fetch_history", side_effect=fetch_history_for_test),
+                patch(
+                    "app.web.runtime.refresh_one_minute_store",
+                    side_effect=AssertionError("The isolated API test must not refresh remote data."),
+                ),
+                patch(
+                    "app.web.runtime.fetch_one_minute_history_for_trading_date",
+                    side_effect=lambda ticker, *_args, **_kwargs: live_frames[ticker],
+                ) as exact_day_fetch_mock,
+            ):
+                response = create_app().test_client().get(
+                    "/api/compare/live?ticker=000660.KS&ticker=7709.HK&period=1d"
+                    "&axis_date=2026-07-15&live_date=2026-07-23&refresh=0"
+                )
 
         payload = response.get_json()
         self.assertEqual(response.status_code, 200, payload)
@@ -925,6 +941,10 @@ class ComparePageTests(unittest.TestCase):
                     side_effect=lambda ticker, interval="1m": Path(tempdir) / f"{ticker}.parquet",
                 ),
                 patch("app.web.runtime.fetch_history", side_effect=_fetch_history),
+                patch(
+                    "app.web.runtime.build_supported_periods_for_history_store",
+                    return_value=["1d", "3d", "1w"],
+                ),
                 patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
                 patch("app.web.runtime.record_ticker_usage"),
                 patch.object(
