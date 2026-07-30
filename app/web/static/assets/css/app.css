@@ -1,4 +1,4 @@
-/* Code version: v0.33.36 */
+/* Code version: v0.33.37 */
 @import url("./foundation/fonts.css?v=0.3.0");
 @import url("./foundation/tokens.css?v=4.4.8");
 @import url("./layout/shell.css?v=3.28.0");
@@ -7,6 +7,6 @@
 @import url("./views/workspace.css?v=1.15.2");
 @import url("./views/settings.css?v=0.15.0");
 @import url("./views/trade.css?v=3.27.1");
-@import url("./views/investment.css?v=1.54.0");
+@import url("./views/investment.css?v=1.55.0");
 @import url("./utilities/responsive.css?v=3.28.0");
 @import url("./foundation/motion.css?v=1.0.0");

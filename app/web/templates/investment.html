@@ -1,4 +1,4 @@
-{# Code version: v1.24.0 #}
+{# Code version: v1.25.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -132,6 +132,7 @@
             </button>
             <section id="transaction_form_container" class="investment-form-container">
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
+                      data-card-shadow="false"
                       enctype="multipart/form-data">
                     <div class="investment-import-stack">
                         <div class="investment-import-field-group">
@@ -185,8 +186,9 @@
                                     [
                                         {"id": "ibkr_import_mode_csv", "value": "csv", "label": "CSV"},
                                         {"id": "ibkr_import_mode_gainskeeper", "value": "gainskeeper", "label": "GainsKeeper"},
+                                        {"id": "ibkr_import_mode_web_paste", "value": "web_paste", "label": "Web paste"},
                                     ],
-                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="2" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
+                                    'id="investment_import_ibkr_mode" data-active="csv" data-option-count="3" data-segmented-pill="measured" aria-labelledby="investment_import_ibkr_mode_label"'
                                 ) }}
                             </div>
                             <div data-ibkr-import-mode-panel="csv">
@@ -265,6 +267,48 @@
                                            multiple
                                            class="settings-form-control investment-import-file-input">
                                 </div>
+                            </div>
+                            </div>
+                            <div data-ibkr-import-mode-panel="web_paste" hidden>
+                            <div class="investment-import-field investment-import-bridge-field">
+                                <label class="trade-strategy-param-label" for="ibkr_trade_notifications_display">
+                                    <span class="investment-import-label-trigger"
+                                          tabindex="0">
+                                        <span class="investment-import-label-step" aria-hidden="true">➊</span>
+                                        <span class="investment-import-label-text">Trade Notifications plain text</span>
+                                        <span class="investment-import-status-icon" id="ibkr_trade_notifications_text_status"
+                                              aria-hidden="true"></span>
+                                        <span class="field-tooltip trade-strategy-param-help liquid-glass-surface investment-import-help"
+                                              role="tooltip">
+                                            <span class="investment-import-help-title">Copy IBKR filled trade notifications</span>
+                                            <span class="investment-import-help-step">1. Sign in to IBKR Client Portal.</span>
+                                            <span class="investment-import-help-step">2. Open Orders &amp; Trades, then Trade Notifications.</span>
+                                            <span class="investment-import-help-step">3. Copy the full visible page text, including account, Filled status, displayed time, amount, and fees.</span>
+                                            <span class="investment-import-help-step">4. Paste it here for an immediate provisional sync. Displayed Beijing times are converted to New York ledger times.</span>
+                                            <span class="investment-import-help-step">5. Import the matching CSV or GainsKeeper file later; its higher-precision values replace matching web rows.</span>
+                                        </span>
+                                    </span>
+                                </label>
+                                <div class="trade-capital-row investment-import-paste-row">
+                                    <div class="investment-import-paste-shell">
+                                        <input id="ibkr_trade_notifications_display"
+                                               class="settings-form-control investment-import-paste-display"
+                                               type="text"
+                                               value=""
+                                               readonly>
+                                    </div>
+                                    <button type="button"
+                                            class="settings-round-icon-button investment-import-paste-button"
+                                            id="ibkr_trade_notifications_paste_button"
+                                            aria-label="Paste IBKR Trade Notifications page text from clipboard"
+                                            title="Paste from clipboard">
+                                        <span class="icon investment-import-paste-button-icon" aria-hidden="true"></span>
+                                    </button>
+                                </div>
+                                <textarea id="ibkr_trade_notifications_text"
+                                          name="ibkr_trade_notifications_text"
+                                          hidden
+                                          spellcheck="false"></textarea>
                             </div>
                             </div>
                             </div>
@@ -705,5 +749,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.11.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.12.0') }}"></script>
 {% endblock %}

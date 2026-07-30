@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.59.0`
+Documentation version: `v2.60.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -18,7 +18,7 @@ Documentation version: `v2.59.0`
 - Include or exclude cash dividends in comparison, portfolio, and backtest calculations
 - Use `1d` data by default and run `1m` backtests when local intraday data exists for the selected ticker
 - Choose the backtest execution mode between `signal_close` and `next_open`
-- Import IBKR CSV exports into a local investment ledger used by `Trade -> Investment`
+- Import IBKR CSV, GainsKeeper, or pasted Trade Notifications into a local investment ledger used by `Trade -> Investment`
 - Review imported holdings, equity history, and transaction history from `Trade -> Investment`
 - Read broker account data and submit protected Longbridge orders from `Trade -> Live trading`
 - Manage theme, date format, broker access, Yahoo Mail SMTP, local cache maintenance, strategy metadata, and design tokens from `Settings`
@@ -336,6 +336,11 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 
 - Import source rule:
   - Use official IBKR CSV exports or GainsKeeper files as the source of truth.
+  - Use pasted Trade Notifications only as a provisional current-moment capture
+    while the prior-day files are not yet available. Displayed Beijing times are
+    converted to New York ledger times.
+  - A later matching CSV or GainsKeeper row replaces the web row's rounded fee,
+    net amount, and timestamp precision without creating a duplicate trade.
   - Do not apply HSBC pending logic to IBKR data.
 - Booking and reconciliation:
   - Record each row using imported fields for gross amount, commission, taxes, and cash movement.
@@ -368,10 +373,12 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 
 - IBKR has no direct connection or credential configuration in this app. It cannot place orders, request live data, or start a brokerage session.
 - IBKR Flex Web Service, Client Portal, and Gateway integrations are deliberately retired, not deferred fallbacks. Do not reintroduce a direct IBKR transport without an explicit user-approved architecture and security review.
-- Import official files only:
+- Import only user-supplied offline evidence; the app never connects to IBKR:
   - **CSV**: Transaction History plus Realized Summary exports for historical backfills.
   - **GainsKeeper**: OFX/GKX files for precision upgrades and overlapping historical coverage.
-- Each newly imported file is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
+  - **Web paste**: copied Trade Notifications page text for immediate provisional
+    filled trades. It is not a browser session, API, or direct broker transport.
+- Each newly imported file or pasted evidence capture is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB.
 - Application startup and read-only Investment browsing require only `investment.parquet`. Source-evidence verification remains mandatory at the investment-import commit boundary, so a device without the matching evidence sidecar can inspect the portable ledger but cannot silently extend it with unauditable imports.
 - Existing ledger records remain readable after a Parquet-only transfer and
   remain mergeable when their matching evidence sidecar is present. Legacy

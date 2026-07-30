@@ -1,4 +1,4 @@
-/* Code version: v1.54.0 */
+/* Code version: v1.55.0 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -3618,6 +3618,16 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 0;
 }
 
+.investment-import-form[data-card-shadow="true"] {
+    --investment-import-bridge-shadow: var(--liquid-glass-shadow);
+    --investment-import-action-package-shadow: var(--frosted-glass-shadow);
+}
+
+.investment-import-form[data-card-shadow="false"] {
+    --investment-import-bridge-shadow: none;
+    --investment-import-action-package-shadow: none;
+}
+
 .investment-import-stack {
     display: grid;
     flex: 1 1 auto;
@@ -3721,7 +3731,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     backdrop-filter: var(--liquid-glass-blur);
     -webkit-backdrop-filter: var(--liquid-glass-blur);
     border: var(--settings-action-package-border);
-    box-shadow: var(--liquid-glass-shadow);
+    box-shadow: var(--investment-import-bridge-shadow, var(--liquid-glass-shadow));
     isolation: isolate;
 }
 
@@ -4065,7 +4075,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     backdrop-filter: var(--frosted-glass-blur);
     -webkit-backdrop-filter: var(--frosted-glass-blur);
     border: var(--frosted-glass-border);
-    box-shadow: var(--frosted-glass-shadow);
+    box-shadow: var(--investment-import-action-package-shadow, var(--frosted-glass-shadow));
     isolation: isolate;
 }
 

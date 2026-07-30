@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.39.0
+Code version: v0.40.0
 """
 
 from __future__ import annotations
@@ -5683,6 +5683,27 @@ def build_web_runtime() -> WebRuntime:
                         "IBKR GainsKeeper import complete. OFX/GKX records were merged idempotently, "
                         "matching CSV records were upgraded with intraday trade timestamps where available, "
                         "and exact uploaded source files were retained locally as SHA-256-verified immutable evidence."
+                    )
+                elif ibkr_import_mode == "web_paste":
+                    trade_notifications_text = str(
+                        request.form.get("ibkr_trade_notifications_text", "")
+                    ).strip()
+                    if not trade_notifications_text:
+                        return jsonify({
+                            "success": False,
+                            "error": "Please paste the IBKR Trade Notifications page text.",
+                        }), 400
+                    imported_payload = parse_investment_payload(
+                        "ibkr",
+                        "web_pasted_text",
+                        trade_notifications_text=trade_notifications_text,
+                    )
+                    success_message = (
+                        "IBKR web trade notification sync complete. Filled trades were merged "
+                        "idempotently as a provisional current-moment capture; later matching "
+                        "Transaction History CSV or GainsKeeper records replace their rounded "
+                        "web values with authoritative file precision. Exact pasted text is retained "
+                        "locally as SHA-256-verified immutable evidence."
                     )
                 else:
                     if transactions_file is None or positions_file is None:

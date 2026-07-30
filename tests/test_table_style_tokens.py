@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.6.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.0."""
 
 from __future__ import annotations
 
@@ -98,6 +98,25 @@ def test_investment_equity_range_uses_the_compact_segmented_control_contract() -
         "--mode-switch-thumb-background: var(--accent-fill);",
     ):
         assert declaration in range_rule
+
+
+def test_investment_import_cards_use_the_parent_shadow_switch() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    investment_css = (
+        project_root / "app/web/static/assets/css/views/investment.css"
+    ).read_text(encoding="utf-8")
+    client = create_app().test_client()
+
+    response = client.get("/trade/investment")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="investment_form"' in html
+    assert 'data-card-shadow="false"' in html
+    assert '.investment-import-form[data-card-shadow="true"] {' in investment_css
+    assert '.investment-import-form[data-card-shadow="false"] {' in investment_css
+    assert "--investment-import-bridge-shadow: none;" in investment_css
+    assert "--investment-import-action-package-shadow: none;" in investment_css
 
 
 def test_investment_table_header_is_interactive_and_body_is_measurable() -> None:

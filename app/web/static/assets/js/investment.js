@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.11.0
+ * Code version: v2.12.0
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -145,6 +145,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const positionsCsvInput = document.getElementById('positions_csv');
     const gainskeeperFilesInput = document.getElementById('gainskeeper_files');
     const gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
+    const ibkrTradeNotificationsTextInput = document.getElementById('ibkr_trade_notifications_text');
+    const ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
+    const ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
+    const ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
     const investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     const transactionsCsvStatus = document.getElementById('transactions_csv_status');
     const positionsCsvStatus = document.getElementById('positions_csv_status');
@@ -6090,6 +6094,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
         if (value === 'gainskeeper') return 'gainskeeper';
+        if (value === 'web_paste') return 'web_paste';
         return 'csv';
     }
 
@@ -6103,10 +6108,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedMode = getSelectedIbkrImportMode();
         if (investmentImportIbkrMode instanceof HTMLElement) {
             investmentImportIbkrMode.dataset.active = selectedMode;
-            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '2');
+            investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
             const activeIndex = selectedMode === 'gainskeeper'
                 ? '1'
-                : '0';
+                : (selectedMode === 'web_paste' ? '2' : '0');
             investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
             scheduleIbkrImportSegmentedPillUpdate();
         }
@@ -6147,6 +6152,75 @@ document.addEventListener('DOMContentLoaded', () => {
     function countClipboardLines(text) {
         const normalized = normalizeClipboardText(text);
         return normalized ? normalized.split('\n').length : 0;
+    }
+
+    function isLikelyIbkrTradeNotificationsText(rawText) {
+        const text = normalizeClipboardText(rawText);
+        return Boolean(
+            text
+            && /Orders\s*&\s*Trades/i.test(text)
+            && /Trade Notifications/i.test(text)
+            && /\bU\d{6,12}\b/i.test(text)
+            && /(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/i.test(text)
+            && /\bFilled\b/i.test(text)
+            && /\d{1,2}\/\d{1,2}\/20\d{2},\s+\d{1,2}:\d{2}\s+[AP]M/i.test(text)
+            && /Fees:\s*[\d,]+(?:\.\d+)?/i.test(text)
+        );
+    }
+
+    function syncIbkrTradeNotificationsDisplay() {
+        if (!(ibkrTradeNotificationsDisplay instanceof HTMLInputElement)) {
+            return;
+        }
+        const text = normalizeClipboardText(ibkrTradeNotificationsTextInput?.value || '');
+        if (!text) {
+            ibkrTradeNotificationsDisplay.value = '';
+            ibkrTradeNotificationsDisplay.title = '';
+            return;
+        }
+        const tradeCount = Array.from(
+            text.matchAll(/(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/gi)
+        ).length;
+        const tradeLabel = tradeCount === 1 ? '1 filled trade' : `${tradeCount.toLocaleString('en-US')} filled trades`;
+        const lineCount = countClipboardLines(text).toLocaleString('en-US');
+        const charCount = text.length.toLocaleString('en-US');
+        const readiness = isLikelyIbkrTradeNotificationsText(text) ? 'Ready' : 'Check format';
+        ibkrTradeNotificationsDisplay.value = `IBKR Trade Notifications · ${tradeLabel} · ${lineCount} lines · ${charCount} chars · ${readiness}`;
+        ibkrTradeNotificationsDisplay.title = text;
+    }
+
+    async function pasteIbkrTradeNotificationsFromClipboard() {
+        if (!navigator.clipboard?.readText) {
+            setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
+            return;
+        }
+        try {
+            const text = normalizeClipboardText(await navigator.clipboard.readText());
+            if (!text) {
+                setImportFeedback('Clipboard is empty.', 'error');
+                return;
+            }
+            if (!(ibkrTradeNotificationsTextInput instanceof HTMLTextAreaElement)) {
+                return;
+            }
+            ibkrTradeNotificationsTextInput.value = text;
+            syncIbkrTradeNotificationsDisplay();
+            syncImportValidationState();
+            if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
+                ibkrTradeNotificationsPasteButton.classList.add('is-pasted');
+                window.setTimeout(() => {
+                    ibkrTradeNotificationsPasteButton.classList.remove('is-pasted');
+                }, 1200);
+            }
+            setImportFeedback(
+                isLikelyIbkrTradeNotificationsText(text)
+                    ? 'IBKR Trade Notifications clipboard capture is ready to sync.'
+                    : 'Clipboard text was pasted, but the IBKR Trade Notifications format could not be verified.',
+                isLikelyIbkrTradeNotificationsText(text) ? 'success' : 'warning',
+            );
+        } catch (_error) {
+            setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
+        }
     }
 
     function splitHsbcPastedTextChunks(rawText) {
@@ -6388,6 +6462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ibkrImportMode = getSelectedIbkrImportMode();
         const hsbcImportMode = getSelectedHsbcImportMode();
         const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
+        const isIbkrWebPaste = isIbkr && ibkrImportMode === 'web_paste';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -6397,7 +6472,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
-        const usesSyncAction = isLongbridgeHk || (isHsbc && hsbcImportMode === 'paste');
+        const usesSyncAction = isLongbridgeHk
+            || isIbkrWebPaste
+            || (isHsbc && hsbcImportMode === 'paste');
 
         if (investmentImportIbkrFields instanceof HTMLElement) {
             investmentImportIbkrFields.hidden = !isIbkr;
@@ -6472,6 +6549,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.parquet</code> without clearing existing records.'
                         : (isFutuhk
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                        : (isIbkrWebPaste
+                            ? 'Paste the IBKR Trade Notifications page for an immediate provisional sync. Matching CSV or GainsKeeper files imported later replace the rounded web values.'
                         : (isIbkrGainskeeper
                             ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
@@ -6482,7 +6561,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.'))))))));
+                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))));
         }
         if (importSubmitButton instanceof HTMLButtonElement) {
             importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -8496,6 +8575,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ibkrImportMode = getSelectedIbkrImportMode();
         const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
         const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
+        const isIbkrWebPaste = isIbkr && ibkrImportMode === 'web_paste';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -8518,6 +8598,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const gainskeeperReady = isIbkrGainskeeper
             && gainskeeperFiles.length > 0
             && gainskeeperFiles.every((file) => isLikelyGainskeeperFile(file));
+        const ibkrTradeNotificationsText = String(
+            ibkrTradeNotificationsTextInput?.value || ''
+        ).trim();
+        const ibkrTradeNotificationsReady = isIbkrWebPaste
+            && isLikelyIbkrTradeNotificationsText(ibkrTradeNotificationsText);
         const hsbcPortfolioText = String(hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(hsbcCashAccountTextInput?.value || '').trim();
@@ -8546,6 +8631,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const importReady = brokerReady && (
             (isIbkrCsv && transactionReady && positionsReady)
             || gainskeeperReady
+            || ibkrTradeNotificationsReady
             || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
@@ -8559,6 +8645,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(transactionsCsvStatus, transactionReady);
         setImportStatusIcon(positionsCsvStatus, positionsReady);
         setImportStatusIcon(gainskeeperFilesStatus, gainskeeperReady);
+        setImportStatusIcon(
+            ibkrTradeNotificationsTextStatus,
+            Boolean(ibkrTradeNotificationsReady),
+        );
 
         setImportStatusIcon(longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));
         setImportStatusIcon(longbridgeSgHistoryOrdersStatus, Boolean(longbridgeSgHistoryOrdersReady));
@@ -8764,6 +8854,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mountInvestmentCurrencyFilterHeaders();
     bindInvestmentExportButton();
     syncInvestmentImportMode();
+    syncIbkrTradeNotificationsDisplay();
     syncHsbcPasteDisplaySummaries();
     syncImportValidationState();
     // Re-force shared select refresh (the broker dropdown uses the backtest-shared-select machinery).
@@ -8813,6 +8904,18 @@ document.addEventListener('DOMContentLoaded', () => {
             syncImportValidationState();
         });
     });
+    if (ibkrTradeNotificationsTextInput) {
+        ibkrTradeNotificationsTextInput.addEventListener('input', () => {
+            clearImportFeedback();
+            syncIbkrTradeNotificationsDisplay();
+            syncImportValidationState();
+        });
+    }
+    if (ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
+        ibkrTradeNotificationsPasteButton.addEventListener('click', () => {
+            pasteIbkrTradeNotificationsFromClipboard();
+        });
+    }
     [
         ['cash', hsbcCashAccountPasteButton],
         ['portfolio', hsbcPortfolioTextPasteButton],
@@ -8901,6 +9004,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     gainskeeperFiles.forEach((file) => {
                         formData.append('gainskeeper_files', file);
                     });
+                } else if (ibkrImportMode === 'web_paste') {
+                    const tradeNotificationsText = String(
+                        ibkrTradeNotificationsTextInput?.value || ''
+                    ).trim();
+                    if (!tradeNotificationsText) {
+                        setImportFeedback('Please paste the IBKR Trade Notifications page text before syncing.', 'error');
+                        return;
+                    }
+                    if (!isLikelyIbkrTradeNotificationsText(tradeNotificationsText)) {
+                        setImportFeedback('The pasted text does not look like the IBKR Trade Notifications page.', 'error');
+                        return;
+                    }
+                    formData.append(
+                        'ibkr_trade_notifications_text',
+                        tradeNotificationsText,
+                    );
                 } else if (!transactionsFile || !positionsFile) {
                     setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
                     return;

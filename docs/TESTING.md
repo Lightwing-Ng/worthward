@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.10.0`
+Documentation version: `v1.11.1`
 
 ## Supported commands
 
@@ -49,11 +49,11 @@ artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 24 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
+Baseline remeasured on 30 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `62.4%` (`coverage.json`
-  reports `12,234` covered lines of `18,360` statements and `3,795` covered
-  branches of `7,308`).
+- Total combined statement-and-branch coverage: `63.4%` (`coverage.json`
+  reports `12,846` covered lines of `19,015` statements and `4,015` covered
+  branches of `7,576`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -66,7 +66,7 @@ Baseline remeasured on 24 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
 
 Priority coverage gaps:
 
-- `app/services/investment_import.py`: `51.9%`, with broker-specific
+- `app/services/investment_import.py`: `53.5%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 Recently strengthened coverage:
@@ -81,7 +81,7 @@ Recently strengthened coverage:
 
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
-`44.43%` lines, `64.26%` branches, and `70.88%` functions. The gate enforces
+`45.29%` lines, `64.62%` branches, and `71.08%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -91,13 +91,13 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 24 Jul 2026:
+Current suite inventory remeasured on 30 Jul 2026:
 
-- 450 Python tests collected; the latest full Python run reports 450 passed,
-  6 skipped, and 63 subtests passed.
-- 78 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 492 Python tests collected; the latest full Python run reports 486 passed,
+  6 skipped, and 73 subtests passed.
+- 83 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 84 Playwright test cases passed through `./scripts/check.sh` on 27 Jul 2026,
+- 88 Playwright test cases passed through `./scripts/check.sh` on 30 Jul 2026,
   including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
@@ -113,6 +113,10 @@ Current suite inventory remeasured on 24 Jul 2026:
 - `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
+- `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
+  Notifications paste parsing, Beijing-to-New York conversion, exact 15-share
+  DRAM and one-share GOOGL gap validation, authoritative GainsKeeper correction,
+  route persistence, and immutable evidence materialization.
 - `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
 - `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
