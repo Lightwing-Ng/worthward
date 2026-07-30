@@ -1,4 +1,4 @@
-{# Code version: v0.12.5 #}
+{# Code version: v0.12.6 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -125,7 +125,7 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.33.44') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.33.45') }}">
 </head>
 <body>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
