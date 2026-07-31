@@ -1,11 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.3.4`
+Documentation version: `v1.7.0`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Added: The Investment share drawer exports the active transaction scope as a round-trip standard XLSX workbook, and the broker selector exposes a neutral `No specified broker` fallback for importing that contract.
+- Added: The fixed Holdings summary row now shows non-zero aggregate daily realized and unrealized P&L badges, while every daily P&L badge sizes to its content and preserves decimal-point alignment with the cumulative value above it.
+- Fixed: Holdings now uses the backend US market `session_date` even when a ticker has no realtime quote, so the daily P&L base advances at the Overnight boundary and remains the prior trading day's Intraday close through Post.
+- Fixed: Investment ticker logos now use only the backend-resolved local asset URL. A missing logo renders the established placeholder without speculative `.svg` or `.png` requests, and Investment images load eagerly so Chromium-based browsers do not emit deferred lazy-load intervention diagnostics.
+- Added: Open Holdings rows now show non-zero daily realized and unrealized P&L beneath their cumulative values in solid positive/negative badges with aligned decimal points.
 - Fixed: Holdings allocation badges now render their text with the active theme background color, producing white text in light mode and dark text in dark mode without changing the established color-token contract.
 - Fixed: Holdings now supplies canonical issuer or fund names for AAPL, BOXX, MU, NVDA, QQQ, QCOM, TQQQ, and TSM when a local market profile contains only its ticker placeholder.
 - Fixed: The Holdings summary uses sentence case for Total equity and keeps the Cash through Cumulative P&L values on one shared right edge after live-number transitions reserve different widths.

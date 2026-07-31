@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.0
+Code version: v0.20.1
 """
 
 from __future__ import annotations
@@ -112,6 +112,21 @@ class MarketSessionClassificationTests(unittest.TestCase):
         self.assertEqual(session_state["session"], "overnight")
         self.assertEqual(session_state["session_date"], "2026-07-28")
         self.assertTrue(session_state["is_realtime_allowed"])
+
+    def test_nyse_summer_overnight_starts_at_0800_beijing_time(self) -> None:
+        post_state = nyse_market_session_state(
+            "2026-07-27T23:59:00Z",
+            include_overnight=True,
+        )
+        overnight_state = nyse_market_session_state(
+            "2026-07-28T00:00:00Z",
+            include_overnight=True,
+        )
+
+        self.assertEqual(post_state["session"], "post")
+        self.assertEqual(post_state["session_date"], "2026-07-27")
+        self.assertEqual(overnight_state["session"], "overnight")
+        self.assertEqual(overnight_state["session_date"], "2026-07-28")
 
     def test_nyse_default_session_contract_keeps_overnight_disabled(self) -> None:
         session_state = nyse_market_session_state("2026-07-28T03:19:00Z")

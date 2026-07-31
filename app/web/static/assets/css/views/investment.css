@@ -1,4 +1,4 @@
-/* Code version: v1.59.1 */
+/* Code version: v1.63.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -953,7 +953,7 @@
     right: var(--global-quick-actions-right);
     transform: translateY(-50%);
     z-index: var(--layer-fixed-dock);
-    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    width: var(--settings-round-icon-button-size);
     height: var(--settings-round-icon-button-size);
     isolation: isolate;
     pointer-events: none;
@@ -961,6 +961,18 @@
 
 .investment-view-segmented-wrap > .investment-share-actions:not([hidden]) {
     pointer-events: auto;
+}
+
+.investment-view-segmented-wrap > .investment-share-actions:hover,
+.investment-view-segmented-wrap > .investment-share-actions:focus-within,
+.investment-view-segmented-wrap > .investment-share-actions.is-mask-active {
+    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+}
+
+.investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action]:hover,
+.investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action]:focus-within,
+.investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action].is-mask-active {
+    width: calc((var(--settings-round-icon-button-size) * 4) + (var(--investment-share-action-gap) * 3));
 }
 
 .investment-share-actions {
@@ -978,10 +990,6 @@
     height: var(--settings-round-icon-button-size);
     isolation: isolate;
     pointer-events: none;
-}
-
-.investment-share-actions[data-share-drawer]:not([hidden]) {
-    pointer-events: auto;
 }
 
 #compare_summary_panel {
@@ -1009,6 +1017,10 @@
     right: 0;
 }
 
+.investment-share-actions > .export-transactions-button {
+    pointer-events: auto;
+}
+
 .investment-share-actions > .investment-share-action-button {
     opacity: 0;
     pointer-events: none;
@@ -1033,6 +1045,24 @@
     right: calc(var(--investment-share-action-step) * 2);
     --investment-share-action-hidden-offset: calc(var(--investment-share-action-step) * 2);
     transition-delay: 28ms;
+}
+
+.investment-share-actions[data-standard-xlsx-action] > #export_standard_xlsx_button {
+    right: calc(var(--investment-share-action-step) * 1);
+    --investment-share-action-hidden-offset: calc(var(--investment-share-action-step) * 1);
+    transition-delay: 0ms;
+}
+
+.investment-share-actions[data-standard-xlsx-action] > #share_mask_button {
+    right: calc(var(--investment-share-action-step) * 2);
+    --investment-share-action-hidden-offset: calc(var(--investment-share-action-step) * 2);
+    transition-delay: 28ms;
+}
+
+.investment-share-actions[data-standard-xlsx-action] > #share_capture_button {
+    right: calc(var(--investment-share-action-step) * 3);
+    --investment-share-action-hidden-offset: calc(var(--investment-share-action-step) * 3);
+    transition-delay: 56ms;
 }
 
 .investment-share-actions:hover > .investment-share-action-button,
@@ -2926,9 +2956,8 @@
     border-left: 0;
 }
 
-.investment-holdings-table tbody tr+tr td,
-.investment-holdings-table tbody tr:first-child td {
-    border-top: var(--frosted-glass-border);
+.investment-holdings-table tbody tr + tr td {
+    border-top: 1px solid var(--theme-glass-border);
 }
 
 .investment-holdings-table tbody td {
@@ -3006,6 +3035,68 @@
     opacity: 0.72;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+.investment-holdings-pnl-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    max-width: 100%;
+    text-align: right;
+}
+
+.investment-holdings-daily-pnl-badge {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    inline-size: max-content;
+    min-inline-size: 0;
+    margin-inline-end: calc(-1 * var(--investment-holdings-allocation-badge-padding-inline));
+    padding-block: var(--investment-holdings-allocation-badge-padding-block);
+    padding-inline: var(--investment-holdings-allocation-badge-padding-inline);
+    border-radius: var(--investment-holdings-allocation-badge-radius);
+    background: var(--investment-holdings-allocation-badge-background-positive);
+    color: var(--theme-background);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.investment-holdings-daily-pnl-badge[hidden] {
+    display: none;
+}
+
+.investment-holdings-daily-pnl-badge.investment-holdings-daily-pnl-badge-negative {
+    background: var(--investment-holdings-allocation-badge-background-negative);
+}
+
+#investment_holdings_panel .investment-holdings-daily-pnl-badge-value.trade-metric-value {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-end !important;
+    inline-size: 100%;
+    max-inline-size: none;
+    min-height: 0;
+    padding-bottom: 0;
+    color: inherit;
+}
+
+.investment-holdings-daily-pnl-badge-value > .workspace-metric-value-major,
+.investment-holdings-daily-pnl-badge-value > .workspace-metric-value-minor {
+    align-self: end;
+    display: flex;
+    align-items: flex-end;
+    line-height: 1;
+}
+
+.investment-holdings-daily-pnl-badge-value > .workspace-metric-value-major {
+    justify-self: end;
+}
+
+.investment-holdings-daily-pnl-badge-value > .workspace-metric-value-minor {
+    transform: none;
 }
 
 .investment-live-value {

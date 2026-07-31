@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.17.0
+ * Code version: v2.20.0
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -23,7 +23,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.49.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.50.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -74,7 +74,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.10.0',
+    entry: 'v2.20.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -246,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const INVESTMENT_REALTIME_QUOTE_IDLE_CHECK_MS = 60000;
     const INVESTMENT_MARKET_SESSION_TTL_MS = 30000;
     const INVESTMENT_LIVE_DIGIT_EPSILON = 1e-9;
+    const INVESTMENT_DAILY_PNL_DISPLAY_EPSILON = 0.005;
 
     function initInvestmentSectionResizer() {
         return bindInvestmentSectionResizer({
@@ -270,6 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentStockDetailsTableHost = document.getElementById('investment_stock_details_table_host');
     const investmentShareActions = document.getElementById('investment_share_actions');
     const exportTransactionsButton = document.getElementById('export_transactions_button');
+    const exportStandardXlsxButton = document.getElementById('export_standard_xlsx_button');
     const shareCaptureButton = document.getElementById('share_capture_button');
     const shareMaskButton = document.getElementById('share_mask_button');
     const investmentSharePreviewDemo = document.getElementById('investment_share_preview_demo');
@@ -660,8 +662,14 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/Zircon%20HK.png',
             logoAlt: 'Zircon HK logo',
         },
+        standard_xlsx: {
+            code: 'standard_xlsx',
+            label: 'No specified broker',
+            logoUrl: '/market-store/logos/brokers/Standard%20XLSX.svg',
+            logoAlt: 'Standard XLSX icon',
+        },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk', 'zircon_hk']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk', 'zircon_hk', 'standard_xlsx']);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -3603,7 +3611,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getInvestmentBaseCurrency,
         getInvestmentBrokerMeta,
         getInvestmentChartPointsCache: () => investmentChartPointsCache,
-        getInvestmentMarketStoreTickerCandidates,
+        getInvestmentMarketStoreTickerCandidates: getInvestmentTickerStoreAliasCandidates,
         getInvestmentProcessedTransactionsCache: () => investmentProcessedTransactionsCache,
         getInvestmentStockDetailsPanel: () => investmentStockDetailsPanel,
         getInvestmentStockDetailsPriceChartInstance: () => investmentStockDetailsPriceChartInstance,
@@ -4110,52 +4118,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function buildMarketStoreLogoFilenames(ticker) {
-        const normalizedTicker = normalizeInvestmentTicker(ticker);
-        if (!normalizedTicker) return ['stock.png'];
-
-        const filenames = [];
-        const addFilename = (value) => {
-            const normalizedValue = String(value || '').trim();
-            if (!normalizedValue || filenames.includes(normalizedValue)) return;
-            filenames.push(normalizedValue);
-        };
-
-        getInvestmentMarketStoreTickerCandidates(ticker).forEach((candidate) => {
-            if (candidate.includes('.')) {
-                const [symbol, suffix] = candidate.split('.');
-                if (suffix === 'HK') {
-                    const strippedSymbol = String(symbol || '').replace(/^0+(?=\d)/, '');
-                    if (strippedSymbol && strippedSymbol !== symbol) {
-                        addFilename(`${strippedSymbol}.${suffix}.svg`);
-                        addFilename(`${strippedSymbol}.${suffix}.png`);
-                    }
-                }
-                addFilename(`${candidate}.svg`);
-                addFilename(`${candidate}.png`);
-                return;
-            }
-            addFilename(`${candidate}.svg`);
-            addFilename(`${candidate}.png`);
-        });
-        return filenames.length ? filenames : [`${normalizedTicker}.png`];
-    }
-
-    function buildMarketStoreLogoUrl(ticker) {
-        const [filename] = buildMarketStoreLogoFilenames(ticker);
-        return `/market-store/logos/${encodeURIComponent(filename || 'stock.png')}`;
-    }
-
-    function getInvestmentMarketStoreTickerCandidates(ticker) {
-        return getInvestmentTickerStoreAliasCandidates(ticker);
-    }
-
-    function buildMarketStoreLogoUrls(ticker) {
-        return buildMarketStoreLogoFilenames(ticker).map((filename) => (
-            `/market-store/logos/${encodeURIComponent(filename)}`
-        ));
-    }
-
     function normalizeInvestmentLogoUrlList(logoUrl) {
         const values = Array.isArray(logoUrl) ? logoUrl : [logoUrl];
         return Array.from(new Set(values
@@ -4167,18 +4129,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isDollarTokenMoneyMarketTicker(ticker)) {
             return '/market-store/logos/dollarsign.ring.svg';
         }
-        const logoUrl = String(profile?.logo_url || '').trim();
-        return logoUrl || buildMarketStoreLogoUrls(ticker)[0] || buildMarketStoreLogoUrl(ticker);
+        return String(profile?.logo_url || '').trim();
     }
 
     function resolveInvestmentLogoUrls(profile, ticker) {
         if (isDollarTokenMoneyMarketTicker(ticker)) {
             return ['/market-store/logos/dollarsign.ring.svg'];
         }
-        return normalizeInvestmentLogoUrlList([
-            String(profile?.logo_url || '').trim(),
-            ...buildMarketStoreLogoUrls(ticker),
-        ]);
+        return normalizeInvestmentLogoUrlList(String(profile?.logo_url || '').trim());
     }
 
     function setInvestmentTickerLogoVisibility(logo, placeholder, isLoaded) {
@@ -4304,7 +4262,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const midAngle = segmentStart + ((segmentEnd - segmentStart) / 2);
                 const profile = resolveInvestmentTickerProfile(tickerProfiles, ticker);
                 const logoUrl = resolveInvestmentLogoUrl(profile, ticker);
-                logoItems.push({ ticker, logoUrl, midAngle });
+                if (logoUrl) {
+                    logoItems.push({ ticker, logoUrl, midAngle });
+                }
                 if (!isCashEquivalent) {
                     gradientIndex += 1;
                 }
@@ -6592,6 +6552,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
         const isZirconHk = selectedBroker === 'zircon_hk';
+        const isStandardXlsx = selectedBroker === 'standard_xlsx';
+        const usesStandardXlsxImport = isZirconHk || isStandardXlsx;
         const usesSyncAction = isLongbridgeHk
             || isIbkrWebPaste
             || (isHsbc && hsbcImportMode === 'paste');
@@ -6623,7 +6585,7 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentImportUsmartHkFields.hidden = !isUsmartHk;
         }
         if (investmentImportZirconHkFields instanceof HTMLElement) {
-            investmentImportZirconHkFields.hidden = !isZirconHk;
+            investmentImportZirconHkFields.hidden = !usesStandardXlsxImport;
         }
         if (transactionsCsvInput instanceof HTMLInputElement) {
             transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
@@ -6659,7 +6621,7 @@ document.addEventListener('DOMContentLoaded', () => {
             usmartHkStatementPdfsInput.required = isUsmartHk;
         }
         if (zirconHkTransactionsXlsxInput instanceof HTMLInputElement) {
-            zirconHkTransactionsXlsxInput.required = isZirconHk;
+            zirconHkTransactionsXlsxInput.required = usesStandardXlsxImport;
         }
         if (hsbcStatementPdfsInput instanceof HTMLInputElement) {
             hsbcStatementPdfsInput.required = isHsbc && hsbcImportMode === 'statement_pdf';
@@ -6683,8 +6645,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isUsmartHk
                                     ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
-                                    : (isZirconHk
-                                        ? 'Download the typed Zircon HK sample workbook, enter only real broker activity, then upload it for server validation before importing.'
+                                    : (usesStandardXlsxImport
+                                        ? (isStandardXlsx
+                                            ? 'Upload any antigravity standard XLSX workbook. Each row retains its own broker identity and is validated before import.'
+                                            : 'Download the typed standard workbook, enter only real broker activity, then upload it for server validation before importing.')
                                     : (isSchwab
                                 ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                                 : (isIbkr
@@ -6720,7 +6684,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <img class="ticker-input-logo investment-history-broker-logo"
                          src="${escapeHtml(brokerMeta.logoUrl)}"
                          alt="${escapeHtml(brokerMeta.logoAlt)}"
-                         loading="lazy"
+                         loading="eager"
                          decoding="async">
                 </span>
                 <span class="sr-only">${escapeHtml(brokerMeta.label)}</span>
@@ -6966,6 +6930,72 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function downloadMarkdownFile(filename, content) {
         downloadBlobFile(filename, new Blob([content], { type: 'text/markdown;charset=utf-8' }));
+    }
+
+    function getVisibleTransactionsForStandardXlsxExport() {
+        const processedTransactions = Array.isArray(investmentProcessedTransactionsCache)
+            ? investmentProcessedTransactionsCache
+            : [];
+        if (activeInvestmentView === 'stock_details') {
+            const activeTicker = normalizeInvestmentTicker(
+                selectedInvestmentStockTicker || getInvestmentLocationTicker(),
+            );
+            return getVisibleInvestmentStockDetailTransactions(
+                buildInvestmentStockDetailRows(processedTransactions, activeTicker),
+            );
+        }
+        return getVisibleInvestmentHistoryTransactions(
+            processedTransactions,
+            investmentChartPointsCache,
+        );
+    }
+
+    function getInvestmentDownloadFilename(response, fallback) {
+        const disposition = String(response?.headers?.get('Content-Disposition') || '');
+        const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match) {
+            try {
+                return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ''));
+            } catch (_error) {
+                return fallback;
+            }
+        }
+        const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+        return filenameMatch?.[1]?.trim() || fallback;
+    }
+
+    async function exportStandardInvestmentXlsx() {
+        const transactions = getVisibleTransactionsForStandardXlsxExport();
+        if (!transactions.length) {
+            setImportFeedback(
+                'No visible transactions are available for standard XLSX export.',
+                'warning',
+            );
+            return;
+        }
+        const response = await fetch(
+            '/api/investment/exports/standard.xlsx',
+            buildInvestmentRequestOptions({
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({transactions}),
+            }),
+        );
+        if (!response.ok) {
+            let message = 'The standard investment workbook could not be exported.';
+            try {
+                const payload = await response.json();
+                message = payload?.error || message;
+            } catch (_error) {
+                // Keep the stable browser-facing fallback.
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        downloadBlobFile(
+            getInvestmentDownloadFilename(response, 'Standard_investment_export.xlsx'),
+            blob,
+        );
     }
 
     function cloneRenderedTable(headerTable, bodyTable) {
@@ -8223,6 +8253,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!exportPayload) return;
             downloadMarkdownFile(exportPayload.filename, exportPayload.markdown);
         });
+        if (exportStandardXlsxButton && exportStandardXlsxButton.dataset.bound !== '1') {
+            exportStandardXlsxButton.dataset.bound = '1';
+            exportStandardXlsxButton.addEventListener('click', async () => {
+                if (exportStandardXlsxButton.getAttribute('aria-busy') === 'true') return;
+                exportStandardXlsxButton.setAttribute('aria-busy', 'true');
+                try {
+                    await exportStandardInvestmentXlsx();
+                } catch (error) {
+                    setImportFeedback(
+                        error instanceof Error
+                            ? error.message
+                            : 'The standard investment workbook could not be exported.',
+                        'error',
+                    );
+                } finally {
+                    exportStandardXlsxButton.removeAttribute('aria-busy');
+                }
+            });
+        }
         if (shareMaskButton && shareMaskButton.dataset.bound !== '1') {
             shareMaskButton.dataset.bound = '1';
             syncInvestmentShareMaskButtonState();
@@ -8733,6 +8782,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
         const isZirconHk = selectedBroker === 'zircon_hk';
+        const isStandardXlsx = selectedBroker === 'standard_xlsx';
+        const usesStandardXlsxImport = isZirconHk || isStandardXlsx;
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
         const hsbcStatementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
         const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
@@ -8775,7 +8826,7 @@ document.addEventListener('DOMContentLoaded', () => {
             && usmartHkStatementFiles.length > 0
             && usmartHkStatementFiles.every((file) => isLikelyPdfFile(file));
         const zirconHkWorkbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
-        const zirconHkWorkbookReady = isZirconHk
+        const zirconHkWorkbookReady = usesStandardXlsxImport
             && isLikelyXlsxFile(zirconHkWorkbookFile)
             && zirconHkWorkbookValidation.valid
             && zirconHkWorkbookValidation.signature === getImportFileSignature(zirconHkWorkbookFile);
@@ -8821,7 +8872,7 @@ document.addEventListener('DOMContentLoaded', () => {
             zirconHkTransactionsXlsxStatus,
             Boolean(zirconHkWorkbookReady),
             zirconHkWorkbookReady
-                ? `Validated ${zirconHkWorkbookValidation.transactionCount.toLocaleString()} Zircon HK transactions.`
+                ? `Validated ${zirconHkWorkbookValidation.transactionCount.toLocaleString()} standard XLSX transactions.`
                 : '',
         );
 
@@ -9317,11 +9368,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 formData.append('transactions_csv', schwabFile);
-            } else if (selectedBroker === 'zircon_hk') {
+            } else if (selectedBroker === 'zircon_hk' || selectedBroker === 'standard_xlsx') {
                 const workbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
                 const workbookSignature = getImportFileSignature(workbookFile);
                 if (!workbookFile || !isLikelyXlsxFile(workbookFile)) {
-                    setImportFeedback('Please upload the completed Zircon HK .xlsx workbook.', 'error');
+                    setImportFeedback('Please upload a completed antigravity standard .xlsx workbook.', 'error');
                     return;
                 }
                 if (
@@ -9539,6 +9590,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const holdingsRealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.realizedPnl) || 0), 0);
         const totalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
         const totalUnrealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const totalDailyPnl = summarySummaries.reduce((totals, summary) => {
+            const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
+            totals.realized += Number(dailyPnl.realized) || 0;
+            totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            return totals;
+        }, { realized: 0, unrealized: 0 });
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
         const totalWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9
@@ -9566,7 +9623,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <img class="ticker-identity-logo"
                                          alt=""
                                          hidden
-                                         loading="lazy"
+                                         loading="eager"
                                          decoding="async"
                                          data-investment-logo-image
                                          data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
@@ -9584,6 +9641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? ' investment-holdings-value-positive'
                     : ' investment-holdings-value-negative');
             const lastClass = resolveInvestmentLastPriceToneClass(summary.lastPrice, summary.ticker);
+            const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
 
             return `
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
@@ -9624,20 +9682,38 @@ document.addEventListener('DOMContentLoaded', () => {
                         })}
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
-                        ${renderHoldingsDualCurrencyValue(
-                            summary.realizedPnl,
-                            summary.realizedPnlLocal,
-                            summary.quoteCurrency,
-                            { valueClass: realizedClass },
-                        )}
+                        <span class="investment-holdings-pnl-stack">
+                            ${renderHoldingsDualCurrencyValue(
+                                summary.realizedPnl,
+                                summary.realizedPnlLocal,
+                                summary.quoteCurrency,
+                                { valueClass: realizedClass },
+                            )}
+                            ${summary.hasOpenPosition
+                                ? renderInvestmentHoldingsDailyPnlBadge(
+                                    'daily_realized_pnl',
+                                    summary.ticker,
+                                    dailyPnl.realized,
+                                )
+                                : ''}
+                        </span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">
-                        ${renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
-                            ticker: summary.ticker,
-                            className: `trade-metric-value investment-stock-details-metric-value ${unrealizedClass.trim()}`,
-                            formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
-                            useSplitValue: true,
-                        })}
+                        <span class="investment-holdings-pnl-stack">
+                            ${renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
+                                ticker: summary.ticker,
+                                className: `trade-metric-value investment-stock-details-metric-value ${unrealizedClass.trim()}`,
+                                formatter: (nextValue) => nextValue === null ? '-' : formatHoldingsMoney(nextValue),
+                                useSplitValue: true,
+                            })}
+                            ${summary.hasOpenPosition
+                                ? renderInvestmentHoldingsDailyPnlBadge(
+                                    'daily_unrealized_pnl',
+                                    summary.ticker,
+                                    dailyPnl.unrealized,
+                                )
+                                : ''}
+                        </span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         ${renderInvestmentLiveValue('position_weight', summary.hasOpenPosition ? summary.positionWeight : null, {
@@ -9747,14 +9823,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     })}
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
-                    <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(formatHoldingsMoney(totalRealizedPnl))}</span>
+                    <span class="investment-holdings-pnl-stack">
+                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${renderWorkspaceMetricValueContent(formatHoldingsMoney(totalRealizedPnl))}</span>
+                        ${renderInvestmentHoldingsDailyPnlBadge(
+                            'summary_daily_realized_pnl',
+                            '',
+                            totalDailyPnl.realized,
+                        )}
+                    </span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
-                    ${renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
-                        className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
-                        formatter: (nextValue) => formatHoldingsMoney(nextValue),
-                        useSplitValue: true,
-                    })}
+                    <span class="investment-holdings-pnl-stack">
+                        ${renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
+                            className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
+                            formatter: (nextValue) => formatHoldingsMoney(nextValue),
+                            useSplitValue: true,
+                        })}
+                        ${renderInvestmentHoldingsDailyPnlBadge(
+                            'summary_daily_unrealized_pnl',
+                            '',
+                            totalDailyPnl.unrealized,
+                        )}
+                    </span>
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money">
                     ${renderInvestmentLiveValue('summary_position_weight', totalWeight, {
@@ -9928,11 +10018,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildInvestmentStockDonutMarkup(summary, profile) {
         const logoUrl = resolveInvestmentLogoUrl(profile, summary?.ticker || 'stock');
         const ticker = escapeHtml(summary?.ticker || 'Ticker');
+        const logoMarkup = logoUrl
+            ? `<img class="portfolio-donut-logo investment-stock-details-donut-logo" src="${escapeHtml(logoUrl)}" alt="${ticker} logo" loading="eager" decoding="async" data-ticker="${ticker}" data-style-token-donut-angle="44.4">`
+            : '';
         return `
             <div class="style-token-portfolio-donut-shell investment-stock-details-donut-shell">
                 <div class="portfolio-donut-orbit style-token-portfolio-donut-orbit investment-stock-details-donut-orbit" aria-hidden="true">
                     <div class="portfolio-donut-logo-layer investment-stock-details-donut-logo-layer">
-                        <img class="portfolio-donut-logo investment-stock-details-donut-logo" src="${escapeHtml(logoUrl)}" alt="${ticker} logo" loading="lazy" decoding="async" data-ticker="${ticker}" data-style-token-donut-angle="44.4">
+                        ${logoMarkup}
                     </div>
                     <div class="portfolio-donut investment-stock-details-donut" style="--portfolio-donut-fill: ${STOCK_DETAILS_DONUT_GRAY_FILL};"></div>
                 </div>
@@ -10075,6 +10168,49 @@ document.addEventListener('DOMContentLoaded', () => {
             : ' investment-holdings-allocation-badge-negative';
     }
 
+    function getInvestmentHoldingsDailyPnlBadgeToneClass(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || Math.abs(numericValue) < INVESTMENT_DAILY_PNL_DISPLAY_EPSILON) {
+            return '';
+        }
+        return numericValue > 0
+            ? ' investment-holdings-daily-pnl-badge-positive'
+            : ' investment-holdings-daily-pnl-badge-negative';
+    }
+
+    function renderInvestmentHoldingsDailyPnlBadge(field, ticker, value) {
+        const numericValue = Number(value);
+        const isVisible = Number.isFinite(numericValue)
+            && Math.abs(numericValue) >= INVESTMENT_DAILY_PNL_DISPLAY_EPSILON;
+        const displayText = isVisible ? formatSignedHoldingsMoney(numericValue) : formatHoldingsMoney(0);
+        const toneClass = getInvestmentHoldingsDailyPnlBadgeToneClass(numericValue);
+        return `
+            <span class="investment-holdings-daily-pnl-badge${toneClass}"${isVisible ? '' : ' hidden'}>
+                <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-daily-pnl-badge-value"
+                      data-investment-live-field="${escapeHtml(field)}"
+                      data-investment-live-ticker="${escapeHtml(ticker)}"
+                      data-investment-live-number="${escapeHtml(String(Number.isFinite(numericValue) ? numericValue : 0))}"
+                      data-investment-live-display="${escapeHtml(displayText)}">${renderWorkspaceMetricValueContent(displayText)}</span>
+            </span>
+        `;
+    }
+
+    function updateInvestmentHoldingsDailyPnlBadge(node, value) {
+        if (!(node instanceof HTMLElement)) return;
+        const numericValue = Number(value);
+        const isVisible = Number.isFinite(numericValue)
+            && Math.abs(numericValue) >= INVESTMENT_DAILY_PNL_DISPLAY_EPSILON;
+        const displayText = isVisible ? formatSignedHoldingsMoney(numericValue) : formatHoldingsMoney(0);
+        node.dataset.investmentLiveNumber = String(Number.isFinite(numericValue) ? numericValue : 0);
+        node.dataset.investmentLiveDisplay = displayText;
+        node.innerHTML = renderWorkspaceMetricValueContent(displayText);
+        const badge = node.closest('.investment-holdings-daily-pnl-badge');
+        if (!(badge instanceof HTMLElement)) return;
+        badge.hidden = !isVisible;
+        badge.classList.toggle('investment-holdings-daily-pnl-badge-positive', isVisible && numericValue > 0);
+        badge.classList.toggle('investment-holdings-daily-pnl-badge-negative', isVisible && numericValue < 0);
+    }
+
     function renderInvestmentHoldingsAllocationBadge(field, value, toneValue = value) {
         const numericValue = Number(value);
         const displayText = Number.isFinite(numericValue) ? formatHoldingsPercent(numericValue) : '-';
@@ -10149,6 +10285,70 @@ document.addEventListener('DOMContentLoaded', () => {
             latestLedgerDate,
         );
         return Number.isFinite(Number(referenceClose)) ? Number(referenceClose) : null;
+    }
+
+    function getInvestmentHoldingSessionDate(ticker) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        if (!normalizedTicker) return getTodayLedgerDate();
+        const quote = getInvestmentRealtimeQuoteForTicker(normalizedTicker);
+        const quoteSessionDate = normalizeLedgerDate(quote?.session_date);
+        if (quoteSessionDate) return quoteSessionDate;
+        const market = getInvestmentQuoteMarket(quote, normalizedTicker);
+        if (market === 'HK') return getInvestmentHongKongClockParts().dateKey;
+        if (market === 'US') {
+            const marketSessionDate = normalizeLedgerDate(
+                getCachedInvestmentMarketSessionState()?.session_date,
+            );
+            return marketSessionDate || getInvestmentNewYorkClockParts().dateKey;
+        }
+        return getTodayLedgerDate();
+    }
+
+    function resolveInvestmentTickerPreviousClose(ticker, sessionDate) {
+        const normalizedTicker = normalizeInvestmentTicker(ticker);
+        const normalizedSessionDate = normalizeLedgerDate(sessionDate);
+        if (!normalizedTicker || !normalizedSessionDate) return null;
+        const tickerPriceIndex = buildTickerPriceIndex(investmentTickerClosePricesCache);
+        const priceRecord = tickerPriceIndex[normalizedTicker];
+        if (!priceRecord) return null;
+        const priorDates = priceRecord.dates.filter((date) => date < normalizedSessionDate);
+        if (!priorDates.length) return null;
+        const previousClose = Number(priceRecord.closes[priorDates[priorDates.length - 1]]);
+        return Number.isFinite(previousClose) && previousClose > 0 ? previousClose : null;
+    }
+
+    function resolveInvestmentHoldingDailyPnl(summary) {
+        if (!summary?.hasOpenPosition) {
+            return { realized: 0, unrealized: 0 };
+        }
+        const sessionDate = getInvestmentHoldingSessionDate(summary.ticker);
+        const realized = Number(summary.realizedPnlByDate?.[sessionDate]) || 0;
+        const lastPrice = Number(summary.lastPrice);
+        const shares = Number(summary.shares);
+        const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
+        if (
+            !Number.isFinite(lastPrice)
+            || !Number.isFinite(shares)
+            || !Number.isFinite(previousClose)
+        ) {
+            return { realized, unrealized: 0 };
+        }
+        const dailyUnrealizedLocal = (lastPrice - previousClose) * shares;
+        const fxTimeline = buildInvestmentFxRateTimeline(
+            investmentRawTransactionsCache,
+            getInvestmentBaseCurrency(),
+        );
+        const unrealized = convertAmountToBaseCurrency(
+            dailyUnrealizedLocal,
+            summary.quoteCurrency,
+            sessionDate,
+            fxTimeline,
+            getInvestmentBaseCurrency(),
+        );
+        return {
+            realized,
+            unrealized: Number.isFinite(unrealized) ? unrealized : 0,
+        };
     }
 
     function resolveInvestmentLastPriceToneClass(lastPrice, ticker) {
@@ -10269,6 +10469,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastNode = row.querySelector('[data-investment-live-field="last"]');
             const marketValueNode = row.querySelector('[data-investment-live-field="market_value"]');
             const unrealizedNode = row.querySelector('[data-investment-live-field="unrealized_pnl"]');
+            const dailyUnrealizedNode = row.querySelector('[data-investment-live-field="daily_unrealized_pnl"]');
             const weightNode = row.querySelector('[data-investment-live-field="position_weight"]');
             const lastCell = lastNode?.closest('td');
             const unrealizedCell = unrealizedNode?.closest('td');
@@ -10288,6 +10489,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 unrealizedNode,
                 summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl),
                 summary.unrealizedPnl,
+            );
+            updateInvestmentHoldingsDailyPnlBadge(
+                dailyUnrealizedNode,
+                resolveInvestmentHoldingDailyPnl(summary).unrealized,
             );
             updateInvestmentLiveValueNode(
                 weightNode,
@@ -10311,6 +10516,12 @@ document.addEventListener('DOMContentLoaded', () => {
             + getBrokerRewardRealizedIncome(brokerBenefitMetrics)
         );
         const totalUnrealizedPnl = summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const totalDailyPnl = summaries.reduce((totals, summary) => {
+            const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
+            totals.realized += Number(dailyPnl.realized) || 0;
+            totals.unrealized += Number(dailyPnl.unrealized) || 0;
+            return totals;
+        }, { realized: 0, unrealized: 0 });
         const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number(summary.marketValue) || 0), 0);
         const totalWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > INVESTMENT_LIVE_DIGIT_EPSILON
@@ -10326,6 +10537,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const cashEquivalentsAllocationNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cash_equivalents_allocation"]');
         const cumulativeNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_cumulative_pnl"]');
         const summaryUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_unrealized_pnl"]');
+        const summaryDailyRealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_daily_realized_pnl"]');
+        const summaryDailyUnrealizedNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_daily_unrealized_pnl"]');
         const summaryWeightNode = document.querySelector('#investment_holdings_panel [data-investment-live-field="summary_position_weight"]');
         const summaryUnrealizedCell = summaryUnrealizedNode?.closest('td');
 
@@ -10369,6 +10582,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateInvestmentLiveValueNode(cumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
         updateInvestmentLiveValueNode(summaryUnrealizedNode, formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
+        updateInvestmentHoldingsDailyPnlBadge(summaryDailyRealizedNode, totalDailyPnl.realized);
+        updateInvestmentHoldingsDailyPnlBadge(summaryDailyUnrealizedNode, totalDailyPnl.unrealized);
         updateInvestmentLiveValueNode(summaryWeightNode, formatHoldingsPercent(totalWeight), totalWeight);
         updateInvestmentLiveValueNode(metricsCumulativeNode, formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
         updateInvestmentLiveValueNode(metricsUnrealizedNode, formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
@@ -10748,7 +10963,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <img class="ticker-identity-logo"
                              alt=""
                              hidden
-                             loading="lazy"
+                             loading="eager"
                              decoding="async"
                              data-investment-logo-image
                              data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"

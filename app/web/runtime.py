@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.45.0
+Code version: v0.46.0
 """
 
 from __future__ import annotations
@@ -148,7 +148,9 @@ from app.services.investment_import import (
 )
 from app.services.investment_import_registry import commit_investment_import
 from app.services.zircon_hk_import import (
+    STANDARD_INVESTMENT_EXPORT_FILENAME,
     ZIRCON_HK_TEMPLATE_FILENAME,
+    build_standard_investment_xlsx,
     build_zircon_hk_template_xlsx,
 )
 
@@ -366,6 +368,7 @@ class WebRuntime:
     investment_get_transactions: Any
     investment_add_transaction: Any
     investment_download_zircon_hk_template: Any
+    investment_export_standard_xlsx: Any
     investment_validate_zircon_hk_workbook: Any
     investment_get_latest_price: Any
     investment_get_parquet: Any
@@ -5690,6 +5693,58 @@ def build_web_runtime() -> WebRuntime:
         )
         return apply_no_store_headers(response)
 
+    def investment_export_standard_xlsx():
+        """Export selected rendered ledger rows in the round-trip XLSX contract."""
+        try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                raise ValueError("The standard XLSX export request is invalid.")
+            selected_transactions = payload.get("transactions")
+            if not isinstance(selected_transactions, list) or not selected_transactions:
+                raise ValueError("Select at least one transaction for standard XLSX export.")
+            if len(selected_transactions) > 2_000:
+                raise ValueError("A standard XLSX export supports at most 2,000 transactions.")
+            if not all(isinstance(transaction, dict) for transaction in selected_transactions):
+                raise ValueError("The standard XLSX export contains an invalid transaction.")
+            tickers = {
+                str(transaction.get("ticker") or "").strip().upper()
+                for transaction in selected_transactions
+                if str(transaction.get("ticker") or "").strip()
+            }
+            filename = STANDARD_INVESTMENT_EXPORT_FILENAME
+            if len(tickers) == 1:
+                ticker = re.sub(r"[^A-Z0-9._-]+", "-", next(iter(tickers))).strip("-")
+                if ticker:
+                    filename = f"{ticker}_standard_investment_export.xlsx"
+            response = send_file(
+                BytesIO(build_standard_investment_xlsx(selected_transactions)),
+                as_attachment=True,
+                download_name=filename,
+                mimetype=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                max_age=0,
+            )
+            return apply_no_store_headers(response)
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to export the standard investment workbook")
+            response = jsonify({
+                "success": False,
+                "error": "The standard investment workbook could not be exported.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
     def investment_validate_zircon_hk_workbook():
         """Validate a generic fallback workbook without writing investment data."""
         try:
@@ -6012,7 +6067,7 @@ def build_web_runtime() -> WebRuntime:
                     "Charles Schwab import complete. Records were merged incrementally into the local investment store "
                     "without clearing older data first."
                 )
-            elif broker == "zircon_hk":
+            elif broker in {"zircon_hk", "standard_xlsx"}:
                 workbook_file = request.files.get("zircon_hk_transactions_xlsx")
                 if workbook_file is None:
                     return jsonify({
@@ -6690,6 +6745,7 @@ def build_web_runtime() -> WebRuntime:
         investment_get_transactions=investment_get_transactions,
         investment_add_transaction=investment_add_transactions,
         investment_download_zircon_hk_template=investment_download_zircon_hk_template,
+        investment_export_standard_xlsx=investment_export_standard_xlsx,
         investment_validate_zircon_hk_workbook=investment_validate_zircon_hk_workbook,
         investment_get_latest_price=investment_get_latest_price,
         investment_get_parquet=investment_get_parquet,

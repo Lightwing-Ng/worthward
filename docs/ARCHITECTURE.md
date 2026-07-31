@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.17.0`
+Documentation version: `v1.18.0`
 
 ## Runtime flow
 
@@ -97,6 +97,10 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   commit route but never reaches persistence. The exact validated workbook must
   be resubmitted through the immutable-evidence and readback-verified commit
   boundary.
+- Stock details exports its active, filtered transaction scope through the same
+  typed workbook builder. The `No specified broker` import selector is a
+  broker-neutral entrypoint to that shared parser; each workbook row, rather
+  than the selector, remains authoritative for broker identity.
 - Investment source evidence is immutable, SHA-256-addressed, capacity-bounded, and verified under the ledger lock before persistence and at application startup. A ledger manifest must never retain raw uploaded Base64 bytes.
 - Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
 - `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.

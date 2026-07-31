@@ -1,6 +1,6 @@
 """Tests for the generic typed manual-workbook import.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from app.services.zircon_hk_import import (
     ZIRCON_HK_TEMPLATE_INPUT_ROWS,
     ZIRCON_HK_TYPE_LABELS,
     build_investment_payload_from_zircon_hk_manual_xlsx,
+    build_standard_investment_xlsx,
     build_zircon_hk_template_xlsx,
 )
 
@@ -169,6 +170,46 @@ class ZirconHkImportTests(unittest.TestCase):
             base64.b64decode(artifact["content_base64"]),
             workbook_bytes,
         )
+
+    def test_standard_export_round_trips_selected_ledger_rows(self) -> None:
+        workbook_bytes = build_standard_investment_xlsx([
+            {
+                "ledger_no": 42,
+                "broker": "ibkr",
+                "account": "U1234567",
+                "datetime": "2026-07-30 09:15:00",
+                "type": "buy",
+                "currency": "USD",
+                "ticker": "AAPL",
+                "quantity_raw": "2",
+                "price_raw": "210.25",
+                "commission_raw": "-1.25",
+                "description": "Authoritative AAPL purchase",
+                "source": {},
+            },
+        ])
+
+        workbook = load_workbook(BytesIO(workbook_bytes))
+        values = tuple(
+            workbook["Transactions"].cell(row=2, column=column).value
+            for column in range(1, len(ZIRCON_HK_HEADERS) + 1)
+        )
+        self.assertEqual(values[0], "IBKR")
+        self.assertEqual(values[3], "Buy")
+        self.assertEqual(values[5], "AAPL")
+        self.assertEqual(values[11], "antigravity-ledger-42")
+
+        payload = build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=workbook_bytes,
+            filename="AAPL_standard_investment_export.xlsx",
+        )
+        transaction = payload["transactions"][0]
+        self.assertEqual(transaction["broker"], "ibkr")
+        self.assertEqual(transaction["account"], "U1234567")
+        self.assertEqual(transaction["datetime"], "2026-07-30 09:15:00")
+        self.assertEqual(transaction["quantity_raw"], "2")
+        self.assertEqual(transaction["price_raw"], "210.25")
+        self.assertEqual(transaction["commission_raw"], "-1.25")
 
     def test_parser_rejects_text_dates_numbers_formulas_and_wrong_cash_signs(
         self,

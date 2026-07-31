@@ -1,4 +1,4 @@
-{# Code version: v0.5.0 #}
+{# Code version: v0.6.0 #}
 
 {% macro render_notice_banner(
     title='',
@@ -212,8 +212,8 @@
 </div>
 {%- endmacro %}
 
-{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None, placement=none) -%}
-<div class="investment-share-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %}{% if placement %} data-share-placement="{{ placement }}"{% endif %} hidden>
+{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, show_standard_xlsx=false, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None, placement=none) -%}
+<div class="investment-share-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %}{% if show_standard_xlsx %} data-standard-xlsx-action{% endif %}{% if placement %} data-share-placement="{{ placement }}"{% endif %} hidden>
     <button type="button" class="investment-share-action-button" id="share_capture_button"
             aria-label="{{ capture_label }}" title="{{ capture_label }}">
         <span class="icon"
@@ -224,6 +224,14 @@
         <span class="icon"
               style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);"></span>
     </button>
+    {% if show_standard_xlsx %}
+    <button type="button" class="investment-share-action-button standard-investment-xlsx-button"
+            id="export_standard_xlsx_button"
+            aria-label="Export Standard XLSX" title="Export Standard XLSX">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/arrow.up.document.fill.svg); mask-image: url(/static/images/arrow.up.document.fill.svg);"></span>
+    </button>
+    {% endif %}
     <button type="button" class="export-transactions-button" id="export_transactions_button"
             aria-label="{{ anchor_label }}" title="{{ anchor_title or anchor_label }}">
         <span class="icon"

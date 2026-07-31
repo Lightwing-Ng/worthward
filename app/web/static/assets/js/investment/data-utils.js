@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.49.0
+ * Code version: v1.50.0
+ * - Added: Holdings summaries retain ledger-derived realized P&L by date so open positions can display an attributable daily realized result.
  * - Added: US overnight quote sessions require Longbridge provenance and use the Investment realtime clock contract.
  * - Added: Extended-hours Investment pulse eligibility now requires the per-ticker Longbridge quote source while preserving regular-session fallback behavior.
  * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
@@ -879,6 +880,7 @@ export function createInvestmentDataUtils({
             shares: 0,
             totalCost: 0,
             realizedPnl: 0,
+            realizedPnlByDate: {},
             lastCloseDate: null,
         };
     }
@@ -1949,6 +1951,7 @@ export function createInvestmentDataUtils({
             }
             const summary = tickerMap.get(ticker);
             const ledgerDate = normalizeLedgerDate(txn?.date);
+            const realizedPnlBeforeTransaction = Number(summary.realizedPnl) || 0;
             if (syntheticCashEquivalentTicker) {
                 const valueAfter = Number(
                     txn?.normalized?.cash_equivalent_value_after
@@ -1970,6 +1973,12 @@ export function createInvestmentDataUtils({
                 }
             } else {
                 applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate);
+            }
+            const realizedPnlDelta = (Number(summary.realizedPnl) || 0) - realizedPnlBeforeTransaction;
+            if (ledgerDate && Math.abs(realizedPnlDelta) > 1e-9) {
+                summary.realizedPnlByDate[ledgerDate] = (
+                    Number(summary.realizedPnlByDate[ledgerDate]) || 0
+                ) + realizedPnlDelta;
             }
 
             const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
@@ -2097,6 +2106,19 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
+            const realizedPnlByDateLocal = { ...(summary.realizedPnlByDate || {}) };
+            const realizedPnlByDate = Object.fromEntries(
+                Object.entries(realizedPnlByDateLocal).map(([ledgerDate, dailyRealizedPnlLocal]) => ([
+                    ledgerDate,
+                    convertAmountToBaseCurrency(
+                        dailyRealizedPnlLocal,
+                        quoteCurrency,
+                        ledgerDate,
+                        fxTimeline,
+                        baseCurrency,
+                    ),
+                ])),
+            );
             const positionWeight = Number.isFinite(totalEquity) && Math.abs(totalEquity) > 1e-9 && hasOpenPosition
                 ? (marketValue / totalEquity) * 100
                 : 0;
@@ -2110,6 +2132,8 @@ export function createInvestmentDataUtils({
                 marketValue,
                 realizedPnl,
                 realizedPnlLocal,
+                realizedPnlByDate,
+                realizedPnlByDateLocal,
                 quoteCurrency,
                 unrealizedPnl,
                 positionWeight,
@@ -2220,4 +2244,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.49.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.50.0';

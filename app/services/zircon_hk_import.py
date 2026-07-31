@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ ZIRCON_HK_IMPORTER_VERSION = "0.4.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
 ZIRCON_HK_BROKER_LABEL = "Zircon HK"
 ZIRCON_HK_TEMPLATE_FILENAME = "Manual_investment_import.xlsx"
+STANDARD_INVESTMENT_EXPORT_FILENAME = "Standard_investment_export.xlsx"
 ZIRCON_HK_TRANSACTION_SHEET = "Transactions"
 ZIRCON_HK_LISTS_SHEET = "Lists"
 ZIRCON_HK_MAX_TRANSACTION_ROWS = 2_000
@@ -81,7 +82,9 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
 }
 ZIRCON_HK_CURRENCIES = ("HKD", "USD", "CNH", "CNY", "SGD")
 ZIRCON_HK_BROKER_ENTRIES = tuple(
-    sorted_broker_entries(tuple(BROKER_CATALOG))
+    sorted_broker_entries(
+        tuple(code for code in BROKER_CATALOG if code != "standard_xlsx")
+    )
 )
 
 _TYPE_LOOKUP = {
@@ -386,9 +389,129 @@ def _configure_transactions_sheet(sheet: Any) -> None:
 
 def build_zircon_hk_template_xlsx() -> bytes:
     """Return a plain fallback XLSX template with typed validation rules."""
+    return build_standard_investment_xlsx()
+
+
+def _export_decimal(value: Any) -> int | float | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"Investment export contains an invalid numeric value: {value!r}.") from exc
+    if not parsed.is_finite():
+        raise ValueError("Investment export contains a non-finite numeric value.")
+    integral = parsed.to_integral_value()
+    if parsed == integral:
+        return int(integral)
+    return float(parsed)
+
+
+def _export_transaction_datetime(transaction: dict[str, Any]) -> datetime:
+    raw_datetime = normalize_import_text(transaction.get("datetime"))
+    if not raw_datetime:
+        raw_datetime = normalize_import_text(transaction.get("date"))
+    try:
+        parsed = datetime.fromisoformat(raw_datetime)
+    except ValueError as exc:
+        ledger_no = transaction.get("ledger_no")
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            "has no exportable date-time."
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=INVESTMENT_LEDGER_TIMEZONE)
+    return parsed.astimezone(ZIRCON_HK_TIMEZONE).replace(tzinfo=None, microsecond=0)
+
+
+def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
+    transaction_type = normalize_import_text(transaction.get("type")).casefold()
+    type_label_by_value = {
+        value: label for label, value in ZIRCON_HK_TYPE_LABELS.items()
+    }
+    type_label = type_label_by_value.get(transaction_type)
+    ledger_no = transaction.get("ledger_no")
+    if type_label is None:
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            f"uses unsupported standard XLSX type {transaction_type!r}."
+        )
+
+    broker_code = normalize_import_text(
+        transaction.get("broker")
+        or (transaction.get("source") or {}).get("broker")
+    ).casefold()
+    broker_entry = BROKER_CATALOG.get(broker_code)
+    if broker_entry is None:
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            f"uses unsupported broker {broker_code!r}."
+        )
+
+    currency = normalize_import_text(transaction.get("currency")).upper()
+    if currency not in ZIRCON_HK_CURRENCIES:
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            f"uses unsupported standard XLSX currency {currency!r}."
+        )
+
+    quantity = _export_decimal(transaction.get("quantity_raw"))
+    if quantity is None:
+        quantity = _export_decimal((transaction.get("normalized") or {}).get("position_quantity"))
+    if quantity is not None:
+        quantity = abs(quantity)
+
+    price = _export_decimal(transaction.get("price_raw"))
+    if price is None:
+        price = _export_decimal((transaction.get("normalized") or {}).get("unit_price"))
+    if price is not None:
+        price = abs(price)
+
+    amount: int | float | None = None
+    if transaction_type not in {"buy", "sell", "dividend_reinvestment", "grant"}:
+        amount = _export_decimal(transaction.get("net_amount_raw"))
+        if amount is None:
+            amount = _export_decimal((transaction.get("normalized") or {}).get("net_amount"))
+
+    commission = _export_decimal(transaction.get("commission_raw"))
+    if commission is None:
+        commission = _export_decimal((transaction.get("normalized") or {}).get("commission"))
+    if commission is not None:
+        commission = abs(commission)
+
+    source = transaction.get("source") or {}
+    reference_id = normalize_import_text(source.get("reference_id"))
+    if not reference_id:
+        if ledger_no in {None, ""}:
+            raise ValueError(
+                "Every exported investment transaction requires a ledger number "
+                "or an existing Reference ID."
+            )
+        reference_id = f"antigravity-ledger-{ledger_no}"
+
+    return (
+        broker_entry.label,
+        normalize_import_text(transaction.get("account") or source.get("account")),
+        _export_transaction_datetime(transaction),
+        type_label,
+        currency,
+        normalize_import_text(transaction.get("ticker")).upper(),
+        quantity,
+        price,
+        amount,
+        commission,
+        normalize_import_whitespace(transaction.get("description"))[:500],
+        reference_id[:100],
+    )
+
+
+def build_standard_investment_xlsx(
+    transactions: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+) -> bytes:
+    """Build the neutral standard workbook, optionally populated for round-trip import."""
     workbook = Workbook()
-    transactions = workbook.active
-    transactions.title = ZIRCON_HK_TRANSACTION_SHEET
+    transaction_sheet = workbook.active
+    transaction_sheet.title = ZIRCON_HK_TRANSACTION_SHEET
     lists = workbook.create_sheet(ZIRCON_HK_LISTS_SHEET)
     _style_template_workbook(workbook)
     _configure_lists_sheet(lists)
@@ -410,7 +533,17 @@ def build_zircon_hk_template_xlsx() -> bytes:
             f"$C${len(ZIRCON_HK_BROKER_ENTRIES) + 1}"
         ),
     )
-    _configure_transactions_sheet(transactions)
+    _configure_transactions_sheet(transaction_sheet)
+    for row_number, transaction in enumerate(transactions, start=2):
+        for column_number, value in enumerate(
+            _standard_export_row(transaction),
+            start=1,
+        ):
+            transaction_sheet.cell(
+                row=row_number,
+                column=column_number,
+                value=value,
+            )
     workbook.active = 0
     buffer = BytesIO()
     workbook.save(buffer)
