@@ -1,12 +1,13 @@
 # Investment frontend changelog
 
-Documentation version: `v1.7.0`
+Documentation version: `v1.7.1`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
 - Added: The Investment share drawer exports the active transaction scope as a round-trip standard XLSX workbook, and the broker selector exposes a neutral `No specified broker` fallback for importing that contract.
+- Fixed: Fixed Holdings summary values for Market value, Realized P&L, Unrealized P&L, and % now derive their physical columns directly from the scrolling body table, preserving the same right edge across scrollbar and responsive-width changes.
 - Added: The fixed Holdings summary row now shows non-zero aggregate daily realized and unrealized P&L badges, while every daily P&L badge sizes to its content and preserves decimal-point alignment with the cumulative value above it.
 - Fixed: Holdings now uses the backend US market `session_date` even when a ticker has no realtime quote, so the daily P&L base advances at the Overnight boundary and remains the prior trading day's Intraday close through Post.
 - Fixed: Investment ticker logos now use only the backend-resolved local asset URL. A missing logo renders the established placeholder without speculative `.svg` or `.png` requests, and Investment images load eagerly so Chromium-based browsers do not emit deferred lazy-load intervention diagnostics.

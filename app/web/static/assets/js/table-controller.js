@@ -1,7 +1,7 @@
 /**
  * Standard scrollable table alignment controller.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
  */
 (function bootstrapStandardTableController(globalScope) {
     "use strict";
@@ -94,10 +94,27 @@
             1,
             columnWidths[columnWidths.length - 1] + trailingTrackWidth,
         );
+        const headerColumns = Array.from(headerTable.querySelectorAll(":scope > colgroup > col"));
+        const hasMatchingColumnGroup = headerColumns.length === columnWidths.length;
+        if (hasMatchingColumnGroup) {
+            headerColumns.forEach((column, index) => {
+                column.style.width = `${columnWidths[index]}px`;
+            });
+        }
         Array.from(headerTable.rows).forEach((row) => {
             Array.from(row.cells).forEach((cell, index) => {
                 if (getCellSpan(cell) !== 1 || index >= columnWidths.length) return;
-                cell.style.width = `${columnWidths[index]}px`;
+                const bodyStyle = globalScope.getComputedStyle(bodyRow.cells[index]);
+                const bodyEndPadding = Number.parseFloat(bodyStyle.paddingInlineEnd) || 0;
+                cell.style.paddingInlineStart = bodyStyle.paddingInlineStart;
+                cell.style.paddingInlineEnd = `${bodyEndPadding + (
+                    index === columnWidths.length - 1 ? trailingTrackWidth : 0
+                )}px`;
+                if (hasMatchingColumnGroup) {
+                    cell.style.removeProperty("width");
+                } else {
+                    cell.style.width = `${columnWidths[index]}px`;
+                }
             });
         });
         return true;
