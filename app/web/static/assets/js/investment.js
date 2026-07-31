@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.20.0
+ * Code version: v2.20.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -9642,6 +9642,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : ' investment-holdings-value-negative');
             const lastClass = resolveInvestmentLastPriceToneClass(summary.lastPrice, summary.ticker);
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
+            const dailyLastPriceChange = resolveInvestmentHoldingDailyPriceChange(summary);
 
             return `
                 <tr data-investment-holdings-ticker="${escapeHtml(summary.ticker)}">
@@ -9663,12 +9664,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(averagePriceDisplay)}</span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${lastClass}">
-                        ${renderInvestmentLiveValue('last', summary.lastPrice, {
-                            ticker: summary.ticker,
-                            className: `trade-metric-value investment-stock-details-metric-value${lastClass}`,
-                            formatter: (nextValue) => formatHoldingsLocalMoney(nextValue, summary.quoteCurrency),
-                            useSplitValue: true,
-                        })}
+                        <span class="investment-holdings-pnl-stack">
+                            ${renderInvestmentLiveValue('last', summary.lastPrice, {
+                                ticker: summary.ticker,
+                                className: `trade-metric-value investment-stock-details-metric-value${lastClass}`,
+                                formatter: (nextValue) => formatHoldingsLocalMoney(nextValue, summary.quoteCurrency),
+                                useSplitValue: true,
+                            })}
+                            ${summary.hasOpenPosition
+                                ? renderInvestmentHoldingsDailyPnlBadge(
+                                    'daily_last_price',
+                                    summary.ticker,
+                                    dailyLastPriceChange,
+                                    {
+                                        formatter: (nextValue) => formatSignedHoldingsLocalMoney(
+                                            nextValue,
+                                            summary.quoteCurrency,
+                                        ),
+                                    },
+                                )
+                                : ''}
+                        </span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">
                         <span class="trade-metric-value investment-stock-details-metric-value">${renderWorkspaceMetricValueContent(positionDisplay)}</span>
@@ -9877,7 +9893,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <th>No.</th>
                             <th>Ticker</th>
                             <th>Average price</th>
-                            <th>Last</th>
+                            <th>Last price</th>
                             <th>Position</th>
                             <th>Market value</th>
                             <th>Realized P&amp;L</th>
@@ -10098,6 +10114,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${normalizedCurrency} ${formatted}`;
     }
 
+    function formatSignedHoldingsLocalMoney(value, currency) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return '-';
+        const formatted = formatHoldingsLocalMoney(Math.abs(numericValue), currency);
+        if (formatted === '-') return formatted;
+        return numericValue > 0 ? `+${formatted}` : (numericValue < 0 ? `-${formatted}` : formatted);
+    }
+
     function formatHoldingsLocalCurrencyLine(value, currency) {
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) return '';
@@ -10178,11 +10202,16 @@ document.addEventListener('DOMContentLoaded', () => {
             : ' investment-holdings-daily-pnl-badge-negative';
     }
 
-    function renderInvestmentHoldingsDailyPnlBadge(field, ticker, value) {
+    function renderInvestmentHoldingsDailyPnlBadge(
+        field,
+        ticker,
+        value,
+        { formatter = formatSignedHoldingsMoney } = {},
+    ) {
         const numericValue = Number(value);
         const isVisible = Number.isFinite(numericValue)
             && Math.abs(numericValue) >= INVESTMENT_DAILY_PNL_DISPLAY_EPSILON;
-        const displayText = isVisible ? formatSignedHoldingsMoney(numericValue) : formatHoldingsMoney(0);
+        const displayText = isVisible ? formatter(numericValue) : formatHoldingsMoney(0);
         const toneClass = getInvestmentHoldingsDailyPnlBadgeToneClass(numericValue);
         return `
             <span class="investment-holdings-daily-pnl-badge${toneClass}"${isVisible ? '' : ' hidden'}>
@@ -10195,12 +10224,16 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    function updateInvestmentHoldingsDailyPnlBadge(node, value) {
+    function updateInvestmentHoldingsDailyPnlBadge(
+        node,
+        value,
+        { formatter = formatSignedHoldingsMoney } = {},
+    ) {
         if (!(node instanceof HTMLElement)) return;
         const numericValue = Number(value);
         const isVisible = Number.isFinite(numericValue)
             && Math.abs(numericValue) >= INVESTMENT_DAILY_PNL_DISPLAY_EPSILON;
-        const displayText = isVisible ? formatSignedHoldingsMoney(numericValue) : formatHoldingsMoney(0);
+        const displayText = isVisible ? formatter(numericValue) : formatHoldingsMoney(0);
         node.dataset.investmentLiveNumber = String(Number.isFinite(numericValue) ? numericValue : 0);
         node.dataset.investmentLiveDisplay = displayText;
         node.innerHTML = renderWorkspaceMetricValueContent(displayText);
@@ -10351,6 +10384,15 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function resolveInvestmentHoldingDailyPriceChange(summary) {
+        if (!summary?.hasOpenPosition) return 0;
+        const sessionDate = getInvestmentHoldingSessionDate(summary.ticker);
+        const lastPrice = Number(summary.lastPrice);
+        const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
+        if (!Number.isFinite(lastPrice) || !Number.isFinite(previousClose)) return 0;
+        return lastPrice - previousClose;
+    }
+
     function resolveInvestmentLastPriceToneClass(lastPrice, ticker) {
         const price = Number(lastPrice);
         const referenceClose = resolveInvestmentTickerReferenceClose(ticker);
@@ -10469,6 +10511,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastNode = row.querySelector('[data-investment-live-field="last"]');
             const marketValueNode = row.querySelector('[data-investment-live-field="market_value"]');
             const unrealizedNode = row.querySelector('[data-investment-live-field="unrealized_pnl"]');
+            const dailyLastPriceNode = row.querySelector('[data-investment-live-field="daily_last_price"]');
             const dailyUnrealizedNode = row.querySelector('[data-investment-live-field="daily_unrealized_pnl"]');
             const weightNode = row.querySelector('[data-investment-live-field="position_weight"]');
             const lastCell = lastNode?.closest('td');
@@ -10489,6 +10532,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 unrealizedNode,
                 summary.unrealizedPnl === null ? '-' : formatHoldingsMoney(summary.unrealizedPnl),
                 summary.unrealizedPnl,
+            );
+            updateInvestmentHoldingsDailyPnlBadge(
+                dailyLastPriceNode,
+                resolveInvestmentHoldingDailyPriceChange(summary),
+                {
+                    formatter: (nextValue) => formatSignedHoldingsLocalMoney(
+                        nextValue,
+                        summary.quoteCurrency,
+                    ),
+                },
             );
             updateInvestmentHoldingsDailyPnlBadge(
                 dailyUnrealizedNode,

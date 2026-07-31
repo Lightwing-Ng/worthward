@@ -1,11 +1,12 @@
 # Investment frontend changelog
 
-Documentation version: `v1.7.1`
+Documentation version: `v1.7.2`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Changed: Holdings labels the live-price column `Last price` and shows each open position's local-currency session price change beneath it, using the same solid, right-aligned badge treatment as Unrealized P&L.
 - Added: The Investment share drawer exports the active transaction scope as a round-trip standard XLSX workbook, and the broker selector exposes a neutral `No specified broker` fallback for importing that contract.
 - Fixed: Fixed Holdings summary values for Market value, Realized P&L, Unrealized P&L, and % now derive their physical columns directly from the scrolling body table, preserving the same right edge across scrollbar and responsive-width changes.
 - Added: The fixed Holdings summary row now shows non-zero aggregate daily realized and unrealized P&L badges, while every daily P&L badge sizes to its content and preserves decimal-point alignment with the cumulative value above it.
