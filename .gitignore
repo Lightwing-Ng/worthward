@@ -72,3 +72,16 @@ test-results/
 .vercelignore
 .lb-home/
 .dbg/
+
+# Local verification artifacts and user-provided transaction material.
+/outputs/
+/.codex_tmp/
+/body.html
+/main_rows.json
+/verify_results_full.json
+/coverage*.json
+/dump_body.mjs
+/generate_report.mjs
+/run_verify*.mjs
+/verify*.mjs
+/_r2_*.cjs
