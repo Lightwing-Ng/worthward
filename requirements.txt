@@ -12,3 +12,8 @@ pathlib~=1.0.1
 curl_cffi~=0.15.0
 certifi>=2024.8.30
 numpy~=2.3.5
+
+# Development and quality dependencies. Versions verified on 11 Jul 2026.
+pytest==9.0.3
+pytest-cov==7.1.0
+ruff==0.15.21

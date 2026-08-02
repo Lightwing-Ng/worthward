@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v0.5.0
+# Code version: v0.5.1
 
 set -euo pipefail
 
@@ -27,7 +27,6 @@ PY
 echo "Using host Python: $PYTHON_BIN"
 "$PYTHON_BIN" -m pip install --upgrade pip
 "$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements.txt"
-"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements-dev.txt"
 
 if command -v npm >/dev/null 2>&1; then
 	(cd "$ROOT_DIR" && npm install)

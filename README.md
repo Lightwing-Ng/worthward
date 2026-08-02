@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.65.0`
+Documentation version: `v2.65.1`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -72,7 +72,7 @@ On Windows PowerShell, install dependencies and launch with the Python
 Launcher for Windows:
 
 ```powershell
-py -3.14 -m pip install --upgrade -r requirements.txt -r requirements-dev.txt
+py -3.14 -m pip install --upgrade -r requirements.txt
 py -3.14 main.py
 ```
 
@@ -484,8 +484,7 @@ docs/ARCHITECTURE.md            -> Runtime layers, routes, data ownership, and i
 docs/TESTING.md                 -> Test commands, factories, coverage, and E2E isolation
 docs/KNOWN_ISSUES.md            -> Current debt and classified historical failures
 docs/INVESTMENT_FRONTEND_CHANGELOG.md -> Historical Investment frontend changes
-requirements.txt                -> Python dependency pin set
-requirements-dev.txt            -> Pinned test, coverage, and static-check dependencies
+requirements.txt                -> Python runtime, test, coverage, and static-check dependency pins
 scripts/setup_python.sh         -> Supported host-Python dependency installer
 scripts/run_app.sh              -> Supported host-Python app launcher
 scripts/test.sh                 -> Supported host-Python pytest wrapper

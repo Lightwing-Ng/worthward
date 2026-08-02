@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.18.0`
+Documentation version: `v1.18.1`
 
 ## Supported commands
 
@@ -11,8 +11,8 @@ Install all runtime and development dependencies:
 ```
 
 The supported host interpreters are Python `3.13` and `3.14`. On Windows,
-install the same dependency sets with `py -3.14 -m pip install -r
-requirements.txt -r requirements-dev.txt`.
+install the same dependencies with `py -3.14 -m pip install -r
+requirements.txt`.
 
 Run Python tests only:
 
