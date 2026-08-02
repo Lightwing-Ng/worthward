@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.3.8
+Code version: v1.3.9
 """
 
 from __future__ import annotations
@@ -17,7 +17,14 @@ from tests.factories.market import FakeStrategy, backtest_result, fetch_history_
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_JS = ROOT / "app/web/static/assets/js/app.js"
+INVESTMENT_JS = ROOT / "app/web/static/assets/js/investment.js"
+WORKSPACE_SHARE_JS = ROOT / "app/web/static/assets/js/workspace-share.js"
 SETTINGS_JS = ROOT / "app/web/static/assets/js/settings.js"
+BASE_HTML = ROOT / "app/web/templates/base.html"
+SETTINGS_HTML = ROOT / "app/web/templates/settings.html"
+MOTION_CSS = ROOT / "app/web/static/assets/css/foundation/motion.css"
+SPINNER_SVG = ROOT / "app/web/static/images/loading.spinner.svg"
+STYLE_TOKEN_ROWS = ROOT / "app/web/style_token_rows.py"
 PRICE_COMPARE_JS = ROOT / "app/web/static/assets/js/price-compare.js"
 SHELL_CSS = ROOT / "app/web/static/assets/css/layout/shell.css"
 RESPONSIVE_CSS = ROOT / "app/web/static/assets/css/utilities/responsive.css"
@@ -118,6 +125,32 @@ class OptimisticNavigationTests(unittest.TestCase):
             "const scheduleAutoSubmit", 1
         )[0]
         self.assertNotIn("!hasInitialResult", can_auto_submit)
+
+    def test_waiting_states_share_the_vector_ticker_spinner(self) -> None:
+        app_source = APP_JS.read_text(encoding="utf-8")
+        investment_source = INVESTMENT_JS.read_text(encoding="utf-8")
+        share_source = WORKSPACE_SHARE_JS.read_text(encoding="utf-8")
+        settings_source = SETTINGS_JS.read_text(encoding="utf-8")
+        base_source = BASE_HTML.read_text(encoding="utf-8")
+        settings_html = SETTINGS_HTML.read_text(encoding="utf-8")
+        motion_source = MOTION_CSS.read_text(encoding="utf-8")
+        spinner_source = SPINNER_SVG.read_text(encoding="utf-8")
+        style_token_source = STYLE_TOKEN_ROWS.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'workspaceModalOverlayIcon.className = "suggestion-loading-spinner workspace-modal-icon";',
+            app_source,
+        )
+        self.assertNotIn('iconClass: "icon-', app_source)
+        self.assertIn('class="suggestion-loading-spinner workspace-modal-icon"', base_source)
+        self.assertIn("suggestion-loading-spinner", investment_source)
+        self.assertIn('SHARE_RENDER_MODAL_ICON_CLASS = "suggestion-loading-spinner"', share_source)
+        self.assertIn('"suggestion-loading-spinner"', settings_source)
+        self.assertIn("suggestion-loading-spinner", settings_html)
+        self.assertIn('"sample_icon_class": "suggestion-loading-spinner"', style_token_source)
+        self.assertIn('mask: url("/static/images/loading.spinner.svg")', motion_source)
+        self.assertIn('stroke-linecap="round"', spinner_source)
+        self.assertNotIn("border: 2px solid", motion_source)
 
     def test_empty_price_history_does_not_request_live_data_without_tickers(self) -> None:
         source = PRICE_COMPARE_JS.read_text(encoding="utf-8")

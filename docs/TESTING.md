@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.18.1`
+Documentation version: `v1.18.3`
 
 ## Supported commands
 
@@ -125,8 +125,12 @@ Current suite inventory remeasured on 1 Aug 2026:
   provisional-source pruning, GKX statement metadata, same-origin and CSRF
   rejection, route persistence, and immutable evidence materialization.
 - `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
-  template structure, full broker-dropdown coverage, absence of Excel-repaired
-  table and conditional-formatting parts, 23:00 Hong Kong date-only default,
+  template structure, standard-export archive health, exact named ranges and
+  validation ranges through the full selected scope, stable Reference ID and
+  FX identity coverage, the 10,000-row boundary, full broker and
+  transaction-type round trips, full broker-dropdown coverage, absence of
+  Excel-repaired table and
+  conditional-formatting parts, 23:00 Hong Kong date-only default,
   Hong Kong-to-New York time conversion, text-date and text-number rejection,
   formula rejection, cash-sign contracts, precise cell diagnostics, read-only
   prevalidation, isolated persistence, and immutable workbook evidence.
@@ -187,7 +191,7 @@ launches remain unchanged. The `npm run test:e2e` wrapper removes the isolated
 runtime copy after Playwright exits, including failed test runs.
 
 The investment-import E2E verifies broker selection, file readiness, submit
-enablement, and the Zircon HK prevalidation success state but does not submit the
+enablement, and the Zircon (HK) prevalidation success state but does not submit the
 form. This prevents mutation of the real local investment store.
 
 The generic manual-workbook unit suite verifies paired currency conversions:

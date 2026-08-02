@@ -1,4 +1,4 @@
-{# Code version: v0.3.2 #}
+{# Code version: v0.4.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -25,26 +25,26 @@
         {% set ns.active_index = loop.index0 %}
     {% endif %}
 {% endfor %}
-<nav class="settings-nav" aria-label="Settings sections" style="--settings-active-index: {{ ns.active_index }};">
+<nav class="settings-nav" aria-label="{{ translate_ui('Settings sections') }}" style="--settings-active-index: {{ ns.active_index }};">
     <a href="{{ settings_urls.about }}" class="settings-nav-item settings-nav-item-about{% if settings_section == 'about' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-about"></span></span>
         <span class="settings-nav-label">{{ labels.about }}</span>
     </a>
     <a href="{{ settings_urls.backtest }}" class="settings-nav-item settings-nav-item-backtest{% if settings_section == 'backtest' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-backtest"></span></span>
-        <span class="settings-nav-label">Backtest</span>
+        <span class="settings-nav-label">{{ translate_ui('Backtest') }}</span>
     </a>
     <a href="{{ settings_urls['broker-access'] }}" class="settings-nav-item settings-nav-item-broker{% if settings_section == 'broker-access' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
-        <span class="settings-nav-label">Broker access</span>
+        <span class="settings-nav-label">{{ translate_ui('Broker access') }}</span>
     </a>
     <a href="{{ settings_urls['cash-equivalents'] }}" class="settings-nav-item settings-nav-item-cash-equivalents{% if settings_section == 'cash-equivalents' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
-        <span class="settings-nav-label">{{ labels.cash_equivalents or 'Cash equivalents' }}</span>
+        <span class="settings-nav-label">{{ labels.cash_equivalents or translate_ui('Cash equivalents') }}</span>
     </a>
     <a href="{{ settings_urls['clear-caches'] }}" class="settings-nav-item settings-nav-item-clear-cache{% if settings_section == 'clear-caches' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
-        <span class="settings-nav-label">Clear caches</span>
+        <span class="settings-nav-label">{{ translate_ui('Clear caches') }}</span>
     </a>
     <a href="{{ settings_urls['email-smtp'] }}" class="settings-nav-item settings-nav-item-email{% if settings_section == 'email-smtp' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
@@ -52,15 +52,15 @@
     </a>
     <a href="{{ settings_urls['export-image'] }}" class="settings-nav-item settings-nav-item-export-image{% if settings_section == 'export-image' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-export-image"></span></span>
-        <span class="settings-nav-label">Export images</span>
+        <span class="settings-nav-label">{{ translate_ui('Export images') }}</span>
     </a>
     <a href="{{ settings_urls['font-tokens'] }}" class="settings-nav-item settings-nav-item-font-tokens{% if settings_section == 'font-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-font-tokens"></span></span>
-        <span class="settings-nav-label">Font tokens</span>
+        <span class="settings-nav-label">{{ translate_ui('Font tokens') }}</span>
     </a>
     <a href="{{ settings_urls.general }}" class="settings-nav-item settings-nav-item-general{% if settings_section == 'general' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-general"></span></span>
-        <span class="settings-nav-label">General</span>
+        <span class="settings-nav-label">{{ translate_ui('General') }}</span>
     </a>
     <a href="{{ settings_urls['local-market-store'] }}" class="settings-nav-item settings-nav-item-store{% if settings_section == 'local-market-store' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-store"></span></span>
@@ -68,7 +68,7 @@
     </a>
     <a href="{{ settings_urls['material-tokens'] }}" class="settings-nav-item settings-nav-item-material-tokens{% if settings_section == 'material-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-material-tokens"></span></span>
-        <span class="settings-nav-label">Material tokens</span>
+        <span class="settings-nav-label">{{ translate_ui('Material tokens') }}</span>
     </a>
     <a href="{{ settings_urls.network }}" class="settings-nav-item settings-nav-item-network settings-nav-network{% if settings_section == 'network' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
@@ -80,13 +80,13 @@
     </a>
     <a href="{{ settings_urls['style-tokens'] }}" class="settings-nav-item settings-nav-item-style-tokens{% if settings_section == 'style-tokens' %} is-active{% endif %}">
         <span class="settings-nav-icon-shell" aria-hidden="true"><span class="icon icon-settings-style-tokens"></span></span>
-        <span class="settings-nav-label">Style tokens</span>
+        <span class="settings-nav-label">{{ translate_ui('Style tokens') }}</span>
     </a>
 </nav>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.13.2') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.14.2') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -99,12 +99,12 @@
 
     {% if settings_section == "about" %}
     <article class="report-card workspace-content-card about-section settings-reading-guard">
-            <h2 class="about-heading">What this service does</h2>
-            <p class="about-copy">Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.</p>
+            <h2 class="about-heading">{{ translate_ui('What this service does') }}</h2>
+            <p class="about-copy">{{ translate_ui('Compare stocks, compute weighted portfolios, and backtest trading strategies with locally cached daily market data plus broker-backed 1-minute history stored as the latest 6 months of trading days.') }}</p>
     </article>
 
     <article class="report-card workspace-content-card about-section settings-reading-guard">
-            <h2 class="about-heading">System information</h2>
+            <h2 class="about-heading">{{ translate_ui('System information') }}</h2>
             <dl class="footer-meta about-meta">
                 <dt>{{ labels.code_version }}</dt>
                 <dd>{{ version }}</dd>
@@ -114,7 +114,7 @@
     </article>
 
     <article class="report-card workspace-content-card about-section settings-reading-guard">
-            <h2 class="about-heading">Source code</h2>
+            <h2 class="about-heading">{{ translate_ui('Source code') }}</h2>
             <a class="about-link-card" href="{{ project_source_url }}" target="_blank" rel="noreferrer">
                 <span class="about-link-logo-shell" aria-hidden="true">
                     <img class="about-link-logo" src="/static/images/GitHub-Mark.svg" alt="">
@@ -124,11 +124,11 @@
     </article>
 
     <article class="report-card workspace-content-card about-section about-disclaimer settings-reading-guard">
-            <h2 class="about-heading">Disclaimer</h2>
+            <h2 class="about-heading">{{ translate_ui('Disclaimer') }}</h2>
             <ol class="about-disclaimer-list">
-                <li class="about-copy">This service does not provide financial advice. All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.</li>
-                <li class="about-copy">The value of investments can go down as well as up. Past performance is not a reliable indicator of future results. Seek independent professional advice before making investment decisions.</li>
-                <li class="about-copy">Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.</li>
+                <li class="about-copy">{{ translate_ui('This service does not provide financial advice. All information — including share prices, returns, and backtest results — is for educational purposes only and does not constitute a recommendation to buy, sell, or hold any security.') }}</li>
+                <li class="about-copy">{{ translate_ui('The value of investments can go down as well as up. Past performance is not a reliable indicator of future results. Seek independent professional advice before making investment decisions.') }}</li>
+                <li class="about-copy">{{ translate_ui('Market data is sourced from third parties on an "as is" basis with no guarantee of accuracy or completeness.') }}</li>
             </ol>
     </article>
     {% elif settings_section == "general" %}
@@ -369,22 +369,22 @@
     {% elif settings_section == "backtest" %}
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
-            <p class="settings-general-kicker">Backtest execution model</p>
-            <p class="settings-general-copy">Choose how a signal bar is translated into an executed trade.</p>
+            <p class="settings-general-kicker">{{ translate_ui('Backtest execution model') }}</p>
+            <p class="settings-general-copy">{{ translate_ui('Choose how a signal bar is translated into an executed trade.') }}</p>
         </div>
         <form class="settings-general-form" method="post" action="{{ settings_urls.backtest }}/action">
             <label class="settings-general-option">
                 <input type="radio" name="backtest_execution_mode" value="signal_close" onchange="this.form.submit()" {% if backtest_execution_mode == 'signal_close' %}checked{% endif %}>
                 <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">Signal bar close</span>
-                    <span class="settings-general-option-desc">When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.</span>
+                    <span class="settings-general-option-title">{{ translate_ui('Signal bar close') }}</span>
+                    <span class="settings-general-option-desc">{{ translate_ui('When a signal appears, execute the trade at the closing price of the same bar. This is simple and deterministic, but it is more optimistic because the model uses the bar that generated the signal.') }}</span>
                 </span>
             </label>
             <label class="settings-general-option">
                 <input type="radio" name="backtest_execution_mode" value="next_open" onchange="this.form.submit()" {% if backtest_execution_mode == 'next_open' %}checked{% endif %}>
                 <span class="settings-general-option-copy">
-                    <span class="settings-general-option-title">Next bar open</span>
-                    <span class="settings-general-option-desc">When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.</span>
+                    <span class="settings-general-option-title">{{ translate_ui('Next bar open') }}</span>
+                    <span class="settings-general-option-desc">{{ translate_ui('When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.') }}</span>
                 </span>
             </label>
         </form>
@@ -425,9 +425,9 @@
                     </div>
                     <div class="font-token-table-wrap">
                         <div class="style-token-title-row font-token-title-row">
-                            <p class="style-token-title">Token map</p>
+                            <p class="style-token-title">{{ translate_ui('Token map') }}</p>
                         </div>
-                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
                             <tbody>
                                 {% for token in row.tokens %}
                                 <tr>
@@ -447,21 +447,21 @@
     <section class="settings-action-package settings-callout-card-primary">
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-network"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-note">Run the network checks again and refresh the availability results shown below.</p>
-                <p class="settings-service-note settings-service-meta" data-network-last-checked>Last checked: {% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text|replace('Last checked: ', '') }}{% else %}Not checked yet.{% endif %}</p>
+                <p class="settings-service-note">{{ translate_ui('Run the network checks again and refresh the availability results shown below.') }}</p>
+                <p class="settings-service-note settings-service-meta" data-network-last-checked>{% if settings_service_rows and settings_service_rows[0].checked_at_text %}{{ settings_service_rows[0].checked_at_text }}{% else %}{{ translate_ui('Last checked:') }} {{ translate_ui('Not checked yet.') }}{% endif %}</p>
             </div>
             <div class="settings-action-package-form">
                 <button
                     type="button"
                     class="settings-inline-button settings-inline-button-primary"
                     data-network-refresh-button
-                >Check again</button>
+                >{{ translate_ui('Check again') }}</button>
             </div>
     </section>
     <section class="settings-card settings-general-card settings-general-panel settings-general-panel-network">
             <div class="settings-general-header">
                 <p class="settings-general-kicker">{{ labels.service_status }}</p>
-                <p class="settings-general-copy">Review the latest connectivity and dependency availability checks for this device.</p>
+                <p class="settings-general-copy">{{ translate_ui('Review the latest connectivity and dependency availability checks for this device.') }}</p>
             </div>
             <div class="settings-service-list settings-service-list-network">
                 {% for row in settings_service_rows %}
@@ -469,15 +469,15 @@
                     <div class="settings-service-main settings-reading-guard-row">
                         <div class="settings-service-heading">
                             {% if row.logo_url %}
-                            <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} logo" loading="lazy" decoding="async">
+                            <img class="settings-service-logo" src="{{ row.logo_url }}" alt="{{ row.name }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
                             {% endif %}
                             <p class="settings-service-name">{{ row.name }}</p>
                         </div>
-                        <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}Checking whether Yahoo Finance can be reached from this device.{% elif row.key == 'logo' %}Checking whether the primary ticker logo service and its fallbacks can be reached from this device.{% elif row.key == 'google-hk' %}Checking whether Google (Hong Kong) can be reached from this device.{% else %}Checking...{% endif %}">{{ row.note }}</p>
+                        <p class="settings-service-note" data-settings-service-note data-pending-note="{% if row.key == 'market' %}{{ translate_ui('Checking whether Yahoo Finance can be reached from this device.') }}{% elif row.key == 'logo' %}{{ translate_ui('Checking whether the primary ticker logo service and its fallbacks can be reached from this device.') }}{% elif row.key == 'google-hk' %}{{ translate_ui('Checking whether Google (Hong Kong) can be reached from this device.') }}{% else %}{{ translate_ui('Checking...') }}{% endif %}">{{ row.note }}</p>
                         <p class="settings-service-note settings-service-meta" data-settings-service-checked-at>{{ row.checked_at_text }}</p>
                     </div>
                     <div class="settings-service-state{% if not row.is_available %} is-muted{% endif %}">
-                        <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
+                        <span class="settings-service-status-icon{% if row.is_available %} is-visible{% endif %}{% if row.is_pending %} is-pending-status suggestion-loading-spinner{% endif %}" data-workspace-mask="settings-status-icon" data-settings-service-icon aria-hidden="true"></span>
                         <span data-workspace-mask="settings-status-text" data-settings-service-status>{{ row.status }}</span>
                     </div>
                 </div>
@@ -485,7 +485,7 @@
             </div>
     </section>
     {% elif settings_section == "strategies" %}
-    <p class="settings-summary">Review the built-in trading strategies and their reusable backtest parameters in this workspace.</p>
+    <p class="settings-summary">{{ translate_ui('Review the built-in trading strategies and their reusable backtest parameters in this workspace.') }}</p>
     {% for row in strategy_settings_rows %}
     <details class="settings-strategy-card"{% if loop.first %} open{% endif %}>
                 <summary class="settings-strategy-summary">
@@ -505,14 +505,14 @@
                             </colgroup>
                             <thead>
                                 <tr>
-                                    <th>Value name</th>
-                                    <th>Default</th>
-                                    <th>Meaning</th>
+                                    <th>{{ translate_ui('Value name') }}</th>
+                                    <th>{{ translate_ui('Default') }}</th>
+                                    <th>{{ translate_ui('Meaning') }}</th>
                                 </tr>
                             </thead>
                         </table>
                         <div class="settings-strategy-params-table-wrap scrollable-data-table-scroll">
-                            <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-label="{{ row.name }} parameters">
+                            <table class="settings-table settings-strategy-params-table settings-strategy-scroll-table scrollable-data-table" aria-label="{{ row.name }} {{ translate_ui('parameters') }}">
                                 <colgroup>
                                     <col class="settings-strategy-params-col-label">
                                     <col class="settings-strategy-params-col-value">
@@ -521,9 +521,9 @@
                                 <tbody>
                                     {% for parameter in row.parameters %}
                                     <tr>
-                                        <td class="settings-strategy-param-label" data-column-label="Value name">{{ parameter.label }}</td>
-                                        <td class="settings-strategy-param-value" data-column-label="Default">{{ parameter.default_display }}</td>
-                                        <td class="settings-strategy-param-meaning" data-column-label="Meaning">{{ parameter.meaning }}</td>
+                                        <td class="settings-strategy-param-label" data-column-label="{{ translate_ui('Value name') }}">{{ parameter.label }}</td>
+                                        <td class="settings-strategy-param-value" data-column-label="{{ translate_ui('Default') }}">{{ parameter.default_display }}</td>
+                                        <td class="settings-strategy-param-meaning" data-column-label="{{ translate_ui('Meaning') }}">{{ parameter.meaning }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -536,12 +536,12 @@
     {% endfor %}
     {% elif settings_section == "email-smtp" %}
     <section class="settings-action-package settings-callout-card-warning">
-            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}" onclick="this.closest('section').remove()">
                 <span class="icon icon-dismiss-control" aria-hidden="true"></span>
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-note">Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full <code>@yahoo.com</code> address with the generated app password.</p>
+                <p class="settings-service-note">{{ translate_ui('Yahoo Mail personal accounts require an app password for SMTP. Keep STARTTLS enabled and use your full') }} <code>@yahoo.com</code> {{ translate_ui('address with the generated app password.') }}</p>
             </div>
     </section>
     <form method="post" action="/settings/email-smtp/action" class="settings-stack-form settings-form-shell settings-email-smtp-form">
@@ -562,7 +562,7 @@
                 </div>
                 <div class="field settings-field-span-full">
                     <label for="smtp_password">{{ labels.email_smtp_password }}</label>
-                    <input id="smtp_password" name="password" type="password" class="settings-form-control settings-form-control-secret" autocomplete="new-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}Yahoo Mail app password{% endif %}">
+                    <input id="smtp_password" name="password" type="password" class="settings-form-control settings-form-control-secret" autocomplete="new-password" placeholder="{% if smtp_settings.has_password %}{{ labels.email_smtp_password_saved }}{% else %}{{ translate_ui('Yahoo Mail app password') }}{% endif %}">
                 </div>
             </div>
             <div class="field-checkbox field-switch settings-field-span-full">
@@ -578,7 +578,7 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Store the Yahoo SMTP endpoint, mailbox, app password, and STARTTLS setting on this device.</p>
+                        <p class="settings-service-note">{{ translate_ui('Store the Yahoo SMTP endpoint, mailbox, app password, and STARTTLS setting on this device.') }}</p>
                     </div>
                     <div class="settings-action-package-form">
                         <button type="submit" name="action" value="save" class="settings-inline-button settings-inline-button-secondary-token">{{ labels.email_smtp_save }}</button>
@@ -587,7 +587,7 @@
                 <section class="settings-action-package settings-callout-card-primary">
                     <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-email"></span></span>
                     <div class="settings-action-package-copy settings-callout-text">
-                        <p class="settings-service-note">Verify SMTP login against Yahoo Mail with the saved app password.</p>
+                        <p class="settings-service-note">{{ translate_ui('Verify SMTP login against Yahoo Mail with the saved app password.') }}</p>
                     </div>
                     <div class="settings-action-package-form">
                         <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary">{{ labels.email_smtp_test }}</button>
@@ -624,8 +624,8 @@
                     </colgroup>
                     <thead>
                         <tr>
-                            <th class="local-store-col-index">No.</th>
-                            <th>Ticker</th>
+                            <th class="local-store-col-index">{{ translate_ui('No.') }}</th>
+                            <th>{{ translate_ui('Ticker') }}</th>
                             <th>{{ labels.local_store_range }}</th>
                             <th class="local-store-col-update">1d</th>
                             <th class="local-store-col-1m">{{ labels.local_store_intraday }}</th>
@@ -652,7 +652,7 @@
                                     <div class="ticker-identity-item">
                                         <div class="ticker-identity-row">
                                         {% if row.logo_url %}
-                                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo">
+                                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} {{ translate_ui('logo') }}">
                                         {% endif %}
                                             <span class="ticker-identity-copy">
                                                 <span class="suggestion-symbol ticker-identity-symbol">{{ row.ticker }}</span>
@@ -673,13 +673,13 @@
                                         {% if row.daily_store_status == "fresh" %}
                                         <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true"></span>
                                         {% elif row.daily_store_status == "short_history" %}
-                                        <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
+                                        <span class="local-store-status-chip" data-local-store-status="short-history" title="{{ translate_ui('Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.') }}">{{ translate_ui('New') }}</span>
                                         {% else %}
                                         <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                             <input type="hidden" name="ticker" value="{{ row.ticker }}">
                                             <input type="hidden" name="action" value="refresh">
                                             <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                            <button type="submit" class="settings-action-button" aria-label="Fetch 1d history">
+                                            <button type="submit" class="settings-action-button" aria-label="{{ translate_ui('Fetch 1d history') }}">
                                                 <span class="icon icon-store-refresh" aria-hidden="true"></span>
                                             </button>
                                         </form>
@@ -691,13 +691,13 @@
                                         {% if row.intraday_store_status == "fresh" %}
                                         <span class="settings-service-status-icon is-visible icon-store-has-1m" aria-hidden="true"></span>
                                         {% elif row.intraday_store_status == "short_history" %}
-                                        <span class="local-store-status-chip" data-local-store-status="short-history" title="Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.">new</span>
+                                        <span class="local-store-status-chip" data-local-store-status="short-history" title="{{ translate_ui('Fresh through the latest completed trading day, but the listing is too new to satisfy the long-history completeness threshold.') }}">{{ translate_ui('New') }}</span>
                                         {% else %}
                                         <form method="post" action="/settings/local-market-store/action" class="settings-action-form">
                                             <input type="hidden" name="ticker" value="{{ row.ticker }}">
                                             <input type="hidden" name="action" value="refresh-1m">
                                             <input type="hidden" name="page" value="{{ local_store_current_page }}">
-                                            <button type="submit" class="settings-action-button" aria-label="Fetch 1m history for the latest 6 months of trading days">
+                                            <button type="submit" class="settings-action-button" aria-label="{{ translate_ui('Fetch 1m history for the latest 6 months of trading days') }}">
                                                 <span class="icon icon-store-fetch-1m" aria-hidden="true"></span>
                                             </button>
                                         </form>
@@ -727,9 +727,9 @@
                     </table>
                 </div>
     {% if local_store_total_pages > 1 %}
-    <nav class="settings-pagination local-store-pagination local-store-table-pagination" aria-label="Local market store pages" data-local-store-pagination>
+    <nav class="settings-pagination local-store-pagination local-store-table-pagination" aria-label="{{ translate_ui('Local market store pages') }}" data-local-store-pagination>
                 {% if local_store_prev_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
+                <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="{{ translate_ui('Previous pages') }}">
                     <span class="icon icon-page-prev" aria-hidden="true"></span>
                 </a>
                 {% else %}
@@ -743,7 +743,7 @@
                 {% endif %}
                 {% endfor %}
                 {% if local_store_next_slot.page %}
-                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Next pages">
+                <a href="{{ local_store_page_urls[local_store_next_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="{{ translate_ui('Next pages') }}">
                     <span class="icon icon-page-next" aria-hidden="true"></span>
                 </a>
                 {% else %}
@@ -754,19 +754,19 @@
     </div>
     {% elif settings_section == "broker-access" %}
     <section class="settings-action-package settings-callout-card-warning">
-            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">
+            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}" onclick="this.closest('section').remove()">
                 <span class="icon icon-dismiss-control" aria-hidden="true"></span>
             </button>
             <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
             <div class="settings-action-package-copy settings-callout-text">
-                <p class="settings-service-note">This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.</p>
+                <p class="settings-service-note">{{ translate_ui('This project is fully open source. Your credentials are stored only on your local machine and are never shared with the developer or any third party beyond the chosen broker.') }}</p>
             </div>
     </section>
     <form method="post" action="/settings/broker-access/action" class="settings-stack-form settings-form-shell">
                 <div class="field live-trading-broker-strip backtest-shared-select-field settings-broker-row"
                      data-shared-select-field
                      data-shared-select-kind="settings-broker">
-                    <label class="settings-form-label live-trading-field-label" for="selected_broker">Broker</label>
+                    <label class="settings-form-label live-trading-field-label" for="selected_broker">{{ translate_ui('Broker') }}</label>
                     <div class="trade-strategy-row backtest-shared-select-row live-trading-broker-row">
                         <select id="selected_broker"
                                 name="selected_broker"
@@ -799,7 +799,7 @@
                              class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown"
                              data-shared-select-dropdown
                              role="listbox"
-                             aria-label="Broker"
+                             aria-label="{{ translate_ui('Broker') }}"
                              hidden></div>
                     </div>
                 </div>
@@ -813,11 +813,11 @@
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name">Longbridge OAuth</p>
-                            <p class="settings-service-note">Authorize through the installed Longbridge CLI in a separate browser window. Antigravity does not receive, display, or store the authorization code or OAuth token. Your existing terminal CLI profile is used automatically.</p>
+                            <p class="settings-service-name">{{ translate_ui('Longbridge OAuth') }}</p>
+                            <p class="settings-service-note">{{ translate_ui('Authorize through the installed Longbridge CLI in a separate browser window. Antigravity does not receive, display, or store the authorization code or OAuth token. Your existing terminal CLI profile is used automatically.') }}</p>
                         </div>
                         <div class="settings-action-package-form">
-                            <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>Authorize in browser</button>
+                            <button type="submit" name="action" value="authorize" class="settings-inline-button settings-inline-button-primary" formnovalidate>{{ translate_ui('Authorize in browser') }}</button>
                         </div>
                     </section>
                 </div>
@@ -827,7 +827,7 @@
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
                             <p class="settings-service-name">IBKR</p>
-                            <p class="settings-service-note">Direct IBKR connectivity is not configured. For trading history, import official IBKR CSV or GainsKeeper files in Trade → Investment. For personal prices and market data, use Longbridge.</p>
+                            <p class="settings-service-note">{{ translate_ui('Direct IBKR connectivity is not configured. For trading history, import official IBKR CSV or GainsKeeper files in Trade → Investment. For personal prices and market data, use Longbridge.') }}</p>
                         </div>
                     </section>
                 </div>
@@ -836,21 +836,21 @@
                     <section class="settings-action-package settings-callout-card-primary">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-settings-broker"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name"><span class="settings-broker-health-indicator" data-broker-connection-health role="img" aria-label="Healthy connection" title="Healthy connection"{% if broker_test_status != 'success' %} hidden{% endif %}></span>Broker connection test</p>
-                            <p class="settings-service-note" data-broker-connection-summary>{% if broker_test_status == 'success' %}The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order.{% else %}Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.{% endif %}</p>
+                            <p class="settings-service-name"><span class="settings-broker-health-indicator" data-broker-connection-health role="img" aria-label="{{ translate_ui('Healthy connection') }}" title="{{ translate_ui('Healthy connection') }}"{% if broker_test_status != 'success' %} hidden{% endif %}></span>{{ translate_ui('Broker connection test') }}</p>
+                            <p class="settings-service-note" data-broker-connection-summary>{% if broker_test_status == 'success' %}{{ translate_ui('The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order.') }}{% else %}{{ translate_ui('Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.') }}{% endif %}</p>
                             {% if broker_test_status and broker_test_message %}
                             <p class="settings-broker-test-feedback{% if broker_test_status == 'success' %} is-success{% else %} is-error{% endif %}" role="status" aria-live="polite" data-broker-test-feedback>
                                 {% if broker_test_status == 'success' %}
                                 <span class="settings-broker-test-feedback-icon" aria-hidden="true"></span>
                                 {% endif %}
-                                <span>{{ broker_test_message }}{% if broker_test_checked_at %} Tested at {{ broker_test_checked_at }}.{% endif %}</span>
+                                <span>{{ broker_test_message }}{% if broker_test_checked_at %} {{ translate_ui('Tested at') }} {{ broker_test_checked_at }}.{% endif %}</span>
                             </p>
                             {% else %}
                             <p class="settings-broker-test-feedback" role="status" aria-live="polite" data-broker-test-feedback hidden></p>
                             {% endif %}
                         </div>
                         <div class="settings-action-package-form">
-                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary" data-broker-test-button>Test connection</button>
+                            <button type="submit" name="action" value="test" class="settings-inline-button settings-inline-button-primary" data-broker-test-button>{{ translate_ui('Test connection') }}</button>
                         </div>
                     </section>
                 </div>
@@ -859,28 +859,28 @@
     <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
-                    <p class="settings-service-note">This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.</p>
+                    <p class="settings-service-note">{{ translate_ui('This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.') }}</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
                     <input type="hidden" name="section" value="clear-caches">
                     <input type="hidden" name="action" value="market-data">
-                    <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear market data caches</button>
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">{{ translate_ui('Clear market data caches') }}</button>
                 </form>
     </section>
     <section class="settings-action-package settings-danger-option">
                 <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell settings-danger-icon-shell" aria-hidden="true"><span class="icon icon-settings-clear-cache"></span></span>
                 <div class="settings-action-package-copy settings-callout-text settings-danger-text">
-                    <p class="settings-service-note">This deletes <code>settings_store/investment.parquet</code> on this device, which removes the imported local broker transaction history shown in My investment.</p>
+                    <p class="settings-service-note">{{ translate_ui('This deletes') }} <code>settings_store/investment.parquet</code> {{ translate_ui('on this device, which removes the imported local broker transaction history shown in My investment.') }}</p>
                 </div>
                 <form method="post" action="/settings/cache/action" class="settings-stack-form settings-callout-form settings-action-package-form settings-danger-form">
                     <input type="hidden" name="section" value="clear-caches">
                     <input type="hidden" name="action" value="investment-transactions">
-                    <button type="submit" class="settings-inline-button settings-inline-button-danger">Clear local broker transaction record</button>
+                    <button type="submit" class="settings-inline-button settings-inline-button-danger">{{ translate_ui('Clear local broker transaction record') }}</button>
                 </form>
     </section>
     {% elif settings_section == "material-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
-            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize style token demos"></button>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
             <div class="style-token-list">
             {% for row in material_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
@@ -900,7 +900,7 @@
                         <p class="style-token-title">{{ row.name }}</p>
                     </div>
                     <div class="style-token-table-wrap">
-                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
                             <tbody>
                                 {% for token in row.tokens %}
                                 <tr>
@@ -929,17 +929,17 @@
     </section>
     {% elif settings_section == "cash-equivalents" %}
     <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
-        <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="Add a ticker" title="Add a ticker"><span class="icon icon-plus" aria-hidden="true"></span></button>
+        <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
     </div>
     <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
-        <p class="settings-service-note">Tickers in this list are treated as cash in the investment donut chart (at /trade/investment) and use the standard green token instead of the gradient.</p>
+        <p class="settings-service-note">{{ translate_ui('Tickers in this list are treated as cash in the investment donut chart (at /trade/investment) and use the standard green token instead of the gradient.') }}</p>
         <div class="cash-equivalents-list" id="cash_equivalents_list" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
             {% for row in cash_equivalent_rows %}
             <div class="cash-equivalent-row ticker-input-row" data-ticker="{{ row.ticker }}">
                 <div class="ticker-identity-item">
                     <div class="ticker-identity-row">
                         {% if row.logo_url %}
-                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} logo" loading="lazy" decoding="async">
+                        <img class="ticker-identity-logo" src="{{ row.logo_url }}" alt="{{ row.ticker }} {{ translate_ui('logo') }}" loading="lazy" decoding="async">
                         {% else %}
                         <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
                         {% endif %}
@@ -949,33 +949,33 @@
                         </span>
                     </div>
                 </div>
-                <button type="button" class="ticker-remove cash-equiv-remove" aria-label="Remove {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                <button type="button" class="ticker-remove cash-equiv-remove" aria-label="{{ translate_ui('Remove') }} {{ row.ticker }}" data-ticker="{{ row.ticker }}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
             </div>
             {% else %}
-            <div class="cash-equivalents-empty">No cash equivalents configured.</div>
+            <div class="cash-equivalents-empty">{{ translate_ui('No cash equivalents configured.') }}</div>
             {% endfor %}
         </div>
-        <p class="settings-service-note cash-equiv-note">Defaults: BOXX, SGOV. Added tickers use green in the donut.</p>
+        <p class="settings-service-note cash-equiv-note">{{ translate_ui('Defaults: BOXX, SGOV. Added tickers use green in the donut.') }}</p>
         <form id="cash_equiv_form" method="post" action="/settings/cash-equivalents/action" style="display:none;">
             <input type="hidden" name="action" value="set">
         </form>
     </section>
     {% elif settings_section == "style-tokens" %}
     <section class="style-token-shell" data-style-token-shell>
-            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize style token demos"></button>
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
             <div class="style-token-list">
             {% for row in style_token_rows %}
             <section id="{{ row.id }}" class="style-token-card" data-style-token-card="{{ row.id }}">
                 <div class="style-token-demo">
                     {% if row.sample_kind == "range-mode" %}
-                    <div class="range-mode-shell" data-active="period" data-option-count="2" data-segmented-active-index="0" role="radiogroup" aria-label="Style token range mode">
+                    <div class="range-mode-shell" data-active="period" data-option-count="2" data-segmented-active-index="0" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
                         <label class="range-mode-option" for="style_token_range_relative">
                             <input id="style_token_range_relative" name="style_token_range_mode" type="radio" value="period" checked>
-                            <span>Relative</span>
+                            <span>{{ translate_ui('Relative') }}</span>
                         </label>
                         <label class="range-mode-option" for="style_token_range_exact">
                             <input id="style_token_range_exact" name="style_token_range_mode" type="radio" value="exact">
-                            <span>Exact</span>
+                            <span>{{ translate_ui('Exact') }}</span>
                         </label>
                     </div>
                     {% elif row.sample_kind == "action-button" %}
@@ -1000,7 +1000,7 @@
                         </div>
                     </div>
                     <label class="style-token-action-package-live-control" for="style_token_action_package_live">
-                        <span>Live marker</span>
+                        <span>{{ translate_ui('Live marker') }}</span>
                         <span class="ios-switch-shell">
                             <input id="style_token_action_package_live" type="checkbox" data-style-token-action-package-live>
                             <span class="ios-switch-slider" aria-hidden="true"></span>
@@ -1035,10 +1035,10 @@
                                                 <img class="ticker-input-logo" src="/market-store/logos/{{ row.sample_value }}.png" alt="" onerror="this.style.display='none'; this.previousElementSibling.style.display='flex'">
                                             </span>
                                             <input id="style_token_ticker_input" class="settings-form-control style-token-settings-input" style="padding-left: 44px; padding-right: 32px; width: 100%; box-sizing: border-box;" name="ticker" data-ticker-input value="{{ row.sample_value }}" placeholder="{{ row.sample_placeholder }}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin">
-                                            <button type="button" class="ticker-clear is-visible" aria-label="Clear ticker" style="opacity: 1; pointer-events: auto;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                            <button type="button" class="ticker-clear is-visible" aria-label="{{ translate_ui('Clear ticker') }}" style="opacity: 1; pointer-events: auto;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                                         </div>
                                     </div>
-                                    <button type="button" class="ticker-remove" aria-label="Remove ticker" style="opacity: 1; pointer-events: auto; margin-top: 24px; margin-left: 8px;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                                    <button type="button" class="ticker-remove" aria-label="{{ translate_ui('Remove ticker') }}" style="opacity: 1; pointer-events: auto; margin-top: 24px; margin-left: 8px;"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                                 </div>
                             </div>
                         </form>
@@ -1066,7 +1066,7 @@
                     {% elif row.sample_kind == "modal-dialog" %}
                     <div class="style-token-modal-shell">
                         <div class="workspace-modal-dialog style-token-modal-demo">
-                            <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close">
+                            <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}">
                                 <span class="icon icon-dismiss-control"></span>
                             </button>
                             <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" aria-hidden="true"></span>
@@ -1131,8 +1131,8 @@
                                     {% endfor %}
                                 </tr>
                                 <tr data-table-summary-row data-summary-scope="both">
-                                    <td colspan="3"><span class="investment-holdings-summary-copy">4 filtered of 12 total</span></td>
-                                    <td colspan="2"><span class="investment-holdings-summary-copy">Net $7,089.68</span></td>
+                                    <td colspan="3"><span class="investment-holdings-summary-copy">{{ translate_ui('4 filtered of 12 total') }}</span></td>
+                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} $7,089.68</span></td>
                                 </tr>
                                 </thead>
                             </table>
@@ -1171,7 +1171,7 @@
                                     {% for option in ["All", "Buy", "Sell"] %}
                                     <button type="button" class="trade-strategy-dropdown-option{% if option == row.sample_button %} is-selected is-active{% endif %}" role="option" aria-selected="{{ 'true' if option == row.sample_button else 'false' }}">
                                         <span class="trade-strategy-dropdown-check" aria-hidden="true"></span>
-                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ option }}</span></span>
+                                        <span class="trade-strategy-dropdown-copy"><span class="trade-strategy-dropdown-title">{{ translate_ui(option) }}</span></span>
                                     </button>
                                     {% endfor %}
                                 </div>
@@ -1183,13 +1183,13 @@
                         <div class="style-token-stepper-preview">
                             <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-stepper-input" value="10px" readonly>
                             <div class="trade-strategy-stepper style-token-stepper-demo" aria-hidden="false">
-                                <button type="button" class="trade-strategy-stepper-button" aria-label="Increase value">▲</button>
-                                <button type="button" class="trade-strategy-stepper-button" aria-label="Decrease value">▼</button>
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                                <button type="button" class="trade-strategy-stepper-button" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
                             </div>
                         </div>
                     </div>
                     {% elif row.sample_kind == "local-store-pagination" %}
-                    <nav class="settings-pagination local-store-pagination" aria-label="Local store pagination demo" data-local-store-pagination-demo>
+                    <nav class="settings-pagination local-store-pagination" aria-label="{{ translate_ui('Local store pagination demo') }}" data-local-store-pagination-demo>
                         <span class="local-store-pagination-indicator" aria-hidden="true" style="width: var(--local-store-pagination-slot-size); height: var(--local-store-pagination-slot-size); transform: translate3d(calc((var(--local-store-pagination-slot-size) + var(--local-store-pagination-gap)) * 2), 0, 0); opacity: 1;"></span>
                         <span class="local-store-page-button local-store-page-nav" aria-hidden="true">
                             <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -1210,7 +1210,7 @@
                         <p class="style-token-title">{{ row.name }}</p>
                     </div>
                     <div class="style-token-table-wrap">
-                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
                             <tbody>
                                 {% for token in row.tokens %}
                                 <tr>
@@ -1220,8 +1220,8 @@
                                         <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
                                             <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
                                             <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
-                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="Increase value">▲</button>
-                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="Decrease value">▼</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
                                             </div>
                                         </div>
                                         {% else %}
@@ -1245,7 +1245,7 @@
                                         <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
                                     </td>
                                     <td class="style-token-value">
-                                        <span class="style-token-related-value">Reusable style</span>
+                                        <span class="style-token-related-value">{{ translate_ui('Reusable style') }}</span>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -1258,8 +1258,8 @@
             </div>
     </section>
     {% elif settings_section == "export-image" %}
-    <section class="style-token-shell export-image-shell" data-export-image-shell>
-            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="Resize export image previews"></button>
+    <section class="style-token-shell export-image-shell" data-export-image-shell data-export-image-profile="investment-community-share">
+            <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize export image previews') }}"></button>
             <div class="style-token-list export-image-list">
             {% for row in export_image_rows %}
             <section id="{{ row.id }}" class="style-token-card export-image-card" data-style-token-card="{{ row.id }}">
@@ -1268,22 +1268,22 @@
                     <div class="export-image-share-preview-groups">
                         <div class="style-token-investment-share-preview-demo export-image-share-preview-demo" data-style-token-share-demo data-style-token-share-preview-group="investment" data-style-token-share-preview-index="0">
                             <div class="style-token-investment-share-preview-toolbar">
-                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="Show previous investment share preview">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="{{ translate_ui('Show previous investment share preview') }}">
                                     <span class="icon icon-page-prev" aria-hidden="true"></span>
                                 </button>
                                 <div class="style-token-investment-share-preview-status" aria-live="polite">
-                                    <p class="style-token-investment-share-preview-kicker">Investment share preview</p>
+                                    <p class="style-token-investment-share-preview-kicker">{{ translate_ui('Investment share preview') }}</p>
                                     <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>{{ row.sample_title }}</p>
                                 </div>
-                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false">
+                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="{{ translate_ui('Mask Sensitive Values') }}" title="{{ translate_ui('Mask Sensitive Values') }}" aria-pressed="false">
                                     <span class="icon" style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);" aria-hidden="true"></span>
                                 </button>
-                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="Show next investment share preview">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="{{ translate_ui('Show next investment share preview') }}">
                                     <span class="icon icon-page-next" aria-hidden="true"></span>
                                 </button>
                             </div>
                             <div class="style-token-investment-share-preview-shell">
-                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" data-share-template="stable-v1" aria-label="Overview community share template">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="chart" data-share-template="stable-v1" aria-label="{{ translate_ui('Overview') }} {{ translate_ui('community share template') }}">
                                     <div class="investment-community-share-header">
                                         <div class="investment-community-share-heading">
                                             <p class="investment-community-share-title">{{ row.sample_title }}</p>
@@ -1295,7 +1295,7 @@
                                         <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
                                         <div class="investment-community-share-footer-copy">
                                             <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
-                                            <p class="investment-community-share-footer-prompt">Welcome to vibe and star this project.</p>
+                                            <p class="investment-community-share-footer-prompt">{{ translate_ui('Welcome to vibe and star this project.') }}</p>
                                         </div>
                                         <div class="investment-community-share-footer-qr" aria-hidden="true" data-style-token-share-qr="{{ row.sample_url }}"></div>
                                     </div>
@@ -1304,25 +1304,25 @@
                         </div>
                         <div class="style-token-investment-share-preview-demo export-image-share-preview-demo" data-style-token-share-demo data-style-token-share-preview-group="workspace" data-style-token-share-preview-index="0">
                             <div class="style-token-investment-share-preview-toolbar">
-                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="Show previous workspace share preview">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="prev" aria-label="{{ translate_ui('Show previous workspace share preview') }}">
                                     <span class="icon icon-page-prev" aria-hidden="true"></span>
                                 </button>
                                 <div class="style-token-investment-share-preview-status" aria-live="polite">
-                                    <p class="style-token-investment-share-preview-kicker">Workspace share preview</p>
-                                    <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>Compare</p>
+                                    <p class="style-token-investment-share-preview-kicker">{{ translate_ui('Workspace share preview') }}</p>
+                                    <p class="style-token-investment-share-preview-view" data-style-token-share-view-label>{{ translate_ui('Compare') }}</p>
                                 </div>
-                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false">
+                                <button type="button" class="investment-share-action-button investment-share-preview-mask-button settings-round-icon-button" data-style-token-share-mask aria-label="{{ translate_ui('Mask Sensitive Values') }}" title="{{ translate_ui('Mask Sensitive Values') }}" aria-pressed="false">
                                     <span class="icon" style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);" aria-hidden="true"></span>
                                 </button>
-                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="Show next workspace share preview">
+                                <button type="button" class="settings-round-icon-button" data-style-token-share-nav="next" aria-label="{{ translate_ui('Show next workspace share preview') }}">
                                     <span class="icon icon-page-next" aria-hidden="true"></span>
                                 </button>
                             </div>
                             <div class="style-token-investment-share-preview-shell">
-                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" data-share-template="stable-v1" aria-label="Compare community share template">
+                                <article class="investment-community-share-card" data-style-token-share-preview-card data-share-view="compare" data-share-template="stable-v1" aria-label="{{ translate_ui('Compare') }} {{ translate_ui('community share template') }}">
                                     <div class="investment-community-share-header">
                                         <div class="investment-community-share-heading">
-                                            <p class="investment-community-share-title">Return comparison</p>
+                                            <p class="investment-community-share-title">{{ translate_ui('Return comparison') }}</p>
                                         </div>
                                     </div>
                                     <div class="investment-community-share-body"></div>
@@ -1330,7 +1330,7 @@
                                         <img class="investment-community-share-footer-brand-icon" src="/market-store/logos/favicon.svg" alt="">
                                         <div class="investment-community-share-footer-copy">
                                             <div class="investment-community-share-footer-timestamp" data-style-token-share-timestamp>{{ row.sample_timestamp }}</div>
-                                            <p class="investment-community-share-footer-prompt">Welcome to vibe and star this project.</p>
+                                            <p class="investment-community-share-footer-prompt">{{ translate_ui('Welcome to vibe and star this project.') }}</p>
                                         </div>
                                         <div class="investment-community-share-footer-qr" aria-hidden="true" data-style-token-share-qr="{{ row.sample_url }}"></div>
                                     </div>
@@ -1348,7 +1348,7 @@
                     <p class="style-token-investment-share-demo-note export-image-demo-note">{{ row.sample_copy }}</p>
                     {% endif %}
                     <div class="style-token-table-wrap">
-                        <table class="style-token-table" aria-label="{{ row.name }} tokens">
+                        <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
                             <tbody>
                                 {% for token in row.tokens %}
                                 <tr>
@@ -1358,8 +1358,8 @@
                                         <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
                                             <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
                                             <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
-                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="Increase value">▲</button>
-                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="Decrease value">▼</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                                                <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
                                             </div>
                                         </div>
                                         {% else %}
@@ -1383,7 +1383,7 @@
                                         <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
                                     </td>
                                     <td class="style-token-value">
-                                        <span class="style-token-related-value">Reusable style</span>
+                                        <span class="style-token-related-value">{{ translate_ui('Reusable style') }}</span>
                                     </td>
                                 </tr>
                                 {% endfor %}

@@ -1,4 +1,25 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
+
+/* Shared waiting indicator: a resolution-independent SVG arc with rounded caps. */
+.suggestion-loading-spinner {
+	display: inline-block;
+	box-sizing: border-box;
+	width: var(--loading-spinner-size, 14px);
+	height: var(--loading-spinner-size, 14px);
+	flex: 0 0 var(--loading-spinner-size, 14px);
+	background-color: var(--accent-fill);
+	mask: url("/static/images/loading.spinner.svg") center/contain no-repeat;
+	-webkit-mask: url("/static/images/loading.spinner.svg") center/contain no-repeat;
+	transform-origin: center;
+	animation: ticker-suggestion-loading 700ms linear infinite;
+	will-change: transform;
+}
+
+@keyframes ticker-suggestion-loading {
+	to {
+		transform: rotate(360deg);
+	}
+}
 
 /* Keep motion composited and deterministic when controls are interrupted. */
 [data-motion-state="running"] {
@@ -6,6 +27,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.suggestion-loading-spinner {
+		animation: none;
+	}
+
 	html:focus-within {
 		scroll-behavior: auto;
 	}

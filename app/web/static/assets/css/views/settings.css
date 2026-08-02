@@ -1606,9 +1606,6 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .settings-service-status-icon.is-pending-status {
     opacity: 1;
-    background-color: var(--accent-fill);
-    mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
-    -webkit-mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
 }
 
 .settings-service-status-icon.is-visible {

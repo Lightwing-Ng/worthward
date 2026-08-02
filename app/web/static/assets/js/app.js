@@ -1,4 +1,4 @@
-/* Code version: v0.26.1 */
+/* Code version: v0.27.3 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -781,20 +781,20 @@
     };
 
     const SETTINGS_NAVIGATION_PROFILES = Object.freeze({
-        about: {title: "About", layout: "reading"},
-        backtest: {title: "Backtest", layout: "options"},
-        "broker-access": {title: "Broker access", layout: "broker"},
-        "cash-equivalents": {title: labels.cash_equivalents || "Cash equivalents", layout: "actions"},
-        "clear-caches": {title: "Clear caches", layout: "actions"},
-        "email-smtp": {title: labels.email_smtp || "Email (SMTP)", layout: "form"},
-        "export-image": {title: "Export images", layout: "tokens"},
-        "font-tokens": {title: "Font tokens", layout: "tokens"},
-        general: {title: "General", layout: "options"},
-        "local-market-store": {title: labels.local_market_store || "Local market store", layout: "table"},
-        "material-tokens": {title: "Material tokens", layout: "tokens"},
-        network: {title: labels.network_self_check || "Network self-check", layout: "actions"},
-        strategies: {title: labels.strategy_settings || "Strategy settings", layout: "actions"},
-        "style-tokens": {title: "Style tokens", layout: "tokens"},
+        about: {title: translateUi("About"), layout: "reading"},
+        backtest: {title: translateUi("Backtest"), layout: "options"},
+        "broker-access": {title: translateUi("Broker access"), layout: "broker"},
+        "cash-equivalents": {title: translateUi("Cash equivalents"), layout: "actions"},
+        "clear-caches": {title: translateUi("Clear caches"), layout: "actions"},
+        "email-smtp": {title: translateUi("Email (SMTP)"), layout: "form"},
+        "export-image": {title: translateUi("Export images"), layout: "tokens"},
+        "font-tokens": {title: translateUi("Font tokens"), layout: "tokens"},
+        general: {title: translateUi("General"), layout: "options"},
+        "local-market-store": {title: translateUi("Local market store"), layout: "table"},
+        "material-tokens": {title: translateUi("Material tokens"), layout: "tokens"},
+        network: {title: translateUi("Network self-check"), layout: "actions"},
+        strategies: {title: translateUi("Strategies"), layout: "actions"},
+        "style-tokens": {title: translateUi("Style tokens"), layout: "tokens"},
     });
     const SETTINGS_NAVIGATION_ORDER = Object.freeze(Object.keys(SETTINGS_NAVIGATION_PROFILES));
     const TRADE_NAVIGATION_PROFILES = Object.freeze({
@@ -1878,8 +1878,8 @@
 
     const buildPendingWorkspaceMarkup = () => {
         const currentValues = getFilledTickers();
-        const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.backtest_metrics || "Loading";
-        const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || "Loading";
+        const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.backtest_metrics || translateUi("Loading");
+        const chartHeading = $(".workspace .chart-heading")?.textContent?.trim() || translateUi("Loading");
         if (state.currentView === "backtest") {
             const tradeMetricLabels = [
                 "Initial capital",
@@ -4112,9 +4112,7 @@
         if (workspaceModalOverlayTitle && options.title) workspaceModalOverlayTitle.textContent = options.title;
         if (workspaceModalOverlayCopy && options.copy) workspaceModalOverlayCopy.textContent = options.copy;
         if (workspaceModalOverlayIcon) {
-            workspaceModalOverlayIcon.className = options.loadingSpinner
-                ? "suggestion-loading-spinner workspace-modal-icon"
-                : `icon ${options.iconClass || "icon-overlay-refresh"} workspace-modal-icon`;
+            workspaceModalOverlayIcon.className = "suggestion-loading-spinner workspace-modal-icon";
         }
         workspaceModalOverlay.hidden = false;
     };
@@ -4132,7 +4130,7 @@
         showWorkspaceModal({
             title: "Calculating market-cap history",
             copy: "Combining historical prices with point-in-time shares for the selected range. Longer ranges may take a moment.",
-            iconClass: "icon-hourglass",
+            loadingSpinner: true,
         });
     };
 
@@ -4142,7 +4140,7 @@
             copy: isBacktestView
                 ? "Please wait while the app prepares the selected daily data and runs the backtest."
                 : "Please wait while the app checks local data and prepares the chart. This may take a little longer for a new ticker.",
-            iconClass: "icon-overlay-processing",
+            loadingSpinner: true,
         });
     };
 
@@ -4787,12 +4785,7 @@
         }
     };
 
-    const BROKER_PINYIN_SORT_KEYS = {
-        hsbc: "hsbc",
-        ibkr: "ibkr",
-        longbridge: "longbridge",
-    };
-    const brokerPinyinCollator = new Intl.Collator("zh-CN", {sensitivity: "base", numeric: true});
+    const brokerAlphabeticalCollator = new Intl.Collator("en-US", {sensitivity: "base", numeric: true});
 
     const isBrokerSharedSelectKind = (field) => {
         if (!(field instanceof HTMLElement)) return false;
@@ -4804,14 +4797,12 @@
 
     const getBrokerOptionSortKey = (option) => {
         if (!(option instanceof HTMLOptionElement)) return "";
-        const explicitKey = String(option.dataset.pinyinSortKey || "").trim().toLowerCase();
+        const explicitKey = String(option.dataset.sortKey || "").trim().toLowerCase();
         if (explicitKey) return explicitKey;
-        const catalogKey = BROKER_PINYIN_SORT_KEYS[String(option.value || "").trim().toLowerCase()];
-        if (catalogKey) return catalogKey;
         return String(option.textContent || option.value || "").trim().toLowerCase();
     };
 
-    const compareBrokerOptionSortKeys = (leftKey, rightKey) => brokerPinyinCollator.compare(leftKey, rightKey);
+    const compareBrokerOptionSortKeys = (leftKey, rightKey) => brokerAlphabeticalCollator.compare(leftKey, rightKey);
 
     const sortBrokerSelectOptions = (select) => {
         if (!(select instanceof HTMLSelectElement)) return;
@@ -7662,7 +7653,7 @@
                 showWorkspaceModal({
                     title: "Fetching remote market data",
                     copy: `Fetching remote market data for ${missingLocalTickers.join(", ")} and saving it to Local Market Store. Results will appear as soon as loading finishes.`,
-                    iconClass: "icon-overlay-local-cache",
+                    loadingSpinner: true,
                 });
             }
             const currentParams = new URLSearchParams(currentUrlObj.search);
@@ -7671,7 +7662,7 @@
                 showWorkspaceModal({
                     title: "Running Backtest",
                     copy: "Calculating strategy signals and performance metrics. This may take a moment depending on the data resolution and strategy complexity.",
-                    iconClass: "icon-hourglass"
+                    loadingSpinner: true,
                 });
                 // Only capture refresh transition if date range (x-axis) hasn't changed:
                 // - If ticker/period/interval/exact dates change: full rebuild from scratch (original behavior)
@@ -7696,7 +7687,7 @@
                 showWorkspaceModal({
                     title: "Running DCA simulation",
                     copy: "Calculating recurring buy dates, cumulative shares, and the if-all-in comparison curve for the selected range.",
-                    iconClass: "icon-hourglass",
+                    loadingSpinner: true,
                 });
                 delete bootstrap.chartWorkspaceRefreshTransition;
             } else if (
@@ -7708,7 +7699,7 @@
                 showWorkspaceModal({
                     title: "Calculating comparison",
                     copy: "Rebuilding the return curve and performance summary for the selected tickers. You can close this dialog while loading continues.",
-                    iconClass: "icon-hourglass",
+                    loadingSpinner: true,
                 });
             } else if (["tickers", "market-caps", "prices"].includes(state.currentView) && !missingLocalTickers.length && didCompareRequestChangeRange(currentParams, nextParams)) {
                 if (["market-caps", "prices"].includes(state.currentView)) {
@@ -7717,7 +7708,7 @@
                     showWorkspaceModal({
                         title: "Calculating comparison",
                         copy: "Rebuilding the return curve and performance summary for the selected range. You can close this dialog while loading continues.",
-                        iconClass: "icon-hourglass",
+                        loadingSpinner: true,
                     });
                 }
             } else if (pendingWorkspaceChartTransition?.view === state.currentView) {
@@ -7765,13 +7756,13 @@
                 showWorkspaceModal({
                     title: "Saving daily market data to local cache",
                     copy: "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
-                    iconClass: "icon-overlay-local-cache",
+                    loadingSpinner: true,
                 });
             } else if (actionInput?.value === "refresh-1m") {
                 showWorkspaceModal({
                     title: "Saving 1-minute market data to local cache",
                     copy: "We are refreshing the latest 6 months of trading days for this ticker and saving the result on this device. Please keep this page open while the download finishes.",
-                    iconClass: "icon-overlay-local-cache",
+                    loadingSpinner: true,
                 });
             }
             return;
@@ -7787,19 +7778,19 @@
                 showWorkspaceModal({
                     title: "Maintaining all local market data",
                     copy: "We are checking every cached ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
-                    iconClass: "icon-overlay-local-cache",
+                    loadingSpinner: true,
                 });
             } else if (actionInput?.value === "investment-transactions") {
                 showWorkspaceModal({
                     title: "Clearing local broker transaction record",
                     copy: "We are removing the imported local broker transaction history stored on this device. Please keep this page open while this finishes.",
-                    iconClass: "icon-settings-clear-cache",
+                    loadingSpinner: true,
                 });
             } else if (sectionInput?.value === "clear-caches") {
                 showWorkspaceModal({
                     title: "Clearing local market data caches",
                     copy: "We are removing non-local market caches while keeping Local Market Store protected entries and ticker usage records. Please keep this page open while this finishes.",
-                    iconClass: "icon-settings-clear-cache",
+                    loadingSpinner: true,
                 });
             }
             return;

@@ -1,4 +1,25 @@
-/* Code version: v1.64.1 */
+/* Code version: v1.67.1 */
+
+:root {
+    --investment-community-share-print-width: 53.98mm;
+    --investment-community-share-print-height: 86.50mm;
+    --investment-community-share-print-radius: 3.18mm;
+    --investment-community-share-accent: #0055cc;
+    --investment-community-share-shell-width: 1080px;
+    --investment-community-share-shell-height: 1730px;
+    --investment-community-share-logical-width: 540px;
+    --investment-community-share-logical-height: 865px;
+    --investment-community-share-export-scale: 2;
+    --investment-community-share-card-radius: 31.8px;
+    --investment-community-share-safe-padding: 10px;
+    --investment-community-share-card-gap: 10px;
+    --investment-community-share-section-gap: 10px;
+    --investment-community-share-section-radius: 16px;
+    --investment-community-share-footer-brand-size: 72px;
+    --investment-community-share-footer-qr-size: 108px;
+    --investment-community-share-ticker-identity-logo-size: 36px;
+    --investment-community-share-ticker-identity-logo-base: 20px;
+}
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -668,6 +689,46 @@
     display: none !important;
 }
 
+#investment_broker_summary_selector .investment-broker-filter-field {
+    width: 100%;
+    justify-content: flex-start;
+}
+
+#investment_broker_summary_selector .investment-broker-filter-row {
+    width: 100%;
+    margin: 0;
+}
+
+#investment_broker_summary_selector .investment-broker-summary-trigger {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: var(--sidebar-form-control-min-height);
+    justify-content: flex-start;
+    gap: 0;
+    padding: var(--sidebar-form-control-padding-block) 36px var(--sidebar-form-control-padding-block) 46px;
+    border: 0 !important;
+    border-radius: var(--radius-control);
+    background-color: var(--control-liquid-background);
+    box-shadow: var(--control-liquid-shadow);
+    color: var(--text);
+    font-size: var(--font-form-control);
+}
+
+#investment_broker_summary_selector .investment-broker-summary-trigger::before {
+    left: auto;
+    right: 12px;
+    transform: translateY(-50%);
+}
+
+#investment_broker_summary_selector .investment-broker-summary-trigger .investment-broker-filter-trigger-label {
+    display: inline-flex !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .investment-broker-filter-dropdown {
     /* Base styles; actual open state uses JS-driven position:fixed to escape clipping
        from sticky <th> and scrollable table containers. */
@@ -1288,7 +1349,7 @@
 }
 
 .investment-community-share-capture {
-    --investment-community-share-export-scale: 2;
+    --investment-community-share-export-scale: inherit;
     position: fixed;
     left: -200vw;
     top: 0;
@@ -1306,20 +1367,20 @@
 }
 
 .investment-community-share-card {
-    --investment-community-share-logical-width: 540px;
-    --investment-community-share-logical-height: 865px;
-    --investment-community-share-safe-padding: 10px;
-    --investment-community-share-chart-slot-width: calc(var(--investment-community-share-logical-width, 540px) - (2 * var(--investment-community-share-safe-padding, 10px)));
-    --investment-community-share-chart-slot-height-compare: 360px;
-    --investment-community-share-chart-slot-height-trade-price: 150px;
-    --investment-community-share-chart-slot-height-trade-equity: 220px;
-    --investment-community-share-footer-brand-size: 72px;
-    --investment-community-share-footer-qr-size: 108px;
-    --investment-community-share-ticker-identity-logo-size: 36px;
-    --investment-community-share-ticker-identity-logo-base: var(--ticker-identity-logo-height, 20px);
+    --investment-community-share-logical-width: inherit;
+    --investment-community-share-logical-height: inherit;
+    --investment-community-share-safe-padding: inherit;
+    --investment-community-share-chart-slot-width: inherit;
+    --investment-community-share-chart-slot-height-compare: inherit;
+    --investment-community-share-chart-slot-height-trade-price: inherit;
+    --investment-community-share-chart-slot-height-trade-equity: inherit;
+    --investment-community-share-footer-brand-size: inherit;
+    --investment-community-share-footer-qr-size: inherit;
+    --investment-community-share-ticker-identity-logo-size: inherit;
+    --investment-community-share-ticker-identity-logo-base: inherit;
     width: 100%;
     height: 100%;
-    aspect-ratio: 53.98 / 85.60;
+    aspect-ratio: 53.98 / 86.50;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -1330,7 +1391,7 @@
     color: var(--text);
     background:
         radial-gradient(circle at top right, color-mix(in srgb, var(--theme-accent-positive, #16a34a) 22%, transparent) 0%, transparent 38%),
-        radial-gradient(circle at bottom left, color-mix(in srgb, #0055cc 24%, transparent) 0%, transparent 42%),
+        radial-gradient(circle at bottom left, color-mix(in srgb, var(--investment-community-share-accent, #0055cc) 24%, transparent) 0%, transparent 42%),
         var(--investment-community-share-surface-background, linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%));
     backdrop-filter: var(--investment-community-share-surface-blur, saturate(160%) blur(18px));
     -webkit-backdrop-filter: var(--investment-community-share-surface-blur, saturate(160%) blur(18px));
@@ -1357,7 +1418,7 @@
     line-height: 1.02;
     letter-spacing: -0.04em;
     font-weight: 400;
-    color: #0055cc;
+    color: var(--investment-community-share-accent, #0055cc);
     text-shadow:
         0 0 1px #fff,
         0 0 2px #fff,
@@ -1397,7 +1458,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--investment-community-share-section-gap, 14px);
+    gap: var(--investment-community-share-section-gap, 10px);
 }
 
 .investment-community-share-section {
@@ -1870,7 +1931,7 @@
     width: var(--investment-community-share-footer-qr-size, var(--investment-community-share-footer-brand-size, 11.5mm));
     height: var(--investment-community-share-footer-qr-size, var(--investment-community-share-footer-brand-size, 11.5mm));
     flex: 0 0 auto;
-    color: #0055cc;
+    color: var(--investment-community-share-accent, #0055cc);
     background: transparent;
 }
 
@@ -2224,6 +2285,41 @@
     height: 100%;
 }
 
+.investment-metrics-panel {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+.investment-metrics-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 16px;
+    min-width: 0;
+    padding: 0 2px;
+}
+
+.investment-broker-summary-selector-label {
+    margin: 0;
+}
+
+.investment-broker-summary-selector-shell {
+    width: min(100%, var(--settings-action-package-max-width));
+    max-width: var(--settings-action-package-max-width);
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
 #investment_holdings_panel {
     --investment-holdings-summary-frosted-background: var(--scrollable-data-table-summary-background);
     --investment-holdings-summary-frosted-border: var(--scrollable-data-table-summary-border);
@@ -2245,8 +2341,14 @@
     isolation: isolate;
 }
 
-#investment_metrics_panel {
+#investment_metrics_panel_shell {
     height: 100%;
+    min-height: 0;
+}
+
+#investment_metrics_panel {
+    flex: 1 1 auto;
+    height: auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -5017,6 +5119,20 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         width: 100%;
         max-width: none;
         padding-bottom: 0;
+    }
+
+    .investment-metrics-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .investment-broker-summary-selector-shell {
+        align-items: stretch;
+    }
+
+    #investment_broker_summary_selector .investment-broker-summary-trigger {
+        width: 100%;
     }
 
     .investment-import-action-package {

@@ -1,4 +1,4 @@
-/* Code version: v0.13.3 */
+/* Code version: v0.14.2 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -21,13 +21,25 @@
     const getStyleTokenApplyTargets = (shell) => {
         if (!(shell instanceof HTMLElement)) return [];
         if (shell.hasAttribute("data-export-image-shell")) {
-            return [document.documentElement, shell];
+            return [
+                document.documentElement,
+                shell,
+                ...shell.querySelectorAll("[data-style-token-share-preview-card], .investment-community-share-card"),
+            ];
         }
         return [shell];
     };
 
     const applyStyleTokenProperty = (shell, tokenName, value) => {
         if (!tokenName) return;
+        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const profileId = shell?.dataset?.exportImageProfile
+            || exportImageConfig?.defaultProfileId;
+        if (shell?.hasAttribute("data-export-image-shell") && exportImageConfig?.setToken && profileId) {
+            exportImageConfig.setToken(tokenName, value, {profileId});
+            exportImageConfig.applyConfigToTargets(getStyleTokenApplyTargets(shell), profileId);
+            return;
+        }
         getStyleTokenApplyTargets(shell).forEach((target) => {
             if (target instanceof HTMLElement) {
                 target.style.setProperty(tokenName, value);
@@ -39,6 +51,16 @@
     const getState = () => getContext().state || null;
     const getEndpoints = () => getContext().endpoints || {};
     const getLabels = () => getContext().labels || {};
+    const getLanguageState = () => window.ANTIGRAVITY_APP?.language || {};
+    const translateUi = (value) => {
+        const languageState = getLanguageState();
+        const languageCode = String(languageState.code || "en");
+        if (languageCode === "en") return value;
+        const row = Array.isArray(languageState.translations)
+            ? languageState.translations.find((candidate) => candidate?.en === value)
+            : null;
+        return row?.[languageCode] || value;
+    };
     const getShortDatePlaceholder = () => {
         const helper = window.ANTIGRAVITY_BOOTSTRAP?.dateDisplay?.getShortDatePlaceholder;
         return typeof helper === "function" ? helper() : "0000/00/00";
@@ -200,8 +222,8 @@
             if (healthIndicator instanceof HTMLElement) healthIndicator.hidden = !isSuccess;
             if (healthSummary instanceof HTMLElement) {
                 healthSummary.textContent = isSuccess
-                    ? "The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order."
-                    : "Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.";
+                    ? translateUi("The broker is connected and ready. You can still test detailed connection parameters, including latency. This does not place any order.")
+                    : translateUi("Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.");
             }
             const feedback = document.querySelector("[data-broker-test-feedback]");
             if (feedback instanceof HTMLElement) {
@@ -227,7 +249,7 @@
             const heading = banner.querySelector(".notice-floating-banner-heading");
             const copy = banner.querySelector(".notice-floating-banner-copy");
             const icon = banner.querySelector(".notice-floating-banner-icon");
-            if (heading instanceof HTMLElement) heading.textContent = isSuccess ? "Connected" : "Connection issue";
+            if (heading instanceof HTMLElement) heading.textContent = isSuccess ? translateUi("Connected") : translateUi("Connection issue");
             if (copy instanceof HTMLElement) copy.textContent = message;
             if (icon instanceof HTMLElement && isSuccess) icon.classList.add("icon-settings-broker");
             if (isSuccess) {
@@ -250,7 +272,7 @@
                 const status = String(payload?.status || "error").trim().toLowerCase();
                 consecutiveFetchFailures = 0;
                 if (status === "pending") return;
-                const message = String(payload?.message || "Longbridge authorization status is unavailable.").trim();
+                const message = String(payload?.message || translateUi("Longbridge authorization status is unavailable.")).trim();
                 stop();
                 updateFeedback(status, message);
             } catch {
@@ -259,7 +281,7 @@
                 stop();
                 updateFeedback(
                     "error",
-                    "Longbridge authorization status checks could not reach this app after 3 attempts. Check your local connection, then authorize again.",
+                    translateUi("Longbridge authorization status checks could not reach this app after 3 attempts. Check your local connection, then authorize again."),
                 );
             } finally {
                 requestInFlight = false;
@@ -686,16 +708,16 @@
         document.querySelectorAll("[data-style-token-copy]").forEach((button) => {
             if (!(button instanceof HTMLButtonElement) || button.dataset.bound === "1") return;
             button.dataset.bound = "1";
-            const defaultLabel = button.getAttribute("aria-label") || "Copy style name";
+            const defaultLabel = button.getAttribute("aria-label") || translateUi("Copy style name");
             const showCopiedState = () => {
                 button.classList.add("is-copied");
-                button.setAttribute("aria-label", "Copied");
-                button.setAttribute("title", "Copied");
+                button.setAttribute("aria-label", translateUi("Copied"));
+                button.setAttribute("title", translateUi("Copied"));
                 window.clearTimeout(Number(button.dataset.copyResetTimer || "0"));
                 const timer = window.setTimeout(() => {
                     button.classList.remove("is-copied");
                     button.setAttribute("aria-label", defaultLabel);
-                    button.setAttribute("title", "Copy style name");
+                    button.setAttribute("title", translateUi("Copy style name"));
                     delete button.dataset.copyResetTimer;
                 }, 1200);
                 button.dataset.copyResetTimer = String(timer);
@@ -918,17 +940,17 @@
     };
 
     const INVESTMENT_SHARE_PREVIEW_VIEWS = [
-        {id: "chart", title: "Overview", subtitle: ""},
-        {id: "holdings", title: "Holdings", subtitle: ""},
-        {id: "stock_details", title: "Stock details", subtitle: ""},
-        {id: "metrics", title: "Metrics", subtitle: ""},
+        {id: "chart", title: translateUi("Overview"), subtitle: ""},
+        {id: "holdings", title: translateUi("Holdings"), subtitle: ""},
+        {id: "stock_details", title: translateUi("Stock details"), subtitle: ""},
+        {id: "metrics", title: translateUi("Metrics"), subtitle: ""},
     ];
 
     const WORKSPACE_SHARE_PREVIEW_VIEWS = [
-        {id: "compare", title: "Return comparison", subtitle: ""},
-        {id: "portfolio", title: "Portfolio", subtitle: ""},
-        {id: "dca", title: "DCA", subtitle: ""},
-        {id: "backtest", title: "Backtest", subtitle: ""},
+        {id: "compare", title: translateUi("Return comparison"), subtitle: ""},
+        {id: "portfolio", title: translateUi("Portfolio"), subtitle: ""},
+        {id: "dca", title: translateUi("DCA"), subtitle: ""},
+        {id: "backtest", title: translateUi("Backtest"), subtitle: ""},
     ];
 
     const getSharePreviewViewsForDemo = (demoShell) => {
@@ -943,7 +965,7 @@
         demoShell.dataset.styleTokenShareMaskEnabled = enabled ? "1" : "0";
         const maskButton = demoShell.querySelector("[data-style-token-share-mask]");
         if (maskButton instanceof HTMLButtonElement) {
-            const label = enabled ? "Show Sensitive Values" : "Mask Sensitive Values";
+            const label = enabled ? translateUi("Show Sensitive Values") : translateUi("Mask Sensitive Values");
             maskButton.setAttribute("aria-pressed", enabled ? "true" : "false");
             maskButton.setAttribute("aria-label", label);
             maskButton.title = label;
@@ -1088,9 +1110,10 @@
     const createStyleTokenShareDemoHoldingsSection = ({maskSensitive = false} = {}) => {
         const section = createStyleTokenShareDemoSection("investment-community-share-section--chart investment-community-share-table-shell");
         const shell = createStyleTokenDemoElement("div", "investment-holdings-table-shell");
-        const visibleColumns = maskSensitive
+        const visibleColumns = (maskSensitive
             ? ["Ticker", "Weight", "Avg cost", "Last"]
-            : ["Ticker", "Weight", "Shares", "Avg cost", "Last", "P&L"];
+            : ["Ticker", "Weight", "Shares", "Avg cost", "Last", "P&L"])
+            .map((label) => translateUi(label));
         const createTickerCellContent = (ticker, companyName) => {
             const wrapper = createStyleTokenDemoElement("div", "suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link");
             wrapper.dataset.ticker = ticker;
@@ -1119,7 +1142,7 @@
             headerRow.append(createStyleTokenDemoElement("th", "", label));
         });
         const summaryRow = createStyleTokenDemoElement("tr", "investment-holdings-summary-row");
-        const summaryLabel = createStyleTokenDemoElement("th", "investment-holdings-summary-copy", "Summary");
+        const summaryLabel = createStyleTokenDemoElement("th", "investment-holdings-summary-copy", translateUi("Summary"));
         summaryLabel.colSpan = visibleColumns.length;
         summaryRow.append(summaryLabel);
         thead.append(headerRow, summaryRow);
@@ -1154,7 +1177,7 @@
             "report-card workspace-article-card workspace-summary-card compare-share-heading-card",
         );
         const headingRow = createStyleTokenDemoElement("div", "report-heading-row");
-        headingRow.append(createStyleTokenDemoElement("p", "report-heading", "Performance summary"));
+        headingRow.append(createStyleTokenDemoElement("p", "report-heading", translateUi("Performance summary")));
         card.append(headingRow);
         section.append(card);
         return section;
@@ -1209,7 +1232,7 @@
                 winnerBadge.src = "/static/images/checkmark.circle.fill.green.svg";
                 winnerBadge.alt = "";
                 winnerBadge.setAttribute("role", "img");
-                winnerBadge.setAttribute("aria-label", "Winner");
+                winnerBadge.setAttribute("aria-label", translateUi("Winner"));
                 value.append(winnerBadge);
             }
             const yieldRow = createStyleTokenDemoElement("p", "report-value performance-metric-row performance-metric-row-dividend");
@@ -1221,7 +1244,7 @@
                 winnerBadge.src = "/static/images/checkmark.circle.fill.green.svg";
                 winnerBadge.alt = "";
                 winnerBadge.setAttribute("role", "img");
-                winnerBadge.setAttribute("aria-label", "Winner");
+                winnerBadge.setAttribute("aria-label", translateUi("Winner"));
                 yieldRow.append(winnerBadge);
             }
             metrics.append(value, yieldRow);
@@ -1240,7 +1263,7 @@
         const summary = createStyleTokenDemoElement("div", "portfolio-summary");
         const main = createStyleTokenDemoElement("div", "portfolio-summary-main");
         main.append(
-            createStyleTokenDemoElement("p", "portfolio-total-label", "Total return"),
+            createStyleTokenDemoElement("p", "portfolio-total-label", translateUi("Total return")),
             createStyleTokenDemoElement("p", "portfolio-total-value", "36.42%"),
         );
         summary.append(main);
@@ -1252,10 +1275,10 @@
     const createStyleTokenShareDemoTradeMetricsSection = () => {
         const section = createStyleTokenShareDemoSection("investment-community-share-section--chart investment-community-share-section--padded");
         const grid = createStyleTokenShareDemoMetricsGrid([
-            {label: "Total return", value: "36.42%"},
-            {label: "CAGR", value: "18.6%"},
-            {label: "Max drawdown", value: "-12.4%"},
-            {label: "Sharpe", value: "1.42"},
+            {label: translateUi("Total return"), value: "36.42%"},
+            {label: translateUi("CAGR"), value: "18.6%"},
+            {label: translateUi("Max drawdown"), value: "-12.4%"},
+            {label: translateUi("Sharpe"), value: "1.42"},
         ]);
         grid.classList.add("workspace-share-metrics-card");
         section.append(grid);
@@ -1306,10 +1329,10 @@
                 const metricsSection = createStyleTokenShareDemoSection("investment-community-share-section--compact investment-community-share-section--padded");
                 metricsSection.classList.add("investment-stock-details-metrics");
                 metricsSection.append(createStyleTokenShareDemoMetricsGrid([
-                    {label: "Last", value: "$ 1,248.60"},
-                    {label: "Day", value: "+2.81%"},
-                    {label: "Shares", value: "180"},
-                    {label: "Market value", value: "$ 224,748"},
+                    {label: translateUi("Last"), value: "$ 1,248.60"},
+                    {label: translateUi("Day"), value: "+2.81%"},
+                    {label: translateUi("Shares"), value: "180"},
+                    {label: translateUi("Market value"), value: "$ 224,748"},
                 ]));
                 return [
                     createStyleTokenShareDemoStockIdentity(),
@@ -1320,12 +1343,12 @@
             case "metrics": {
                 const metricsSection = createStyleTokenShareDemoSection("investment-community-share-section--chart investment-community-share-section--padded");
                 metricsSection.append(createStyleTokenShareDemoMetricsGrid([
-                    {label: "Total equity", value: "$ 1,401,220"},
-                    {label: "Cumulative P&L", value: "+$ 182,340"},
-                    {label: "Realized P&L", value: "+$ 76,180"},
-                    {label: "Unrealized P&L", value: "+$ 106,160"},
-                    {label: "Commission", value: "-$ 4,218"},
-                    {label: "Interest", value: "-$ 628"},
+                    {label: translateUi("Total equity"), value: "$ 1,401,220"},
+                    {label: translateUi("Cumulative P&L"), value: "+$ 182,340"},
+                    {label: translateUi("Realized P&L"), value: "+$ 76,180"},
+                    {label: translateUi("Unrealized P&L"), value: "+$ 106,160"},
+                    {label: translateUi("Commission"), value: "-$ 4,218"},
+                    {label: translateUi("Interest"), value: "-$ 628"},
                 ]));
                 return [metricsSection];
             }
@@ -1541,8 +1564,8 @@
         demoShell.dataset.styleTokenSharePreviewIndex = String(normalizedIndex);
         demoShell.dataset.styleTokenSharePreviewView = currentView.id;
         card.dataset.shareView = currentView.id;
-        card.setAttribute("aria-label", `${currentView.title} community share template`);
-        title.textContent = previewGroup === "workspace" ? currentView.title : "Overview";
+        card.setAttribute("aria-label", `${currentView.title} ${translateUi("community share template")}`);
+        title.textContent = previewGroup === "workspace" ? currentView.title : translateUi("Overview");
         viewLabel.textContent = currentView.title;
         if (subtitle instanceof HTMLElement) {
             subtitle.textContent = currentView.subtitle;
@@ -1596,6 +1619,27 @@
     const seedExportImageTokenDefaults = () => {
         const shell = getStyleTokenShell();
         if (!(shell instanceof HTMLElement) || !shell.hasAttribute("data-export-image-shell")) return;
+        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const profileId = shell.dataset.exportImageProfile
+            || exportImageConfig?.defaultProfileId;
+        if (exportImageConfig?.applyConfigToTargets && profileId) {
+            exportImageConfig.applyConfigToTargets(getStyleTokenApplyTargets(shell), profileId);
+            const config = exportImageConfig.getConfig?.(profileId);
+            shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
+                if (!(control instanceof HTMLElement)) return;
+                const tokenName = control.dataset.styleTokenName || "";
+                const unit = control.dataset.styleTokenUnit || "";
+                const tokenValue = config?.tokens?.[tokenName];
+                if (tokenValue === undefined) return;
+                const numericValue = Number.parseFloat(String(tokenValue).replace(unit, ""));
+                if (!Number.isFinite(numericValue)) return;
+                control.dataset.styleTokenValue = String(numericValue);
+                const valueText = control.querySelector("[data-style-token-value-text]");
+                if (valueText instanceof HTMLInputElement) valueText.value = tokenValue;
+                else if (valueText instanceof HTMLElement) valueText.textContent = tokenValue;
+            });
+            return;
+        }
         shell.querySelectorAll("[data-style-token-control]").forEach((control) => {
             if (!(control instanceof HTMLElement)) return;
             const tokenName = control.dataset.styleTokenName || "";
@@ -1635,7 +1679,7 @@
             return;
         }
         if (!(currentPagination instanceof HTMLElement) || !(nextPagination instanceof HTMLElement)) return;
-        currentPagination.setAttribute("aria-label", nextPagination.getAttribute("aria-label") || "Local market store pages");
+        currentPagination.setAttribute("aria-label", nextPagination.getAttribute("aria-label") || translateUi("Local market store pages"));
         const indicator = currentPagination.querySelector(".local-store-pagination-indicator");
         Array.from(currentPagination.childNodes).forEach((node) => {
             if (node !== indicator) node.remove();
@@ -1707,16 +1751,16 @@
         article.innerHTML = `
 			<article class="report-card workspace-article-card workspace-summary-card settings-summary-card">
 				<div class="report-heading-row">
-					<p class="report-heading">${labels.local_market_store || "Local Market Store"}</p>
+						<p class="report-heading">${labels.local_market_store || translateUi("Local market store")}</p>
 				</div>
 			</article>
 			<section class="settings-action-package settings-callout-card-primary local-store-maintain-card" data-action-package-live="true">
 				<span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
 				<div class="settings-action-package-copy settings-callout-text">
-					<p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="${labels.local_store_maintain_live_marker || "Live maintenance is active"}" title="${labels.local_store_maintain_live_marker || "Live maintenance is active"}"></span>${labels.local_store_maintain_title || "Maintain all data"}</p>
-					<p class="settings-service-note" data-action-package-copy>${labels.local_store_maintain_pending_note || "Refreshing all cached daily datasets and protected brand assets. Keep this page open while maintenance is in progress."}</p>
+						<p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}" title="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}"></span>${labels.local_store_maintain_title || translateUi("Maintain all data")}</p>
+						<p class="settings-service-note" data-action-package-copy>${labels.local_store_maintain_pending_note || translateUi("Refreshing all cached daily datasets and protected brand assets. Keep this page open while maintenance is in progress.")}</p>
 				</div>
-				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_pending_button || "Maintaining"}</span>
+				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_pending_button || translateUi("Maintaining")}</span>
 			</section>
 			<p class="settings-summary">${labels.local_store_summary || ""}</p>
 			<div class="scrollable-data-table-shell local-store-table-shell" id="local_store_region" data-local-store-region>
@@ -1731,9 +1775,9 @@
 					</colgroup>
 					<thead>
 						<tr>
-							<th class="local-store-col-index">No.</th>
-							<th>Ticker</th>
-							<th>${labels.local_store_range || "Range"}</th>
+								<th class="local-store-col-index">${translateUi("No.")}</th>
+								<th>${translateUi("Ticker")}</th>
+								<th>${labels.local_store_range || translateUi("Range")}</th>
 							<th>1d</th>
 							<th>${labels.local_store_intraday || "1m"}</th>
 							<th>${labels.local_store_delete || ""}</th>
@@ -1759,7 +1803,7 @@
 										<div class="ticker-identity-row">
 											<span class="ticker-identity-copy">
 												<span class="suggestion-symbol ticker-identity-symbol is-pending-value" data-workspace-mask="company-name">TICK</span>
-												<span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name">Loading</span>
+													<span class="suggestion-name ticker-identity-name is-pending-value" data-workspace-mask="company-name">${translateUi("Loading")}</span>
 											</span>
 										</div>
 									</div>
@@ -1771,9 +1815,9 @@
 										<span class="local-store-range-token is-pending-value" data-workspace-mask="local-store-date" data-local-store-range="end">${compactPlaceholder}</span>
 									</span>
 								</td>
-								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-refresh"></span></span></td>
-								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="icon icon-store-fetch-1m"></span></span></td>
-								<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="icon icon-store-delete"></span></span></td>
+								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="suggestion-loading-spinner"></span></span></td>
+								<td><span class="settings-action-button is-pending" aria-hidden="true"><span class="suggestion-loading-spinner"></span></span></td>
+								<td><span class="settings-action-button is-danger is-pending" aria-hidden="true"><span class="suggestion-loading-spinner"></span></span></td>
 							</tr>
 						`).join("")}
 						</tbody>
@@ -1843,24 +1887,24 @@
 
     const setNetworkStatusesPending = () => {
         const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
-        if (summaryCheckedAtNode instanceof HTMLElement) summaryCheckedAtNode.textContent = "Last checked: Checking...";
+        if (summaryCheckedAtNode instanceof HTMLElement) summaryCheckedAtNode.textContent = `${translateUi("Last checked:")} ${translateUi("Checking...")}`;
         document.querySelectorAll("[data-settings-service-row]").forEach((row) => {
             const statusNode = row.querySelector("[data-settings-service-status]");
             const noteNode = row.querySelector("[data-settings-service-note]");
             const checkedAtNode = row.querySelector("[data-settings-service-checked-at]");
             const iconNode = row.querySelector("[data-settings-service-icon]");
             const stateNode = row.querySelector(".settings-service-state");
-            if (statusNode instanceof HTMLElement) statusNode.textContent = "Checking...";
+            if (statusNode instanceof HTMLElement) statusNode.textContent = translateUi("Checking...");
             if (iconNode instanceof HTMLElement) {
                 iconNode.classList.remove("is-visible");
-                iconNode.classList.add("is-pending-status");
+                iconNode.classList.add("is-pending-status", "suggestion-loading-spinner");
             }
             if (stateNode instanceof HTMLElement) stateNode.classList.add("is-muted");
             if (noteNode instanceof HTMLElement) {
                 const pendingNote = noteNode.dataset.pendingNote || "";
                 if (pendingNote) noteNode.textContent = pendingNote;
             }
-            if (checkedAtNode instanceof HTMLElement) checkedAtNode.textContent = "Last checked: Checking...";
+            if (checkedAtNode instanceof HTMLElement) checkedAtNode.textContent = `${translateUi("Last checked:")} ${translateUi("Checking...")}`;
         });
     };
 
@@ -1880,7 +1924,7 @@
             const summaryCheckedAtNode = document.querySelector("[data-network-last-checked]");
             const firstCheckedAtText = payload?.rows?.[0]?.checked_at_text || "";
             if (summaryCheckedAtNode instanceof HTMLElement) {
-                summaryCheckedAtNode.textContent = firstCheckedAtText || "Last checked: Not checked yet.";
+                summaryCheckedAtNode.textContent = firstCheckedAtText || `${translateUi("Last checked:")} ${translateUi("Not checked yet.")}`;
             }
             (payload?.rows || []).forEach((item) => {
                 const row = document.querySelector(`[data-settings-service-row][data-service-key="${CSS.escape(item.key || "")}"]`);
@@ -1895,7 +1939,7 @@
                 if (checkedAtNode instanceof HTMLElement) checkedAtNode.textContent = item.checked_at_text || "";
                 if (stateNode instanceof HTMLElement) stateNode.classList.toggle("is-muted", !item.is_available);
                 if (iconNode instanceof HTMLElement) {
-                    iconNode.classList.remove("is-pending-status");
+                    iconNode.classList.remove("is-pending-status", "suggestion-loading-spinner");
                     iconNode.classList.toggle("is-visible", Boolean(item.is_available));
                 }
             });
@@ -2208,10 +2252,10 @@
         const saveButton = form.querySelector("[data-language-save-button]");
         const saveFeedback = form.querySelector("[data-language-save-feedback]");
         const languageUi = {
-            saving: form.dataset.languageSavingLabel || "Saving...",
-            savingTranslations: form.dataset.languageSavingTranslationsLabel || "Saving translations...",
-            saved: form.dataset.languageSavedLabel || "Translations saved.",
-            saveError: form.dataset.languageSaveErrorLabel || "Unable to save translations right now.",
+            saving: form.dataset.languageSavingLabel || translateUi("Saving..."),
+            savingTranslations: form.dataset.languageSavingTranslationsLabel || translateUi("Saving translations..."),
+            saved: form.dataset.languageSavedLabel || translateUi("Translations saved."),
+            saveError: form.dataset.languageSaveErrorLabel || translateUi("Unable to save translations right now."),
         };
         const languageInputs = Array.from(form.querySelectorAll('tbody input[type="text"][name^="translation_"]'))
             .filter((input) => input instanceof HTMLInputElement);
@@ -2257,10 +2301,10 @@
                 saveButton.classList.toggle("is-pending", isPending);
                 saveButton.setAttribute("aria-busy", String(isPending));
                 if (isPending) {
-                    saveButton.dataset.languageSaveLabel = saveButton.dataset.languageSaveLabel || saveButton.textContent || "Save translations";
+                    saveButton.dataset.languageSaveLabel = saveButton.dataset.languageSaveLabel || saveButton.textContent || translateUi("Save translations");
                     saveButton.textContent = languageUi.saving;
                 } else {
-                    saveButton.textContent = saveButton.dataset.languageSaveLabel || "Save translations";
+                    saveButton.textContent = saveButton.dataset.languageSaveLabel || translateUi("Save translations");
                     saveButton.removeAttribute("aria-busy");
                 }
             }
@@ -2540,17 +2584,17 @@
             row.className = 'cash-equiv-add-row ticker-input-row';
             row.innerHTML = `
                 <div class="ticker-input-main">
-                    <label style="font-size: var(--font-form-label);">Add ticker</label>
+                    <label style="font-size: var(--font-form-label);">${translateUi("Add ticker")}</label>
                     <div class="ticker-input-control">
                         <span class="ticker-leading-slot" aria-hidden="true">
                             <span class="ticker-logo-placeholder"></span>
                             <img class="ticker-input-logo" alt="" hidden>
                         </span>
                         <input class="settings-form-control" data-ticker-input placeholder="e.g. BOXX" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="latin" style="padding-left:44px;">
-                        <button type="button" class="ticker-clear" aria-label="Clear"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                        <button type="button" class="ticker-clear" aria-label="${translateUi("Clear")}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
                     </div>
                 </div>
-                <button type="button" class="ticker-remove cash-equiv-cancel-add" aria-label="Cancel add"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
+                <button type="button" class="ticker-remove cash-equiv-cancel-add" aria-label="${translateUi("Cancel add")}"><span class="icon icon-remove-muted" aria-hidden="true"></span></button>
             `;
             listEl.appendChild(row);
             const input = row.querySelector('input[data-ticker-input]');

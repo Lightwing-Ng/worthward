@@ -1,4 +1,4 @@
-{# Code version: v1.35.2 #}
+{# Code version: v1.38.5 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -81,9 +81,19 @@
                     </div>
                     <div class="trade-metrics-grid investment-view-panel-grid" id="investment_holdings_panel"
                          data-investment-view-panel="holdings" hidden></div>
-                    <div class="trade-metrics-grid investment-view-panel-grid trade-metrics-panel-grid"
-                         id="investment_metrics_panel"
-                         data-investment-view-panel="metrics" hidden></div>
+                    <div class="investment-metrics-panel"
+                         id="investment_metrics_panel_shell"
+                         data-investment-view-panel="metrics"
+                         hidden>
+                        <div class="investment-metrics-toolbar">
+                            <div class="field live-trading-broker-strip backtest-shared-select-field investment-import-broker-field investment-broker-summary-selector-shell">
+                                <span class="settings-form-label live-trading-field-label investment-broker-summary-selector-label">Brokers</span>
+                                <div id="investment_broker_summary_selector"></div>
+                            </div>
+                        </div>
+                        <div class="trade-metrics-grid investment-view-panel-grid trade-metrics-panel-grid"
+                             id="investment_metrics_panel"></div>
+                    </div>
                     <div class="investment-stock-details-panel"
                          id="stock_panel"
                          data-investment-view-panel="stock_details"
@@ -824,5 +834,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.31.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.37.1') }}"></script>
 {% endblock %}

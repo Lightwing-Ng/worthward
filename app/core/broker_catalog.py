@@ -1,7 +1,7 @@
 """
-Canonical broker metadata and pinyin-initial sort order.
+Canonical broker metadata and alphabetical sort order.
 
-Code version: v0.5.0
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -13,106 +13,142 @@ from dataclasses import dataclass
 class BrokerCatalogEntry:
     code: str
     label: str
-    pinyin_sort_key: str
     icon_filename: str
     description: str = ""
 
 
-# Sort keys use the broker display label's first-letter bucket (H/I/L for the
-# current English labels). Full keys keep a stable tie-breaker within the bucket.
+# Display labels provide a stable alphabetical order for institution selectors,
+# with the code providing the final tie-breaker.
 BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
     "hsbc": BrokerCatalogEntry(
         code="hsbc",
         label="HSBC",
-        pinyin_sort_key="hsbc",
         icon_filename="HSBC.png",
         description="Paste plain text from HSBC Order Status and the USD cash account.",
     ),
     "ibkr": BrokerCatalogEntry(
         code="ibkr",
         label="IBKR",
-        pinyin_sort_key="ibkr",
         icon_filename="IBKR.svg",
         description="Supported now for CSV import.",
     ),
     "longbridge": BrokerCatalogEntry(
         code="longbridge",
         label="Longbridge",
-        pinyin_sort_key="longbridge",
         icon_filename="Longbridge.png",
         description="Authorize the local Longbridge CLI through browser OAuth.",
     ),
     "schwab": BrokerCatalogEntry(
         code="schwab",
         label="Charles Schwab",
-        pinyin_sort_key="charlesschwab",
         icon_filename="Charles Schwab.svg",
         description="Upload Schwab Order Status CSV (e.g. Individual..._Order_Status_....csv) or Transaction History CSV.",
     ),
     "tigertrade": BrokerCatalogEntry(
         code="tigertrade",
         label="Tiger Trade",
-        pinyin_sort_key="tigertrade",
         icon_filename="TigerTrade.png",
         description="Upload one or more Tiger Trade activity statement PDFs.",
     ),
     "usmart_hk": BrokerCatalogEntry(
         code="usmart_hk",
         label="uSMART (HK)",
-        pinyin_sort_key="usmarthk",
         icon_filename="uSAMRT.png",
         description="Upload one or more uSMART Securities (HK) monthly statement PDFs.",
     ),
     "zircon_hk": BrokerCatalogEntry(
         code="zircon_hk",
-        label="Zircon HK",
-        pinyin_sort_key="zirconhk",
+        label="Zircon (HK)",
         icon_filename="Zircon HK.png",
         description="Download, complete, validate, and upload the generic fallback XLSX template.",
     ),
     "standard_xlsx": BrokerCatalogEntry(
         code="standard_xlsx",
         label="No specified broker",
-        pinyin_sort_key="nospecifiedbroker",
         icon_filename="Standard XLSX.svg",
         description="Import a broker-neutral antigravity standard XLSX workbook.",
     ),
     "longbridge_hk": BrokerCatalogEntry(
         code="longbridge_hk",
         label="Longbridge (HK)",
-        pinyin_sort_key="longbridgehk",
         icon_filename="Longbridge.png",
         description="Upload Fund Details plain text and History Orders XLSX exports.",
     ),
     "longbridge_sg": BrokerCatalogEntry(
         code="longbridge_sg",
         label="Longbridge (SG)",
-        pinyin_sort_key="longbridgesg",
         icon_filename="Longbridge.png",
         description="Upload Fund Details plain text and History Orders XLSX exports.",
     ),
     "futuhk": BrokerCatalogEntry(
         code="futuhk",
         label="Futu (HK)",
-        pinyin_sort_key="futuhk",
         icon_filename="FutuHK.svg",
         description="Upload one or more Futu Securities International (Hong Kong) monthly statement PDFs.",
     ),
     "cmbwl": BrokerCatalogEntry(
         code="cmbwl",
         label="CMB Wing Lung Bank",
-        pinyin_sort_key="cmbwinglungbank",
         icon_filename="CMB Wing Lung.svg",
         description="Parse completed securities order notification emails (.eml).",
+    ),
+    "cmb_cn": BrokerCatalogEntry(
+        code="cmb_cn",
+        label="China Merchants Bank",
+        icon_filename="CMB Wing Lung.svg",
+        description="Record Mainland China bank-account activity in CNY through the standard XLSX.",
+    ),
+    "boc_cn": BrokerCatalogEntry(
+        code="boc_cn",
+        label="Bank of China",
+        icon_filename="Bank of China.svg",
+        description="Record Mainland China bank-account activity in CNY, HKD, or USD through the standard XLSX.",
+    ),
+    "boc_hk": BrokerCatalogEntry(
+        code="boc_hk",
+        label="Bank of China (Hong Kong)",
+        icon_filename="Bank of China.svg",
+        description="Record Hong Kong bank-account activity in RMB (CNY/CNH), HKD, or USD through the standard XLSX.",
+    ),
+    "icbc_cn": BrokerCatalogEntry(
+        code="icbc_cn",
+        label="Industrial and Commercial Bank of China",
+        icon_filename="ICBC.svg",
+        description="Record Mainland China bank-account activity through the standard XLSX.",
+    ),
+    "icbc_hk": BrokerCatalogEntry(
+        code="icbc_hk",
+        label="Industrial and Commercial Bank of China (Asia)",
+        icon_filename="ICBC.svg",
+        description="Record Hong Kong bank-account activity through the standard XLSX.",
+    ),
+    "ccb_cn": BrokerCatalogEntry(
+        code="ccb_cn",
+        label="China Construction Bank",
+        icon_filename="CCB.svg",
+        description="Record Mainland China bank-account activity through the standard XLSX.",
+    ),
+    "ccb_hk": BrokerCatalogEntry(
+        code="ccb_hk",
+        label="China Construction Bank (Asia)",
+        icon_filename="CCB.svg",
+        description="Record Hong Kong bank-account activity through the standard XLSX.",
     ),
 }
 
 SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
 INVESTMENT_IMPORT_BROKER_CODES = (
+    "boc_cn",
+    "boc_hk",
+    "ccb_cn",
+    "ccb_hk",
+    "cmb_cn",
     "cmbwl",
     "hsbc",
     "futuhk",
+    "icbc_cn",
+    "icbc_hk",
     "ibkr",
     "longbridge_hk",
     "longbridge_sg",
@@ -124,11 +160,11 @@ INVESTMENT_IMPORT_BROKER_CODES = (
 )
 
 
-def broker_pinyin_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:
+def broker_sort_key(code: str | None, *, fallback_label: str | None = None) -> str:
     normalized_code = str(code or "").strip().lower()
     entry = BROKER_CATALOG.get(normalized_code)
     if entry is not None:
-        return entry.pinyin_sort_key
+        return entry.label.casefold()
     fallback = str(fallback_label or normalized_code).strip().lower()
     return fallback or normalized_code
 
@@ -142,7 +178,7 @@ def sort_broker_codes(codes: list[str] | set[str] | tuple[str, ...]) -> list[str
             continue
         seen.add(normalized_code)
         unique_codes.append(normalized_code)
-    return sorted(unique_codes, key=lambda code: (broker_pinyin_sort_key(code), code))
+    return sorted(unique_codes, key=lambda code: (broker_sort_key(code), code))
 
 
 def sorted_broker_entries(codes: list[str] | set[str] | tuple[str, ...]) -> list[BrokerCatalogEntry]:

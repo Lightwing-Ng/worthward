@@ -1,7 +1,7 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.61.0
+ * Code version: v1.62.0
  * - Added: Explicit account-scope history attestations can verify otherwise partial tax-lot sources only when their broker, account, ticker, currency, date, trade counts, and quantities all match.
  * - Fixed: Tax-lot replay uses broker execution chronology instead of cash-safety ordering when statement rows share one normalized timestamp.
  * - Fixed: Realized P&L is calculated inside broker-account security scopes before ticker display aggregation, and broker-reported closed-lot P&L bypasses local fee and basis reconstruction.
@@ -120,6 +120,40 @@ export function createInvestmentDataUtils({
         SZ: 'CNY',
         SG: 'SGD',
     };
+    const INVESTMENT_MONEY_MARKET_STANDARD_NAMES = Object.freeze({
+        '005276756': 'Franklin Templeton U.S. Dollar Short-Term Money Market Fund',
+        HK0000369196: 'Taikang Kaitai Overseas Short Tenor Bond Fund A USD Acc',
+        HK0000478872: 'GaoTeng WeInvest Money Market A HKD Acc',
+        HK0000584737: 'GaoTeng WeValue USD Money Mkt A USD Acc',
+        HK0000584752: 'GaoTeng WeValue USD Money Mkt C USD Acc',
+        HK0000720752: 'Ping An Money Market P USD Acc',
+        HK0001039582: 'CMS USD Money Market Fund B Acc',
+    });
+    const INVESTMENT_MONEY_MARKET_FUND_IDENTITY = Object.freeze({
+        GAOTENG_MONEY_MARKET_HKD: 'HK0000478872',
+        GAOTENG_MONEY_MARKET_USD: 'HK0000584737',
+        PING_AN_MONEY_MARKET_USD: 'HK0000720752',
+    });
+    const INVESTMENT_MONEY_MARKET_DESCRIPTION_ALIASES = Object.freeze({
+        '005276756': [
+            'FRANKLIN TEMPLETON OFFSHORE FUNDS FRANKLIN U.S. DOLLAR SHORT-TERM MONEY MARKET "A" (USD) INC',
+            'LU0052767562',
+            'L9025R513',
+        ],
+        HK0000478872: [
+            'GAOTENG WEINVEST MONEY MARKET FUND',
+            'MMF/GTMMF/100000',
+        ],
+        HK0000584737: [
+            'GAOTENG WEVALUE USD MONEY MARKET FUND',
+            'GAOTENG WEVALUE USD MONEY MKT A USD ACC',
+            'MMF/GTMMF/100001',
+        ],
+        HK0000720752: [
+            'PING AN MONEY MARKET FUND',
+            'PING AN MONEY MARKET P USD ACC',
+        ],
+    });
 
     function getNormalizedTransactionType(txn) {
         return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
@@ -740,6 +774,175 @@ export function createInvestmentDataUtils({
         return rawDescription || fallback;
     }
 
+    function escapeInvestmentDescriptionRegExp(value) {
+        return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function getInvestmentMoneyMarketFundIdTicker(fundId) {
+        const normalizedFundId = String(fundId || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+        return INVESTMENT_MONEY_MARKET_FUND_IDENTITY[normalizedFundId] || '';
+    }
+
+    function getInvestmentMoneyMarketDisplayName(ticker) {
+        const canonicalTicker = String(getInvestmentCanonicalTicker(ticker) || ticker || '')
+            .trim()
+            .toUpperCase();
+        if (!canonicalTicker) return '';
+        const payloadNames = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.known_ticker_company_names;
+        const payloadName = payloadNames && typeof payloadNames === 'object' && !Array.isArray(payloadNames)
+            ? String(payloadNames[canonicalTicker] || '').trim()
+            : '';
+        return payloadName || INVESTMENT_MONEY_MARKET_STANDARD_NAMES[canonicalTicker] || '';
+    }
+
+    function getInvestmentMoneyMarketDescriptionAliases(ticker) {
+        const canonicalTicker = String(getInvestmentCanonicalTicker(ticker) || ticker || '')
+            .trim()
+            .toUpperCase();
+        const aliases = [
+            canonicalTicker,
+            `${canonicalTicker}.HK`,
+            `${canonicalTicker}.USD`,
+            getInvestmentMoneyMarketDisplayName(canonicalTicker),
+            ...(INVESTMENT_MONEY_MARKET_DESCRIPTION_ALIASES[canonicalTicker] || []),
+        ];
+        return Array.from(new Set(aliases.map((value) => String(value || '').trim()).filter(Boolean)))
+            .sort((left, right) => right.length - left.length);
+    }
+
+    function canonicalizeInvestmentMoneyMarketTicker(candidate) {
+        const fundTicker = getInvestmentMoneyMarketFundIdTicker(candidate);
+        const normalizedCandidate = String(fundTicker || candidate || '').trim().toUpperCase();
+        if (!normalizedCandidate) return '';
+        const canonicalTicker = String(getInvestmentCanonicalTicker(normalizedCandidate) || normalizedCandidate)
+            .trim()
+            .toUpperCase();
+        const candidates = [
+            canonicalTicker,
+            canonicalTicker.replace(/\.(USD|HKD)$/i, ''),
+            normalizedCandidate.replace(/\.(USD|HKD)$/i, ''),
+        ];
+        const configuredTickers = getMoneyMarketTickerSet();
+        return candidates.find((value) => configuredTickers.has(value)) || '';
+    }
+
+    function resolveInvestmentMoneyMarketTransactionIdentity(txn) {
+        const candidateValues = [
+            txn?.ticker,
+            isLongbridgeHkCashEquivalentTransfer(txn)
+                ? getLongbridgeHkCashEquivalentSyntheticTicker(txn)
+                : '',
+            txn?.normalized?.cash_equivalent_fund_id,
+            txn?.source?.cash_equivalent_fund_id,
+        ];
+        for (const candidate of candidateValues) {
+            const canonicalTicker = canonicalizeInvestmentMoneyMarketTicker(candidate);
+            if (!canonicalTicker) continue;
+            const displayName = getInvestmentMoneyMarketDisplayName(canonicalTicker);
+            if (displayName) return {ticker: canonicalTicker, name: displayName};
+        }
+
+        const rawDescription = normalizeTransactionDescriptionWhitespace(txn?.description).toUpperCase();
+        if (!rawDescription) return null;
+        const configuredTickers = Array.from(getMoneyMarketTickerSet())
+            .sort((left, right) => right.length - left.length);
+        for (const ticker of configuredTickers) {
+            const tickerPattern = new RegExp(
+                `\\b${escapeInvestmentDescriptionRegExp(ticker)}(?:\\.(?:HK|HKD|USD|US))?\\b`,
+                'i',
+            );
+            if (tickerPattern.test(rawDescription)) {
+                const displayName = getInvestmentMoneyMarketDisplayName(ticker);
+                if (displayName) return {ticker, name: displayName};
+            }
+            const aliases = getInvestmentMoneyMarketDescriptionAliases(ticker)
+                .filter((alias) => alias !== ticker && !alias.endsWith('.HK') && !alias.endsWith('.USD'));
+            if (aliases.some((alias) => rawDescription.includes(alias.toUpperCase()))) {
+                const displayName = getInvestmentMoneyMarketDisplayName(ticker);
+                if (displayName) return {ticker, name: displayName};
+            }
+        }
+        return null;
+    }
+
+    function getInvestmentMoneyMarketActionLabel(txn) {
+        const rawAction = String(
+            txn?.normalized?.cash_equivalent_action
+            ?? txn?.source?.cash_equivalent_action
+            ?? '',
+        ).trim().toLowerCase();
+        if (['placement', 'subscription', 'buy'].includes(rawAction)) return 'Subscription';
+        if (['redemption', 'withdrawal', 'sell'].includes(rawAction)) return 'Redemption';
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'dividend_reinvestment') return 'Dividend reinvestment';
+        if (normalizedType === 'dividend') return 'Dividend';
+        return '';
+    }
+
+    function getInvestmentMoneyMarketQuantityLabel(txn) {
+        const rawQuantity = txn?.quantity_abs
+            ?? txn?.normalized?.display_quantity
+            ?? txn?.quantity;
+        if (rawQuantity === undefined || rawQuantity === null || rawQuantity === '') return '';
+        const numericQuantity = Number(rawQuantity);
+        if (Number.isFinite(numericQuantity)) {
+            return Number.isInteger(numericQuantity)
+                ? String(Math.trunc(numericQuantity))
+                : String(rawQuantity).trim();
+        }
+        return String(rawQuantity).trim();
+    }
+
+    function getInvestmentMoneyMarketTransactionDetails(txn, identity) {
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'dividend_reinvestment') {
+            const quantityLabel = getInvestmentMoneyMarketQuantityLabel(txn);
+            return quantityLabel
+                ? `Dividend reinvestment × ${quantityLabel}`
+                : 'Dividend reinvestment';
+        }
+
+        let details = normalizeTransactionDescriptionWhitespace(txn?.description);
+        if (details) {
+            getInvestmentMoneyMarketDescriptionAliases(identity.ticker).forEach((alias) => {
+                details = details.replace(
+                    new RegExp(escapeInvestmentDescriptionRegExp(alias), 'ig'),
+                    ' ',
+                );
+            });
+            details = details.replace(/MMF\/GTMMF\/\d+/ig, ' ');
+            details = details.replace(/\(Withdrawal\)/ig, 'Redemption');
+            details = details.replace(/\bFund\s+(Subscription|Redemption)\s*#?/ig, '$1');
+            details = details.replace(/\bSubscription\s+of\s+of\b/ig, 'Subscription');
+            details = details.replace(/\bRedemption\s+of\s+of\b/ig, 'Redemption');
+            details = details.replace(/\(\s*\)/g, ' ');
+            details = details.replace(/\s+/g, ' ').trim();
+            details = details.replace(/^[#·|:/,\-]+|[#·|:/,\-]+$/g, '').trim();
+        }
+
+        const actionLabel = getInvestmentMoneyMarketActionLabel(txn);
+        if (!details) return actionLabel;
+        const includesAction = /\b(subscription|redemption|dividend)\b/i.test(details);
+        return actionLabel && !includesAction ? `${actionLabel} · ${details}` : details;
+    }
+
+    function formatInvestmentMoneyMarketTransactionDescription(txn, identity, currentDescription) {
+        if (!identity) return currentDescription;
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (['buy', 'sell', 'grant'].includes(normalizedType)) return currentDescription;
+        let details = getInvestmentMoneyMarketTransactionDetails(txn, identity);
+        if (!details && currentDescription) {
+            const tickerPattern = new RegExp(`^${escapeInvestmentDescriptionRegExp(identity.ticker)}\\s*`, 'i');
+            details = String(currentDescription).replace(tickerPattern, '').trim();
+        }
+        const identityLabel = `${identity.ticker} · ${identity.name}`;
+        return details ? `${identityLabel} · ${details}` : identityLabel;
+    }
+
     function getHsbcReferenceCodeSummary(txn) {
         const rawCodes = [
             String(txn?.source?.statement_order_id || txn?.source?.order_id || '').trim(),
@@ -805,6 +1008,15 @@ export function createInvestmentDataUtils({
             description = '';
         } else {
             description = getTransactionDescriptionText(txn);
+        }
+
+        const moneyMarketIdentity = resolveInvestmentMoneyMarketTransactionIdentity(txn);
+        if (moneyMarketIdentity) {
+            description = formatInvestmentMoneyMarketTransactionDescription(
+                txn,
+                moneyMarketIdentity,
+                description,
+            );
         }
 
         if (brokerCode === 'hsbc' && ['buy', 'sell'].includes(normalizedTypeDesc)) {
@@ -1443,9 +1655,12 @@ export function createInvestmentDataUtils({
     }
 
     function getMoneyMarketTickerSet() {
-        const configuredTickers = window.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers || [];
+        const configuredTickers = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_tickers;
+        const sourceTickers = Array.isArray(configuredTickers)
+            ? configuredTickers
+            : Object.keys(INVESTMENT_MONEY_MARKET_STANDARD_NAMES);
         return new Set(
-            configuredTickers
+            sourceTickers
                 .map((ticker) => String(ticker || '').trim().toUpperCase())
                 .filter(Boolean)
         );
@@ -2686,4 +2901,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.61.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.62.0';

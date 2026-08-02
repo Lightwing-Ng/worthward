@@ -1,15 +1,60 @@
 # Investment frontend changelog
 
-Documentation version: `v1.11.4`
+Documentation version: `v1.11.14`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Changed: Transaction history now renders configured money-market fund descriptions with
+  their canonical ISIN and standard full name while preserving subscription, redemption,
+  dividend, and share details from the imported source text. Raw ledger descriptions remain
+  unchanged.
+
+- Fixed: Settings export-image controls now persist through the shared versioned export-image
+  registry and apply to the Settings preview, Investment PNG card, and workspace PNG card
+  through the same derived dimensions and CSS variables.
+- Added: Future exporters can register an isolated profile through
+  `window.ANTIGRAVITY_EXPORT_IMAGE` without duplicating the capture contract.
+
+- Added: The standard manual investment workbook now recognizes China Merchants Bank,
+  Bank of China, and Bank of China (Hong Kong) as
+  institution choices. Existing CNY, CNH, HKD, and USD currency choices remain in the
+  separate Currency column; the China Merchants Bank entry reuses the existing Wing
+  Lung pure-mark SVG as permitted by the product design.
+
+- Changed: The three manual bank institution choices now use the existing generic XLSX
+  validation and import path directly from Trade > Investment.
+
+- Changed: Broker and bank selectors now sort by their English display labels. Mainland
+  China institution labels no longer include the redundant Mainland China parenthetical,
+  and Zircon is displayed as Zircon (HK) while its internal code and resource filename
+  remain stable.
+
+- Added: Industrial and Commercial Bank of China and China Construction Bank now each
+  have Mainland China and Asia institution choices. Each pair reuses one pure-mark SVG
+  and uses the same generic XLSX validation and import path.
+
+- Added: Investment Metrics now includes a single-select Brokers scope. All is the
+  default, and selecting a broker refreshes the metrics and transaction history using
+  the same broker filter semantics as Overview.
+
+- Fixed: The existing hover-revealed Standard XLSX export now uses the Metrics Brokers
+  scope as the same source of truth as the transaction table. All exports every visible
+  broker row; a selected broker exports only that broker's rows. The workbook remains
+  the existing standard import contract and is verified by the same round-trip parser.
+
 - Fixed: Investment Metrics tooltips now use current calculation copy for offshore
   gain, broker rewards, stock grants, funding, commission, and P&L cards. Each
   tooltip identifies its calculation and lists the contributing ledger rows with
   row number, date, and a readable transaction description.
+
+- Changed: Investment Metrics now removes the redundant portfolio-performance copy
+  and renders the Brokers selector with the existing investment import broker-field
+  treatment.
+
+- Changed: Resolved in-kind transfers in Transaction history now use the canonical
+  ticker-and-quantity description and a compact counterpart broker label.
 - Fixed: Metrics tooltips now portal to the document body, wrap long content, and
   clamp to the viewport. The Metrics grid can scroll at narrow widths without
   clipping or creating a false scroll range from tooltip content.

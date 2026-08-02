@@ -1,4 +1,4 @@
-{# Code version: v0.6.0 #}
+{# Code version: v0.6.1 #}
 
 {% macro render_notice_banner(
     title='',
@@ -245,7 +245,7 @@
 <option value="{{ entry.code }}"
         data-icon-url="{{ url_for('market_store_logo', filename='brokers/' ~ entry.icon_filename) }}"
         data-icon-alt="{{ entry.label }} logo"
-        data-pinyin-sort-key="{{ entry.pinyin_sort_key }}"
+        data-sort-key="{{ entry.label }}"
         {% if entry.description %}data-description="{{ entry.description }}"{% endif %}
         {% if selected_code == entry.code %}selected{% endif %}>{{ entry.label }}</option>
 {% endfor %}

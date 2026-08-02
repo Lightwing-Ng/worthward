@@ -1,7 +1,7 @@
 """
 Pure presentation builders for strategy selectors, forms, and settings rows.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ StrategyFactory = Callable[[str], BaseStrategy]
 def format_strategy_category_label(category: str) -> str:
     """Return the user-facing label for a strategy category key."""
     normalized = (category or "general").strip().lower()
+    normalized = normalized.replace("_", "-")
     return STRATEGY_CATEGORY_LABELS.get(
         normalized,
         normalized.replace("-", " ").title(),
@@ -236,7 +237,11 @@ def build_strategy_settings_rows(
                 "parameters": [
                     {
                         "label": definition.label,
-                        "default_display": definition.display_default(),
+                        "default_display": (
+                            "Close price"
+                            if definition.key == "source" and definition.display_default() == "Close"
+                            else definition.display_default()
+                        ),
                         "meaning": definition.help_text,
                     }
                     for definition in strategy.get_parameter_definitions()

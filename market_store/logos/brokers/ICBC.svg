@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Pure ICBC symbol adapted from the ICBC China logo SVG sourced from icbc.com.cn. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-31 -19 62 60" role="img" aria-labelledby="title">
+  <title id="title">Industrial and Commercial Bank of China symbol</title>
+  <path
+    d="M0 0v-4.426h14.363V8.854H5.529v4.427h8.834v13.295H0v-4.43h9.93v-4.437H1.078V4.426H9.93V0Zm-25.533 11.062c0 13.442 10.904 24.356 24.353 24.356 13.446 0 24.352-10.914 24.352-24.356C23.172-2.385 12.266-13.291-1.18-13.291c-13.449 0-24.353 10.906-24.353 24.353Zm-4.461 0c0 15.917 12.892 28.809 28.814 28.809 15.918 0 28.819-12.892 28.819-28.809C27.639-4.855 14.738-17.747-1.18-17.747c-15.922 0-28.814 12.892-28.814 28.809Zm27.76 11.096v4.428h-14.381V13.299h8.812V8.867h-8.812V-4.418H-2.234V.01h-9.955v4.426h8.851v13.295h-8.851v4.427Z"
+    fill="#cb0202"
+    fill-rule="evenodd" />
+</svg>

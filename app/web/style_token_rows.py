@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.4.2
+Code version: v1.5.2
 """
 
 from __future__ import annotations
@@ -457,7 +457,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "sample_copy": "We are checking this ticker for missing daily history and saving any new data on this device. Please keep this page open while the download finishes.",
             "sample_button": "",
             "sample_button_class": "",
-            "sample_icon_class": "icon-overlay-local-cache",
+            "sample_icon_class": "suggestion-loading-spinner",
             "sample_icon_shell_class": "",
             "tokens": [
                 px_token("--workspace-modal-radius", 10),
@@ -545,7 +545,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
             "sample_icon_class": "",
             "sample_icon_shell_class": "",
             "sample_rows": [
-                {"label": "Close", "value": "44.38", "color": "var(--accent-fill)"},
+                {"label": "Close price", "value": "44.38", "color": "var(--accent-fill)"},
                 {"label": "Net return", "value": "3.34%", "color": "var(--theme-accent-positive)"},
                 {"label": "Equity", "value": "10,333.71", "color": "var(--theme-text)"},
                 {"label": "If all in", "value": "9,840.88", "color": "var(--theme-muted)"},
@@ -653,7 +653,7 @@ def build_export_image_rows(project_display_url: str) -> list[dict[str, object]]
             "sample_kind": "export-image-share-card",
             "sample_title": "Overview",
             "sample_subtitle": "",
-            "sample_copy": "Exported image previews use the same HTML and CSS as workspace and investment PNG exports. The print spec is a portrait card at 53.98 mm by 86.50 mm with a 3.18 mm corner radius, mapped onto a 20 px per mm export grid for readable PNG output.",
+            "sample_copy": "Exported image previews use the same token registry, HTML structure, and CSS as workspace and investment PNG exports. The print spec is a portrait card at 53.98 mm by 86.50 mm with a 3.18 mm corner radius, mapped onto a 20 px per mm export grid for readable PNG output.",
             "sample_button": "",
             "sample_button_class": "",
             "sample_icon_class": "",

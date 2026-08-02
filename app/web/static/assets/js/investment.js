@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.31.1
+ * Code version: v2.37.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -23,7 +23,7 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.61.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.62.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -75,7 +75,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.31.1',
+    entry: 'v2.37.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -209,10 +209,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const hsbcPasteButtonFlashTimers = new WeakMap();
     const INVESTMENT_LOADING_MODAL_TITLE = 'Loading investment data';
     const INVESTMENT_LOADING_MODAL_COPY = 'We are reading the locally stored broker activity and rebuilding the holdings, charts, metrics, and transaction history for this page. Please keep this tab open while loading finishes.';
-    const INVESTMENT_LOADING_MODAL_ICON_CLASS = 'icon-hourglass';
+    const INVESTMENT_LOADING_MODAL_ICON_CLASS = 'suggestion-loading-spinner';
     const INVESTMENT_SHARE_RENDER_MODAL_TITLE = 'Rendering share image';
     const INVESTMENT_SHARE_RENDER_MODAL_COPY = 'We are rendering the community share card and encoding the PNG export. Please wait until the image finishes saving.';
-    const INVESTMENT_SHARE_RENDER_MODAL_ICON_CLASS = 'icon-hourglass';
+    const INVESTMENT_SHARE_RENDER_MODAL_ICON_CLASS = 'suggestion-loading-spinner';
     const WORKSPACE_MODAL_DEFAULT_TITLE = String(workspaceModalOverlayTitle?.textContent || '').trim();
     const WORKSPACE_MODAL_DEFAULT_COPY = String(workspaceModalOverlayCopy?.textContent || '').trim();
     const WORKSPACE_MODAL_DEFAULT_ICON_CLASS = String(workspaceModalOverlayIcon?.className || '').trim();
@@ -238,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const segmentedControl = document.getElementById('investment_view_segmented');
     const investmentViewSurface = document.getElementById('investment_view_surface');
     const investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    const investmentBrokerSummarySelector = document.getElementById('investment_broker_summary_selector');
     const investmentDummyChart = document.getElementById('investment_dummy_chart');
     const investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
     const investmentDummyDonut = document.getElementById('investment_dummy_donut');
@@ -551,6 +552,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentHistoryPendingPaginationAnimation = null;
     let investmentHistoryPaginationAnimationTimer = 0;
     let investmentBrokerFilterSelectedCodes = new Set();
+    let investmentBrokerSummarySelectedCode = 'all';
+    let investmentBrokerSummarySelectionInitialized = false;
     let investmentBrokerFilterDocumentListenersBound = false;
     let investmentBrokerFilterApplyRaf = 0;
     let investmentBrokerFilterPositionRaf = 0;
@@ -644,6 +647,48 @@ document.addEventListener('DOMContentLoaded', () => {
             logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
             logoAlt: 'CMB Wing Lung Bank logo',
         },
+        cmb_cn: {
+            code: 'cmb_cn',
+            label: 'China Merchants Bank',
+            logoUrl: '/market-store/logos/brokers/CMB%20Wing%20Lung.svg',
+            logoAlt: 'China Merchants Bank logo',
+        },
+        boc_cn: {
+            code: 'boc_cn',
+            label: 'Bank of China',
+            logoUrl: '/market-store/logos/brokers/Bank%20of%20China.svg',
+            logoAlt: 'Bank of China logo',
+        },
+        boc_hk: {
+            code: 'boc_hk',
+            label: 'Bank of China (Hong Kong)',
+            logoUrl: '/market-store/logos/brokers/Bank%20of%20China.svg',
+            logoAlt: 'Bank of China logo',
+        },
+        icbc_cn: {
+            code: 'icbc_cn',
+            label: 'Industrial and Commercial Bank of China',
+            logoUrl: '/market-store/logos/brokers/ICBC.svg',
+            logoAlt: 'Industrial and Commercial Bank of China logo',
+        },
+        icbc_hk: {
+            code: 'icbc_hk',
+            label: 'Industrial and Commercial Bank of China (Asia)',
+            logoUrl: '/market-store/logos/brokers/ICBC.svg',
+            logoAlt: 'Industrial and Commercial Bank of China (Asia) logo',
+        },
+        ccb_cn: {
+            code: 'ccb_cn',
+            label: 'China Construction Bank',
+            logoUrl: '/market-store/logos/brokers/CCB.svg',
+            logoAlt: 'China Construction Bank logo',
+        },
+        ccb_hk: {
+            code: 'ccb_hk',
+            label: 'China Construction Bank (Asia)',
+            logoUrl: '/market-store/logos/brokers/CCB.svg',
+            logoAlt: 'China Construction Bank (Asia) logo',
+        },
         schwab: {
             code: 'schwab',
             label: 'Charles Schwab',
@@ -664,9 +709,9 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         zircon_hk: {
             code: 'zircon_hk',
-            label: 'Zircon HK',
+            label: 'Zircon (HK)',
             logoUrl: '/market-store/logos/brokers/Zircon%20HK.png',
-            logoAlt: 'Zircon HK logo',
+            logoAlt: 'Zircon (HK) logo',
         },
         standard_xlsx: {
             code: 'standard_xlsx',
@@ -675,7 +720,37 @@ document.addEventListener('DOMContentLoaded', () => {
             logoAlt: 'Standard XLSX icon',
         },
     };
-    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set(['ibkr', 'longbridge_hk', 'longbridge_sg', 'hsbc', 'futuhk', 'cmbwl', 'schwab', 'tigertrade', 'usmart_hk', 'zircon_hk', 'standard_xlsx']);
+    const SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set([
+        'ibkr',
+        'longbridge_hk',
+        'longbridge_sg',
+        'hsbc',
+        'futuhk',
+        'cmbwl',
+        'cmb_cn',
+        'boc_cn',
+        'boc_hk',
+        'icbc_cn',
+        'icbc_hk',
+        'ccb_cn',
+        'ccb_hk',
+        'schwab',
+        'tigertrade',
+        'usmart_hk',
+        'zircon_hk',
+        'standard_xlsx',
+    ]);
+    const GENERIC_XLSX_INVESTMENT_BROKERS = new Set([
+        'zircon_hk',
+        'standard_xlsx',
+        'cmb_cn',
+        'boc_cn',
+        'boc_hk',
+        'icbc_cn',
+        'icbc_hk',
+        'ccb_cn',
+        'ccb_hk',
+    ]);
 
     const {
         adjustTradePriceForRenderedSeries,
@@ -4018,6 +4093,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (normalizedNextView === activeInvestmentView) {
+            if (normalizedNextView === 'metrics') {
+                ensureInvestmentMetricsBrokerScope();
+            }
             rememberInvestmentPageState({ view: normalizedNextView });
             if (normalizedNextView === 'stock_details') {
                 refreshPortfolioDonutOrbits(investmentStockDetailsPanel);
@@ -4045,6 +4123,9 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.hidden = panel.dataset.investmentViewPanel !== normalizedNextView;
         });
         activeInvestmentView = normalizedNextView;
+        if (normalizedNextView === 'metrics') {
+            ensureInvestmentMetricsBrokerScope();
+        }
         syncInvestmentStockDetailsTableVisibility();
         if (syncHash) {
             syncInvestmentViewHash(normalizedNextView);
@@ -4692,6 +4773,7 @@ document.addEventListener('DOMContentLoaded', () => {
             importFeedbackIcon.classList.toggle('notice-floating-banner-icon-error', isError || isWarning);
             importFeedbackIcon.classList.toggle('notice-floating-banner-icon-success', !isError && !isWarning && !isLoading);
             importFeedbackIcon.classList.toggle('icon-modal-dialog-banner-default', isError || isWarning || isLoading);
+            importFeedbackIcon.classList.toggle('suggestion-loading-spinner', isLoading);
         }
     }
 
@@ -4706,6 +4788,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (importFeedbackIcon) {
             importFeedbackIcon.classList.remove('notice-floating-banner-icon-error');
             importFeedbackIcon.classList.remove('notice-floating-banner-icon-success');
+            importFeedbackIcon.classList.remove('suggestion-loading-spinner');
             importFeedbackIcon.classList.add('icon-modal-dialog-banner-default');
         }
     }
@@ -5153,22 +5236,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    const INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS = {
-        cmbwl: 'cmbwinglungbank',
-        hsbc: 'hsbc',
-        ibkr: 'ibkr',
-        longbridge_hk: 'longbridgehk',
-        longbridge_sg: 'longbridgesg',
-        futuhk: 'futuhk',
-        schwab: 'charlesschwab',
-    };
     function sortInvestmentBrokerFilterCodes(brokerCodes = []) {
         const labels = Object.fromEntries(
             Object.entries(INVESTMENT_BROKER_META).map(([brokerCode, metadata]) => [brokerCode, metadata.label]),
         );
         return sortInvestmentBrokerFilterCodesCore(brokerCodes, {
             labels,
-            sortKeys: INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS,
         });
     }
 
@@ -5186,7 +5259,6 @@ document.addEventListener('DOMContentLoaded', () => {
             normalizeDate: normalizeLedgerDate,
             payloadBrokers: payloadBrokerCodes,
             labels,
-            sortKeys: INVESTMENT_BROKER_FILTER_PINYIN_SORT_KEYS,
         });
     }
 
@@ -5247,21 +5319,65 @@ document.addEventListener('DOMContentLoaded', () => {
         investmentBrokerFilterSelectedCodes = new Set(getAvailableInvestmentBrokerCodes());
     }
 
-    function renderInvestmentBrokerFilterHeaderInnerMarkup(filterId = 'investment_history_broker_filter') {
+    function getInvestmentBrokerSummarySelectedCode() {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        if (!availableBrokerCodes.length) {
+            investmentBrokerSummarySelectedCode = 'all';
+            return 'all';
+        }
+
+        if (!investmentBrokerSummarySelectionInitialized) {
+            const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+            const selectedAvailableCode = availableBrokerCodes.find((brokerCode) => selectedBrokerCodes.has(brokerCode));
+            investmentBrokerSummarySelectedCode = selectedBrokerCodes.size === 1 && selectedAvailableCode
+                ? selectedAvailableCode
+                : 'all';
+            investmentBrokerSummarySelectionInitialized = true;
+            return investmentBrokerSummarySelectedCode;
+        }
+
+        const normalizedCurrentCode = normalizeInvestmentBroker(investmentBrokerSummarySelectedCode);
+        if (normalizedCurrentCode === 'all') {
+            investmentBrokerSummarySelectedCode = 'all';
+            return 'all';
+        }
+        if (availableBrokerCodes.includes(normalizedCurrentCode)) {
+            investmentBrokerSummarySelectedCode = normalizedCurrentCode;
+            return normalizedCurrentCode;
+        }
+
+        investmentBrokerSummarySelectedCode = 'all';
+        return 'all';
+    }
+
+    function isInvestmentBrokerSummaryFilterField(field) {
+        return field instanceof HTMLElement && field.dataset.investmentBrokerFilterMode === 'single';
+    }
+
+    function renderInvestmentBrokerFilterHeaderInnerMarkup(
+        filterId = 'investment_history_broker_filter',
+        { singleSelect = false } = {},
+    ) {
+        const modeAttribute = singleSelect ? ' data-investment-broker-filter-mode="single"' : '';
+        const summaryTriggerClass = singleSelect ? ' investment-broker-summary-trigger' : '';
+        const summaryLabelAttributes = singleSelect ? '' : ' hidden aria-hidden="true"';
+        const initialTitle = singleSelect ? 'All' : 'All brokers';
+        const initialAriaLabel = singleSelect ? 'Brokers selector: All' : 'Broker filter: All brokers';
         return `
             <div class="field investment-broker-filter-field backtest-shared-select-field"
                  data-investment-broker-filter
+                 ${modeAttribute}
                  data-filter-id="${escapeHtml(filterId)}">
                 <div class="trade-strategy-row backtest-shared-select-row investment-broker-filter-row live-trading-broker-row">
                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                         <button type="button"
-                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger investment-broker-filter-trigger"
+                                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger live-trading-broker-trigger investment-broker-filter-trigger${summaryTriggerClass}"
                                 data-investment-broker-filter-trigger
                                 aria-haspopup="listbox"
                                 aria-expanded="false"
                                 aria-controls="${escapeHtml(filterId)}_dropdown"
-                                title="All brokers"
-                                aria-label="Broker filter: All brokers">
+                                title="${initialTitle}"
+                                aria-label="${initialAriaLabel}">
                             <span class="ticker-leading-slot live-trading-broker-trigger-slot investment-broker-filter-trigger-slot" aria-hidden="true">
                                 <span class="ticker-logo-placeholder"
                                       data-investment-broker-filter-placeholder></span>
@@ -5272,15 +5388,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             </span>
                             <span class="trade-strategy-trigger-label live-trading-broker-trigger-label investment-broker-filter-trigger-label"
                                   data-investment-broker-filter-label
-                                  hidden
-                                  aria-hidden="true"></span>
+                                  ${summaryLabelAttributes}></span>
                         </button>
                     </div>
                     <div id="${escapeHtml(filterId)}_dropdown"
                          class="trade-strategy-dropdown backtest-shared-select-dropdown live-trading-broker-dropdown investment-broker-filter-dropdown"
                          data-investment-broker-filter-dropdown
                          role="listbox"
-                         aria-label="Broker"
+                         aria-label="${singleSelect ? 'Brokers' : 'Broker'}"
                          hidden></div>
                 </div>
             </div>
@@ -5311,6 +5426,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const triggerLabel = field.querySelector('[data-investment-broker-filter-label]');
+        if (isInvestmentBrokerSummaryFilterField(field)) {
+            const selectedCode = getInvestmentBrokerSummarySelectedCode();
+            const selectedLabel = selectedCode === 'all'
+                ? 'All'
+                : getInvestmentBrokerMeta(selectedCode).label;
+            if (triggerLabel instanceof HTMLElement) {
+                triggerLabel.textContent = selectedLabel;
+                triggerLabel.hidden = false;
+                triggerLabel.setAttribute('aria-hidden', 'false');
+            }
+            trigger.disabled = !availableBrokerCodes.length;
+            trigger.title = `Brokers: ${selectedLabel}`;
+            trigger.setAttribute('aria-label', `Brokers selector: ${selectedLabel}`);
+            return;
+        }
+
+        trigger.disabled = false;
+        if (triggerLabel instanceof HTMLElement) {
+            triggerLabel.textContent = '';
+            triggerLabel.hidden = true;
+            triggerLabel.setAttribute('aria-hidden', 'true');
+        }
         const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
         const selectedBrokerList = availableBrokerCodes.filter((brokerCode) => selectedBrokerCodes.has(brokerCode));
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
@@ -5542,6 +5680,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return optionButton;
     }
 
+    function applyInvestmentBrokerSummarySelection(nextBrokerCode, field = null) {
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const requestedBrokerCode = String(nextBrokerCode || '').trim().toLowerCase();
+        const isAll = requestedBrokerCode === '__all__' || requestedBrokerCode === 'all';
+        const normalizedBrokerCode = normalizeInvestmentBroker(nextBrokerCode);
+        if (!isAll && !availableBrokerCodes.includes(normalizedBrokerCode)) return;
+        investmentBrokerSummarySelectedCode = isAll ? 'all' : normalizedBrokerCode;
+        investmentBrokerSummarySelectionInitialized = true;
+        investmentBrokerFilterSelectedCodes = isAll
+            ? new Set(availableBrokerCodes)
+            : new Set([normalizedBrokerCode]);
+        if (field instanceof HTMLElement) {
+            setInvestmentBrokerFilterDropdownOpen(field, false);
+        }
+        applyInvestmentBrokerFilterChange();
+    }
+
     function renderInvestmentBrokerFilterDropdown(field) {
         if (!(field instanceof HTMLElement)) return;
         const dropdown = getInvestmentBrokerFilterDropdown(field);
@@ -5549,6 +5704,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
         const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        if (isInvestmentBrokerSummaryFilterField(field)) {
+            const selectedCode = getInvestmentBrokerSummarySelectedCode();
+            dropdown.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+            fragment.appendChild(createInvestmentBrokerFilterOptionButton({
+                value: '__all__',
+                label: 'All',
+                isSelected: selectedCode === 'all',
+                isActive: selectedCode === 'all',
+                onClick: () => applyInvestmentBrokerSummarySelection('__all__', field),
+            }));
+            availableBrokerCodes.forEach((brokerCode) => {
+                const brokerMeta = getInvestmentBrokerMeta(brokerCode);
+                fragment.appendChild(createInvestmentBrokerFilterOptionButton({
+                    value: brokerCode,
+                    label: brokerMeta.label,
+                    iconUrl: brokerMeta.logoUrl,
+                    iconAlt: brokerMeta.logoAlt,
+                    logoOnly: false,
+                    isSelected: selectedCode === brokerCode,
+                    isActive: selectedCode === brokerCode,
+                    onClick: () => applyInvestmentBrokerSummarySelection(brokerCode, field),
+                }));
+            });
+            dropdown.appendChild(fragment);
+            return;
+        }
+
         const allSelected = isInvestmentBrokerFilterAllSelected(selectedBrokerCodes, availableBrokerCodes);
         dropdown.innerHTML = '';
         const fragment = document.createDocumentFragment();
@@ -5659,6 +5842,37 @@ document.addEventListener('DOMContentLoaded', () => {
             bindInvestmentBrokerFilterField(th.querySelector('[data-investment-broker-filter]'));
         });
         syncAllInvestmentBrokerFilterUi();
+    }
+
+    function mountInvestmentBrokerSummarySelector() {
+        if (!(investmentBrokerSummarySelector instanceof HTMLElement)) return;
+        ensureInvestmentBrokerFilterDocumentListeners();
+        if (!investmentBrokerSummarySelector.querySelector('[data-investment-broker-filter]')) {
+            investmentBrokerSummarySelector.innerHTML = renderInvestmentBrokerFilterHeaderInnerMarkup(
+                'investment_broker_summary_filter',
+                { singleSelect: true },
+            );
+        }
+        const field = investmentBrokerSummarySelector.querySelector('[data-investment-broker-filter]');
+        bindInvestmentBrokerFilterField(field);
+        syncInvestmentBrokerFilterField(field);
+    }
+
+    function ensureInvestmentMetricsBrokerScope() {
+        mountInvestmentBrokerSummarySelector();
+        const selectedCode = getInvestmentBrokerSummarySelectedCode();
+        const desiredBrokerCodes = selectedCode === 'all'
+            ? new Set(getAvailableInvestmentBrokerCodes())
+            : new Set([selectedCode]);
+        const selectedBrokerCodes = getInvestmentBrokerFilterSelectedCodes();
+        const isAlreadyScoped = selectedBrokerCodes.size === desiredBrokerCodes.size
+            && Array.from(desiredBrokerCodes).every((brokerCode) => selectedBrokerCodes.has(brokerCode));
+        if (!isAlreadyScoped) {
+            investmentBrokerFilterSelectedCodes = desiredBrokerCodes;
+            applyInvestmentBrokerFilterChange();
+            return;
+        }
+        renderInvestmentMetricsPanel();
     }
 
     function renderInvestmentSideFilterHeaderInnerMarkup(filterId = 'investment_history_side_filter') {
@@ -6243,6 +6457,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeInvestmentView === 'stock_details') {
                 refreshInvestmentStockDetailsTableRows();
             }
+            if (activeInvestmentView === 'metrics') {
+                renderInvestmentMetricsPanel();
+            }
             mountInvestmentSideFilterHeaders();
             mountInvestmentCurrencyFilterHeaders();
         });
@@ -6676,9 +6893,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
-        const isZirconHk = selectedBroker === 'zircon_hk';
         const isStandardXlsx = selectedBroker === 'standard_xlsx';
-        const usesStandardXlsxImport = isZirconHk || isStandardXlsx;
+        const usesStandardXlsxImport = GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker);
         const usesSyncAction = isLongbridgeHk
             || isIbkrWebPaste
             || (isHsbc && hsbcImportMode === 'paste');
@@ -7164,7 +7380,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const transferOptions = sourceKey ? (investmentInternalTransferSourceOptionsByKey.get(sourceKey) || []) : [];
         const selectedTargetKey = String(txn?.manual_internal_transfer_selected_target_key || '').trim();
         const resolvedDescription = getInvestmentResolvedTransferDescription(txn);
-        const descriptionCurrentText = resolvedDescription || description;
+        const isSecurityTransfer = txn?.manual_internal_transfer_kind === 'security';
+        const descriptionCurrentText = isSecurityTransfer
+            ? description
+            : (resolvedDescription || description);
         const resolvedBinding = sourceKey ? investmentInternalTransferResolvedBindingsBySourceKey.get(sourceKey) || null : null;
         const transferFeeNote = txn?.manual_internal_transfer_needs_binding
             ? String(txn?.manual_internal_transfer_fee_note || '').trim()
@@ -7185,7 +7404,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             data-investment-transfer-source-key="${escapeHtml(sourceKey)}"
                             aria-label="Bind internal transfer counterpart">
                         ${transferIsAutoMatched
-                            ? `<option value="${escapeHtml(selectedTargetKey)}" selected>Automatically matched ${resolvedTransferPreposition} ${escapeHtml(resolvedBrokerLabel)}</option>`
+                            ? `<option value="${escapeHtml(selectedTargetKey)}" selected>${isSecurityTransfer ? '' : 'Automatically matched '}${resolvedTransferPreposition} ${escapeHtml(resolvedBrokerLabel)}</option>`
                             : (txn?.manual_internal_transfer_needs_binding
                             ? '<option value="">Bind transfer outflow...</option>'
                             : `<option value="${escapeHtml(selectedTargetKey)}" selected>${resolvedTransferPreposition} ${escapeHtml(resolvedBrokerLabel)}</option><option value="">Undo link</option>`)}
@@ -7274,6 +7493,22 @@ document.addEventListener('DOMContentLoaded', () => {
             && matchesInvestmentCurrencyFilter(txn)
             && matchesInvestmentStockDetailsDateFilter(txn)
         ));
+    }
+
+    function getInvestmentBrokerFilteredRowsForVisibleHistory(processedTransactions = []) {
+        if (activeInvestmentView !== 'metrics') {
+            return getInvestmentBrokerFilteredTransactionRows(processedTransactions);
+        }
+
+        const availableBrokerCodes = getAvailableInvestmentBrokerCodes();
+        const selectedBrokerCode = getInvestmentBrokerSummarySelectedCode();
+        const selectedBrokerCodes = selectedBrokerCode === 'all'
+            ? new Set(availableBrokerCodes)
+            : new Set([selectedBrokerCode]);
+        return selectInvestmentBrokerRows(
+            ensureInvestmentBrokerFilterTransactionIndex(processedTransactions),
+            selectedBrokerCodes,
+        );
     }
 
     function buildInvestmentMarkdownFilterSummary({ includeTransactionDate = false } = {}) {
@@ -7943,6 +8178,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         card.appendChild(createInvestmentShareHeader(normalizedView));
         card.appendChild(body);
+        const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+        const profileId = exportImageConfig?.defaultProfileId || 'investment-community-share';
+        if (typeof exportImageConfig?.applyConfigToTargets === 'function') {
+            exportImageConfig.applyConfigToTargets([host, card], profileId);
+        }
         host.appendChild(card);
         return { host, card, body };
     }
@@ -8797,7 +9037,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderMetricCards(metricDefinitions, metricValues) {
+    function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } = {}) {
         return metricDefinitions.map((definition) => `
             <div class="trade-metric-card trade-metric-card--value-align-end">
                 <span class="trade-metric-label">${definition.label}</span>
@@ -8815,7 +9055,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     liveNumber: definition.liveNumberKey
                         ? metricValues?.[definition.liveNumberKey]
                         : metricValues?.[definition.valueKey],
-                })}
+                }, { keyPrefix })}
             </div>
         `).join('');
     }
@@ -8848,14 +9088,112 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics) {
+    function renderFundingMetricCards(
+        fundingMetrics,
+        holdingsSummaryMetrics,
+        brokerBenefitMetrics,
+        { keyPrefix = '' } = {},
+    ) {
         const offshoreGainMetrics = getTotalOffshoreGainMetrics(holdingsSummaryMetrics);
         return [
-            renderMetricCards(OFFSHORE_GAIN_METRIC_DEFINITIONS, offshoreGainMetrics),
-            renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics),
-            renderMetricCards(FUNDING_METRIC_DEFINITIONS, fundingMetrics),
-            renderMetricCards(BROKER_BENEFIT_METRIC_DEFINITIONS, brokerBenefitMetrics),
+            renderMetricCards(OFFSHORE_GAIN_METRIC_DEFINITIONS, offshoreGainMetrics, { keyPrefix }),
+            renderMetricCards(HOLDINGS_SUMMARY_METRIC_DEFINITIONS, holdingsSummaryMetrics, { keyPrefix }),
+            renderMetricCards(FUNDING_METRIC_DEFINITIONS, fundingMetrics, { keyPrefix }),
+            renderMetricCards(BROKER_BENEFIT_METRIC_DEFINITIONS, brokerBenefitMetrics, { keyPrefix }),
         ].join('');
+    }
+
+    function mapInvestmentMetricRowsToGlobalLedgerNos(metricValues, scopedTransactions) {
+        if (!metricValues || typeof metricValues !== 'object') return metricValues;
+        const globalEntries = getSortedInvestmentMetricTransactions(investmentRawTransactionsCache);
+        const globalLedgerNoByTransaction = new Map(
+            globalEntries.map(({txn, ledgerNo}) => [txn, ledgerNo]),
+        );
+        const scopedEntries = getSortedInvestmentMetricTransactions(scopedTransactions);
+        const scopedLedgerNoToGlobal = new Map(
+            scopedEntries.map(({txn, ledgerNo}) => [ledgerNo, globalLedgerNoByTransaction.get(txn)]),
+        );
+        return Object.fromEntries(Object.entries(metricValues).map(([key, value]) => {
+            if (!key.endsWith('Rows') || !Array.isArray(value)) return [key, value];
+            return [key, value.map((rowNo) => scopedLedgerNoToGlobal.get(Number(rowNo)) ?? rowNo)];
+        }));
+    }
+
+    function getInvestmentBrokerSummaryTransactions(brokerCode = getInvestmentBrokerSummarySelectedCode()) {
+        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+        if (normalizedBrokerCode === 'all') return [...investmentRawTransactionsCache];
+        if (!normalizedBrokerCode) return [];
+        return investmentRawTransactionsCache.filter((txn) => (
+            normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normalizedBrokerCode
+        ));
+    }
+
+    function getInvestmentBrokerSummaryTotalEquity(brokerCode) {
+        const normalizedBrokerCode = normalizeInvestmentBroker(brokerCode);
+        if (!normalizedBrokerCode) return 0;
+        const latestProcessed = [...investmentProcessedTransactionsCache].reverse().find((txn) => (
+            normalizeInvestmentBroker(getTransactionBrokerCode(txn)) === normalizedBrokerCode
+        ));
+        const brokerTotalEquity = Number(latestProcessed?.broker_total_equity);
+        return Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : 0;
+    }
+
+    function renderInvestmentMetricsPanel({
+        fundingMetrics = null,
+        holdingsSummaryMetrics = null,
+        brokerBenefitMetrics = null,
+        totalEquity = null,
+        latestPrices = null,
+    } = {}) {
+        mountInvestmentBrokerSummarySelector();
+        const metricsPanel = document.getElementById('investment_metrics_panel');
+        if (!(metricsPanel instanceof HTMLElement)) return;
+
+        const selectedBrokerCode = getInvestmentBrokerSummarySelectedCode();
+        const isAllBrokersSelected = selectedBrokerCode === 'all';
+        const scopedTransactions = getInvestmentBrokerSummaryTransactions(selectedBrokerCode);
+        const mergedLatestPrices = {
+            ...(investmentBaseLatestPricesCache && typeof investmentBaseLatestPricesCache === 'object'
+                ? investmentBaseLatestPricesCache
+                : {}),
+            ...(investmentLatestPricesCache && typeof investmentLatestPricesCache === 'object'
+                ? investmentLatestPricesCache
+                : {}),
+            ...(latestPrices && typeof latestPrices === 'object' ? latestPrices : {}),
+        };
+        const resolvedTotalEquity = isAllBrokersSelected && Number.isFinite(Number(totalEquity))
+            ? Number(totalEquity)
+            : isAllBrokersSelected
+                ? getLatestDashboardEquity(investmentProcessedTransactionsCache, investmentChartPointsCache)
+                : getInvestmentBrokerSummaryTotalEquity(selectedBrokerCode);
+        const resolvedBrokerBenefitMetrics = isAllBrokersSelected && brokerBenefitMetrics
+            ? brokerBenefitMetrics
+            : getBrokerBenefitMetrics(scopedTransactions, mergedLatestPrices, resolvedTotalEquity);
+        const resolvedHoldingsSummaryMetrics = isAllBrokersSelected && holdingsSummaryMetrics
+            ? holdingsSummaryMetrics
+            : getHoldingsSummaryMetrics(
+                scopedTransactions,
+                mergedLatestPrices,
+                resolvedTotalEquity,
+                resolvedBrokerBenefitMetrics,
+            );
+        const resolvedFundingMetrics = isAllBrokersSelected && fundingMetrics
+            ? fundingMetrics
+            : getUsdFundingMetrics(scopedTransactions);
+        const metricsToRender = isAllBrokersSelected
+            ? [resolvedFundingMetrics, resolvedHoldingsSummaryMetrics, resolvedBrokerBenefitMetrics]
+            : [
+                mapInvestmentMetricRowsToGlobalLedgerNos(resolvedFundingMetrics, scopedTransactions),
+                mapInvestmentMetricRowsToGlobalLedgerNos(resolvedHoldingsSummaryMetrics, scopedTransactions),
+                mapInvestmentMetricRowsToGlobalLedgerNos(resolvedBrokerBenefitMetrics, scopedTransactions),
+            ];
+        removeInvestmentMetricTooltips();
+        metricsPanel.innerHTML = renderFundingMetricCards(
+            metricsToRender[0],
+            metricsToRender[1],
+            metricsToRender[2],
+        );
+        bindInvestmentMetricTooltipInteractions(metricsPanel);
     }
 
     function resetInvestmentDashboard() {
@@ -8865,22 +9203,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const chartContainer = document.getElementById('investment_equity_chart');
 
         selectedInvestmentStockTicker = '';
+        investmentRawTransactionsCache = [];
         investmentProcessedTransactionsCache = [];
         investmentTickerSummariesCache = [];
+        investmentBrokerSummarySelectedCode = 'all';
+        investmentBrokerSummarySelectionInitialized = false;
+        investmentBrokerFilterSelectedCodes = new Set();
         refreshInvestmentAvailableBrokerCodes();
         clearInvestmentStockDetailHighlights();
         if (holdingsPanel) {
             holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
         }
-        if (metricsPanel) {
-            removeInvestmentMetricTooltips();
-            metricsPanel.innerHTML = renderFundingMetricCards(
-                getUsdFundingMetrics([]),
-                getHoldingsSummaryMetrics([], {}, 0),
-                getBrokerBenefitMetrics([], {}, 0)
-            );
-            bindInvestmentMetricTooltipInteractions(metricsPanel);
-        }
+        if (metricsPanel) renderInvestmentMetricsPanel();
         if (stockDetailsPanel) {
             stockDetailsPanel.innerHTML = `
                 <div class="investment-stock-details-empty-shell">
@@ -8916,9 +9250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
         const isUsmartHk = selectedBroker === 'usmart_hk';
-        const isZirconHk = selectedBroker === 'zircon_hk';
-        const isStandardXlsx = selectedBroker === 'standard_xlsx';
-        const usesStandardXlsxImport = isZirconHk || isStandardXlsx;
+        const usesStandardXlsxImport = GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker);
         const futuhkStatementFiles = getSelectedFutuStatementPdfFiles();
         const hsbcStatementFiles = getSelectedStatementPdfFiles(hsbcStatementPdfsInput);
         const tigertradeStatementFiles = getSelectedStatementPdfFiles(tigertradeStatementPdfsInput);
@@ -9224,6 +9556,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initInvestmentViewTabs();
     initInvestmentDummyDonut();
     mountInvestmentBrokerFilterHeaders();
+    mountInvestmentBrokerSummarySelector();
     mountInvestmentSideFilterHeaders();
     mountInvestmentCurrencyFilterHeaders();
     bindInvestmentExportButton();
@@ -9513,7 +9846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 formData.append('transactions_csv', schwabTransactionsFile);
                 formData.append('positions_csv', schwabPositionsFile);
-            } else if (selectedBroker === 'zircon_hk' || selectedBroker === 'standard_xlsx') {
+            } else if (GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker)) {
                 const workbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
                 const workbookSignature = getImportFileSignature(workbookFile);
                 if (!workbookFile || !isLikelyXlsxFile(workbookFile)) {
@@ -10800,6 +11133,9 @@ document.addEventListener('DOMContentLoaded', () => {
         syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, { enableSignedTone: true });
         syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, { enableSignedTone: true });
         syncInvestmentStockDetailsRealtimeMetrics();
+        if (activeInvestmentView === 'metrics') {
+            renderInvestmentMetricsPanel();
+        }
     }
 
     function syncInvestmentStockDetailsLivePulse() {
@@ -11325,7 +11661,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getVisibleInvestmentHistoryTransactions(processedTransactions = [], chartPoints = []) {
         return selectVisibleInvestmentHistoryTransactions({
-            brokerFilteredRows: getInvestmentBrokerFilteredTransactionRows(processedTransactions),
+            brokerFilteredRows: getInvestmentBrokerFilteredRowsForVisibleHistory(processedTransactions),
             chartPoints,
             selectedRange: selectedInvestmentEquityRange,
             matchesSide: (transaction) => (
@@ -12327,6 +12663,9 @@ document.addEventListener('DOMContentLoaded', () => {
             investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
             refreshInvestmentAvailableBrokerCodes();
         }
+        if (activeInvestmentView === 'metrics') {
+            ensureInvestmentMetricsBrokerScope();
+        }
         investmentTickerSummariesCache = Array.isArray(tickerSummaries) ? [...tickerSummaries] : [];
         syncHoldingsChartHoverState('', 0);
         const rawAggregateDisplayCash = Number(last?.aggregate_display_cash);
@@ -12360,9 +12699,13 @@ document.addEventListener('DOMContentLoaded', () => {
             holdings_market_values: {},
         }, tickerProfiles);
 
-        removeInvestmentMetricTooltips();
-        metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics);
-        bindInvestmentMetricTooltipInteractions(metricsPanel);
+        renderInvestmentMetricsPanel({
+            fundingMetrics,
+            holdingsSummaryMetrics,
+            brokerBenefitMetrics,
+            totalEquity: AGGREGATE_TOTAL_EQUITY,
+            latestPrices: mergedLatestPrices,
+        });
         if (shouldAnimateVisibleMetricsPanel) {
             animateInvestmentSurfaceHeight();
         }
@@ -13746,7 +14089,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return description || String(entry.txn?.description || '').replace(/\s+/g, ' ').trim() || 'Ledger row';
     }
 
-    function renderMetricValueWithTooltip(metric) {
+    function renderMetricValueWithTooltip(metric, { keyPrefix = '' } = {}) {
         const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
             ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
                 .sort((left, right) => compareInvestmentTransactions(left, right))
@@ -13785,10 +14128,11 @@ document.addEventListener('DOMContentLoaded', () => {
             : `<p class="investment-metric-tooltip-note">No matching ledger rows.</p>`;
         const latestRow = rows.length ? rows[0] : '';
         const valueClass = String(metric?.valueClass || '').trim();
-        const tooltipId = `investment_metric_tooltip_${String(metric?.key || 'metric').replace(/[^a-z0-9_-]/gi, '_')}`;
+        const metricKey = keyPrefix ? `${keyPrefix}-${metric?.key || 'metric'}` : (metric?.key || 'metric');
+        const tooltipId = `investment_metric_tooltip_${String(metricKey).replace(/[^a-z0-9_-]/gi, '_')}`;
 
         return `
-            <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${escapeHtml(metric?.key || '')}" data-metric-target-row="${escapeHtml(String(latestRow))}" data-workspace-mask="trade-metric">
+            <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${escapeHtml(metricKey)}" data-metric-target-row="${escapeHtml(String(latestRow))}" data-workspace-mask="trade-metric">
                 ${renderMetricValueCopy(metric, valueClass)}
                 <span id="${tooltipId}" class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip" aria-hidden="true" data-investment-metric-tooltip="1">
                     <span class="investment-metric-tooltip-section">

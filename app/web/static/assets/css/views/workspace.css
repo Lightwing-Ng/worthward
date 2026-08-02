@@ -1,4 +1,4 @@
-/* Code version: v1.15.2 */
+/* Code version: v1.15.3 */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Keep the shared workspace shell from clipping child card shadows. */
 .chart-panel.workspace {
@@ -879,28 +879,6 @@
     line-height: 1.2;
 }
 
-.suggestion-loading-spinner {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 14px;
-    border: 2px solid color-mix(in srgb, var(--theme-muted) 34%, transparent);
-    border-right-color: var(--theme-accent-primary);
-    border-radius: 50%;
-    animation: ticker-suggestion-loading 700ms linear infinite;
-}
-
-@keyframes ticker-suggestion-loading {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .suggestion-loading-spinner {
-        animation: none;
-    }
-}
-
 .suggestion-group + .suggestion-group {
     border-top: 1px solid var(--theme-glass-border);
 }
@@ -1477,6 +1455,7 @@
 .workspace-modal-icon {
     grid-column: 1;
     grid-row: 1;
+    --loading-spinner-size: var(--workspace-modal-icon-size);
     width: var(--workspace-modal-icon-size);
     height: var(--workspace-modal-icon-size);
     align-self: center;

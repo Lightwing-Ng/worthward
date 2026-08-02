@@ -1,4 +1,4 @@
-{# Code version: v0.14.6 #}
+{# Code version: v0.15.2 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -125,7 +125,7 @@
             --theme-success-strong: {{ theme_dark.success_strong }};
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.6') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.37.9') }}">
 </head>
 <body>
 {% set dock_workspace_label = labels.get("dock_workspace", "Workspace") %}
@@ -143,11 +143,11 @@
 <main class="page">
     {% if error %}
     {% call render_notice_banner(
-        title="Error",
+        title=translate_ui('Error'),
         icon_class=floating_banner_icon_class or 'icon-modal-dialog-banner-default',
         variant="error",
         banner_class="notice-floating-banner-global",
-        close_label="Close error notice",
+        close_label=translate_ui('Close error notice'),
         numbered=false
     ) %}
         {{ error }}
@@ -155,7 +155,7 @@
     {% endif %}
     {% if notice %}
     {% call render_notice_banner(
-        title="Notice",
+        title=translate_ui('Notice'),
         icon_class=floating_banner_icon_class or 'icon-modal-dialog-banner-default',
         banner_class="notice-floating-banner-global",
         numbered=false
@@ -164,10 +164,10 @@
     {% endcall %}
     {% endif %}
     <div class="app-shell is-sidebar-open">
-        <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="Toggle sidebar" aria-expanded="true">
+        <button type="button" class="sidebar-toggle" id="sidebar_toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
             <span class="icon icon-sidebar-left" aria-hidden="true"></span>
         </button>
-        <div class="global-quick-actions" id="global_quick_actions" aria-label="Global quick actions">
+        <div class="global-quick-actions" id="global_quick_actions" aria-label="{{ translate_ui('Global quick actions') }}">
             <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle" aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>
             </button>
@@ -179,7 +179,7 @@
             type="button"
             class="sidebar-backdrop"
             id="sidebar_backdrop"
-            aria-label="Close sidebar"
+            aria-label="{{ translate_ui('Close sidebar') }}"
             aria-hidden="true"
             tabindex="-1"
             hidden
@@ -194,7 +194,7 @@
             {% block workspace_content %}{% endblock %}
         </section>
     </div>
-    <nav class="sidebar-dock" aria-label="Workspace modes">
+    <nav class="sidebar-dock" aria-label="{{ translate_ui('Workspace modes') }}">
         <a href="{{ dock_urls.backtest }}" class="sidebar-dock-item{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %} is-active{% endif %}" aria-current="{% if current_view in ['tickers', 'prices', 'portfolio', 'dca', 'backtest', 'grid-trading'] %}page{% endif %}" aria-label="{{ dock_workspace_label }}" data-tooltip="{{ dock_workspace_label }}">
             <span class="icon icon-dock-backtest" aria-hidden="true"></span>
             <span class="sidebar-dock-label" aria-hidden="true">{{ dock_workspace_label }}</span>
@@ -211,12 +211,12 @@
 </main>
 <div id="workspace_modal_overlay" class="workspace-modal-overlay" hidden>
     <div class="workspace-modal-dialog">
-        <button type="button" id="workspace_modal_overlay_close" class="dismiss-button workspace-modal-close" aria-label="Close">
+        <button type="button" id="workspace_modal_overlay_close" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}">
             <span class="icon icon-dismiss-control" aria-hidden="true"></span>
         </button>
-        <span id="workspace_modal_overlay_icon" class="icon icon-overlay-refresh workspace-modal-icon" aria-hidden="true"></span>
-        <p class="workspace-modal-title">Updating local market data</p>
-        <p class="workspace-modal-copy">This may take a moment while the app checks remote data and refreshes the local store.</p>
+        <span id="workspace_modal_overlay_icon" class="suggestion-loading-spinner workspace-modal-icon" aria-hidden="true"></span>
+        <p class="workspace-modal-title">{{ translate_ui('Updating local market data') }}</p>
+        <p class="workspace-modal-copy">{{ translate_ui('This may take a moment while the app checks remote data and refreshes the local store.') }}</p>
     </div>
 </div>
 <script id="antigravity_state" type="application/json">{{ {
@@ -262,14 +262,15 @@
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.1') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.0.2') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading", "trade"] %}
-<script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.5.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.1') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "grid-trading"] %}
 <script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version) }}"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.26.1') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.27.3') }}"></script>
 {% if current_view in ["tickers", "market-caps", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
 {% endif %}

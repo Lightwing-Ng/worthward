@@ -1,10 +1,11 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.54.1
+Code version: v0.58.0
 """
 
 from __future__ import annotations
+from collections.abc import Callable
 from datetime import datetime
 from http.client import RemoteDisconnected
 import json
@@ -43,6 +44,7 @@ from app.core.language_settings import (
     load_language_settings,
     save_language_code,
     save_language_settings,
+    translate_nested_text,
     translate_labels,
     translate_text,
 )
@@ -149,6 +151,7 @@ from app.services.investment_import import (
 from app.services.investment_import_registry import commit_investment_import
 from app.services.zircon_hk_import import (
     STANDARD_INVESTMENT_EXPORT_FILENAME,
+    ZIRCON_HK_MAX_TRANSACTION_ROWS,
     ZIRCON_HK_TEMPLATE_FILENAME,
     build_standard_investment_xlsx,
     build_zircon_hk_template_xlsx,
@@ -427,7 +430,6 @@ def build_web_runtime() -> WebRuntime:
     settings = get_settings()
     defaults = settings["defaults"]
     base_labels = settings["ui"]["labels"]
-    labels = base_labels
     theme_settings = settings["ui"]["theme"]
     theme_light = theme_settings["light"]
     theme_dark = theme_settings["dark"]
@@ -2539,44 +2541,67 @@ def build_web_runtime() -> WebRuntime:
             )
         return rows
 
-    def build_network_service_rows(*, pending: bool) -> list[dict[str, str | bool]]:
+    def build_network_service_rows(
+        *,
+        pending: bool,
+        service_labels: dict[str, str] | None = None,
+        translate_fn: Callable[[str], str] | None = None,
+    ) -> list[dict[str, str | bool]]:
+        if service_labels is None or translate_fn is None:
+            current_language_settings = load_language_settings()
+            current_translations = build_translation_map(current_language_settings)
+            service_labels = service_labels or translate_labels(
+                base_labels,
+                current_language_settings,
+            )
+            if translate_fn is None:
+                def translate_fn(value: str) -> str:
+                    return translate_text(
+                        value,
+                        current_language_settings.language,
+                        current_translations,
+                    )
+
+        translate = translate_fn
+
         def service_logo_url(filename: str) -> str:
             return url_for("static", filename=f"images/{filename}")
 
         def format_checked_at(value: float | None) -> str:
+            prefix = translate("Last checked:")
             if value is None:
-                return "Last checked: Not checked yet."
+                return f"{prefix} {translate('Not checked yet.')}"
             stamp = pd.Timestamp(value, unit="s")
-            return f"Last checked: {format_display_datetime(stamp, include_seconds=True)}"
+            return f"{prefix} {format_display_datetime(stamp, include_seconds=True)}"
 
         if pending:
             return [
                 {
                     "key": "market",
                     "name": "yfinance",
-                    "status": "Checking...",
-                    "note": "Checking whether Yahoo Finance can be reached from this device.",
-                    "checked_at_text": "Last checked: Checking...",
+                    "status": translate("Checking..."),
+                    "note": translate("Checking whether Yahoo Finance can be reached from this device."),
+                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
                     "logo_url": service_logo_url("Yahoo-Logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
                 {
                     "key": "logo",
-                    "name": labels["logo_network"],
-                    "status": "Checking...",
-                    "note": "Checking whether the primary ticker logo service and its fallbacks can be reached from this device.",
-                    "checked_at_text": "Last checked: Checking...",
+                    "name": service_labels["logo_network"],
+                    "status": translate("Checking..."),
+                    "note": translate("Checking whether the primary ticker logo service and its fallbacks can be reached from this device."),
+                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
                     "logo_url": service_logo_url("apple.logo.svg"),
                     "is_available": False,
                     "is_pending": True,
                 },
                 {
                     "key": "google-hk",
-                    "name": "Google (Hong Kong)",
-                    "status": "Checking...",
-                    "note": "Checking whether Google (Hong Kong) can be reached from this device.",
-                    "checked_at_text": "Last checked: Checking...",
+                    "name": translate("Google (Hong Kong)"),
+                    "status": translate("Checking..."),
+                    "note": translate("Checking whether Google (Hong Kong) can be reached from this device."),
+                    "checked_at_text": f"{translate('Last checked:')} {translate('Checking...')}",
                     "logo_url": service_logo_url("Google__G__logo.svg"),
                     "is_available": False,
                     "is_pending": True,
@@ -2593,11 +2618,11 @@ def build_web_runtime() -> WebRuntime:
             {
                 "key": "market",
                 "name": "yfinance",
-                "status": labels["service_ok"] if remote_market_access else labels["service_down"],
+                "status": service_labels["service_ok"] if remote_market_access else service_labels["service_down"],
                 "note": (
-                    "Yahoo Finance is reachable, so missing price history can be refreshed from the network."
+                    translate("Yahoo Finance is reachable, so missing price history can be refreshed from the network.")
                     if remote_market_access
-                    else "Yahoo Finance could not be reached. Check the proxy and corporate CA configuration; local market data remains available."
+                    else translate("Yahoo Finance could not be reached. Check the proxy and corporate CA configuration; local market data remains available.")
                 ),
                 "checked_at_text": format_checked_at(last_remote_market_check_at()),
                 "logo_url": service_logo_url("Yahoo-Logo.svg"),
@@ -2606,12 +2631,12 @@ def build_web_runtime() -> WebRuntime:
             },
             {
                 "key": "logo",
-                "name": labels["logo_network"],
-                "status": labels["service_ok"] if remote_logo_access else labels["service_down"],
+                "name": service_labels["logo_network"],
+                "status": service_labels["service_ok"] if remote_logo_access else service_labels["service_down"],
                 "note": (
-                    "Logo providers are reachable, so missing brand marks can be fetched when needed."
+                    translate("Logo providers are reachable, so missing brand marks can be fetched when needed.")
                     if remote_logo_access
-                    else "Remote logo sources could not be reached. Check the proxy and corporate CA configuration; stored logos remain available."
+                    else translate("Remote logo sources could not be reached. Check the proxy and corporate CA configuration; stored logos remain available.")
                 ),
                 "checked_at_text": format_checked_at(last_remote_logo_check_at()),
                 "logo_url": service_logo_url("apple.logo.svg"),
@@ -2620,12 +2645,12 @@ def build_web_runtime() -> WebRuntime:
             },
             {
                 "key": "google-hk",
-                "name": "Google (Hong Kong)",
-                "status": labels["service_ok"] if google_hk_access else labels["service_down"],
+                "name": translate("Google (Hong Kong)"),
+                "status": service_labels["service_ok"] if google_hk_access else service_labels["service_down"],
                 "note": (
-                    "Google (Hong Kong) is reachable from this device."
+                    translate("Google (Hong Kong) is reachable from this device.")
                     if google_hk_access
-                    else "Google (Hong Kong) could not be reached from this device."
+                    else translate("Google (Hong Kong) could not be reached from this device.")
                 ),
                 "checked_at_text": format_checked_at(last_google_hk_check_at()),
                 "logo_url": service_logo_url("Google__G__logo.svg"),
@@ -4050,12 +4075,36 @@ def build_web_runtime() -> WebRuntime:
         if current_view == "settings":
             if settings_section in {"general", "backtest", "email-smtp", "broker-access", "local-market-store", "clear-caches"} and (notice or error):
                 floating_banner_icon_class = modal_banner_icon_class(error or notice)
-            settings_service_rows = build_network_service_rows(pending=settings_section == "network")
-            strategy_settings_rows = build_strategy_settings_rows(strategy_options)
-            font_token_rows = build_font_token_rows(labels)
-            style_token_rows = build_style_token_rows(labels)
-            export_image_rows = build_export_image_rows(PROJECT_DISPLAY_URL)
-            material_token_rows = build_material_token_rows()
+            settings_service_rows = build_network_service_rows(
+                pending=settings_section == "network",
+                service_labels=labels,
+                translate_fn=translate_ui,
+            )
+            strategy_settings_rows = translate_nested_text(
+                build_strategy_settings_rows(strategy_options),
+                language_settings.language,
+                language_translations,
+            )
+            font_token_rows = translate_nested_text(
+                build_font_token_rows(labels),
+                language_settings.language,
+                language_translations,
+            )
+            style_token_rows = translate_nested_text(
+                build_style_token_rows(labels),
+                language_settings.language,
+                language_translations,
+            )
+            export_image_rows = translate_nested_text(
+                build_export_image_rows(PROJECT_DISPLAY_URL),
+                language_settings.language,
+                language_translations,
+            )
+            material_token_rows = translate_nested_text(
+                build_material_token_rows(),
+                language_settings.language,
+                language_translations,
+            )
             cash_equivalent_tickers = load_cash_equivalent_tickers()
             cash_equivalent_rows = []
             for t in cash_equivalent_tickers:
@@ -5730,8 +5779,11 @@ def build_web_runtime() -> WebRuntime:
             selected_transactions = payload.get("transactions")
             if not isinstance(selected_transactions, list) or not selected_transactions:
                 raise ValueError("Select at least one transaction for standard XLSX export.")
-            if len(selected_transactions) > 2_000:
-                raise ValueError("A standard XLSX export supports at most 2,000 transactions.")
+            if len(selected_transactions) > ZIRCON_HK_MAX_TRANSACTION_ROWS:
+                raise ValueError(
+                    "A standard XLSX export supports at most "
+                    f"{ZIRCON_HK_MAX_TRANSACTION_ROWS:,} transactions."
+                )
             if not all(isinstance(transaction, dict) for transaction in selected_transactions):
                 raise ValueError("The standard XLSX export contains an invalid transaction.")
             tickers = {
@@ -6104,7 +6156,17 @@ def build_web_runtime() -> WebRuntime:
                     "Charles Schwab import complete. Transactions and the authoritative Positions snapshot were "
                     "merged incrementally into the local investment store without clearing older data first."
                 )
-            elif broker in {"zircon_hk", "standard_xlsx"}:
+            elif broker in {
+                "zircon_hk",
+                "standard_xlsx",
+                "cmb_cn",
+                "boc_cn",
+                "boc_hk",
+                "icbc_cn",
+                "icbc_hk",
+                "ccb_cn",
+                "ccb_hk",
+            }:
                 workbook_file = request.files.get("zircon_hk_transactions_xlsx")
                 if workbook_file is None:
                     return jsonify({

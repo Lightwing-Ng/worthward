@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.1.1
+# Code version: v1.1.2
 
 set -euo pipefail
 
@@ -29,6 +29,7 @@ node --experimental-test-coverage --test \
 	--test-coverage-include='app/web/static/assets/js/table-controller.js' \
 	--test-coverage-include='app/web/static/assets/js/investment/*.js' \
 	tests/test_chart_axis_utils.mjs \
+	tests/test_export_image_config.mjs \
 	tests/test_investment_data_utils.mjs \
 	tests/test_investment_import_feedback.mjs \
 	tests/test_investment_layout.mjs \

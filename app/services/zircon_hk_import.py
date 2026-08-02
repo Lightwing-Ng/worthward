@@ -1,14 +1,16 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.7.0
+Code version: v0.9.1
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import math
+import re
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -17,6 +19,7 @@ from zipfile import BadZipFile, ZipFile
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -32,15 +35,16 @@ from app.services.investment_record_basics import (
 )
 
 
-ZIRCON_HK_IMPORTER_VERSION = "0.5.0"
+ZIRCON_HK_IMPORTER_VERSION = "0.6.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
-ZIRCON_HK_BROKER_LABEL = "Zircon HK"
+ZIRCON_HK_BROKER_LABEL = "Zircon (HK)"
 ZIRCON_HK_TEMPLATE_FILENAME = "Manual_investment_import.xlsx"
 STANDARD_INVESTMENT_EXPORT_FILENAME = "Standard_investment_export.xlsx"
 ZIRCON_HK_TRANSACTION_SHEET = "Transactions"
 ZIRCON_HK_LISTS_SHEET = "Lists"
-ZIRCON_HK_MAX_TRANSACTION_ROWS = 2_000
-ZIRCON_HK_TEMPLATE_INPUT_ROWS = 500
+ZIRCON_HK_MAX_TRANSACTION_ROWS = 10_000
+ZIRCON_HK_TEMPLATE_INPUT_ROWS = 2_000
+ZIRCON_HK_MAX_REPORTED_ERRORS = 100
 ZIRCON_HK_MAX_XLSX_BYTES = 16 * 1024 * 1024
 ZIRCON_HK_MAX_ARCHIVE_ENTRIES = 256
 ZIRCON_HK_MAX_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
@@ -144,7 +148,7 @@ _NEGATIVE_CASH_TYPES = {
 _REQUIRED_CASH_TYPES = (
     _POSITIVE_CASH_TYPES
     | _NEGATIVE_CASH_TYPES
-    | {"adjustment", "forex_trade_component", "fx_translation_pnl"}
+    | {"forex_trade_component", "fx_translation_pnl"}
 )
 _FORMULA_PREFIXES = ("=",)
 
@@ -162,6 +166,73 @@ _FORBIDDEN_XLSX_MEMBER_PREFIXES = (
 _FORBIDDEN_XLSX_MEMBER_NAMES = {
     "xl/connections.xml",
     "xl/vbaProject.bin",
+}
+
+_STANDARD_REFERENCE_SOURCE_FIELDS = (
+    "file_kind",
+    "source_filename",
+    "source_file_sha256",
+    "source_sheet",
+    "source_row",
+    "row_number",
+    "file_index",
+    "fitid",
+    "secid",
+    "fiid",
+    "statement_order_id",
+    "history_order_id",
+    "history_order_row_number",
+    "fund_details_entry_number",
+    "cash_flow_contract_row_number",
+)
+
+_STANDARD_HEADER_COMMENTS = {
+    "Broker": (
+        "Choose the institution that produced this activity. The selected broker "
+        "is authoritative for this row."
+    ),
+    "Account": (
+        "Enter the broker account label or number exactly as it appears in the "
+        "source statement."
+    ),
+    "Transaction Date / Time (Hong Kong)": (
+        "Enter a native Excel date or date-time in Asia/Hong_Kong time. A date "
+        "without a time defaults to 23:00 Hong Kong time."
+    ),
+    "Type": (
+        "For Buy, Sell, and Dividend reinvestment, leave Amount blank: it is "
+        "derived from Quantity, Trade Price, and Commission."
+    ),
+    "Currency": "Choose the currency of the row's Amount or trade price.",
+    "Ticker": (
+        "Use the broker or provider symbol. Security movements normally require "
+        "a valid Ticker."
+    ),
+    "Quantity": (
+        "Enter a positive native Excel number when the selected Type requires a "
+        "position quantity."
+    ),
+    "Trade Price": (
+        "Enter a positive native Excel number for Buy, Sell, or Dividend "
+        "reinvestment."
+    ),
+    "Amount": (
+        "Use a signed native Excel number for non-trade activity: cash received "
+        "is positive and cash paid is negative. Adjustment may be zero when the "
+        "Description documents a non-cash event."
+    ),
+    "Commission": (
+        "Enter the non-negative fee magnitude. The imported ledger stores it as "
+        "a negative commission."
+    ),
+    "Description": (
+        "Keep the broker wording or explain a manual/non-cash event. This field "
+        "is retained in the ledger and is limited to 500 characters."
+    ),
+    "Reference ID": (
+        "Use a unique source identifier per broker/account. FX requires exactly "
+        "two rows sharing one Reference ID."
+    ),
 }
 
 
@@ -306,19 +377,27 @@ def _add_decimal_validation(
     validation.add(cell_range)
 
 
-def _configure_transactions_sheet(sheet: Any) -> None:
+def _configure_transactions_sheet(
+    sheet: Any,
+    *,
+    input_rows: int = ZIRCON_HK_TEMPLATE_INPUT_ROWS,
+) -> None:
     sheet.freeze_panes = "A2"
+    sheet.sheet_view.showGridLines = False
     for column, header in enumerate(ZIRCON_HK_HEADERS, start=1):
         cell = sheet.cell(row=1, column=column, value=header)
         cell.fill = PatternFill("solid", fgColor=_HEADER_FILL)
         cell.font = Font(color=_HEADER_TEXT, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        comment_text = _STANDARD_HEADER_COMMENTS.get(header)
+        if comment_text:
+            cell.comment = Comment(comment_text, "antigravity")
     sheet.row_dimensions[1].height = 30
 
     widths = (20, 18, 29, 26, 12, 18, 14, 14, 16, 14, 40, 22)
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[chr(64 + index)].width = width
-    for row in range(2, ZIRCON_HK_TEMPLATE_INPUT_ROWS + 2):
+    for row in range(2, input_rows + 2):
         sheet.cell(row=row, column=3).number_format = "yyyy-mm-dd hh:mm"
         for column in range(7, 11):
             sheet.cell(row=row, column=column).number_format = (
@@ -327,14 +406,14 @@ def _configure_transactions_sheet(sheet: Any) -> None:
 
     _add_list_validation(
         sheet,
-        f"A2:A{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"A2:A{input_rows + 1}",
         formula="ZirconBrokers",
         title="Choose broker",
         message="Select the broker that produced this transaction.",
     )
     _add_list_validation(
         sheet,
-        f"D2:D{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"D2:D{input_rows + 1}",
         formula="ZirconTypes",
         title="Choose transaction type",
         message=(
@@ -344,7 +423,7 @@ def _configure_transactions_sheet(sheet: Any) -> None:
     )
     _add_list_validation(
         sheet,
-        f"E2:E{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"E2:E{input_rows + 1}",
         formula="ZirconCurrencies",
         title="Choose currency",
         message="Select one supported currency.",
@@ -368,11 +447,11 @@ def _configure_transactions_sheet(sheet: Any) -> None:
         ),
     )
     sheet.add_data_validation(date_validation)
-    date_validation.add(f"C2:C{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}")
+    date_validation.add(f"C2:C{input_rows + 1}")
 
     _add_decimal_validation(
         sheet,
-        f"G2:G{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"G2:G{input_rows + 1}",
         minimum="0",
         maximum="1000000000000",
         title="Enter a numeric quantity",
@@ -380,7 +459,7 @@ def _configure_transactions_sheet(sheet: Any) -> None:
     )
     _add_decimal_validation(
         sheet,
-        f"H2:H{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"H2:H{input_rows + 1}",
         minimum="0",
         maximum="1000000000000",
         title="Enter a numeric trade price",
@@ -388,7 +467,7 @@ def _configure_transactions_sheet(sheet: Any) -> None:
     )
     _add_decimal_validation(
         sheet,
-        f"I2:I{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"I2:I{input_rows + 1}",
         minimum="-1000000000000",
         maximum="1000000000000",
         title="Enter a signed amount",
@@ -400,7 +479,7 @@ def _configure_transactions_sheet(sheet: Any) -> None:
     )
     _add_decimal_validation(
         sheet,
-        f"J2:J{ZIRCON_HK_TEMPLATE_INPUT_ROWS + 1}",
+        f"J2:J{input_rows + 1}",
         minimum="0",
         maximum="1000000000000",
         title="Enter a numeric commission",
@@ -452,6 +531,22 @@ def _resolve_standard_export_currency(
     transaction_type: str,
 ) -> str:
     currency = normalize_import_text(transaction.get("currency")).upper()
+    if transaction_type == "forex_trade_component":
+        description = normalize_import_whitespace(transaction.get("description")).upper()
+        match = re.search(r"FX FROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})", description)
+        if match:
+            normalized = transaction.get("normalized") or {}
+            amount = _export_decimal_from_fields(
+                transaction,
+                normalized,
+                "net_amount_raw",
+                "net_amount",
+                "amount",
+                "gross_amount_raw",
+                "gross_amount",
+            )
+            if amount is not None:
+                return (match.group(1) if amount < 0 else match.group(2))
     if currency in ZIRCON_HK_CURRENCIES:
         return currency
 
@@ -476,7 +571,173 @@ def _resolve_standard_export_currency(
     )
 
 
-def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
+def _export_decimal_from_fields(
+    transaction: dict[str, Any],
+    normalized: dict[str, Any],
+    *field_names: str,
+) -> int | float | None:
+    for container in (transaction, normalized):
+        for field_name in field_names:
+            value = _export_decimal(container.get(field_name))
+            if value is not None:
+                return value
+    return None
+
+
+def _standard_export_ticker(
+    transaction: dict[str, Any],
+    *,
+    transaction_type: str,
+) -> str:
+    source = transaction.get("source") or {}
+    for value in (
+        transaction.get("ticker"),
+        source.get("source_symbol_raw"),
+        source.get("symbol"),
+    ):
+        ticker = normalize_import_text(value).upper()
+        if ticker:
+            return ticker
+
+    if transaction_type in {"dividend", "foreign_tax_withholding", "payment_in_lieu"}:
+        description = normalize_import_whitespace(transaction.get("description")).upper()
+        match = re.match(
+            r"^([A-Z][A-Z0-9._-]{0,15})\s+\d[\d,.]*\s+SHARES\s+"
+            r"(?:DIVIDENDS?|WITHHOLDING|PAYMENT)",
+            description,
+        )
+        if match:
+            inferred_ticker = normalize_ticker(match.group(1))
+            if inferred_ticker:
+                return inferred_ticker
+    return ""
+
+
+def _stable_standard_reference_id(
+    transaction: dict[str, Any],
+    *,
+    broker_code: str,
+    transaction_type: str,
+    currency: str,
+    quantity: int | float | None,
+    price: int | float | None,
+    economic_amount: int | float | None,
+    commission: int | float | None,
+    ticker: str,
+) -> str:
+    source = transaction.get("source") or {}
+    source_identity = {
+        field_name: source.get(field_name)
+        for field_name in _STANDARD_REFERENCE_SOURCE_FIELDS
+        if source.get(field_name) not in {None, ""}
+    }
+    execution_key = normalize_import_text(source.get("execution_key"))
+    if transaction_type == "forex_trade_component" and execution_key:
+        for currency_code in ZIRCON_HK_CURRENCIES:
+            currency_suffix = f":{currency_code.casefold()}"
+            if execution_key.casefold().endswith(currency_suffix):
+                execution_key = execution_key[: -len(currency_suffix)]
+                break
+        source_identity["execution_key"] = execution_key
+        source_identity.pop("source_row", None)
+        source_identity.pop("row_number", None)
+    fingerprint = {
+        "broker": broker_code,
+        "account": normalize_import_text(
+            transaction.get("account")
+            or source.get("account")
+            or source.get("account_number")
+        ),
+        "datetime": normalize_import_text(
+            transaction.get("datetime") or transaction.get("date")
+        ),
+        "type": transaction_type,
+        "currency": "" if execution_key and transaction_type == "forex_trade_component" else currency,
+        "ticker": "" if execution_key and transaction_type == "forex_trade_component" else ticker,
+        "quantity": None if execution_key and transaction_type == "forex_trade_component" else quantity,
+        "price": None if execution_key and transaction_type == "forex_trade_component" else price,
+        "amount": None if execution_key and transaction_type == "forex_trade_component" else economic_amount,
+        "commission": None if execution_key and transaction_type == "forex_trade_component" else commission,
+        "description": "" if execution_key and transaction_type == "forex_trade_component" else normalize_import_whitespace(transaction.get("description")),
+        "source": source_identity,
+    }
+    encoded = json.dumps(
+        fingerprint,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()[:40]
+    return f"antigravity-{digest}"
+
+
+def _standard_export_fallback(
+    transaction: dict[str, Any],
+    *,
+    transaction_type: str,
+    type_label: str,
+    ticker: str,
+    quantity: int | float | None,
+    price: int | float | None,
+    economic_amount: int | float | None,
+) -> tuple[str, int | float | None, list[str]]:
+    source = transaction.get("source") or {}
+    reasons: list[str] = []
+    if transaction_type in _SECURITY_TYPES and not ticker:
+        reasons.append("Ticker is unavailable")
+    if transaction_type in _QUANTITY_TYPES and quantity is None:
+        reasons.append("Quantity is unavailable")
+    if transaction_type in _PRICE_TYPES and price is None:
+        reasons.append("Trade Price is unavailable")
+
+    if transaction_type in _POSITIVE_CASH_TYPES and (
+        economic_amount is None or economic_amount <= 0
+    ):
+        reasons.append("the signed cash amount is a reversal or non-standard positive flow")
+    if transaction_type in _NEGATIVE_CASH_TYPES and (
+        economic_amount is None or economic_amount >= 0
+    ):
+        reasons.append("the signed cash amount is a reversal or non-standard negative flow")
+    if (
+        transaction_type == "forex_trade_component"
+        and not normalize_import_text(source.get("reference_id"))
+        and not normalize_import_text(source.get("execution_key"))
+    ):
+        reasons.append("the source does not provide a stable two-leg FX identity")
+
+    if not reasons:
+        amount = (
+            None
+            if transaction_type in _AMOUNTLESS_SECURITY_TYPES
+            else economic_amount
+        )
+        return transaction_type, amount, reasons
+
+    if transaction_type in _QUANTITY_TYPES and (
+        economic_amount is None or economic_amount == 0
+    ):
+        ledger_no = transaction.get("ledger_no")
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            f"({type_label}) cannot be exported safely: {', '.join(reasons)} "
+            "and no signed cash Amount is available for a reversible Adjustment row."
+        )
+    if economic_amount is None:
+        ledger_no = transaction.get("ledger_no")
+        raise ValueError(
+            f"Investment transaction {ledger_no or 'without a ledger number'} "
+            f"({type_label}) cannot be exported safely: {', '.join(reasons)} "
+            "and no signed cash Amount is available."
+        )
+    return "adjustment", economic_amount, reasons
+
+
+def _standard_export_row(
+    transaction: dict[str, Any],
+    *,
+    reference_id_override: str | None = None,
+) -> tuple[Any, ...]:
     transaction_type = normalize_import_text(transaction.get("type")).casefold()
     type_label_by_value = {
         value: label for label, value in ZIRCON_HK_TYPE_LABELS.items()
@@ -506,52 +767,102 @@ def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
         transaction_type=transaction_type,
     )
 
-    quantity = _export_decimal(transaction.get("quantity_raw"))
-    if quantity is None:
-        quantity = _export_decimal((transaction.get("normalized") or {}).get("position_quantity"))
+    normalized = transaction.get("normalized") or {}
+    quantity = _export_decimal_from_fields(
+        transaction,
+        normalized,
+        "quantity_raw",
+        "position_quantity",
+        "quantity_abs",
+        "quantity",
+    )
     if quantity is not None:
         quantity = abs(quantity)
 
-    price = _export_decimal(transaction.get("price_raw"))
-    if price is None:
-        price = _export_decimal((transaction.get("normalized") or {}).get("unit_price"))
+    price = _export_decimal_from_fields(
+        transaction,
+        normalized,
+        "price_raw",
+        "unit_price",
+        "price",
+    )
     if price is not None:
         price = abs(price)
 
-    amount: int | float | None = None
-    if transaction_type not in _AMOUNTLESS_SECURITY_TYPES:
-        amount = _export_decimal(transaction.get("net_amount_raw"))
-        if amount is None:
-            amount = _export_decimal((transaction.get("normalized") or {}).get("net_amount"))
+    economic_amount = _export_decimal_from_fields(
+        transaction,
+        normalized,
+        "net_amount_raw",
+        "net_amount",
+        "amount",
+        "gross_amount_raw",
+        "gross_amount",
+    )
 
-    commission = _export_decimal(transaction.get("commission_raw"))
-    if commission is None:
-        commission = _export_decimal((transaction.get("normalized") or {}).get("commission"))
+    commission = _export_decimal_from_fields(
+        transaction,
+        normalized,
+        "commission_raw",
+        "commission",
+    )
     if commission is not None:
         commission = abs(commission)
 
+    ticker = _standard_export_ticker(
+        transaction,
+        transaction_type=transaction_type,
+    )
+    export_type, amount, fallback_reasons = _standard_export_fallback(
+        transaction,
+        transaction_type=transaction_type,
+        type_label=type_label,
+        ticker=ticker,
+        quantity=quantity,
+        price=price,
+        economic_amount=economic_amount,
+    )
+    export_type_label = type_label_by_value[export_type]
+
     source = transaction.get("source") or {}
-    reference_id = normalize_import_text(source.get("reference_id"))
+    reference_id = normalize_import_text(
+        reference_id_override or source.get("reference_id")
+    )
     if not reference_id:
-        if ledger_no in {None, ""}:
-            raise ValueError(
-                "Every exported investment transaction requires a ledger number "
-                "or an existing Reference ID."
-            )
-        reference_id = f"antigravity-ledger-{ledger_no}"
+        reference_id = _stable_standard_reference_id(
+            transaction,
+            broker_code=broker_code,
+            transaction_type=transaction_type,
+            currency=currency,
+            quantity=quantity,
+            price=price,
+            economic_amount=economic_amount,
+            commission=commission,
+            ticker=ticker,
+        )
+
+    description = normalize_import_whitespace(transaction.get("description"))
+    if fallback_reasons:
+        description = normalize_import_whitespace(
+            f"[Standard XLSX fallback: original Type {type_label!r} exported as "
+            f"{export_type_label!r}; {'; '.join(fallback_reasons)}.] {description}"
+        )
 
     return (
         broker_entry.label,
-        normalize_import_text(transaction.get("account") or source.get("account")),
+        normalize_import_text(
+            transaction.get("account")
+            or source.get("account")
+            or source.get("account_number")
+        ),
         _export_transaction_datetime(transaction),
-        type_label,
+        export_type_label,
         currency,
-        normalize_import_text(transaction.get("ticker")).upper(),
+        ticker,
         quantity,
         price,
         amount,
         commission,
-        normalize_import_whitespace(transaction.get("description"))[:500],
+        description[:500],
         reference_id[:100],
     )
 
@@ -584,12 +895,40 @@ def build_standard_investment_xlsx(
             f"$C${len(ZIRCON_HK_BROKER_ENTRIES) + 1}"
         ),
     )
-    _configure_transactions_sheet(transaction_sheet)
+    _configure_transactions_sheet(
+        transaction_sheet,
+        input_rows=max(ZIRCON_HK_TEMPLATE_INPUT_ROWS, len(transactions)),
+    )
+    reference_occurrences: dict[tuple[str, str, str], int] = {}
+    reference_types: dict[tuple[str, str, str], set[str]] = {}
     for row_number, transaction in enumerate(transactions, start=2):
-        for column_number, value in enumerate(
-            _standard_export_row(transaction),
-            start=1,
+        exported_row = _standard_export_row(transaction)
+        reference_key = (exported_row[0], exported_row[1], exported_row[11])
+        occurrence = reference_occurrences.get(reference_key, 0) + 1
+        reference_occurrences[reference_key] = occurrence
+        existing_types = reference_types.setdefault(reference_key, set())
+        if occurrence > 1 and (
+            exported_row[3] != "Forex trade component"
+            or existing_types != {"Forex trade component"}
         ):
+            collision_payload = json.dumps(
+                {
+                    "row": exported_row[:11],
+                    "occurrence": occurrence,
+                },
+                default=str,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            collision_suffix = hashlib.sha256(collision_payload).hexdigest()[:16]
+            exported_row = _standard_export_row(
+                transaction,
+                reference_id_override=(
+                    f"{exported_row[11]}::antigravity-{collision_suffix}"
+                ),
+            )
+        existing_types.add(exported_row[3])
+        for column_number, value in enumerate(exported_row, start=1):
             transaction_sheet.cell(
                 row=row_number,
                 column=column_number,
@@ -598,7 +937,13 @@ def build_standard_investment_xlsx(
     workbook.active = 0
     buffer = BytesIO()
     workbook.save(buffer)
-    return buffer.getvalue()
+    workbook_bytes = buffer.getvalue()
+    if transactions:
+        build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=workbook_bytes,
+            filename=STANDARD_INVESTMENT_EXPORT_FILENAME,
+        )
+    return workbook_bytes
 
 
 def _cell_error(cell: Any, message: str) -> str:
@@ -800,6 +1145,16 @@ def _transaction_from_row(
         maximum_length=100,
         field_name="Reference ID",
     )
+    if mapped_type == "adjustment" and amount is None:
+        amount = Decimal("0")
+    if mapped_type == "adjustment" and amount == 0 and not (description or reference_id):
+        raise ValueError(
+            _cell_error(
+                amount_cell,
+                "A zero Adjustment must include a Description or Reference ID "
+                "that documents the non-cash event.",
+            )
+        )
     if mapped_type == "forex_trade_component" and not reference_id:
         raise ValueError(
             _cell_error(
@@ -816,7 +1171,7 @@ def _transaction_from_row(
         raise ValueError(
             _cell_error(amount_cell, "Amount must be negative for this Type.")
         )
-    if mapped_type in {"adjustment", "forex_trade_component", "fx_translation_pnl"}:
+    if mapped_type in {"forex_trade_component", "fx_translation_pnl"}:
         if amount is None or amount == 0:
             raise ValueError(
                 _cell_error(amount_cell, "Amount must be non-zero for this Type.")
@@ -1123,7 +1478,8 @@ def build_investment_payload_from_zircon_hk_manual_xlsx(
     sheet = workbook[ZIRCON_HK_TRANSACTION_SHEET]
     if sheet.max_column > 50 or sheet.max_row > ZIRCON_HK_MAX_TRANSACTION_ROWS + 1:
         raise ValueError(
-            "The manual investment workbook exceeds the supported 2,000 transaction rows or 50 columns."
+            "The manual investment workbook exceeds the supported "
+            f"{ZIRCON_HK_MAX_TRANSACTION_ROWS:,} transaction rows or 50 columns."
         )
     headers = tuple(
         normalize_import_whitespace(sheet.cell(row=1, column=column).value)
@@ -1156,6 +1512,7 @@ def build_investment_payload_from_zircon_hk_manual_xlsx(
     source_sha256 = hashlib.sha256(xlsx_bytes).hexdigest()
     transactions: list[dict[str, Any]] = []
     errors: list[str] = []
+    omitted_error_count = 0
     accounts: set[str] = set()
     brokers: set[str] = set()
     for row_number in range(2, sheet.max_row + 1):
@@ -1172,9 +1529,10 @@ def build_investment_payload_from_zircon_hk_manual_xlsx(
                 source_sha256=source_sha256,
             )
         except ValueError as exc:
-            errors.append(str(exc))
-            if len(errors) >= 20:
-                break
+            if len(errors) < ZIRCON_HK_MAX_REPORTED_ERRORS:
+                errors.append(str(exc))
+            else:
+                omitted_error_count += 1
             continue
         transactions.append(transaction)
         brokers.add(normalize_import_text(transaction.get("broker")))
@@ -1184,10 +1542,16 @@ def build_investment_payload_from_zircon_hk_manual_xlsx(
     if not errors:
         errors.extend(_validate_and_enrich_reference_groups(transactions))
     if errors:
+        reported_error_count = len(errors)
+        if omitted_error_count:
+            errors.append(
+                f"{omitted_error_count} additional validation error(s) were omitted; "
+                "fix the listed cells first and upload again."
+            )
         suffix = (
             " Fix the listed cells and upload the workbook again."
-            if len(errors) == 1
-            else f" Fix these {len(errors)} cells and upload the workbook again."
+            if reported_error_count == 1
+            else f" Fix these {reported_error_count} cells and upload the workbook again."
         )
         raise ValueError(
             "Manual investment workbook validation failed: "

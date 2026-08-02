@@ -1,4 +1,4 @@
-/* Code version: v0.5.0 */
+/* Code version: v0.6.1 */
 (() => {
 	const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
 	const appState = () => window.ANTIGRAVITY_APP || {};
@@ -12,7 +12,7 @@
 	const WORKSPACE_MODAL_DEFAULT_ICON_CLASS = String(workspaceModalOverlayIcon?.className || "").trim();
 	const SHARE_RENDER_MODAL_TITLE = "Rendering share image";
 	const SHARE_RENDER_MODAL_COPY = "We are rendering the community share card and encoding the PNG export. Please wait until the image finishes saving.";
-	const SHARE_RENDER_MODAL_ICON_CLASS = "icon-hourglass";
+	const SHARE_RENDER_MODAL_ICON_CLASS = "suggestion-loading-spinner";
 
 	const providers = new Map();
 	let qrCodeLibraryPromise = null;
@@ -142,6 +142,11 @@
 		body.className = "investment-community-share-body";
 		card.appendChild(header);
 		card.appendChild(body);
+		const exportImageConfig = window.ANTIGRAVITY_EXPORT_IMAGE;
+		const profileId = exportImageConfig?.defaultProfileId || "investment-community-share";
+		if (typeof exportImageConfig?.applyConfigToTargets === "function") {
+			exportImageConfig.applyConfigToTargets([host, card], profileId);
+		}
 		host.appendChild(card);
 		return { host, card, body };
 	};

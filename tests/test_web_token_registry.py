@@ -1,7 +1,7 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.7.3
+Code version: v0.7.4
 """
 
 from __future__ import annotations
@@ -185,6 +185,22 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertEqual(export_rows[0]["sample_url"], "example.test/design-preview")
         self.assertEqual(font_rows[0]["samples"][5]["sample_text"], labels["hero_title"])
         self.assertEqual(material_rows[0]["name"], "Frosted glass")
+
+    def test_export_image_defaults_share_the_settings_and_capture_contract(self) -> None:
+        export_row = build_export_image_rows("example.test/design-preview")[0]
+        export_tokens = {token["name"]: token["value"] for token in export_row["tokens"]}
+        investment_css = read_text(WEB_CSS_ROOT / "views" / "investment.css")
+        base_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "base.html")
+        settings_template = read_text(REPO_ROOT / "app" / "web" / "templates" / "settings.html")
+
+        self.assertEqual(export_tokens["--investment-community-share-shell-width"], "1080px")
+        self.assertEqual(export_tokens["--investment-community-share-shell-height"], "1730px")
+        self.assertEqual(export_tokens["--investment-community-share-section-gap"], "10px")
+        self.assertIn("--investment-community-share-shell-width: 1080px;", investment_css)
+        self.assertIn("--investment-community-share-shell-height: 1730px;", investment_css)
+        self.assertIn("aspect-ratio: 53.98 / 86.50;", investment_css)
+        self.assertIn("export-image-config.js", base_template)
+        self.assertIn('data-export-image-profile="investment-community-share"', settings_template)
 
     def test_loader_reads_foundation_root_tokens(self) -> None:
         registry = load_foundation_css_token_registry()

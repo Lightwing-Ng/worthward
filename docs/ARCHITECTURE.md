@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.18.0`
+Documentation version: `v1.20.0`
 
 ## Runtime flow
 
@@ -83,11 +83,19 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   supersede their rounded values. Flex Web Service, Client Portal, Gateway,
   credentials, sessions, market data, and order-routing must not be reintroduced
   without an explicit user-approved architecture and security decision.
-- Zircon HK exposes the offline generic fallback-workbook integration. The
+- Zircon (HK) exposes the offline generic fallback-workbook integration. The
   downloadable XLSX provides controlled broker, transaction-type, and currency
   lists plus typed date/date-time and numeric validation. Date-only entries
   default to 23:00 Asia/Hong_Kong time. Trade totals are derived from Quantity,
   Trade Price, and Commission; Amount is used only for non-trade cash activity.
+  The standard parser and exporter support up to 10,000 transaction rows; the
+  blank template validates and formats its first 2,000 input rows, while
+  populated exports extend those controls to the complete selected scope.
+  Exported Reference IDs use a stable source fingerprint rather than browser
+  display order, with deterministic collision suffixes for repeated broker
+  references. Source rows that cannot satisfy strict security or cash sign
+  rules are represented as annotated signed `Adjustment` rows, and a populated
+  workbook must pass the same parser before it is returned to the browser.
   A currency conversion is represented by exactly two Forex trade component
   rows sharing broker, account, timestamp, and Reference ID. One signed Amount
   removes the sold currency and the other adds the acquired currency. Manual
@@ -146,8 +154,9 @@ Tests must not rely on or mutate real device-local data. Unit tests patch store 
   builders. WebRuntime supplies translated labels and the project display URL;
   the module has no request, storage, broker, or live-order dependency.
 - `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
-- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon HK template and parser live in `zircon_hk_import.py`.
+- `app/services/investment_import_registry.py`: explicit broker and source-format parser dispatch plus the normalize, idempotent merge, atomic persistence, cache invalidation, and readback-verification boundary. Most legacy broker parsers remain in `investment_import.py`; the cohesive Zircon (HK) template and parser live in `zircon_hk_import.py`.
 - `app/web/static/assets/js/chart-axis-utils.js`: shared chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.ANTIGRAVITY_CHART_AXIS` before consumer scripts. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `ANTIGRAVITY_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing theme-token consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.ANTIGRAVITY_EXPORT_IMAGE`.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details range, session-boundary, and rendering helpers.
 - `app/web/static/assets/js/investment/transaction-filters.js`: broker, currency, type, and date-filter contracts.
