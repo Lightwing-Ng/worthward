@@ -1,4 +1,4 @@
-/* Tests for Investment import-feedback markup. Code version: v1.2.0 */
+/* Tests for Investment import-feedback markup. Code version: v1.3.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,6 +7,7 @@ import {
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
     buildInvestmentImportFeedbackListHtml,
+    buildSchwabImportFeedbackMessage,
 } from '../app/web/static/assets/js/investment/import-feedback.js';
 
 function escapeHtml(value) {
@@ -46,8 +47,8 @@ test('IBKR feedback preserves verified source-evidence copy and singular transfe
 
     assert.match(message, /This run parsed <strong>12,345<\/strong> records, added <strong>1,234<\/strong>, and treated <strong>11,111<\/strong> as already present\./);
     assert.match(message, /SHA-256-verified immutable evidence/);
-    assert.match(message, /1 possible HSBC transfer match<\/strong>/);
-    assert.doesNotMatch(message, /1 possible HSBC transfer matches<\/strong>/);
+    assert.match(message, /1 possible internal-transfer match<\/strong>/);
+    assert.doesNotMatch(message, /1 possible internal-transfer matches<\/strong>/);
 });
 
 test('IBKR feedback escapes refresh and valuation notices while pluralizing transfer review', () => {
@@ -57,7 +58,7 @@ test('IBKR feedback escapes refresh and valuation notices while pluralizing tran
         pendingTransferCount: 2,
     }, {escapeHtml});
 
-    assert.match(message, /2 possible HSBC transfer matches<\/strong>/);
+    assert.match(message, /2 possible internal-transfer matches<\/strong>/);
     assert.match(message, /&lt;rebuild&gt;&amp; retry/);
     assert.match(message, /&quot;quoted&quot; &lt;value&gt;/);
     assert.doesNotMatch(message, /<rebuild>/);
@@ -74,6 +75,31 @@ test('IBKR feedback requires the composition root HTML escaper', () => {
 test('HSBC feedback requires the composition root HTML escaper', () => {
     assert.throws(
         () => buildHsbcImportFeedbackMessage(),
+        /requires an HTML escape function/,
+    );
+});
+
+test('Schwab feedback reports snapshot evidence and ambiguous in-kind transfer review', () => {
+    const message = buildSchwabImportFeedbackMessage({
+        importSummary: {
+            incremental_import: {
+                imported_record_count: 2,
+                added_record_count: 2,
+            },
+        },
+        pendingTransferCount: 1,
+    }, {escapeHtml});
+
+    assert.match(message, /Charles Schwab import complete/);
+    assert.match(message, /authoritative <strong>Positions<\/strong> snapshot/);
+    assert.match(message, /SHA-256-verified immutable evidence/);
+    assert.match(message, /1 ambiguous in-kind transfer match<\/strong>/);
+    assert.match(message, /Exact same-day ticker-and-quantity pairs are linked automatically/);
+});
+
+test('Schwab feedback requires the composition root HTML escaper', () => {
+    assert.throws(
+        () => buildSchwabImportFeedbackMessage(),
         /requires an HTML escape function/,
     );
 });

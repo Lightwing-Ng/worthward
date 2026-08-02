@@ -1,4 +1,4 @@
-/* Code version: v0.13.3 */
+/* Code version: v0.13.4 */
 :root {
 	color-scheme: var(--color-scheme);
 	--sidebar-form-gap: 2px;
@@ -260,6 +260,7 @@
 	--shared-select-dropdown-radius: var(--radius-soft);
 	--shared-select-dropdown-max-height: min(360px, 55vh);
 	--shared-select-option-padding: 9px 10px;
+	--shared-select-option-radius: var(--radius-pill);
 	--shared-select-option-gap: 8px;
 	--investment-holdings-cell-padding: 4px 6px;
 	--investment-holdings-allocation-badge-inline-size: 52px;

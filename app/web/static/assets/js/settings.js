@@ -1,4 +1,4 @@
-/* Code version: v0.13.2 */
+/* Code version: v0.13.3 */
 (() => {
     const bootstrap = window.ANTIGRAVITY_BOOTSTRAP = window.ANTIGRAVITY_BOOTSTRAP || {};
     let settingsContext = null;
@@ -1620,11 +1620,14 @@
 
     const syncLocalStorePagination = (currentShell, nextShell) => {
         if (!(currentShell instanceof HTMLElement) || !(nextShell instanceof HTMLElement)) return;
-        const currentPagination = currentShell.querySelector("[data-local-store-pagination]");
-        const nextPagination = nextShell.querySelector("[data-local-store-pagination]");
+        const currentTableShell = currentShell.querySelector("[data-local-store-region]");
+        const nextTableShell = nextShell.querySelector("[data-local-store-region]");
+        if (!(currentTableShell instanceof HTMLElement) || !(nextTableShell instanceof HTMLElement)) return;
+        const currentPagination = currentTableShell.querySelector("[data-local-store-pagination]");
+        const nextPagination = nextTableShell.querySelector("[data-local-store-pagination]");
         if (!(currentPagination instanceof HTMLElement) && !(nextPagination instanceof HTMLElement)) return;
         if (!(currentPagination instanceof HTMLElement) && nextPagination instanceof HTMLElement) {
-            currentShell.append(nextPagination.cloneNode(true));
+            currentTableShell.append(nextPagination.cloneNode(true));
             return;
         }
         if (currentPagination instanceof HTMLElement && !(nextPagination instanceof HTMLElement)) {

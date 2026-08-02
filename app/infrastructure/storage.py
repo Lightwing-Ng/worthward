@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.10.0
+Code version: v0.16.0
 """
 
 from __future__ import annotations
@@ -188,6 +188,20 @@ def canonicalize_investment_ticker(ticker: str) -> str:
 INVESTMENT_TICKER_LINEAGE: dict[str, tuple[str, ...]] = {
     "SPLG.US": ("SPYM", "SPYM.US", "SPLG", "SPY", "SPY.US"),
     "SPLG": ("SPYM", "SPYM.US", "SPY", "SPY.US"),
+    # These are fund share-class ISINs, not exchange trading symbols. Keep the
+    # broker-provided aliases in immutable source records while presenting one
+    # canonical ISIN across Holdings, profiles, and valuation anchors.
+    "HK0000369196.USD": ("HK0000369196",),
+    "HK0000369196.HK": ("HK0000369196",),
+    "HK0000584752.HK": ("HK0000584752",),
+    "HK0000584737.HK": ("HK0000584737",),
+    "HK0000478872.HK": ("HK0000478872",),
+    "HK0000720752.HK": ("HK0000720752",),
+    "HK0001039582.USD": ("HK0001039582",),
+    "HK0001039582.HK": ("HK0001039582",),
+    "LONGBRIDGE_HK_CASH_EQUIVALENT.PING_AN_MONEY_MARKET_USD.USD": ("HK0000720752",),
+    "LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_USD.USD": ("HK0000584737",),
+    "LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_HKD.HKD": ("HK0000478872",),
 }
 
 LINEAGE_IDENTITY_PROXY_TICKERS = frozenset({"SPY", "SPY.US"})
@@ -217,13 +231,32 @@ def market_ticker_store_aliases(ticker: str) -> list[str]:
 KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "AMD": "Advanced Micro Devices, Inc.",
     "AAPL": "Apple Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "AXP": "American Express Company",
+    "BAC": "Bank of America Corporation",
     "BOXX": "Alpha Architect 1-3 Month Box ETF",
+    "C": "Citigroup Inc.",
+    "CVX": "Chevron Corporation",
+    "DIS": "The Walt Disney Company",
     "DRAM": "Roundhill Memory ETF",
+    "EQNR": "Equinor ASA",
     "EUV": "Corgi Lithography & Semiconductor Photonics ETF",
+    "005276756": "Franklin Templeton U.S. Dollar Short-Term Money Market Fund",
+    "GS": "The Goldman Sachs Group, Inc.",
+    "HIBS": "Direxion Daily S&P 500 High Beta Bear 3X Shares ETF",
     "GOOG": "Alphabet Inc.",
     "GOOGL": "Alphabet Inc.",
     "IBKR": "Interactive Brokers Group, Inc.",
     "JEPQ": "JPMorgan Nasdaq Equity Premium Income ETF",
+    "HK0000369196": "Taikang Kaitai Overseas Short Tenor Bond Fund A USD Acc",
+    "HK0000478872": "GaoTeng WeInvest Money Market A HKD Acc",
+    "HK0000584737": "GaoTeng WeValue USD Money Mkt A USD Acc",
+    "HK0000584752": "GaoTeng WeValue USD Money Mkt C USD Acc",
+    "HK0000720752": "Ping An Money Market P USD Acc",
+    "HK0001039582": "CMS USD Money Market Fund B Acc",
+    "1310.HK": "HKBN Ltd.",
+    "JPM": "JPMorgan Chase & Co.",
+    "KO": "The Coca-Cola Company",
     "META": "Meta Platforms, Inc.",
     "MU": "Micron Technology, Inc.",
     "NVDA": "NVIDIA Corporation",
@@ -232,10 +265,14 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "QCOM": "QUALCOMM Incorporated",
     "RAM": "Roundhill T-REX 2X Long DRAM Daily Target ETF",
     "SGOV": "iShares 0-3 Month Treasury Bond ETF",
+    "SQQQ": "ProShares UltraPro Short QQQ",
     "SKHY": "SK hynix Inc.",
     "SKHYV": "SK hynix Inc.",
     "TQQQ": "ProShares UltraPro QQQ",
     "TSM": "Taiwan Semiconductor Manufacturing Company Limited",
+    "V": "Visa Inc.",
+    "VZ": "Verizon Communications Inc.",
+    "WFC": "Wells Fargo & Company",
     "XQQI": "NEOS Boosted Nasdaq-100(R) High Income ETF",
 }
 
@@ -245,6 +282,7 @@ ROUNDHILL_PRODUCT_LOGO_TICKERS = frozenset({
 })
 
 PINNED_LOGO_TICKERS = frozenset({
+    "1310.HK",
     "AMD",
     "AVGO",
     "COST",
@@ -284,7 +322,7 @@ def resolve_known_ticker_company_name(ticker: str) -> str | None:
 def known_ticker_company_names_payload() -> dict[str, str]:
     payload = dict(KNOWN_TICKER_COMPANY_NAMES)
     for ticker, company_name in KNOWN_TICKER_COMPANY_NAMES.items():
-        if not ticker.endswith(".US"):
+        if re.fullmatch(r"[A-Z]{1,5}", ticker):
             payload.setdefault(f"{ticker}.US", company_name)
     return payload
 

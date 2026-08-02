@@ -1,4 +1,4 @@
-/* Code version: v0.9.0 */
+/* Code version: v0.9.1 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -912,7 +912,7 @@
 	width: 100%;
 	padding: var(--shared-select-option-padding);
 	border: 0;
-	border-radius: var(--radius-soft);
+	border-radius: var(--shared-select-option-radius);
 	background: transparent;
 	color: var(--text);
 	display: grid;

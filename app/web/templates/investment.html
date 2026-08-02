@@ -1,4 +1,4 @@
-{# Code version: v1.34.1 #}
+{# Code version: v1.35.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -542,22 +542,45 @@
                                     <span class="investment-import-label-trigger"
                                           tabindex="0">
                                         <span class="investment-import-label-step" aria-hidden="true">➊</span>
-                                        <span class="investment-import-label-text">Order Status / Transactions CSV</span>
+                                        <span class="investment-import-label-text">Transactions CSV</span>
                                         <span class="investment-import-status-icon" id="schwab_transactions_csv_status"
                                               aria-hidden="true"></span>
                                         <span class="field-tooltip trade-strategy-param-help investment-import-help"
                                               role="tooltip">
-                                            <span class="investment-import-help-title">How to download this file from Charles Schwab</span>
+                                            <span class="investment-import-help-title">Download the Schwab Transactions CSV</span>
                                             <span class="investment-import-help-step">🄌 Sign in to Schwab.com (or international.schwab.com).</span>
-                                            <span class="investment-import-help-step">➊ Go to Trade &gt; Order Status or Accounts &gt; Transaction History.</span>
+                                            <span class="investment-import-help-step">➊ Go to Accounts &gt; Transaction History, choose the transfer date range, and export CSV.</span>
                                             <span class="investment-import-help-step">➋ Choose the desired date range and export/download as CSV.</span>
-                                            <span class="investment-import-help-step">➌ The filename often looks like <code>Individual..._Order_Status_YYYYMMDD-....csv</code>.</span>
-                                            <span class="investment-import-help-step">➍ Upload that CSV here.</span>
+                                            <span class="investment-import-help-step">➌ The filename often looks like <code>Individual..._Transactions_YYYYMMDD-....csv</code>.</span>
+                                            <span class="investment-import-help-step">➍ Upload that CSV together with the Positions CSV below.</span>
                                         </span>
                                     </span>
                                     </label>
                                     <div class="investment-import-plain-control-row">
                                         <input id="schwab_transactions_csv" name="transactions_csv" type="file" accept=".csv,text/csv"
+                                               class="settings-form-control investment-import-file-input" required>
+                                    </div>
+                                </div>
+                                <div class="investment-import-field investment-import-bridge-field" data-import-field="positions">
+                                    <label class="trade-strategy-param-label" for="schwab_positions_csv">
+                                    <span class="investment-import-label-trigger"
+                                          tabindex="0">
+                                        <span class="investment-import-label-step" aria-hidden="true">➋</span>
+                                        <span class="investment-import-label-text">Positions CSV</span>
+                                        <span class="investment-import-status-icon" id="schwab_positions_csv_status"
+                                              aria-hidden="true"></span>
+                                        <span class="field-tooltip trade-strategy-param-help investment-import-help"
+                                              role="tooltip">
+                                            <span class="investment-import-help-title">Download the Schwab Positions CSV</span>
+                                            <span class="investment-import-help-step">🄌 Sign in to Schwab.com (or international.schwab.com).</span>
+                                            <span class="investment-import-help-step">➊ Go to Accounts &gt; Positions and export/download CSV.</span>
+                                            <span class="investment-import-help-step">➋ Keep the Positions export from the same transfer snapshot as the Transactions CSV.</span>
+                                            <span class="investment-import-help-step">➌ The snapshot validates imported holdings and is retained as immutable source evidence.</span>
+                                        </span>
+                                    </span>
+                                    </label>
+                                    <div class="investment-import-plain-control-row">
+                                        <input id="schwab_positions_csv" name="positions_csv" type="file" accept=".csv,text/csv"
                                                class="settings-form-control investment-import-file-input" required>
                                     </div>
                                 </div>
@@ -801,5 +824,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.9.4') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.20.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.31.1') }}"></script>
 {% endblock %}

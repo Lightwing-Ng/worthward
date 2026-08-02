@@ -1,4 +1,4 @@
-/* Code version: v0.15.0 */
+/* Code version: v0.15.2 */
 
 .style-token-holdings-allocation-badge-demo {
     display: grid;
@@ -2036,6 +2036,13 @@ div.style-token-modal-demo::-webkit-scrollbar,
 
 .local-store-table-shell {
     min-height: 0;
+    --local-store-table-pagination-edge-inset: 13px;
+    --local-store-table-pagination-shell-padding: 4px;
+    --local-store-table-pagination-clearance: calc(
+        var(--local-store-pagination-slot-size)
+        + (var(--local-store-table-pagination-shell-padding) * 2)
+        + (var(--local-store-table-pagination-edge-inset) * 2)
+    );
 }
 
 .local-store-table th, .local-store-table td {
@@ -2188,6 +2195,86 @@ div.style-token-modal-demo::-webkit-scrollbar,
     align-items: center;
     width: fit-content;
     margin: 0 auto;
+}
+
+.local-store-table-wrap {
+    scroll-padding-block-end: var(--local-store-table-pagination-clearance);
+}
+
+.local-store-table-wrap::after {
+    content: "";
+    display: block;
+    width: 1px;
+    height: var(--local-store-table-pagination-clearance);
+    pointer-events: none;
+}
+
+.local-store-table-pagination {
+    --local-store-table-pagination-item-gap: clamp(1px, 0.5vw, var(--local-store-pagination-gap));
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-end: var(--local-store-table-pagination-edge-inset);
+    z-index: var(--layer-inline-ornament);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--local-store-table-pagination-item-gap);
+    width: max-content;
+    max-width: none;
+    margin: 0;
+    padding: var(--local-store-table-pagination-shell-padding);
+    border: var(--frosted-glass-border);
+    border-radius: var(--radius-pill);
+    background: var(--frosted-glass-background);
+    box-shadow: var(--frosted-glass-shadow);
+    backdrop-filter: var(--frosted-glass-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-blur);
+    transform: translateX(-50%);
+    color: var(--theme-text);
+    overflow: visible;
+    pointer-events: none;
+}
+
+.local-store-table-pagination .local-store-page-button {
+    appearance: none;
+    box-sizing: border-box;
+    cursor: pointer;
+    border-radius: 50%;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    color: var(--theme-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    text-align: center;
+    text-align-last: center;
+    font-family: inherit;
+    font-size: var(--font-table-body);
+    font-variant-numeric: lining-nums tabular-nums;
+    font-feature-settings: "lnum" 1, "tnum" 1;
+    line-height: 1;
+    pointer-events: auto;
+}
+
+.local-store-table-pagination .local-store-page-button.is-active,
+.local-store-table-pagination.is-animated .local-store-page-button.is-active {
+    color: var(--accent-contrast);
+}
+
+.local-store-table-pagination .local-store-page-button:not(.is-active):not(.local-store-page-placeholder):hover,
+.local-store-table-pagination .local-store-page-button:not(.is-active):not(.local-store-page-placeholder):focus-visible {
+    border: var(--frosted-glass-border);
+    background: var(--frosted-glass-background-hover);
+    box-shadow: var(--frosted-glass-shadow-active);
+}
+
+.local-store-table-pagination .local-store-pagination-indicator {
+    border-radius: 50%;
 }
 
 .local-store-pagination-indicator {

@@ -1,7 +1,7 @@
 """
 Shared web runtime and route handlers.
 
-Code version: v0.46.0
+Code version: v0.54.1
 """
 
 from __future__ import annotations
@@ -308,7 +308,7 @@ def report_fetch_abort_debug_event(
     # #endregion
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v2"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v7"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 INVESTMENT_REALTIME_QUOTE_TTL_SECONDS = 60.0
 INVESTMENT_REALTIME_QUOTE_TIMEOUT_SECONDS = 30
@@ -724,10 +724,23 @@ def build_web_runtime() -> WebRuntime:
             return pd.Timestamp(requested_date_value).strftime("%Y-%m-%d")
         return payload.max_date or payload.trading_dates[-1]
 
+    def canonicalize_money_market_ticker(value: object) -> str:
+        raw_ticker = str(value or "").strip().upper()
+        aliases = investment_ticker_store_aliases(raw_ticker)
+        return str(aliases[0] if aliases else raw_ticker).strip().upper()
+
     configured_money_market_tickers = {
-        str(value).strip().upper()
+        canonicalize_money_market_ticker(value)
         for value in money_market_settings.get("tickers", [])
         if str(value).strip()
+    }
+    configured_money_market_quote_currencies = {
+        canonicalize_money_market_ticker(ticker): str(currency).strip().upper()
+        for ticker, currency in money_market_settings.get("quote_currency_overrides", {}).items()
+        if (
+            canonicalize_money_market_ticker(ticker) in configured_money_market_tickers
+            and len(str(currency).strip()) == 3
+        )
     }
     money_market_name_from_description = bool(money_market_settings.get("name_from_description", False))
     money_market_description_keywords = [
@@ -740,7 +753,7 @@ def build_web_runtime() -> WebRuntime:
         return [
             ticker
             for ticker in tickers
-            if str(ticker).strip().upper() not in configured_money_market_tickers
+            if not is_configured_money_market_ticker(ticker)
         ]
 
     investment_daily_refresh_lock = threading.Lock()
@@ -748,7 +761,7 @@ def build_web_runtime() -> WebRuntime:
     investment_realtime_quote_cache: dict[tuple[str, ...], tuple[float, list[dict[str, object]]]] = {}
 
     def is_configured_money_market_ticker(ticker: str) -> bool:
-        return str(ticker).strip().upper() in configured_money_market_tickers
+        return canonicalize_money_market_ticker(ticker) in configured_money_market_tickers
 
     def get_cash_equivalent_tickers() -> set[str]:
         try:
@@ -874,7 +887,10 @@ def build_web_runtime() -> WebRuntime:
         )
         if cached.get("price_stores") != price_store_fingerprints:
             return None
-        return cast(dict[str, Any], payload)
+        return cast(
+            dict[str, Any],
+            normalize_investment_payload_tickers(payload),
+        )
 
     def write_investment_transactions_cache(
             *,
@@ -1043,13 +1059,13 @@ def build_web_runtime() -> WebRuntime:
             ticker: str,
             transactions: list[dict[str, Any]],
     ) -> str | None:
-        if ticker not in configured_money_market_tickers or not money_market_name_from_description:
+        if not is_configured_money_market_ticker(ticker) or not money_market_name_from_description:
             return None
 
         preferred_transaction_types = {"buy", "sell"}
         fallback_candidate = None
         for txn in transactions:
-            if str(txn.get("ticker") or "").strip().upper() != ticker:
+            if canonicalize_money_market_ticker(txn.get("ticker")) != canonicalize_money_market_ticker(ticker):
                 continue
             description = " ".join(str(txn.get("description") or "").split()).strip()
             if not description:
@@ -1072,6 +1088,7 @@ def build_web_runtime() -> WebRuntime:
             for ticker in (open_tickers or [])
             if str(ticker or "").strip()
         ))
+        requested_tickers = exclude_configured_money_market_tickers(requested_tickers)
         if not requested_tickers:
             return []
         cache_key = tuple(sorted(requested_tickers))
@@ -1114,7 +1131,10 @@ def build_web_runtime() -> WebRuntime:
         for raw_ticker in collect_investment_display_tickers(transactions):
             company_name, logo_url = resolve_ticker_identity_snapshot(
                 raw_ticker,
-                allow_remote_refresh=raw_ticker in open_ticker_set,
+                allow_remote_refresh=(
+                    raw_ticker in open_ticker_set
+                    and not is_configured_money_market_ticker(raw_ticker)
+                ),
             )
             if company_name == raw_ticker:
                 known_company_name = resolve_known_ticker_company_name(raw_ticker)
@@ -5550,6 +5570,7 @@ def build_web_runtime() -> WebRuntime:
                 "price_history_by_ticker": {},
                 "price_history_failures": [],
                 "money_market_tickers": sorted(configured_money_market_tickers),
+                "money_market_quote_currencies": configured_money_market_quote_currencies,
                 "cash_equivalent_tickers": sorted(get_cash_equivalent_tickers()),
                 "ticker_lineage": investment_ticker_lineage_payload(),
                 "known_ticker_company_names": known_ticker_company_names_payload(),
@@ -5578,6 +5599,7 @@ def build_web_runtime() -> WebRuntime:
                     else []
                 )
                 cached_data["money_market_tickers"] = sorted(configured_money_market_tickers)
+                cached_data["money_market_quote_currencies"] = configured_money_market_quote_currencies
                 cached_data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
                 cached_data["ticker_lineage"] = investment_ticker_lineage_payload()
                 cached_data["known_ticker_company_names"] = known_ticker_company_names_payload()
@@ -5619,6 +5641,7 @@ def build_web_runtime() -> WebRuntime:
             data["price_history_by_ticker"] = price_history_by_ticker
             data["price_history_failures"] = price_history_failures
             data["money_market_tickers"] = sorted(configured_money_market_tickers)
+            data["money_market_quote_currencies"] = configured_money_market_quote_currencies
             data["cash_equivalent_tickers"] = sorted(get_cash_equivalent_tickers())
             data["ticker_lineage"] = investment_ticker_lineage_payload()
             data["known_ticker_company_names"] = known_ticker_company_names_payload()
@@ -6047,25 +6070,39 @@ def build_web_runtime() -> WebRuntime:
                         "clearing older data first."
                     )
             elif broker == "schwab":
-                schwab_file = request.files.get("transactions_csv")
-                if schwab_file is None:
-                    schwab_file = request.files.get("schwab_transactions_csv")
-                if schwab_file is None:
+                schwab_transactions_file = request.files.get("transactions_csv")
+                if schwab_transactions_file is None:
+                    schwab_transactions_file = request.files.get("schwab_transactions_csv")
+                schwab_positions_file = request.files.get("positions_csv")
+                if schwab_positions_file is None:
+                    schwab_positions_file = request.files.get("schwab_positions_csv")
+                if schwab_transactions_file is None or schwab_positions_file is None:
                     return jsonify({
                         "success": False,
-                        "error": "Please upload the Schwab Order Status or Transactions CSV.",
+                        "error": "Please upload both the Schwab Transactions CSV and Positions CSV.",
                     }), 400
-                schwab_payload = schwab_file.read()
-                if not schwab_payload:
-                    return jsonify({"success": False, "error": "The Schwab CSV file is empty."}), 400
+                schwab_transactions_payload = schwab_transactions_file.read()
+                schwab_positions_payload = schwab_positions_file.read()
+                if not schwab_transactions_payload or not schwab_positions_payload:
+                    return jsonify({
+                        "success": False,
+                        "error": "The Schwab Transactions and Positions CSV files cannot be empty.",
+                    }), 400
                 imported_payload = parse_investment_payload(
                     "schwab",
                     "csv",
-                    csv_bytes=schwab_payload,
+                    transaction_csv_bytes=schwab_transactions_payload,
+                    positions_csv_bytes=schwab_positions_payload,
+                    transaction_filename=str(
+                        getattr(schwab_transactions_file, "filename", "") or ""
+                    ).strip(),
+                    positions_filename=str(
+                        getattr(schwab_positions_file, "filename", "") or ""
+                    ).strip(),
                 )
                 success_message = (
-                    "Charles Schwab import complete. Records were merged incrementally into the local investment store "
-                    "without clearing older data first."
+                    "Charles Schwab import complete. Transactions and the authoritative Positions snapshot were "
+                    "merged incrementally into the local investment store without clearing older data first."
                 )
             elif broker in {"zircon_hk", "standard_xlsx"}:
                 workbook_file = request.files.get("zircon_hk_transactions_xlsx")
@@ -6311,7 +6348,7 @@ def build_web_runtime() -> WebRuntime:
             )
             should_refresh_ticker = (
                 ticker in set(section_freshness["open_tickers"])
-                and ticker not in configured_money_market_tickers
+                and not is_configured_money_market_ticker(ticker)
             )
             if path is None:
                 if not should_refresh_ticker:
@@ -6370,6 +6407,19 @@ def build_web_runtime() -> WebRuntime:
 
         try:
             normalized_ticker = validate_ticker_or_raise(ticker)
+            if is_configured_money_market_ticker(normalized_ticker):
+                response = jsonify({
+                    "success": True,
+                    "ticker": normalized_ticker,
+                    "interval": "1m",
+                    "range": requested_range,
+                    "days": requested_days,
+                    "rows": [],
+                    "count": 0,
+                    "refreshed": False,
+                    "source": "money_market_anchor",
+                })
+                return apply_no_store_headers(response)
             refresh_result = None
             intraday_path = resolve_investment_history_store_path(normalized_ticker, interval="1m")
             if ensure_store and not is_one_minute_store_fresh(normalized_ticker):

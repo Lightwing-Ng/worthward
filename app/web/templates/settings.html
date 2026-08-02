@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.3.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner with context %}
 
@@ -726,9 +726,8 @@
                         </tbody>
                     </table>
                 </div>
-    </div>
     {% if local_store_total_pages > 1 %}
-    <nav class="settings-pagination local-store-pagination" aria-label="Local market store pages" data-local-store-pagination>
+    <nav class="settings-pagination local-store-pagination local-store-table-pagination" aria-label="Local market store pages" data-local-store-pagination>
                 {% if local_store_prev_slot.page %}
                 <a href="{{ local_store_page_urls[local_store_prev_slot.page] }}" class="local-store-page-button local-store-page-nav" aria-label="Previous pages">
                     <span class="icon icon-page-prev" aria-hidden="true"></span>
@@ -752,6 +751,7 @@
                 {% endif %}
     </nav>
     {% endif %}
+    </div>
     {% elif settings_section == "broker-access" %}
     <section class="settings-action-package settings-callout-card-warning">
             <button type="button" class="dismiss-button workspace-modal-close" aria-label="Close" onclick="this.closest('section').remove()">

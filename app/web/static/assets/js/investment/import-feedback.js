@@ -1,10 +1,10 @@
 /**
  * Pure Investment import-feedback markup builders.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
  */
 
-export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.2.0';
+export const INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION = 'v1.3.0';
 
 export function buildInvestmentImportFeedbackListHtml(items = []) {
     const normalizedItems = Array.isArray(items)
@@ -51,7 +51,7 @@ export function buildIbkrImportFeedbackMessage({
     }
     if (pendingTransferCount > 0) {
         items.push(
-            `<span class="notice-floating-banner-emphasis-danger"><u>Immediate action</u>:</span> Review and bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} possible HSBC transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history to remove duplicate-equity spikes.`
+            `<span class="notice-floating-banner-emphasis-danger"><u>Immediate action</u>:</span> Review and bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} possible internal-transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history to remove duplicate-equity spikes.`
         );
     }
     const trimmedRefreshNotice = String(refreshNotice || '').trim();
@@ -60,6 +60,44 @@ export function buildIbkrImportFeedbackMessage({
     if (trimmedValuationNotice) items.push(escapeHtml(trimmedValuationNotice));
     return `
         <p class="notice-floating-banner-heading">IBKR import complete</p>
+        ${buildInvestmentImportFeedbackListHtml(items)}
+    `.trim();
+}
+
+export function buildSchwabImportFeedbackMessage({
+    importSummary = null,
+    refreshNotice = '',
+    pendingTransferCount = 0,
+} = {}, {
+    escapeHtml,
+} = {}) {
+    if (typeof escapeHtml !== 'function') {
+        throw new TypeError('Schwab import feedback requires an HTML escape function.');
+    }
+
+    const incrementalImport = importSummary && typeof importSummary === 'object'
+        ? importSummary.incremental_import
+        : null;
+    const importedRecordCount = Number(incrementalImport?.imported_record_count);
+    const addedRecordCount = Number(incrementalImport?.added_record_count);
+    const items = [
+        'Transactions and the authoritative <strong>Positions</strong> snapshot were merged <strong>incrementally</strong> without clearing older records.',
+        'Both uploaded CSV files are retained locally as <strong>SHA-256-verified immutable evidence</strong>.',
+    ];
+    if (Number.isFinite(importedRecordCount) && Number.isFinite(addedRecordCount)) {
+        items.unshift(
+            `This run parsed <strong>${importedRecordCount.toLocaleString('en-US')}</strong> records and added <strong>${addedRecordCount.toLocaleString('en-US')}</strong>.`
+        );
+    }
+    if (pendingTransferCount > 0) {
+        items.push(
+            `<span class="notice-floating-banner-emphasis-danger"><u>Manual review required</u>:</span> Bind <strong class="notice-floating-banner-emphasis-danger">${pendingTransferCount.toLocaleString('en-US')} ambiguous in-kind transfer ${pendingTransferCount === 1 ? 'match' : 'matches'}</strong> in Transaction history. Exact same-day ticker-and-quantity pairs are linked automatically.`
+        );
+    }
+    const trimmedRefreshNotice = String(refreshNotice || '').trim();
+    if (trimmedRefreshNotice) items.push(escapeHtml(trimmedRefreshNotice));
+    return `
+        <p class="notice-floating-banner-heading">Charles Schwab import complete</p>
         ${buildInvestmentImportFeedbackListHtml(items)}
     `.trim();
 }

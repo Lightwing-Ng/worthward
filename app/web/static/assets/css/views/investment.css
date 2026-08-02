@@ -1,4 +1,4 @@
-/* Code version: v1.63.2 */
+/* Code version: v1.64.1 */
 
 .investment-workspace-header {
     --investment-section-resizer-size: 12px;
@@ -2246,9 +2246,10 @@
 }
 
 #investment_metrics_panel {
-    height: auto;
+    height: 100%;
     min-height: 0;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
     scrollbar-gutter: auto;
 }
 
@@ -2256,7 +2257,8 @@
     grid-auto-rows: max-content;
     column-gap: 14px;
     row-gap: 0;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
     scrollbar-width: none;
     scrollbar-gutter: auto;
 }
@@ -2747,7 +2749,8 @@
 }
 
 .scrollable-data-table-shell {
-    border-radius: 0;
+    /* The shell alone clips every fixed and scrolling table layer at its corners. */
+    border-radius: 10px;
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -2861,7 +2864,13 @@
     background: var(--panel-strong);
     background-clip: padding-box;
     scrollbar-gutter: stable;
+    scrollbar-color: color-mix(in srgb, var(--theme-muted) 62%, transparent) transparent;
     scroll-padding-top: var(--scrollable-data-table-header-height);
+}
+
+.scrollable-data-table-scroll::-webkit-scrollbar-track,
+.investment-holdings-table-scroll::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .investment-holdings-table-scroll.trade-transactions-wrap {
@@ -2999,6 +3008,20 @@
 .scrollable-data-table tbody tr:last-child td:last-child,
 .investment-holdings-table tbody tr:last-child td:last-child {
     border-bottom-right-radius: 10px;
+}
+
+/* Keep the four table layers rectangular; the shell above provides the only corner mask. */
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header],
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header],
+.scrollable-data-table-shell > .scrollable-data-table[data-table-header] thead th,
+.investment-holdings-table-shell > .investment-holdings-table[data-table-header] thead th,
+.scrollable-data-table-shell > .scrollable-data-table-scroll,
+.investment-holdings-table-shell > .investment-holdings-table-scroll,
+.scrollable-data-table-shell > .scrollable-data-table-scroll > .scrollable-data-table tbody tr:last-child > :first-child,
+.scrollable-data-table-shell > .scrollable-data-table-scroll > .scrollable-data-table tbody tr:last-child > :last-child,
+.investment-holdings-table-shell > .investment-holdings-table-scroll > .investment-holdings-table tbody tr:last-child > :first-child,
+.investment-holdings-table-shell > .investment-holdings-table-scroll > .investment-holdings-table tbody tr:last-child > :last-child {
+    border-radius: 0;
 }
 
 .investment-holdings-cell {
@@ -3186,7 +3209,10 @@
 }
 
 .investment-holdings-ticker-link .investment-cash-equivalent-token-logo,
-.investment-holdings-ticker-link .investment-broker-reward-token-logo {
+.investment-holdings-ticker-link .investment-money-market-fund-token-logo,
+.investment-holdings-ticker-link .investment-broker-reward-token-logo,
+.investment-stock-details-identity .investment-cash-equivalent-token-logo,
+.investment-stock-details-identity .investment-money-market-fund-token-logo {
     background: var(--theme-accent-positive);
     box-shadow: none;
 }
@@ -3196,6 +3222,21 @@
     -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
 }
 
+.investment-stock-details-identity .investment-cash-equivalent-token-logo {
+    mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/dollarsign.ring.svg") right center / contain no-repeat;
+}
+
+.investment-holdings-ticker-link .investment-money-market-fund-token-logo {
+    mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+}
+
+.investment-stock-details-identity .investment-money-market-fund-token-logo {
+    mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+    -webkit-mask: url("/market-store/logos/money-market-fund.ring.svg") center / contain no-repeat;
+}
+
 .investment-holdings-ticker-link .investment-broker-reward-token-logo {
     mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
     -webkit-mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
@@ -3203,6 +3244,30 @@
 
 .investment-holdings-broker-rewards-identity {
     cursor: default;
+}
+
+.settings-table.investment-holdings-table .investment-holdings-broker-rewards-row > td {
+    padding-block: 2px;
+}
+
+.investment-holdings-broker-rewards-identity {
+    padding-block: 0;
+}
+
+.investment-holdings-broker-rewards-identity .ticker-identity-copy {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.investment-holdings-broker-rewards-identity .ticker-identity-symbol {
+    flex: 0 0 auto;
+}
+
+.investment-holdings-broker-rewards-identity .ticker-identity-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
 }
 
 .investment-holdings-table th:nth-child(1),
@@ -4782,29 +4847,46 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-metric-tooltip {
-    position: absolute;
+    position: fixed;
     left: 0;
-    top: calc(100% + 8px);
+    top: 0;
     z-index: var(--layer-global-popover);
     display: grid;
-    gap: 6px;
-    min-width: 220px;
-    max-width: min(320px, calc(100vw - 32px));
+    box-sizing: border-box;
+    gap: 10px;
+    width: min(360px, calc(100vw - 24px));
+    min-width: min(220px, calc(100vw - 24px));
+    max-width: min(360px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    overflow: auto;
     margin-top: 0;
     padding: 10px 12px;
     border-radius: var(--radius-panel);
     color: var(--text);
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
     transform: translateY(-4px);
     transition: opacity 160ms var(--motion-standard), transform 160ms var(--motion-standard);
 }
 
-.investment-metric-tooltip-trigger:hover .investment-metric-tooltip,
-.investment-metric-tooltip-trigger:focus-visible .investment-metric-tooltip,
-.investment-metric-tooltip-trigger:focus-within .investment-metric-tooltip {
+.investment-metric-tooltip.is-visible {
     opacity: 1;
+    visibility: visible;
     transform: translateY(0);
+}
+
+.investment-metric-tooltip-section {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.investment-metric-tooltip-section-title {
+    color: var(--text);
+    font-size: var(--font-ui-xs);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
 }
 
 .investment-metric-tooltip-copy,
@@ -4819,27 +4901,62 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     color: var(--muted);
     font-size: var(--font-tooltip);
     line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 .investment-metric-tooltip-list {
-    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .investment-metric-tooltip-list li+li {
-    margin-top: 2px;
+    margin-top: 0;
 }
 
 .investment-metric-tooltip-list-line {
-    display: inline-grid;
-    grid-template-columns: 3ch max-content;
-    column-gap: 10px;
+    display: grid;
+    grid-template-columns: 4ch minmax(0, 1fr);
+    column-gap: 8px;
     align-items: baseline;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+}
+
+.investment-metric-tooltip-row-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.investment-metric-tooltip-row-date,
+.investment-metric-tooltip-row-description {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .investment-metric-tooltip-row-no {
+    white-space: nowrap;
     text-align: right;
+    color: var(--text);
+    font-size: var(--font-ui-xs);
+}
+
+.investment-metric-tooltip-row-date {
+    color: var(--text);
+    font-size: var(--font-ui-xs);
+    line-height: 1.25;
+}
+
+.investment-metric-tooltip-row-description {
+    color: var(--muted);
+    font-size: var(--font-tooltip);
+    line-height: 1.3;
 }
 
 @keyframes investment-history-row-pulse {

@@ -1,6 +1,6 @@
 # antigravity
 
-Documentation version: `v2.64.0`
+Documentation version: `v2.65.0`
 
 `antigravity` is a local-first Flask web app for comparing supported-market stock tickers, building weighted portfolios, running single-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches.
 
@@ -290,9 +290,17 @@ profile name.
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
 - IBKR internal FX conversion symbols such as `USD.HKD` are treated as ledger-only cash-conversion artifacts rather than queryable securities
 - Confirmed internal-transfer bindings are persisted in `investment.parquet` with
-  cross-import `v2` leg identities. Broker re-imports preserve those identities
-  across source-file, row-number, description, IBKR account-mask, and USD
-  blank-field presentation changes.
+  cross-import `v2` leg identities. Broker re-imports preserve cash-transfer
+  identities across source-file, row-number, description, IBKR account-mask,
+  and USD blank-field presentation changes. In-kind security-transfer identities
+  additionally require broker, account, date, direction, ticker, and quantity.
+- IBKR Realized Summary `Transfers` rows record FOP security transfers as
+  non-cash `transfer_out` or `transfer_in` ledger events. Charles Schwab imports
+  require the paired Transactions and Positions CSV exports; the Positions file
+  provides the authoritative broker snapshot. A same-day, cross-broker in-kind
+  transfer is linked automatically only when ticker and quantity match exactly;
+  every ambiguous candidate remains available for manual binding in Transaction
+  history.
 
 `config.toml` contains an `investment.money_market_funds` rule family for cash-like instruments whose valuation should not depend on normal daily mark-to-market history.
 

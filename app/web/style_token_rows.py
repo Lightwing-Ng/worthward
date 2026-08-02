@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.4.1
+Code version: v1.4.2
 """
 
 from __future__ import annotations
@@ -115,6 +115,7 @@ def build_style_token_rows(labels: Mapping[str, str]) -> list[dict[str, object]]
                 raw_token("--shared-select-dropdown-radius", "var(--radius-soft)"),
                 raw_token("--shared-select-dropdown-max-height", "min(360px, 55vh)"),
                 raw_token("--shared-select-option-padding", "9px 10px"),
+                raw_token("--shared-select-option-radius", "var(--radius-pill)"),
                 px_token("--shared-select-option-gap", 8, 0),
                 raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
                 raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),

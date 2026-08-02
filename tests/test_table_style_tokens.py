@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.7.2."""
 
 from __future__ import annotations
 
@@ -27,9 +27,23 @@ def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None
     assert response.status_code == 200
     assert 'id="shared-select-filter"' in html
     assert "--shared-select-option-padding" in html
+    assert "--shared-select-option-radius" in html
     assert "--scrollable-data-table-header-height" in html
     assert "--scrollable-data-table-summary-background" in html
     assert 'data-summary-scope="both"' in html
+
+
+def test_shared_select_option_highlights_use_pill_geometry() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    forms_css = (
+        project_root / "app/web/static/assets/css/components/forms.css"
+    ).read_text(encoding="utf-8")
+
+    option_rule = forms_css.split(
+        "\n.trade-strategy-dropdown-option {", maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+
+    assert "border-radius: var(--shared-select-option-radius);" in option_rule
 
 
 def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:

@@ -1,11 +1,66 @@
 # Investment frontend changelog
 
-Documentation version: `v1.7.2`
+Documentation version: `v1.11.4`
 
 This permanent changelog preserves the historical notes that previously occupied the
 `investment.js` module header. The source file now keeps only its current version and
 architectural boundary summary so code navigation begins at the imports.
 
+- Fixed: Investment Metrics tooltips now use current calculation copy for offshore
+  gain, broker rewards, stock grants, funding, commission, and P&L cards. Each
+  tooltip identifies its calculation and lists the contributing ledger rows with
+  row number, date, and a readable transaction description.
+- Fixed: Metrics tooltips now portal to the document body, wrap long content, and
+  clamp to the viewport. The Metrics grid can scroll at narrow widths without
+  clipping or creating a false scroll range from tooltip content.
+
+- Verified: A complete read-only pass over all 41 non-money-market stock and ETF
+  rows confirms that Holdings, Stock details, and the calculation engine agree
+  at two decimal places. The audited fourth Stock-details action is Export
+  Transactions; Realized P&L remains a persistent metric card.
+- Tested: The accepted GOOGL total remains `414.81 USD`, including the
+  user-confirmed CMB Wing Lung five-share round trip and verified HSBC
+  `15.96 USD`. AAPL remains `220.95 USD` across its CMB Wing Lung, Longbridge HK,
+  and Tiger Trade account contributions.
+- Documented: DRAM, BOXX, and EUV retain `partial` calculation status because
+  rolling HSBC Order Status history cannot supply a verified account result.
+  Their displayed values therefore include complete accounts only; no local
+  estimate from incomplete HSBC history is added.
+- Fixed: Stock-details identity for every configured money-market fund now uses
+  the same positive green token logo as Holdings instead of rendering the raw
+  black SVG asset.
+- Fixed: Franklin's money-market symbol now displays its canonical `005276756`
+  ticker while retaining the standard full fund name.
+
+- Changed: Stock-details exact-price hover badges now reuse the Holdings
+  allocation badge's shared 2px corner radius while preserving the existing
+  standard-blue fill, dimensions, and axis alignment.
+
+- Fixed: The Stock-details horizontal hover guide now spans the complete price
+  chart area, independently of the average-cost curve's visible range.
+
+- Fixed: Stock-details daily-chart tooltips now carry weekend and market-holiday
+  position changes to the following visible market close, so QQQI and other
+  securities show the correct point-in-time position on hover.
+
+- Fixed: Explicit, evidence-backed account history attestations allow otherwise
+  rolling broker sources to reconstruct realized P&L only while broker, account,
+  ticker, currency, cutoff date, trade counts, and quantities all match. HSBC
+  GOOGL now contributes its independently reconstructed `15.96 USD` before the
+  cross-broker display total is formed.
+- Fixed: The final Holdings broker-rewards row now keeps its label and description
+  on one compact line, so a table without pagination no longer ends in an
+  oversized visual chin.
+- Fixed: Account-scoped broker calibrations restore closed Longbridge HK and
+  HSBC realized P&L rows, preserve SQQQ's broker-reported negative sign, and avoid adding ticker cash
+  adjustments when the broker total already includes them.
+- Fixed: Realized P&L now replays inside broker-account security scopes, uses
+  broker-reported closed-lot P&L without a second fee deduction, and aggregates
+  only after each account result has been validated.
+- Fixed: IBKR CSV/GainsKeeper deduplication now preserves official closed-lot
+  proceeds, signed fee, basis, realized P&L, and source identity on the retained
+  execution row.
+- Fixed: Scrollable Investment tables now use one rounded clipping shell for the header, optional fixed summary, scrolling rows, and pagination tail. The reserved scrollbar gutter remains alignment-only with a transparent track, eliminating child-layer corner leaks.
 - Changed: Holdings labels the live-price column `Last price` and shows each open position's local-currency session price change beneath it, using the same solid, right-aligned badge treatment as Unrealized P&L.
 - Added: The Investment share drawer exports the active transaction scope as a round-trip standard XLSX workbook, and the broker selector exposes a neutral `No specified broker` fallback for importing that contract.
 - Fixed: Fixed Holdings summary values for Market value, Realized P&L, Unrealized P&L, and % now derive their physical columns directly from the scrolling body table, preserving the same right edge across scrollbar and responsive-width changes.

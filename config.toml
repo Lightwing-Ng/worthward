@@ -1,8 +1,8 @@
 [app]
 name = "antigravity"
-version = "v2.52.5"
+version = "v2.59.0"
 debug = false
-updated_on = "19 Jul 2026"
+updated_on = "1 Aug 2026"
 
 [server]
 host = "0.0.0.0"
@@ -239,6 +239,7 @@ default_screener = "america"
 default_exchange = "NASDAQ"
 
 [investment.money_market_funds]
-tickers = ["005276756", "HK0000369196.USD", "HK0001039582.USD"]
+tickers = ["005276756", "HK0000369196", "HK0000584737", "HK0000584752", "HK0000478872", "HK0000720752", "HK0001039582"]
+quote_currency_overrides = { "005276756" = "USD", "HK0000369196" = "USD", "HK0000584737" = "USD", "HK0000584752" = "USD", "HK0000478872" = "HKD", "HK0000720752" = "USD", "HK0001039582" = "USD" }
 name_from_description = true
 description_keywords = ["MONEY MARKET", "SHORT-TERM MONEY MARKET"]

@@ -1,8 +1,13 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.50.0
+ * Code version: v1.61.0
+ * - Added: Explicit account-scope history attestations can verify otherwise partial tax-lot sources only when their broker, account, ticker, currency, date, trade counts, and quantities all match.
+ * - Fixed: Tax-lot replay uses broker execution chronology instead of cash-safety ordering when statement rows share one normalized timestamp.
+ * - Fixed: Realized P&L is calculated inside broker-account security scopes before ticker display aggregation, and broker-reported closed-lot P&L bypasses local fee and basis reconstruction.
  * - Added: Holdings summaries retain ledger-derived realized P&L by date so open positions can display an attributable daily realized result.
+ * - Fixed: Broker performance snapshots calibrate only trade P&L and retain evidenced dividend, withholding, payment-in-lieu, and adjustment cash income.
+ * - Fixed: Transaction descriptions reserve @ for prices and use × for a quantity without a price.
  * - Added: US overnight quote sessions require Longbridge provenance and use the Investment realtime clock contract.
  * - Added: Extended-hours Investment pulse eligibility now requires the per-ticker Longbridge quote source while preserving regular-session fallback behavior.
  * - Added: Realtime quote source resolution preserves one provider or reports mixed provenance.
@@ -318,6 +323,12 @@ export function createInvestmentDataUtils({
     function getTickerQuoteCurrency(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
+        const canonicalTicker = getInvestmentCanonicalTicker(normalizedTicker);
+        const configuredMoneyMarketCurrency = normalizeCurrencyCode(
+            globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_quote_currencies?.[canonicalTicker]
+            ?? globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.money_market_quote_currencies?.[normalizedTicker],
+        );
+        if (configuredMoneyMarketCurrency) return configuredMoneyMarketCurrency;
         if (normalizedTicker.startsWith(`${LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX}.`)) {
             const currency = normalizeCurrencyCode(normalizedTicker.split('.').pop());
             return currency || INVESTMENT_BASE_CURRENCY;
@@ -780,7 +791,7 @@ export function createInvestmentDataUtils({
                 const cleanPrice = Number(price).toFixed(2);
                 description = `${displayTicker} @ ${cleanPrice} × ${cleanQty}`;
             } else {
-                description = `${displayTicker}@${cleanQty}`;
+                description = `${displayTicker} × ${cleanQty}`;
             }
         } else if (brokerCode === 'hsbc' && ['deposit', 'withdrawal'].includes(normalizedTypeDesc)) {
             description = getTransactionDescriptionText(
@@ -880,9 +891,99 @@ export function createInvestmentDataUtils({
             shares: 0,
             totalCost: 0,
             realizedPnl: 0,
+            nonPerformanceRealizedPnl: 0,
             realizedPnlByDate: {},
             lastCloseDate: null,
+            lastTradeDate: null,
+            buyCount: 0,
+            buyQuantity: 0,
+            sellCount: 0,
+            sellQuantity: 0,
+            brokerRealizedSellCount: 0,
+            realizedPnlStatus: 'complete',
+            hasPartialTaxLotHistory: false,
+            lotScope: null,
         };
+    }
+
+    function normalizeInvestmentLotScopeAccount(broker, accountId) {
+        const normalizedAccount = String(accountId || '').trim();
+        if (String(broker || '').trim().toLowerCase() === 'ibkr') {
+            const suffixMatch = normalizedAccount.toUpperCase().match(/^U(?:\*+|\d+)(\d{5})$/);
+            if (suffixMatch) return `ibkr:u-suffix:${suffixMatch[1]}`;
+        }
+        return normalizedAccount.toLowerCase() || 'missing-account';
+    }
+
+    function getTransactionLotScope(txn, tickerOverride = '') {
+        const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase() || 'missing-broker';
+        const institution = String(
+            txn?.institution || txn?.source?.institution || broker,
+        ).trim().toLowerCase() || broker;
+        const accountId = String(
+            txn?.account_id
+            ?? txn?.account
+            ?? txn?.source?.account_id
+            ?? txn?.source?.account
+            ?? '',
+        ).trim();
+        const accountType = String(
+            txn?.account_type ?? txn?.source?.account_type ?? '',
+        ).trim().toLowerCase() || 'missing-account-type';
+        const ticker = getInvestmentCanonicalTicker(tickerOverride || txn?.ticker) || 'missing-ticker';
+        const currency = String(formatTransactionCurrency(txn) || getTickerQuoteCurrency(ticker)).trim().toUpperCase()
+            || 'MISSING-CURRENCY';
+        const securityId = String(
+            txn?.security_id
+            ?? txn?.source?.security_id
+            ?? txn?.source?.unique_id
+            ?? txn?.source?.cusip
+            ?? txn?.source?.isin
+            ?? '',
+        ).trim().toUpperCase() || 'MISSING-SECURITY-ID';
+        return {
+            broker,
+            institution,
+            accountId,
+            accountToken: normalizeInvestmentLotScopeAccount(broker, accountId),
+            accountType,
+            ticker,
+            currency,
+            securityId,
+        };
+    }
+
+    function getTransactionLotScopeKey(txn, tickerOverride = '') {
+        const scope = getTransactionLotScope(txn, tickerOverride);
+        return [
+            scope.broker,
+            scope.institution,
+            scope.accountToken,
+            scope.accountType,
+            scope.ticker,
+            scope.currency,
+            scope.securityId,
+        ].join('|');
+    }
+
+    function getTransactionBrokerRealizedPnl(txn) {
+        const rawValue = (
+            txn?.broker_realized_pnl_raw
+            ?? txn?.broker_realized_pnl
+            ?? txn?.normalized?.broker_realized_pnl
+            ?? txn?.source?.broker_realized_pnl
+        );
+        if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') return null;
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function hasPartialTaxLotHistorySource(txn) {
+        return new Set([
+            'hsbc_order_status_text',
+            'hsbc_order_status_capture',
+            'ibkr_web_trade_notification',
+        ]).has(String(txn?.source?.file_kind || '').trim().toLowerCase());
     }
 
     function compareInvestmentTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
@@ -928,6 +1029,46 @@ export function createInvestmentDataUtils({
         return leftRow - rightRow;
     }
 
+    function getInvestmentTaxLotOrderDatetime(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        return String(
+            source.history_order_datetime
+            ?? source.execution_datetime
+            ?? source.trade_datetime
+            ?? txn?.datetime
+            ?? txn?.date
+            ?? '',
+        ).trim();
+    }
+
+    function compareInvestmentTaxLotTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftDatetime = getInvestmentTaxLotOrderDatetime(leftTxn);
+        const rightDatetime = getInvestmentTaxLotOrderDatetime(rightTxn);
+        if (leftDatetime !== rightDatetime) {
+            return leftDatetime.localeCompare(rightDatetime);
+        }
+        const leftDate = String(leftTxn?.date || '');
+        const rightDate = String(rightTxn?.date || '');
+        if (leftDate !== rightDate) {
+            return leftDate.localeCompare(rightDate);
+        }
+        const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
+        const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
+        if (leftBroker === 'hsbc' && rightBroker === 'hsbc') {
+            const leftSequence = getHsbcOrderSequenceNumber(leftTxn);
+            const rightSequence = getHsbcOrderSequenceNumber(rightTxn);
+            if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
+                return leftSequence - rightSequence;
+            }
+        }
+        const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
+        const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);
+        if (Number.isFinite(leftRow) && Number.isFinite(rightRow) && leftRow !== rightRow) {
+            return leftRow - rightRow;
+        }
+        return leftIndex - rightIndex;
+    }
+
     function getAuthoritativePositionSnapshot() {
         if (window.ANTIGRAVITY_INVESTMENT_DATA?.summary?.position_snapshot_authoritative !== true) {
             return null;
@@ -967,6 +1108,7 @@ export function createInvestmentDataUtils({
             normalizedSnapshot[normalizedTicker] = {
                 realizedTotal,
                 currency: String(snapshot.currency || getTickerQuoteCurrency(normalizedTicker)).trim().toUpperCase(),
+                includesNonperformance: snapshot.realized_total_includes_nonperformance === true,
             };
         });
         return normalizedSnapshot;
@@ -983,18 +1125,91 @@ export function createInvestmentDataUtils({
 
     function getAuthoritativeBrokerPerformanceSnapshots() {
         const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
-        if (!brokerSummaries || typeof brokerSummaries !== 'object') return {};
-        const snapshots = {};
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
+        const snapshots = [];
         Object.entries(brokerSummaries).forEach(([broker, summary]) => {
             if (!summary || typeof summary !== 'object') return;
             if (summary.performance_snapshot_authoritative !== true) return;
             const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
             if (!normalizedBroker) return;
-            snapshots[normalizedBroker] = normalizeAuthoritativePerformanceSnapshot(
-                summary.performance_snapshot,
-            );
+            const accountId = String(summary.account_id ?? summary.account ?? '').trim();
+            snapshots.push({
+                broker: normalizedBroker,
+                accountId,
+                accountToken: normalizeInvestmentLotScopeAccount(normalizedBroker, accountId),
+                performanceSnapshot: normalizeAuthoritativePerformanceSnapshot(
+                    summary.performance_snapshot,
+                ),
+            });
         });
         return snapshots;
+    }
+
+    function getVerifiedTaxLotHistoryScopes() {
+        const brokerSummaries = window.ANTIGRAVITY_INVESTMENT_DATA?.broker_summaries;
+        const scopes = new Map();
+        if (!brokerSummaries || typeof brokerSummaries !== 'object') return scopes;
+        Object.entries(brokerSummaries).forEach(([broker, summary]) => {
+            if (!summary || typeof summary !== 'object') return;
+            const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
+            const accountId = String(summary.account_id ?? summary.account ?? '').trim();
+            if (!normalizedBroker || !accountId) return;
+            const accountToken = normalizeInvestmentLotScopeAccount(normalizedBroker, accountId);
+            const rawVerifications = summary.tax_lot_history_verifications;
+            if (!rawVerifications || typeof rawVerifications !== 'object') return;
+            Object.entries(rawVerifications).forEach(([ticker, rawVerification]) => {
+                if (!rawVerification || typeof rawVerification !== 'object') return;
+                const normalizedTicker = getInvestmentCanonicalTicker(ticker);
+                const currency = String(rawVerification.currency || '').trim().toUpperCase();
+                const verifiedThrough = normalizeLedgerDate(rawVerification.verified_through);
+                const buyCount = Number(rawVerification.buy_count);
+                const sellCount = Number(rawVerification.sell_count);
+                const buyQuantity = Number(rawVerification.buy_quantity);
+                const sellQuantity = Number(rawVerification.sell_quantity);
+                if (
+                    !normalizedTicker
+                    || !currency
+                    || !verifiedThrough
+                    || !Number.isInteger(buyCount)
+                    || buyCount < 0
+                    || !Number.isInteger(sellCount)
+                    || sellCount < 0
+                    || !Number.isFinite(buyQuantity)
+                    || buyQuantity < 0
+                    || !Number.isFinite(sellQuantity)
+                    || sellQuantity < 0
+                ) return;
+                scopes.set([
+                    normalizedBroker,
+                    accountToken,
+                    normalizedTicker,
+                    currency,
+                ].join('|'), {
+                    verifiedThrough,
+                    buyCount,
+                    sellCount,
+                    buyQuantity,
+                    sellQuantity,
+                    calculationMethod: String(rawVerification.calculation_method || '').trim(),
+                    verificationSource: String(rawVerification.verification_source || '').trim(),
+                });
+            });
+        });
+        return scopes;
+    }
+
+    function matchesVerifiedTaxLotHistory(scopeState, verification) {
+        if (!verification || !isFlatPosition(scopeState?.shares)) return false;
+        const closeEnough = (left, right) => Math.abs(Number(left) - Number(right)) < 1e-9;
+        return (
+            scopeState.realizedPnlStatus === 'complete'
+            && scopeState.lastTradeDate
+            && scopeState.lastTradeDate <= verification.verifiedThrough
+            && scopeState.buyCount === verification.buyCount
+            && scopeState.sellCount === verification.sellCount
+            && closeEnough(scopeState.buyQuantity, verification.buyQuantity)
+            && closeEnough(scopeState.sellQuantity, verification.sellQuantity)
+        );
     }
 
     function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
@@ -1021,6 +1236,24 @@ export function createInvestmentDataUtils({
         }
         const price = getTransactionPrice(txn);
         return Number.isFinite(price) ? price : 0;
+    }
+
+    function getTransactionTradePriceAndCommissionUnitPrice(txn, quantityOverride = null) {
+        const quantity = quantityOverride ?? getTransactionQuantity(txn);
+        const price = getTransactionPrice(txn);
+        if (
+            quantity === null
+            || !Number.isFinite(quantity)
+            || quantity <= 0
+            || !Number.isFinite(price)
+            || price < 0
+        ) {
+            return getTransactionEffectiveUnitPrice(txn, quantityOverride);
+        }
+        const commissionPerShare = Math.abs(getTransactionCommission(txn)) / quantity;
+        return getNormalizedTransactionType(txn) === 'sell'
+            ? Math.max(0, price - commissionPerShare)
+            : price + commissionPerShare;
     }
 
     const INVESTMENT_LINEAGE_PROXY_TICKERS = new Set(['SPY', 'SPY.US']);
@@ -1442,10 +1675,21 @@ export function createInvestmentDataUtils({
     const INVESTMENT_TICKER_LINEAGE_FALLBACK = {
         'SPLG.US': ['SPYM', 'SPYM.US', 'SPLG', 'SPY', 'SPY.US'],
         SPLG: ['SPYM', 'SPYM.US', 'SPY', 'SPY.US'],
+        'HK0000369196.USD': ['HK0000369196'],
+        'HK0000369196.HK': ['HK0000369196'],
+        'HK0000584752.HK': ['HK0000584752'],
+        'HK0000584737.HK': ['HK0000584737'],
+        'HK0000478872.HK': ['HK0000478872'],
+        'HK0000720752.HK': ['HK0000720752'],
+        'HK0001039582.USD': ['HK0001039582'],
+        'HK0001039582.HK': ['HK0001039582'],
+        'LONGBRIDGE_HK_CASH_EQUIVALENT.PING_AN_MONEY_MARKET_USD.USD': ['HK0000720752'],
+        'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_USD.USD': ['HK0000584737'],
+        'LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_HKD.HKD': ['HK0000478872'],
     };
 
     function getInvestmentTickerLineageMap() {
-        const payloadLineage = window.ANTIGRAVITY_INVESTMENT_DATA?.ticker_lineage;
+        const payloadLineage = globalThis.window?.ANTIGRAVITY_INVESTMENT_DATA?.ticker_lineage;
         if (payloadLineage && typeof payloadLineage === 'object' && !Array.isArray(payloadLineage)) {
             return payloadLineage;
         }
@@ -1860,8 +2104,10 @@ export function createInvestmentDataUtils({
 
     function buildTickerSummaries(transactions, latestPrices, totalEquity, tickerClosePrices = {}) {
         const tickerMap = new Map();
-        const brokerTickerMap = new Map();
-        const orderedTransactions = [...transactions].sort((left, right) => compareInvestmentTransactions(left, right));
+        const lotScopeMap = new Map();
+        const orderedTransactions = [...transactions].sort((left, right) => (
+            compareInvestmentTaxLotTransactions(left, right)
+        ));
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
@@ -1869,6 +2115,7 @@ export function createInvestmentDataUtils({
         const authoritativePositionSnapshot = getAuthoritativePositionSnapshot();
         const authoritativePerformanceSnapshot = getAuthoritativePerformanceSnapshot();
         const authoritativeBrokerPerformanceSnapshots = getAuthoritativeBrokerPerformanceSnapshots();
+        const verifiedTaxLotHistoryScopes = getVerifiedTaxLotHistoryScopes();
         const useAuthoritativePositionSnapshot = authoritativePositionSnapshot !== null;
         const canonicalAuthoritativePositionSnapshot = {};
         if (useAuthoritativePositionSnapshot) {
@@ -1904,9 +2151,29 @@ export function createInvestmentDataUtils({
             });
         }
 
-        function applyTickerTransaction(summary, txn, normalizedType, quantity, amount, ledgerDate) {
+        function applyTickerTransaction(
+            summary,
+            txn,
+            normalizedType,
+            quantity,
+            amount,
+            ledgerDate,
+            {
+                preferBrokerRealizedPnl = false,
+                preferTradePriceAndCommission = false,
+            } = {},
+        ) {
+            summary.hasPartialTaxLotHistory = (
+                summary.hasPartialTaxLotHistory || hasPartialTaxLotHistorySource(txn)
+            );
             if (normalizedType === 'buy' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'long', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                summary.buyCount += 1;
+                summary.buyQuantity += quantity;
+                summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
+                const effectiveUnitPrice = preferTradePriceAndCommission
+                    ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
+                    : getTransactionEffectiveUnitPrice(txn, quantity);
+                applyDirectionalTrade(summary, 'long', quantity, effectiveUnitPrice);
                 if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
                 return;
             }
@@ -1922,7 +2189,34 @@ export function createInvestmentDataUtils({
                 return;
             }
             if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-                applyDirectionalTrade(summary, 'short', quantity, getTransactionEffectiveUnitPrice(txn, quantity));
+                const sharesBeforeSell = Number(summary.shares) || 0;
+                const realizedBeforeSell = Number(summary.realizedPnl) || 0;
+                const effectiveUnitPrice = preferTradePriceAndCommission
+                    ? getTransactionTradePriceAndCommissionUnitPrice(txn, quantity)
+                    : getTransactionEffectiveUnitPrice(txn, quantity);
+                applyDirectionalTrade(summary, 'short', quantity, effectiveUnitPrice);
+                summary.sellCount += 1;
+                summary.sellQuantity += quantity;
+                summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
+                const brokerRealizedPnl = preferBrokerRealizedPnl
+                    ? getTransactionBrokerRealizedPnl(txn)
+                    : null;
+                if (brokerRealizedPnl !== null) {
+                    summary.realizedPnl = realizedBeforeSell + brokerRealizedPnl;
+                    summary.brokerRealizedSellCount += 1;
+                } else if (sharesBeforeSell < quantity - 1e-9) {
+                    summary.realizedPnlStatus = 'incomplete';
+                }
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            if (normalizedType === 'transfer_in' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares += quantity;
+                if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
+                return;
+            }
+            if (normalizedType === 'transfer_out' && quantity !== null && !Number.isNaN(quantity)) {
+                summary.shares -= quantity;
                 if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
                 return;
             }
@@ -1931,16 +2225,19 @@ export function createInvestmentDataUtils({
                 && txn?.source?.excluded_from_broker_pnl !== true
             ) {
                 summary.realizedPnl += amount;
+                summary.nonPerformanceRealizedPnl += amount;
             }
         }
 
         orderedTransactions.forEach((txn) => {
             const syntheticCashEquivalentTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
-            const ticker = syntheticCashEquivalentTicker || (
+            const ticker = syntheticCashEquivalentTicker
+                ? getInvestmentCanonicalTicker(syntheticCashEquivalentTicker)
+                : (
                 shouldTrackHoldingTicker(txn)
                     ? getInvestmentCanonicalTicker(txn.ticker)
                     : ''
-            );
+                );
             if (!ticker) return;
             const normalizedType = getNormalizedTransactionType(txn);
             const quantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
@@ -1981,21 +2278,140 @@ export function createInvestmentDataUtils({
                 ) + realizedPnlDelta;
             }
 
-            const broker = String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase();
-            if (broker) {
-                const brokerTickerKey = `${broker}|${ticker}`;
-                if (!brokerTickerMap.has(brokerTickerKey)) {
-                    brokerTickerMap.set(brokerTickerKey, createPositionState(ticker));
+            const lotScopeKey = getTransactionLotScopeKey(txn, ticker);
+            if (!lotScopeMap.has(lotScopeKey)) {
+                const scopedState = createPositionState(ticker);
+                scopedState.lotScope = getTransactionLotScope(txn, ticker);
+                lotScopeMap.set(lotScopeKey, scopedState);
+            }
+            const scopedState = lotScopeMap.get(lotScopeKey);
+            const scopedVerification = verifiedTaxLotHistoryScopes.get([
+                scopedState.lotScope.broker,
+                scopedState.lotScope.accountToken,
+                scopedState.lotScope.ticker,
+                scopedState.lotScope.currency,
+            ].join('|')) ?? null;
+            const scopedRealizedPnlBeforeTransaction = Number(scopedState.realizedPnl) || 0;
+            if (syntheticCashEquivalentTicker) {
+                const valueAfter = Number(
+                    txn?.normalized?.cash_equivalent_value_after
+                    ?? txn?.source?.cash_equivalent_cost_basis_after_raw
+                    ?? 0
+                );
+                const interestAmount = Number(
+                    txn?.normalized?.cash_equivalent_interest_amount
+                    ?? txn?.source?.cash_equivalent_interest_raw
+                    ?? 0
+                );
+                scopedState.shares = Number.isFinite(valueAfter) ? Math.max(0, valueAfter) : 0;
+                scopedState.totalCost = scopedState.shares;
+                if (Number.isFinite(interestAmount)) {
+                    scopedState.realizedPnl += interestAmount;
                 }
+                if (isFlatPosition(scopedState.shares)) {
+                    scopedState.lastCloseDate = ledgerDate;
+                }
+            } else {
                 applyTickerTransaction(
-                    brokerTickerMap.get(brokerTickerKey),
+                    scopedState,
                     txn,
                     normalizedType,
                     quantity,
                     amount,
                     ledgerDate,
+                    {
+                        preferBrokerRealizedPnl: true,
+                        preferTradePriceAndCommission: (
+                            scopedVerification?.calculationMethod === 'trade_price_and_commission'
+                        ),
+                    },
                 );
             }
+            const scopedRealizedPnlDelta = (
+                Number(scopedState.realizedPnl) || 0
+            ) - scopedRealizedPnlBeforeTransaction;
+            if (ledgerDate && Math.abs(scopedRealizedPnlDelta) > 1e-9) {
+                scopedState.realizedPnlByDate[ledgerDate] = (
+                    Number(scopedState.realizedPnlByDate[ledgerDate]) || 0
+                ) + scopedRealizedPnlDelta;
+            }
+        });
+
+        const realizedAccountResultsByTicker = new Map();
+        lotScopeMap.forEach((scopeState) => {
+            const scope = scopeState.lotScope;
+            const authoritativeSnapshot = authoritativeBrokerPerformanceSnapshots.find((entry) => (
+                entry.broker === scope.broker
+                && entry.accountToken === scope.accountToken
+            ));
+            const performanceEntry = authoritativeSnapshot?.performanceSnapshot?.[scope.ticker] ?? null;
+            const taxLotHistoryVerification = verifiedTaxLotHistoryScopes.get([
+                scope.broker,
+                scope.accountToken,
+                scope.ticker,
+                scope.currency,
+            ].join('|')) ?? null;
+            const verifiedTaxLotHistory = matchesVerifiedTaxLotHistory(
+                scopeState,
+                taxLotHistoryVerification,
+            );
+            const nonPerformanceRealizedPnlLocal = Number(scopeState.nonPerformanceRealizedPnl) || 0;
+            let realizedPnlLocal = Number(scopeState.realizedPnl) || 0;
+            let status = 'complete';
+            let source = scopeState.brokerRealizedSellCount > 0
+                ? 'broker_closed_trades'
+                : 'account_tax_lot_reconstruction';
+            let sourceCurrency = scope.currency;
+
+            if (performanceEntry && Number.isFinite(performanceEntry.realizedTotal)) {
+                realizedPnlLocal = performanceEntry.realizedTotal + (
+                    performanceEntry.includesNonperformance ? 0 : nonPerformanceRealizedPnlLocal
+                );
+                sourceCurrency = performanceEntry.currency;
+                source = 'broker_performance_snapshot';
+            } else if (scopeState.realizedPnlStatus === 'incomplete') {
+                status = 'incomplete';
+                realizedPnlLocal = null;
+                source = 'unavailable';
+            } else if (
+                scopeState.sellCount > scopeState.brokerRealizedSellCount
+                && scopeState.hasPartialTaxLotHistory
+                && !verifiedTaxLotHistory
+            ) {
+                status = 'unverified';
+                realizedPnlLocal = null;
+                source = 'unavailable';
+            }
+
+            const realizedPnl = realizedPnlLocal === null
+                ? null
+                : convertAmountToBaseCurrencyAtLatestRate(
+                    realizedPnlLocal,
+                    sourceCurrency,
+                    fxTimeline,
+                    baseCurrency,
+                );
+            const accountResult = {
+                ...scope,
+                realizedPnl: realizedPnl === null ? null : Number(realizedPnl.toFixed(12)),
+                realizedPnlLocal: realizedPnlLocal === null
+                    ? null
+                    : Number(realizedPnlLocal.toFixed(12)),
+                status,
+                source,
+                realizedPnlByDateLocal: (
+                    status === 'complete' && source !== 'broker_performance_snapshot'
+                ) ? {...scopeState.realizedPnlByDate} : {},
+                sellCount: scopeState.sellCount,
+                brokerRealizedSellCount: scopeState.brokerRealizedSellCount,
+                taxLotHistoryVerification: verifiedTaxLotHistory
+                    ? {...taxLotHistoryVerification}
+                    : null,
+            };
+            if (!realizedAccountResultsByTicker.has(scope.ticker)) {
+                realizedAccountResultsByTicker.set(scope.ticker, []);
+            }
+            realizedAccountResultsByTicker.get(scope.ticker).push(accountResult);
         });
 
         if (useAuthoritativePositionSnapshot) {
@@ -2041,44 +2457,50 @@ export function createInvestmentDataUtils({
             const quoteCurrency = getTickerQuoteCurrency(summary.ticker);
             const lastLedgerDate = normalizeLedgerDate(orderedTransactions[orderedTransactions.length - 1]?.date || '');
             const performanceEntry = authoritativePerformanceSnapshot?.[summary.ticker] ?? null;
-            let realizedPnlLocal = Number(summary.realizedPnl) || 0;
-            let realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
-                realizedPnlLocal,
-                quoteCurrency,
-                fxTimeline,
-                baseCurrency,
+            const realizedPnlAccounts = realizedAccountResultsByTicker.get(summary.ticker) || [];
+            const completeRealizedPnlAccounts = realizedPnlAccounts.filter((result) => result.realizedPnl !== null);
+            const hasOnlyUnavailableRealizedAccounts = (
+                realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
             );
-            if (performanceEntry && Number.isFinite(performanceEntry.realizedTotal)) {
-                realizedPnlLocal = performanceEntry.realizedTotal;
-                realizedPnl = convertAmountToBaseCurrencyAtLatestRate(
-                    performanceEntry.realizedTotal,
-                    performanceEntry.currency,
-                    fxTimeline,
-                    baseCurrency,
+            let realizedPnlLocal = hasOnlyUnavailableRealizedAccounts
+                ? null
+                : completeRealizedPnlAccounts.reduce(
+                    (total, result) => total + (Number(result.realizedPnlLocal) || 0),
+                    0,
                 );
-            } else {
-                Object.entries(authoritativeBrokerPerformanceSnapshots).forEach(([broker, snapshot]) => {
-                    const brokerPerformanceEntry = snapshot?.[summary.ticker] ?? null;
-                    if (!brokerPerformanceEntry || !Number.isFinite(brokerPerformanceEntry.realizedTotal)) return;
-                    const brokerSummary = brokerTickerMap.get(`${broker}|${summary.ticker}`);
-                    const brokerRealizedPnlLocal = Number(brokerSummary?.realizedPnl) || 0;
-                    const brokerRealizedPnl = convertAmountToBaseCurrencyAtLatestRate(
-                        brokerRealizedPnlLocal,
+            const nonPerformanceRealizedPnlLocal = Number(summary.nonPerformanceRealizedPnl) || 0;
+            let realizedPnl = hasOnlyUnavailableRealizedAccounts
+                ? null
+                : completeRealizedPnlAccounts.reduce(
+                    (total, result) => total + (Number(result.realizedPnl) || 0),
+                    0,
+                );
+            if (realizedPnlLocal !== null) realizedPnlLocal = Number(realizedPnlLocal.toFixed(12));
+            if (realizedPnl !== null) realizedPnl = Number(realizedPnl.toFixed(12));
+            const usedLegacyTickerPerformanceSnapshot = (
+                realizedPnlAccounts.length <= 1
+                && performanceEntry
+                && Number.isFinite(performanceEntry.realizedTotal)
+            );
+            if (usedLegacyTickerPerformanceSnapshot) {
+                const additionalNonPerformanceRealizedPnlLocal = performanceEntry.includesNonperformance
+                    ? 0
+                    : nonPerformanceRealizedPnlLocal;
+                realizedPnlLocal = performanceEntry.realizedTotal + additionalNonPerformanceRealizedPnlLocal;
+                realizedPnl = (
+                    convertAmountToBaseCurrencyAtLatestRate(
+                        performanceEntry.realizedTotal,
+                        performanceEntry.currency,
+                        fxTimeline,
+                        baseCurrency,
+                    )
+                    + convertAmountToBaseCurrencyAtLatestRate(
+                        additionalNonPerformanceRealizedPnlLocal,
                         quoteCurrency,
                         fxTimeline,
                         baseCurrency,
-                    );
-                    const calibratedBrokerRealizedPnl = convertAmountToBaseCurrencyAtLatestRate(
-                        brokerPerformanceEntry.realizedTotal,
-                        brokerPerformanceEntry.currency,
-                        fxTimeline,
-                        baseCurrency,
-                    );
-                    realizedPnl += calibratedBrokerRealizedPnl - brokerRealizedPnl;
-                    if (brokerPerformanceEntry.currency === quoteCurrency) {
-                        realizedPnlLocal += brokerPerformanceEntry.realizedTotal - brokerRealizedPnlLocal;
-                    }
-                });
+                    )
+                );
             }
             const marketValueLocal = hasOpenPosition
                 ? (marketValueFromSnapshot !== null
@@ -2106,7 +2528,20 @@ export function createInvestmentDataUtils({
                     fxTimeline,
                     baseCurrency,
                 );
-            const realizedPnlByDateLocal = { ...(summary.realizedPnlByDate || {}) };
+            const scopedRealizedPnlByDateLocal = usedLegacyTickerPerformanceSnapshot
+                ? {}
+                : completeRealizedPnlAccounts.reduce((dailyTotals, result) => {
+                    Object.entries(result.realizedPnlByDateLocal || {}).forEach(([ledgerDate, value]) => {
+                        dailyTotals[ledgerDate] = (Number(dailyTotals[ledgerDate]) || 0) + (Number(value) || 0);
+                    });
+                    return dailyTotals;
+                }, {});
+            const realizedPnlByDateLocal = Object.fromEntries(
+                Object.entries(scopedRealizedPnlByDateLocal).map(([ledgerDate, value]) => ([
+                    ledgerDate,
+                    Number(Number(value).toFixed(12)),
+                ])),
+            );
             const realizedPnlByDate = Object.fromEntries(
                 Object.entries(realizedPnlByDateLocal).map(([ledgerDate, dailyRealizedPnlLocal]) => ([
                     ledgerDate,
@@ -2132,6 +2567,10 @@ export function createInvestmentDataUtils({
                 marketValue,
                 realizedPnl,
                 realizedPnlLocal,
+                realizedPnlAccounts,
+                realizedPnlStatus: realizedPnlAccounts.some((result) => result.status !== 'complete')
+                    ? 'partial'
+                    : 'complete',
                 realizedPnlByDate,
                 realizedPnlByDateLocal,
                 quoteCurrency,
@@ -2222,6 +2661,9 @@ export function createInvestmentDataUtils({
         getTransactionCommission,
         getTransactionEconomicAmount,
         getTransactionEffectiveUnitPrice,
+        getTransactionBrokerRealizedPnl,
+        getTransactionLotScope,
+        getTransactionLotScopeKey,
         getTransactionRenderedSplitFactor,
         getTransactionValuationQuantity,
         getTransactionPrice,
@@ -2244,4 +2686,4 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.50.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.61.0';

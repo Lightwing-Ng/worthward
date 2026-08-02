@@ -1,4 +1,4 @@
-/* Code version: v0.26.0 */
+/* Code version: v0.26.1 */
 (() => {
     const state = window.ANTIGRAVITY_APP;
     if (!state) return;
@@ -5756,19 +5756,29 @@
             preferredTop = triggerRect.top - popoverGap - popoverHeight;
         }
         const sidebarPicker = picker.wrapper.closest(".sidebar-form");
-        const canOpenRight = sidebarPicker && spaceRight >= popoverWidth;
-        const canOpenLeft = sidebarPicker && spaceLeft >= popoverWidth;
+        const canOpenBeside = Boolean(sidebarPicker || picker.avoidSelector);
+        const canOpenRight = canOpenBeside && spaceRight >= popoverWidth;
+        const canOpenLeft = canOpenBeside && spaceLeft >= popoverWidth;
         let top = Math.min(
             Math.max(canOpenRight || canOpenLeft ? triggerRect.top : preferredTop, topBoundary),
             maxTop,
         );
-        const avoidElement = picker.avoidSelector
-            ? document.querySelector(picker.avoidSelector)
-            : null;
-        if (avoidElement instanceof HTMLElement) {
+        let preferredLeft = triggerRect.left;
+        if (canOpenRight) {
+            preferredLeft = triggerRect.right + popoverGap;
+        } else if (canOpenLeft) {
+            preferredLeft = triggerRect.left - popoverGap - popoverWidth;
+        }
+        const left = Math.min(Math.max(preferredLeft, leftBoundary), maxLeft);
+        const avoidElements = picker.avoidSelector
+            ? Array.from(document.querySelectorAll(picker.avoidSelector)).filter(
+                (element) => element instanceof HTMLElement,
+            )
+            : [];
+        avoidElements.forEach((avoidElement) => {
             const avoidRect = avoidElement.getBoundingClientRect();
-            const overlapsHorizontally = leftBoundary < avoidRect.right
-                && rightBoundary > avoidRect.left;
+            const overlapsHorizontally = left < avoidRect.right
+                && (left + popoverWidth) > avoidRect.left;
             const overlapsVertically = top < avoidRect.bottom
                 && (top + popoverHeight) > avoidRect.top;
             if (overlapsHorizontally && overlapsVertically) {
@@ -5785,14 +5795,7 @@
                         : avoidBelowTop;
                 }
             }
-        }
-        let preferredLeft = triggerRect.left;
-        if (canOpenRight) {
-            preferredLeft = triggerRect.right + popoverGap;
-        } else if (canOpenLeft) {
-            preferredLeft = triggerRect.left - popoverGap - popoverWidth;
-        }
-        const left = Math.min(Math.max(preferredLeft, leftBoundary), maxLeft);
+        });
         const roundedTop = Math.round(top);
         const roundedLeft = Math.round(left);
         picker.popover.style.top = `${roundedTop}px`;

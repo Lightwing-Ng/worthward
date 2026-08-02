@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.5.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from app.services.investment_record_basics import (
 )
 
 
-ZIRCON_HK_IMPORTER_VERSION = "0.4.0"
+ZIRCON_HK_IMPORTER_VERSION = "0.5.0"
 ZIRCON_HK_BROKER_CODE = "zircon_hk"
 ZIRCON_HK_BROKER_LABEL = "Zircon HK"
 ZIRCON_HK_TEMPLATE_FILENAME = "Manual_investment_import.xlsx"
@@ -79,6 +79,8 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
     "KOL reward": "kol_reward",
     "Forex trade component": "forex_trade_component",
     "FX translation P&L": "fx_translation_pnl",
+    "Transfer In": "transfer_in",
+    "Transfer Out": "transfer_out",
 }
 ZIRCON_HK_CURRENCIES = ("HKD", "USD", "CNH", "CNY", "SGD")
 ZIRCON_HK_BROKER_ENTRIES = tuple(
@@ -104,9 +106,28 @@ _SECURITY_TYPES = {
     "foreign_tax_withholding",
     "grant",
     "payment_in_lieu",
+    "transfer_in",
+    "transfer_out",
 }
-_QUANTITY_TYPES = {"buy", "sell", "dividend_reinvestment", "grant"}
+_QUANTITY_TYPES = {
+    "buy",
+    "sell",
+    "dividend_reinvestment",
+    "grant",
+    "transfer_in",
+    "transfer_out",
+}
 _PRICE_TYPES = {"buy", "sell", "dividend_reinvestment"}
+_CASHLESS_SECURITY_TRANSFER_TYPES = {"transfer_in", "transfer_out"}
+_IBKR_STATEMENT_BASE_CURRENCY = "USD"
+_IBKR_BASE_CURRENCY_CASH_TYPES = {"deposit", "withdrawal"}
+_AMOUNTLESS_SECURITY_TYPES = {
+    "buy",
+    "sell",
+    "dividend_reinvestment",
+    "grant",
+    *_CASHLESS_SECURITY_TRANSFER_TYPES,
+}
 _POSITIVE_CASH_TYPES = {
     "deposit",
     "dividend",
@@ -424,6 +445,37 @@ def _export_transaction_datetime(transaction: dict[str, Any]) -> datetime:
     return parsed.astimezone(ZIRCON_HK_TIMEZONE).replace(tzinfo=None, microsecond=0)
 
 
+def _resolve_standard_export_currency(
+    transaction: dict[str, Any],
+    *,
+    broker_code: str,
+    transaction_type: str,
+) -> str:
+    currency = normalize_import_text(transaction.get("currency")).upper()
+    if currency in ZIRCON_HK_CURRENCIES:
+        return currency
+
+    source = transaction.get("source") or {}
+    source_broker = normalize_import_text(source.get("broker")).casefold()
+    source_kind = normalize_import_text(source.get("file_kind")).casefold()
+    ticker = normalize_import_text(transaction.get("ticker"))
+    if (
+        not currency
+        and broker_code == "ibkr"
+        and source_broker == "ibkr"
+        and source_kind == "transactions"
+        and transaction_type in _IBKR_BASE_CURRENCY_CASH_TYPES
+        and not ticker
+    ):
+        return _IBKR_STATEMENT_BASE_CURRENCY
+
+    ledger_no = transaction.get("ledger_no")
+    raise ValueError(
+        f"Investment transaction {ledger_no or 'without a ledger number'} "
+        f"uses unsupported standard XLSX currency {currency!r}."
+    )
+
+
 def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
     transaction_type = normalize_import_text(transaction.get("type")).casefold()
     type_label_by_value = {
@@ -448,12 +500,11 @@ def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
             f"uses unsupported broker {broker_code!r}."
         )
 
-    currency = normalize_import_text(transaction.get("currency")).upper()
-    if currency not in ZIRCON_HK_CURRENCIES:
-        raise ValueError(
-            f"Investment transaction {ledger_no or 'without a ledger number'} "
-            f"uses unsupported standard XLSX currency {currency!r}."
-        )
+    currency = _resolve_standard_export_currency(
+        transaction,
+        broker_code=broker_code,
+        transaction_type=transaction_type,
+    )
 
     quantity = _export_decimal(transaction.get("quantity_raw"))
     if quantity is None:
@@ -468,7 +519,7 @@ def _standard_export_row(transaction: dict[str, Any]) -> tuple[Any, ...]:
         price = abs(price)
 
     amount: int | float | None = None
-    if transaction_type not in {"buy", "sell", "dividend_reinvestment", "grant"}:
+    if transaction_type not in _AMOUNTLESS_SECURITY_TYPES:
         amount = _export_decimal(transaction.get("net_amount_raw"))
         if amount is None:
             amount = _export_decimal((transaction.get("normalized") or {}).get("net_amount"))
@@ -786,6 +837,16 @@ def _transaction_from_row(
             )
         gross_amount = Decimal("0")
         net_amount = Decimal("0")
+    elif mapped_type in _CASHLESS_SECURITY_TRANSFER_TYPES:
+        if amount not in {None, Decimal("0")}:
+            raise ValueError(
+                _cell_error(
+                    amount_cell,
+                    "Amount must be blank or zero for an in-kind security transfer.",
+                )
+            )
+        gross_amount = Decimal("0")
+        net_amount = Decimal("0")
     elif mapped_type in {"buy", "sell", "dividend_reinvestment"}:
         assert quantity is not None
         assert price is not None
@@ -821,13 +882,28 @@ def _transaction_from_row(
         net_amount,
         is_cash_flow_override=(
             False
-            if mapped_type in {"buy", "sell", "grant", "fx_translation_pnl"}
+            if mapped_type in {
+                "buy",
+                "sell",
+                "grant",
+                "fx_translation_pnl",
+                *_CASHLESS_SECURITY_TRANSFER_TYPES,
+            }
             else True
         ),
         side_override=(
             "buy"
-            if mapped_type in {"buy", "grant", "dividend_reinvestment"}
-            else ("sell" if mapped_type == "sell" else None)
+            if mapped_type in {
+                "buy",
+                "grant",
+                "dividend_reinvestment",
+                "transfer_in",
+            }
+            else (
+                "sell"
+                if mapped_type in {"sell", "transfer_out"}
+                else None
+            )
         ),
     )
     source = {

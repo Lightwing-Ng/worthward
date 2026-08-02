@@ -1,7 +1,7 @@
 /**
  * Investment transaction tracker frontend.
  *
- * Code version: v2.20.1
+ * Code version: v2.31.1
  * Realtime polling and value animation, Stock-details rules, transaction filters
  * and table page state, import feedback, split layout, and calculation-heavy
  * data utilities live in tested modules.
@@ -23,12 +23,13 @@ import {
     isCompleteHsbcStatementPdfBundle,
     isRealtimeQuotePulseProviderEligible,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.50.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.61.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
     buildIbkrImportFeedbackMessage,
-} from './investment/import-feedback.js?v=investment-import-feedback-v1.2.0';
+    buildSchwabImportFeedbackMessage,
+} from './investment/import-feedback.js?v=investment-import-feedback-v1.3.0';
 import {
     INVESTMENT_PAGINATION_MODULE_VERSION,
     buildInvestmentHistoryPagination,
@@ -42,7 +43,7 @@ import {
     isInvestmentStockDetailsIntradayRange as isInvestmentStockDetailsIntradayRangeCore,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.5.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.8.3';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -74,7 +75,7 @@ import {
 } from './investment/transaction-table.js?v=investment-transaction-table-v1.0.0';
 
 window.ANTIGRAVITY_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.20.0',
+    entry: 'v2.31.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -172,6 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const investmentImportSchwabFields = document.getElementById('investment_import_schwab_fields');
     const schwabTransactionsCsvInput = document.getElementById('schwab_transactions_csv');
     const schwabTransactionsCsvStatus = document.getElementById('schwab_transactions_csv_status');
+    const schwabPositionsCsvInput = document.getElementById('schwab_positions_csv');
+    const schwabPositionsCsvStatus = document.getElementById('schwab_positions_csv_status');
     const investmentImportZirconHkFields = document.getElementById('investment_import_zircon_hk_fields');
     const zirconHkTransactionsXlsxInput = document.getElementById('zircon_hk_transactions_xlsx');
     const zirconHkTransactionsXlsxStatus = document.getElementById('zircon_hk_transactions_xlsx_status');
@@ -299,12 +302,14 @@ document.addEventListener('DOMContentLoaded', () => {
         'kol_reward',
         'grant',
         'withdrawal',
+        'transfer_in',
+        'transfer_out',
     ]);
     const FUNDING_METRIC_DEFINITIONS = [
         {
             key: 'direct-deposits',
             label: 'Direct deposits',
-            summary: 'Direct USD cash deposits that were not consumed by later USD conversions.',
+            summary: 'USD deposits still available to fund investments after matched USD conversions. Deposit rows consumed by a later conversion are excluded.',
             valueKey: 'directUsdDeposits',
             rowsKey: 'directDepositRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.directUsdDeposits, 'USD', { showUsdSymbol: false }),
@@ -312,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'net-usd-converted',
             label: 'Net USD converted',
-            summary: 'USD received from FX conversion after subtracting conversion commissions.',
+            summary: 'USD received from matched FX conversions after conversion commissions are deducted.',
             valueKey: 'netUsdConverted',
             rowsKey: 'netUsdConvertedRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.netUsdConverted, 'USD', { showUsdSymbol: false }),
@@ -320,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'fx-funding-loss',
             label: 'FX funding loss',
-            summary: 'Real conversion cost only: FX commission plus the deposit-to-USD shortfall tied to matched conversion funding.',
+            summary: 'Funding loss on matched FX conversions: conversion commission plus any deposit-to-USD shortfall. Ordinary trading P&L is excluded.',
             valueKey: 'fxFundingLoss',
             rowsKey: 'fxFundingLossRows',
             formatValue: (metrics) => formatMetricLossAmountWithCurrency(metrics?.fxFundingLoss, 'USD'),
@@ -329,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'final-investable-usd',
             label: 'Final investable USD',
-            summary: 'Direct USD deposits plus net USD obtained from FX conversion.',
+            summary: 'Direct USD deposits plus net USD received from matched FX conversions. This is the funding base used by the investment ledger.',
             valueKey: 'finalInvestableUsd',
             rowsKey: 'finalInvestableUsdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.finalInvestableUsd, 'USD', { showUsdSymbol: false }),
@@ -337,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'total-commission',
             label: 'Total commission',
-            summary: 'All commissions charged across the imported investment ledger.',
+            summary: 'All commissions charged by imported investment activity, including trading commissions and other broker-reported fees.',
             valueKey: 'totalCommission',
             rowsKey: 'totalCommissionRows',
             formatValue: (metrics) => formatMetricLossAmount(metrics?.totalCommission),
@@ -346,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'interest-charged',
             label: 'Interest charged',
-            summary: 'Debit interest charged by the broker and deducted from cash.',
+            summary: 'Debit interest charged by the broker and deducted from cash. It is kept separate from commission and trading P&L.',
             valueKey: 'interestCharged',
             rowsKey: 'interestChargedRows',
             formatValue: (metrics) => formatMetricLossAmount(metrics?.interestCharged),
@@ -357,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'coupon-rebates-hkd',
             label: 'Coupon rebates HKD',
-            summary: 'Broker coupon and fee-rebate benefits whose economic notional is denominated in HKD.',
+            summary: 'Imported broker coupon and fee-rebate benefits whose source notional is denominated in HKD. The converted contribution is included in P&L once.',
             valueKey: 'couponRebateHkd',
             rowsKey: 'couponRebateHkdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateHkd, 'HKD'),
@@ -366,7 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'coupon-rebates-usd',
             label: 'Coupon rebates USD',
-            summary: 'Broker coupon and fee-rebate benefits denominated in USD.',
+            summary: 'Imported broker coupon and fee-rebate benefits whose source notional is denominated in USD. The benefit is included in P&L once.',
             valueKey: 'couponRebateUsd',
             rowsKey: 'couponRebateUsdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.couponRebateUsd, 'USD', { showUsdSymbol: false }),
@@ -375,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'cash-rewards-hkd',
             label: 'Cash rewards HKD',
-            summary: 'Cash cards, stock-cash coupons, task rewards, and signup or funding rewards denominated in HKD.',
+            summary: 'Imported HKD cash cards, stock-cash coupons, task rewards, and signup or funding rewards. The converted contribution is included in P&L once.',
             valueKey: 'cashRewardHkd',
             rowsKey: 'cashRewardHkdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardHkd, 'HKD'),
@@ -384,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'cash-rewards-usd',
             label: 'Cash rewards USD',
-            summary: 'Cash cards, stock-cash coupons, task rewards, and signup or funding rewards denominated in USD.',
+            summary: 'Imported USD cash cards, stock-cash coupons, task rewards, and signup or funding rewards. The benefit is included in P&L once.',
             valueKey: 'cashRewardUsd',
             rowsKey: 'cashRewardUsdRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.cashRewardUsd, 'USD', { showUsdSymbol: false }),
@@ -393,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'kol-rewards',
             label: 'KOL rewards',
-            summary: 'KOL reward income converted to the workspace base currency at the ledger-date FX rate.',
+            summary: 'Imported KOL reward income converted to the workspace base currency using the FX rate for each ledger date.',
             valueKey: 'kolRewardIncome',
             rowsKey: 'kolRewardRows',
             formatValue: (metrics) => formatAmountWithCurrency(metrics?.kolRewardIncome, getInvestmentBaseCurrency(), { showUsdSymbol: false }),
@@ -402,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'stock-grant-realized-pnl',
             label: 'Stock grant realized P&L',
-            summary: 'Sale proceeds attributed to zero-cost broker stock grants using the same ledger ordering as holdings replay.',
+            summary: 'Sale proceeds matched to zero-cost broker stock-grant lots using the same ledger order as Holdings. This is a disclosure card, not an extra addition to P&L.',
             valueKey: 'stockGrantRealizedPnl',
             rowsKey: 'stockGrantRealizedRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.stockGrantRealizedPnl),
@@ -411,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'stock-grant-unrealized-pnl',
             label: 'Stock grant unrealized P&L',
-            summary: 'Current mark-to-market value attributed to still-open zero-cost broker stock grants.',
+            summary: 'Current mark-to-market value of still-open zero-cost broker stock-grant lots. This value already flows through ticker Holdings P&L.',
             valueKey: 'stockGrantUnrealizedPnl',
             rowsKey: 'stockGrantUnrealizedRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.stockGrantUnrealizedPnl),
@@ -422,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'total-offshore-gain',
             label: 'Total offshore gain',
-            summary: 'Mainland-resident offshore gain view: cumulative P&L including converted broker coupon, cash, and KOL rewards. Stock-grant P&L remains included once through its ticker holdings.',
+            summary: 'Offshore gain view: Holdings realized P&L plus Holdings unrealized P&L, including converted broker coupon, cash, and KOL rewards. Stock-grant P&L is included once through ticker Holdings.',
             valueKey: 'totalOffshoreGain',
             rowsKey: 'totalOffshoreGainRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalOffshoreGain),
@@ -433,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'cumulative-pnl',
             label: 'Cumulative P&L',
-            summary: 'Combined realized and unrealized profit and loss, including converted broker coupon, cash, and KOL rewards.',
+            summary: 'Holdings realized P&L plus Holdings unrealized P&L, including converted broker coupon, cash, and KOL rewards. Stock-grant P&L remains attached to its ticker Holdings result.',
             valueKey: 'cumulativePnl',
             rowsKey: 'cumulativePnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.cumulativePnl),
@@ -444,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Realized profit and loss from holdings activity plus converted broker coupon, cash, and KOL rewards.',
+            summary: 'Realized P&L from Holdings activity plus converted broker coupon, cash, and KOL rewards. Stock-grant sale proceeds remain included through the ticker result.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalRealizedPnl),
@@ -453,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         {
             key: 'unrealized-pnl',
             label: 'Unrealized P&L',
-            summary: 'Mark-to-market profit and loss for holdings that still have an open position.',
+            summary: 'Mark-to-market P&L for positions that remain open. It is calculated from current value less the replayed cost basis.',
             valueKey: 'totalUnrealizedPnl',
             rowsKey: 'unrealizedPnlRows',
             formatValue: (metrics) => formatSignedHoldingsMoney(metrics?.totalUnrealizedPnl),
@@ -479,6 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let investmentImportStableHeight = 0;
     let activeInvestmentHistoryRowIds = [];
     let activeInvestmentStockDetailRowIds = [];
+    let activeInvestmentMetricTooltipState = null;
     const INVESTMENT_MANUAL_SCROLL_SUPPRESS_MS = 1400;
     const INVESTMENT_PROGRAMMATIC_SCROLL_GUARD_MS = 900;
     const INVESTMENT_OVERVIEW_INTRADAY_REQUEST_TIMEOUT_MS = 45000;
@@ -718,8 +724,11 @@ document.addEventListener('DOMContentLoaded', () => {
         getNormalizedTransactionType,
         getTransactionAmount,
         getTransactionCommission,
+        getTransactionBrokerRealizedPnl,
         getTransactionEconomicAmount,
         getTransactionEffectiveUnitPrice,
+        getTransactionLotScope,
+        getTransactionLotScopeKey,
         getInvestmentBaseCurrency,
         getTransactionPrice,
         getTransactionQuantity,
@@ -1799,6 +1808,23 @@ document.addEventListener('DOMContentLoaded', () => {
             && ['', 'USD'].includes(explicitCurrency)
         ) ? 'USD_OR_MISSING' : explicitCurrency;
         if (!brokerCode || !txn?.date || !normalizedType || !amountText) return '';
+        if (['transfer_in', 'transfer_out'].includes(normalizedType)) {
+            const ticker = getInvestmentCanonicalTicker(txn?.ticker);
+            const quantity = Number(getTransactionQuantity(txn));
+            const quantityText = Number.isFinite(quantity)
+                ? Math.abs(quantity).toFixed(8).replace(/\.?0+$/, '')
+                : '';
+            if (!ticker || !quantityText) return '';
+            return `v2:${JSON.stringify([
+                brokerCode,
+                accountIdentity,
+                String(txn?.date || '').trim(),
+                normalizedType,
+                ticker,
+                quantityText,
+                currencyIdentity,
+            ])}`;
+        }
         return `v2:${JSON.stringify([
             brokerCode,
             accountIdentity,
@@ -1831,24 +1857,45 @@ document.addEventListener('DOMContentLoaded', () => {
     function getInvestmentInternalTransferDirection(txn) {
         const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
         const normalizedType = getNormalizedTransactionType(txn);
+        if (normalizedType === 'transfer_out' && String(txn?.ticker || '').trim()) {
+            return 'security_broker_to_broker';
+        }
         if (brokerCode !== 'hsbc' && normalizedType === 'deposit') return 'hsbc_to_broker';
         if (brokerCode === 'hsbc' && normalizedType === 'deposit') return 'broker_to_hsbc';
         return '';
     }
 
+    function getInvestmentInternalTransferKind(txn) {
+        return getInvestmentInternalTransferDirection(txn) === 'security_broker_to_broker'
+            ? 'security'
+            : (getInvestmentInternalTransferDirection(txn) ? 'cash' : '');
+    }
+
     function isInvestmentInternalTransferSourceCandidate(txn) {
         if (!getInvestmentInternalTransferDirection(txn)) return false;
+        if (getInvestmentInternalTransferKind(txn) === 'security') {
+            return Math.abs(Number(getTransactionQuantity(txn)) || 0) > 1e-9;
+        }
         if (String(txn?.ticker || '').trim()) return false;
         return Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9;
     }
 
-    function isInvestmentInternalTransferTargetCandidateForDirection(txn, direction) {
-        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(txn));
+    function isInvestmentInternalTransferTargetCandidateForDirection(sourceTxn, targetTxn, direction) {
+        const brokerCode = normalizeInvestmentBroker(getTransactionBrokerCode(targetTxn));
+        if (direction === 'security_broker_to_broker') {
+            return (
+                brokerCode !== normalizeInvestmentBroker(getTransactionBrokerCode(sourceTxn))
+                && getNormalizedTransactionType(targetTxn) === 'transfer_in'
+                && getInvestmentCanonicalTicker(targetTxn?.ticker)
+                    === getInvestmentCanonicalTicker(sourceTxn?.ticker)
+                && Math.abs(Number(getTransactionQuantity(targetTxn)) || 0) > 1e-9
+            );
+        }
         if (direction === 'hsbc_to_broker' && brokerCode !== 'hsbc') return false;
         if (direction === 'broker_to_hsbc' && brokerCode === 'hsbc') return false;
-        if (getNormalizedTransactionType(txn) !== 'withdrawal') return false;
-        if (String(txn?.ticker || '').trim()) return false;
-        return Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9;
+        if (getNormalizedTransactionType(targetTxn) !== 'withdrawal') return false;
+        if (String(targetTxn?.ticker || '').trim()) return false;
+        return Math.abs(Number(getTransactionAmount(targetTxn)) || 0) > 1e-9;
     }
 
     function getInvestmentInternalTransferPairAmount(sourceTxn, targetTxn) {
@@ -1859,7 +1906,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn) {
         const direction = getInvestmentInternalTransferDirection(sourceTxn);
-        if (!direction) return 0;
+        if (!direction || direction === 'security_broker_to_broker') return 0;
         const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
         const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
         const feeAmount = targetAmount - sourceAmount;
@@ -1893,7 +1940,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const accountCompact = formatInvestmentTransferAccountCompact(txn);
         const dateLabel = formatTransactionDateDisplay(txn);
         const descriptionLabel = String(formatTransactionDescription(txn) || '').replace(/\s+/g, ' ').trim() || '--';
-        const amountLabel = formatAmountWithCurrency(getTransactionAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false });
+        const transferKind = String(metadata?.transferKind || '').trim();
+        const amountLabel = transferKind === 'security'
+            ? `${formatHoldingsPosition(Math.abs(Number(getTransactionQuantity(txn)) || 0))} ${formatInvestmentTickerForDisplay(txn?.ticker)}`
+            : formatAmountWithCurrency(getTransactionAmount(txn), formatTransactionCurrency(txn), { showUsdSymbol: false });
         const feeAmount = Number(metadata?.feeAmount) || 0;
         const feeLabel = feeAmount > 0.005
             ? `includes ${formatInvestmentInternalTransferFeeAmount(feeAmount, formatTransactionCurrency(txn) || 'USD')} transfer fee`
@@ -1918,7 +1968,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatInvestmentInternalTransferFeeNote(feeAmount, currency) {
         const numericFeeAmount = Number(feeAmount);
         if (!Number.isFinite(numericFeeAmount) || numericFeeAmount <= 0.005) return '';
-        return `Transfer fee ${formatInvestmentInternalTransferFeeAmount(numericFeeAmount, currency || 'USD')} will be recorded as HSBC commission.`;
+        return `Transfer fee ${formatInvestmentInternalTransferFeeAmount(numericFeeAmount, currency || 'USD')} is retained as broker commission.`;
     }
 
     function getInvestmentInternalTransferReferenceText(txn) {
@@ -1968,7 +2018,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isInvestmentInternalTransferSourceCandidate(txn)) {
                 sourceTransactions.push(txn);
             }
-            if (getNormalizedTransactionType(txn) === 'withdrawal' && Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9) {
+            const normalizedType = getNormalizedTransactionType(txn);
+            if (
+                (normalizedType === 'withdrawal' && Math.abs(Number(getTransactionAmount(txn)) || 0) > 1e-9)
+                || (normalizedType === 'transfer_in' && Math.abs(Number(getTransactionQuantity(txn)) || 0) > 1e-9)
+            ) {
                 targetTransactions.push(txn);
                 targetByKey.set(transactionKey, txn);
             }
@@ -1979,14 +2033,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!sourceKey) return;
             const direction = getInvestmentInternalTransferDirection(sourceTxn);
             if (!direction) return;
+            const transferKind = getInvestmentInternalTransferKind(sourceTxn);
             const selectedTargetKey = String(storedBindings[sourceKey] || '').trim();
             const sourceAmount = Math.abs(Number(getTransactionAmount(sourceTxn)) || 0);
+            const sourceQuantity = Math.abs(Number(getTransactionQuantity(sourceTxn)) || 0);
             const sourceDate = normalizeLedgerDate(sourceTxn?.date);
             const amountTolerance = Math.max(0.01, sourceAmount * 0.02);
+            const quantityTolerance = Math.max(0.000001, sourceQuantity * 0.000001);
             const selectedTargetCandidate = selectedTargetKey ? targetByKey.get(selectedTargetKey) || null : null;
             const selectedTarget = (
                 selectedTargetCandidate
-                && isInvestmentInternalTransferTargetCandidateForDirection(selectedTargetCandidate, direction)
+                && isInvestmentInternalTransferTargetCandidateForDirection(
+                    sourceTxn,
+                    selectedTargetCandidate,
+                    direction,
+                )
             )
                 ? selectedTargetCandidate
                 : null;
@@ -1994,10 +2055,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter((targetTxn) => {
                     const targetKey = String(targetTxn?.manual_internal_transfer_key || '').trim();
                     if (!targetKey || targetKey === selectedTargetKey) return Boolean(targetKey);
-                    if (!isInvestmentInternalTransferTargetCandidateForDirection(targetTxn, direction)) return false;
+                    if (!isInvestmentInternalTransferTargetCandidateForDirection(sourceTxn, targetTxn, direction)) return false;
                     const targetDate = normalizeLedgerDate(targetTxn?.date);
                     const dayDistance = getInvestmentLedgerDateDistanceDays(sourceDate, targetDate);
                     if (!Number.isFinite(dayDistance) || dayDistance > INVESTMENT_INTERNAL_TRANSFER_LINK_WINDOW_DAYS) return false;
+                    if (transferKind === 'security') {
+                        const targetQuantity = Math.abs(Number(getTransactionQuantity(targetTxn)) || 0);
+                        return Math.abs(targetQuantity - sourceQuantity) <= quantityTolerance;
+                    }
                     const targetAmount = Math.abs(Number(getTransactionAmount(targetTxn)) || 0);
                     if (Math.abs(targetAmount - sourceAmount) > amountTolerance) return false;
                     const sourceCurrency = String(formatTransactionCurrency(sourceTxn) || '').trim().toUpperCase();
@@ -2008,10 +2073,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, targetTxn);
                     return {
                         key: String(targetTxn?.manual_internal_transfer_key || '').trim(),
-                        label: formatInvestmentInternalTransferOptionLabel(targetTxn, { feeAmount }),
+                        label: formatInvestmentInternalTransferOptionLabel(targetTxn, { feeAmount, transferKind }),
                         targetTxn,
                         dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(targetTxn?.date)),
-                        amountDiff: Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount),
+                        amountDiff: transferKind === 'security'
+                            ? Math.abs((Math.abs(Number(getTransactionQuantity(targetTxn)) || 0)) - sourceQuantity)
+                            : Math.abs((Math.abs(Number(getTransactionAmount(targetTxn)) || 0)) - sourceAmount),
+                        transferKind,
                         feeAmount,
                         feeNote: formatInvestmentInternalTransferFeeNote(
                             feeAmount,
@@ -2031,10 +2099,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, selectedTarget);
                 options.unshift({
                     key: selectedTargetKey,
-                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget, { feeAmount }),
+                    label: formatInvestmentInternalTransferOptionLabel(selectedTarget, { feeAmount, transferKind }),
                     targetTxn: selectedTarget,
                     dayDistance: getInvestmentLedgerDateDistanceDays(sourceDate, normalizeLedgerDate(selectedTarget?.date)),
-                    amountDiff: Math.abs((Math.abs(Number(getTransactionAmount(selectedTarget)) || 0)) - sourceAmount),
+                    amountDiff: transferKind === 'security'
+                        ? Math.abs((Math.abs(Number(getTransactionQuantity(selectedTarget)) || 0)) - sourceQuantity)
+                        : Math.abs((Math.abs(Number(getTransactionAmount(selectedTarget)) || 0)) - sourceAmount),
+                    transferKind,
                     feeAmount,
                     feeNote: formatInvestmentInternalTransferFeeNote(
                         feeAmount,
@@ -2043,20 +2114,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            const automaticSecurityTarget = (
+                transferKind === 'security'
+                && !selectedTarget
+                && options.length === 1
+                && options[0].dayDistance === 0
+                && options[0].amountDiff <= quantityTolerance
+            ) ? options[0].targetTxn : null;
+            const resolvedTarget = selectedTarget || automaticSecurityTarget;
+            const resolvedTargetKey = selectedTargetKey || String(
+                automaticSecurityTarget?.manual_internal_transfer_key || ''
+            ).trim();
+
             sourceOptionsByKey.set(sourceKey, options);
-            if (selectedTarget) {
-                const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, selectedTarget);
+            if (resolvedTarget) {
+                const feeAmount = getInvestmentInternalTransferFeeAmount(sourceTxn, resolvedTarget);
                 resolvedBindingsBySourceKey.set(sourceKey, {
                     sourceKey,
-                    targetKey: selectedTargetKey,
+                    targetKey: resolvedTargetKey,
                     sourceTxn,
-                    targetTxn: selectedTarget,
-                    amount: getInvestmentInternalTransferPairAmount(sourceTxn, selectedTarget),
+                    targetTxn: resolvedTarget,
+                    kind: transferKind,
+                    quantity: transferKind === 'security' ? sourceQuantity : 0,
+                    autoMatched: Boolean(automaticSecurityTarget),
+                    amount: getInvestmentInternalTransferPairAmount(sourceTxn, resolvedTarget),
                     feeAmount,
-                    commissionTxn: getInvestmentInternalTransferCommissionTxn(sourceTxn, selectedTarget),
+                    commissionTxn: getInvestmentInternalTransferCommissionTxn(sourceTxn, resolvedTarget),
                     feeNote: formatInvestmentInternalTransferFeeNote(
                         feeAmount,
-                        formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(selectedTarget) || 'USD'
+                        formatTransactionCurrency(sourceTxn) || formatTransactionCurrency(resolvedTarget) || 'USD'
                     ),
                 });
             }
@@ -2169,6 +2255,9 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.manual_internal_transfer_role = '';
             txn.manual_internal_transfer_pair_key = '';
             txn.manual_internal_transfer_pair_amount = 0;
+            txn.manual_internal_transfer_pair_quantity = 0;
+            txn.manual_internal_transfer_kind = '';
+            txn.manual_internal_transfer_auto_matched = false;
             txn.manual_internal_transfer_source_key = '';
             txn.manual_internal_transfer_selected_target_key = '';
             txn.manual_internal_transfer_currency = '';
@@ -2194,6 +2283,8 @@ document.addEventListener('DOMContentLoaded', () => {
             txn.manual_internal_transfer_candidate_count = options.length;
             txn.manual_internal_transfer_selected_target_key = String(resolvedBinding?.targetKey || '').trim();
             txn.manual_internal_transfer_needs_binding = !resolvedBinding;
+            txn.manual_internal_transfer_kind = String(resolvedBinding?.kind || options[0]?.transferKind || '').trim();
+            txn.manual_internal_transfer_auto_matched = resolvedBinding?.autoMatched === true;
             const pendingFeeOption = options.find((option) => Number(option?.feeAmount) > 0.005) || null;
             txn.manual_internal_transfer_fee_amount = Number(resolvedBinding?.feeAmount ?? pendingFeeOption?.feeAmount ?? 0) || 0;
             txn.manual_internal_transfer_fee_note = String(resolvedBinding?.feeNote || pendingFeeOption?.feeNote || '').trim();
@@ -2204,22 +2295,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 sourceTxn,
                 targetTxn,
                 targetKey,
+                kind,
+                quantity,
                 amount,
                 feeAmount,
                 commissionTxn,
                 feeNote,
             } = binding;
             const pairAmount = Number(amount) || 0;
-            if (!(pairAmount > 1e-9)) return;
+            const pairQuantity = Number(quantity) || 0;
+            const isSecurityTransfer = kind === 'security';
+            if (!isSecurityTransfer && !(pairAmount > 1e-9)) return;
             sourceTxn.manual_internal_transfer_external_flow_excluded = true;
             sourceTxn.manual_internal_transfer_role = 'source';
             sourceTxn.manual_internal_transfer_pair_key = targetKey;
             sourceTxn.manual_internal_transfer_pair_amount = pairAmount;
+            sourceTxn.manual_internal_transfer_pair_quantity = pairQuantity;
+            sourceTxn.manual_internal_transfer_kind = String(kind || 'cash');
+            sourceTxn.manual_internal_transfer_auto_matched = binding.autoMatched === true;
             sourceTxn.manual_internal_transfer_currency = String(formatTransactionCurrency(targetTxn) || 'USD').trim().toUpperCase() || 'USD';
             targetTxn.manual_internal_transfer_external_flow_excluded = true;
             targetTxn.manual_internal_transfer_role = 'target';
             targetTxn.manual_internal_transfer_pair_key = String(sourceTxn?.manual_internal_transfer_key || '').trim();
             targetTxn.manual_internal_transfer_pair_amount = pairAmount;
+            targetTxn.manual_internal_transfer_pair_quantity = pairQuantity;
+            targetTxn.manual_internal_transfer_kind = String(kind || 'cash');
+            targetTxn.manual_internal_transfer_auto_matched = binding.autoMatched === true;
+            if (isSecurityTransfer) return;
             const numericFeeAmount = Number(feeAmount) || 0;
             if (numericFeeAmount > 0.005 && commissionTxn) {
                 commissionTxn.manual_internal_transfer_fee_amount = numericFeeAmount;
@@ -3627,7 +3729,10 @@ document.addEventListener('DOMContentLoaded', () => {
         getTransactionAmount,
         getTransactionBrokerCode,
         getTransactionCommission,
+        getTransactionBrokerRealizedPnl,
         getTransactionEffectiveUnitPrice,
+        getTransactionLotScope,
+        getTransactionLotScopeKey,
         getTransactionPrice,
         getTransactionQuantity,
         getTransactionValuationQuantity,
@@ -4126,16 +4231,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resolveInvestmentLogoUrl(profile, ticker) {
-        if (isDollarTokenMoneyMarketTicker(ticker)) {
-            return '/market-store/logos/dollarsign.ring.svg';
-        }
+        const moneyMarketFundLogoUrl = getMoneyMarketFundLogoUrl(ticker);
+        if (moneyMarketFundLogoUrl) return moneyMarketFundLogoUrl;
         return String(profile?.logo_url || '').trim();
     }
 
     function resolveInvestmentLogoUrls(profile, ticker) {
-        if (isDollarTokenMoneyMarketTicker(ticker)) {
-            return ['/market-store/logos/dollarsign.ring.svg'];
-        }
+        const moneyMarketFundLogoUrl = getMoneyMarketFundLogoUrl(ticker);
+        if (moneyMarketFundLogoUrl) return [moneyMarketFundLogoUrl];
         return normalizeInvestmentLogoUrlList(String(profile?.logo_url || '').trim());
     }
 
@@ -4865,10 +4968,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isDollarTokenMoneyMarketTicker(ticker) {
+        return (
+            isMoneyMarketFundTicker(ticker)
+            && getTickerQuoteCurrency(ticker) === 'USD'
+        );
+    }
+
+    function isMoneyMarketFundTicker(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
-        if (!normalizedTicker || isFranklinMoneyMarketTicker(normalizedTicker)) return false;
-        if (isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) return true;
+        if (!normalizedTicker) return false;
+        if (isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) {
+            return true;
+        }
         return getMoneyMarketTickerSet().has(normalizedTicker);
+    }
+
+    function getMoneyMarketFundLogoUrl(ticker) {
+        if (!isMoneyMarketFundTicker(ticker)) return '';
+        return isDollarTokenMoneyMarketTicker(ticker)
+            ? '/market-store/logos/dollarsign.ring.svg'
+            : '/market-store/logos/money-market-fund.ring.svg';
+    }
+
+    function getMoneyMarketFundTokenLogoClass(ticker) {
+        if (!isMoneyMarketFundTicker(ticker)) return '';
+        return isDollarTokenMoneyMarketTicker(ticker)
+            ? 'investment-cash-equivalent-token-logo'
+            : 'investment-money-market-fund-token-logo';
     }
 
     function getCashEquivalentFundDisplayName(ticker) {
@@ -4877,9 +5003,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Franklin Templeton U.S. Dollar Short-Term Money Market Fund';
         }
         if (!isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) {
-            if (normalizedTicker === 'HK0000369196.USD') return 'USD Money Market Fund (HK0000369196.USD)';
-            if (normalizedTicker === 'HK0001039582.USD') return 'USD Money Market Fund (HK0001039582.USD)';
-            if (isDollarTokenMoneyMarketTicker(normalizedTicker)) return 'Money Market Fund';
+            const knownName = getInvestmentKnownTickerCompanyNames()[normalizedTicker];
+            if (knownName) return knownName;
+            if (isMoneyMarketFundTicker(normalizedTicker)) return 'Money Market Fund';
             return '';
         }
         const parts = normalizedTicker.split('.');
@@ -4889,7 +5015,7 @@ document.addEventListener('DOMContentLoaded', () => {
             PING_AN_MONEY_MARKET_USD: 'Ping An Money Market Fund',
             PING_AN_MONEY_MARKET_HKD: 'Ping An Money Market Fund',
             GAOTENG_MONEY_MARKET_USD: 'GaoTeng WeValue USD Money Market Fund',
-            GAOTENG_MONEY_MARKET_HKD: 'GaoTeng WeValue HKD Money Market Fund',
+            GAOTENG_MONEY_MARKET_HKD: 'GaoTeng WeInvest Money Market Fund',
         };
         const baseName = fundNames[fundId] || 'Money Market Fund';
         return currency ? `${baseName} (${currency})` : baseName;
@@ -4897,9 +5023,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getCashEquivalentTickerLabel(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
-        if (isFranklinMoneyMarketTicker(normalizedTicker)) return 'Franklin MMF';
-        if (normalizedTicker === 'HK0000369196.USD') return 'HK0000369196 USD MMF';
-        if (normalizedTicker === 'HK0001039582.USD') return 'HK0001039582 USD MMF';
         if (!isLongbridgeHkCashEquivalentSyntheticTicker(normalizedTicker)) return '';
         const parts = normalizedTicker.split('.');
         const fundId = parts[1] || '';
@@ -5889,7 +6012,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  data-date-picker-keep-open-on-select="true"
                  data-date-picker-select-month="true"
                  data-date-picker-stable-frame="true"
-                 data-date-picker-avoid-selector="[data-investment-stock-details-time-filter-trigger][aria-expanded='true']"
+                 data-date-picker-avoid-selector="[data-investment-stock-details-time-filter-trigger][aria-expanded='true'], [data-investment-stock-details-time-filter-panel]"
                  data-date-picker-guidance="single-day-or-month"
                  data-date-picker-default-feedback="Choose a day or a calendar month.">
                 <input id="${escapeHtml(inputId)}" name="${escapeHtml(inputId)}" type="hidden" value="${escapeHtml(value)}">
@@ -6004,7 +6127,9 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.style.left = `${Math.round(left)}px`;
         panel.style.top = `${Math.round(rect.bottom + 6)}px`;
         panel.style.width = `${Math.round(width)}px`;
-        panel.style.zIndex = '10002';
+        // The date picker is portaled to the document root at the global popover layer.
+        // Keep its owning panel immediately beneath it so the picker remains clickable.
+        panel.style.zIndex = 'calc(var(--layer-global-popover) - 1)';
     }
 
     function openInvestmentStockDetailsTimeFilter(field) {
@@ -6614,6 +6739,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (schwabTransactionsCsvInput instanceof HTMLInputElement) {
             schwabTransactionsCsvInput.required = isSchwab;
         }
+        if (schwabPositionsCsvInput instanceof HTMLInputElement) {
+            schwabPositionsCsvInput.required = isSchwab;
+        }
         if (tigertradeStatementPdfsInput instanceof HTMLInputElement) {
             tigertradeStatementPdfsInput.required = isTigertrade;
         }
@@ -6650,7 +6778,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             ? 'Upload any antigravity standard XLSX workbook. Each row retains its own broker identity and is validated before import.'
                                             : 'Download the typed standard workbook, enter only real broker activity, then upload it for server validation before importing.')
                                     : (isSchwab
-                                ? 'Imports Schwab CSV (Order Status / Transaction History) into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                                ? 'Upload the Charles Schwab Transactions and Positions CSV exports together. Exact same-day ticker and quantity matches are linked as in-kind transfers; ambiguous matches require manual binding.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
                                     : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.'))))))))));
@@ -7043,7 +7171,11 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
         const resolvedBrokerLabel = resolvedBinding?.targetTxn
             ? getInvestmentBrokerMeta(getTransactionBrokerCode(resolvedBinding.targetTxn)).label
-            : 'HSBC';
+            : 'counterpart account';
+        const resolvedTransferPreposition = getInvestmentInternalTransferDirection(resolvedBinding?.sourceTxn) === 'security_broker_to_broker'
+            ? 'to'
+            : 'from';
+        const transferIsAutoMatched = txn?.manual_internal_transfer_auto_matched === true;
         const currencyDisplay = formatInvestmentHistoryCurrencyDisplay(txn);
         const descriptionMarkup = transferOptions.length
             ? `
@@ -7052,10 +7184,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <select class="investment-transfer-link-select trade-strategy-select form-select"
                             data-investment-transfer-source-key="${escapeHtml(sourceKey)}"
                             aria-label="Bind internal transfer counterpart">
-                        ${txn?.manual_internal_transfer_needs_binding
+                        ${transferIsAutoMatched
+                            ? `<option value="${escapeHtml(selectedTargetKey)}" selected>Automatically matched ${resolvedTransferPreposition} ${escapeHtml(resolvedBrokerLabel)}</option>`
+                            : (txn?.manual_internal_transfer_needs_binding
                             ? '<option value="">Bind transfer outflow...</option>'
-                            : `<option value="${escapeHtml(selectedTargetKey)}" selected>from ${escapeHtml(resolvedBrokerLabel)}</option><option value="">Undo link</option>`}
-                        ${transferOptions.map((option) => `
+                            : `<option value="${escapeHtml(selectedTargetKey)}" selected>${resolvedTransferPreposition} ${escapeHtml(resolvedBrokerLabel)}</option><option value="">Undo link</option>`)}
+                        ${transferIsAutoMatched ? '' : transferOptions.map((option) => `
                             <option value="${escapeHtml(option.key)}"${txn?.manual_internal_transfer_needs_binding && option.key === selectedTargetKey ? ' selected' : ''}>
                                 ${escapeHtml(option.label)}
                             </option>
@@ -7098,8 +7232,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rememberInvestmentInternalTransferBinding(sourceKey, targetKey);
             setImportFeedback(
                 targetKey
-                    ? 'Linked the selected HSBC outflow. Aggregate equity now treats that bridge as an internal transfer.'
-                    : 'Removed the manual HSBC outflow link. The aggregate curve now shows the raw transfer path again.',
+                    ? 'Linked the selected internal-transfer counterpart. Aggregate equity now treats that bridge as internal.'
+                    : 'Removed the manual internal-transfer link. The aggregate curve now shows the raw transfer path again.',
                 targetKey ? 'success' : 'warning'
             );
             await renderTransactionTable(investmentRawTransactionsCache, { preserveHistoryPage: true, scrollToTop: false });
@@ -8739,6 +8873,7 @@ document.addEventListener('DOMContentLoaded', () => {
             holdingsPanel.innerHTML = renderHoldingsTable([], {}, 0);
         }
         if (metricsPanel) {
+            removeInvestmentMetricTooltips();
             metricsPanel.innerHTML = renderFundingMetricCards(
                 getUsdFundingMetrics([]),
                 getHoldingsSummaryMetrics([], {}, 0),
@@ -8817,8 +8952,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const futuhkStatementsReady = isFutuhk
             && futuhkStatementFiles.length > 0
             && futuhkStatementFiles.every((file) => isLikelyFutuStatementPdf(file));
-        const schwabCsvFile = schwabTransactionsCsvInput?.files?.[0];
-        const schwabReady = isSchwab && !!schwabCsvFile;
+        const schwabTransactionsFile = schwabTransactionsCsvInput?.files?.[0];
+        const schwabPositionsFile = schwabPositionsCsvInput?.files?.[0];
+        const schwabTransactionsReady = isSchwab && isLikelyCsvFile(schwabTransactionsFile);
+        const schwabPositionsReady = isSchwab && isLikelyCsvFile(schwabPositionsFile);
+        const schwabReady = schwabTransactionsReady && schwabPositionsReady;
         const tigertradeStatementsReady = isTigertrade
             && tigertradeStatementFiles.length > 0
             && tigertradeStatementFiles.every((file) => isLikelyPdfFile(file));
@@ -8865,7 +9003,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setImportStatusIcon(hsbcCashAccountTextStatus, Boolean(hsbcCashAccountReady));
         setImportStatusIcon(hsbcStatementPdfsStatus, Boolean(hsbcStatementsReady));
         setImportStatusIcon(futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
-        setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabReady));
+        setImportStatusIcon(schwabTransactionsCsvStatus, Boolean(schwabTransactionsReady));
+        setImportStatusIcon(schwabPositionsCsvStatus, Boolean(schwabPositionsReady));
         setImportStatusIcon(tigertradeStatementPdfsStatus, Boolean(tigertradeStatementsReady));
         setImportStatusIcon(usmartHkStatementPdfsStatus, Boolean(usmartHkStatementsReady));
         setImportStatusIcon(
@@ -9101,7 +9240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (investmentImportBrokerSelect) {
         investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
-    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput].forEach((input) => {
+    [transactionsCsvInput, positionsCsvInput, gainskeeperFilesInput, futuhkStatementPdfsInput, hsbcStatementPdfsInput, tigertradeStatementPdfsInput, usmartHkStatementPdfsInput, longbridgeSgFundDetailsInput, longbridgeSgHistoryOrdersInput, longbridgeHkFundDetailsInput, longbridgeHkHistoryOrdersInput, investmentImportBrokerSelect, schwabTransactionsCsvInput, schwabPositionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 clearImportFeedback();
@@ -9362,12 +9501,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     formData.append('hsbc_cash_account_text', cashAccountText);
                 }
             } else if (selectedBroker === 'schwab') {
-                const schwabFile = schwabTransactionsCsvInput?.files?.[0] || transactionsCsv?.files?.[0];
-                if (!schwabFile) {
-                    setImportFeedback('Please choose a Schwab CSV file before importing.', 'error');
+                const schwabTransactionsFile = schwabTransactionsCsvInput?.files?.[0] || transactionsCsv?.files?.[0];
+                const schwabPositionsFile = schwabPositionsCsvInput?.files?.[0] || positionsCsv?.files?.[0];
+                if (!schwabTransactionsFile || !schwabPositionsFile) {
+                    setImportFeedback('Please choose both the Schwab Transactions CSV and Positions CSV before importing.', 'error');
                     return;
                 }
-                formData.append('transactions_csv', schwabFile);
+                if (!isLikelyCsvFile(schwabTransactionsFile) || !isLikelyCsvFile(schwabPositionsFile)) {
+                    setImportFeedback('Please upload the Schwab Transactions and Positions exports as CSV files.', 'error');
+                    return;
+                }
+                formData.append('transactions_csv', schwabTransactionsFile);
+                formData.append('positions_csv', schwabPositionsFile);
             } else if (selectedBroker === 'zircon_hk' || selectedBroker === 'standard_xlsx') {
                 const workbookFile = zirconHkTransactionsXlsxInput?.files?.[0];
                 const workbookSignature = getImportFileSignature(workbookFile);
@@ -9434,13 +9579,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const refreshNotice = Array.isArray(result.freshness_refresh_failures) && result.freshness_refresh_failures.length
                         ? `Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.map((ticker) => formatInvestmentTickerForDisplay(ticker)).join(', ')}.`
                         : '';
-                    const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
                     closeInvestmentImportForm();
                     setImportFeedback('Import committed. Refreshing the transaction table…', 'loading');
                     try {
                         const { valuationStatus } = await fetchInvestmentData({
                             expectedStoreVersion: result.investment_store_version,
                         });
+                        const pendingTransferCount = countInvestmentPendingInternalTransferBindings();
                         const valuationNotice = valuationStatus?.isDegraded ? String(valuationStatus.message || '').trim() : '';
                         if (valuationNotice) {
                             setImportFeedback(
@@ -9463,6 +9608,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                 buildHsbcImportFeedbackMessage({
                                     importSummary: result.summary,
                                     refreshNotice,
+                                }, { escapeHtml }),
+                                'success',
+                                { allowHtml: true }
+                            );
+                        } else if (selectedBroker === 'schwab') {
+                            setImportFeedback(
+                                buildSchwabImportFeedbackMessage({
+                                    importSummary: result.summary,
+                                    refreshNotice,
+                                    pendingTransferCount,
                                 }, { escapeHtml }),
                                 'success',
                                 { allowHtml: true }
@@ -9616,9 +9771,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const tickerLabel = formatInvestmentTickerForDisplay(summary.ticker);
             const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, summary.ticker);
             const logoUrls = resolveInvestmentLogoUrls(profile, summary.ticker);
-            const usesCashEquivalentTokenLogo = isDollarTokenMoneyMarketTicker(summary.ticker);
-            const logoHtml = usesCashEquivalentTokenLogo
-                ? '<span class="ticker-identity-logo investment-cash-equivalent-token-logo" aria-hidden="true"></span>'
+            const moneyMarketFundTokenLogoClass = getMoneyMarketFundTokenLogoClass(summary.ticker);
+            const logoHtml = moneyMarketFundTokenLogoClass
+                ? `<span class="ticker-identity-logo ${moneyMarketFundTokenLogoClass}" aria-hidden="true"></span>`
                 : `
                                     <img class="ticker-identity-logo"
                                          alt=""
@@ -10853,6 +11008,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayTicker = formatInvestmentTickerForDisplay(activeTicker);
         const companyName = resolveInvestmentTickerCompanyName(tickerProfiles, activeTicker);
         const logoUrls = resolveInvestmentLogoUrls(profile, activeTicker);
+        const moneyMarketFundTokenLogoClass = getMoneyMarketFundTokenLogoClass(activeTicker);
+        const identityLogoMarkup = moneyMarketFundTokenLogoClass
+            ? `<span class="ticker-identity-logo ${moneyMarketFundTokenLogoClass}" aria-hidden="true"></span>`
+            : `<img class="ticker-identity-logo"
+                   alt=""
+                   hidden
+                   loading="eager"
+                   decoding="async"
+                   data-investment-logo-image
+                   data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
+                   data-ticker="${escapeHtml(activeTicker)}">`;
+        const identityLogoPlaceholderMarkup = moneyMarketFundTokenLogoClass
+            ? ''
+            : '<span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>';
         const detailRows = buildInvestmentStockDetailRows(investmentProcessedTransactionsCache, activeTicker);
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(getTransactionCommission(txn)), 0);
         const totalCommissionCurrency = detailRows
@@ -11013,15 +11182,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="investment-stock-details-overview">
                 <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
                     <div class="ticker-identity-row">
-                        <img class="ticker-identity-logo"
-                             alt=""
-                             hidden
-                             loading="eager"
-                             decoding="async"
-                             data-investment-logo-image
-                             data-logo-url="${escapeHtml(JSON.stringify(logoUrls))}"
-                             data-ticker="${escapeHtml(activeTicker)}">
-                        <span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>
+                        ${identityLogoMarkup}
+                        ${identityLogoPlaceholderMarkup}
                         <span class="ticker-identity-copy">
                             <span class="suggestion-symbol ticker-identity-symbol">${escapeHtml(displayTicker)}</span>
                             ${renderInvestmentTickerIdentityNameHtml(companyName)}
@@ -11546,7 +11708,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function applyHoldingStateUpdate(state, txn, normalizedType, valuationQty, price) {
             if (isLongbridgeHkCashEquivalentTransfer(txn)) {
-                const syntheticTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
+                const syntheticSourceTicker = getLongbridgeHkCashEquivalentSyntheticTicker(txn);
+                const syntheticTicker = getInvestmentCanonicalTicker(syntheticSourceTicker);
                 if (!syntheticTicker) return;
                 const valueAfter = Number(
                     txn?.normalized?.cash_equivalent_value_after
@@ -11595,7 +11758,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 || moneyMarketTickers.has(rawTicker)
                 || isSyntheticCashEquivalentTicker(normalizedTicker)
             );
-            if (['buy', 'dividend_reinvestment', 'grant'].includes(normalizedType)) {
+            if (['buy', 'dividend_reinvestment', 'grant', 'transfer_in'].includes(normalizedType)) {
                 if (isMoneyMarketTicker && effectivePrice !== null && !Number.isNaN(effectivePrice)) {
                     const previousQuantity = state.holdings[normalizedTicker];
                     const previousAnchor = state.moneyMarketAnchors[normalizedTicker] ?? effectivePrice;
@@ -11607,7 +11770,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.holdings[normalizedTicker] += effectiveValuationQty;
                 return;
             }
-            if (normalizedType !== 'sell') return;
+            if (!['sell', 'transfer_out'].includes(normalizedType)) return;
             state.holdings[normalizedTicker] -= effectiveValuationQty;
             if (isMoneyMarketTicker && state.holdings[normalizedTicker] > 0 && effectivePrice !== null && !Number.isNaN(effectivePrice)) {
                 state.moneyMarketAnchors[normalizedTicker] = state.moneyMarketAnchors[normalizedTicker] ?? effectivePrice;
@@ -12197,6 +12360,7 @@ document.addEventListener('DOMContentLoaded', () => {
             holdings_market_values: {},
         }, tickerProfiles);
 
+        removeInvestmentMetricTooltips();
         metricsPanel.innerHTML = renderFundingMetricCards(fundingMetrics, holdingsSummaryMetrics, brokerBenefitMetrics);
         bindInvestmentMetricTooltipInteractions(metricsPanel);
         if (shouldAnimateVisibleMetricsPanel) {
@@ -13576,6 +13740,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="investment-metric-tooltip-value-copy${valueClass ? ` ${valueClass}` : ''}">${renderWorkspaceMetricValueContent(value)}</span>`;
     }
 
+    function formatInvestmentMetricTooltipRowLabel(entry) {
+        if (!entry?.txn) return 'Ledger row';
+        const description = String(formatTransactionDescription(entry.txn) || '').replace(/\s+/g, ' ').trim();
+        return description || String(entry.txn?.description || '').replace(/\s+/g, ' ').trim() || 'Ledger row';
+    }
+
     function renderMetricValueWithTooltip(metric) {
         const sortedLedgerEntries = Array.isArray(window.ANTIGRAVITY_INVESTMENT_DATA?.transactions)
             ? [...window.ANTIGRAVITY_INVESTMENT_DATA.transactions]
@@ -13583,9 +13753,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map((txn, index) => ({
                     ledgerNo: index + 1,
                     date: String(txn?.date || ''),
+                    txn,
                 }))
             : [];
-        const ledgerDateMap = new Map(sortedLedgerEntries.map((entry) => [entry.ledgerNo, entry.date]));
+        const ledgerEntryMap = new Map(sortedLedgerEntries.map((entry) => [entry.ledgerNo, entry]));
         const formatTooltipLedgerDate = (rawDate) => {
             const dateParts = parseInvestmentDateParts(rawDate);
             if (!dateParts) return '';
@@ -13600,27 +13771,81 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${visibleRows.map((rowNo) => `
                         <li>
                             <span class="investment-metric-tooltip-list-line">
-                                <span class="investment-metric-tooltip-row-no">${rowNo}</span>
-                                <span class="investment-metric-tooltip-row-date">${formatTooltipLedgerDate(ledgerDateMap.get(rowNo))}</span>
+                                <span class="investment-metric-tooltip-row-no">${escapeHtml(String(rowNo))}</span>
+                                <span class="investment-metric-tooltip-row-copy">
+                                    <span class="investment-metric-tooltip-row-date">${escapeHtml(formatTooltipLedgerDate(ledgerEntryMap.get(rowNo)?.date) || 'Date unavailable')}</span>
+                                    <span class="investment-metric-tooltip-row-description">${escapeHtml(formatInvestmentMetricTooltipRowLabel(ledgerEntryMap.get(rowNo)))}</span>
+                                </span>
                             </span>
                         </li>
                     `).join('')}
                 </ul>
-                ${extraCount > 0 ? `<p class="investment-metric-tooltip-note">+ ${extraCount} earlier row${extraCount === 1 ? '' : 's'}</p>` : ''}
+                ${extraCount > 0 ? `<p class="investment-metric-tooltip-note">+ ${extraCount.toLocaleString('en-US')} more ledger row${extraCount === 1 ? '' : 's'}</p>` : ''}
             `
-            : `<p class="investment-metric-tooltip-note">No contributing rows were detected.</p>`;
+            : `<p class="investment-metric-tooltip-note">No matching ledger rows.</p>`;
         const latestRow = rows.length ? rows[0] : '';
         const valueClass = String(metric?.valueClass || '').trim();
+        const tooltipId = `investment_metric_tooltip_${String(metric?.key || 'metric').replace(/[^a-z0-9_-]/gi, '_')}`;
 
         return `
-            <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${metric?.key || ''}" data-metric-target-row="${latestRow}" data-workspace-mask="trade-metric">
+            <span class="investment-metric-tooltip-trigger trade-metric-value${valueClass ? ` ${valueClass}` : ''}" tabindex="0" data-metric-key="${escapeHtml(metric?.key || '')}" data-metric-target-row="${escapeHtml(String(latestRow))}" data-workspace-mask="trade-metric">
                 ${renderMetricValueCopy(metric, valueClass)}
-                <span class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip">
-                    <span class="investment-metric-tooltip-copy">${metric?.summary || ''}</span>
+                <span id="${tooltipId}" class="investment-metric-tooltip field-tooltip liquid-glass-surface" role="tooltip" aria-hidden="true" data-investment-metric-tooltip="1">
+                    <span class="investment-metric-tooltip-section">
+                        <span class="investment-metric-tooltip-section-title">Calculation</span>
+                        <span class="investment-metric-tooltip-copy">${escapeHtml(metric?.summary || '')}</span>
+                    </span>
+                    <span class="investment-metric-tooltip-section">
+                        <span class="investment-metric-tooltip-section-title">Contributing ledger rows</span>
                     ${rowListHtml}
+                    </span>
                 </span>
             </span>
         `;
+    }
+
+    function positionInvestmentMetricTooltip(trigger, tooltip) {
+        if (!(trigger instanceof HTMLElement) || !(tooltip instanceof HTMLElement)) return;
+        tooltip.style.left = '0px';
+        tooltip.style.top = '0px';
+        const triggerRect = trigger.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const viewportWidth = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
+        const margin = 12;
+        const gap = 8;
+        const maxLeft = Math.max(margin, viewportWidth - tooltipRect.width - margin);
+        const left = Math.min(Math.max(margin, triggerRect.left), maxLeft);
+        const roomBelow = viewportHeight - triggerRect.bottom - margin;
+        const roomAbove = triggerRect.top - margin;
+        const shouldPlaceAbove = roomBelow < tooltipRect.height + gap && roomAbove >= tooltipRect.height + gap;
+        const preferredTop = shouldPlaceAbove
+            ? triggerRect.top - tooltipRect.height - gap
+            : triggerRect.bottom + gap;
+        const maxTop = Math.max(margin, viewportHeight - tooltipRect.height - margin);
+        const top = Math.min(Math.max(margin, preferredTop), maxTop);
+        tooltip.style.left = `${Math.round(left)}px`;
+        tooltip.style.top = `${Math.round(top)}px`;
+    }
+
+    function closeInvestmentMetricTooltip({ clearHistory = true } = {}) {
+        const activeState = activeInvestmentMetricTooltipState;
+        if (!activeState) {
+            if (clearHistory) clearInvestmentHistoryHighlights();
+            return;
+        }
+        activeState.tooltip.classList.remove('is-visible');
+        activeState.tooltip.setAttribute('aria-hidden', 'true');
+        activeState.trigger.removeAttribute('aria-describedby');
+        window.removeEventListener('resize', activeState.reposition);
+        window.removeEventListener('scroll', activeState.reposition, true);
+        activeInvestmentMetricTooltipState = null;
+        if (clearHistory) clearInvestmentHistoryHighlights();
+    }
+
+    function removeInvestmentMetricTooltips() {
+        closeInvestmentMetricTooltip({ clearHistory: false });
+        document.querySelectorAll('[data-investment-metric-tooltip="1"]').forEach((tooltip) => tooltip.remove());
     }
 
     function bindInvestmentMetricTooltipInteractions(metricsPanel) {
@@ -13628,18 +13853,42 @@ document.addEventListener('DOMContentLoaded', () => {
         metricsPanel.querySelectorAll('.investment-metric-tooltip-trigger').forEach((trigger) => {
             if (trigger.dataset.tooltipBound === '1') return;
             trigger.dataset.tooltipBound = '1';
+            const tooltip = trigger.querySelector('[data-investment-metric-tooltip="1"]');
+            if (!(tooltip instanceof HTMLElement)) return;
+            document.body.appendChild(tooltip);
+            const openTooltip = () => {
+                closeInvestmentMetricTooltip({ clearHistory: false });
+                activeInvestmentMetricTooltipState = {
+                    trigger,
+                    tooltip,
+                    reposition: () => positionInvestmentMetricTooltip(trigger, tooltip),
+                };
+                tooltip.setAttribute('aria-hidden', 'false');
+                trigger.setAttribute('aria-describedby', tooltip.id);
+                tooltip.classList.add('is-visible');
+                positionInvestmentMetricTooltip(trigger, tooltip);
+                window.addEventListener('resize', activeInvestmentMetricTooltipState.reposition);
+                window.addEventListener('scroll', activeInvestmentMetricTooltipState.reposition, true);
+            };
+            const closeTooltip = () => {
+                if (activeInvestmentMetricTooltipState?.tooltip !== tooltip) return;
+                closeInvestmentMetricTooltip();
+            };
             const jumpToContributionRow = () => {
                 const targetRowNo = Number(trigger.dataset.metricTargetRow);
                 if (!Number.isFinite(targetRowNo) || targetRowNo <= 0) return;
                 activateInvestmentHistoryRows([targetRowNo], { behavior: 'auto', scroll: false });
             };
-            const clearContributionRow = () => {
-                clearInvestmentHistoryHighlights();
-            };
-            trigger.addEventListener('mouseenter', jumpToContributionRow);
-            trigger.addEventListener('focus', jumpToContributionRow);
-            trigger.addEventListener('mouseleave', clearContributionRow);
-            trigger.addEventListener('blur', clearContributionRow);
+            trigger.addEventListener('mouseenter', () => {
+                openTooltip();
+                jumpToContributionRow();
+            });
+            trigger.addEventListener('focus', () => {
+                openTooltip();
+                jumpToContributionRow();
+            });
+            trigger.addEventListener('mouseleave', closeTooltip);
+            trigger.addEventListener('blur', closeTooltip);
         });
     }
 

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.15.0`
+Documentation version: `v1.18.0`
 
 ## Supported commands
 
@@ -49,11 +49,11 @@ artifact actions.
 
 ## Coverage baseline
 
-Baseline remeasured on 30 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
+Baseline remeasured on 1 Aug 2026 with Python `3.13.0`, pytest `9.0.3`, and coverage.py `7.15.0`:
 
-- Total combined statement-and-branch coverage: `63.97%` (`coverage.json`
-  reports `13,348` covered lines of `19,589` statements and `4,172` covered
-  branches of `7,800`).
+- Total combined statement-and-branch coverage: `64.90%` (`coverage.json`
+  reports `13,791` covered lines of `19,976` statements and `4,340` covered
+  branches of `7,962`).
 - `app/services/dca.py`: `97.5%`, with recurring schedule, contribution accounting, dividend, normalization, and error paths covered by deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
   through parameter-schema, signal-contract, and empty-frame tests.
@@ -66,7 +66,7 @@ Baseline remeasured on 30 Jul 2026 with Python `3.13.0`, pytest `9.0.3`, and cov
 
 Priority coverage gaps:
 
-- `app/services/investment_import.py`: `53.7%`, with broker-specific
+- `app/services/investment_import.py`: `56.4%`, with broker-specific
   reconciliation paths remaining more valuable than aggregate line gains.
 
 Recently strengthened coverage:
@@ -81,7 +81,7 @@ Recently strengthened coverage:
 
 JavaScript source coverage is measured by Node's built-in test runner for the
 first-party modules loaded by direct Node suites. The current baseline is
-`45.29%` lines, `64.62%` branches, and `71.08%` functions. The gate enforces
+`53.65%` lines, `68.42%` branches, and `73.62%` functions. The gate enforces
 gradual minimums of `40%`, `60%`, and `65%`, respectively. Override them only
 for an intentional diagnostic with
 `ANTIGRAVITY_JS_COVERAGE_LINES_MINIMUM`,
@@ -91,13 +91,13 @@ coverage; assembled behavior remains independently protected by Playwright.
 
 ## Test organization
 
-Current suite inventory remeasured on 30 Jul 2026:
+Current suite inventory remeasured on 1 Aug 2026:
 
-- 517 Python tests collected; the latest full Python run reports 511 passed,
-  6 skipped, and 80 subtests passed.
-- 83 Node unit tests (`npm run test:js`), including shared chart-axis theme
+- 546 Python tests collected; the latest full Python run reports 540 passed,
+  6 skipped, and 107 subtests passed.
+- 106 Node unit tests (`npm run test:js`), including shared chart-axis theme
   fallback priority and direct Investment module coverage.
-- 89 Playwright test cases passed through `./scripts/check.sh` on 30 Jul 2026,
+- 92 Playwright test cases passed through `./scripts/check.sh` on 1 Aug 2026,
   including parameterized viewport coverage.
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
@@ -110,12 +110,18 @@ Current suite inventory remeasured on 30 Jul 2026:
   OAuth or connection failure feedback.
 - `tests/test_runtime_error_redaction.py`: stable client failures that retain
   full unexpected-error diagnostics only in local logs.
-- `tests/test_investment_data_utils.mjs`: Node unit tests for investment calculations.
+- `tests/test_investment_data_utils.mjs`: Node unit tests for investment
+  calculations, including the user-confirmed CMB Wing Lung five-share GOOGL
+  round trip, the four-account `414.80816032` GOOGL total, the account-scoped
+  `220.95` AAPL total, and exclusion of incomplete HSBC DRAM, BOXX, and EUV
+  histories from complete-account totals.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
   Notifications paste parsing, Beijing-to-New York conversion, exact 15-share
-  DRAM and one-share GOOGL gap validation, authoritative GainsKeeper correction,
+  DRAM and one-share GOOGL gap validation, exact `408.952041` DRAM closed-trade
+  aggregation, closed-lot metadata retention across CSV/GainsKeeper deduplication,
+  authoritative GainsKeeper correction,
   provisional-source pruning, GKX statement metadata, same-origin and CSRF
   rejection, route persistence, and immutable evidence materialization.
 - `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX

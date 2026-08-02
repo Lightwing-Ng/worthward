@@ -1,7 +1,7 @@
 """
 Tests for investment ticker lineage (legacy symbol -> successor chain).
 
-Code version: v0.4.3
+Code version: v0.10.0
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from app.infrastructure.storage import (
     investment_ticker_lineage_legacy_tickers,
     investment_ticker_lineage_payload,
     investment_ticker_store_aliases,
+    is_pinned_logo_ticker,
     is_ticker_fallback_company_name,
     known_ticker_company_names_payload,
     market_ticker_store_aliases,
@@ -60,6 +61,32 @@ class InvestmentTickerLineageTests(unittest.TestCase):
 
         self.assertEqual(payload["SPLG.US"], ["SPYM", "SPYM.US", "SPLG", "SPY", "SPY.US"])
         self.assertEqual(payload["SPLG"], ["SPYM", "SPYM.US", "SPY", "SPY.US"])
+
+    def test_hong_kong_money_market_fund_aliases_resolve_to_canonical_isins(self) -> None:
+        expected_aliases = {
+            "HK0000369196.USD": "HK0000369196",
+            "HK0000584752.HK": "HK0000584752",
+            "HK0001039582.USD": "HK0001039582",
+            "LONGBRIDGE_HK_CASH_EQUIVALENT.PING_AN_MONEY_MARKET_USD.USD": "HK0000720752",
+            "LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_USD.USD": "HK0000584737",
+            "LONGBRIDGE_HK_CASH_EQUIVALENT.GAOTENG_MONEY_MARKET_HKD.HKD": "HK0000478872",
+        }
+        expected_names = {
+            "005276756": "Franklin Templeton U.S. Dollar Short-Term Money Market Fund",
+            "HK0000369196": "Taikang Kaitai Overseas Short Tenor Bond Fund A USD Acc",
+            "HK0000584737": "GaoTeng WeValue USD Money Mkt A USD Acc",
+            "HK0000478872": "GaoTeng WeInvest Money Market A HKD Acc",
+            "HK0000720752": "Ping An Money Market P USD Acc",
+            "HK0001039582": "CMS USD Money Market Fund B Acc",
+        }
+
+        for alias, isin in expected_aliases.items():
+            with self.subTest(alias=alias):
+                self.assertEqual(investment_ticker_store_aliases(alias)[0], isin)
+                self.assertEqual(investment_ticker_lineage_payload()[alias], [isin])
+        for isin, name in expected_names.items():
+            with self.subTest(isin=isin):
+                self.assertEqual(resolve_known_ticker_company_name(isin), name)
 
     def test_expand_tickers_with_store_lineage_deduplicates_candidates(self) -> None:
         expanded = expand_tickers_with_store_lineage(["SPLG.US", "SPYM.US"])
@@ -148,6 +175,37 @@ class InvestmentTickerLineageTests(unittest.TestCase):
             with self.subTest(ticker=ticker):
                 self.assertEqual(resolve_known_ticker_company_name(ticker), expected_name)
                 self.assertEqual(payload[f"{ticker}.US"], expected_name)
+
+    def test_core_holdings_always_have_full_company_name_us_aliases(self) -> None:
+        expected_names = {
+            "HIBS": "Direxion Daily S&P 500 High Beta Bear 3X Shares ETF",
+            "DIS": "The Walt Disney Company",
+            "KO": "The Coca-Cola Company",
+            "V": "Visa Inc.",
+            "AXP": "American Express Company",
+            "CVX": "Chevron Corporation",
+            "C": "Citigroup Inc.",
+            "BAC": "Bank of America Corporation",
+            "JPM": "JPMorgan Chase & Co.",
+            "AMZN": "Amazon.com, Inc.",
+            "GS": "The Goldman Sachs Group, Inc.",
+            "VZ": "Verizon Communications Inc.",
+            "WFC": "Wells Fargo & Company",
+            "SQQQ": "ProShares UltraPro Short QQQ",
+            "EQNR": "Equinor ASA",
+        }
+        payload = known_ticker_company_names_payload()
+
+        for ticker, name in expected_names.items():
+            with self.subTest(ticker=ticker):
+                self.assertEqual(resolve_known_ticker_company_name(ticker), name)
+                self.assertEqual(resolve_known_ticker_company_name(f"{ticker}.US"), name)
+                self.assertEqual(payload[ticker], name)
+                self.assertEqual(payload[f"{ticker}.US"], name)
+
+    def test_hkbn_uses_its_listed_company_name_and_pinned_logo(self) -> None:
+        self.assertEqual(resolve_known_ticker_company_name("1310.HK"), "HKBN Ltd.")
+        self.assertTrue(is_pinned_logo_ticker("1310.HK"))
 
     def test_known_ticker_company_names_cover_sgov(self) -> None:
         expected_name = "iShares 0-3 Month Treasury Bond ETF"

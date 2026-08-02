@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.20.1
+Code version: v0.20.2
 """
 
 from __future__ import annotations
@@ -1304,6 +1304,40 @@ class MarketDataFreshnessTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(quote_mock.call_count, 2)
         self.assertEqual(second.get_json()["count"], 2)
+
+    def test_realtime_quote_endpoint_excludes_configured_money_market_funds(self) -> None:
+        qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}
+
+        with (
+            patch("app.web.runtime.fetch_longbridge_realtime_quotes", return_value=[]) as longbridge_mock,
+            patch(
+                "app.web.runtime.fetch_yfinance_realtime_quotes",
+                return_value=[qqq_quote],
+            ) as yfinance_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/investment/realtime-quotes?ticker=HK0000584752.HK&ticker=QQQ"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["quotes"], [qqq_quote])
+        self.assertEqual(longbridge_mock.call_args.args[0], ["QQQ"])
+        self.assertEqual(yfinance_mock.call_args.args[0], ["QQQ"])
+
+    def test_intraday_endpoint_skips_configured_money_market_funds(self) -> None:
+        with (
+            patch("app.web.runtime.refresh_one_minute_store") as refresh_mock,
+            patch("app.web.runtime.fetch_history") as fetch_history_mock,
+        ):
+            response = create_app().test_client().get(
+                "/api/investment/intraday?ticker=HK0000584752.HK&range=1w&ensure_store=1"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["rows"], [])
+        self.assertEqual(response.get_json()["source"], "money_market_anchor")
+        refresh_mock.assert_not_called()
+        fetch_history_mock.assert_not_called()
 
     def test_realtime_quote_endpoint_reuses_a_complete_batch_for_one_minute(self) -> None:
         qqq_quote = {"ticker": "QQQ", "price": 100.0, "source": "yfinance"}

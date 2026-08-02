@@ -1,7 +1,11 @@
 /**
  * Investment stock details helpers.
  *
- * Code version: v0.5.0
+ * Code version: v0.8.3
+ * - Changed: Stock-details exact-price hover badges now reuse the Holdings allocation badge corner radius while preserving their existing blue fill and alignment.
+ * - Fixed: Stock-details hover guides span the complete chart area instead of stopping at the average-cost curve.
+ * - Fixed: Daily stock-details replay carries weekend and market-holiday position changes to the next visible market close.
+ * - Fixed: Stock-detail trade replay uses broker-account tax-lot scopes and displays broker-reported realized P&L when present.
  * - Refactored: Range, intraday-minute, day-boundary, and trade-session rules are exported for direct unit testing.
  * - Fixed: Eligible live markers keep the final chart x-position while resolving their y-position and y-scale from the current realtime quote price.
  * - Fixed: Mixed integer and fractional y-axis ticks now select a fractional tick when resolving the shared decimal anchor.
@@ -24,9 +28,10 @@
  * - Added: Stock-details price chart rendering can notify the parent investment page after the canvas is ready for share preview refreshes
  * - Added: Stock-details price chart now reuses the DOM-based live pulse marker, so eligible ranges no longer need canvas-side pulse painting
  * - Fixed: Average-price chart replay now uses the same split-adjusted quantities as holdings, so fully closed historical positions leave a real gap instead of a residual cost line.
+ * - Fixed: Aggregate stock-detail replay recognizes in-kind transfers as non-cash share movements.
  */
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.5.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.8.3';
 
 export function normalizeInvestmentRange(range, options = [], fallback = 'max') {
     const normalizedRange = String(range || '').trim().toLowerCase();
@@ -91,6 +96,23 @@ export function buildInvestmentIntradayDayBoundaries(labels = [], normalizeDate 
         dayMap.set(dayKey, entry);
     });
     return {orderedDays, dayMap};
+}
+
+export function resolveInvestmentStockDetailsDailySnapshotIndex(
+    ledgerDate,
+    labels = [],
+    normalizeDate = (value) => String(value || '').slice(0, 10),
+) {
+    const normalizedLedgerDate = normalizeDate(ledgerDate);
+    const normalizedLabels = Array.isArray(labels) ? labels : [];
+    if (!normalizedLedgerDate || !normalizedLabels.length) return null;
+    const firstVisibleDate = normalizeDate(normalizedLabels[0]);
+    if (!firstVisibleDate || normalizedLedgerDate < firstVisibleDate) return null;
+    for (let index = 0; index < normalizedLabels.length; index += 1) {
+        const visibleDate = normalizeDate(normalizedLabels[index]);
+        if (visibleDate && visibleDate >= normalizedLedgerDate) return index;
+    }
+    return null;
 }
 
 export function getInvestmentTradeSessionType(value, parseDateParts) {
@@ -160,10 +182,13 @@ export function createInvestmentStockDetailsUtils({
     getTickerQuoteCurrency,
     getTransactionAmount,
     getTransactionBrokerCode,
+    getTransactionBrokerRealizedPnl,
     getTransactionCommission,
     getTransactionEffectiveUnitPrice,
     getTransactionPrice,
     getTransactionQuantity,
+    getTransactionLotScope,
+    getTransactionLotScopeKey,
     getTransactionValuationQuantity,
     incrementInvestmentStockDetailsPriceChartRequestSerial,
     isFlatPosition,
@@ -189,7 +214,7 @@ export function createInvestmentStockDetailsUtils({
     function buildInvestmentStockDetailRows(processedTransactions, ticker) {
         const normalizedTicker = getInvestmentCanonicalTicker(ticker);
         if (!normalizedTicker) return [];
-        const stockState = createPositionState(normalizedTicker);
+        const stockStates = new Map();
         const moneyMarketTickers = getMoneyMarketTickerSet();
         const priceHistoryRows = window.ANTIGRAVITY_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
@@ -199,6 +224,11 @@ export function createInvestmentStockDetailsUtils({
         (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
             if (getInvestmentCanonicalTicker(txn?.ticker) !== normalizedTicker) return;
             const normalizedType = getNormalizedTransactionType(txn);
+            const lotScopeKey = getTransactionLotScopeKey(txn, normalizedTicker);
+            if (!stockStates.has(lotScopeKey)) {
+                stockStates.set(lotScopeKey, createPositionState(normalizedTicker));
+            }
+            const stockState = stockStates.get(lotScopeKey);
             const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const transactionPrice = getTransactionPrice(txn);
             let realizedPnl = null;
@@ -209,7 +239,17 @@ export function createInvestmentStockDetailsUtils({
             } else if (normalizedType === 'dividend_reinvestment' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
                 stockState.shares += valuationQuantity;
             } else if (normalizedType === 'sell' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
-                realizedPnl = applyDirectionalTrade(stockState, 'short', valuationQuantity, getTransactionEffectiveUnitPrice(txn, valuationQuantity));
+                const computedRealizedPnl = applyDirectionalTrade(
+                    stockState,
+                    'short',
+                    valuationQuantity,
+                    getTransactionEffectiveUnitPrice(txn, valuationQuantity),
+                );
+                realizedPnl = getTransactionBrokerRealizedPnl(txn) ?? computedRealizedPnl;
+            } else if (normalizedType === 'transfer_in' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                stockState.shares += valuationQuantity;
+            } else if (normalizedType === 'transfer_out' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                stockState.shares -= valuationQuantity;
             } else if (['dividend', 'foreign_tax_withholding', 'payment_in_lieu', 'adjustment'].includes(normalizedType)) {
                 realizedPnl = getTransactionAmount(txn);
             }
@@ -264,11 +304,16 @@ export function createInvestmentStockDetailsUtils({
             }
             const quantity = Number(getTransactionQuantity(txn));
             if (!Number.isFinite(quantity) || quantity <= 0) return;
-            if (normalizedType === 'buy' || normalizedType === 'grant' || normalizedType === 'dividend_reinvestment') {
+            if (
+                normalizedType === 'buy'
+                || normalizedType === 'grant'
+                || normalizedType === 'dividend_reinvestment'
+                || normalizedType === 'transfer_in'
+            ) {
                 fallbackShares += quantity;
                 return;
             }
-            if (normalizedType === 'sell') {
+            if (normalizedType === 'sell' || normalizedType === 'transfer_out') {
                 fallbackShares -= quantity;
             }
         });
@@ -342,16 +387,19 @@ export function createInvestmentStockDetailsUtils({
 
         orderedRows.forEach((txn) => {
             const brokerCode = getTransactionBrokerCode(txn);
-            if (!brokerMetrics.has(brokerCode)) {
-                brokerMetrics.set(brokerCode, {
+            const lotScope = getTransactionLotScope(txn, normalizedTicker);
+            const lotScopeKey = getTransactionLotScopeKey(txn, normalizedTicker);
+            if (!brokerMetrics.has(lotScopeKey)) {
+                brokerMetrics.set(lotScopeKey, {
                     brokerCode,
+                    accountId: lotScope.accountId,
                     positionState: createPositionState(normalizedTicker),
                     totalCommission: 0,
                     totalTrades: 0,
                     currencyCounts: new Map(),
                 });
             }
-            const metric = brokerMetrics.get(brokerCode);
+            const metric = brokerMetrics.get(lotScopeKey);
             const normalizedType = getNormalizedTransactionType(txn);
             const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
             const transactionCurrency = String(formatTransactionCurrency(txn) || '').trim().toUpperCase();
@@ -372,6 +420,10 @@ export function createInvestmentStockDetailsUtils({
                 metric.totalTrades += 1;
                 return;
             }
+            if (normalizedType === 'transfer_in' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                metric.positionState.shares += valuationQuantity;
+                return;
+            }
             if (normalizedType === 'grant' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
                 metric.positionState.shares += valuationQuantity;
                 return;
@@ -388,6 +440,10 @@ export function createInvestmentStockDetailsUtils({
                     getTransactionEffectiveUnitPrice(txn, valuationQuantity),
                 );
                 metric.totalTrades += 1;
+                return;
+            }
+            if (normalizedType === 'transfer_out' && Number.isFinite(valuationQuantity) && valuationQuantity > 0) {
+                metric.positionState.shares -= valuationQuantity;
             }
         });
 
@@ -406,6 +462,7 @@ export function createInvestmentStockDetailsUtils({
                 : null;
             return {
                 brokerCode: metric.brokerCode,
+                accountId: metric.accountId,
                 brokerLabel: getInvestmentBrokerMeta(metric.brokerCode).label,
                 shares,
                 positionDisplay: formatHoldingsPosition(shares),
@@ -692,7 +749,11 @@ export function createInvestmentStockDetailsUtils({
                     }
                 }
             } else {
-                markerIndex = dateIndex.get(ledgerDate);
+                markerIndex = resolveInvestmentStockDetailsDailySnapshotIndex(
+                    ledgerDate,
+                    labels,
+                    normalizeLedgerDate,
+                );
                 if (Number.isInteger(markerIndex)) {
                     markerPrice = resolveTradeMarkerPrice(markerIndex, transactionPrice);
                 }
@@ -734,8 +795,11 @@ export function createInvestmentStockDetailsUtils({
                 const fallbackIndex = intradayDayFallbackIndex.get(ledgerDate);
                 return Number.isInteger(fallbackIndex) ? fallbackIndex : null;
             }
-            const dailyIndex = dateIndex.get(ledgerDate);
-            return Number.isInteger(dailyIndex) ? dailyIndex : null;
+            return resolveInvestmentStockDetailsDailySnapshotIndex(
+                ledgerDate,
+                labels,
+                normalizeLedgerDate,
+            );
         };
         const preRangeTransactions = [];
         const transactionsBySnapshotIndex = chronologicalRows.reduce((accumulator, txn) => {
@@ -788,6 +852,11 @@ export function createInvestmentStockDetailsUtils({
                 renderedStockState.shares += quantity;
                 return { buyQuantity: 0, sellQuantity: 0 };
             }
+            if (normalizedType === 'transfer_in' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares += quantity;
+                renderedStockState.shares += quantity;
+                return { buyQuantity: 0, sellQuantity: 0 };
+            }
             if (normalizedType === 'sell' && Number.isFinite(quantity) && quantity > 0) {
                 applyDirectionalTrade(stockState, 'short', quantity, effectiveUnitPrice);
                 applyDirectionalTrade(
@@ -797,6 +866,11 @@ export function createInvestmentStockDetailsUtils({
                     Number.isFinite(renderedEffectiveUnitPrice) ? renderedEffectiveUnitPrice : effectiveUnitPrice,
                 );
                 return { buyQuantity: 0, sellQuantity: quantity };
+            }
+            if (normalizedType === 'transfer_out' && Number.isFinite(quantity) && quantity > 0) {
+                stockState.shares -= quantity;
+                renderedStockState.shares -= quantity;
+                return { buyQuantity: 0, sellQuantity: 0 };
             }
             return { buyQuantity: 0, sellQuantity: 0 };
         };
@@ -1101,19 +1175,7 @@ export function createInvestmentStockDetailsUtils({
                 const { ctx, chartArea } = chartInstance;
                 const y = Number(chartInstance?._activeInvestmentStockDetailsGuideY);
                 if (!chartArea || !Number.isFinite(y) || y < chartArea.top || y > chartArea.bottom) return;
-                const averagePricePoints = chartInstance.getDatasetMeta(1)?.data || [];
-                const finiteAveragePriceIndexes = averagePriceSeries
-                    .map((value, index) => (
-                        value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
-                            ? index
-                            : -1
-                    ))
-                    .filter((index) => index >= 0);
-                const firstAveragePriceIndex = finiteAveragePriceIndexes[0];
-                const lastAveragePriceIndex = finiteAveragePriceIndexes[finiteAveragePriceIndexes.length - 1];
-                const left = Number(averagePricePoints[firstAveragePriceIndex]?.x);
-                const right = Number(averagePricePoints[lastAveragePriceIndex]?.x);
-                if (!Number.isFinite(left) || !Number.isFinite(right) || right < left) return;
+                const { left, right } = chartArea;
                 chartInstance._activeInvestmentStockDetailsGuideBounds = { left, right, y };
                 ctx.save();
                 ctx.strokeStyle = resolvedTheme.muted;
@@ -1193,6 +1255,15 @@ export function createInvestmentStockDetailsUtils({
                 );
                 const badgeRight = decimalAnchor + fractionWidth + horizontalPadding;
                 const badgeHeight = 20;
+                const allocationBadgeRadius = Number.parseFloat(
+                    getComputedStyle(chartInstance.canvas)
+                        .getPropertyValue('--investment-holdings-allocation-badge-radius'),
+                );
+                const badgeRadius = Math.min(
+                    Number.isFinite(allocationBadgeRadius) ? allocationBadgeRadius : 0,
+                    (badgeRight - badgeLeft) / 2,
+                    badgeHeight / 2,
+                );
                 chartInstance._activeInvestmentStockDetailsGuideBounds = {
                     ...(chartInstance._activeInvestmentStockDetailsGuideBounds || {}),
                     badgeBottom: y + (badgeHeight / 2),
@@ -1206,7 +1277,20 @@ export function createInvestmentStockDetailsUtils({
                     price,
                 };
                 ctx.fillStyle = resolvedTheme.accentPrimary;
-                ctx.fillRect(badgeLeft, y - (badgeHeight / 2), badgeRight - badgeLeft, badgeHeight);
+                const badgeTop = y - (badgeHeight / 2);
+                const badgeWidth = badgeRight - badgeLeft;
+                ctx.beginPath();
+                if (typeof ctx.roundRect === 'function') {
+                    ctx.roundRect(badgeLeft, badgeTop, badgeWidth, badgeHeight, badgeRadius);
+                } else {
+                    ctx.moveTo(badgeLeft + badgeRadius, badgeTop);
+                    ctx.arcTo(badgeRight, badgeTop, badgeRight, badgeTop + badgeHeight, badgeRadius);
+                    ctx.arcTo(badgeRight, badgeTop + badgeHeight, badgeLeft, badgeTop + badgeHeight, badgeRadius);
+                    ctx.arcTo(badgeLeft, badgeTop + badgeHeight, badgeLeft, badgeTop, badgeRadius);
+                    ctx.arcTo(badgeLeft, badgeTop, badgeRight, badgeTop, badgeRadius);
+                    ctx.closePath();
+                }
+                ctx.fill();
                 ctx.fillStyle = '#ffffff';
                 ctx.textAlign = 'right';
                 ctx.fillText(integerCopy, decimalAnchor, y);

@@ -1,6 +1,6 @@
 """Tests for the generic typed manual-workbook import.
 
-Code version: v0.5.0
+Code version: v0.7.0
 """
 
 from __future__ import annotations
@@ -210,6 +210,144 @@ class ZirconHkImportTests(unittest.TestCase):
         self.assertEqual(transaction["quantity_raw"], "2")
         self.assertEqual(transaction["price_raw"], "210.25")
         self.assertEqual(transaction["commission_raw"], "-1.25")
+
+    def test_standard_export_uses_ibkr_statement_base_currency_for_blank_cash_rows(
+        self,
+    ) -> None:
+        workbook_bytes = build_standard_investment_xlsx([
+            {
+                "ledger_no": 4601,
+                "broker": "ibkr",
+                "account": "U32281328",
+                "datetime": "2026-01-01 20:00:00",
+                "type": "deposit",
+                "currency": "",
+                "gross_amount_raw": "1284.5987154",
+                "net_amount_raw": "1284.5987154",
+                "description": "Electronic Fund Transfer",
+                "source": {"broker": "ibkr", "file_kind": "transactions"},
+            },
+        ])
+
+        workbook = load_workbook(BytesIO(workbook_bytes))
+        self.assertEqual(workbook["Transactions"]["E2"].value, "USD")
+
+        payload = build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=workbook_bytes,
+            filename="ibkr_cash_export.xlsx",
+        )
+        transaction = payload["transactions"][0]
+        self.assertEqual(transaction["currency"], "USD")
+        self.assertEqual(transaction["net_amount_raw"], "1284.5987154")
+
+    def test_standard_export_rejects_blank_currency_without_ibkr_statement_evidence(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Investment transaction 4601 uses unsupported standard XLSX currency ''",
+        ):
+            build_standard_investment_xlsx([
+                {
+                    "ledger_no": 4601,
+                    "broker": "ibkr",
+                    "account": "U32281328",
+                    "datetime": "2026-01-01 20:00:00",
+                    "type": "deposit",
+                    "currency": "",
+                    "net_amount_raw": "1284.5987154",
+                    "description": "Electronic Fund Transfer",
+                    "source": {"broker": "ibkr", "file_kind": "manual_xlsx"},
+                },
+            ])
+
+    def test_standard_export_round_trips_in_kind_security_transfers_without_cash(
+        self,
+    ) -> None:
+        workbook_bytes = build_standard_investment_xlsx([
+            {
+                "ledger_no": 5096,
+                "broker": "ibkr",
+                "account": "U32281328",
+                "datetime": "2026-07-31 23:00:00",
+                "type": "transfer_out",
+                "currency": "USD",
+                "ticker": "QQQI",
+                "quantity_raw": "5",
+                "price_raw": "52.68",
+                "commission_raw": "0",
+                "gross_amount_raw": "0",
+                "net_amount_raw": "0",
+                "description": "FOP security transfer out: QQQI",
+                "source": {"reference_id": "ibkr-fop-20260731-qqqi"},
+            },
+            {
+                "ledger_no": 5097,
+                "broker": "schwab",
+                "account": "Individual ...103",
+                "datetime": "2026-07-31 23:00:00",
+                "type": "transfer_in",
+                "currency": "USD",
+                "ticker": "QQQI",
+                "quantity_raw": "5",
+                "commission_raw": "0",
+                "gross_amount_raw": "0",
+                "net_amount_raw": "0",
+                "description": "Security transfer in: QQQI",
+                "source": {"reference_id": "schwab-transfer-20260731-qqqi"},
+            },
+        ])
+
+        workbook = load_workbook(BytesIO(workbook_bytes))
+        sheet = workbook["Transactions"]
+        self.assertEqual(sheet["D2"].value, "Transfer Out")
+        self.assertEqual(sheet["D3"].value, "Transfer In")
+        self.assertEqual(sheet["G2"].value, 5)
+        self.assertIsNone(sheet["I2"].value)
+        self.assertIsNone(sheet["I3"].value)
+
+        payload = build_investment_payload_from_zircon_hk_manual_xlsx(
+            xlsx_bytes=workbook_bytes,
+            filename="QQQI_standard_investment_export.xlsx",
+        )
+        exported_outbound, exported_inbound = payload["transactions"]
+        self.assertEqual(exported_outbound["type"], "transfer_out")
+        self.assertEqual(exported_outbound["broker"], "ibkr")
+        self.assertEqual(exported_outbound["quantity_raw"], "5")
+        self.assertEqual(exported_outbound["price_raw"], "52.68")
+        self.assertEqual(exported_outbound["gross_amount_raw"], "0")
+        self.assertEqual(exported_outbound["net_amount_raw"], "0")
+        self.assertFalse(exported_outbound["normalized"]["is_cash_flow"])
+        self.assertEqual(exported_outbound["normalized"]["side"], "sell")
+        self.assertEqual(exported_inbound["type"], "transfer_in")
+        self.assertEqual(exported_inbound["broker"], "schwab")
+        self.assertEqual(exported_inbound["quantity_raw"], "5")
+        self.assertEqual(exported_inbound["gross_amount_raw"], "0")
+        self.assertEqual(exported_inbound["net_amount_raw"], "0")
+        self.assertFalse(exported_inbound["normalized"]["is_cash_flow"])
+        self.assertEqual(exported_inbound["normalized"]["side"], "buy")
+
+    def test_parser_rejects_cash_consideration_for_in_kind_security_transfers(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Transactions!I2.*blank or zero for an in-kind security transfer",
+        ):
+            build_investment_payload_from_zircon_hk_manual_xlsx(
+                xlsx_bytes=self._completed_workbook(
+                    overrides={
+                        "D2": "Transfer Out",
+                        "E2": "USD",
+                        "F2": "QQQI",
+                        "G2": 5,
+                        "H2": 52.68,
+                        "I2": 1,
+                        "J2": None,
+                    }
+                ),
+                filename="invalid-security-transfer.xlsx",
+            )
 
     def test_parser_rejects_text_dates_numbers_formulas_and_wrong_cash_signs(
         self,
